@@ -17,14 +17,15 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case toggleContentTabSelection(ContentTabID)
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive
+        case dismissTopNavigationPresentation
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
         case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
-        case contentTabReorderRequested(
-            sourceID: ContentTabID,
-            targetID: ContentTabID,
-            placement: ContentTabReorderPlacement,
+        case fileManagerTopNavigationReorderRequested(
+            sourceID: FileManagerTopNavigationItemID,
+            anchorID: FileManagerTopNavigationItemID,
+            placement: FileManagerTopNavigationReorderPlacement,
         )
         case moveContentTab(tabID: ContentTabID, targetWindowID: UUID)
         case receiveContentTabDrag(ContentTabDragPayload)
@@ -37,6 +38,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case toggleContentTabSelection(ContentTabID)
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive
+        case dismissTopNavigationPresentation
         case closeContentTab(ContentTabID)
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
@@ -46,10 +48,10 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case duplicateContentTab(ContentTabID)
         case duplicateSelectedContentTabs
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
-        case contentTabReorderRequested(
-            sourceID: ContentTabID,
-            targetID: ContentTabID,
-            placement: ContentTabReorderPlacement,
+        case fileManagerTopNavigationReorderRequested(
+            sourceID: FileManagerTopNavigationItemID,
+            anchorID: FileManagerTopNavigationItemID,
+            placement: FileManagerTopNavigationReorderPlacement,
         )
         case requestContentTabMove(ContentTabMoveRequest)
         case receiveContentTabDrag(ContentTabDragPayload)

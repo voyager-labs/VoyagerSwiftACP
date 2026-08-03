@@ -690,9 +690,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
             .requestCloseSelectedContentTabs,
             .closeContentTabRequested(fixture.tabD),
             .request(.duplicateContentTab(fixture.tabA)),
-            .sidebar(.delegate(.contentTabReorderRequested(
-                sourceID: fixture.tabA,
-                targetID: fixture.tabD,
+            .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                sourceID: .contentTab(fixture.tabA),
+                anchorID: .contentTab(fixture.tabD),
                 placement: .after,
             ))),
             .request(.openNewContentTab),
@@ -2968,6 +2968,58 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNotNil(store.state.contentTabs.tabs[id: pinnedID])
     }
 
+    /// CTM-001-close_selected_content_tabs: bulk close는 pinned Sidebar 표시 순서로 target을 고정한다.
+    /// - 검증 내용: C/A/B 표시에서 선택 C/A의 close queue가 raw A/B/C 순서로 역전되지 않음
+    /// - 사전 조건: raw tabs A/B/C/U, pinned top-navigation C/A/B, unpinned U active
+    /// - 기대 결과: ordered targets는 C/A이고 선택되지 않은 B는 제외됨
+    func testCloseSelectedContentTabs_freezesPinnedTopNavigationDisplayOrder() throws {
+        let tabA = ContentTabID(rawValue: "display-close-A")
+        let tabB = ContentTabID(rawValue: "display-close-B")
+        let tabC = ContentTabID(rawValue: "display-close-C")
+        let unpinned = ContentTabID(rawValue: "display-close-U")
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000455"))
+        func tab(_ id: ContentTabID, isPinned: Bool) -> ContentTabItem {
+            ContentTabItem(
+                id: id,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: isPinned,
+                title: id.rawValue,
+                iconName: "house",
+            )
+        }
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                tab(tabA, isPinned: true),
+                tab(tabB, isPinned: true),
+                tab(tabC, isPinned: true),
+                tab(unpinned, isPinned: false),
+            ],
+            activeTabID: unpinned,
+        )
+        state.contentTabs.selectedTabIDs = [tabC, tabA]
+        state.contentTabs.selectionAnchorID = tabC
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(tabC),
+            .contentTab(tabA),
+            .contentTab(tabB),
+        ])
+        state.syncContentTabSidebarItems()
+
+        _ = withDependencies {
+            $0.uuid = .constant(operationID)
+        } operation: {
+            FileManagerWindowRoutingReducer().reduce(
+                into: &state,
+                action: .requestCloseSelectedContentTabs,
+            )
+        }
+
+        XCTAssertEqual(state.pendingSelectedContentTabClose?.orderedTargetIDs, [tabC, tabA])
+        XCTAssertFalse(state.pendingSelectedContentTabClose?.orderedTargetIDs.contains(tabB) ?? true)
+    }
+
     /// CTM-001-close_selected_content_tabs: 선택 identity를 고정하고 active tab을 마지막으로 직렬 처리함
     /// 사용자가 두 개 이상의 Content Tab을 닫을 때 Window가 한 번에 하나의 target만 진행하는 계약을 검증한다.
     /// - 검증 내용: 0/1개 no-start, frozen original order, active-last ordering, current cursor의 단일 진행과 종료 clear
@@ -4424,7 +4476,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.tabs[id: pinnedID]?.isPinned = false
             $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordPersistenceRequested)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.selectedTabIDs, [pinnedID])

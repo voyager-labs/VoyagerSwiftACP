@@ -104,8 +104,8 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     }
 
     /// CTM-001-select_content_tabs: reorder threshold를 넘으면 drag만 정확히 한 번 시작함
-    /// 실제 mouse-down event를 보존한 source가 selection callback 없이 native writer를 시작하는지 확인함
-    /// - 검증 내용: above-threshold drag의 session start 수, down event identity, writer token, primary callback 총합
+    /// 임계값을 넘긴 최신 drag event로 source가 selection callback 없이 native writer를 시작하는지 확인함
+    /// - 검증 내용: above-threshold drag의 session start 수, drag event identity, writer token, primary callback 총합
     /// - 사전 조건: 실제 NSWindow의 unpinned button과 4pt 임계값을 넘는 leftMouseDragged event
     /// - 기대 결과: drag-session은 1회, selection callback은 0회이고 dismantle은 writer-owned token만 제거함
     func testContentTabButton_thresholdDragStartsOnceWithoutPrimaryAction() throws {
@@ -114,9 +114,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
             XCTAssertTrue(fixture.recorder.routes.isEmpty)
             XCTAssertEqual(fixture.recorder.draggingItems.count, 1)
-            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.type), [.leftMouseDown])
+            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.type), [.leftMouseDragged])
+            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.eventNumber), [2])
             let draggingItem = try XCTUnwrap(fixture.recorder.draggingItems.first?.first)
-            let writer = try XCTUnwrap(draggingItem.item as? ContentTabReorderPasteboardWriter)
+            let writer = try XCTUnwrap(draggingItem.item as? FileManagerTopNavigationReorderPasteboardWriter)
             XCTAssertEqual(fixture.sessionStore.entry?.token, writer.token)
 
             fixture.button.dismantle()
@@ -161,7 +162,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     func testContentTabButton_updateUsesNewestCallbacksAndControlState() throws {
         let oldRecorder = ContentTabButtonRecorder()
         let newRecorder = ContentTabButtonRecorder()
-        let updatedSessionStore = ContentTabReorderLocalSessionStore()
+        let updatedSessionStore = FileManagerTopNavigationReorderLocalSessionStore()
         let updatedSourceID = ContentTabID(rawValue: "updated-source")
 
         try withContentTabButtonFixture(recorder: oldRecorder) { fixture in
@@ -191,7 +192,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             XCTAssertNil(fixture.sessionStore.entry)
             XCTAssertEqual(newRecorder.routes, [.toggleSelection])
             XCTAssertEqual(newRecorder.draggingItems.count, 1)
-            XCTAssertEqual(updatedSessionStore.entry?.payload.sourceID, updatedSourceID)
+            XCTAssertEqual(updatedSessionStore.entry?.payload.sourceID, .contentTab(updatedSourceID))
             XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Inactive, Selected")
             XCTAssertTrue(fixture.button.isEnabled)
             XCTAssertEqual(fixture.button.contentHuggingPriority(for: .horizontal), .defaultLow)
@@ -374,6 +375,43 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
     }
 
+    /// CTM-001-select_content_tabs: Sidebar 빈 viewport가 행과 분리된 hit target을 사용함
+    /// eager VStack의 잔여 Spacer만 빈 공간 pointer surface를 소유하는지 확인함
+    /// - 검증 내용: viewport minHeight, LazyVStack 형제 Spacer, canonical collapse action wiring
+    /// - 사전 조건: production SidebarView source
+    /// - 기대 결과: background gesture 없이 전용 Spacer만 collapse action을 전송함
+    func testSidebarEmptyViewportUsesDedicatedSiblingHitTarget() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let geometryStart = try XCTUnwrap(source.range(of: "GeometryReader { proxy in"))
+        let geometryEnd = try XCTUnwrap(source.range(
+            of: ".clipped()",
+            range: geometryStart.upperBound ..< source.endIndex,
+        ))
+        let geometrySource = source[geometryStart.lowerBound ..< geometryEnd.upperBound]
+        let hitTargetStart = try XCTUnwrap(geometrySource.range(of: "Spacer(minLength: 0)"))
+        let hitTargetEnd = try XCTUnwrap(geometrySource.range(
+            of: "                    }\n                    .frame(",
+            range: hitTargetStart.upperBound ..< geometrySource.endIndex,
+        ))
+        let hitTargetSource = geometrySource[hitTargetStart.lowerBound ..< hitTargetEnd.lowerBound]
+
+        XCTAssertTrue(geometrySource.contains("minHeight: proxy.size.height"))
+        XCTAssertTrue(geometrySource.contains("VStack(spacing: 0)"))
+        XCTAssertTrue(geometrySource.contains("LazyVStack(alignment: .leading, spacing: 0)"))
+        XCTAssertTrue(hitTargetSource.contains(".frame(maxWidth: .infinity)"))
+        XCTAssertTrue(hitTargetSource.contains(".contentShape(Rectangle())"))
+        XCTAssertTrue(hitTargetSource.contains(".onTapGesture"))
+        XCTAssertTrue(hitTargetSource.contains("collapseContentTabSelectionToActive"))
+        XCTAssertFalse(geometrySource.contains(".background {"))
+    }
+
     /// CTM-001-select_content_tabs: Window Sidebar selection Delegate routing 검증
     /// Window boundary가 toggle/range만 기존 ContentTab action으로 변환하는지 확인함
     /// - 검증 내용: toggle/range Delegate→ContentTab action 순서와 payload
@@ -383,6 +421,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let tabA = ContentTabID(rawValue: "router-A")
         let tabB = ContentTabID(rawValue: "router-B")
         let state = FileManagerFeature.State()
+        let selectionOrder = state.contentTabSelectionOrderedIDs
         let store = TestStore(initialState: state) {
             FileManagerWindowRoutingReducer()
         }
@@ -394,20 +433,62 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
         await store.send(.sidebar(.delegate(.selectContentTabRange(to: tabB))))
         await store.receive { action in
-            guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
-            return id == tabB
+            guard case let .contentTabs(.selectRange(to: id, orderedIDs: orderedIDs)) = action else {
+                return false
+            }
+            return id == tabB && orderedIDs == selectionOrder
         }
 
         XCTAssertEqual(store.state, state)
         // store.finish() 불필요: 모든 effect가 receive로 소비됨
     }
 
-    /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 selection 독립성 검증
-    /// Sidebar plain activation이 active만 바꾸고 explicit selection을 보존하는지 확인함
-    /// - 검증 내용: setCurrent 단일 route와 selected IDs/anchor 및 active identity
+    /// CTM-001-select_content_tabs: pinned range는 raw tab 저장 순서가 아니라 Sidebar 표시 순서를 사용한다.
+    /// - 검증 내용: C/A/B 표시에서 C→A range가 중간 raw tab B를 포함하지 않음
+    /// - 사전 조건: raw tabs A/B/C, pinned top-navigation C/A/B, anchor C
+    /// - 기대 결과: selection은 C/A만 포함하고 B는 제외됨
+    func testWindowRangeSelectionUsesPinnedTopNavigationDisplayOrder() async {
+        let tabA = ContentTabID(rawValue: "display-range-A")
+        let tabB = ContentTabID(rawValue: "display-range-B")
+        let tabC = ContentTabID(rawValue: "display-range-C")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                tab(id: tabA, isPinned: true),
+                tab(id: tabB, isPinned: true),
+                tab(id: tabC, isPinned: true),
+            ],
+            activeTabID: tabC,
+        )
+        state.contentTabs.selectedTabIDs = [tabC]
+        state.contentTabs.selectionAnchorID = tabC
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(tabC),
+            .contentTab(tabA),
+            .contentTab(tabB),
+        ])
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.delegate(.selectContentTabRange(to: tabA))))
+        await store.receive { action in
+            guard case let .contentTabs(.selectRange(to: id, orderedIDs: orderedIDs)) = action else {
+                return false
+            }
+            return id == tabA && orderedIDs == [tabC, tabA, tabB]
+        } assert: {
+            $0.contentTabs.selectedTabIDs = [tabC, tabA]
+        }
+
+        XCTAssertFalse(store.state.contentTabs.selectedTabIDs.contains(tabB))
+    }
+
+    /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 exclusive selection 검증
+    /// Sidebar plain activation이 새 active 하나로 explicit selection을 축소하는지 확인함
+    /// - 검증 내용: setCurrent 이후 collapse 순서와 selected IDs/anchor 및 active identity
     /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
-    /// - 기대 결과: active가 B로 전환되고 selection/anchor는 그대로 유지됨
-    func testPlainClickDifferentTab_activatesWithoutChangingSelection() async {
+    /// - 기대 결과: active가 B로 전환되고 selection/anchor도 B 하나로 축소됨
+    func testPlainClickDifferentTab_activatesAndCollapsesSelectionToTarget() async {
         let tabA = ContentTabID(rawValue: "plain-different-A")
         let tabB = ContentTabID(rawValue: "plain-different-B")
         var state = FileManagerFeature.State()
@@ -437,17 +518,19 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             $0.contentTabs.previousActiveTabID = tabA
             $0.contentTabs.selectedTabIDs = [tabA, tabB]
         }
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [tabA, tabB])
-        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabB)
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [tabB]
+            $0.contentTabs.selectionAnchorID = tabB
+        }
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
     }
 
-    /// CTM-001-select_content_tabs: 현재 active Content Tab plain click의 selection 독립성 검증
-    /// 이미 active인 row의 재활성화도 explicit selection을 보존하는지 확인함
-    /// - 검증 내용: setCurrent no-op route와 selected IDs/anchor 및 active identity
+    /// CTM-001-select_content_tabs: 현재 active Content Tab plain click의 exclusive selection 검증
+    /// 이미 active인 row의 재활성화도 해당 active 하나로 explicit selection을 축소하는지 확인함
+    /// - 검증 내용: setCurrent no-op 이후 collapse 순서와 selected IDs/anchor 및 active identity
     /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
-    /// - 기대 결과: active identity와 selection/anchor가 모두 유지됨
-    func testPlainClickActiveTab_preservesSelection() async {
+    /// - 기대 결과: active identity는 유지되고 selection/anchor는 A 하나로 축소됨
+    func testPlainClickActiveTab_collapsesSelectionToActive() async {
         let tabA = ContentTabID(rawValue: "plain-active-A")
         let tabB = ContentTabID(rawValue: "plain-active-B")
         var state = FileManagerFeature.State()
@@ -473,9 +556,37 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == tabA
         }
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [tabA, tabB])
-        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabB)
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [tabA]
+            $0.contentTabs.selectionAnchorID = tabA
+        }
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+    }
+
+    /// CTM-001-select_content_tabs: 사라진 Content Tab plain click의 selection 보존 검증
+    /// stale Sidebar row가 현재 active 기준 collapse를 유발하지 않는지 확인함
+    /// - 검증 내용: routed ContentTab action 부재와 active/selected IDs/anchor 불변
+    /// - 사전 조건: A active, A/B selected이며 요청 target은 tabs에 없는 Window 상태
+    /// - 기대 결과: stale activation 요청은 무시되고 canonical ContentTab state가 유지됨
+    func testPlainClickMissingTab_doesNotCollapseCurrentSelection() async {
+        let tabA = ContentTabID(rawValue: "plain-missing-A")
+        let tabB = ContentTabID(rawValue: "plain-missing-B")
+        let missingTab = ContentTabID(rawValue: "plain-missing-target")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tab(id: tabA, isPinned: false), tab(id: tabB, isPinned: false)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        let originalContentTabs = state.contentTabs
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.selectContentTab(missingTab))))
+
+        XCTAssertEqual(store.state.contentTabs, originalContentTabs)
     }
 
     /// CTM-001-select_content_tabs: Sidebar New Tab 성공 시 selection 독립성 전체 chain 검증
@@ -577,6 +688,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let sidebarProjectionSentinel = state.sidebar.contentTabSidebarItems
         let homeLocationSentinel = state.content.homeLocationItems
         let homeFavoriteSentinel = state.content.homeFavoriteItems
+        let selectionOrder = state.contentTabSelectionOrderedIDs
         let store = TestStore(initialState: state) { FileManagerFeature() }
 
         await store.send(.sidebar(.view(.toggleContentTabSelection(tabB))))
@@ -597,8 +709,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             return id == tabA
         }
         await store.receive { action in
-            guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
-            return id == tabA
+            guard case let .contentTabs(.selectRange(to: id, orderedIDs: orderedIDs)) = action else {
+                return false
+            }
+            return id == tabA && orderedIDs == selectionOrder
         } assert: {
             $0.contentTabs.selectedTabIDs = [tabA, tabB]
         }
@@ -820,14 +934,14 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         state.selectionAnchorID = pinned1
         let store = TestStore(initialState: state) { ContentTabFeature() }
 
-        await store.send(.selectRange(to: unpinned2)) {
+        await store.send(.selectRange(to: unpinned2, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [pinned1, pinned2, unpinned1, unpinned2]
         }
         await store.send(.toggleSelection(unpinned3)) {
             $0.selectedTabIDs.insert(unpinned3)
             $0.selectionAnchorID = unpinned3
         }
-        await store.send(.selectRange(to: pinned2)) {
+        await store.send(.selectRange(to: pinned2, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [pinned2, unpinned1, unpinned2, unpinned3]
         }
 
@@ -851,7 +965,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         nilAnchorState.selectedTabIDs = [tabA]
         let nilAnchorStore = TestStore(initialState: nilAnchorState) { ContentTabFeature() }
 
-        await nilAnchorStore.send(.selectRange(to: tabB)) {
+        await nilAnchorStore.send(.selectRange(to: tabB, orderedIDs: nilAnchorStore.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [tabB]
             $0.selectionAnchorID = tabB
         }
@@ -861,7 +975,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         staleAnchorState.selectionAnchorID = staleTab
         let staleAnchorStore = TestStore(initialState: staleAnchorState) { ContentTabFeature() }
 
-        await staleAnchorStore.send(.selectRange(to: tabB)) {
+        await staleAnchorStore.send(.selectRange(
+            to: tabB,
+            orderedIDs: staleAnchorStore.state.selectionOrderedTabIDs,
+        )) {
             $0.selectedTabIDs = [tabB]
             $0.selectionAnchorID = tabB
         }
@@ -890,7 +1007,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             $0.selectedTabIDs = []
             $0.selectionAnchorID = tab1
         }
-        await store.send(.selectRange(to: tab3)) {
+        await store.send(.selectRange(to: tab3, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [tab1, tab2, tab3]
         }
 
@@ -935,7 +1052,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.selectedTabIDs, Set([unpinned2, unpinned3]))
         XCTAssertEqual(store.state.selectionAnchorID, unpinned3)
 
-        await store.send(.selectRange(to: unpinned2)) {
+        await store.send(.selectRange(to: unpinned2, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [unpinned3, unpinned1, unpinned2]
         }
 
@@ -964,7 +1081,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
         await store.send(.toggleSelection(invalidTab))
         XCTAssertEqual(store.state, state)
-        await store.send(.selectRange(to: invalidTab))
+        await store.send(.selectRange(to: invalidTab, orderedIDs: store.state.selectionOrderedTabIDs))
         XCTAssertEqual(store.state, state)
     }
 
@@ -1001,7 +1118,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let validSelectionState = store.state
         await store.send(.contentTabs(.toggleSelection(invalidTab)))
         XCTAssertEqual(store.state, validSelectionState)
-        await store.send(.contentTabs(.selectRange(to: invalidTab)))
+        await store.send(.contentTabs(.selectRange(
+            to: invalidTab,
+            orderedIDs: store.state.contentTabSelectionOrderedIDs,
+        )))
         XCTAssertEqual(store.state, validSelectionState)
     }
 
@@ -1029,7 +1149,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let window: NSWindow
         let button: ContentTabSidebarButton
         let recorder: ContentTabButtonRecorder
-        let sessionStore: ContentTabReorderLocalSessionStore
+        let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
     }
 
     private var insideButtonLocation: NSPoint {
@@ -1050,7 +1170,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         )
         let contentView = NSView(frame: window.contentLayoutRect)
         let button = ContentTabSidebarButton(frame: NSRect(x: 20, y: 40, width: 240, height: 28))
-        let sessionStore = ContentTabReorderLocalSessionStore()
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore()
         configure(
             button,
             recorder: recorder,
@@ -1088,7 +1208,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     private func configure(
         _ button: ContentTabSidebarButton,
         recorder: ContentTabButtonRecorder,
-        sessionStore: ContentTabReorderLocalSessionStore,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
         sourceID: ContentTabID = ContentTabID(rawValue: "source"),
         rootView: AnyView = AnyView(Color.clear.frame(height: 24)),
         accessibilityValue: String = "Active, Not Selected",
@@ -1102,8 +1222,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             duplicateAccessibilityIdentifier: "duplicate-content-tab-test",
             isPinned: isPinned,
             isEnabled: isEnabled,
-            reorderDragSource: isPinned ? nil : ContentTabReorderDragSourceConfiguration(
-                payload: .init(sourceID: sourceID, dragScopeID: ContentTabReorderDragScopeID()),
+            reorderDragSource: isPinned ? nil : FileManagerTopNavigationReorderDragSourceConfiguration(
+                payload: .init(
+                    sourceID: .contentTab(sourceID),
+                    dragScopeID: FileManagerTopNavigationReorderDragScopeID(),
+                ),
                 sessionStore: sessionStore,
             ),
             onActivate: { recorder.routes.append(.activate) },

@@ -20,8 +20,9 @@ extension WindowManagerFeature {
             return rejectContentTabMove(request, category: .unavailable, state: &state)
         }
 
-        guard !state.inFlightPinnedRecordMutations.values.contains(where: {
-            $0.request.request.tabID == request.tabID
+        guard !state.topNavigationPersistenceQueue.contains(where: {
+            guard case let .pinnedRecord(_, persistenceRequest, _) = $0.operation else { return false }
+            return persistenceRequest.tabID == request.tabID
         }) else {
             return rejectContentTabMove(request, category: .busy, state: &state)
         }

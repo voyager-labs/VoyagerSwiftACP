@@ -133,7 +133,7 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
         dropInfo: some FileManagerSidebarDropPreflightInfo,
     ) -> Bool {
         let hasFileURLItems = dropInfo.hasItemsConforming(to: [.fileURL])
-        let hasReorderItems = dropInfo.hasItemsConforming(to: [.contentTabReorder])
+        let hasReorderItems = dropInfo.hasItemsConforming(to: [.fileManagerTopNavigationReorder])
         return hasFileURLItems && !hasReorderItems
     }
 

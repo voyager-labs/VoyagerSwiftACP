@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
 
-public enum ContentTabReorderPlacement: Equatable, Sendable {
+public enum FileManagerTopNavigationReorderPlacement: Equatable, Sendable {
     case before
     case after
 }
@@ -22,46 +22,18 @@ public enum ContentTabPinnedRecordSaveNonAppliedReason: Equatable, Sendable {
 }
 
 public struct ContentTabPinnedRecordRollbackSnapshot: Equatable, Sendable {
-    let previousIsPinned: Bool
-    let previousPinnedRecord: ContentTabPinnedRecord?
-    let previousTabIndex: Int?
-}
-
-public enum ContentTabPinnedRecordMutation: Equatable, Sendable {
-    case upsert(ContentTabPinnedRecord)
-    case remove(recordID: String)
-
-    public func applying(
-        to existingStore: ContentTabPinnedRecordStore,
-    ) -> ContentTabPinnedRecordStore {
-        switch self {
-        case let .upsert(record):
-            upsertPinnedRecord(record, in: existingStore)
-        case let .remove(recordID):
-            removePinnedRecord(id: recordID, from: existingStore)
-        }
-    }
-}
-
-public struct ContentTabPinnedRecordPersistenceRequest: Equatable, Sendable {
-    public let mutationID: UUID
-    public let tabID: ContentTabID
-    public let intentID: UUID
-    public let mutation: ContentTabPinnedRecordMutation
-    public let rollback: ContentTabPinnedRecordRollbackSnapshot
+    public let previousIsPinned: Bool
+    public let previousPinnedRecord: ContentTabPinnedRecord?
+    public let previousTabIndex: Int?
 
     public init(
-        mutationID: UUID,
-        tabID: ContentTabID,
-        intentID: UUID,
-        mutation: ContentTabPinnedRecordMutation,
-        rollback: ContentTabPinnedRecordRollbackSnapshot,
+        previousIsPinned: Bool,
+        previousPinnedRecord: ContentTabPinnedRecord?,
+        previousTabIndex: Int?,
     ) {
-        self.mutationID = mutationID
-        self.tabID = tabID
-        self.intentID = intentID
-        self.mutation = mutation
-        self.rollback = rollback
+        self.previousIsPinned = previousIsPinned
+        self.previousPinnedRecord = previousPinnedRecord
+        self.previousTabIndex = previousTabIndex
     }
 }
 
@@ -78,8 +50,54 @@ public struct ContentTabPinnedRecordTerminalContext: Equatable, Sendable {
     }
 }
 
+public enum ContentTabPinnedRecordPersistenceMutation: Equatable, Sendable {
+    case upsert(
+        record: ContentTabPinnedRecord,
+        dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+    )
+    case remove(recordID: String)
+}
+
+public struct ContentTabPinnedRecordPersistenceRequest: Equatable, Sendable {
+    public let tabID: ContentTabID
+    public let context: ContentTabPinnedRecordTerminalContext
+    public let rollback: ContentTabPinnedRecordRollbackSnapshot
+    public let mutation: ContentTabPinnedRecordPersistenceMutation
+
+    public init(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+        mutation: ContentTabPinnedRecordPersistenceMutation,
+    ) {
+        self.tabID = tabID
+        self.context = context
+        self.rollback = rollback
+        self.mutation = mutation
+    }
+}
+
+public enum ContentTabPinnedRecordPersistenceRouting: Equatable, Sendable {
+    case local(discoveredLocationIDs: [String])
+    case delegate
+}
+
+extension ContentTabPinnedRecordPersistenceRouting: DependencyKey {
+    public static let liveValue: Self = .local(discoveredLocationIDs: [])
+    public static let testValue: Self = .local(discoveredLocationIDs: [])
+    public static let previewValue: Self = .local(discoveredLocationIDs: [])
+}
+
+public extension DependencyValues {
+    var contentTabPinnedRecordPersistenceRouting: ContentTabPinnedRecordPersistenceRouting {
+        get { self[ContentTabPinnedRecordPersistenceRouting.self] }
+        set { self[ContentTabPinnedRecordPersistenceRouting.self] = newValue }
+    }
+}
+
 @CasePathable
 public enum ContentTabAction: Sendable {
+    case delegate(Delegate)
     case open(ContentTabPageAnchor)
     case setCurrent(ContentTabID)
 
@@ -88,7 +106,7 @@ public enum ContentTabAction: Sendable {
     /// 유효한 Content Tab identity의 선택 membership을 반전한다.
     case toggleSelection(ContentTabID)
     /// 현재 anchor부터 target까지 pinned-first 표시 구간으로 선택을 교체한다.
-    case selectRange(to: ContentTabID)
+    case selectRange(to: ContentTabID, orderedIDs: [ContentTabID])
     /// 선택 membership과 range anchor를 현재 active tab 하나로 축소한다.
     case collapseSelectionToActive
 
@@ -101,13 +119,16 @@ public enum ContentTabAction: Sendable {
     case reorder(
         sourceID: ContentTabID,
         targetID: ContentTabID,
-        placement: ContentTabReorderPlacement,
+        placement: FileManagerTopNavigationReorderPlacement,
     )
     case pin(ContentTabID)
+    case pinUsingDormantSlot(
+        ContentTabID,
+        FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+    )
     case unpin(ContentTabID)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)
     case updateRuntimePageAnchor(ContentTabID, ContentTabPageAnchor)
-    case pinnedRecordPersistenceRequested(ContentTabPinnedRecordPersistenceRequest)
     case pinnedRecordSaveSucceeded(
         tabID: ContentTabID,
         context: ContentTabPinnedRecordTerminalContext,
@@ -117,10 +138,21 @@ public enum ContentTabAction: Sendable {
         context: ContentTabPinnedRecordTerminalContext,
         rollback: ContentTabPinnedRecordRollbackSnapshot,
     )
+    case pinnedRecordStoreUnavailable(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        failure: FileManagerTopNavigationArrangementLoadFailure,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+    )
     case pinnedRecordSaveNotApplied(
         tabID: ContentTabID,
         context: ContentTabPinnedRecordTerminalContext,
         reason: ContentTabPinnedRecordSaveNonAppliedReason,
         rollback: ContentTabPinnedRecordRollbackSnapshot,
     )
+
+    @CasePathable
+    public enum Delegate: Sendable {
+        case persistPinnedRecord(ContentTabPinnedRecordPersistenceRequest)
+    }
 }

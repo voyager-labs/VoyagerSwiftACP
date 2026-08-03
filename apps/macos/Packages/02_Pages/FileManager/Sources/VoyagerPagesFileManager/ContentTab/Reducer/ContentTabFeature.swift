@@ -1,24 +1,34 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 @Reducer
 public struct ContentTabFeature {
+    public typealias State = ContentTabState
+    public typealias Action = ContentTabAction
+
     @Dependency(\.entryLoadingClient)
     var entryLoadingClient
     @Dependency(\.fileManagerIconClient)
     var fileManagerIconClient
+    @Dependency(\.contentTabPinnedRecordClient)
+    var contentTabPinnedRecordClient
+    @Dependency(\.contentTabPinnedRecordPersistenceRouting)
+    var pinnedRecordPersistenceRouting
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
     @Dependency(\.date)
     var date
-
-    public typealias State = ContentTabState
-    public typealias Action = ContentTabAction
 
     public init() {}
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case .delegate:
+                return .none
+
             case let .open(anchor):
                 return open(anchor: anchor, state: &state)
 
@@ -28,8 +38,8 @@ public struct ContentTabFeature {
             case let .toggleSelection(id):
                 return toggleSelection(id: id, state: &state)
 
-            case let .selectRange(targetID):
-                return selectRange(to: targetID, state: &state)
+            case let .selectRange(targetID, orderedIDs):
+                return selectRange(to: targetID, orderedIDs: orderedIDs, state: &state)
 
             case .collapseSelectionToActive:
                 return collapseSelectionToActive(state: &state)
@@ -56,7 +66,10 @@ public struct ContentTabFeature {
                 return reorder(sourceID: sourceID, targetID: targetID, placement: placement, state: &state)
 
             case let .pin(id):
-                return pin(id: id, state: &state)
+                return pin(id: id, dormantSlot: nil, state: &state)
+
+            case let .pinUsingDormantSlot(id, dormantSlot):
+                return pin(id: id, dormantSlot: dormantSlot, state: &state)
 
             case let .unpin(id):
                 return unpin(id: id, state: &state)
@@ -66,9 +79,6 @@ public struct ContentTabFeature {
 
             case let .updateRuntimePageAnchor(id, newAnchor):
                 return updateRuntimePageAnchor(id: id, newAnchor: newAnchor, state: &state)
-
-            case .pinnedRecordPersistenceRequested:
-                return .none
 
             case let .pinnedRecordSaveSucceeded(tabID, context):
                 guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID) else {
@@ -81,6 +91,11 @@ public struct ContentTabFeature {
             case let .pinnedRecordSaveFailed(
                 tabID,
                 context,
+                rollback,
+            ), let .pinnedRecordStoreUnavailable(
+                tabID,
+                context,
+                _,
                 rollback,
             ):
                 guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID) else {
@@ -138,11 +153,11 @@ extension ContentTabFeature {
     /// pinned-first ordering의 anchor-target inclusive interval로 기존 선택을 교체한다.
     private func selectRange(
         to targetID: ContentTabID,
+        orderedIDs: [ContentTabID],
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
         guard state.tabs[id: targetID] != nil else { return .none }
 
-        let orderedIDs = state.selectionOrderedTabIDs
         guard let anchorID = state.selectionAnchorID,
               let anchorIndex = orderedIDs.firstIndex(of: anchorID),
               let targetIndex = orderedIDs.firstIndex(of: targetID)
@@ -202,6 +217,7 @@ extension ContentTabFeature {
         preservesLastTabIdentity: Bool,
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
+        guard !state.pendingPinnedRecordIDs.contains(id) else { return .none }
         guard let tab = state.tabs[id: id] else {
             state.previousActiveTabID = nil
             return .none
@@ -428,7 +444,7 @@ extension ContentTabFeature {
     private func reorder(
         sourceID: ContentTabID,
         targetID: ContentTabID,
-        placement: ContentTabReorderPlacement,
+        placement: FileManagerTopNavigationReorderPlacement,
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
         guard sourceID != targetID,
@@ -492,7 +508,11 @@ extension ContentTabFeature {
         }
     }
 
-    private func pin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
+    private func pin(
+        id: ContentTabID,
+        dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
         guard let tab = state.tabs[id: id], !tab.isPinned,
               let previousTabIndex = state.tabs.index(id: id)
@@ -524,21 +544,19 @@ extension ContentTabFeature {
         state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
-        let rollback = ContentTabPinnedRecordRollbackSnapshot(
-            previousIsPinned: false,
-            previousPinnedRecord: previousPinnedRecord,
-            previousTabIndex: previousTabIndex,
-        )
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
-        return .send(.pinnedRecordPersistenceRequested(
-            ContentTabPinnedRecordPersistenceRequest(
-                mutationID: intentID,
-                tabID: id,
-                intentID: intentID,
-                mutation: .upsert(pinnedRecord),
-                rollback: rollback,
+        let generation = contentTabPinnedRecordClient.reserveMutationGeneration(id)
+        let request = ContentTabPinnedRecordPersistenceRequest(
+            tabID: id,
+            context: .init(intentID: intentID, generation: generation),
+            rollback: .init(
+                previousIsPinned: false,
+                previousPinnedRecord: previousPinnedRecord,
+                previousTabIndex: previousTabIndex,
             ),
-        ))
+            mutation: .upsert(record: pinnedRecord, dormantSlot: dormantSlot),
+        )
+        return persistPinnedRecord(request, state: state)
     }
 
     private func unpin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
@@ -561,21 +579,19 @@ extension ContentTabFeature {
         state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
-        let rollback = ContentTabPinnedRecordRollbackSnapshot(
-            previousIsPinned: true,
-            previousPinnedRecord: previousPinnedRecord,
-            previousTabIndex: previousTabIndex,
-        )
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
-        return .send(.pinnedRecordPersistenceRequested(
-            ContentTabPinnedRecordPersistenceRequest(
-                mutationID: intentID,
-                tabID: id,
-                intentID: intentID,
-                mutation: .remove(recordID: id.rawValue),
-                rollback: rollback,
+        let generation = contentTabPinnedRecordClient.reserveMutationGeneration(id)
+        let request = ContentTabPinnedRecordPersistenceRequest(
+            tabID: id,
+            context: .init(intentID: intentID, generation: generation),
+            rollback: .init(
+                previousIsPinned: true,
+                previousPinnedRecord: previousPinnedRecord,
+                previousTabIndex: previousTabIndex,
             ),
-        ))
+            mutation: .remove(recordID: id.rawValue),
+        )
+        return persistPinnedRecord(request, state: state)
     }
 
     private func updateRuntimePageAnchor(
@@ -624,26 +640,122 @@ extension ContentTabFeature {
         state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
-        let rollback = ContentTabPinnedRecordRollbackSnapshot(
-            previousIsPinned: true,
-            previousPinnedRecord: previousPinnedRecord,
-            previousTabIndex: nil,
-        )
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
-        return .send(.pinnedRecordPersistenceRequested(
-            ContentTabPinnedRecordPersistenceRequest(
-                mutationID: intentID,
-                tabID: id,
-                intentID: intentID,
-                mutation: .upsert(updatedRecord),
-                rollback: rollback,
+        let generation = contentTabPinnedRecordClient.reserveMutationGeneration(id)
+        let request = ContentTabPinnedRecordPersistenceRequest(
+            tabID: id,
+            context: .init(intentID: intentID, generation: generation),
+            rollback: .init(
+                previousIsPinned: true,
+                previousPinnedRecord: previousPinnedRecord,
+                previousTabIndex: nil,
             ),
-        ))
+            mutation: .upsert(record: updatedRecord, dormantSlot: nil),
+        )
+        return persistPinnedRecord(request, state: state)
+    }
+
+    private func persistPinnedRecord(
+        _ request: ContentTabPinnedRecordPersistenceRequest,
+        state: ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard case let .local(discoveredLocationIDs) = pinnedRecordPersistenceRouting else {
+            return .send(.delegate(.persistPinnedRecord(request)))
+        }
+
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        let persistenceScopeID = state.pinnedRecordPersistenceScopeID
+        return .run { send in
+            await send(pinnedRecordPersistenceAction(
+                request: request,
+                discoveredLocationIDs: discoveredLocationIDs,
+                client: client,
+                defaults: defaults,
+                persistenceScopeID: persistenceScopeID,
+            ))
+        }
+        .cancellable(
+            id: PinnedRecordPersistenceCancelID(
+                scopeID: persistenceScopeID,
+                tabID: request.tabID,
+            ),
+            cancelInFlight: true,
+        )
     }
 }
 
 private func ordinaryPinInsertionIndex(in state: ContentTabState) -> Int {
     state.tabs.firstIndex(where: { !$0.isPinned }) ?? state.tabs.endIndex
+}
+
+private func pinnedRecordPersistenceAction(
+    request: ContentTabPinnedRecordPersistenceRequest,
+    discoveredLocationIDs: [String],
+    client: ContentTabPinnedRecordClient,
+    defaults: UserDefaultsClient,
+    persistenceScopeID: UUID,
+) async -> ContentTabAction {
+    do {
+        try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: persistenceScopeID,
+            tabID: request.tabID,
+            intentID: request.context.intentID,
+        )
+        let disposition = try await client.updateStoreGuarded(
+            request.context.generation,
+            defaults,
+        ) { store in
+            try PinnedRecordPersistenceIntent.checkCurrent(
+                scopeID: persistenceScopeID,
+                tabID: request.tabID,
+                intentID: request.context.intentID,
+            )
+            return applying(
+                request.mutation,
+                to: store,
+                discoveredLocationIDs: discoveredLocationIDs,
+            )
+        }
+        return pinnedRecordDispositionAction(disposition, request: request)
+    } catch is CancellationError {
+        return .pinnedRecordSaveNotApplied(
+            tabID: request.tabID,
+            context: request.context,
+            reason: .cancelled,
+            rollback: request.rollback,
+        )
+    } catch let error as ContentTabPinnedRecordStoreLoadError {
+        return .pinnedRecordStoreUnavailable(
+            tabID: request.tabID,
+            context: request.context,
+            failure: topNavigationLoadFailure(error),
+            rollback: request.rollback,
+        )
+    } catch {
+        return .pinnedRecordSaveFailed(
+            tabID: request.tabID,
+            context: request.context,
+            rollback: request.rollback,
+        )
+    }
+}
+
+private func pinnedRecordDispositionAction(
+    _ disposition: ContentTabPinnedRecordMutationDisposition,
+    request: ContentTabPinnedRecordPersistenceRequest,
+) -> ContentTabAction {
+    switch disposition {
+    case .applied:
+        .pinnedRecordSaveSucceeded(tabID: request.tabID, context: request.context)
+    case .superseded:
+        .pinnedRecordSaveNotApplied(
+            tabID: request.tabID,
+            context: request.context,
+            reason: .superseded,
+            rollback: request.rollback,
+        )
+    }
 }
 
 private func restorePinnedRecordSnapshot(
@@ -755,24 +867,86 @@ enum PinnedRecordPersistenceIntent {
 func upsertPinnedRecord(
     _ record: ContentTabPinnedRecord,
     in existingStore: ContentTabPinnedRecordStore,
+    dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot? = nil,
+    discoveredLocationIDs: [String] = [],
 ) -> ContentTabPinnedRecordStore {
     var records = existingStore.records
-    if let existingIndex = records.firstIndex(where: { $0.id == record.id }) {
+    let existingIndex = records.firstIndex(where: { $0.id == record.id })
+    if let existingIndex {
         records[existingIndex] = record
     } else {
         records.append(record)
     }
-    return ContentTabPinnedRecordStore(schemaVersion: existingStore.schemaVersion, records: records)
+    let tabID = ContentTabID(rawValue: record.id)
+    let baseStore = ContentTabPinnedRecordStore(
+        schemaVersion: existingStore.schemaVersion,
+        records: records,
+        topNavigationOrder: existingStore.topNavigationOrder,
+    )
+    var normalizedStore = FileManagerTopNavigationOrderPolicy.normalize(
+        store: baseStore,
+        discoveredLocationIDs: discoveredLocationIDs,
+    ).normalizedStore
+    if existingIndex == nil || dormantSlot != nil {
+        normalizedStore.topNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+            tabID,
+            into: normalizedStore.topNavigationOrder,
+            dormantSlot: dormantSlot,
+        )
+    }
+    return normalizedStore
 }
 
 func removePinnedRecord(
     id: String,
     from existingStore: ContentTabPinnedRecordStore,
+    discoveredLocationIDs: [String] = [],
 ) -> ContentTabPinnedRecordStore {
-    ContentTabPinnedRecordStore(
+    let tabID = ContentTabID(rawValue: id)
+    let baseStore = ContentTabPinnedRecordStore(
         schemaVersion: existingStore.schemaVersion,
         records: existingStore.records.filter { $0.id != id },
+        topNavigationOrder: .init(items: existingStore.topNavigationOrder.items.filter {
+            $0 != .contentTab(tabID)
+        }),
     )
+    return FileManagerTopNavigationOrderPolicy.normalize(
+        store: baseStore,
+        discoveredLocationIDs: discoveredLocationIDs,
+    ).normalizedStore
+}
+
+func applying(
+    _ mutation: ContentTabPinnedRecordPersistenceMutation,
+    to store: ContentTabPinnedRecordStore,
+    discoveredLocationIDs: [String],
+) -> ContentTabPinnedRecordStore {
+    switch mutation {
+    case let .upsert(record, dormantSlot):
+        upsertPinnedRecord(
+            record,
+            in: store,
+            dormantSlot: dormantSlot,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+    case let .remove(recordID):
+        removePinnedRecord(
+            id: recordID,
+            from: store,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+    }
+}
+
+private func topNavigationLoadFailure(
+    _ error: ContentTabPinnedRecordStoreLoadError,
+) -> FileManagerTopNavigationArrangementLoadFailure {
+    switch error {
+    case .corruptUnavailable:
+        .corrupt
+    case let .futureSchemaUnavailable(schemaVersion):
+        .unsupportedSchema(schemaVersion)
+    }
 }
 
 private extension String {

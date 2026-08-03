@@ -22,7 +22,7 @@ final class AppKeyboardShortcutMonitor {
         stop()
 
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
+            guard self != nil else { return event }
             return Self.processKeyDownEvent(
                 event,
                 context: context(),

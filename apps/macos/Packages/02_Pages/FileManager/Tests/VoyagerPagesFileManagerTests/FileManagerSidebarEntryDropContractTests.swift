@@ -345,7 +345,7 @@ private final class FileManagerSidebarEntryDropPreflightInfoSpy: FileManagerSide
     init(hasFileURLItems: Bool, hasReorderItems: Bool) {
         conformingTypeIdentifiers = Set([
             hasFileURLItems ? UTType.fileURL.identifier : nil,
-            hasReorderItems ? UTType.contentTabReorder.identifier : nil,
+            hasReorderItems ? UTType.fileManagerTopNavigationReorder.identifier : nil,
         ].compactMap(\.self))
     }
 

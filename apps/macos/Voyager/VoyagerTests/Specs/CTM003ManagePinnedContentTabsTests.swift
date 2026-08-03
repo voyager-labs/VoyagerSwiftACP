@@ -189,30 +189,26 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             WindowSessionState(id: otherWindowID, window: other),
         ]
         let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
-        let generations = LockIsolated<[ContentTabID: UUID]>([:])
-        let loadCount = LockIsolated(0)
+        let mutationCount = LockIsolated(0)
         let counts = LockIsolated(CTM003ActionCounts())
         let store = Store(initialState: initialState) {
             Self.trackedWindowManager(counts: counts)
         } withDependencies: {
             $0.uuid = .constant(operationID)
             $0.date = .constant(Self.pinnedAt)
-            $0.contentTabPinnedRecordClient.loadStore = { _ in
-                loadCount.withValue { $0 += 1 }
-                return persistedStore.value
-            }
-            $0.contentTabPinnedRecordClient.reserveMutationGeneration = { tabID in
-                let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
-                generations.withValue { $0[tabID] = generation.value }
-                return generation
-            }
-            $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { generation in
-                generations.value[generation.tabID] == generation.value
-            }
-            $0.contentTabPinnedRecordClient.guardedUpdateStore = { generation, _, transform in
-                guard generations.value[generation.tabID] == generation.value else { return .superseded }
-                try persistedStore.withValue { $0 = try transform($0) }
-                return .applied
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, mutation in
+                let count = mutationCount.withValue { value in
+                    value += 1
+                    return value
+                }
+                let updated = persistedStore.withValue { store in
+                    store = Self.applying(mutation, to: store)
+                    return store
+                }
+                return .init(
+                    store: updated,
+                    topNavigation: .init(order: updated.topNavigationOrder, revision: UInt64(count)),
+                )
             }
         }
 
@@ -223,10 +219,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await batchTask.finish()
 
         XCTAssertEqual(persistedStore.value.records.map(\.id), selectedIDs.map(\.rawValue))
-        XCTAssertEqual(loadCount.value, 3)
-        XCTAssertEqual(counts.value.storeChanged, 3)
+        XCTAssertEqual(mutationCount.value, 3)
         XCTAssertEqual(counts.value.batchCompleted, 1)
-        XCTAssertEqual(counts.value.applyByWindow[sourceWindowID], 4)
+        XCTAssertEqual(counts.value.applyByWindow[sourceWindowID], 3)
         XCTAssertEqual(counts.value.applyByWindow[otherWindowID], 3)
         store.withState { state in
             let sourceState = state.windows[id: sourceWindowID]?.window
@@ -236,6 +231,48 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             XCTAssertEqual(sourceState?.contentTabs.selectionAnchorID, originalAnchor)
             XCTAssertEqual(Self.pinnedIDs(sourceState), selectedIDs)
             XCTAssertEqual(Self.pinnedIDs(otherState), selectedIDs)
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: app-owned unavailable terminal은 batch를 중단하지 않는다.
+    /// WindowManager FIFO가 corrupt store를 반환해도 각 항목을 failure로 완료하는지 검증한다.
+    /// - 검증 내용: 세 persistence 요청, optimistic rollback, queue/coordinator cleanup
+    /// - 사전 조건: 선택된 unpinned tab 3개와 항상 corrupt를 반환하는 app persistence owner
+    /// - 기대 결과: 세 tab이 unpinned로 rollback되고 parent queue와 Selected Pin coordinator가 비어 있음
+    func testAppOwnedUnavailableStoreCompletesSelectedPinBatchFailures() async {
+        let windowID = UUID()
+        let source = Self.makeThreeSelectedUnpinnedWindow(path: "/Users/test/Unavailable")
+        let selectedIDs = source.contentTabs.tabs.map(\.id)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [WindowSessionState(id: windowID, window: source)]
+        let mutationCount = LockIsolated(0)
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.reserveMutationGeneration = {
+                ContentTabPinnedRecordMutationGeneration(tabID: $0)
+            }
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, _ in
+                mutationCount.withValue { $0 += 1 }
+                throw ContentTabPinnedRecordStoreLoadError.corruptUnavailable
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+
+        let task = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.requestSelectedContentTabPinMutation(target: .pinned)),
+        )))
+        await task.finish()
+
+        XCTAssertEqual(mutationCount.value, selectedIDs.count)
+        store.withState { state in
+            let window = state.windows[id: windowID]?.window
+            XCTAssertTrue(selectedIDs.allSatisfy { window?.contentTabs.tabs[id: $0]?.isPinned == false })
+            XCTAssertEqual(window?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
+            XCTAssertNil(window?.pendingSelectedContentTabPinMutation)
+            XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
+            XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
         }
     }
 
@@ -297,255 +334,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// reload 자체가 실패해도 item-local rollback과 batch 분류가 바뀌지 않는지 검증한다.
     /// - 검증 내용: failed/notApplied 각각 storeChanged 1회, load failure 뒤 failure/remaining 분류 유지
     /// - 사전 조건: locally-current optimistic Pin terminal과 항상 throw하는 loadStore
-    /// - 기대 결과: 두 terminal 모두 unpinned rollback되고 coordinator가 정확한 분류로 끝난다.
-    func testFailureAndNotAppliedRollbackBeforeReconciliationEvenWhenReloadFails() async throws {
-        let outcomes: [WindowManagerPinnedRecordMutationOutcome] = [.failed, .superseded, .cancelled]
-        for outcome in outcomes {
-            let windowID = UUID()
-            let operationID = UUID()
-            let mutationID = UUID()
-            let tabID = ContentTabID(rawValue: "reload-failure-\(outcome)")
-            let window = Self.makeOptimisticPinWindow(
-                path: "/Users/test/Failure",
-                tabID: tabID,
-                operationID: operationID,
-            )
-            let intentID = window.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
-            let request = ContentTabPinnedRecordPersistenceRequest(
-                mutationID: mutationID,
-                tabID: tabID,
-                intentID: intentID,
-                mutation: .upsert(Self.record(id: tabID.rawValue, path: "/Users/test/Optimistic")),
-                rollback: ContentTabPinnedRecordRollbackSnapshot(
-                    previousIsPinned: false,
-                    previousPinnedRecord: nil,
-                    previousTabIndex: 1,
-                ),
-            )
-            let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
-            var initialState = WindowManagerFeature.State()
-            initialState.windows = [WindowSessionState(id: windowID, window: window)]
-            initialState.inFlightPinnedRecordMutations[mutationID] = WindowManagerInFlightPinnedRecordMutation(
-                sourceWindowID: windowID,
-                request: FileManagerPinnedRecordPersistenceRequest(
-                    request: request,
-                    route: .selectedPin(operationID: operationID),
-                ),
-                generation: generation,
-            )
-            let counts = LockIsolated(CTM003ActionCounts())
-            let loadCount = LockIsolated(0)
-            let completed = LockIsolated<[SelectedContentTabPinMutationResult]>([])
-            let store = TestStore(initialState: initialState) {
-                CombineReducers {
-                    Self.trackedWindowManager(counts: counts)
-                    Reduce<WindowManagerFeature.State, WindowManagerFeature.Action> { _, action in
-                        if case let .windows(.element(
-                            id: _,
-                            action: .window(.selectedPinMutationBatchCompleted(result)),
-                        )) = action {
-                            completed.withValue { $0.append(result) }
-                        }
-                        return .none
-                    }
-                }
-            } withDependencies: {
-                $0.contentTabPinnedRecordClient.loadStore = { _ in
-                    loadCount.withValue { $0 += 1 }
-                    throw CTM003TestFailure()
-                }
-                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
-            }
-            // store.exhaustivity = .off: local terminal chain과 실패한 reload의 최종 상태/호출 수를 검증한다.
-            store.exhaustivity = .off
-
-            await store.send(.pinnedRecordMutationFinished(mutationID: mutationID, outcome: outcome))
-            await store.skipReceivedActions()
-            await store.finish()
-
-            XCTAssertEqual(counts.value.storeChanged, 1)
-            XCTAssertEqual(loadCount.value, 1)
-            XCTAssertEqual(counts.value.applyByWindow[windowID, default: 0], 0)
-            XCTAssertTrue(store.state.inFlightPinnedRecordMutations.isEmpty)
-            XCTAssertEqual(store.state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.isPinned, false)
-            XCTAssertEqual(store.state.windows[id: windowID]?.window.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
-            let result = try XCTUnwrap(completed.value.first)
-            XCTAssertEqual(result.failureCount, outcome == .failed ? 1 : 0)
-            XCTAssertEqual(result.remainingCount, outcome == .failed ? 0 : 1)
-        }
-    }
-
     /// CTM-003-pin_selected_content_tabs: app-owned terminal은 source closing/removal 뒤에도 reload를 완료한다.
     /// source-local coordinator를 부활시키지 않고 surviving windows만 authoritative snapshot을 받는지 검증한다.
     /// - 검증 내용: closing/removed source의 local delivery 0, load 1, S-window fan-out, duplicate finish no-op
     /// - 사전 조건: accepted applied mutation metadata와 surviving window 2개
-    /// - 기대 결과: in-flight가 한 번 소비되고 source는 부활하지 않으며 두 survivor만 durable record로 수렴한다.
-    func testAppliedTerminalSurvivesClosingAndRemovedSourceAndIgnoresDuplicate() async {
-        for removesSource in [false, true] {
-            let sourceWindowID = UUID()
-            let survivorIDs = [UUID(), UUID()]
-            let mutationID = UUID()
-            let tabID = ContentTabID(rawValue: removesSource ? "removed-source" : "closing-source")
-            var source = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Source")
-            let intentID = source.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
-            if !removesSource { source.isClosing = true }
-            let request = ContentTabPinnedRecordPersistenceRequest(
-                mutationID: mutationID,
-                tabID: tabID,
-                intentID: intentID,
-                mutation: .upsert(Self.record(id: tabID.rawValue, path: "/Users/test/Durable")),
-                rollback: ContentTabPinnedRecordRollbackSnapshot(
-                    previousIsPinned: false,
-                    previousPinnedRecord: nil,
-                    previousTabIndex: nil,
-                ),
-            )
-            let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
-            var initialState = WindowManagerFeature.State()
-            initialState.windows = .init(uniqueElements: survivorIDs.map { id in
-                WindowSessionState(
-                    id: id,
-                    window: FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Survivor"),
-                )
-            })
-            if !removesSource {
-                initialState.windows.append(WindowSessionState(id: sourceWindowID, window: source))
-            }
-            initialState.inFlightPinnedRecordMutations[mutationID] = WindowManagerInFlightPinnedRecordMutation(
-                sourceWindowID: sourceWindowID,
-                request: FileManagerPinnedRecordPersistenceRequest(request: request, route: .single),
-                generation: generation,
-            )
-            let counts = LockIsolated(CTM003ActionCounts())
-            let loadCount = LockIsolated(0)
-            let durableStore = ContentTabPinnedRecordStore(records: [
-                Self.record(id: tabID.rawValue, path: "/Users/test/Durable"),
-            ])
-            let store = TestStore(initialState: initialState) {
-                Self.trackedWindowManager(counts: counts)
-            } withDependencies: {
-                $0.contentTabPinnedRecordClient.loadStore = { _ in
-                    loadCount.withValue { $0 += 1 }
-                    return durableStore
-                }
-            }
-            // store.exhaustivity = .off: source-local action 부재와 survivor fan-out count를 검증한다.
-            store.exhaustivity = .off
-
-            await store.send(.pinnedRecordMutationFinished(mutationID: mutationID, outcome: .applied))
-            await store.skipReceivedActions()
-            await store.finish()
-
-            XCTAssertTrue(store.state.inFlightPinnedRecordMutations.isEmpty)
-            XCTAssertEqual(loadCount.value, 1)
-            XCTAssertEqual(counts.value.storeChanged, 1)
-            for survivorID in survivorIDs {
-                XCTAssertEqual(counts.value.applyByWindow[survivorID], 1)
-                XCTAssertEqual(Self.pinnedIDs(store.state.windows[id: survivorID]?.window), [tabID])
-            }
-            XCTAssertEqual(counts.value.applyByWindow[sourceWindowID, default: 0], 0)
-            XCTAssertEqual(store.state.windows[id: sourceWindowID]?.window.isClosing, removesSource ? nil : true)
-
-            let stateAfterFirstFinish = store.state
-            let countsAfterFirstFinish = counts.value
-            await store.send(.pinnedRecordMutationFinished(mutationID: mutationID, outcome: .applied))
-            XCTAssertEqual(store.state, stateAfterFirstFinish)
-            XCTAssertEqual(counts.value, countsAfterFirstFinish)
-            XCTAssertEqual(loadCount.value, 1)
-        }
-    }
-
     /// CTM-003-pin_selected_content_tabs: source close 뒤 latest 실패·취소·supersede도 durable winner를 재동기화한다.
     /// app-global completion이 source-local terminal 생존 여부와 무관하게 authoritative reload를 소유하는지 검증한다.
     /// - 검증 내용: G1 applied와 G2 failed/cancelled/superseded 각각 reload, survivor fan-out, duplicate completion no-op
     /// - 사전 조건: G1 durable record, closing source, 같은 tab의 G1/G2 in-flight metadata, idle survivor
-    /// - 기대 결과: source-local action 없이 survivor가 durable G1 record로 수렴하고 in-flight가 정확히 한 번 소비된다.
-    func testLatestNonAppliedCompletionAfterSourceClosesReloadsDurableWinner() async {
-        let outcomes: [WindowManagerPinnedRecordMutationOutcome] = [.failed, .cancelled, .superseded]
-        for outcome in outcomes {
-            let sourceWindowID = UUID()
-            let survivorWindowID = UUID()
-            let firstMutationID = UUID()
-            let latestMutationID = UUID()
-            let tabID = ContentTabID(rawValue: "teardown-race-\(outcome)")
-            let durableRecord = Self.record(id: tabID.rawValue, path: "/Users/test/DurableWinner")
-            let rollback = ContentTabPinnedRecordRollbackSnapshot(
-                previousIsPinned: false,
-                previousPinnedRecord: nil,
-                previousTabIndex: nil,
-            )
-            var source = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/ClosingSource")
-            source.isClosing = true
-            let firstIntentID = source.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
-            let latestIntentID = source.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
-            let firstRequest = ContentTabPinnedRecordPersistenceRequest(
-                mutationID: firstMutationID,
-                tabID: tabID,
-                intentID: firstIntentID,
-                mutation: .upsert(durableRecord),
-                rollback: rollback,
-            )
-            let latestRequest = ContentTabPinnedRecordPersistenceRequest(
-                mutationID: latestMutationID,
-                tabID: tabID,
-                intentID: latestIntentID,
-                mutation: .remove(recordID: tabID.rawValue),
-                rollback: rollback,
-            )
-            var initialState = WindowManagerFeature.State()
-            initialState.windows = [
-                WindowSessionState(id: sourceWindowID, window: source),
-                WindowSessionState(
-                    id: survivorWindowID,
-                    window: FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Survivor"),
-                ),
-            ]
-            initialState.inFlightPinnedRecordMutations[firstMutationID] = WindowManagerInFlightPinnedRecordMutation(
-                sourceWindowID: sourceWindowID,
-                request: FileManagerPinnedRecordPersistenceRequest(request: firstRequest, route: .single),
-                generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
-            )
-            initialState.inFlightPinnedRecordMutations[latestMutationID] = WindowManagerInFlightPinnedRecordMutation(
-                sourceWindowID: sourceWindowID,
-                request: FileManagerPinnedRecordPersistenceRequest(request: latestRequest, route: .single),
-                generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
-            )
-            let counts = LockIsolated(CTM003ActionCounts())
-            let loadCount = LockIsolated(0)
-            let durableStore = ContentTabPinnedRecordStore(records: [durableRecord])
-            let store = TestStore(initialState: initialState) {
-                Self.trackedWindowManager(counts: counts)
-            } withDependencies: {
-                $0.contentTabPinnedRecordClient.loadStore = { _ in
-                    loadCount.withValue { $0 += 1 }
-                    return durableStore
-                }
-            }
-            // store.exhaustivity = .off: source-local action 부재와 두 app-global reconciliation의 결과를 검증한다.
-            store.exhaustivity = .off
-
-            await store.send(.pinnedRecordMutationFinished(mutationID: firstMutationID, outcome: .applied))
-            await store.skipReceivedActions()
-            await store.send(.pinnedRecordMutationFinished(mutationID: latestMutationID, outcome: outcome))
-            await store.skipReceivedActions()
-            await store.finish()
-
-            XCTAssertTrue(store.state.inFlightPinnedRecordMutations.isEmpty)
-            XCTAssertEqual(loadCount.value, 2)
-            XCTAssertEqual(counts.value.storeChanged, 2)
-            XCTAssertEqual(counts.value.applyByWindow[sourceWindowID, default: 0], 0)
-            XCTAssertEqual(counts.value.applyByWindow[survivorWindowID], 2)
-            XCTAssertEqual(Self.pinnedIDs(store.state.windows[id: survivorWindowID]?.window), [tabID])
-
-            let stateAfterCompletion = store.state
-            let countsAfterCompletion = counts.value
-            await store.send(.pinnedRecordMutationFinished(mutationID: latestMutationID, outcome: outcome))
-            XCTAssertEqual(store.state, stateAfterCompletion)
-            XCTAssertEqual(counts.value, countsAfterCompletion)
-            XCTAssertEqual(loadCount.value, 2)
-        }
-    }
-
     /// CTM-003-pin_selected_content_tabs: selected Pin busy source는 latest authoritative snapshot만 재생한다.
     /// source가 defer하는 동안 idle other window는 각 authoritative snapshot을 즉시 적용하는지 검증한다.
     /// - 검증 내용: A→B latest-wins defer, coordinator clear/cancel 뒤 B replay 1회, idle window immediate apply
@@ -743,133 +539,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// stale applied selected terminal과 current ordinary terminal의 interleaving이 window별 projection을 갈라놓지 않는지 검증한다.
     /// - 검증 내용: G1 selected Unpin stale success fan-out 0, G2 same-tab Pin fan-out 1, 별도 탭 Pin fan-out 1
     /// - 사전 조건: G1 durable commit 뒤 terminal gate, G2 same-tab winner와 independent tab mutation
-    /// - 기대 결과: source/other 모두 persisted two records와 같고 stale item은 remaining으로 완료된다.
-    func testSameTabCompetitionAndDifferentTabMutationConvergeAllWindows() async {
-        let sourceWindowID = UUID()
-        let otherWindowID = UUID()
-        let operationID = UUID()
-        let staleMutationID = UUID()
-        let sameTabMutationID = UUID()
-        let independentMutationID = UUID()
-        let sharedID = ContentTabID(rawValue: "shared-tab")
-        let independentID = ContentTabID(rawValue: "independent-tab")
-        let oldRecord = Self.record(id: sharedID.rawValue, path: "/Users/test/OldShared")
-        let sharedWinner = Self.record(id: sharedID.rawValue, path: "/Users/test/NewShared")
-        let independentWinner = Self.record(id: independentID.rawValue, path: "/Users/test/Independent")
-        var source = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Source")
-        source.contentTabs.tabs.append(Self.pinnedItem(record: oldRecord))
-        source.contentTabs.selectedTabIDs = [sharedID]
-        source.contentTabs.selectionAnchorID = sharedID
-        source.contentTabs.tabs[id: sharedID]?.isPinned = false
-        source.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
-            operationID: operationID,
-            target: .unpinned,
-            orderedTargetIDs: [sharedID],
-            currentTabID: sharedID,
-        )
-        let staleIntentID = source.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedID)
-        source.syncContentTabSidebarItems()
-        var other = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Other")
-        other.contentTabs.tabs.append(Self.pinnedItem(record: sharedWinner))
-        other.contentTabs.tabs.append(Self.pinnedItem(record: independentWinner))
-        other.contentTabs.pinnedRecords[sharedID] = sharedWinner
-        other.contentTabs.pinnedRecords[independentID] = independentWinner
-        let sameTabIntentID = other.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedID)
-        let independentIntentID = other.contentTabs.markLatestPinnedRecordPersistenceIntent(for: independentID)
-        other.contentTabs.pendingPinnedRecordIDs.formUnion([sharedID, independentID])
-        other.syncContentTabSidebarItems()
-        let staleGeneration = ContentTabPinnedRecordMutationGeneration(tabID: sharedID)
-        let sameTabGeneration = ContentTabPinnedRecordMutationGeneration(tabID: sharedID)
-        let independentGeneration = ContentTabPinnedRecordMutationGeneration(tabID: independentID)
-        let rollback = ContentTabPinnedRecordRollbackSnapshot(
-            previousIsPinned: false,
-            previousPinnedRecord: nil,
-            previousTabIndex: nil,
-        )
-        let staleRequest = ContentTabPinnedRecordPersistenceRequest(
-            mutationID: staleMutationID,
-            tabID: sharedID,
-            intentID: staleIntentID,
-            mutation: .remove(recordID: sharedID.rawValue),
-            rollback: ContentTabPinnedRecordRollbackSnapshot(
-                previousIsPinned: true,
-                previousPinnedRecord: oldRecord,
-                previousTabIndex: 1,
-            ),
-        )
-        let sameTabRequest = ContentTabPinnedRecordPersistenceRequest(
-            mutationID: sameTabMutationID,
-            tabID: sharedID,
-            intentID: sameTabIntentID,
-            mutation: .upsert(sharedWinner),
-            rollback: rollback,
-        )
-        let independentRequest = ContentTabPinnedRecordPersistenceRequest(
-            mutationID: independentMutationID,
-            tabID: independentID,
-            intentID: independentIntentID,
-            mutation: .upsert(independentWinner),
-            rollback: rollback,
-        )
-        var initialState = WindowManagerFeature.State()
-        initialState.windows = [
-            WindowSessionState(id: sourceWindowID, window: source),
-            WindowSessionState(id: otherWindowID, window: other),
-        ]
-        initialState.inFlightPinnedRecordMutations[staleMutationID] = WindowManagerInFlightPinnedRecordMutation(
-            sourceWindowID: sourceWindowID,
-            request: FileManagerPinnedRecordPersistenceRequest(
-                request: staleRequest,
-                route: .selectedPin(operationID: operationID),
-            ),
-            generation: staleGeneration,
-        )
-        initialState.inFlightPinnedRecordMutations[sameTabMutationID] = WindowManagerInFlightPinnedRecordMutation(
-            sourceWindowID: otherWindowID,
-            request: FileManagerPinnedRecordPersistenceRequest(request: sameTabRequest, route: .single),
-            generation: sameTabGeneration,
-        )
-        initialState.inFlightPinnedRecordMutations[independentMutationID] = WindowManagerInFlightPinnedRecordMutation(
-            sourceWindowID: otherWindowID,
-            request: FileManagerPinnedRecordPersistenceRequest(request: independentRequest, route: .single),
-            generation: independentGeneration,
-        )
-        let persistedStore = ContentTabPinnedRecordStore(records: [sharedWinner, independentWinner])
-        let counts = LockIsolated(CTM003ActionCounts())
-        let store = TestStore(initialState: initialState) {
-            Self.trackedWindowManager(counts: counts)
-        } withDependencies: {
-            $0.contentTabPinnedRecordClient.loadStore = { _ in persistedStore }
-            $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { generation in
-                generation.value != staleGeneration.value
-            }
-        }
-        // store.exhaustivity = .off: app-global completion 순서와 최종 authoritative projection을 검증한다.
-        store.exhaustivity = .off
-
-        await store.send(.pinnedRecordMutationFinished(mutationID: sameTabMutationID, outcome: .applied))
-        await store.skipReceivedActions()
-        await store.send(.pinnedRecordMutationFinished(mutationID: independentMutationID, outcome: .applied))
-        await store.skipReceivedActions()
-        await store.send(.pinnedRecordMutationFinished(mutationID: staleMutationID, outcome: .applied))
-        await store.skipReceivedActions()
-        await store.finish()
-
-        XCTAssertEqual(counts.value.storeChanged, 3)
-        XCTAssertEqual(Set(persistedStore.records.map(\.id)), Set([sharedID.rawValue, independentID.rawValue]))
-        XCTAssertEqual(counts.value.applyByWindow[sourceWindowID], 4)
-        XCTAssertEqual(counts.value.applyByWindow[otherWindowID], 3)
-        XCTAssertEqual(counts.value.batchCompleted, 1)
-        XCTAssertTrue(store.state.inFlightPinnedRecordMutations.isEmpty)
-        let sourceState = store.state.windows[id: sourceWindowID]?.window
-        let otherState = store.state.windows[id: otherWindowID]?.window
-        XCTAssertEqual(Set(Self.pinnedIDs(sourceState)), Set([sharedID, independentID]))
-        XCTAssertEqual(Set(Self.pinnedIDs(otherState)), Set([sharedID, independentID]))
-        XCTAssertNil(sourceState?.pendingSelectedContentTabPinMutation)
-        XCTAssertEqual(sourceState?.contentTabs.selectedTabIDs, [sharedID])
-        XCTAssertEqual(sourceState?.contentTabs.selectionAnchorID, sharedID)
-    }
-
     private static func trackedWindowManager(
         counts: LockIsolated<CTM003ActionCounts>,
     ) -> some ReducerOf<WindowManagerFeature> {
@@ -885,7 +554,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     }
                     if case let .windows(.element(
                         id: windowID,
-                        action: .window(.applyAuthoritativePinnedContentTabs),
+                        action: .window(.applyCommittedTopNavigationSnapshot),
                     )) = action {
                         value.applyByWindow[windowID, default: 0] += 1
                     }
@@ -971,6 +640,26 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     private static func store(recordID: String, path: String) -> ContentTabPinnedRecordStore {
         ContentTabPinnedRecordStore(records: [record(id: recordID, path: path)])
+    }
+
+    nonisolated private static func applying(
+        _ mutation: ContentTabPinnedRecordPersistenceMutation,
+        to store: ContentTabPinnedRecordStore,
+    ) -> ContentTabPinnedRecordStore {
+        var updated = store
+        switch mutation {
+        case let .upsert(record, _):
+            updated.records.removeAll { $0.id == record.id }
+            updated.records.append(record)
+            updated.topNavigationOrder.items.removeAll { $0 == .contentTab(ContentTabID(rawValue: record.id)) }
+            updated.topNavigationOrder.items.append(.contentTab(ContentTabID(rawValue: record.id)))
+        case let .remove(recordID):
+            updated.records.removeAll { $0.id == recordID }
+            updated.topNavigationOrder.items.removeAll {
+                $0 == .contentTab(ContentTabID(rawValue: recordID))
+            }
+        }
+        return updated
     }
 
     private static func pinnedIDs(_ window: FileManagerWindowFeature.State?) -> [ContentTabID] {

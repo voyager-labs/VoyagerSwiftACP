@@ -83,6 +83,7 @@ public extension FileManagerWindowState {
             canCloseActiveContentTab: selectedContentTabCount <= 1
                 && activeContentTab != nil
                 && activeContentTab?.isPinned != true
+                && activeContentTab.map { !contentTabs.pendingPinnedRecordIDs.contains($0.id) } == true
                 && canCloseContentTabs,
             canDuplicateSelectedContentTabs: selectedContentTabCount > 1 && canDuplicateContentTabs,
             canDuplicateActiveContentTab: selectedContentTabCount <= 1 && activeContentTab != nil

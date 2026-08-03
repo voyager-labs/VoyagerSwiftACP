@@ -3,67 +3,69 @@ import Dispatch
 import Foundation
 import UniformTypeIdentifiers
 
-struct ContentTabReorderDragScopeID: Hashable, Codable {
+enum FileManagerTopNavigationReorderBoundaryOwner: String, Codable, Equatable {
+    case topNavigation
+    case unpinnedContentTabs
+}
+
+struct FileManagerTopNavigationReorderDragScopeID: Hashable, Codable {
     let rawValue: UUID
+    let boundaryOwner: FileManagerTopNavigationReorderBoundaryOwner
 
-    init() {
+    init(boundaryOwner: FileManagerTopNavigationReorderBoundaryOwner = .unpinnedContentTabs) {
         rawValue = UUID()
+        self.boundaryOwner = boundaryOwner
     }
-
-    init(rawValue: UUID) {
-        self.rawValue = rawValue
-    }
-}
-
-struct ContentTabReorderDragPayload: Codable, Equatable {
-    let sourceID: ContentTabID
-    let dragScopeID: ContentTabReorderDragScopeID
-}
-
-struct ContentTabReorderDragSourceConfiguration {
-    let payload: ContentTabReorderDragPayload?
-    let movePayload: ContentTabDragPayload?
-    let sessionStore: ContentTabReorderLocalSessionStore
 
     init(
-        payload: ContentTabReorderDragPayload,
-        sessionStore: ContentTabReorderLocalSessionStore,
+        rawValue: UUID,
+        boundaryOwner: FileManagerTopNavigationReorderBoundaryOwner = .unpinnedContentTabs,
+    ) {
+        self.rawValue = rawValue
+        self.boundaryOwner = boundaryOwner
+    }
+}
+
+struct FileManagerTopNavigationReorderDragPayload: Codable, Equatable {
+    let sourceID: FileManagerTopNavigationItemID
+    let dragScopeID: FileManagerTopNavigationReorderDragScopeID
+}
+
+struct FileManagerTopNavigationReorderDragSourceConfiguration {
+    let payload: FileManagerTopNavigationReorderDragPayload
+    let movePayload: ContentTabDragPayload?
+    let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
+
+    init(
+        payload: FileManagerTopNavigationReorderDragPayload,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
         movePayload: ContentTabDragPayload? = nil,
     ) {
         self.payload = payload
         self.movePayload = movePayload
         self.sessionStore = sessionStore
     }
-
-    init(
-        movePayload: ContentTabDragPayload,
-        sessionStore: ContentTabReorderLocalSessionStore,
-    ) {
-        payload = nil
-        self.movePayload = movePayload
-        self.sessionStore = sessionStore
-    }
 }
 
 extension UTType {
-    static let contentTabReorder = UTType(
+    static let fileManagerTopNavigationReorder = UTType(
         exportedAs: "fm.voyager.content-tab-reorder",
         conformingTo: .data,
     )
 
-    static let contentTabReorderLocal = UTType(
+    static let fileManagerTopNavigationReorderLocal = UTType(
         exportedAs: "fm.voyager.content-tab-reorder.local",
         conformingTo: .data,
     )
 }
 
 extension NSPasteboard.PasteboardType {
-    static let contentTabReorder = Self(UTType.contentTabReorder.identifier)
-    static let contentTabReorderLocal = Self(UTType.contentTabReorderLocal.identifier)
+    static let fileManagerTopNavigationReorder = Self(UTType.fileManagerTopNavigationReorder.identifier)
+    static let fileManagerTopNavigationReorderLocal = Self(UTType.fileManagerTopNavigationReorderLocal.identifier)
     static let contentTabMove = Self(ContentTabDragPayload.contentType.identifier)
 }
 
-struct ContentTabReorderLocalToken: Equatable {
+struct FileManagerTopNavigationReorderLocalToken: Equatable {
     let rawValue: UUID
 
     var data: Data {
@@ -86,10 +88,10 @@ struct ContentTabReorderLocalToken: Equatable {
 }
 
 @MainActor
-final class ContentTabReorderLocalSessionStore {
+final class FileManagerTopNavigationReorderLocalSessionStore {
     struct Entry: Equatable {
-        let token: ContentTabReorderLocalToken
-        let payload: ContentTabReorderDragPayload
+        let token: FileManagerTopNavigationReorderLocalToken
+        let payload: FileManagerTopNavigationReorderDragPayload
         let issuedAtNanoseconds: UInt64
         let expiresAtNanoseconds: UInt64
     }
@@ -113,9 +115,9 @@ final class ContentTabReorderLocalSessionStore {
 
     @discardableResult
     func begin(
-        payload: ContentTabReorderDragPayload,
-        token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
-    ) -> ContentTabReorderLocalToken {
+        payload: FileManagerTopNavigationReorderDragPayload,
+        token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
+    ) -> FileManagerTopNavigationReorderLocalToken {
         let issuedAtNanoseconds = nowNanoseconds()
         let addition = issuedAtNanoseconds.addingReportingOverflow(timeToLiveNanoseconds)
         entry = Entry(
@@ -127,18 +129,17 @@ final class ContentTabReorderLocalSessionStore {
         return token
     }
 
-    func consume(token: ContentTabReorderLocalToken) -> ContentTabReorderDragPayload? {
-        guard let entry,
-              entry.token == token,
-              nowNanoseconds() < entry.expiresAtNanoseconds
-        else {
+    func consume(token: FileManagerTopNavigationReorderLocalToken) -> FileManagerTopNavigationReorderDragPayload? {
+        guard let entry, entry.token == token else { return nil }
+        guard nowNanoseconds() < entry.expiresAtNanoseconds else {
+            self.entry = nil
             return nil
         }
         self.entry = nil
         return entry.payload
     }
 
-    func clear(token: ContentTabReorderLocalToken) {
+    func clear(token: FileManagerTopNavigationReorderLocalToken) {
         guard entry?.token == token else { return }
         entry = nil
     }
@@ -148,21 +149,21 @@ final class ContentTabReorderLocalSessionStore {
     }
 }
 
-final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
-    let token: ContentTabReorderLocalToken?
+final class FileManagerTopNavigationReorderPasteboardWriter: NSObject, NSPasteboardWriting {
+    let token: FileManagerTopNavigationReorderLocalToken
 
-    private let reorderPayloadData: Data?
+    private let reorderPayloadData: Data
     private let movePayloadData: Data?
-    private let sessionStore: ContentTabReorderLocalSessionStore
+    private let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
 
     @MainActor
     convenience init(
-        payload: ContentTabReorderDragPayload,
-        sessionStore: ContentTabReorderLocalSessionStore,
-        token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
+        payload: FileManagerTopNavigationReorderDragPayload,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
+        token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
     ) throws {
         try self.init(
-            configuration: ContentTabReorderDragSourceConfiguration(
+            configuration: FileManagerTopNavigationReorderDragSourceConfiguration(
                 payload: payload,
                 sessionStore: sessionStore,
             ),
@@ -172,25 +173,21 @@ final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
 
     @MainActor
     init(
-        configuration: ContentTabReorderDragSourceConfiguration,
-        token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
+        configuration: FileManagerTopNavigationReorderDragSourceConfiguration,
+        token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
     ) throws {
-        reorderPayloadData = try configuration.payload.map(JSONEncoder().encode)
+        reorderPayloadData = try JSONEncoder().encode(configuration.payload)
         movePayloadData = try configuration.movePayload.map(JSONEncoder().encode)
         sessionStore = configuration.sessionStore
-        if let payload = configuration.payload {
-            self.token = sessionStore.begin(payload: payload, token: token)
-        } else {
-            self.token = nil
-        }
+        self.token = sessionStore.begin(payload: configuration.payload, token: token)
         super.init()
     }
 
     func writableTypes(for _: NSPasteboard) -> [NSPasteboard.PasteboardType] {
-        var types: [NSPasteboard.PasteboardType] = []
-        if reorderPayloadData != nil {
-            types.append(contentsOf: [.contentTabReorder, .contentTabReorderLocal])
-        }
+        var types: [NSPasteboard.PasteboardType] = [
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
+        ]
         if movePayloadData != nil {
             types.append(.contentTabMove)
         }
@@ -206,10 +203,10 @@ final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
 
     func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
         switch type {
-        case .contentTabReorder:
+        case .fileManagerTopNavigationReorder:
             reorderPayloadData
-        case .contentTabReorderLocal:
-            token?.data
+        case .fileManagerTopNavigationReorderLocal:
+            token.data
         case .contentTabMove:
             movePayloadData
         default:
@@ -219,30 +216,29 @@ final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
 
     @MainActor
     func cleanupOwnedToken() {
-        guard let token else { return }
         sessionStore.clear(token: token)
     }
 }
 
-enum ContentTabReorderItemProviderFactory {
+enum FileManagerTopNavigationReorderItemProviderFactory {
     @MainActor
     static func makeProvider(
-        payload: ContentTabReorderDragPayload,
-        sessionStore: ContentTabReorderLocalSessionStore,
-        token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
+        payload: FileManagerTopNavigationReorderDragPayload,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
+        token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
     ) throws -> NSItemProvider {
         let payloadData = try JSONEncoder().encode(payload)
         let localToken = sessionStore.begin(payload: payload, token: token)
         let provider = NSItemProvider()
         provider.registerDataRepresentation(
-            forTypeIdentifier: UTType.contentTabReorder.identifier,
+            forTypeIdentifier: UTType.fileManagerTopNavigationReorder.identifier,
             visibility: .all,
         ) { completion in
             completion(payloadData, nil)
             return completedProgress()
         }
         provider.registerDataRepresentation(
-            forTypeIdentifier: UTType.contentTabReorderLocal.identifier,
+            forTypeIdentifier: UTType.fileManagerTopNavigationReorderLocal.identifier,
             visibility: .ownProcess,
         ) { completion in
             completion(localToken.data, nil)

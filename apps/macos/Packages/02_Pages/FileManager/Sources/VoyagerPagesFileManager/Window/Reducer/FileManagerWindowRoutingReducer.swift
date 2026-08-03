@@ -346,9 +346,14 @@ struct FileManagerWindowRoutingReducer {
                 return resyncContentNavigationEffect(state: state)
 
             case let .sidebar(.delegate(.selectContentTab(tabID))):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
                 return .merge(
-                    .send(.contentTabs(.setCurrent(tabID))),
+                    .concatenate(
+                        .send(.contentTabs(.setCurrent(tabID))),
+                        .send(.contentTabs(.collapseSelectionToActive)),
+                    ),
                     brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
                 )
 
@@ -402,18 +407,35 @@ struct FileManagerWindowRoutingReducer {
                 return .send(.contentTabs(.toggleSelection(id)))
 
             case let .sidebar(.delegate(.selectContentTabRange(to: id))):
-                return .send(.contentTabs(.selectRange(to: id)))
+                return .send(.contentTabs(.selectRange(
+                    to: id,
+                    orderedIDs: state.contentTabSelectionOrderedIDs,
+                )))
 
             case .sidebar(.delegate(.collapseContentTabSelectionToActive)):
                 return .send(.contentTabs(.collapseSelectionToActive))
 
-            case let .sidebar(.delegate(.contentTabReorderRequested(sourceID, targetID, placement))):
+            case .sidebar(.delegate(.dismissTopNavigationPresentation)):
+                state.sidebar.topNavigationArrangementPresentation = nil
+                return .none
+
+            case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement))):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
-                return .send(.contentTabs(.reorder(
-                    sourceID: sourceID,
-                    targetID: targetID,
-                    placement: placement,
-                )))
+                if case let .contentTab(sourceTabID) = sourceID,
+                   case let .contentTab(anchorTabID) = anchorID,
+                   state.contentTabs.tabs[id: sourceTabID]?.isPinned == false,
+                   state.contentTabs.tabs[id: anchorTabID]?.isPinned == false
+                {
+                    return .send(.contentTabs(.reorder(
+                        sourceID: sourceTabID,
+                        targetID: anchorTabID,
+                        placement: placement,
+                    )))
+                }
+                let destination: FileManagerTopNavigationMoveDestination = placement == .before
+                    ? .before(anchorID)
+                    : .after(anchorID)
+                return .send(.topNavigationMoveRequested(source: sourceID, destination: destination))
 
             case .content(.delegate(.requestDuplicate)):
                 let command: Action.WindowCommand = state.contentTabs.selectedTabIDs.count > 1
@@ -524,6 +546,7 @@ struct FileManagerWindowRoutingReducer {
                 )
 
             case let .contentTabs(.requestClose(tabID)):
+                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
                 guard let tab = state.contentTabs.tabs[id: tabID] else { return .none }
                 if tab.isPinned {
                     return .send(.contentTabs(.close(tabID)))
@@ -531,9 +554,11 @@ struct FileManagerWindowRoutingReducer {
                 return prepareContentTabTeardown(tabID: tabID, state: &state)
 
             case let .contentTabs(.close(tabID)):
+                guard state.contentTabs.tabs[id: tabID] == nil else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.commitClose(tabID)):
+                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case .contentTabs(.restore):
@@ -1665,7 +1690,8 @@ private extension FileManagerWindowRoutingReducer {
         state: inout State,
     ) -> Effect<Action> {
         guard state.canStartSelectedContentTabPinMutation else { return .none }
-        let orderedTargetIDs = state.contentTabs.orderedValidSelectedTabIDs
+        let orderedTargetIDs = state.contentTabSelectionOrderedIDs
+            .filter(state.contentTabs.selectedTabIDs.contains)
         guard orderedTargetIDs.count >= 2 else { return .none }
 
         let operationID = uuid()
@@ -1822,6 +1848,12 @@ private extension FileManagerWindowRoutingReducer {
                 state.pendingRuntimePreservationRecords[tabID] = previousRecord
             }
             outcome = .failure
+        case let .pinnedRecordStoreUnavailable(unavailableTabID, _, _, rollback)
+            where unavailableTabID == tabID:
+            if pending.target == .unpinned, let previousRecord = rollback.previousPinnedRecord {
+                state.pendingRuntimePreservationRecords[tabID] = previousRecord
+            }
+            outcome = .failure
         case let .pinnedRecordSaveNotApplied(nonAppliedTabID, _, _, rollback) where nonAppliedTabID == tabID:
             if pending.target == .unpinned, let previousRecord = rollback.previousPinnedRecord {
                 state.pendingRuntimePreservationRecords[tabID] = previousRecord
@@ -1867,7 +1899,8 @@ private extension FileManagerWindowRoutingReducer {
     func handleRequestCloseSelectedContentTabs(state: inout State) -> Effect<Action> {
         guard state.canStartSelectedContentTabClose else { return .none }
 
-        let validSelectedIDs = state.contentTabs.orderedValidSelectedTabIDs
+        let selectionOrderedIDs = state.contentTabSelectionOrderedIDs
+        let validSelectedIDs = selectionOrderedIDs.filter(state.contentTabs.selectedTabIDs.contains)
         guard validSelectedIDs.count >= 2 else { return .none }
 
         let activeTabID = state.contentTabs.activeTabID
@@ -1877,7 +1910,7 @@ private extension FileManagerWindowRoutingReducer {
         }
         let targetIDSet = Set(orderedTargetIDs)
         let preferredFallbackIDs = preferredSelectedContentTabCloseFallbackIDs(
-            originalTabIDs: state.contentTabs.selectionOrderedTabIDs,
+            originalTabIDs: selectionOrderedIDs,
             originalActiveTabID: activeTabID,
             targetIDSet: targetIDSet,
             orderedTargetIDs: orderedTargetIDs,
@@ -2129,29 +2162,12 @@ private extension FileManagerWindowRoutingReducer {
                 )),
             )
 
-        case let .pinnedRecordSaveSucceeded(successTabID, context) where successTabID == tabID:
-            return .send(.selectedContentTabCloseItemCompleted(
-                operationID: operationID,
-                tabID: tabID,
-                outcome: contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-                    ? .unpinned
-                    : .cancelled,
-            ))
-
-        case let .pinnedRecordSaveFailed(failedTabID, _, _) where failedTabID == tabID:
-            return .send(.selectedContentTabCloseItemCompleted(
-                operationID: operationID,
-                tabID: tabID,
-                outcome: .failed,
-            ))
-
-        case let .pinnedRecordSaveNotApplied(nonAppliedTabID, _, _, _)
-            where nonAppliedTabID == tabID:
-            return .send(.selectedContentTabCloseItemCompleted(
-                operationID: operationID,
-                tabID: tabID,
-                outcome: .cancelled,
-            ))
+        case .pinnedRecordSaveSucceeded,
+             .pinnedRecordSaveFailed,
+             .pinnedRecordStoreUnavailable,
+             .pinnedRecordSaveNotApplied:
+            // pinned batch close completion은 FileManagerFeature가 durable terminal 뒤 commitClose로 연결한다.
+            return .none
 
         default:
             return .none
@@ -2421,6 +2437,7 @@ private extension FileManagerWindowRoutingReducer {
         state: inout State,
         batchOperationID: UUID? = nil,
     ) -> Effect<Action> {
+        guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
         if let pendingClose = state.pendingContentTabClose {
             guard let batchOperationID,
                   pendingClose.tabID == tabID,

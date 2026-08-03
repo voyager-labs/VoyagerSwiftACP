@@ -21,7 +21,7 @@ extension WindowManagerFeature {
             guard state.authorizedTrackedSingletonRequestID == requestID else {
                 return trackedSingletonCompletionEffect(requestID)
             }
-            guard state.windows.isEmpty else {
+            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains) else {
                 state.authorizedTrackedSingletonRequestID = nil
                 return trackedSingletonCompletionEffect(requestID)
             }
@@ -118,24 +118,20 @@ extension WindowManagerFeature {
         state.pendingWindowOpenIDs.insert(windowSession.id)
         state.refreshContentTabMoveTargets()
         state.trackedSingletonWindow = .init(requestID: requestID, windowID: windowSession.id)
-        return .concatenate(
+        var effects: [Effect<Action>] = [
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .run { [fileManagerWindowClient, id = windowSession.id] send in
-                await fileManagerWindowClient.open(id)
-                guard !Task.isCancelled else { return }
-                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-                guard !Task.isCancelled else { return }
-                await send(.windowOpenCompleted(
-                    id: id,
-                    shouldBootstrapDefaultWindow: path == nil,
-                    isRegistered: registeredWindowIDs.contains(id),
-                ))
-                guard !Task.isCancelled else { return }
-                await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))
-            },
-        )
-        .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true)
+        ]
+        if path == nil {
+            effects.append(.send(.defaultWindowBootstrapRequested(id: windowSession.id)))
+        } else {
+            effects.append(trackedWindowOpenEffect(
+                for: windowSession.id,
+                requestID: requestID,
+            ))
+        }
+        return .concatenate(effects)
+            .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true)
     }
 
     private func revokeTrackedSingleton(
@@ -181,6 +177,43 @@ extension WindowManagerFeature {
         .cancellable(id: CancelID.windowOpen(id))
     }
 
+    func readyToOpenWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
+        guard state.windows[id: id] != nil,
+              state.pendingWindowOpenIDs.contains(id),
+              !state.closingWindowIDs.contains(id),
+              state.externalWindowBatchIDs[id] == nil,
+              state.retainedExternalOpenPlacementOwnership?.newWindowIDs.contains(id) != true
+        else { return .none }
+
+        if let trackedWindow = state.trackedSingletonWindow,
+           trackedWindow.windowID == id
+        {
+            guard state.authorizedTrackedSingletonRequestID == trackedWindow.requestID else { return .none }
+            return trackedWindowOpenEffect(for: id, requestID: trackedWindow.requestID)
+        }
+        return windowOpenEffect(for: id, shouldBootstrapDefaultWindow: false)
+    }
+
+    private func trackedWindowOpenEffect(
+        for id: State.WindowID,
+        requestID: UUID,
+    ) -> Effect<Action> {
+        .run { [fileManagerWindowClient] send in
+            await fileManagerWindowClient.open(id)
+            guard !Task.isCancelled else { return }
+            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
+            guard !Task.isCancelled else { return }
+            await send(.windowOpenCompleted(
+                id: id,
+                shouldBootstrapDefaultWindow: false,
+                isRegistered: registeredWindowIDs.contains(id),
+            ))
+            guard !Task.isCancelled else { return }
+            await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))
+        }
+        .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true)
+    }
+
     func closeWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
         guard state.windows[id: id] != nil, !state.closingWindowIDs.contains(id) else { return .none }
         state.closingWindowIDs.insert(id)
@@ -216,6 +249,50 @@ extension WindowManagerFeature {
         )
     }
 
+    func deferWindowRemovalUntilTopNavigationPersistenceCompletes(
+        _ id: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.windows[id: id] != nil else { return .none }
+        let wasPendingOpen = state.pendingWindowOpenIDs.remove(id) != nil
+        state.closingWindowIDs.insert(id)
+        state.deferredClosedWindowIDs.insert(id)
+        state.lastUsedWindowIDs.removeAll { $0 == id }
+        state.defaultWindowBootstrapWindowIDs.remove(id)
+        state.externalWindowBatchIDs[id] = nil
+        if var ownership = state.retainedExternalOpenPlacementOwnership {
+            ownership.newWindowIDs.removeAll { $0 == id }
+            state.retainedExternalOpenPlacementOwnership = ownership.newWindowIDs.isEmpty ? nil : ownership
+        }
+        if state.focusedWindowID == id {
+            state.focusedWindowID = state.lastUsedWindowIDs.first(where: { isWindowReady($0, state: state) })
+                ?? state.windows.ids.first(where: { isWindowReady($0, state: state) })
+        }
+
+        var effects: [Effect<Action>] = []
+        if wasPendingOpen {
+            effects.append(.cancel(id: CancelID.windowOpen(id)))
+        }
+        if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
+            state.defaultWindowBootstrapRequestID = nil
+            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+        }
+        return effects.isEmpty ? .none : .merge(effects)
+    }
+
+    func finalizeDeferredWindowClosuresWithoutPendingPersistence(
+        state: inout State,
+    ) -> Effect<Action> {
+        let pendingSourceWindowIDs = Set(state.topNavigationPersistenceQueue.map(\.sourceWindowID))
+        let readyWindowIDs = state.deferredClosedWindowIDs
+            .filter { !pendingSourceWindowIDs.contains($0) }
+        var effects: [Effect<Action>] = []
+        for id in readyWindowIDs {
+            effects.append(finalizeWindowRemoval(id, state: &state))
+        }
+        return effects.isEmpty ? .none : .merge(effects)
+    }
+
     func finalizeWindowRemoval(
         _ id: State.WindowID,
         state: inout State,
@@ -227,6 +304,7 @@ extension WindowManagerFeature {
         state.windows.remove(id: id)
         state.pendingWindowOpenIDs.remove(id)
         state.closingWindowIDs.remove(id)
+        state.deferredClosedWindowIDs.remove(id)
         state.invalidatingWindowIDs.remove(id)
         state.lastUsedWindowIDs.removeAll { $0 == id }
         state.defaultWindowBootstrapWindowIDs.remove(id)
@@ -280,11 +358,16 @@ extension WindowManagerFeature {
         state.moveWindowToMRUFront(windowSession.id)
         state.pendingWindowOpenIDs.insert(windowSession.id)
         state.refreshContentTabMoveTargets()
-        return .concatenate(
+        var effects: [Effect<Action>] = [
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: path == nil),
-        )
+        ]
+        if path == nil {
+            effects.append(.send(.defaultWindowBootstrapRequested(id: windowSession.id)))
+        } else {
+            effects.append(windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: false))
+        }
+        return .concatenate(effects)
     }
 
     private func openCollectionWindowSession(url: URL, state: inout State) -> Effect<Action> {
@@ -302,7 +385,7 @@ extension WindowManagerFeature {
                 action: .window(.navigation(.view(.openCollectionFile(url)))),
             ))),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: true),
+            .send(.defaultWindowBootstrapRequested(id: windowSession.id)),
         )
     }
 

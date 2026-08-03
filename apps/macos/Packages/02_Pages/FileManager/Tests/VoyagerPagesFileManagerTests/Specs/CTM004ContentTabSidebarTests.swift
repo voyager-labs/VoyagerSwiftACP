@@ -279,6 +279,255 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertNil(item.tagColorCode)
     }
 
+    // MARK: - CTM-004-sidebar_mixed_top_navigation_projection
+
+    /// CTM-004-sidebar_mixed_top_navigation_projection: mixed durable 순서는 Location과 pinned tab payload를 정확한 순서로 투영함
+    /// 상단 projection이 kind별 배열 연결이 아니라 authoritative tagged 순서를 따르는 대표 경로를 검증한다.
+    /// - 검증 내용: `[Downloads, A, Home, B]` tagged ID와 row별 title, 독립 unpinned `[C, D]`, active/selection identity
+    /// - 사전 조건: Downloads/Home Location, pinned A/B, unpinned C/D와 mixed optimistic order
+    /// - 기대 결과: visible top은 정확히 mixed 순서이고 unpinned/active/selection 상태는 바뀌지 않는다.
+    func testMixedTopNavigationProjectionPreservesAuthoritativeOrderAndUnpinnedIdentity() {
+        let tabA = ContentTabID(rawValue: "tab-a")
+        let tabB = ContentTabID(rawValue: "tab-b")
+        let tabC = ContentTabID(rawValue: "tab-c")
+        let tabD = ContentTabID(rawValue: "tab-d")
+        let downloads = FileManagerFixedLocationItem(
+            id: "location-downloads",
+            title: "Downloads",
+            path: "/Users/test/Downloads",
+            iconName: "arrow.down.circle",
+            accessibilityLabel: "Downloads",
+        )
+        let home = FileManagerFixedLocationItem(
+            id: "location-home",
+            title: "Home",
+            path: "/Users/test",
+            iconName: "house",
+            accessibilityLabel: "Home",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .directory,
+                    anchor: .directory(path: "/A"),
+                    isPinned: true,
+                    title: "A",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/B"),
+                    isPinned: true,
+                    title: "B",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: tabC,
+                    page: .directory,
+                    anchor: .directory(path: "/C"),
+                    isPinned: false,
+                    title: "C",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: tabD,
+                    page: .directory,
+                    anchor: .directory(path: "/D"),
+                    isPinned: false,
+                    title: "D",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabC,
+        )
+        state.contentTabs.selectedTabIDs = [tabB, tabD]
+        state.optimisticTopNavigationOrder = .init(items: [
+            .location(downloads.id),
+            .contentTab(tabA),
+            .location(home.id),
+            .contentTab(tabB),
+        ])
+
+        state.syncContentTabSidebarItems()
+        state.applyFixedLocationItems([downloads, home])
+
+        XCTAssertEqual(state.sidebar.topNavigationItems.map(\.id), [
+            .location(downloads.id),
+            .contentTab(tabA),
+            .location(home.id),
+            .contentTab(tabB),
+        ])
+        XCTAssertEqual(state.sidebar.topNavigationItems.map { item in
+            switch item {
+            case let .location(location): location.title
+            case let .contentTab(tab): tab.title ?? ""
+            }
+        }, ["Downloads", "A", "Home", "B"])
+        XCTAssertEqual(state.sidebar.unpinnedContentTabItems.map(\.id), [tabC, tabD])
+        XCTAssertEqual(state.contentTabs.activeTabID, tabC)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [tabB, tabD])
+        XCTAssertTrue(state.sidebar.showsTopNavigationDivider)
+    }
+
+    /// CTM-004-sidebar_mixed_top_navigation_projection: hidden/absent/dormant 항목은 slot을 만들지 않고 Location 재등장은 tombstone을
+    /// 복원함
+    /// Location discovery reconciliation이 tombstone을 보존하고 새 Location만 마지막 Location 뒤에 삽입하는 edge 경로를 검증한다.
+    /// - 검증 내용: hidden Downloads, absent/reappearing External, dormant tab, 새 Network의 runtime/visible 위치와 divider
+    /// - 사전 조건: `[Downloads, A, External tombstone, Home, dormant]` order와 discovered Downloads/Home/Network
+    /// - 기대 결과: 첫 projection은 `[A, Home, Network]`, 재등장 후 `[A, External, Home, Network]`이며 dormant는 unpinned에만 남는다.
+    func testLocationReconciliationRestoresTombstoneAndAppendsNewLocationCanonically() {
+        let tabA = ContentTabID(rawValue: "tab-a")
+        let dormantTab = ContentTabID(rawValue: "tab-dormant")
+        let downloads = FileManagerFixedLocationItem(
+            id: "location-downloads",
+            title: "Downloads",
+            path: "/Downloads",
+            iconName: "arrow.down.circle",
+            accessibilityLabel: "Downloads",
+        )
+        let external = FileManagerFixedLocationItem(
+            id: "location-external",
+            title: "External",
+            path: "/Volumes/External",
+            iconName: "externaldrive",
+            accessibilityLabel: "External",
+        )
+        let home = FileManagerFixedLocationItem(
+            id: "location-home",
+            title: "Home",
+            path: "/Users/test",
+            iconName: "house",
+            accessibilityLabel: "Home",
+        )
+        let network = FileManagerFixedLocationItem(
+            id: "location-network",
+            title: "Network",
+            path: "/Network",
+            iconName: "network",
+            accessibilityLabel: "Network",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .directory,
+                    anchor: .directory(path: "/A"),
+                    isPinned: true,
+                    title: "A",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: dormantTab,
+                    page: .directory,
+                    anchor: .directory(path: "/Dormant"),
+                    isPinned: false,
+                    title: "Dormant",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: dormantTab,
+        )
+        state.contentTabs.selectedTabIDs = [dormantTab]
+        state.optimisticTopNavigationOrder = .init(items: [
+            .location(downloads.id),
+            .contentTab(tabA),
+            .location(external.id),
+            .location(home.id),
+            .contentTab(dormantTab),
+        ])
+        state.dormantContentTabSlots = [.init(
+            id: dormantTab,
+            before: .location(home.id),
+            after: nil,
+        )]
+        state.syncContentTabSidebarItems()
+
+        state.applyFixedLocationItems(
+            [downloads, home, network],
+            hiddenLocationIDs: [downloads.id],
+        )
+
+        XCTAssertEqual(state.optimisticTopNavigationOrder.items, [
+            .location(downloads.id),
+            .contentTab(tabA),
+            .location(external.id),
+            .location(home.id),
+            .location(network.id),
+            .contentTab(dormantTab),
+        ])
+        XCTAssertEqual(state.sidebar.topNavigationItems.map(\.id), [
+            .contentTab(tabA),
+            .location(home.id),
+            .location(network.id),
+        ])
+        XCTAssertEqual(
+            state.sidebar.fixedLocationVisibilityMenuItems.map(\.title),
+            ["Downloads", "Home", "Network"],
+        )
+        XCTAssertEqual(state.sidebar.unpinnedContentTabItems.map(\.id), [dormantTab])
+
+        state.applyFixedLocationItems(
+            [downloads, external, home, network],
+            hiddenLocationIDs: [downloads.id],
+        )
+
+        XCTAssertEqual(state.sidebar.topNavigationItems.map(\.id), [
+            .contentTab(tabA),
+            .location(external.id),
+            .location(home.id),
+            .location(network.id),
+        ])
+        XCTAssertEqual(
+            state.sidebar.fixedLocationVisibilityMenuItems.map(\.title),
+            ["Downloads", "External", "Home", "Network"],
+        )
+        XCTAssertEqual(state.contentTabs.activeTabID, dormantTab)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [dormantTab])
+    }
+
+    /// CTM-004-sidebar_mixed_top_navigation_projection: Location visibility는 projection만 바꾸고 pinned store를 쓰지 않음
+    /// hidden preference가 유일한 visibility SSOT이며 visible top item 유무만 divider를 결정하는 경로를 검증한다.
+    /// - 검증 내용: hide/show action 전후 tagged slot 복원, divider 0/1, pinned save 호출 0회
+    /// - 사전 조건: top order에 단일 Location이 있고 pinned ContentTab은 없는 상태
+    /// - 기대 결과: hide 시 top/divider가 사라지고 show 시 같은 durable slot에 복원되며 pinned store write는 없다.
+    func testLocationVisibilityOnlyChangesProjectionAndDividerWithoutPinnedStoreWrite() async {
+        let location = FileManagerFixedLocationItem(
+            id: "location-home",
+            title: "Home",
+            path: "/Users/test",
+            iconName: "house",
+            accessibilityLabel: "Home",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: [], activeTabID: nil)
+        state.optimisticTopNavigationOrder = .init(items: [.location(location.id)])
+        state.syncContentTabSidebarItems()
+        state.applyFixedLocationItems([location])
+        let pinnedStoreWriteCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                pinnedStoreWriteCount.withValue { $0 += 1 }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.view(.setFixedLocationVisibility(location.id, false))))
+        XCTAssertTrue(store.state.sidebar.topNavigationItems.isEmpty)
+        XCTAssertFalse(store.state.sidebar.showsTopNavigationDivider)
+
+        await store.send(.sidebar(.view(.setFixedLocationVisibility(location.id, true))))
+        XCTAssertEqual(store.state.sidebar.topNavigationItems.map(\.id), [.location(location.id)])
+        XCTAssertTrue(store.state.sidebar.showsTopNavigationDivider)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder.items, [.location(location.id)])
+        XCTAssertEqual(pinnedStoreWriteCount.value, 0)
+    }
+
     // MARK: - CTM-004-sidebar_fixed_locations
 
     /// CTM-004-sidebar_fixed_locations: fixed Locations는 window onAppear sync 전에는 비어 있음
@@ -295,6 +544,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     func testWindowAppearanceLoadsFixedLocationsOnceUntilDisappear() async {
         let requestID = UUID()
         let loadCount = LockIsolated(0)
+        let preparedPaths = LockIsolated<[[String]]>([])
         let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
         let projectedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(from: sourceLocations)
         let store = TestStore(initialState: FileManagerFeature.State()) {
@@ -309,7 +559,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 loadCount.withValue { $0 += 1 }
                 return sourceLocations
             }
+            $0.workspaceClient.prepareFileIcons = { paths in
+                preparedPaths.withValue { $0.append(paths) }
+                return false
+            }
         }
+        // store.exhaustivity = .off: window 통합 reducer의 관련 없는 bootstrap action은 검증 대상이 아님
         store.exhaustivity = .off
 
         await store.send(.onAppear) {
@@ -319,6 +574,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             $0.fixedLocationsLoadPhase = .loaded
             $0.applyFixedLocationItems(projectedLocations)
         }
+        XCTAssertEqual(preparedPaths.value, [projectedLocations.map(\.path)])
 
         await store.send(.onAppear)
         XCTAssertEqual(loadCount.value, 1)
@@ -334,6 +590,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(loadCount.value, 2)
+        XCTAssertEqual(preparedPaths.value, [
+            projectedLocations.map(\.path),
+            projectedLocations.map(\.path),
+        ])
     }
 
     /// CTM-004-sidebar_fixed_locations_visibility: 새 window appearance는 저장된 숨김 설정을 복원함
@@ -909,9 +1169,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
     /// CTM-004-sidebar_row_click_routing: Sidebar ContentTab row click이 active tab과 저장된 ContentPane session을 함께 전환함
     /// SidebarView delegate → FileManagerWindowRoutingReducer → ContentTabFeature → tabContentStates swap을 검증한다.
-    /// - 검증 내용: Directory tab row click 후 activeTabID가 바뀌고 content.navigation.currentPath가 저장된 tab session으로 복원됨
+    /// - 검증 내용: Directory tab row click 후 active/selection이 전환되고 content.navigation.currentPath가 저장된 tab session으로 복원됨
     /// - 사전 조건: Home + Directory 두 탭, 각 탭마다 별도 FileManagerContentFeature.State 저장
-    /// - 기대 결과: Directory tab이 active로 전환되고 ContentPane state가 재네비게이션 없이 Directory tab session으로 swap됨
+    /// - 기대 결과: 클릭한 tab 하나가 active/selected가 되고 ContentPane state가 재네비게이션 없이 해당 session으로 swap됨
     func testRenderedRowClick_dispatchesSetCurrentAndRestoresContentSession() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
@@ -965,6 +1225,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == directoryID
         }
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [directoryID]
+            $0.contentTabs.selectionAnchorID = directoryID
+        }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, directoryID, "active tab must switch to Directory")
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
@@ -975,9 +1239,14 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == homeID
         }
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [homeID]
+            $0.contentTabs.selectionAnchorID = homeID
+        }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID, "active tab must switch back to Home")
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [])
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [homeID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, homeID)
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), .homeDefault)
         XCTAssertEqual(store.state.content.navigation.currentPath, homeSessionPath)
         XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
@@ -1114,40 +1383,78 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: exact writable type set, immediate writing option, base JSON round trip, canonical UUID marker bytes
     /// - 사전 조건: 고정 source/scope/token과 Sidebar-local session store 및 isolated named pasteboard
     /// - 기대 결과: written item은 `{base, local}`만 가지며 source operation은 app 내부 move, 외부 empty임
-    func testContentTabReorderNativeWriterPreservesExactSynchronousShapeAndSourceOperation() throws {
-        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let payload = ContentTabReorderDragPayload(
-            sourceID: ContentTabID(rawValue: "source"),
-            dragScopeID: contentTabReorderScopeID,
+    /// CTM-004-content_tab_reorder_drop_contract: Location과 ContentTab payload는 같은 raw ID도 tag를 보존해 왕복함
+    /// - 검증 내용: 기존 UTI payload JSON이 두 tagged source identity를 정확히 구분함
+    func testFileManagerTopNavigationReorderPayloadRoundTripsTaggedLocationAndContentTabIDs() throws {
+        let rawID = "shared-source"
+        let payloads = [
+            FileManagerTopNavigationReorderDragPayload(
+                sourceID: .location(rawID),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
+            ),
+            FileManagerTopNavigationReorderDragPayload(
+                sourceID: .contentTab(ContentTabID(rawValue: rawID)),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
+            ),
+        ]
+
+        var decoded: [FileManagerTopNavigationReorderDragPayload] = []
+        for payload in payloads {
+            let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+            let writer = try FileManagerTopNavigationReorderPasteboardWriter(
+                payload: payload,
+                sessionStore: sessionStore,
+            )
+            let pasteboard = makeFileManagerTopNavigationReorderPasteboard(items: [NSPasteboardItem]())
+            XCTAssertTrue(pasteboard.writeObjects([writer]))
+            let data = try XCTUnwrap(pasteboard.data(forType: .fileManagerTopNavigationReorder))
+            try decoded.append(JSONDecoder().decode(FileManagerTopNavigationReorderDragPayload.self, from: data))
+            writer.cleanupOwnedToken()
+            pasteboard.clearContents()
+        }
+
+        XCTAssertEqual(decoded, payloads)
+        XCTAssertNotEqual(decoded[0].sourceID, decoded[1].sourceID)
+    }
+
+    func testFileManagerTopNavigationReorderNativeWriterPreservesExactSynchronousShapeAndSourceOperation() throws {
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(ContentTabID(rawValue: "source")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
         )
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let writer = try ContentTabReorderPasteboardWriter(
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let writer = try FileManagerTopNavigationReorderPasteboardWriter(
             payload: payload,
             sessionStore: sessionStore,
             token: token,
         )
-        let pasteboard = makeContentTabReorderPasteboard(items: [NSPasteboardItem]())
+        let pasteboard = makeFileManagerTopNavigationReorderPasteboard(items: [NSPasteboardItem]())
         defer {
             writer.cleanupOwnedToken()
             pasteboard.clearContents()
         }
 
         XCTAssertEqual(Set(writer.writableTypes(for: pasteboard)), [
-            .contentTabReorder,
-            .contentTabReorderLocal,
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
         ])
-        XCTAssertTrue(writer.writingOptions(forType: .contentTabReorder, pasteboard: pasteboard).isEmpty)
-        XCTAssertTrue(writer.writingOptions(forType: .contentTabReorderLocal, pasteboard: pasteboard).isEmpty)
+        XCTAssertTrue(writer.writingOptions(forType: .fileManagerTopNavigationReorder, pasteboard: pasteboard).isEmpty)
+        XCTAssertTrue(writer.writingOptions(forType: .fileManagerTopNavigationReorderLocal, pasteboard: pasteboard)
+            .isEmpty)
         XCTAssertTrue(pasteboard.writeObjects([writer]))
 
         let item = try XCTUnwrap(pasteboard.pasteboardItems?.first)
-        XCTAssertEqual(Set(item.types), [.contentTabReorder, .contentTabReorderLocal])
-        XCTAssertEqual(item.data(forType: .contentTabReorderLocal), token.data)
-        let baseData = try XCTUnwrap(item.data(forType: .contentTabReorder))
-        XCTAssertEqual(try JSONDecoder().decode(ContentTabReorderDragPayload.self, from: baseData), payload)
+        XCTAssertEqual(Set(item.types), [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal])
+        XCTAssertEqual(item.data(forType: .fileManagerTopNavigationReorderLocal), token.data)
+        let baseData = try XCTUnwrap(item.data(forType: .fileManagerTopNavigationReorder))
+        XCTAssertEqual(
+            try JSONDecoder().decode(FileManagerTopNavigationReorderDragPayload.self, from: baseData),
+            payload,
+        )
         XCTAssertEqual(sessionStore.entry?.payload, payload)
-        XCTAssertEqual(ContentTabReorderLocalToken(data: token.data), token)
-        XCTAssertNil(ContentTabReorderLocalToken(data: Data(token.rawValue.uuidString.lowercased().utf8)))
+        XCTAssertEqual(FileManagerTopNavigationReorderLocalToken(data: token.data), token)
+        XCTAssertNil(FileManagerTopNavigationReorderLocalToken(data: Data(token.rawValue.uuidString.lowercased().utf8)))
 
         let button = ContentTabSidebarButton(frame: .zero)
         XCTAssertEqual(button.sourceOperationMask(for: .withinApplication), .move)
@@ -1159,22 +1466,22 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: capacity one, issue/expiry, exact consume, replay rejection, expired rejection, clear
     /// - 사전 조건: 수동 monotonic nanosecond clock과 서로 다른 payload/token 세트
     /// - 기대 결과: 최신 nonexpired exact token만 payload를 반환하며 성공 consume 뒤 entry가 제거됨
-    func testContentTabReorderLocalSessionStoreEnforcesCapacityTTLConsumeReplayAndClear() throws {
+    func testFileManagerTopNavigationReorderLocalSessionStoreEnforcesCapacityTTLConsumeReplayAndClear() throws {
         let now = LockIsolated<UInt64>(100)
-        let store = ContentTabReorderLocalSessionStore(
+        let store = FileManagerTopNavigationReorderLocalSessionStore(
             timeToLiveNanoseconds: 10,
             nowNanoseconds: { now.value },
         )
-        let firstToken = try makeContentTabReorderToken("11111111-1111-1111-1111-111111111111")
-        let secondToken = try makeContentTabReorderToken("22222222-2222-2222-2222-222222222222")
-        let foreignToken = try makeContentTabReorderToken("33333333-3333-3333-3333-333333333333")
-        let firstPayload = ContentTabReorderDragPayload(
-            sourceID: .init(rawValue: "first"),
-            dragScopeID: contentTabReorderScopeID,
+        let firstToken = try makeFileManagerTopNavigationReorderToken("11111111-1111-1111-1111-111111111111")
+        let secondToken = try makeFileManagerTopNavigationReorderToken("22222222-2222-2222-2222-222222222222")
+        let foreignToken = try makeFileManagerTopNavigationReorderToken("33333333-3333-3333-3333-333333333333")
+        let firstPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(ContentTabID(rawValue: "first")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
         )
-        let secondPayload = ContentTabReorderDragPayload(
-            sourceID: .init(rawValue: "second"),
-            dragScopeID: contentTabReorderScopeID,
+        let secondPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(ContentTabID(rawValue: "second")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
         )
 
         store.begin(payload: firstPayload, token: firstToken)
@@ -1195,7 +1502,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         store.begin(payload: firstPayload, token: firstToken)
         now.setValue(210)
         XCTAssertNil(store.consume(token: firstToken))
-        XCTAssertEqual(store.entry?.token, firstToken)
+        XCTAssertNil(store.entry)
         store.clear()
         XCTAssertNil(store.entry)
     }
@@ -1205,18 +1512,24 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: old writer cleanup, current writer cleanup, consumed writer cleanup의 identity semantics
     /// - 사전 조건: 동일 store에 순서대로 발급된 서로 다른 writer token과 성공 consume된 token
     /// - 기대 결과: old cleanup은 newer entry를 보존하고 current cleanup만 제거하며 consume 뒤 cleanup은 no-op임
-    func testContentTabReorderWriterCleanupPreservesNewerAndConsumedSessions() throws {
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let firstToken = try makeContentTabReorderToken("11111111-1111-1111-1111-111111111111")
-        let secondToken = try makeContentTabReorderToken("22222222-2222-2222-2222-222222222222")
-        let thirdToken = try makeContentTabReorderToken("33333333-3333-3333-3333-333333333333")
-        let firstWriter = try ContentTabReorderPasteboardWriter(
-            payload: .init(sourceID: .init(rawValue: "first"), dragScopeID: contentTabReorderScopeID),
+    func testFileManagerTopNavigationReorderWriterCleanupPreservesNewerAndConsumedSessions() throws {
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let firstToken = try makeFileManagerTopNavigationReorderToken("11111111-1111-1111-1111-111111111111")
+        let secondToken = try makeFileManagerTopNavigationReorderToken("22222222-2222-2222-2222-222222222222")
+        let thirdToken = try makeFileManagerTopNavigationReorderToken("33333333-3333-3333-3333-333333333333")
+        let firstWriter = try FileManagerTopNavigationReorderPasteboardWriter(
+            payload: .init(
+                sourceID: .contentTab(ContentTabID(rawValue: "first")),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
+            ),
             sessionStore: sessionStore,
             token: firstToken,
         )
-        let secondWriter = try ContentTabReorderPasteboardWriter(
-            payload: .init(sourceID: .init(rawValue: "second"), dragScopeID: contentTabReorderScopeID),
+        let secondWriter = try FileManagerTopNavigationReorderPasteboardWriter(
+            payload: .init(
+                sourceID: .contentTab(ContentTabID(rawValue: "second")),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
+            ),
             sessionStore: sessionStore,
             token: secondToken,
         )
@@ -1226,8 +1539,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         secondWriter.cleanupOwnedToken()
         XCTAssertNil(sessionStore.entry)
 
-        let thirdWriter = try ContentTabReorderPasteboardWriter(
-            payload: .init(sourceID: .init(rawValue: "third"), dragScopeID: contentTabReorderScopeID),
+        let thirdWriter = try FileManagerTopNavigationReorderPasteboardWriter(
+            payload: .init(
+                sourceID: .contentTab(ContentTabID(rawValue: "third")),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
+            ),
             sessionStore: sessionStore,
             token: thirdToken,
         )
@@ -1241,23 +1557,31 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: 두 exact shape의 move proposal, data query 0회, update 중 Binding write 0회, pinned target 거부
     /// - 사전 조건: exact local runtime/base-only item과 유효한 local store entry
     /// - 기대 결과: repeated update는 setter/data/store를 건드리지 않고 exit 뒤에도 session entry가 유지됨
-    func testContentTabReorderDestinationPreflightAcceptsExactShapesWithoutConsumptionOrRepeatedQueries() throws {
+    func testFileManagerTopNavigationReorderDestinationPreflightAcceptsExactShapesWithoutConsumptionOrRepeatedQueries(
+    ) throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
         sessionStore.begin(
-            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             token: token,
         )
         let exactShapes: [Set<NSPasteboard.PasteboardType>] = [
-            [.contentTabReorder, .contentTabReorderLocal],
-            Set(contentTabReorderRuntimeAuxiliaryTypes + [.contentTabReorder, .contentTabReorderLocal]),
-            [.contentTabReorder],
+            [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal],
+            Set(fileManagerTopNavigationReorderRuntimeAuxiliaryTypes + [
+                .fileManagerTopNavigationReorder,
+                .fileManagerTopNavigationReorderLocal,
+            ]),
+            [.fileManagerTopNavigationReorder],
         ]
 
         for types in exactShapes {
-            assertContentTabReorderPreflightAcceptsWithoutQueries(
+            sessionStore.begin(
+                payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
+                token: token,
+            )
+            assertFileManagerTopNavigationReorderPreflightAcceptsWithoutQueries(
                 types: types,
                 targetID: targetID,
                 sessionStore: sessionStore,
@@ -1265,16 +1589,20 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             )
         }
 
-        let pinnedBoundary = ContentTabReorderActiveBoundaryBox(2)
-        let pinnedView = makeContentTabReorderDestinationView(
+        sessionStore.begin(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
+            token: token,
+        )
+        let pinnedBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(2)
+        let pinnedView = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: pinnedBoundary,
             sessionStore: sessionStore,
             boundaryID: 2,
             pinState: { $0 == targetID ? true : false },
         )
-        let baseOnlyItem = ContentTabReorderPasteboardItem(
-            types: [.contentTabReorder],
+        let baseOnlyItem = FileManagerTopNavigationReorderPasteboardItem(
+            types: [.fileManagerTopNavigationReorder],
             dataForType: { _ in
                 XCTFail("preflight는 payload data를 읽지 않아야 함")
                 return nil
@@ -1283,35 +1611,35 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(pinnedView.draggingEntered(pasteboardItems: [baseOnlyItem]), [])
         XCTAssertNil(pinnedBoundary.value)
-        XCTAssertEqual(sessionStore.entry?.token, token)
+        XCTAssertNil(sessionStore.entry)
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: drag 종료와 dismantle은 accepted state와 owned boundary만 정리함
-    /// 취소·외부 종료·SwiftUI teardown이 더 최신 destination boundary나 local session token을 제거하지 않는지 검증한다.
-    /// - 검증 내용: draggingEnded/dismantle의 accepted-state reset, owned cleanup, foreign boundary 보존, store 보존
+    /// 취소·외부 종료·SwiftUI teardown이 destination-owned boundary만 정리하는지 검증한다.
+    /// - 검증 내용: draggingEnded/dismantle의 accepted-state reset, owned cleanup, foreign boundary와 source token 보존
     /// - 사전 조건: exact base-only preflight와 destination-owned 또는 newer foreign active boundary
-    /// - 기대 결과: teardown 뒤 update는 거부되고 own boundary만 nil이 되며 token은 계속 소비 가능 상태로 남음
-    func testContentTabReorderDestinationEndAndDismantleClearOnlyOwnedState() throws {
+    /// - 기대 결과: teardown 뒤 update는 거부되고 own boundary만 nil이며 foreign boundary와 source token은 보존됨
+    func testFileManagerTopNavigationReorderDestinationEndAndDismantleClearOnlyOwnedState() throws {
         let targetID = ContentTabID(rawValue: "target")
-        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
         sessionStore.begin(
             payload: .init(
-                sourceID: ContentTabID(rawValue: "source"),
-                dragScopeID: contentTabReorderScopeID,
+                sourceID: .contentTab(ContentTabID(rawValue: "source")),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
             ),
             token: token,
         )
         var dataQueryCount = 0
-        let item = ContentTabReorderPasteboardItem(
-            types: [.contentTabReorder],
+        let item = FileManagerTopNavigationReorderPasteboardItem(
+            types: [.fileManagerTopNavigationReorder],
             dataForType: { _ in
                 dataQueryCount += 1
                 return nil
             },
         )
-        let activeBoundary = ContentTabReorderActiveBoundaryBox()
-        let view = makeContentTabReorderDestinationView(
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox()
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
             sessionStore: sessionStore,
@@ -1326,25 +1654,248 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(dataQueryCount, 0)
         XCTAssertEqual(sessionStore.entry?.token, token)
 
+        sessionStore.begin(payload: .init(
+            sourceID: .contentTab(ContentTabID(rawValue: "source")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        ), token: token)
         activeBoundary.setValue(nil)
         XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
         view.draggingEnded()
         XCTAssertNil(activeBoundary.value)
         XCTAssertEqual(sessionStore.entry?.token, token)
 
+        sessionStore.begin(payload: .init(
+            sourceID: .contentTab(ContentTabID(rawValue: "source")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        ), token: token)
         XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
         activeBoundary.setValue(3)
-        ContentTabReorderDropDestination.dismantleNSView(view, coordinator: ())
+        FileManagerTopNavigationReorderDropDestination.dismantleNSView(view, coordinator: ())
         XCTAssertEqual(activeBoundary.value, 3)
         XCTAssertEqual(view.draggingUpdated(), [])
         XCTAssertEqual(dataQueryCount, 0)
         XCTAssertEqual(sessionStore.entry?.token, token)
 
+        sessionStore.begin(payload: .init(
+            sourceID: .contentTab(ContentTabID(rawValue: "source")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        ), token: token)
         activeBoundary.setValue(nil)
         XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
-        ContentTabReorderDropDestination.dismantleNSView(view, coordinator: ())
+        FileManagerTopNavigationReorderDropDestination.dismantleNSView(view, coordinator: ())
         XCTAssertNil(activeBoundary.value)
         XCTAssertEqual(sessionStore.entry?.token, token)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: drop destination은 평상시 mouse-down을 통과시키고 drag 중 활성화됨
+    /// Location 타일 overlay가 아래 버튼의 drag 시작을 허용한 뒤 local reorder destination이 되는지 검증한다.
+    /// - 검증 내용: idle/active session hit test 전환과 reorder pasteboard type 등록 유지
+    /// - 사전 조건: 타일 크기의 AppKit reorder destination view
+    /// - 기대 결과: idle hit test는 nil, active reorder hit test는 destination이고 dragged type 등록은 유지됨
+    func testFileManagerTopNavigationReorderDestinationPassesThroughMouseHitTesting() {
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore()
+        let view = makeFileManagerTopNavigationReorderDestinationView(
+            targetID: ContentTabID(rawValue: "target"),
+            activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(),
+            sessionStore: sessionStore,
+        )
+        view.frame = NSRect(x: 0, y: 0, width: 42, height: 42)
+        let button = FixedLocationSidebarButton(frame: view.frame)
+        configureFixedLocationButton(button, sourceID: "source", sessionStore: sessionStore) {}
+        let container = NSView(frame: view.frame)
+        container.addSubview(button)
+        container.addSubview(view)
+        let center = NSPoint(x: 21, y: 21)
+
+        XCTAssertNil(view.hitTest(center))
+        XCTAssertTrue(container.hitTest(center) === button)
+        XCTAssertTrue(view.registeredDraggedTypes.contains(.fileManagerTopNavigationReorder))
+
+        sessionStore.begin(
+            payload: .init(
+                sourceID: .location("source"),
+                dragScopeID: fileManagerTopNavigationReorderScopeID,
+            ),
+        )
+
+        XCTAssertTrue(view.hitTest(center) === view)
+        XCTAssertTrue(container.hitTest(center) === view)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: Location 타일은 native pointer owner에서 drag를 시작함
+    /// 실제 mouse event가 4pt 임계값을 넘으면 선택과 경쟁하지 않고 Location reorder session을 생성하는지 확인한다.
+    /// - 검증 내용: native drag 시작 횟수, 최신 drag event, Location payload, selection callback
+    /// - 사전 조건: 실제 NSWindow에 설치된 reorder 가능한 FixedLocationSidebarButton
+    /// - 기대 결과: drag는 1회 시작되고 Location payload가 기록되며 selection은 호출되지 않음
+    func testFixedLocationButtonStartsNativeReorderDragWithoutSelecting() throws {
+        _ = NSApplication.shared
+        let window = makeFixedLocationButtonTestWindow()
+        let button = FixedLocationSidebarButton(frame: NSRect(x: 20, y: 40, width: 42, height: 42))
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore()
+        let sourceID = "location-source"
+        var activationCount = 0
+        var draggingItems: [[NSDraggingItem]] = []
+        var dragStartEvents: [NSEvent] = []
+        configureFixedLocationButton(button, sourceID: sourceID, sessionStore: sessionStore) {
+            activationCount += 1
+        }
+        button.dragSessionStartOverride = { items, event in
+            draggingItems.append(items)
+            dragStartEvents.append(event)
+            _ = window.nextEvent(
+                matching: .leftMouseUp,
+                until: .distantPast,
+                inMode: .eventTracking,
+                dequeue: true,
+            )
+        }
+        window.contentView?.addSubview(button)
+        window.orderFrontRegardless()
+        defer {
+            button.dismantle()
+            window.orderOut(nil)
+        }
+
+        try performFixedLocationDrag(on: button)
+
+        XCTAssertEqual(draggingItems.count, 1)
+        XCTAssertEqual(dragStartEvents.map(\.type), [.leftMouseDragged])
+        XCTAssertEqual(dragStartEvents.map(\.eventNumber), [2])
+        let dragStartEvent = try XCTUnwrap(dragStartEvents.first)
+        XCTAssertGreaterThan(button.convert(dragStartEvent.locationInWindow, from: nil).x, 200)
+        XCTAssertEqual(sessionStore.entry?.payload.sourceID, .location(sourceID))
+        XCTAssertEqual(activationCount, 0)
+
+        button.dismantle()
+        configureFixedLocationButton(button, sourceID: sourceID, sessionStore: sessionStore) {
+            activationCount += 1
+        }
+        try performFixedLocationClick(on: button)
+
+        XCTAssertEqual(draggingItems.count, 1)
+        XCTAssertEqual(activationCount, 1)
+        XCTAssertNil(sessionStore.entry)
+    }
+
+    private func makeFixedLocationButtonTestWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = NSView(frame: window.contentLayoutRect)
+        return window
+    }
+
+    private func configureFixedLocationButton(
+        _ button: FixedLocationSidebarButton,
+        sourceID: String,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
+        onActivate: @escaping () -> Void,
+    ) {
+        button.update(
+            rootView: AnyView(Color.clear.frame(width: 42, height: 42)),
+            accessibilityLabel: "Location",
+            isEnabled: true,
+            reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration(
+                payload: .init(
+                    sourceID: .location(sourceID),
+                    dragScopeID: FileManagerTopNavigationReorderDragScopeID(),
+                ),
+                sessionStore: sessionStore,
+            ),
+            onActivate: onActivate,
+        )
+    }
+
+    private func performFixedLocationDrag(on button: FixedLocationSidebarButton) throws {
+        let mouseDown = try makeMouseEvent(
+            .leftMouseDown,
+            on: button,
+            locationInView: NSPoint(x: 12, y: 12),
+            eventNumber: 1,
+        )
+        let mouseDragged = try makeMouseEvent(
+            .leftMouseDragged,
+            on: button,
+            locationInView: NSPoint(x: 220, y: 12),
+            eventNumber: 2,
+        )
+        let mouseUp = try makeMouseEvent(
+            .leftMouseUp,
+            on: button,
+            locationInView: NSPoint(x: 220, y: 12),
+            eventNumber: 3,
+        )
+        NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
+        button.mouseDown(with: mouseDown)
+    }
+
+    private func performFixedLocationClick(on button: FixedLocationSidebarButton) throws {
+        let clickDown = try makeMouseEvent(
+            .leftMouseDown,
+            on: button,
+            locationInView: NSPoint(x: 12, y: 12),
+            eventNumber: 4,
+        )
+        let clickUp = try makeMouseEvent(
+            .leftMouseUp,
+            on: button,
+            locationInView: NSPoint(x: 12, y: 12),
+            eventNumber: 5,
+        )
+        NSApp.postEvent(clickUp, atStart: true)
+
+        button.mouseDown(with: clickDown)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: drag가 insertion slot 사이를 이동해도 source session을 보존함
+    /// destination exit가 source-owned token을 지워 다음 slot drop을 실패시키는 회귀를 검증한다.
+    /// - 검증 내용: first boundary enter/exit 뒤 token 보존과 second boundary synchronous drop 성공
+    /// - 사전 조건: same-scope local payload, 공유 session store, 서로 다른 두 destination boundary
+    /// - 기대 결과: exit는 highlight만 정리하고 다음 boundary가 payload를 한 번 consume해 reorder한다.
+    func testFileManagerTopNavigationReorderMovingBetweenBoundariesPreservesSessionUntilDrop() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let firstTargetID = ContentTabID(rawValue: "first-target")
+        let secondTargetID = ContentTabID(rawValue: "second-target")
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: payload, token: token)
+        let pasteboardItem = try makeFileManagerTopNavigationReorderRuntimePasteboardItem(
+            baseData: JSONEncoder().encode(payload),
+            markerData: token.data,
+        )
+        let firstView = makeFileManagerTopNavigationReorderDestinationView(
+            targetID: firstTargetID,
+            activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(),
+            sessionStore: sessionStore,
+            boundaryID: 1,
+        )
+        var invocations: [FileManagerTopNavigationReorderInvocation] = []
+        let secondView = makeFileManagerTopNavigationReorderDestinationView(
+            targetID: secondTargetID,
+            activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(),
+            sessionStore: sessionStore,
+            boundaryID: 2,
+            onReorder: { source, target, placement in
+                invocations.append(.init(sourceID: source, targetID: target, placement: placement))
+            },
+        )
+
+        XCTAssertEqual(firstView.draggingEntered(pasteboardItems: [pasteboardItem]), .move)
+        firstView.draggingExited()
+        XCTAssertEqual(sessionStore.entry?.token, token)
+        XCTAssertTrue(secondView.performDrop(pasteboardItems: [pasteboardItem]))
+        XCTAssertEqual(invocations, [
+            .init(sourceID: sourceID, targetID: secondTargetID, placement: .after),
+        ])
+        XCTAssertNil(sessionStore.entry)
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: copied local marker는 perform 반환 전에 reorder를 commit함
@@ -1352,25 +1903,25 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: perform true, reorder/validation callback 각 1회, store consume, owned cleanup
     /// - 사전 조건: factory provider를 isolated named pasteboard로 복사한 same-scope local drag
     /// - 기대 결과: performDrop 반환 직후 fixed target/placement invocation과 validation true가 이미 기록됨
-    func testContentTabReorderLocalMarkerCommitsSynchronouslyBeforePerformReturns() throws {
+    func testFileManagerTopNavigationReorderLocalMarkerCommitsSynchronouslyBeforePerformReturns() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let writer = try ContentTabReorderPasteboardWriter(
-            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let writer = try FileManagerTopNavigationReorderPasteboardWriter(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             sessionStore: sessionStore,
-            token: makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+            token: makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
         )
-        let pasteboard = makeContentTabReorderPasteboard(items: [NSPasteboardItem]())
+        let pasteboard = makeFileManagerTopNavigationReorderPasteboard(items: [NSPasteboardItem]())
         XCTAssertTrue(pasteboard.writeObjects([writer]))
         defer {
             writer.cleanupOwnedToken()
             pasteboard.clearContents()
         }
-        let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
-        var invocations: [ContentTabReorderInvocation] = []
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(2)
+        var invocations: [FileManagerTopNavigationReorderInvocation] = []
         var validationResults: [Bool] = []
-        let view = makeContentTabReorderDestinationView(
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
             sessionStore: sessionStore,
@@ -1398,19 +1949,22 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: exact runtime shape 성공, fileURL/URL/string/public.filename/NSFilenamesPboardType 거부
     /// - 사전 조건: same-scope base/local payload와 관측된 8개 promise/dyn representation
     /// - 기대 결과: runtime shape는 정확히 한 번 reorder하고 semantic extra는 token을 보존한 채 거부됨
-    func testContentTabReorderLocalMarkerAllowsTransportButRejectsSemanticExtrasBeforeConsume() throws {
+    func testFileManagerTopNavigationReorderLocalMarkerAllowsTransportButRejectsSemanticExtrasBeforeConsume() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
         let payloadData = try JSONEncoder().encode(payload)
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
         sessionStore.begin(payload: payload, token: token)
-        var invocations: [ContentTabReorderInvocation] = []
+        var invocations: [FileManagerTopNavigationReorderInvocation] = []
         var validationResults: [Bool] = []
-        let view = makeContentTabReorderDestinationView(
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
-            activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+            activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(2),
             sessionStore: sessionStore,
             boundaryID: 2,
             onReorder: { source, target, placement in
@@ -1418,13 +1972,16 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             },
             onValidationCompleted: { validationResults.append($0) },
         )
-        let runtimePasteboard = makeContentTabReorderRuntimePasteboard(
+        let runtimePasteboard = makeFileManagerTopNavigationReorderRuntimePasteboard(
             baseData: payloadData,
             markerData: token.data,
         )
 
         XCTAssertEqual(try Set(XCTUnwrap(runtimePasteboard.pasteboardItems?.first).types),
-                       Set(contentTabReorderRuntimeAuxiliaryTypes + [.contentTabReorder, .contentTabReorderLocal]))
+                       Set(fileManagerTopNavigationReorderRuntimeAuxiliaryTypes + [
+                           .fileManagerTopNavigationReorder,
+                           .fileManagerTopNavigationReorderLocal,
+                       ]))
         XCTAssertTrue(view.performDrop(pasteboard: runtimePasteboard))
         XCTAssertEqual(invocations, [
             .init(sourceID: sourceID, targetID: targetID, placement: .after),
@@ -1433,7 +1990,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertNil(sessionStore.entry)
         runtimePasteboard.clearContents()
 
-        assertContentTabReorderDirectSemanticTypesRejectBeforeConsume(
+        assertFileManagerTopNavigationReorderDirectSemanticTypesRejectBeforeConsume(
             payload: payload,
             payloadData: payloadData,
             token: token,
@@ -1446,25 +2003,26 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: 여섯 invalid shape의 perform false, reorder 0회, validation false 1회, owned cleanup
     /// - 사전 조건: isolated named pasteboard별 invalid item/type cardinality
     /// - 기대 결과: 어느 shape도 semantic callback에 도달하지 않고 Entry type이 reorder로 소비되지 않음
-    func testContentTabReorderDestinationRejectsInvalidCompletePasteboardShapes() {
+    func testFileManagerTopNavigationReorderDestinationRejectsInvalidCompletePasteboardShapes() {
         let invalidItems: [[[NSPasteboard.PasteboardType: Data]]] = [
-            [[.contentTabReorderLocal: Data()]],
+            [[.fileManagerTopNavigationReorderLocal: Data()]],
             [[.fileURL: Data()]],
-            [[.contentTabReorder: Data(), .fileURL: Data()]],
-            [[.contentTabReorder: Data(), .string: Data()]],
+            [[.fileManagerTopNavigationReorder: Data(), .fileURL: Data()]],
+            [[.fileManagerTopNavigationReorder: Data(), .string: Data()]],
             [[.string: Data()]],
-            [[.contentTabReorder: Data()], [.fileURL: Data()]],
+            [[.fileManagerTopNavigationReorder: Data()], [.fileURL: Data()]],
+            [[.fileManagerTopNavigationReorder: Data()], [.fileManagerTopNavigationReorder: Data()]],
         ]
 
         for items in invalidItems {
-            let pasteboard = makeContentTabReorderPasteboard(items: items)
-            let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
+            let pasteboard = makeFileManagerTopNavigationReorderPasteboard(items: items)
+            let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(2)
             var reorderCount = 0
             var validationResults: [Bool] = []
-            let view = makeContentTabReorderDestinationView(
+            let view = makeFileManagerTopNavigationReorderDestinationView(
                 targetID: .init(rawValue: "target"),
                 activeBoundary: activeBoundary,
-                sessionStore: ContentTabReorderLocalSessionStore(),
+                sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
                 boundaryID: 2,
                 onReorder: { _, _, _ in reorderCount += 1 },
                 onValidationCompleted: { validationResults.append($0) },
@@ -1483,26 +2041,29 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: 네 token/store failure의 callback 0회와 validation false exactly-once
     /// - 사전 조건: exact 10-type runtime shape, 성공 가능한 base payload, 각기 실패하는 marker/store 상태
     /// - 기대 결과: base JSON은 읽히지 않고 모든 perform이 false로 종료됨
-    func testContentTabReorderLocalMarkerFailuresRejectWithoutBaseFallback() throws {
+    func testFileManagerTopNavigationReorderLocalMarkerFailuresRejectWithoutBaseFallback() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
         let baseData = try JSONEncoder().encode(payload)
-        let storedToken = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let foreignToken = try makeContentTabReorderToken("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")
+        let storedToken = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let foreignToken = try makeFileManagerTopNavigationReorderToken("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")
 
         let now = LockIsolated<UInt64>(100)
-        let staleStore = ContentTabReorderLocalSessionStore(
+        let staleStore = FileManagerTopNavigationReorderLocalSessionStore(
             timeToLiveNanoseconds: 10,
             nowNanoseconds: { now.value },
         )
         staleStore.begin(payload: payload, token: storedToken)
         now.setValue(110)
 
-        let liveStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let liveStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
         liveStore.begin(payload: payload, token: storedToken)
-        let missingStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let cases: [(ContentTabReorderLocalSessionStore, Data)] = [
+        let missingStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let cases: [(FileManagerTopNavigationReorderLocalSessionStore, Data)] = [
             (liveStore, Data(storedToken.rawValue.uuidString.lowercased().utf8)),
             (liveStore, foreignToken.data),
             (staleStore, storedToken.data),
@@ -1510,15 +2071,15 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ]
 
         for (store, markerData) in cases {
-            let pasteboard = makeContentTabReorderRuntimePasteboard(
+            let pasteboard = makeFileManagerTopNavigationReorderRuntimePasteboard(
                 baseData: baseData,
                 markerData: markerData,
             )
             var reorderCount = 0
             var validationResults: [Bool] = []
-            let view = makeContentTabReorderDestinationView(
+            let view = makeFileManagerTopNavigationReorderDestinationView(
                 targetID: targetID,
-                activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+                activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(2),
                 sessionStore: store,
                 boundaryID: 2,
                 onReorder: { _, _, _ in reorderCount += 1 },
@@ -1537,27 +2098,30 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: 첫 perform success, 두 번째 false, reorder 총 1회, validation `[true, false]`
     /// - 사전 조건: same-scope exact 10-type runtime shape와 한 건의 matching store entry
     /// - 기대 결과: token replay는 callback을 추가하지 않고 owned boundary만 정리함
-    func testContentTabReorderConsumedLocalMarkerCannotReplay() throws {
+    func testFileManagerTopNavigationReorderConsumedLocalMarkerCannotReplay() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let writer = try ContentTabReorderPasteboardWriter(
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let writer = try FileManagerTopNavigationReorderPasteboardWriter(
             payload: payload,
             sessionStore: sessionStore,
             token: token,
         )
-        let pasteboard = makeContentTabReorderPasteboard(items: [NSPasteboardItem]())
+        let pasteboard = makeFileManagerTopNavigationReorderPasteboard(items: [NSPasteboardItem]())
         XCTAssertTrue(pasteboard.writeObjects([writer]))
         defer {
             writer.cleanupOwnedToken()
             pasteboard.clearContents()
         }
-        let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(2)
         var reorderCount = 0
         var validationResults: [Bool] = []
-        let view = makeContentTabReorderDestinationView(
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
             sessionStore: sessionStore,
@@ -1579,36 +2143,36 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: 여섯 semantic invalid case의 reorder 0회, validation false 1회, store consume와 cleanup
     /// - 사전 조건: exact local shape와 각 case에 맞춘 Sidebar item pin-state snapshot
     /// - 기대 결과: 모든 case가 perform false이고 source/target/placement callback을 만들지 않음
-    func testContentTabReorderLocalPayloadRejectsScopeSameIDAndPinnedEndpoints() throws {
+    func testFileManagerTopNavigationReorderLocalPayloadRejectsScopeSameIDAndPinnedEndpoints() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        try assertContentTabReorderSemanticRejection(
-            payload: .init(sourceID: sourceID, dragScopeID: foreignContentTabReorderScopeID),
+        try assertFileManagerTopNavigationReorderSemanticRejection(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: foreignFileManagerTopNavigationReorderScopeID),
             targetID: targetID,
             pinState: { _ in false },
         )
-        try assertContentTabReorderSemanticRejection(
-            payload: .init(sourceID: targetID, dragScopeID: contentTabReorderScopeID),
+        try assertFileManagerTopNavigationReorderSemanticRejection(
+            payload: .init(sourceID: .contentTab(targetID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             targetID: targetID,
             pinState: { _ in false },
         )
-        try assertContentTabReorderSemanticRejection(
-            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+        try assertFileManagerTopNavigationReorderSemanticRejection(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             targetID: targetID,
             pinState: { $0 == sourceID },
         )
-        try assertContentTabReorderSemanticRejection(
-            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+        try assertFileManagerTopNavigationReorderSemanticRejection(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             targetID: targetID,
             pinState: { $0 == targetID },
         )
-        try assertContentTabReorderSemanticRejection(
-            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+        try assertFileManagerTopNavigationReorderSemanticRejection(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             targetID: targetID,
             pinState: { $0 == targetID ? false : nil },
         )
-        try assertContentTabReorderSemanticRejection(
-            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+        try assertFileManagerTopNavigationReorderSemanticRejection(
+            payload: .init(sourceID: .contentTab(sourceID), dragScopeID: fileManagerTopNavigationReorderScopeID),
             targetID: targetID,
             pinState: { $0 == sourceID ? false : nil },
         )
@@ -1619,24 +2183,28 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: valid base success, malformed base rejection, callback counts와 owned cleanup
     /// - 사전 조건: local marker 없는 exact `{base}` pasteboard 두 개
     /// - 기대 결과: valid는 reorder/true 각 1회, malformed는 reorder 0회/false 1회
-    func testContentTabReorderBaseOnlyFallbackSucceedsAndFailsSynchronously() throws {
+    func testFileManagerTopNavigationReorderBaseOnlyFallbackSucceedsAndFailsSynchronously() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
         let cases: [(Data, Bool)] = try [
             (JSONEncoder().encode(payload), true),
             (Data("malformed".utf8), false),
         ]
 
         for (data, expectedSuccess) in cases {
-            let pasteboard = makeContentTabReorderPasteboard(items: [[.contentTabReorder: data]])
-            let activeBoundary = ContentTabReorderActiveBoundaryBox(4)
-            var invocations: [ContentTabReorderInvocation] = []
+            let pasteboard =
+                makeFileManagerTopNavigationReorderPasteboard(items: [[.fileManagerTopNavigationReorder: data]])
+            let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(4)
+            var invocations: [FileManagerTopNavigationReorderInvocation] = []
             var validationResults: [Bool] = []
-            let view = makeContentTabReorderDestinationView(
+            let view = makeFileManagerTopNavigationReorderDestinationView(
                 targetID: targetID,
                 activeBoundary: activeBoundary,
-                sessionStore: ContentTabReorderLocalSessionStore(),
+                sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
                 boundaryID: 4,
                 placement: .before,
                 onReorder: { source, target, placement in
@@ -1665,26 +2233,79 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: 8개 promise/dyn type 각각의 perform false, reorder 0회, validation false exactly-once
     /// - 사전 조건: marker 없는 base payload에 runtime auxiliary type을 한 개씩 추가한 isolated pasteboard
     /// - 기대 결과: 모든 extra shape가 callback 없이 거부되고 base-only exact shape 계약이 유지됨
-    func testContentTabReorderMarkerFreeFallbackRejectsEveryRuntimeAuxiliaryExtra() throws {
+    /// CTM-004-content_tab_reorder_drop_contract: malformed tagged source kind와 id는 base-only decode에서 거부함
+    /// - 검증 내용: unknown kind, empty id, missing id가 callback 없이 validation false로 종료됨
+    func testFileManagerTopNavigationReorderRejectsMalformedTaggedSourceKindAndID() throws {
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(ContentTabID(rawValue: "source")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
+        let validObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)) as? [String: Any],
+        )
+        let malformedObjects: [[String: Any]] = try [
+            mutateSourceID(in: validObject) { $0["kind"] = "unknown" },
+            mutateSourceID(in: validObject) { $0["id"] = "" },
+            mutateSourceID(in: validObject) { $0.removeValue(forKey: "id") },
+        ]
+
+        for object in malformedObjects {
+            let pasteboard = try makeFileManagerTopNavigationReorderPasteboard(items: [[
+                .fileManagerTopNavigationReorder: JSONSerialization.data(withJSONObject: object),
+            ]])
+            let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(1)
+            var dispatchCount = 0
+            var validationResults: [Bool] = []
+            let view = makeFileManagerTopNavigationReorderDestinationView(
+                targetID: ContentTabID(rawValue: "target"),
+                activeBoundary: activeBoundary,
+                sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
+                onReorder: { _, _, _ in dispatchCount += 1 },
+                onValidationCompleted: { validationResults.append($0) },
+            )
+
+            XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+            XCTAssertEqual(dispatchCount, 0)
+            XCTAssertEqual(validationResults, [false])
+            XCTAssertNil(activeBoundary.value)
+            pasteboard.clearContents()
+        }
+    }
+
+    private func mutateSourceID(
+        in object: [String: Any],
+        mutation: (inout [String: Any]) -> Void,
+    ) throws -> [String: Any] {
+        var result = object
+        var sourceID = try XCTUnwrap(result["sourceID"] as? [String: Any])
+        mutation(&sourceID)
+        result["sourceID"] = sourceID
+        return result
+    }
+
+    func testFileManagerTopNavigationReorderMarkerFreeFallbackRejectsEveryRuntimeAuxiliaryExtra() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
-        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
         let payloadData = try JSONEncoder().encode(payload)
         var reorderCount = 0
         var validationResults: [Bool] = []
-        let view = makeContentTabReorderDestinationView(
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
-            activeBoundary: ContentTabReorderActiveBoundaryBox(4),
-            sessionStore: ContentTabReorderLocalSessionStore(),
+            activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(4),
+            sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
             boundaryID: 4,
             onReorder: { _, _, _ in reorderCount += 1 },
             onValidationCompleted: { validationResults.append($0) },
         )
 
-        for auxiliaryType in contentTabReorderRuntimeAuxiliaryTypes {
-            let pasteboard = makeContentTabReorderPasteboard(items: [
+        for auxiliaryType in fileManagerTopNavigationReorderRuntimeAuxiliaryTypes {
+            let pasteboard = makeFileManagerTopNavigationReorderPasteboard(items: [
                 [
-                    .contentTabReorder: payloadData,
+                    .fileManagerTopNavigationReorder: payloadData,
                     auxiliaryType: Data(),
                 ],
             ])
@@ -1703,17 +2324,147 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: before-first, after-first, after-middle, after-last 매핑과 빈 목록
     /// - 사전 조건: Home, First, Middle, Last 순서의 unpinned ContentTab ID 목록
     /// - 기대 결과: boundary 0...4가 첫 ID before 및 각 ID after로 정확히 매핑되고 빈 목록은 boundary를 만들지 않음
-    func testContentTabReorderBoundariesMapEveryStableInsertionSlot() {
-        let itemIDs = ["home", "first", "middle", "last"].map(ContentTabID.init(rawValue:))
+    /// CTM-004-content_tab_reorder_drop_contract: file-only payload는 reorder session을 소비하지 않음
+    /// - 검증 내용: reorder callback 0회, boundary nil, 기존 local token 보존
+    func testFileManagerTopNavigationReorderIgnoresFileOnlyPayloadWithoutConsumingSession() throws {
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(ContentTabID(rawValue: "source")),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: payload, token: token)
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(1)
+        var dispatchCount = 0
+        let view = makeFileManagerTopNavigationReorderDestinationView(
+            targetID: ContentTabID(rawValue: "target"),
+            activeBoundary: activeBoundary,
+            sessionStore: sessionStore,
+            onReorder: { _, _, _ in dispatchCount += 1 },
+        )
+        let fileOnlyItem = FileManagerTopNavigationReorderPasteboardItem(
+            types: [.fileURL],
+            dataForType: { _ in Data("file:///tmp/file".utf8) },
+        )
 
-        let boundaries = ContentTabReorderDropBoundary.make(for: itemIDs)
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [fileOnlyItem]), [])
+        XCTAssertFalse(view.performDrop(pasteboardItems: [fileOnlyItem]))
+        XCTAssertEqual(dispatchCount, 0)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+        XCTAssertNil(activeBoundary.value)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: top-navigation과 unpinned boundary crossing은 dispatch 전에 거부함
+    /// - 검증 내용: 양방향 crossing의 callback 0회와 token/boundary cleanup
+    func testFileManagerTopNavigationReorderRejectsCrossBoundaryDropsBeforeDispatch() throws {
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let topScope = FileManagerTopNavigationReorderDragScopeID(
+            rawValue: fileManagerTopNavigationReorderScopeID.rawValue,
+            boundaryOwner: .topNavigation,
+        )
+        let unpinnedScope = fileManagerTopNavigationReorderScopeID
+        let cases: [(
+            payload: FileManagerTopNavigationReorderDragPayload,
+            destinationScope: FileManagerTopNavigationReorderDragScopeID,
+            boundary: FileManagerTopNavigationReorderDropBoundary,
+        )] = [
+            (
+                .init(sourceID: .location("location"), dragScopeID: topScope),
+                unpinnedScope,
+                .init(
+                    id: 1,
+                    owner: .unpinnedContentTabs,
+                    anchorID: .contentTab(ContentTabID(rawValue: "unpinned")),
+                    placement: .before,
+                ),
+            ),
+            (
+                .init(
+                    sourceID: .contentTab(ContentTabID(rawValue: "unpinned")),
+                    dragScopeID: unpinnedScope,
+                ),
+                topScope,
+                .init(
+                    id: 2,
+                    owner: .topNavigation,
+                    anchorID: .location("location"),
+                    placement: .after,
+                ),
+            ),
+        ]
+
+        for item in cases {
+            let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+            sessionStore.begin(payload: item.payload, token: token)
+            let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(item.boundary.id)
+            var dispatchCount = 0
+            let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+                activeBoundaryID: activeBoundary.binding,
+                boundary: item.boundary,
+                dragScopeID: item.destinationScope,
+                sessionStore: sessionStore,
+                boundaryOwnerForItem: { id in
+                    switch id {
+                    case .location:
+                        .topNavigation
+                    case .contentTab:
+                        .unpinnedContentTabs
+                    }
+                },
+                onReorder: { _ in dispatchCount += 1 },
+                onDropValidationCompleted: { _ in },
+            ))
+            let pasteboardItem = try makeFileManagerTopNavigationReorderRuntimePasteboardItem(
+                baseData: JSONEncoder().encode(item.payload),
+                markerData: token.data,
+            )
+
+            XCTAssertFalse(view.performDrop(pasteboardItems: [pasteboardItem]))
+            XCTAssertEqual(dispatchCount, 0)
+            XCTAssertNil(sessionStore.entry)
+            XCTAssertNil(activeBoundary.value)
+        }
+    }
+
+    func testFileManagerTopNavigationReorderBoundariesMapEveryStableInsertionSlot() {
+        let itemIDs = ["home", "first", "middle", "last"].map {
+            FileManagerTopNavigationItemID.contentTab(ContentTabID(rawValue: $0))
+        }
+
+        let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
+            for: itemIDs,
+            owner: .unpinnedContentTabs,
+        )
 
         XCTAssertEqual(boundaries.count, 5)
-        XCTAssertEqual(boundaries[0], .init(id: 0, targetID: itemIDs[0], placement: .before))
-        XCTAssertEqual(boundaries[1], .init(id: 1, targetID: itemIDs[0], placement: .after))
-        XCTAssertEqual(boundaries[3], .init(id: 3, targetID: itemIDs[2], placement: .after))
-        XCTAssertEqual(boundaries[4], .init(id: 4, targetID: itemIDs[3], placement: .after))
-        XCTAssertTrue(ContentTabReorderDropBoundary.make(for: []).isEmpty)
+        XCTAssertEqual(boundaries[0], .init(
+            id: 0,
+            owner: .unpinnedContentTabs,
+            anchorID: itemIDs[0],
+            placement: .before,
+        ))
+        XCTAssertEqual(boundaries[1], .init(
+            id: 1,
+            owner: .unpinnedContentTabs,
+            anchorID: itemIDs[0],
+            placement: .after,
+        ))
+        XCTAssertEqual(boundaries[3], .init(
+            id: 3,
+            owner: .unpinnedContentTabs,
+            anchorID: itemIDs[2],
+            placement: .after,
+        ))
+        XCTAssertEqual(boundaries[4], .init(
+            id: 4,
+            owner: .unpinnedContentTabs,
+            anchorID: itemIDs[3],
+            placement: .after,
+        ))
+        XCTAssertTrue(FileManagerTopNavigationReorderDropBoundary.make(
+            for: [],
+            owner: .unpinnedContentTabs,
+        ).isEmpty)
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: pure reorder provider는 reorder destination만 정확히 한 번 실행함
@@ -1724,13 +2475,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     func testCrossTypePureReorderRunsOnlyReorderPathExactlyOnce() async throws {
         let sourceID = ContentTabID(rawValue: "source-a")
         let targetID = ContentTabID(rawValue: "target-c")
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let provider = try makeContentTabReorderProvider(
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let provider = try makeFileManagerTopNavigationReorderProvider(
             sourceID: sourceID.rawValue,
             sessionStore: sessionStore,
-            token: makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+            token: makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
         )
-        let pasteboard = try await copyContentTabReorderProviderToRuntimePasteboard(provider)
+        let pasteboard = try await copyFileManagerTopNavigationReorderProviderToRuntimePasteboard(provider)
         defer { pasteboard.clearContents() }
         var actions: [CrossTypeDropAction] = []
         let entryDelegate = FileManagerSidebarEntryDropDelegate(
@@ -1738,10 +2489,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             target: .contentTab(targetID),
             onDrop: { _ in actions.append(.entry) },
         )
-        var invocations: [ContentTabReorderInvocation] = []
-        let reorderView = makeContentTabReorderDestinationView(
+        var invocations: [FileManagerTopNavigationReorderInvocation] = []
+        let reorderView = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
-            activeBoundary: ContentTabReorderActiveBoundaryBox(),
+            activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(),
             sessionStore: sessionStore,
             boundaryID: 3,
             placement: .after,
@@ -1759,8 +2510,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ])
     }
 
-    private var contentTabReorderScopeID: ContentTabReorderDragScopeID {
-        ContentTabReorderDragScopeID(
+    private var fileManagerTopNavigationReorderScopeID: FileManagerTopNavigationReorderDragScopeID {
+        FileManagerTopNavigationReorderDragScopeID(
             rawValue: UUID(uuid: (
                 0x11, 0x11, 0x11, 0x11,
                 0x11, 0x11,
@@ -1771,8 +2522,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
     }
 
-    private var foreignContentTabReorderScopeID: ContentTabReorderDragScopeID {
-        ContentTabReorderDragScopeID(
+    private var foreignFileManagerTopNavigationReorderScopeID: FileManagerTopNavigationReorderDragScopeID {
+        FileManagerTopNavigationReorderDragScopeID(
             rawValue: UUID(uuid: (
                 0x22, 0x22, 0x22, 0x22,
                 0x22, 0x22,
@@ -1783,30 +2534,33 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
     }
 
-    private func makeContentTabReorderToken(_ value: String) throws -> ContentTabReorderLocalToken {
-        try ContentTabReorderLocalToken(rawValue: XCTUnwrap(UUID(uuidString: value)))
+    private func makeFileManagerTopNavigationReorderToken(_ value: String) throws
+        -> FileManagerTopNavigationReorderLocalToken
+    {
+        try FileManagerTopNavigationReorderLocalToken(rawValue: XCTUnwrap(UUID(uuidString: value)))
     }
 
-    private func makeContentTabReorderProvider(
+    private func makeFileManagerTopNavigationReorderProvider(
         sourceID: String = "source",
-        scopeID: ContentTabReorderDragScopeID? = nil,
-        sessionStore: ContentTabReorderLocalSessionStore? = nil,
-        token: ContentTabReorderLocalToken? = nil,
+        scopeID: FileManagerTopNavigationReorderDragScopeID? = nil,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore? = nil,
+        token: FileManagerTopNavigationReorderLocalToken? = nil,
     ) throws -> NSItemProvider {
-        let resolvedStore = sessionStore ?? ContentTabReorderLocalSessionStore()
-        let resolvedToken = try token ?? makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        return try ContentTabReorderItemProviderFactory.makeProvider(
+        let resolvedStore = sessionStore ?? FileManagerTopNavigationReorderLocalSessionStore()
+        let resolvedToken = try token ??
+            makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        return try FileManagerTopNavigationReorderItemProviderFactory.makeProvider(
             payload: .init(
-                sourceID: ContentTabID(rawValue: sourceID),
-                dragScopeID: scopeID ?? contentTabReorderScopeID,
+                sourceID: .contentTab(ContentTabID(rawValue: sourceID)),
+                dragScopeID: scopeID ?? fileManagerTopNavigationReorderScopeID,
             ),
             sessionStore: resolvedStore,
             token: resolvedToken,
         )
     }
 
-    private func makeMixedContentTabReorderProvider() throws -> NSItemProvider {
-        let provider = try makeContentTabReorderProvider()
+    private func makeMixedFileManagerTopNavigationReorderProvider() throws -> NSItemProvider {
+        let provider = try makeFileManagerTopNavigationReorderProvider()
         provider.registerDataRepresentation(
             forTypeIdentifier: UTType.fileURL.identifier,
             visibility: .all,
@@ -1824,47 +2578,61 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
     }
 
-    private func makeContentTabReorderDestinationView(
+    private func makeFileManagerTopNavigationReorderDestinationView(
         targetID: ContentTabID,
-        activeBoundary: ContentTabReorderActiveBoundaryBox,
-        sessionStore: ContentTabReorderLocalSessionStore,
+        activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
         boundaryID: Int = 1,
-        placement: ContentTabReorderPlacement = .after,
+        placement: FileManagerTopNavigationReorderPlacement = .after,
         pinState: @escaping @MainActor (ContentTabID) -> Bool? = { _ in false },
         onReorder: @escaping @MainActor (
             ContentTabID,
             ContentTabID,
-            ContentTabReorderPlacement,
+            FileManagerTopNavigationReorderPlacement,
         ) -> Void = { _, _, _ in },
         onValidationCompleted: @escaping @MainActor (Bool) -> Void = { _ in },
-    ) -> ContentTabReorderDropDestinationView {
-        ContentTabReorderDropDestinationView(configuration: .init(
+    ) -> FileManagerTopNavigationReorderDropDestinationView {
+        let anchorID = FileManagerTopNavigationItemID.contentTab(targetID)
+        return FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
             activeBoundaryID: activeBoundary.binding,
-            boundary: .init(id: boundaryID, targetID: targetID, placement: placement),
-            dragScopeID: contentTabReorderScopeID,
+            boundary: .init(
+                id: boundaryID,
+                owner: .unpinnedContentTabs,
+                anchorID: anchorID,
+                placement: placement,
+            ),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
             sessionStore: sessionStore,
-            pinState: pinState,
-            onReorder: onReorder,
+            boundaryOwnerForItem: { itemID in
+                guard case let .contentTab(contentTabID) = itemID else { return .topNavigation }
+                return pinState(contentTabID) == false ? .unpinnedContentTabs : .topNavigation
+            },
+            onReorder: { result in
+                guard case let .contentTab(sourceID) = result.sourceID,
+                      case let .contentTab(targetID) = result.anchorID
+                else { return }
+                onReorder(sourceID, targetID, result.placement)
+            },
             onDropValidationCompleted: onValidationCompleted,
         ))
     }
 
-    private func assertContentTabReorderPreflightAcceptsWithoutQueries(
+    private func assertFileManagerTopNavigationReorderPreflightAcceptsWithoutQueries(
         types: Set<NSPasteboard.PasteboardType>,
         targetID: ContentTabID,
-        sessionStore: ContentTabReorderLocalSessionStore,
-        token: ContentTabReorderLocalToken,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
+        token: FileManagerTopNavigationReorderLocalToken,
     ) {
         var dataQueryCount = 0
-        let item = ContentTabReorderPasteboardItem(
+        let item = FileManagerTopNavigationReorderPasteboardItem(
             types: types,
             dataForType: { _ in
                 dataQueryCount += 1
                 return nil
             },
         )
-        let activeBoundary = ContentTabReorderActiveBoundaryBox()
-        let view = makeContentTabReorderDestinationView(
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox()
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
             sessionStore: sessionStore,
@@ -1896,10 +2664,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(sessionStore.entry?.token, token)
     }
 
-    private func assertContentTabReorderDirectSemanticTypesRejectBeforeConsume(
-        payload: ContentTabReorderDragPayload,
+    private func assertFileManagerTopNavigationReorderDirectSemanticTypesRejectBeforeConsume(
+        payload: FileManagerTopNavigationReorderDragPayload,
         payloadData: Data,
-        token: ContentTabReorderLocalToken,
+        token: FileManagerTopNavigationReorderLocalToken,
         targetID: ContentTabID,
     ) {
         let semanticTypes: [NSPasteboard.PasteboardType] = [
@@ -1911,28 +2679,28 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ]
         for semanticType in semanticTypes {
             let transportTypeSets: [Set<NSPasteboard.PasteboardType>] = [
-                [.contentTabReorder, .contentTabReorderLocal, semanticType],
-                Set(contentTabReorderRuntimeAuxiliaryTypes
-                    + [.contentTabReorder, .contentTabReorderLocal, semanticType]),
+                [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal, semanticType],
+                Set(fileManagerTopNavigationReorderRuntimeAuxiliaryTypes
+                    + [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal, semanticType]),
             ]
             for types in transportTypeSets {
-                let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+                let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
                 sessionStore.begin(payload: payload, token: token)
                 var reorderCount = 0
                 var validationResults: [Bool] = []
-                let view = makeContentTabReorderDestinationView(
+                let view = makeFileManagerTopNavigationReorderDestinationView(
                     targetID: targetID,
-                    activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+                    activeBoundary: FileManagerTopNavigationReorderActiveBoundaryBox(2),
                     sessionStore: sessionStore,
                     boundaryID: 2,
                     onReorder: { _, _, _ in reorderCount += 1 },
                     onValidationCompleted: { validationResults.append($0) },
                 )
                 let representations: [NSPasteboard.PasteboardType: Data] = [
-                    .contentTabReorder: payloadData,
-                    .contentTabReorderLocal: token.data,
+                    .fileManagerTopNavigationReorder: payloadData,
+                    .fileManagerTopNavigationReorderLocal: token.data,
                 ]
-                let semanticItem = ContentTabReorderPasteboardItem(
+                let semanticItem = FileManagerTopNavigationReorderPasteboardItem(
                     types: types,
                     dataForType: { representations[$0] ?? Data() },
                 )
@@ -1940,12 +2708,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 XCTAssertFalse(view.performDrop(pasteboardItems: [semanticItem]), semanticType.rawValue)
                 XCTAssertEqual(reorderCount, 0, semanticType.rawValue)
                 XCTAssertEqual(validationResults, [false], semanticType.rawValue)
-                XCTAssertEqual(sessionStore.entry?.token, token, semanticType.rawValue)
+                XCTAssertNil(sessionStore.entry, semanticType.rawValue)
             }
         }
     }
 
-    private var contentTabReorderRuntimeAuxiliaryTypes: [NSPasteboard.PasteboardType] {
+    private var fileManagerTopNavigationReorderRuntimeAuxiliaryTypes: [NSPasteboard.PasteboardType] {
         [
             .init("com.apple.NSFilePromiseItemMetaData"),
             .init("com.apple.pasteboard.NSFilePromiseID"),
@@ -1958,52 +2726,53 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ]
     }
 
-    private func contentTabReorderRuntimeRepresentations(
+    private func fileManagerTopNavigationReorderRuntimeRepresentations(
         baseData: Data,
         markerData: Data,
         additionalTypes: [NSPasteboard.PasteboardType] = [],
     ) -> [NSPasteboard.PasteboardType: Data] {
-        var representations = Dictionary(uniqueKeysWithValues: contentTabReorderRuntimeAuxiliaryTypes.map {
-            ($0, Data())
-        })
-        representations[.contentTabReorder] = baseData
-        representations[.contentTabReorderLocal] = markerData
+        var representations = Dictionary(uniqueKeysWithValues: fileManagerTopNavigationReorderRuntimeAuxiliaryTypes
+            .map {
+                ($0, Data())
+            })
+        representations[.fileManagerTopNavigationReorder] = baseData
+        representations[.fileManagerTopNavigationReorderLocal] = markerData
         for type in additionalTypes {
             representations[type] = Data()
         }
         return representations
     }
 
-    private func makeContentTabReorderRuntimePasteboardItem(
+    private func makeFileManagerTopNavigationReorderRuntimePasteboardItem(
         baseData: Data,
         markerData: Data,
         additionalTypes: [NSPasteboard.PasteboardType] = [],
-    ) -> ContentTabReorderPasteboardItem {
-        let representations = contentTabReorderRuntimeRepresentations(
+    ) -> FileManagerTopNavigationReorderPasteboardItem {
+        let representations = fileManagerTopNavigationReorderRuntimeRepresentations(
             baseData: baseData,
             markerData: markerData,
             additionalTypes: additionalTypes,
         )
-        return ContentTabReorderPasteboardItem(
+        return FileManagerTopNavigationReorderPasteboardItem(
             types: Set(representations.keys),
             dataForType: { representations[$0] },
         )
     }
 
-    private func makeContentTabReorderRuntimePasteboard(
+    private func makeFileManagerTopNavigationReorderRuntimePasteboard(
         baseData: Data,
         markerData: Data,
         additionalTypes: [NSPasteboard.PasteboardType] = [],
     ) -> NSPasteboard {
-        let representations = contentTabReorderRuntimeRepresentations(
+        let representations = fileManagerTopNavigationReorderRuntimeRepresentations(
             baseData: baseData,
             markerData: markerData,
             additionalTypes: additionalTypes,
         )
-        return makeContentTabReorderPasteboard(items: [representations])
+        return makeFileManagerTopNavigationReorderPasteboard(items: [representations])
     }
 
-    private func makeContentTabReorderPasteboardItem(
+    private func makeFileManagerTopNavigationReorderPasteboardItem(
         representations: [NSPasteboard.PasteboardType: Data],
     ) -> NSPasteboardItem {
         let item = NSPasteboardItem()
@@ -2017,15 +2786,15 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         return item
     }
 
-    private func makeContentTabReorderPasteboard(
+    private func makeFileManagerTopNavigationReorderPasteboard(
         items: [[NSPasteboard.PasteboardType: Data]],
     ) -> NSPasteboard {
-        makeContentTabReorderPasteboard(items: items.map {
-            makeContentTabReorderPasteboardItem(representations: $0)
+        makeFileManagerTopNavigationReorderPasteboard(items: items.map {
+            makeFileManagerTopNavigationReorderPasteboardItem(representations: $0)
         })
     }
 
-    private func makeContentTabReorderPasteboard(items: [NSPasteboardItem]) -> NSPasteboard {
+    private func makeFileManagerTopNavigationReorderPasteboard(items: [NSPasteboardItem]) -> NSPasteboard {
         let name = NSPasteboard.Name("fm.voyager.ctm004.\(UUID().uuidString)")
         let pasteboard = NSPasteboard(name: name)
         pasteboard.clearContents()
@@ -2033,31 +2802,37 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         return pasteboard
     }
 
-    private func copyContentTabReorderProviderToNamedPasteboard(
+    private func copyFileManagerTopNavigationReorderProviderToNamedPasteboard(
         _ provider: NSItemProvider,
     ) async throws -> NSPasteboard {
-        let baseData = try await loadProviderData(provider, typeIdentifier: UTType.contentTabReorder.identifier)
+        let baseData = try await loadProviderData(
+            provider,
+            typeIdentifier: UTType.fileManagerTopNavigationReorder.identifier,
+        )
         let markerData = try await loadProviderData(
             provider,
-            typeIdentifier: UTType.contentTabReorderLocal.identifier,
+            typeIdentifier: UTType.fileManagerTopNavigationReorderLocal.identifier,
         )
-        return makeContentTabReorderPasteboard(items: [
+        return makeFileManagerTopNavigationReorderPasteboard(items: [
             [
-                .contentTabReorder: baseData,
-                .contentTabReorderLocal: markerData,
+                .fileManagerTopNavigationReorder: baseData,
+                .fileManagerTopNavigationReorderLocal: markerData,
             ],
         ])
     }
 
-    private func copyContentTabReorderProviderToRuntimePasteboard(
+    private func copyFileManagerTopNavigationReorderProviderToRuntimePasteboard(
         _ provider: NSItemProvider,
     ) async throws -> NSPasteboard {
-        let baseData = try await loadProviderData(provider, typeIdentifier: UTType.contentTabReorder.identifier)
+        let baseData = try await loadProviderData(
+            provider,
+            typeIdentifier: UTType.fileManagerTopNavigationReorder.identifier,
+        )
         let markerData = try await loadProviderData(
             provider,
-            typeIdentifier: UTType.contentTabReorderLocal.identifier,
+            typeIdentifier: UTType.fileManagerTopNavigationReorderLocal.identifier,
         )
-        return makeContentTabReorderRuntimePasteboard(
+        return makeFileManagerTopNavigationReorderRuntimePasteboard(
             baseData: baseData,
             markerData: markerData,
         )
@@ -2074,28 +2849,28 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 } else if let data {
                     continuation.resume(returning: data)
                 } else {
-                    continuation.resume(throwing: ContentTabReorderTestError.missingData)
+                    continuation.resume(throwing: FileManagerTopNavigationReorderTestError.missingData)
                 }
             }
         }
     }
 
-    private func assertContentTabReorderSemanticRejection(
-        payload: ContentTabReorderDragPayload,
+    private func assertFileManagerTopNavigationReorderSemanticRejection(
+        payload: FileManagerTopNavigationReorderDragPayload,
         targetID: ContentTabID,
         pinState: @escaping @MainActor (ContentTabID) -> Bool?,
     ) throws {
-        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let token = try makeFileManagerTopNavigationReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
         sessionStore.begin(payload: payload, token: token)
-        let pasteboard = try makeContentTabReorderRuntimePasteboard(
+        let pasteboard = try makeFileManagerTopNavigationReorderRuntimePasteboard(
             baseData: JSONEncoder().encode(payload),
             markerData: token.data,
         )
         var reorderCount = 0
         var validationResults: [Bool] = []
-        let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
-        let view = makeContentTabReorderDestinationView(
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(2)
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
             sessionStore: sessionStore,
@@ -2113,23 +2888,23 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         pasteboard.clearContents()
     }
 
-    private func makeContentTabReorderPasteboard(providers: [NSItemProvider]) -> NSPasteboard {
+    private func makeFileManagerTopNavigationReorderPasteboard(providers: [NSItemProvider]) -> NSPasteboard {
         let items = providers.map { provider in
             Dictionary(uniqueKeysWithValues: provider.registeredTypeIdentifiers.map {
                 (NSPasteboard.PasteboardType($0), Data())
             })
         }
-        return makeContentTabReorderPasteboard(items: items)
+        return makeFileManagerTopNavigationReorderPasteboard(items: items)
     }
 
-    private func assertContentTabReorderPerformRejection(providers: [NSItemProvider]) {
-        let pasteboard = makeContentTabReorderPasteboard(providers: providers)
-        let activeBoundary = ContentTabReorderActiveBoundaryBox(1)
+    private func assertFileManagerTopNavigationReorderPerformRejection(providers: [NSItemProvider]) {
+        let pasteboard = makeFileManagerTopNavigationReorderPasteboard(providers: providers)
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(1)
         var reorderCount = 0
-        let view = makeContentTabReorderDestinationView(
+        let view = makeFileManagerTopNavigationReorderDestinationView(
             targetID: .init(rawValue: "target"),
             activeBoundary: activeBoundary,
-            sessionStore: ContentTabReorderLocalSessionStore(),
+            sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
             onReorder: { _, _, _ in reorderCount += 1 },
         )
 
@@ -2144,27 +2919,27 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         case reorder
     }
 
-    private enum ContentTabReorderTestError: Error {
+    private enum FileManagerTopNavigationReorderTestError: Error {
         case missingData
     }
 
-    private struct ContentTabReorderInvocation: Equatable {
+    private struct FileManagerTopNavigationReorderInvocation: Equatable {
         let sourceID: ContentTabID
         let targetID: ContentTabID
-        let placement: ContentTabReorderPlacement
+        let placement: FileManagerTopNavigationReorderPlacement
     }
 
-    private struct ContentTabReorderActiveBoundaryStorage {
+    private struct FileManagerTopNavigationReorderActiveBoundaryStorage {
         var value: Int?
         var getterInvocationCount: Int
         var setterInvocationCount: Int
     }
 
-    private final class ContentTabReorderActiveBoundaryBox: Sendable {
-        private let storage: LockIsolated<ContentTabReorderActiveBoundaryStorage>
+    private final class FileManagerTopNavigationReorderActiveBoundaryBox: Sendable {
+        private let storage: LockIsolated<FileManagerTopNavigationReorderActiveBoundaryStorage>
 
         init(_ value: Int? = nil) {
-            storage = LockIsolated(ContentTabReorderActiveBoundaryStorage(
+            storage = LockIsolated(FileManagerTopNavigationReorderActiveBoundaryStorage(
                 value: value,
                 getterInvocationCount: 0,
                 setterInvocationCount: 0,
@@ -2220,16 +2995,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             FileManagerSidebarFeature()
         }
 
-        await store.send(.view(.contentTabReorderRequested(
-            sourceID: sourceID,
-            targetID: targetID,
+        await store.send(.view(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(sourceID),
+            anchorID: .contentTab(targetID),
             placement: .after,
         )))
         await store.receive { action in
-            guard case let .delegate(.contentTabReorderRequested(source, target, placement)) = action else {
+            guard case let .delegate(.fileManagerTopNavigationReorderRequested(source, target, placement)) = action
+            else {
                 return false
             }
-            return source == sourceID && target == targetID && placement == .after
+            return source == .contentTab(sourceID) && target == .contentTab(targetID) && placement == .after
         }
 
         XCTAssertEqual(store.state, initialState)
@@ -2244,14 +3020,22 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     func testWindowReorderDelegateRoutesOneContentTabActionWithoutMutation() async {
         let sourceID = ContentTabID(rawValue: "route-source")
         let targetID = ContentTabID(rawValue: "route-target")
-        let initialState = FileManagerFeature.State()
+        var initialState = FileManagerFeature.State()
+        initialState.contentTabs = ContentTabState(
+            tabs: [
+                makeFileManagerTopNavigationReorderItem(id: sourceID),
+                makeFileManagerTopNavigationReorderItem(id: targetID),
+            ],
+            activeTabID: sourceID,
+        )
+        initialState.syncContentTabSidebarItems()
         let store = TestStore(initialState: initialState) {
             FileManagerWindowRoutingReducer()
         }
 
-        await store.send(.sidebar(.delegate(.contentTabReorderRequested(
-            sourceID: sourceID,
-            targetID: targetID,
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(sourceID),
+            anchorID: .contentTab(targetID),
             placement: .before,
         ))))
         await store.receive { action in
@@ -2275,25 +3059,27 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let sourceID = ContentTabID(rawValue: "source-a")
         let activeID = ContentTabID(rawValue: "active-b")
         let targetID = ContentTabID(rawValue: "target-c")
-        let state = makeContentTabReorderRuntimeState(
+        let state = makeFileManagerTopNavigationReorderRuntimeState(
             pinnedID: pinnedID,
             sourceID: sourceID,
             activeID: activeID,
             targetID: targetID,
         )
-        let runtimeBefore = ContentTabReorderRuntimeSnapshot(state: state)
+        let runtimeBefore = FileManagerTopNavigationReorderRuntimeSnapshot(state: state)
         let store = TestStore(initialState: state) { FileManagerFeature() }
 
-        await store.send(.sidebar(.view(.contentTabReorderRequested(
-            sourceID: sourceID,
-            targetID: targetID,
+        await store.send(.sidebar(.view(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(sourceID),
+            anchorID: .contentTab(targetID),
             placement: .after,
         ))))
         await store.receive { action in
-            guard case let .sidebar(.delegate(.contentTabReorderRequested(source, target, placement))) = action else {
+            guard case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(source, target, placement))) =
+                action
+            else {
                 return false
             }
-            return source == sourceID && target == targetID && placement == .after
+            return source == .contentTab(sourceID) && target == .contentTab(targetID) && placement == .after
         }
         await store.receive { action in
             guard case let .contentTabs(.reorder(source, target, placement)) = action else {
@@ -2302,10 +3088,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             return source == sourceID && target == targetID && placement == .after
         } assert: {
             $0.contentTabs.tabs = [
-                self.makeContentTabReorderItem(id: pinnedID, isPinned: true),
-                self.makeContentTabReorderItem(id: activeID),
-                self.makeContentTabReorderItem(id: targetID),
-                self.makeContentTabReorderItem(id: sourceID),
+                self.makeFileManagerTopNavigationReorderItem(id: pinnedID, isPinned: true),
+                self.makeFileManagerTopNavigationReorderItem(id: activeID),
+                self.makeFileManagerTopNavigationReorderItem(id: targetID),
+                self.makeFileManagerTopNavigationReorderItem(id: sourceID),
             ]
             $0.syncContentTabSidebarItems()
         }
@@ -2315,11 +3101,347 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             store.state.sidebar.contentTabSidebarItems.filter { !$0.isPinned }.map(\.id),
             [activeID, targetID, sourceID],
         )
-        XCTAssertEqual(ContentTabReorderRuntimeSnapshot(state: store.state), runtimeBefore)
+        XCTAssertEqual(FileManagerTopNavigationReorderRuntimeSnapshot(state: store.state), runtimeBefore)
         await store.finish()
     }
 
-    private func makeContentTabReorderRuntimeState(
+    /// CTM-004-sidebar_content_tab_reorder_routing: mixed tagged delegate를 하나의 Window move intent로 투영한다.
+    /// Location과 Content Tab identity를 좁히지 않고 source/anchor/placement를 owner 경계로 전달하는지 검증한다.
+    /// - 검증 내용: mixed Sidebar delegate 뒤 동일한 topNavigationMoveRequested 한 개
+    /// - 사전 조건: Location source, Content Tab anchor, placement before
+    /// - 기대 결과: tagged identity와 semantic destination이 그대로 보존되고 routing state는 불변
+    func testWindowMixedReorderDelegateRoutesOneSemanticMoveIntentWithoutMutation() async {
+        let source = FileManagerTopNavigationItemID.location("Downloads")
+        let anchor = FileManagerTopNavigationItemID.contentTab(ContentTabID(rawValue: "A"))
+        let initialState = FileManagerFeature.State()
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: source,
+            anchorID: anchor,
+            placement: .before,
+        ))))
+        await store.receive { action in
+            guard case let .topNavigationMoveRequested(receivedSource, destination) = action else {
+                return false
+            }
+            return receivedSource == source && destination == .before(anchor)
+        }
+
+        XCTAssertEqual(store.state, initialState)
+    }
+
+    /// CTM-004-sidebar_content_tab_reorder_routing: invalid 또는 unchanged mixed move는 effect를 만들지 않는다.
+    /// semantic boundary 검증이 persistence client 호출 전에 끝나는지 검증한다.
+    /// - 검증 내용: missing source와 already-before move의 client invocation count
+    /// - 사전 조건: runtime order `[A,B]`
+    /// - 기대 결과: 두 요청 모두 write/effect 0회이고 state가 변하지 않음
+    func testTopNavigationMoveInvalidAndNoOpEmitNoEffect() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(tabA), .contentTab(tabB)])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        let invocationCount = LockIsolated(0)
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.moveTopNavigationItem = { _, _, _, _ in
+                invocationCount.withValue { $0 += 1 }
+                return .init()
+            }
+        }
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(ContentTabID(rawValue: "missing")),
+            destination: .before(.contentTab(tabB)),
+        ))
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(tabA),
+            destination: .before(.contentTab(tabB)),
+        ))
+
+        XCTAssertEqual(invocationCount.value, 0)
+        XCTAssertEqual(store.state, state)
+    }
+
+    // MARK: - CTM-004-sidebar_mixed_reorder_surface
+
+    /// CTM-004-sidebar_mixed_reorder_surface: Sidebar는 기존 Location grid와 pinned tab 표현을 유지함
+    /// Location은 scroll 위 responsive grid에서 직접 이동하고 pinned tab은 기존 row surface를 유지하는지 검증한다.
+    /// - 검증 내용: Location grid 선행, ScrollView 1개, LazyVGrid, indicator 없는 tile drag/drop, pinned/unpinned/New Tab 순서
+    /// - 사전 조건: Task 7 SidebarView production source
+    /// - 기대 결과: Location icon tile 외형은 유지되고 linear mixed Location row rendering은 사용하지 않는다.
+    func testSidebarPreservesFixedLocationGridAbovePinnedScrollSurface() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let gridRange = try XCTUnwrap(source.range(of: "fixedLocationsGrid"))
+        let scrollRange = try XCTUnwrap(source.range(of: "ScrollView {"))
+        let dropZoneStart = try XCTUnwrap(source.range(of: "private func fixedLocationReorderDropZone"))
+        let dropZoneEnd = try XCTUnwrap(source.range(
+            of: "private func activeReorderBoundaryID",
+            range: dropZoneStart.upperBound ..< source.endIndex,
+        ))
+        let dropZoneSource = source[dropZoneStart.lowerBound ..< dropZoneEnd.lowerBound]
+
+        XCTAssertLessThan(gridRange.lowerBound, scrollRange.lowerBound)
+        XCTAssertEqual(source.components(separatedBy: "ScrollView {").count - 1, 1)
+        XCTAssertTrue(source.contains(".adaptive(minimum: fixedLocationMinimumCellWidth)"))
+        XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertFalse(source.contains("fixedLocationGridHeight"))
+        XCTAssertFalse(source.contains("sidebarStore.sidebarWidth - fixedLocationGridHorizontalPadding"))
+        XCTAssertTrue(source.contains("fixedLocationReorderDropOverlay"))
+        XCTAssertTrue(source.contains("reorderDragSource: reorderDragSource("))
+        XCTAssertTrue(source.contains("reorderablePinnedContentTabRows"))
+        XCTAssertTrue(source.contains("sidebarStore.topNavigationItems"))
+        XCTAssertTrue(source.contains("ForEach(sidebarStore.fixedLocationVisibilityMenuItems)"))
+        XCTAssertFalse(source.contains("ForEach(sidebarStore.allFixedLocationItems)"))
+        XCTAssertTrue(source.contains("sidebarStore.unpinnedContentTabItems"))
+        XCTAssertTrue(source.contains("newContentTabRow"))
+        XCTAssertFalse(source.contains("reorderableTopNavigationRows"))
+        XCTAssertTrue(dropZoneSource.contains("fileManagerTopNavigationReorderDropDestination(for: boundary)"))
+        XCTAssertFalse(dropZoneSource.contains("Color.clear"))
+        XCTAssertFalse(dropZoneSource.contains(".contentShape(Rectangle())"))
+        XCTAssertFalse(dropZoneSource.contains("activeTopNavigationReorderBoundaryID"))
+        XCTAssertFalse(dropZoneSource.contains("Rectangle()"))
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: 네 종류의 tagged drag는 하나의 Sidebar semantic action으로 relay됨
+    /// Location과 ContentTab kind 조합마다 별도 reducer route를 만들지 않는 계약을 검증한다.
+    /// - 검증 내용: Location↔Location, Tab↔Tab, Location→Tab, Tab→Location source/anchor/placement exact relay
+    /// - 사전 조건: 네 tagged source/anchor 조합과 before/after placement
+    /// - 기대 결과: 각 입력은 동일한 delegate case를 정확히 한 번 내보내고 Sidebar state를 바꾸지 않는다.
+    func testSidebarRelaysAllFourTaggedMoveCombinationsThroughOneAction() async {
+        let tabA = ContentTabID(rawValue: "tab-a")
+        let tabB = ContentTabID(rawValue: "tab-b")
+        let requests: [FileManagerSidebarTopNavigationMoveRequest] = [
+            .init(sourceID: .location("location-a"), anchorID: .location("location-b"), placement: .before),
+            .init(sourceID: .contentTab(tabA), anchorID: .contentTab(tabB), placement: .after),
+            .init(sourceID: .location("location-a"), anchorID: .contentTab(tabA), placement: .after),
+            .init(sourceID: .contentTab(tabB), anchorID: .location("location-b"), placement: .before),
+        ]
+
+        for request in requests {
+            let source = request.sourceID
+            let anchor = request.anchorID
+            let placement = request.placement
+            let initialState = FileManagerSidebarState()
+            let store = TestStore(initialState: initialState) {
+                FileManagerSidebarFeature()
+            }
+
+            await store.send(.view(.fileManagerTopNavigationReorderRequested(
+                sourceID: source,
+                anchorID: anchor,
+                placement: placement,
+            )))
+            await store.receive { action in
+                guard case let .delegate(.fileManagerTopNavigationReorderRequested(
+                    receivedSource,
+                    receivedAnchor,
+                    receivedPlacement,
+                )) = action else { return false }
+                return receivedSource == source
+                    && receivedAnchor == anchor
+                    && receivedPlacement == placement
+            }
+            XCTAssertEqual(store.state, initialState)
+            await store.finish()
+        }
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: top과 unpinned collection은 서로 다른 tagged insertion boundary를 소유함
+    /// zero/one/many row에서 stable boundary 수와 owner가 섞이지 않는지 검증한다.
+    /// - 검증 내용: empty 0개, one 2개, mixed many N+1개와 top/unpinned owner 분리
+    /// - 사전 조건: Location/ContentTab mixed ID와 독립 unpinned ContentTab ID
+    /// - 기대 결과: top boundary는 모두 topNavigation, unpinned boundary는 모두 unpinnedContentTabs이다.
+    func testMixedAndUnpinnedRowsOwnIndependentZeroOneManyBoundaries() {
+        let tabA = ContentTabID(rawValue: "tab-a")
+        let tabB = ContentTabID(rawValue: "tab-b")
+        let mixedIDs: [FileManagerTopNavigationItemID] = [
+            .location("location-a"),
+            .contentTab(tabA),
+            .location("location-b"),
+            .contentTab(tabB),
+        ]
+
+        XCTAssertTrue(FileManagerTopNavigationReorderDropBoundary.make(
+            for: [],
+            owner: .topNavigation,
+        ).isEmpty)
+        XCTAssertEqual(FileManagerTopNavigationReorderDropBoundary.make(
+            for: [mixedIDs[0]],
+            owner: .topNavigation,
+        ).count, 2)
+        let topBoundaries = FileManagerTopNavigationReorderDropBoundary.make(
+            for: mixedIDs,
+            owner: .topNavigation,
+        )
+        let unpinnedBoundaries = FileManagerTopNavigationReorderDropBoundary.make(
+            for: [.contentTab(tabA), .contentTab(tabB)],
+            owner: .unpinnedContentTabs,
+        )
+
+        XCTAssertEqual(topBoundaries.count, mixedIDs.count + 1)
+        XCTAssertTrue(topBoundaries.allSatisfy { $0.owner == .topNavigation })
+        XCTAssertEqual(unpinnedBoundaries.count, 3)
+        XCTAssertTrue(unpinnedBoundaries.allSatisfy { $0.owner == .unpinnedContentTabs })
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: keyboard와 accessibility 방향은 visible neighbor semantic move로 변환됨
+    /// hidden/tombstone/dormant를 제외한 현재 visible 배열만 anchor 계산에 사용하는 adapter를 검증한다.
+    /// - 검증 내용: Location↔Location, Location→Tab, Tab→Location, Tab↔Tab과 first/last/missing no-op
+    /// - 사전 조건: `[Location1, Location2, TabA, TabB]` visible tagged order
+    /// - 기대 결과: previous는 neighbor before, next는 neighbor after이며 boundary와 disappeared source는 nil이다.
+    func testVisibleNeighborMoveAdapterConvergesKeyboardAndAccessibilitySemantics() {
+        let tabA = FileManagerTopNavigationItemID.contentTab(ContentTabID(rawValue: "tab-a"))
+        let tabB = FileManagerTopNavigationItemID.contentTab(ContentTabID(rawValue: "tab-b"))
+        let locationA = FileManagerTopNavigationItemID.location("location-a")
+        let locationB = FileManagerTopNavigationItemID.location("location-b")
+        let visibleIDs = [locationA, locationB, tabA, tabB]
+
+        XCTAssertEqual(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: locationA,
+            direction: .next,
+            visibleItemIDs: visibleIDs,
+        ), .init(sourceID: locationA, anchorID: locationB, placement: .after))
+        XCTAssertEqual(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: locationB,
+            direction: .next,
+            visibleItemIDs: visibleIDs,
+        ), .init(sourceID: locationB, anchorID: tabA, placement: .after))
+        XCTAssertEqual(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: tabA,
+            direction: .previous,
+            visibleItemIDs: visibleIDs,
+        ), .init(sourceID: tabA, anchorID: locationB, placement: .before))
+        XCTAssertEqual(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: tabA,
+            direction: .next,
+            visibleItemIDs: visibleIDs,
+        ), .init(sourceID: tabA, anchorID: tabB, placement: .after))
+        XCTAssertNil(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: locationA,
+            direction: .previous,
+            visibleItemIDs: visibleIDs,
+        ))
+        XCTAssertNil(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: tabB,
+            direction: .next,
+            visibleItemIDs: visibleIDs,
+        ))
+        XCTAssertNil(FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: .location("disappeared"),
+            direction: .next,
+            visibleItemIDs: visibleIDs,
+        ))
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: arrow key의 incidental flags는 option-command move를 막지 않음
+    /// AppKit이 화살표 event에 function/numericPad flag를 추가해도 사용자 modifier 의미만 판정하는지 검증한다.
+    /// - 검증 내용: exact option-command와 incidental flag 조합 승인, shift/control 추가 조합 거부
+    /// - 사전 조건: NSEvent.ModifierFlags 조합 여섯 개
+    /// - 기대 결과: function/numericPad는 무시하고 shift/control은 다른 shortcut으로 거부한다.
+    func testTopNavigationMoveKeyCommandClassifierIgnoresIncidentalArrowFlags() {
+        XCTAssertTrue(FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches([.option, .command]))
+        XCTAssertTrue(FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches([.option, .command, .function]))
+        XCTAssertTrue(FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches([.option, .command, .numericPad]))
+        XCTAssertFalse(FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches([.option, .command, .shift]))
+        XCTAssertFalse(FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches([.option, .command, .control]))
+        XCTAssertFalse(FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches([.command]))
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: top row는 keyboard와 named accessibility action을 같은 adapter에 연결함
+    /// pointer overlay 없이 기존 row affordance에 move command modifier가 적용되는 source 계약을 검증한다.
+    /// - 검증 내용: Move Up/Move Down named actions, shared tagged dispatch helper, cache-only icon과 symbol placeholder
+    /// - 사전 조건: Task 7 SidebarView production source
+    /// - 기대 결과: drag/keyboard/accessibility가 같은 fileManagerTopNavigationReorderRequested route를 사용한다.
+    func testTopRowsExposeKeyboardAndAccessibilityMoveCommandsWithoutLocationLifecycleControls() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let fixedLocationStart = try XCTUnwrap(source.range(of: "private struct FixedLocationButton"))
+        let fixedLocationSource = source[fixedLocationStart.lowerBound ..< source.endIndex]
+
+        XCTAssertTrue(source.contains(".topNavigationMoveCommands("))
+        XCTAssertTrue(source.contains("Text(\"Move Up\")"))
+        XCTAssertTrue(source.contains("Text(\"Move Down\")"))
+        XCTAssertTrue(source.contains("[.option, .command]"))
+        XCTAssertTrue(source.contains("sendTopNavigationMoveRequest"))
+        XCTAssertTrue(fixedLocationSource.contains("workspaceClient.cachedIconForFile(item.path)"))
+        XCTAssertFalse(fixedLocationSource.contains("workspaceClient.iconForFile(item.path)"))
+        XCTAssertTrue(fixedLocationSource.contains("Image(systemName: item.iconName)"))
+        XCTAssertFalse(fixedLocationSource.contains("@State private var resolvedIcon"))
+        XCTAssertFalse(fixedLocationSource.contains(".task"))
+        XCTAssertFalse(fixedLocationSource.contains("SidebarSymbolIcon("))
+        XCTAssertFalse(fixedLocationSource.contains("Image(systemName: \"folder\")"))
+        XCTAssertFalse(fixedLocationSource.contains("onClose"))
+        XCTAssertFalse(fixedLocationSource.contains("onUnpin"))
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: arrangement failure는 exact redacted message만 표시함
+    /// save/load failure와 cancelled/superseded presentation 분기를 user-safe pure mapping으로 검증한다.
+    /// - 검증 내용: exact save rollback/load unavailable 문구, dismissible 두 category, silent cancellation, path/internal
+    /// redaction
+    /// - 사전 조건: 네 FileManagerTopNavigationIntentFailure case
+    /// - 기대 결과: save/load만 presentation을 만들고 message에는 path나 내부 error payload가 없다.
+    func testTopNavigationArrangementPresentationUsesExactRedactedMessagesAndSilentCancellation() {
+        let save = FileManagerTopNavigationArrangementPresentation(failure: .save)
+        let corrupt = FileManagerTopNavigationArrangementPresentation(failure: .storeUnavailable(.corrupt))
+        let unsupported = FileManagerTopNavigationArrangementPresentation(
+            failure: .storeUnavailable(.unsupportedSchema(999)),
+        )
+
+        XCTAssertEqual(save, .saveRollback)
+        XCTAssertEqual(corrupt, .loadUnavailable)
+        XCTAssertEqual(unsupported, .loadUnavailable)
+        XCTAssertNil(FileManagerTopNavigationArrangementPresentation(failure: .cancelled))
+        XCTAssertNil(FileManagerTopNavigationArrangementPresentation(failure: .superseded))
+        XCTAssertEqual(
+            save?.message,
+            "Couldn’t save the sidebar order. Your previous order was restored.",
+        )
+        XCTAssertEqual(
+            corrupt?.message,
+            "Couldn’t load the saved sidebar arrangement. A default order is shown; the saved data was not changed.",
+        )
+        for message in [save?.message, corrupt?.message, unsupported?.message].compactMap(\.self) {
+            XCTAssertFalse(message.contains("/"))
+            XCTAssertFalse(message.localizedCaseInsensitiveContains("error"))
+            XCTAssertFalse(message.contains("999"))
+        }
+    }
+
+    /// CTM-004-sidebar_mixed_reorder_surface: 표시된 arrangement message는 사용자 dismiss로 즉시 제거됨
+    /// 현재 window의 presentation lifecycle이 별도 persistence나 cross-window action 없이 종료되는지 검증한다.
+    /// - 검증 내용: dismiss action의 presentation nil 전환과 다른 window state 불변
+    /// - 사전 조건: save rollback presentation이 표시 중인 FileManagerFeature state
+    /// - 기대 결과: 동기 reducer action 뒤 presentation만 nil이 되고 effect는 없다.
+    func testTopNavigationArrangementPresentationIsDismissible() async {
+        var state = FileManagerFeature.State()
+        state.topNavigationArrangementPresentation = .saveRollback
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.sidebar(.view(.dismissTopNavigationPresentation)))
+        await store.receive(\.sidebar.delegate.dismissTopNavigationPresentation) {
+            $0.sidebar.topNavigationArrangementPresentation = nil
+        }
+    }
+
+    private func makeFileManagerTopNavigationReorderRuntimeState(
         pinnedID: ContentTabID,
         sourceID: ContentTabID,
         activeID: ContentTabID,
@@ -2328,10 +3450,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [
-                makeContentTabReorderItem(id: pinnedID, isPinned: true),
-                makeContentTabReorderItem(id: sourceID),
-                makeContentTabReorderItem(id: activeID),
-                makeContentTabReorderItem(id: targetID),
+                makeFileManagerTopNavigationReorderItem(id: pinnedID, isPinned: true),
+                makeFileManagerTopNavigationReorderItem(id: sourceID),
+                makeFileManagerTopNavigationReorderItem(id: activeID),
+                makeFileManagerTopNavigationReorderItem(id: targetID),
             ],
             activeTabID: activeID,
         )
@@ -2349,12 +3471,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         inactiveInspector.inspectorWidth = 432
         state.tabContentStates = [activeID: state.content, sourceID: inactiveContent]
         state.tabInspectorStates = [activeID: state.inspector, targetID: inactiveInspector]
-        seedContentTabReorderProjectionSentinels(state: &state, sourceID: sourceID)
+        seedFileManagerTopNavigationReorderProjectionSentinels(state: &state, sourceID: sourceID)
         state.syncContentTabSidebarItems()
         return state
     }
 
-    private func seedContentTabReorderProjectionSentinels(
+    private func seedFileManagerTopNavigationReorderProjectionSentinels(
         state: inout FileManagerFeature.State,
         sourceID: ContentTabID,
     ) {
@@ -2399,7 +3521,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ]
     }
 
-    private func makeContentTabReorderItem(
+    private func makeFileManagerTopNavigationReorderItem(
         id: ContentTabID,
         isPinned: Bool = false,
     ) -> ContentTabItem {
@@ -2413,7 +3535,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
     }
 
-    private struct ContentTabReorderRuntimeSnapshot: Equatable {
+    private struct FileManagerTopNavigationReorderRuntimeSnapshot: Equatable {
         let activeTabID: ContentTabID?
         let previousActiveTabID: ContentTabID?
         let pendingDirectoryReloadTabIDs: Set<ContentTabID>
@@ -2463,7 +3585,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertTrue(FileManagerSidebarEntryDropClassifier.accepts(providers))
         XCTAssertTrue(delegate.performDrop(providers: providers, isOptionDrag: true))
-        assertContentTabReorderPerformRejection(providers: providers)
+        assertFileManagerTopNavigationReorderPerformRejection(providers: providers)
         XCTAssertEqual(actions.value, [.entry])
 
         let request = try XCTUnwrap(requests.value.first)
@@ -2488,8 +3610,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     func testEntryDropClassifierRejectsEveryReorderAdvertisingProvider() throws {
         let fileURLProvider = makeFileURLProvider(path: "/tmp/entry")
         let secondFileURLProvider = makeFileURLProvider(path: "/tmp/entry-second")
-        let reorderProvider = try makeContentTabReorderProvider()
-        let mixedProvider = try makeMixedContentTabReorderProvider()
+        let reorderProvider = try makeFileManagerTopNavigationReorderProvider()
+        let mixedProvider = try makeMixedFileManagerTopNavigationReorderProvider()
         let unrelatedProvider = NSItemProvider(
             item: "unrelated" as NSString,
             typeIdentifier: UTType.plainText.identifier,
@@ -2521,27 +3643,27 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let sourceID = ContentTabID(rawValue: "source-a")
         let activeID = ContentTabID(rawValue: "active-b")
         let targetID = ContentTabID(rawValue: "target-c")
-        let initialState = makeContentTabReorderRuntimeState(
+        let initialState = makeFileManagerTopNavigationReorderRuntimeState(
             pinnedID: pinnedID,
             sourceID: sourceID,
             activeID: activeID,
             targetID: targetID,
         )
         let store = TestStore(initialState: initialState) { FileManagerFeature() }
-        let provider = try makeMixedContentTabReorderProvider()
+        let provider = try makeMixedFileManagerTopNavigationReorderProvider()
         let actions = LockIsolated<[CrossTypeDropAction]>([])
         let entryDelegate = FileManagerSidebarEntryDropDelegate(
             dropTarget: .constant(nil),
             target: .contentTab(targetID),
             onDrop: { _ in actions.withValue { $0.append(.entry) } },
         )
-        let pasteboard = makeContentTabReorderPasteboard(providers: [provider])
+        let pasteboard = makeFileManagerTopNavigationReorderPasteboard(providers: [provider])
         defer { pasteboard.clearContents() }
-        let activeBoundary = ContentTabReorderActiveBoundaryBox(1)
-        let reorderView = makeContentTabReorderDestinationView(
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(1)
+        let reorderView = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
-            sessionStore: ContentTabReorderLocalSessionStore(),
+            sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
             onReorder: { _, _, _ in actions.withValue { $0.append(.reorder) } },
         )
 
@@ -2552,7 +3674,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(actions.value, [])
         XCTAssertEqual(store.state.contentTabs, initialState.contentTabs)
         XCTAssertEqual(store.state.sidebar, initialState.sidebar)
-        XCTAssertEqual(ContentTabReorderRuntimeSnapshot(state: store.state), .init(state: initialState))
+        XCTAssertEqual(FileManagerTopNavigationReorderRuntimeSnapshot(state: store.state), .init(state: initialState))
     }
 
     /// CTM-004-sidebar_entry_drop_routing: separate reorder/fileURL provider session은 양쪽 경로에서 거부됨
@@ -2565,7 +3687,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let sourceID = ContentTabID(rawValue: "source-a")
         let activeID = ContentTabID(rawValue: "active-b")
         let targetID = ContentTabID(rawValue: "target-c")
-        let initialState = makeContentTabReorderRuntimeState(
+        let initialState = makeFileManagerTopNavigationReorderRuntimeState(
             pinnedID: pinnedID,
             sourceID: sourceID,
             activeID: activeID,
@@ -2573,7 +3695,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
         let store = TestStore(initialState: initialState) { FileManagerFeature() }
         let providers = try [
-            makeContentTabReorderProvider(sourceID: sourceID.rawValue),
+            makeFileManagerTopNavigationReorderProvider(sourceID: sourceID.rawValue),
             makeFileURLProvider(path: "/tmp/entry"),
         ]
         let actions = LockIsolated<[CrossTypeDropAction]>([])
@@ -2582,13 +3704,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             target: .contentTab(targetID),
             onDrop: { _ in actions.withValue { $0.append(.entry) } },
         )
-        let pasteboard = makeContentTabReorderPasteboard(providers: providers)
+        let pasteboard = makeFileManagerTopNavigationReorderPasteboard(providers: providers)
         defer { pasteboard.clearContents() }
-        let activeBoundary = ContentTabReorderActiveBoundaryBox(1)
-        let reorderView = makeContentTabReorderDestinationView(
+        let activeBoundary = FileManagerTopNavigationReorderActiveBoundaryBox(1)
+        let reorderView = makeFileManagerTopNavigationReorderDestinationView(
             targetID: targetID,
             activeBoundary: activeBoundary,
-            sessionStore: ContentTabReorderLocalSessionStore(),
+            sessionStore: FileManagerTopNavigationReorderLocalSessionStore(),
             onReorder: { _, _, _ in actions.withValue { $0.append(.reorder) } },
         )
 
@@ -2599,7 +3721,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(actions.value, [])
         XCTAssertEqual(store.state.contentTabs, initialState.contentTabs)
         XCTAssertEqual(store.state.sidebar, initialState.sidebar)
-        XCTAssertEqual(ContentTabReorderRuntimeSnapshot(state: store.state), .init(state: initialState))
+        XCTAssertEqual(FileManagerTopNavigationReorderRuntimeSnapshot(state: store.state), .init(state: initialState))
     }
 
     /// CTM-004-sidebar_entry_drop_routing: visible Fixed Location은 현재 visible item의 path로 한 번만 전달됨
@@ -4856,6 +5978,186 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         return [batchState, singleState, teardownState, closingState]
     }
 
+    /// CTM-004-sidebar_close_selected_content_tabs: hover action은 native row 내부에서 독립 hit target을 소유함
+    /// SwiftUI overlay와 NSViewRepresentable 사이의 hit-test 경쟁 없이 Close/Unpin callback을 실행하는지 검증한다.
+    /// - 검증 내용: trailing NSButton identity, parent activation 격리, 최신 callback, hidden/disabled 갱신
+    /// - 사전 조건: 실제 frame을 가진 ContentTabSidebarButton과 hover-visible trailing action
+    /// - 기대 결과: trailing 위치 hit은 child button이고 click은 action만 한 번 실행하며 disabled/hidden 상태를 준수한다.
+    func testSidebarNativeTrailingActionOwnsHitTargetAndDispatchesCurrentCallback() throws {
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        var activationCount = 0, firstActionCount = 0, latestActionCount = 0
+
+        updateNativeTrailingAction(
+            button,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { firstActionCount += 1 },
+        )
+        let trailingButton = try XCTUnwrap(
+            button.subviews.compactMap { $0 as? ContentTabSidebarTrailingActionButton }.first,
+        )
+        let hitPoint = trailingButton.convert(
+            NSPoint(x: trailingButton.bounds.midX, y: trailingButton.bounds.midY),
+            to: button,
+        )
+        XCTAssertIdentical(button.hitTest(hitPoint), trailingButton)
+        trailingButton.performClick(nil)
+        XCTAssertEqual(firstActionCount, 1)
+        XCTAssertEqual(activationCount, 0)
+
+        updateNativeTrailingAction(
+            button,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { latestActionCount += 1 },
+        )
+        trailingButton.performClick(nil)
+        XCTAssertEqual(firstActionCount, 1)
+        XCTAssertEqual(latestActionCount, 1)
+        XCTAssertEqual(activationCount, 0)
+
+        updateNativeTrailingAction(
+            button,
+            isActionEnabled: false,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { latestActionCount += 1 },
+        )
+        trailingButton.performClick(nil)
+        XCTAssertEqual(latestActionCount, 1)
+
+        updateNativeTrailingAction(
+            button,
+            showsAction: false,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { latestActionCount += 1 },
+        )
+        XCTAssertTrue(trailingButton.isHidden)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: native trailing action의 Control-click은 context menu로 라우팅됨
+    /// child hit target이 Close/Unpin을 실행하지 않고 row context menu 요청만 전달하는지 검증한다.
+    /// - 검증 내용: Control-left-click의 context menu 요청 횟수와 activation/trailing callback 격리
+    /// - 사전 조건: context menu와 enabled trailing action이 구성된 ContentTabSidebarButton
+    /// - 기대 결과: menu 요청만 한 번 발생하고 activation과 trailing action은 실행되지 않는다.
+    func testSidebarNativeTrailingActionRoutesControlClickToContextMenu() throws {
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        var activationCount = 0, trailingActionCount = 0, contextMenuRequestCount = 0
+        updateNativeTrailingAction(
+            button,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { trailingActionCount += 1 },
+        )
+        let trailingButton = try XCTUnwrap(
+            button.subviews.compactMap { $0 as? ContentTabSidebarTrailingActionButton }.first,
+        )
+        XCTAssertNotNil(trailingButton.menu)
+        trailingButton.onContextMenuRequested = { _ in contextMenuRequestCount += 1 }
+
+        try trailingButton.mouseDown(with: makeControlClickEvent())
+
+        XCTAssertEqual(contextMenuRequestCount, 1)
+        XCTAssertEqual(trailingActionCount, 0)
+        XCTAssertEqual(activationCount, 0)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: trailing glyph는 row pin 상태에 맞는 단일 동작을 표시함
+    /// pinned row의 minus가 Close가 아니라 단일 Unpin 의미를 유지하는지 검증한다.
+    /// - 검증 내용: pinned/ordinary 상태별 typed trailing action과 SF Symbol
+    /// - 사전 조건: pinned 또는 ordinary Content Tab row
+    /// - 기대 결과: pinned는 Unpin/minus, ordinary는 Close/xmark로 매핑된다.
+    func testSidebarTrailingActionMapsPinnedToUnpinAndOrdinaryToClose() {
+        let tabID = ContentTabID(rawValue: "trailing-action-tab")
+        let pinnedAction = ContentTabSidebarTrailingAction(isPinned: true)
+        let ordinaryAction = ContentTabSidebarTrailingAction(isPinned: false)
+
+        XCTAssertEqual(pinnedAction, .unpin)
+        XCTAssertEqual(pinnedAction.systemName, "minus")
+        XCTAssertEqual(ordinaryAction, .close)
+        XCTAssertEqual(ordinaryAction.systemName, "xmark")
+        guard case let .unpinContentTab(pinnedTabID) = pinnedAction.delegateAction(tabID: tabID) else {
+            return XCTFail("Pinned trailing action must preserve the tab and unpin it")
+        }
+        XCTAssertEqual(pinnedTabID, tabID)
+        guard case let .closeContentTab(ordinaryTabID) = ordinaryAction.delegateAction(tabID: tabID) else {
+            return XCTFail("Ordinary trailing action must close the tab")
+        }
+        XCTAssertEqual(ordinaryTabID, tabID)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: native trailing action은 hover 배경을 복원함
+    /// SwiftUI overlay 제거 뒤에도 기존 X/− hover affordance가 유지되는지 검증한다.
+    /// - 검증 내용: corner radius, light appearance hover alpha, exit와 disabled 초기화
+    /// - 사전 조건: Aqua appearance의 visible/enabled native trailing action
+    /// - 기대 결과: enter 시 배경이 나타나고 exit 또는 disable 시 투명해진다.
+    func testSidebarNativeTrailingActionRestoresHoverBackground() throws {
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        updateNativeTrailingAction(button, onActivate: {}, onTrailingAction: {})
+        let trailingButton = try XCTUnwrap(
+            button.subviews.compactMap { $0 as? ContentTabSidebarTrailingActionButton }.first,
+        )
+        trailingButton.appearance = NSAppearance(named: .aqua)
+
+        try trailingButton.mouseEntered(with: makeControlClickEvent())
+        XCTAssertEqual(trailingButton.layer?.cornerRadius, 4)
+        XCTAssertEqual(trailingButton.layer?.backgroundColor?.alpha ?? -1, 0.06, accuracy: 0.001)
+
+        try trailingButton.mouseExited(with: makeControlClickEvent())
+        XCTAssertEqual(trailingButton.layer?.backgroundColor?.alpha ?? -1, 0, accuracy: 0.001)
+        try trailingButton.mouseEntered(with: makeControlClickEvent())
+        updateNativeTrailingAction(
+            button,
+            isActionEnabled: false,
+            onActivate: {},
+            onTrailingAction: {},
+        )
+        XCTAssertEqual(trailingButton.layer?.backgroundColor?.alpha ?? -1, 0, accuracy: 0.001)
+    }
+
+    private func updateNativeTrailingAction(
+        _ button: ContentTabSidebarButton,
+        showsAction: Bool = true,
+        isActionEnabled: Bool = true,
+        onActivate: @escaping () -> Void,
+        onTrailingAction: @escaping () -> Void,
+    ) {
+        button.update(
+            rootView: AnyView(Color.clear.frame(height: 24)),
+            accessibilityLabel: "Content Tab",
+            accessibilityValue: "Selected",
+            duplicateAccessibilityIdentifier: "duplicate-content-tab",
+            isPinned: false,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: onActivate,
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: {},
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            showsTrailingAction: showsAction,
+            trailingActionSystemName: "xmark",
+            isTrailingActionEnabled: isActionEnabled,
+            onTrailingAction: onTrailingAction,
+        )
+        button.layoutSubtreeIfNeeded()
+    }
+
+    private func makeControlClickEvent() throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: .control,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1,
+        ))
+    }
+
     // MARK: - CTM-004-sidebar_close_selected_content_tabs
 
     /// CTM-004-sidebar_close_selected_content_tabs: selected ordinary와 pinned row는 bulk Close label을 사용함
@@ -5083,6 +6385,26 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         // Duplicate가 active로 전환
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, directoryID)
         await store.finish()
+    }
+
+    private func makeMouseEvent(
+        _ type: NSEvent.EventType,
+        on view: NSView,
+        locationInView: NSPoint,
+        eventNumber: Int,
+    ) throws -> NSEvent {
+        let window = try XCTUnwrap(view.window)
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: type,
+            location: view.convert(locationInView, to: nil),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: eventNumber,
+            clickCount: 1,
+            pressure: 1,
+        ))
     }
 
     private static func fixedLocationClient() -> FileManagerLocationsClient {

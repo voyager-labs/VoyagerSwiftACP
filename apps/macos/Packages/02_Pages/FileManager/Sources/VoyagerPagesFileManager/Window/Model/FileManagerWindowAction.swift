@@ -46,31 +46,36 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
     }
 }
 
+public enum FileManagerPinnedRecordPersistenceSource: Equatable, Sendable {
+    case contentTab
+    case selectedPin(operationID: UUID)
+    case selectedClose(operationID: UUID)
+}
+
+public enum FileManagerPinnedRecordPersistenceOwnership: Equatable, Sendable {
+    case local
+    case windowManager
+}
+
+extension FileManagerPinnedRecordPersistenceOwnership: DependencyKey {
+    public static let liveValue: Self = .local
+    public static let testValue: Self = .local
+    public static let previewValue: Self = .local
+}
+
+public extension DependencyValues {
+    var fileManagerPinnedRecordOwner: FileManagerPinnedRecordPersistenceOwnership {
+        get { self[FileManagerPinnedRecordPersistenceOwnership.self] }
+        set { self[FileManagerPinnedRecordPersistenceOwnership.self] = newValue }
+    }
+}
+
 public enum SelectedContentTabCloseOutcome: Equatable, Sendable {
     case removed
     case unpinned
     case cancelled
     case failed
     case missing
-}
-
-public enum FileManagerPinnedRecordPersistenceRoute: Equatable, Sendable {
-    case single
-    case selectedPin(operationID: UUID)
-    case selectedClose(operationID: UUID)
-}
-
-public struct FileManagerPinnedRecordPersistenceRequest: Equatable, Sendable {
-    public let request: ContentTabPinnedRecordPersistenceRequest
-    public let route: FileManagerPinnedRecordPersistenceRoute
-
-    public init(
-        request: ContentTabPinnedRecordPersistenceRequest,
-        route: FileManagerPinnedRecordPersistenceRoute,
-    ) {
-        self.request = request
-        self.route = route
-    }
 }
 
 public enum PinnedContentTabsApplicationMode: Equatable, Sendable {
@@ -94,6 +99,37 @@ public struct FileManagerInspectorNewChatSeedApplication: Equatable, Sendable {
     let seed: AiChatNewChatSelectionSeed?
 }
 
+public enum FileManagerTopNavigationIntentFailure: Equatable, Sendable {
+    case cancelled
+    case superseded
+    case save
+    case storeUnavailable(FileManagerTopNavigationArrangementLoadFailure)
+}
+
+public enum FileManagerTopNavigationIntentTerminal: Equatable, Sendable {
+    case committed(FileManagerTopNavigationCommit)
+    case failed(FileManagerTopNavigationIntentFailure)
+}
+
+public struct FileManagerWindowBootstrap: Equatable, Sendable {
+    public let arrangementAvailability: FileManagerTopNavigationArrangementAvailability
+    public let committedTopNavigationOrder: FileManagerTopNavigationOrder
+    public let authoritativePinnedContentTabs: ContentTabState
+    public let fixedLocationItems: [FileManagerFixedLocationItem]
+
+    public init(
+        arrangementAvailability: FileManagerTopNavigationArrangementAvailability,
+        committedTopNavigationOrder: FileManagerTopNavigationOrder,
+        authoritativePinnedContentTabs: ContentTabState,
+        fixedLocationItems: [FileManagerFixedLocationItem],
+    ) {
+        self.arrangementAvailability = arrangementAvailability
+        self.committedTopNavigationOrder = committedTopNavigationOrder
+        self.authoritativePinnedContentTabs = authoritativePinnedContentTabs
+        self.fixedLocationItems = fixedLocationItems
+    }
+}
+
 @CasePathable
 public enum FileManagerWindowAction: CasePathable, Sendable {
     case view(View)
@@ -111,9 +147,25 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
     case contentTabs(ContentTabAction)
+    case applyBootstrap(FileManagerWindowBootstrap)
     case applyAppPreferences(AppPreferencesState)
     case applyPinnedContentTabs(ContentTabState)
     case applyAuthoritativePinnedContentTabs(ContentTabState)
+    case topNavigationMoveRequested(
+        source: FileManagerTopNavigationItemID,
+        destination: FileManagerTopNavigationMoveDestination,
+    )
+    case applyExternalCommittedTopNavigationOrder(
+        FileManagerTopNavigationOrder,
+        revision: UInt64? = nil,
+    )
+    case applyCommittedTopNavigationSnapshot(
+        order: FileManagerTopNavigationOrder,
+        revision: UInt64,
+        authoritativePinnedContentTabs: ContentTabState?,
+    )
+    case applyFixedLocationItems([FileManagerFixedLocationItem])
+    case applyUnavailableTopNavigationArrangement(FileManagerTopNavigationArrangementLoadFailure)
     case applyPinnedContentTabRuntimeNavigation(
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
@@ -194,6 +246,16 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             undoManagerGeneration: UInt64?,
         )
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
+        case topNavigationIntentCompleted(
+            token: FileManagerTopNavigationOperationToken,
+            terminal: FileManagerTopNavigationIntentTerminal,
+        )
+        case pinnedRecordPersistenceCompleted(
+            token: FileManagerTopNavigationOperationToken,
+            source: FileManagerPinnedRecordPersistenceSource,
+            request: ContentTabPinnedRecordPersistenceRequest,
+            terminal: FileManagerTopNavigationIntentTerminal,
+        )
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
         case duplicateContentTabReduced(
             sourceID: ContentTabID,
@@ -284,6 +346,18 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: Sendable {
+        case persistTopNavigationMove(
+            token: FileManagerTopNavigationOperationToken,
+            source: FileManagerTopNavigationItemID,
+            destination: FileManagerTopNavigationMoveDestination,
+            discoveredLocationIDs: [String],
+        )
+        case persistPinnedRecordMutation(
+            token: FileManagerTopNavigationOperationToken,
+            source: FileManagerPinnedRecordPersistenceSource,
+            request: ContentTabPinnedRecordPersistenceRequest,
+            discoveredLocationIDs: [String],
+        )
         case closeWindow
         case openPathInNewWindow(String)
         case openAISettings
@@ -295,6 +369,5 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             tabID: ContentTabID,
             navigationState: ContentPageNavigationRoute,
         )
-        case pinnedRecordPersistenceRequested(FileManagerPinnedRecordPersistenceRequest)
     }
 }

@@ -310,11 +310,11 @@ enum ExternalOpenPlacementApplication {
     }
 }
 
-enum WindowManagerPinnedRecordMutationOutcome: Equatable {
-    case applied
-    case failed
-    case cancelled
-    case superseded
+struct DefaultWindowBootstrapResult: Equatable {
+    let contentTabs: ContentTabState
+    let fixedLocationItems: [FileManagerFixedLocationItem]
+    let topNavigationOrder: FileManagerTopNavigationOrder
+    let arrangementAvailability: FileManagerTopNavigationArrangementAvailability
 }
 
 @CasePathable
@@ -329,13 +329,18 @@ enum WindowManagerAction: CasePathable {
     case placement(PlacementCommand)
     case trackedSingleton(TrackedSingletonCommand)
     case trackedSingletonNativeOpenCompleted(requestID: UUID)
-    case pinnedRecordMutationFinished(
-        mutationID: UUID,
-        outcome: WindowManagerPinnedRecordMutationOutcome,
-    )
     case pinnedContentTabsStoreChanged
-    case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
+    case topNavigationMovePersistenceCompleted(
+        sourceWindowID: WindowManagerState.WindowID,
+        token: FileManagerTopNavigationOperationToken,
+        terminal: FileManagerTopNavigationIntentTerminal,
+    )
+    case topNavigationPersistenceRequested(WindowManagerTopNavigationPersistenceRequest)
+    case topNavigationPersistenceCompleted(WindowManagerTopNavigationPersistenceResult)
+    case defaultWindowBootstrapCompleted(requestID: UUID, result: DefaultWindowBootstrapResult)
     case defaultWindowBootstrapFailed(requestID: UUID)
+    case defaultWindowBootstrapRequested(id: WindowManagerState.WindowID)
+    case windowReadyToOpen(id: WindowManagerState.WindowID)
     case windowOpenCompleted(
         id: WindowManagerState.WindowID,
         shouldBootstrapDefaultWindow: Bool,

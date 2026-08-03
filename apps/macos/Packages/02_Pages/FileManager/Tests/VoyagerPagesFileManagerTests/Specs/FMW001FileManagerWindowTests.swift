@@ -2107,9 +2107,9 @@ extension FMW001FileManagerWindowTests {
 
     /// FMW-001-move_content_tab_to_window: pending move는 다른 tab 선택 routing을 차단하지 않는다.
     /// 진행 중인 tab의 move control만 제한하고 일반 row navigation은 유지하는 계약을 검증한다.
-    /// - 검증 내용: pending request가 있어도 다른 tab select delegate가 ContentTab setCurrent로 전달된다.
+    /// - 검증 내용: pending request가 있어도 다른 tab select delegate가 setCurrent와 selection collapse로 전달된다.
     /// - 사전 조건: 한 tab에 pending move가 있고 별도의 target tab이 존재한다.
-    /// - 기대 결과: 다른 tab의 setCurrent action이 그대로 방출된다.
+    /// - 기대 결과: 다른 tab의 setCurrent와 collapseSelectionToActive action이 순서대로 방출된다.
     func testContentTabMovePendingPreservesUnrelatedTabSelection() async throws {
         let request = try makeContentTabMoveRequest()
         let otherTabID = ContentTabID(rawValue: "unrelated-tab")
@@ -2134,6 +2134,7 @@ extension FMW001FileManagerWindowTests {
 
         await store.send(.sidebar(.delegate(.selectContentTab(otherTabID))))
         await store.receive(\.contentTabs.setCurrent, otherTabID)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
     }
 
     /// FMW-001-move_content_tab_to_window: drag payload는 version/source/tab locator만 round-trip한다.
@@ -2189,17 +2190,17 @@ extension FMW001FileManagerWindowTests {
         XCTAssertTrue(source.contains("conformingTo: .json"))
     }
 
-    /// FMW-001-move_content_tab_to_window: native drag writer는 reorder와 cross-window move payload를 함께 광고한다.
-    /// phase의 same-window reorder와 VOY-450 cross-window move가 하나의 AppKit drag session을 공유하는 계약을 검증한다.
-    /// - 검증 내용: combined/move-only writable type과 두 JSON payload identity, local token ownership.
+    /// FMW-001-move_content_tab_to_window: native drag writer는 generalized reorder와 cross-window move payload를 함께 광고한다.
+    /// phase의 top-navigation reorder와 VOY-450 cross-window move가 하나의 AppKit drag session을 공유하는 계약을 검증한다.
+    /// - 검증 내용: combined/reorder-only writable type과 두 JSON payload identity, local token ownership.
     /// - 사전 조건: 고정 reorder scope와 cross-window locator, Sidebar-local session store가 있다.
-    /// - 기대 결과: unpinned source는 세 type을, pinned source는 move type만 광고한다.
+    /// - 기대 결과: Content Tab source는 세 type을, Location source는 reorder type만 광고한다.
     func testContentTabNativeDragWriterCombinesReorderAndCrossWindowMovePayloads() throws {
         let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000356"))
         let tabID = ContentTabID(rawValue: "combined-drag-tab")
-        let reorderPayload = try ContentTabReorderDragPayload(
-            sourceID: tabID,
-            dragScopeID: ContentTabReorderDragScopeID(
+        let reorderPayload = try FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(tabID),
+            dragScopeID: FileManagerTopNavigationReorderDragScopeID(
                 rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000357")),
             ),
         )
@@ -2208,11 +2209,11 @@ extension FMW001FileManagerWindowTests {
             sourceWindowID: sourceWindowID,
             tabID: tabID,
         )
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
         let pasteboard = NSPasteboard(name: .init("fm.voyager.tests.combined-content-tab-drag"))
         defer { pasteboard.clearContents() }
 
-        let combinedWriter = try ContentTabReorderPasteboardWriter(
+        let combinedWriter = try FileManagerTopNavigationReorderPasteboardWriter(
             configuration: .init(
                 payload: reorderPayload,
                 sessionStore: sessionStore,
@@ -2221,79 +2222,104 @@ extension FMW001FileManagerWindowTests {
         )
         defer { combinedWriter.cleanupOwnedToken() }
         let expectedTypes: Set<NSPasteboard.PasteboardType> = [
-            .contentTabReorder,
-            .contentTabReorderLocal,
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
             .contentTabMove,
         ]
         XCTAssertEqual(Set(combinedWriter.writableTypes(for: pasteboard)), expectedTypes)
         let reorderData = try XCTUnwrap(combinedWriter.pasteboardPropertyList(
-            forType: NSPasteboard.PasteboardType.contentTabReorder,
+            forType: NSPasteboard.PasteboardType.fileManagerTopNavigationReorder,
         ) as? Data)
         let moveData = try XCTUnwrap(combinedWriter.pasteboardPropertyList(
             forType: NSPasteboard.PasteboardType.contentTabMove,
         ) as? Data)
-        XCTAssertEqual(try JSONDecoder().decode(ContentTabReorderDragPayload.self, from: reorderData), reorderPayload)
-        XCTAssertEqual(try JSONDecoder().decode(ContentTabDragPayload.self, from: moveData), movePayload)
-        XCTAssertNotNil(combinedWriter.token)
-
-        let moveOnlyWriter = try ContentTabReorderPasteboardWriter(
-            configuration: .init(movePayload: movePayload, sessionStore: sessionStore),
-        )
         XCTAssertEqual(
-            moveOnlyWriter.writableTypes(for: pasteboard),
-            [NSPasteboard.PasteboardType.contentTabMove],
+            try JSONDecoder().decode(FileManagerTopNavigationReorderDragPayload.self, from: reorderData),
+            reorderPayload,
         )
-        XCTAssertNil(moveOnlyWriter.token)
+        XCTAssertEqual(try JSONDecoder().decode(ContentTabDragPayload.self, from: moveData), movePayload)
+
+        let locationPayload = try FileManagerTopNavigationReorderDragPayload(
+            sourceID: .location("home"),
+            dragScopeID: FileManagerTopNavigationReorderDragScopeID(
+                rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000360")),
+                boundaryOwner: .topNavigation,
+            ),
+        )
+        let reorderOnlyWriter = try FileManagerTopNavigationReorderPasteboardWriter(
+            configuration: .init(payload: locationPayload, sessionStore: sessionStore),
+        )
+        defer { reorderOnlyWriter.cleanupOwnedToken() }
+        XCTAssertEqual(
+            Set(reorderOnlyWriter.writableTypes(for: pasteboard)),
+            Set<NSPasteboard.PasteboardType>([
+                .fileManagerTopNavigationReorder,
+                .fileManagerTopNavigationReorderLocal,
+            ]),
+        )
     }
 
     /// FMW-001-move_content_tab_to_window: foreign-window combined drag는 same-window reorder slot이 가로채지 않는다.
-    /// reorder payload의 scope를 preview하여 target window의 viewport drop handler에 cross-window payload를 위임한다.
+    /// generalized reorder payload의 scope를 preview하여 target window의 viewport drop handler에 cross-window payload를 위임한다.
     /// - 검증 내용: same scope move 승인과 foreign scope 거부, move UTI가 reorder shape 검증을 깨지 않음.
     /// - 사전 조건: 동일 type set을 가진 same/foreign scope payload가 있다.
     /// - 기대 결과: same scope만 reorder boundary를 활성화하고 foreign scope는 빈 operation을 반환한다.
     func testContentTabReorderDestinationRejectsForeignCombinedDragScope() throws {
-        let localScope = try ContentTabReorderDragScopeID(
+        let localScope = try FileManagerTopNavigationReorderDragScopeID(
             rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000358")),
         )
-        let foreignScope = try ContentTabReorderDragScopeID(
+        let foreignScope = try FileManagerTopNavigationReorderDragScopeID(
             rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000359")),
         )
-        let targetID = ContentTabID(rawValue: "target")
+        let sourceID = FileManagerTopNavigationItemID.contentTab(.init(rawValue: "source"))
+        let targetID = FileManagerTopNavigationItemID.contentTab(.init(rawValue: "target"))
         var activeBoundaryID: Int?
-        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        sessionStore.begin(payload: .init(sourceID: .init(rawValue: "source"), dragScopeID: localScope))
-        let view = ContentTabReorderDropDestinationView(configuration: .init(
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let localPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: sourceID,
+            dragScopeID: localScope,
+        )
+        let foreignPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: sourceID,
+            dragScopeID: foreignScope,
+        )
+        sessionStore.begin(payload: localPayload)
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
             activeBoundaryID: Binding(
                 get: { activeBoundaryID },
                 set: { activeBoundaryID = $0 },
             ),
-            boundary: .init(id: 1, targetID: targetID, placement: .before),
+            boundary: .init(
+                id: 1,
+                owner: .unpinnedContentTabs,
+                anchorID: targetID,
+                placement: .before,
+            ),
             dragScopeID: localScope,
             sessionStore: sessionStore,
-            pinState: { _ in false },
-            onReorder: { _, _, _ in },
+            boundaryOwnerForItem: { _ in .unpinnedContentTabs },
+            onReorder: { _ in },
             onDropValidationCompleted: { _ in },
         ))
         let types: Set<NSPasteboard.PasteboardType> = [
-            .contentTabReorder,
-            .contentTabReorderLocal,
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
             .contentTabMove,
         ]
-        func item(scope: ContentTabReorderDragScopeID) throws -> ContentTabReorderPasteboardItem {
-            let data = try JSONEncoder().encode(ContentTabReorderDragPayload(
-                sourceID: ContentTabID(rawValue: "source"),
-                dragScopeID: scope,
-            ))
-            return ContentTabReorderPasteboardItem(types: types) { type in
-                type == .contentTabReorder ? data : nil
+        func item(payload: FileManagerTopNavigationReorderDragPayload) throws
+            -> FileManagerTopNavigationReorderPasteboardItem
+        {
+            let data = try JSONEncoder().encode(payload)
+            return FileManagerTopNavigationReorderPasteboardItem(types: types) { type in
+                type == .fileManagerTopNavigationReorder ? data : nil
             }
         }
 
-        XCTAssertEqual(try view.draggingEntered(pasteboardItems: [item(scope: localScope)]), NSDragOperation.move)
+        XCTAssertEqual(try view.draggingEntered(pasteboardItems: [item(payload: localPayload)]), .move)
         XCTAssertEqual(activeBoundaryID, 1)
         view.draggingExited()
-        sessionStore.clear()
-        XCTAssertEqual(try view.draggingEntered(pasteboardItems: [item(scope: foreignScope)]), NSDragOperation())
+        sessionStore.begin(payload: foreignPayload)
+        XCTAssertEqual(try view.draggingEntered(pasteboardItems: [item(payload: foreignPayload)]), [])
         XCTAssertNil(activeBoundaryID)
     }
 
@@ -2391,11 +2417,11 @@ extension FMW001FileManagerWindowTests {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("sidebarStore.pendingContentTabMoveRequest == nil"))
-        XCTAssertTrue(source.contains("ContentTabReorderDragSourceConfiguration("))
-        XCTAssertTrue(source.contains("movePayload: movePayload"))
+        XCTAssertTrue(source.contains("FileManagerTopNavigationReorderDragSourceConfiguration("))
+        XCTAssertTrue(source.contains("movePayload: ContentTabDragPayload("))
         XCTAssertTrue(source.contains("private var contentTabsViewport: some View"))
         XCTAssertTrue(source.contains("GeometryReader"))
-        XCTAssertTrue(source.contains(".frame(minHeight: proxy.size.height, alignment: .top)"))
+        XCTAssertTrue(source.contains("minHeight: proxy.size.height"))
         XCTAssertTrue(source.contains(".onDrop("))
         XCTAssertTrue(source.contains("of: [ContentTabDragPayload.contentType]"))
         XCTAssertTrue(source.contains("hasItemsConforming(to: [ContentTabDragPayload.contentType])"))

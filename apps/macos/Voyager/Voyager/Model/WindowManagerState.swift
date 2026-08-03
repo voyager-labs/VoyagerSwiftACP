@@ -2,6 +2,31 @@ import ComposableArchitecture
 import Foundation
 import VoyagerPagesFileManager
 
+struct WindowManagerTopNavigationPersistenceRequest: Equatable {
+    let sourceWindowID: WindowManagerState.WindowID
+    let token: FileManagerTopNavigationOperationToken
+    let operation: Operation
+
+    enum Operation: Equatable {
+        case move(
+            source: FileManagerTopNavigationItemID,
+            destination: FileManagerTopNavigationMoveDestination,
+            discoveredLocationIDs: [String],
+        )
+        case pinnedRecord(
+            source: FileManagerPinnedRecordPersistenceSource,
+            request: ContentTabPinnedRecordPersistenceRequest,
+            discoveredLocationIDs: [String],
+        )
+    }
+}
+
+struct WindowManagerTopNavigationPersistenceResult: Equatable {
+    let request: WindowManagerTopNavigationPersistenceRequest
+    let terminal: FileManagerTopNavigationIntentTerminal
+    let authoritativePinnedContentTabs: ContentTabState?
+}
+
 struct WindowManagerTrackedSingletonWindow: Equatable {
     var requestID: UUID
     var windowID: UUID
@@ -11,12 +36,6 @@ struct WindowManagerTrackedSingletonWindow: Equatable {
 struct WindowManagerRetainedExternalOpenPlacementOwnership: Equatable {
     var batchID: UUID
     var newWindowIDs: [UUID]
-}
-
-struct WindowManagerInFlightPinnedRecordMutation: Equatable {
-    let sourceWindowID: WindowManagerState.WindowID
-    let request: FileManagerPinnedRecordPersistenceRequest
-    let generation: ContentTabPinnedRecordMutationGeneration
 }
 
 struct ContentTabMoveTerminalRecord: Equatable {
@@ -48,6 +67,7 @@ struct WindowManagerState: Equatable {
     var focusedWindowID: WindowID?
     var pendingWindowOpenIDs: Set<WindowID> = []
     var closingWindowIDs: Set<WindowID> = []
+    var deferredClosedWindowIDs: Set<WindowID> = []
     var invalidatingWindowIDs: Set<WindowID> = []
     var lastUsedWindowIDs: [WindowID] = []
     var defaultWindowBootstrapRequestID: UUID?
@@ -58,7 +78,8 @@ struct WindowManagerState: Equatable {
     var authorizedTrackedSingletonRequestID: UUID?
     var trackedSingletonWindow: WindowManagerTrackedSingletonWindow?
     var externalOpenActivationAttempt: ExternalOpenActivationAttempt?
-    var inFlightPinnedRecordMutations: [UUID: WindowManagerInFlightPinnedRecordMutation] = [:]
+    var topNavigationPersistenceQueue: [WindowManagerTopNavigationPersistenceRequest] = []
+    var isTopNavigationPersistenceInFlight = false
     var contentTabMoveTerminalRecords: [UUID: ContentTabMoveTerminalRecord] = [:]
     var contentTabMoveTerminalRequestIDs: [UUID] = []
     var contentTabMoveActivationAttempts: [UUID: ContentTabMoveActivationAttempt] = [:]
@@ -147,6 +168,7 @@ struct WindowSessionFeature {
     var body: some Reducer<State, Action> {
         Scope(state: \.window, action: \.window) {
             FileManagerWindowFeature()
+                .dependency(\.fileManagerPinnedRecordOwner, .windowManager)
         }
 
         Reduce { _, action in
