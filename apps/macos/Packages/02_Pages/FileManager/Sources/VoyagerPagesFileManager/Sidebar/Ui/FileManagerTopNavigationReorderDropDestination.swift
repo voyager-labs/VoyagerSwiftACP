@@ -234,7 +234,7 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
     ) -> FileManagerTopNavigationReorderDragPayload? {
         guard items.count == 1, let item = items.first else { return nil }
 
-        let types = item.types
+        let types = item.types.subtracting([.contentTabMove])
         guard types.contains(.fileManagerTopNavigationReorder) else { return nil }
 
         if types.contains(.fileManagerTopNavigationReorderLocal) {
@@ -291,8 +291,9 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
         _ items: [FileManagerTopNavigationReorderPasteboardItem],
     ) -> Bool {
         guard items.count == 1, let item = items.first else { return false }
-        return localPasteboardTypes.contains(item.types)
-            || item.types == [.fileManagerTopNavigationReorder]
+        let types = item.types.subtracting([.contentTabMove])
+        return localPasteboardTypes.contains(types)
+            || types == [.fileManagerTopNavigationReorder]
     }
 
     private static func advertisesReorderType(
@@ -304,7 +305,10 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
     private func updateCandidateState(
         pasteboardItems: [FileManagerTopNavigationReorderPasteboardItem],
     ) -> NSDragOperation {
-        guard targetBelongsToBoundary(), Self.acceptsAdvertisedShape(pasteboardItems) else {
+        guard targetBelongsToBoundary(),
+              Self.acceptsAdvertisedShape(pasteboardItems),
+              acceptsDragScope(pasteboardItems: pasteboardItems)
+        else {
             if Self.advertisesReorderType(pasteboardItems) {
                 cancel()
             } else {
@@ -315,6 +319,15 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
         acceptedAdvertisedShape = true
         publishActiveBoundary()
         return .move
+    }
+
+    private func acceptsDragScope(
+        pasteboardItems: [FileManagerTopNavigationReorderPasteboardItem],
+    ) -> Bool {
+        guard pasteboardItems.count == 1, let item = pasteboardItems.first else { return false }
+        let types = item.types.subtracting([.contentTabMove])
+        guard types.contains(.fileManagerTopNavigationReorderLocal) else { return true }
+        return configuration.sessionStore.entry?.payload.dragScopeID == configuration.dragScopeID
     }
 
     private func publishActiveBoundary() {

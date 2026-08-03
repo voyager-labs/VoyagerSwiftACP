@@ -1,6 +1,8 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
+import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -1698,6 +1700,19 @@ extension FMW001FileManagerWindowTests {
             XCTAssertFalse(toolbar.allowsDisplayModeCustomization)
         }
     }
+
+    /// FMW-001-open_file_manager_window: Sidebar 외 배경은 기존 window movement를 유지한다.
+    /// Sidebar hosting surface의 국소 override가 window 전역 이동 설정을 약화하지 않는지 검증한다.
+    /// - 검증 내용: configureWindowStyle 이후 isMovableByWindowBackground true.
+    /// - 사전 조건: 새 NSWindow에 FileManagerWindowChrome 스타일을 적용한다.
+    /// - 기대 결과: File Manager window의 background movement가 계속 활성화된다.
+    func testConfigureWindowStyleKeepsBackgroundWindowMovementEnabled() {
+        let window = NSWindow(contentViewController: NSViewController())
+
+        FileManagerWindowChrome.configureWindowStyle(window)
+
+        XCTAssertTrue(window.isMovableByWindowBackground)
+    }
 }
 
 extension FMW001FileManagerWindowTests {
@@ -1829,4 +1844,607 @@ private func makeFileManagerContentStore() -> TestStore<FileManagerContentState,
     TestStore(initialState: FileManagerContentState()) {
         FileManagerContentFeature()
     }
+}
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-move_content_tab_to_window
+
+    /// FMW-001-move_content_tab_to_window: target 선택은 request UUID를 한 번 생성해 모든 delegate 계층에 보존한다.
+    /// 사용자가 같은 target을 반복 선택해도 pending tab에는 하나의 요청만 전달되는 계약을 검증한다.
+    /// - 검증 내용: Sidebar pending state, Sidebar delegate, Window delegate의 request identity와 중복 억제.
+    /// - 사전 조건: source window ID, active tab, 두 target projection, 고정 UUID dependency가 있다.
+    /// - 기대 결과: 첫 선택만 동일 request를 두 delegate 계층에 전달하고 두 번째 선택은 no-op이다.
+    func testContentTabMoveSelectionCreatesOneRequestAndPreservesDelegateIdentity() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000301"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000302"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000303"))
+        var state = FileManagerWindowState()
+        let tabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.sidebar.currentWindowID = sourceWindowID
+        state.sidebar.contentTabMoveTargets = [
+            ContentTabMoveTarget(windowID: targetWindowID, displayTitle: "Research"),
+        ]
+        let request = ContentTabMoveRequest(
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+            targetWindowID: targetWindowID,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+        }
+
+        await store.send(.sidebar(.view(.moveContentTab(tabID: tabID, targetWindowID: targetWindowID)))) {
+            $0.sidebar.pendingContentTabMoveRequest = request
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, request)
+        await store.receive(\.delegate.requestContentTabMove, request)
+
+        await store.send(.sidebar(.view(.moveContentTab(tabID: tabID, targetWindowID: targetWindowID))))
+    }
+
+    /// FMW-001-move_content_tab_to_window: matching success만 pending 요청을 종료한다.
+    /// manager terminal이 현재 request와 정확히 일치할 때만 진행 표시가 사라지는 stale-safe 계약을 검증한다.
+    /// - 검증 내용: stale success no-op과 matching success의 pending clear.
+    /// - 사전 조건: source tab에 pending move request가 있고 stale request ID가 별도로 있다.
+    /// - 기대 결과: stale terminal은 불변이고 matching terminal만 pending을 nil로 만든다.
+    func testContentTabMoveSuccessClearsOnlyMatchingPendingRequest() async throws {
+        let request = try makeContentTabMoveRequest()
+        var state = FileManagerWindowState()
+        state.sidebar.pendingContentTabMoveRequest = request
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.contentTabMoveSucceeded(requestID: UUID()))
+        await store.send(.contentTabMoveSucceeded(requestID: request.requestID)) {
+            $0.sidebar.pendingContentTabMoveRequest = nil
+        }
+    }
+
+    /// FMW-001-move_content_tab_to_window: matching rejection은 네 사용자 범주만 window presentation으로 매핑한다.
+    /// 내부 transfer 세부 정보 대신 고정된 사용자 의미만 source window에 표시하는 계약을 검증한다.
+    /// - 검증 내용: unavailable/capacity/busy/generic terminal의 pending clear와 typed presentation 설정.
+    /// - 사전 조건: 각 범주마다 matching pending request가 설정되어 있다.
+    /// - 기대 결과: presentation은 request ID와 네 범주 중 하나만 보존한다.
+    func testContentTabMoveRejectionMapsAllUserFacingCategories() async throws {
+        for category in ContentTabMoveFailurePresentation.Category.allCases {
+            let request = try makeContentTabMoveRequest()
+            var state = FileManagerWindowState()
+            state.sidebar.pendingContentTabMoveRequest = request
+            let store = TestStore(initialState: state) {
+                FileManagerFeature()
+            }
+
+            await store.send(.contentTabMoveRejected(requestID: request.requestID, category: category)) {
+                $0.sidebar.pendingContentTabMoveRequest = nil
+                $0.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
+                    requestID: request.requestID,
+                    category: category,
+                )
+            }
+        }
+    }
+
+    /// FMW-001-move_content_tab_to_window: stale rejection과 stale dismiss는 현재 presentation을 변경하지 않는다.
+    /// 늦게 도착한 manager/UI action이 새로운 failure ownership을 지우지 않는 계약을 검증한다.
+    /// - 검증 내용: request ID mismatch terminal과 dismiss의 no-op.
+    /// - 사전 조건: matching pending request와 다른 request ID의 기존 presentation이 있다.
+    /// - 기대 결과: stale rejection은 pending을, stale dismiss는 presentation을 그대로 유지한다.
+    func testContentTabMoveStaleTerminalAndDismissAreNoOps() async throws {
+        let request = try makeContentTabMoveRequest()
+        let presentation = ContentTabMoveFailurePresentation(requestID: UUID(), category: .busy)
+        var state = FileManagerWindowState()
+        state.sidebar.pendingContentTabMoveRequest = request
+        state.contentTabMoveFailurePresentation = presentation
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.contentTabMoveRejected(requestID: UUID(), category: .generic))
+        await store.send(.view(.dismissContentTabMoveFailure(requestID: UUID())))
+    }
+
+    /// FMW-001-move_content_tab_to_window: failure dismiss는 presentation 외 transfer semantic state를 변경하지 않는다.
+    /// 사용자가 오류를 닫아도 target projection과 pending/ContentTab 상태가 보존되는 계약을 검증한다.
+    /// - 검증 내용: matching dismiss의 presentation-only mutation.
+    /// - 사전 조건: failure presentation, target projection, content tab state가 설정되어 있다.
+    /// - 기대 결과: presentation만 nil이고 target과 ContentTab 상태는 동일하다.
+    func testContentTabMoveFailureDismissPreservesTransferSemanticState() async throws {
+        let request = try makeContentTabMoveRequest()
+        let target = ContentTabMoveTarget(windowID: request.targetWindowID, displayTitle: "Research")
+        var state = FileManagerWindowState()
+        state.sidebar.contentTabMoveTargets = [target]
+        state.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
+            requestID: request.requestID,
+            category: .unavailable,
+        )
+        let contentTabs = state.contentTabs
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.view(.dismissContentTabMoveFailure(requestID: request.requestID))) {
+            $0.contentTabMoveFailurePresentation = nil
+        }
+
+        XCTAssertEqual(store.state.sidebar.contentTabMoveTargets, [target])
+        XCTAssertEqual(store.state.contentTabs, contentTabs)
+        XCTAssertNil(store.state.sidebar.pendingContentTabMoveRequest)
+    }
+
+    /// FMW-001-move_content_tab_to_window: 빈 projection과 current window target은 move command를 만들지 않는다.
+    /// app projection이 비었거나 방어적으로 제거된 경우 Sidebar가 registry fallback 없이 no-op인지 검증한다.
+    /// - 검증 내용: target filtering 순서와 유효하지 않은 target action의 delegate 미방출.
+    /// - 사전 조건: current window와 동일한 target만 주입되거나 projection이 비어 있다.
+    /// - 기대 결과: available target은 비고 move action은 pending/delegate를 만들지 않는다.
+    func testContentTabMoveProjectionExcludesCurrentWindowAndEmptySelectionIsNoOp() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000310"))
+        var state = FileManagerWindowState()
+        let tabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.sidebar.currentWindowID = sourceWindowID
+        state.sidebar.contentTabMoveTargets = [
+            ContentTabMoveTarget(windowID: sourceWindowID, displayTitle: "Current"),
+        ]
+        XCTAssertTrue(ContentTabMoveProjection.availableTargets(
+            state.sidebar.contentTabMoveTargets,
+            currentWindowID: sourceWindowID,
+        ).isEmpty)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.sidebar(.view(.moveContentTab(tabID: tabID, targetWindowID: UUID()))))
+    }
+
+    /// FMW-001-move_content_tab_to_window: target projection은 주입 순서를 보존한다.
+    /// Sidebar menu가 display title이나 window ID로 재정렬하지 않는 순수 projection 계약을 검증한다.
+    /// - 검증 내용: current window defensive filtering 이후 target 순서.
+    /// - 사전 조건: current window를 사이에 포함한 세 target이 고정 순서로 주입된다.
+    /// - 기대 결과: current window만 제거되고 나머지 두 target 순서는 그대로다.
+    func testContentTabMoveProjectionPreservesInjectedTargetOrder() throws {
+        let currentWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000320"))
+        let first = try ContentTabMoveTarget(
+            windowID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000321")),
+            displayTitle: "Zeta",
+        )
+        let second = try ContentTabMoveTarget(
+            windowID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000322")),
+            displayTitle: "Alpha",
+        )
+        let current = ContentTabMoveTarget(windowID: currentWindowID, displayTitle: "Current")
+
+        XCTAssertEqual(
+            ContentTabMoveProjection.availableTargets([first, current, second], currentWindowID: currentWindowID),
+            [first, second],
+        )
+    }
+
+    /// FMW-001-move_content_tab_to_window: row/menu/target/progress identifier는 stable typed ID만 사용한다.
+    /// display title 변경이 UI automation identifier를 바꾸지 않는 추적 계약을 검증한다.
+    /// - 검증 내용: 네 identifier의 정확한 문자열 형식.
+    /// - 사전 조건: 고정 ContentTabID와 target window UUID가 있다.
+    /// - 기대 결과: 요구된 prefix와 raw typed ID로 정확한 identifier가 생성된다.
+    func testContentTabMoveAccessibilityIdentifiersAreStable() throws {
+        let tabID = ContentTabID(rawValue: "tab-identifier")
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000330"))
+
+        XCTAssertEqual(ContentTabMoveProjection.rowIdentifier(tabID: tabID), "content-tab-tab-identifier")
+        XCTAssertEqual(ContentTabMoveProjection.menuIdentifier(tabID: tabID), "content-tab-move-menu-tab-identifier")
+        XCTAssertEqual(
+            ContentTabMoveProjection.targetIdentifier(tabID: tabID, windowID: windowID),
+            "content-tab-move-target-tab-identifier-00000000-0000-0000-0000-000000000330",
+        )
+        XCTAssertEqual(
+            ContentTabMoveProjection.progressIdentifier(tabID: tabID),
+            "content-tab-move-progress-tab-identifier",
+        )
+    }
+
+    /// FMW-001-move_content_tab_to_window: Sidebar view는 projection과 stable identifier를 실제 context menu에 연결한다.
+    /// 실행 가능한 SwiftUI inspection이 없는 패키지 환경에서 source-level wiring 계약을 고정한다.
+    /// - 검증 내용: non-empty menu guard, injected-order ForEach, move-only disabled, row/menu/target/progress identifier
+    /// 적용.
+    /// - 사전 조건: package checkout의 canonical SidebarView.swift source를 읽을 수 있다.
+    /// - 기대 결과: 요구된 wiring token이 모두 있고 view-side target sorting은 없다.
+    func testContentTabMoveSidebarViewWiresMenuOrderPendingControlsAndIdentifiers() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("if !moveTargets.isEmpty"))
+        XCTAssertTrue(source.contains(#"NSMenuItem(title: "Move to Window""#))
+        XCTAssertTrue(source.contains("for target in moveTargets"))
+        XCTAssertFalse(source.contains("moveTargets.sorted"))
+        XCTAssertTrue(source.contains("moveItem.isEnabled = !isMovePending"))
+        XCTAssertTrue(source.contains("targetItem.isEnabled = !isMovePending"))
+        XCTAssertTrue(source.contains("setAccessibilityIdentifier(ContentTabMoveProjection.rowIdentifier"))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.menuIdentifier(tabID: moveTargetsTabID)"))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.targetIdentifier("))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.progressIdentifier(tabID: item.id)"))
+    }
+
+    /// FMW-001-move_content_tab_to_window: 이동 실패 alert는 live main container가 단독 소유한다.
+    /// 실행 가능한 SwiftUI inspection이 없는 패키지 환경에서 source-level alert hosting 계약을 고정한다.
+    /// - 검증 내용: MainContainer의 alert/binding/dismiss/message mapping과 legacy WindowView alert 부재
+    /// - 사전 조건: package checkout의 두 canonical window view source를 읽을 수 있다.
+    /// - 기대 결과: live split layout 경로에만 content-tab move failure alert가 존재한다.
+    func testContentTabMoveFailureAlertIsOwnedOnlyByLiveMainContainer() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mainContainerSource = try String(
+            contentsOf: packageRoot.appendingPathComponent(
+                "Sources/VoyagerPagesFileManager/Window/Ui/FileManagerWindowMainContainerView.swift",
+            ),
+            encoding: .utf8,
+        )
+        let legacyWindowSource = try String(
+            contentsOf: packageRoot.appendingPathComponent(
+                "Sources/VoyagerPagesFileManager/Window/Ui/FileManagerWindowView.swift",
+            ),
+            encoding: .utf8,
+        )
+
+        XCTAssertTrue(mainContainerSource.contains(#".alert("#))
+        XCTAssertTrue(mainContainerSource.contains("contentTabMoveFailureIsPresented"))
+        XCTAssertTrue(mainContainerSource.contains("dismissContentTabMoveFailure"))
+        XCTAssertTrue(mainContainerSource.contains("contentTabMoveFailureMessage"))
+        XCTAssertTrue(mainContainerSource.contains(".view(.dismissContentTabMoveFailure(requestID: requestID))"))
+        XCTAssertFalse(legacyWindowSource.contains(#".alert("#))
+        XCTAssertFalse(legacyWindowSource.contains("contentTabMoveFailureIsPresented"))
+    }
+
+    /// FMW-001-move_content_tab_to_window: pending move는 다른 tab 선택 routing을 차단하지 않는다.
+    /// 진행 중인 tab의 move control만 제한하고 일반 row navigation은 유지하는 계약을 검증한다.
+    /// - 검증 내용: pending request가 있어도 다른 tab select delegate가 setCurrent와 selection collapse로 전달된다.
+    /// - 사전 조건: 한 tab에 pending move가 있고 별도의 target tab이 존재한다.
+    /// - 기대 결과: 다른 tab의 setCurrent와 collapseSelectionToActive action이 순서대로 방출된다.
+    func testContentTabMovePendingPreservesUnrelatedTabSelection() async throws {
+        let request = try makeContentTabMoveRequest()
+        let otherTabID = ContentTabID(rawValue: "unrelated-tab")
+        var state = FileManagerWindowState()
+        state.sidebar.pendingContentTabMoveRequest = request
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: otherTabID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Other",
+            iconName: "house",
+        ))
+        state.tabContentStates[otherTabID] = FileManagerContentFeature.State.initialContent(
+            for: .homeDefault,
+            inheritingWindowContextFrom: state.content,
+        )
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.selectContentTab(otherTabID))))
+        await store.receive(\.contentTabs.setCurrent, otherTabID)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
+    }
+
+    /// FMW-001-move_content_tab_to_window: drag payload는 version/source/tab locator만 round-trip한다.
+    /// 외부 drop payload가 target/request/tab state를 권한 있는 값처럼 운반하지 않는 최소 계약을 검증한다.
+    /// - 검증 내용: Codable round-trip의 exact field 보존과 top-level encoded key allowlist.
+    /// - 사전 조건: 지원 schema version, source window UUID, ContentTabID가 있다.
+    /// - 기대 결과: 세 값만 복원되고 target/request/state 관련 key는 존재하지 않는다.
+    func testContentTabDragPayloadRoundTripUsesMinimalVersionedLocatorKeys() throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000351"))
+        let payload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: ContentTabID(rawValue: "drag-payload-tab"),
+        )
+
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(ContentTabDragPayload.self, from: data)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(decoded, payload)
+        XCTAssertEqual(decoded.schemaVersion, ContentTabDragPayload.supportedSchemaVersion)
+        XCTAssertEqual(decoded.sourceWindowID, sourceWindowID)
+        XCTAssertEqual(decoded.tabID, ContentTabID(rawValue: "drag-payload-tab"))
+        XCTAssertEqual(Set(object.keys), ["schemaVersion", "sourceWindowID", "tabID"])
+        XCTAssertTrue(ContentTabDragPayload.isSupported(schemaVersion: decoded.schemaVersion))
+        XCTAssertFalse(ContentTabDragPayload.isSupported(schemaVersion: decoded.schemaVersion + 1))
+        for forbiddenKey in ["targetWindowID", "requestID", "title", "path", "anchor", "state", "workUnit"] {
+            XCTAssertNil(object[forbiddenKey])
+        }
+    }
+
+    /// FMW-001-move_content_tab_to_window: drag UTI는 안정적인 identifier와 JSON conformance를 함께 선언한다.
+    /// Swift Transferable representation과 app bundle exported declaration이 공유할 code-side 계약을 검증한다.
+    /// - 검증 내용: contentType identifier와 public.json conformance.
+    /// - 사전 조건: ContentTabDragPayload의 custom exported UTType이 있다.
+    /// - 기대 결과: identifier가 고정되고 UTType.json에 conform한다.
+    func testContentTabDragContentTypeUsesExportedJSONContract() throws {
+        XCTAssertEqual(
+            ContentTabDragPayload.contentType.identifier,
+            "com.voyager.app.content-tab-drag-payload",
+        )
+
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerPagesFileManager/Sidebar/Model/ContentTabMove.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("conformingTo: .json"))
+    }
+
+    /// FMW-001-move_content_tab_to_window: native drag writer는 generalized reorder와 cross-window move payload를 함께 광고한다.
+    /// phase의 top-navigation reorder와 VOY-450 cross-window move가 하나의 AppKit drag session을 공유하는 계약을 검증한다.
+    /// - 검증 내용: combined/reorder-only writable type과 두 JSON payload identity, local token ownership.
+    /// - 사전 조건: 고정 reorder scope와 cross-window locator, Sidebar-local session store가 있다.
+    /// - 기대 결과: Content Tab source는 세 type을, Location source는 reorder type만 광고한다.
+    func testContentTabNativeDragWriterCombinesReorderAndCrossWindowMovePayloads() throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000356"))
+        let tabID = ContentTabID(rawValue: "combined-drag-tab")
+        let reorderPayload = try FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(tabID),
+            dragScopeID: FileManagerTopNavigationReorderDragScopeID(
+                rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000357")),
+            ),
+        )
+        let movePayload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+        )
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let pasteboard = NSPasteboard(name: .init("fm.voyager.tests.combined-content-tab-drag"))
+        defer { pasteboard.clearContents() }
+
+        let combinedWriter = try FileManagerTopNavigationReorderPasteboardWriter(
+            configuration: .init(
+                payload: reorderPayload,
+                sessionStore: sessionStore,
+                movePayload: movePayload,
+            ),
+        )
+        defer { combinedWriter.cleanupOwnedToken() }
+        let expectedTypes: Set<NSPasteboard.PasteboardType> = [
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
+            .contentTabMove,
+        ]
+        XCTAssertEqual(Set(combinedWriter.writableTypes(for: pasteboard)), expectedTypes)
+        let reorderData = try XCTUnwrap(combinedWriter.pasteboardPropertyList(
+            forType: NSPasteboard.PasteboardType.fileManagerTopNavigationReorder,
+        ) as? Data)
+        let moveData = try XCTUnwrap(combinedWriter.pasteboardPropertyList(
+            forType: NSPasteboard.PasteboardType.contentTabMove,
+        ) as? Data)
+        XCTAssertEqual(
+            try JSONDecoder().decode(FileManagerTopNavigationReorderDragPayload.self, from: reorderData),
+            reorderPayload,
+        )
+        XCTAssertEqual(try JSONDecoder().decode(ContentTabDragPayload.self, from: moveData), movePayload)
+
+        let locationPayload = try FileManagerTopNavigationReorderDragPayload(
+            sourceID: .location("home"),
+            dragScopeID: FileManagerTopNavigationReorderDragScopeID(
+                rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000360")),
+                boundaryOwner: .topNavigation,
+            ),
+        )
+        let reorderOnlyWriter = try FileManagerTopNavigationReorderPasteboardWriter(
+            configuration: .init(payload: locationPayload, sessionStore: sessionStore),
+        )
+        defer { reorderOnlyWriter.cleanupOwnedToken() }
+        XCTAssertEqual(
+            Set(reorderOnlyWriter.writableTypes(for: pasteboard)),
+            Set<NSPasteboard.PasteboardType>([
+                .fileManagerTopNavigationReorder,
+                .fileManagerTopNavigationReorderLocal,
+            ]),
+        )
+    }
+
+    /// FMW-001-move_content_tab_to_window: foreign-window combined drag는 same-window reorder slot이 가로채지 않는다.
+    /// generalized reorder payload의 scope를 preview하여 target window의 viewport drop handler에 cross-window payload를 위임한다.
+    /// - 검증 내용: same scope move 승인과 foreign scope 거부, move UTI가 reorder shape 검증을 깨지 않음.
+    /// - 사전 조건: 동일 type set을 가진 same/foreign scope payload가 있다.
+    /// - 기대 결과: same scope만 reorder boundary를 활성화하고 foreign scope는 빈 operation을 반환한다.
+    func testContentTabReorderDestinationRejectsForeignCombinedDragScope() throws {
+        let localScope = try FileManagerTopNavigationReorderDragScopeID(
+            rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000358")),
+        )
+        let foreignScope = try FileManagerTopNavigationReorderDragScopeID(
+            rawValue: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000359")),
+        )
+        let sourceID = FileManagerTopNavigationItemID.contentTab(.init(rawValue: "source"))
+        let targetID = FileManagerTopNavigationItemID.contentTab(.init(rawValue: "target"))
+        var activeBoundaryID: Int?
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let localPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: sourceID,
+            dragScopeID: localScope,
+        )
+        let foreignPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: sourceID,
+            dragScopeID: foreignScope,
+        )
+        sessionStore.begin(payload: localPayload)
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: Binding(
+                get: { activeBoundaryID },
+                set: { activeBoundaryID = $0 },
+            ),
+            boundary: .init(
+                id: 1,
+                owner: .unpinnedContentTabs,
+                anchorID: targetID,
+                placement: .before,
+            ),
+            dragScopeID: localScope,
+            sessionStore: sessionStore,
+            boundaryOwnerForItem: { _ in .unpinnedContentTabs },
+            onReorder: { _ in },
+            onDropValidationCompleted: { _ in },
+        ))
+        let types: Set<NSPasteboard.PasteboardType> = [
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
+            .contentTabMove,
+        ]
+        func item(payload: FileManagerTopNavigationReorderDragPayload) throws
+            -> FileManagerTopNavigationReorderPasteboardItem
+        {
+            let data = try JSONEncoder().encode(payload)
+            return FileManagerTopNavigationReorderPasteboardItem(types: types) { type in
+                type == .fileManagerTopNavigationReorder ? data : nil
+            }
+        }
+
+        XCTAssertEqual(try view.draggingEntered(pasteboardItems: [item(payload: localPayload)]), .move)
+        XCTAssertEqual(activeBoundaryID, 1)
+        view.draggingExited()
+        sessionStore.begin(payload: foreignPayload)
+        XCTAssertEqual(try view.draggingEntered(pasteboardItems: [item(payload: foreignPayload)]), [])
+        XCTAssertNil(activeBoundaryID)
+    }
+
+    /// FMW-001-move_content_tab_to_window: target Sidebar는 unsupported/no-current/self/pending drop을 위임하지 않는다.
+    /// decoded locator를 source-owned move pipeline에 넣기 전 target-local guard가 fail-safe인지 검증한다.
+    /// - 검증 내용: 네 invalid state에서 state mutation과 delegate action이 모두 없다.
+    /// - 사전 조건: unsupported payload, currentWindowID 없음, self payload, 기존 pending request를 각각 구성한다.
+    /// - 기대 결과: 모든 action이 no-op으로 끝난다.
+    func testContentTabDropRejectsUnsupportedMissingCurrentSelfAndPending() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000352"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000353"))
+        let tabID = ContentTabID(rawValue: "drag-rejection-tab")
+        let validPayload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+        )
+        let unsupportedPayload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion + 1,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+        )
+
+        func assertRejected(
+            _ payload: ContentTabDragPayload,
+            state: FileManagerSidebarState,
+        ) async {
+            let store = TestStore(initialState: state) {
+                FileManagerSidebarFeature()
+            }
+            await store.send(.view(.receiveContentTabDrag(payload)))
+            await store.finish()
+        }
+
+        var unsupportedState = FileManagerSidebarState()
+        unsupportedState.currentWindowID = targetWindowID
+        await assertRejected(unsupportedPayload, state: unsupportedState)
+
+        await assertRejected(validPayload, state: FileManagerSidebarState())
+
+        var selfDropState = FileManagerSidebarState()
+        selfDropState.currentWindowID = sourceWindowID
+        await assertRejected(validPayload, state: selfDropState)
+
+        var pendingState = FileManagerSidebarState()
+        pendingState.currentWindowID = targetWindowID
+        pendingState.pendingContentTabMoveRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: targetWindowID,
+            tabID: ContentTabID(rawValue: "other-pending-tab"),
+            targetWindowID: sourceWindowID,
+        )
+        await assertRejected(validPayload, state: pendingState)
+    }
+
+    /// FMW-001-move_content_tab_to_window: valid drop locator는 Sidebar와 FileManager delegate를 그대로 통과한다.
+    /// target 계층이 request UUID나 target ID를 만들지 않고 untrusted locator를 상위 manager로 전달하는지 검증한다.
+    /// - 검증 내용: Sidebar delegate와 FileManagerWindow delegate의 payload identity.
+    /// - 사전 조건: source와 다른 current target window, 지원 schema payload, pending 없음.
+    /// - 기대 결과: 두 delegate가 입력 payload와 정확히 같은 값을 한 번씩 방출한다.
+    func testContentTabDropRoutesPayloadUnchangedThroughSidebarAndWindowDelegates() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000354"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000355"))
+        let payload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: ContentTabID(rawValue: "drag-routing-tab"),
+        )
+        var state = FileManagerWindowState()
+        state.sidebar.currentWindowID = targetWindowID
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.sidebar(.view(.receiveContentTabDrag(payload))))
+        await store.receive(\.sidebar.delegate.receiveContentTabDrag, payload)
+        await store.receive(\.delegate.receiveContentTabDrag, payload)
+        await store.finish()
+    }
+
+    /// FMW-001-move_content_tab_to_window: Sidebar source는 row drag와 move drop wiring을 함께 보존한다.
+    /// source-level UI inspection 관례로 typed payload, move proposal, stable identifier와 menu fallback을 고정한다.
+    /// - 검증 내용: conditional draggable, viewport onDrop, move/forbidden proposal, typed loadTransferable, 기존 menu/IDs.
+    /// - 사전 조건: package checkout의 canonical SidebarView.swift source를 읽을 수 있다.
+    /// - 기대 결과: move cursor용 DropDelegate wiring과 기존 Move to Window menu/pending control이 함께 유지된다.
+    func testContentTabDragDropSidebarViewWiringPreservesMoveMenu() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("sidebarStore.pendingContentTabMoveRequest == nil"))
+        XCTAssertTrue(source.contains("FileManagerTopNavigationReorderDragSourceConfiguration("))
+        XCTAssertTrue(source.contains("movePayload: ContentTabDragPayload("))
+        XCTAssertTrue(source.contains("private var contentTabsViewport: some View"))
+        XCTAssertTrue(source.contains("GeometryReader"))
+        XCTAssertTrue(source.contains("minHeight: proxy.size.height"))
+        XCTAssertTrue(source.contains(".onDrop("))
+        XCTAssertTrue(source.contains("of: [ContentTabDragPayload.contentType]"))
+        XCTAssertTrue(source.contains("hasItemsConforming(to: [ContentTabDragPayload.contentType])"))
+        XCTAssertTrue(source.contains("DropProposal(operation: .move)"))
+        XCTAssertTrue(source.contains("DropProposal(operation: .forbidden)"))
+        XCTAssertTrue(source.contains("loadTransferable(type: ContentTabDragPayload.self)"))
+        XCTAssertFalse(source.contains(".dropDestination(for: ContentTabDragPayload.self)"))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.dropZoneIdentifier"))
+        XCTAssertEqual(ContentTabMoveProjection.dropZoneIdentifier, "content-tabs-drop-zone")
+        XCTAssertTrue(source.contains(#"NSMenuItem(title: "Move to Window""#))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.menuIdentifier(tabID: moveTargetsTabID)"))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.targetIdentifier("))
+        XCTAssertTrue(source.contains("ContentTabMoveProjection.progressIdentifier(tabID: item.id)"))
+        XCTAssertTrue(source.contains("moveItem.isEnabled = !isMovePending"))
+        XCTAssertTrue(source.contains("targetItem.isEnabled = !isMovePending"))
+    }
+}
+
+private func makeContentTabMoveRequest() throws -> ContentTabMoveRequest {
+    try ContentTabMoveRequest(
+        requestID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000340")),
+        sourceWindowID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000341")),
+        tabID: ContentTabID(rawValue: "pending-tab"),
+        targetWindowID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000342")),
+    )
 }

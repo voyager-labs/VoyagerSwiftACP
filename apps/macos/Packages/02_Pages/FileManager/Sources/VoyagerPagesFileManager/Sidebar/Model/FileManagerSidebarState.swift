@@ -15,9 +15,25 @@ public struct FileManagerSidebarState: Equatable {
     var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
     var topNavigationArrangementPresentation: FileManagerTopNavigationArrangementPresentation?
+    public var currentWindowID: UUID?
+    public var contentTabMoveTargets: [ContentTabMoveTarget] = []
+    public var pendingContentTabMoveRequest: ContentTabMoveRequest?
 
     var showsTopNavigationDivider: Bool {
         !topNavigationItems.isEmpty
+    }
+
+    var fixedLocationVisibilityMenuItems: [FileManagerFixedLocationItem] {
+        let discoveredLocationIDs = Set(allFixedLocationItems.map(\.id))
+
+        return orderedTopNavigationItems.compactMap { item in
+            guard case let .location(location) = item,
+                  discoveredLocationIDs.contains(location.id)
+            else {
+                return nil
+            }
+            return location
+        }
     }
 
     mutating func setFixedLocationItems(

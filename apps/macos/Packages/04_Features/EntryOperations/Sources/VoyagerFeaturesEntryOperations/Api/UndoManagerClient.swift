@@ -90,6 +90,17 @@ public enum FileOperationUndoTransitionOutcome: Equatable, Sendable {
     case invalidated
 }
 
+public enum FileOperationUndoScopeMoveOutcome: Equatable, Sendable {
+    case moved
+    case sourceMissing
+    case targetOccupied
+}
+
+public enum FileOperationUndoScopeTargetPolicy: Equatable, Sendable {
+    case requireVacant
+    case replaceEmpty
+}
+
 @MainActor
 public final class FileOperationUndoManagerRegistry {
     public typealias Generation = UInt64
@@ -144,6 +155,30 @@ public final class FileOperationUndoManagerRegistry {
         for scope in scopes {
             deactivate(scope)
         }
+    }
+
+    public func moveScope(
+        from source: UndoManagerScope,
+        to target: UndoManagerScope,
+        targetPolicy: FileOperationUndoScopeTargetPolicy = .requireVacant,
+    ) -> FileOperationUndoScopeMoveOutcome {
+        guard source != target else {
+            return entries[source] == nil ? .sourceMissing : .targetOccupied
+        }
+        guard let entry = entries[source] else { return .sourceMissing }
+        if let targetEntry = entries[target] {
+            guard targetPolicy == .replaceEmpty, isHistoryEmpty(targetEntry) else {
+                return .targetOccupied
+            }
+        }
+
+        entries.removeValue(forKey: source)
+        if let replacedTarget = entries.removeValue(forKey: target) {
+            clearNativeHistory(replacedTarget)
+        }
+        FileOperationUndoManagerHandlerStore.store(for: entry.manager).rebind(to: target)
+        entries[target] = entry
+        return .moved
     }
 
     public func undoManager(for scope: UndoManagerScope) -> UndoManager? {
@@ -264,6 +299,14 @@ public final class FileOperationUndoManagerRegistry {
         entry.generation = nextGeneration()
     }
 
+    private func isHistoryEmpty(_ entry: Entry) -> Bool {
+        entry.undoRecordIDs.isEmpty
+            && entry.redoRecordIDs.isEmpty
+            && entry.pendingTransition == nil
+            && !entry.manager.canUndo
+            && !entry.manager.canRedo
+    }
+
     private func clearNativeHistory(_ entry: Entry) {
         entry.manager.removeAllActions()
         entry.undoRecordIDs.removeAll()
@@ -290,6 +333,11 @@ public struct FileOperationUndoManagerClient: Sendable {
 
     public var activate: @Sendable (UndoManagerScope) -> UndoManager?
     public var deactivate: @Sendable (UndoManagerScope) -> Void
+    public var moveScope: @Sendable (
+        UndoManagerScope,
+        UndoManagerScope,
+        FileOperationUndoScopeTargetPolicy,
+    ) -> FileOperationUndoScopeMoveOutcome
     public var deactivateAll: @MainActor @Sendable (UUID) async -> Void
     public var undoManager: @MainActor @Sendable (UndoManagerScope) async -> UndoManager?
     public var registerUndo: @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool
@@ -304,6 +352,11 @@ public struct FileOperationUndoManagerClient: Sendable {
     nonisolated public init(
         activate: @escaping @Sendable (UndoManagerScope) -> UndoManager?,
         deactivate: @escaping @Sendable (UndoManagerScope) -> Void,
+        moveScope: @escaping @Sendable (
+            UndoManagerScope,
+            UndoManagerScope,
+            FileOperationUndoScopeTargetPolicy,
+        ) -> FileOperationUndoScopeMoveOutcome,
         deactivateAll: @escaping @MainActor @Sendable (UUID) async -> Void,
         undoManager: @escaping @MainActor @Sendable (UndoManagerScope) async -> UndoManager?,
         registerUndo: @escaping @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool,
@@ -317,6 +370,7 @@ public struct FileOperationUndoManagerClient: Sendable {
     ) {
         self.activate = activate
         self.deactivate = deactivate
+        self.moveScope = moveScope
         self.deactivateAll = deactivateAll
         self.undoManager = undoManager
         self.registerUndo = registerUndo
@@ -335,6 +389,11 @@ public extension FileOperationUndoManagerClient {
             },
             deactivate: { scope in
                 withRegistry(registry) { $0.deactivate(scope) }
+            },
+            moveScope: { source, target, targetPolicy in
+                withRegistry(registry) {
+                    $0.moveScope(from: source, to: target, targetPolicy: targetPolicy)
+                }
             },
             deactivateAll: { registry.deactivateAll(windowID: $0) },
             undoManager: { registry.undoManager(for: $0) },
@@ -383,6 +442,7 @@ extension FileOperationUndoManagerClient: DependencyKey {
         .init(
             activate: { _ in nil },
             deactivate: { _ in },
+            moveScope: { _, _, _ in .sourceMissing },
             deactivateAll: { _ in },
             undoManager: { _ in nil },
             registerUndo: { _, _, _ in false },
@@ -403,7 +463,7 @@ public extension DependencyValues {
 private final class FileOperationUndoManagerHandler {
     private weak var registry: FileOperationUndoManagerRegistry?
     private weak var undoManager: UndoManager?
-    private let scope: UndoManagerScope
+    private var scope: UndoManagerScope
     private let generation: FileOperationUndoManagerRegistry.Generation
     private let recordID: UUID
 
@@ -427,6 +487,10 @@ private final class FileOperationUndoManagerHandler {
 
     func handleRedo() {
         complete(.redo)
+    }
+
+    func rebind(to scope: UndoManagerScope) {
+        self.scope = scope
     }
 
     private func complete(_ direction: FileOperationUndoDirection) {
@@ -471,6 +535,12 @@ private final class FileOperationUndoManagerHandlerStore {
 
     func clear() {
         handlers.removeAll()
+    }
+
+    func rebind(to scope: UndoManagerScope) {
+        for handler in handlers {
+            handler.rebind(to: scope)
+        }
     }
 }
 
@@ -622,147 +692,200 @@ public extension UndoManagerClient {
         let eventBridge = UndoManagerEventBridge()
         return .init(
             registerUndo: { windowID, ownerID, record in
-                guard let undoManager = await resolveUndoManager(windowID) else {
-                    return
-                }
-                await MainActor.run {
-                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    guard handlerStore.canRegister(windowID: windowID, ownerID: ownerID) else {
-                        return
-                    }
-                    let handler = UndoManagerHandler(
-                        undoManager: undoManager,
-                        windowID: windowID,
-                        ownerID: ownerID,
-                        eventBridge: eventBridge,
-                        handlerStore: handlerStore,
-                    )
-                    handlerStore.add(handler)
-                    undoManager.registerUndo(withTarget: handler) { target in
-                        target.handleUndo(record)
-                    }
-                    handlerStore.didRegister(
-                        windowID: windowID,
-                        identity: .init(ownerID: ownerID, recordID: record.id),
-                    )
-                }
+                await registerLegacyUndo(
+                    windowID: windowID,
+                    ownerID: ownerID,
+                    record: record,
+                    resolveUndoManager: resolveUndoManager,
+                    eventBridge: eventBridge,
+                )
             },
-            events: { windowID in
-                eventBridge.stream(windowID: windowID)
-            },
+            events: { eventBridge.stream(windowID: $0) },
             undo: { windowID, expectedTarget in
-                guard let undoManager = await resolveUndoManager(windowID) else {
-                    return .init(didInvoke: false, availability: .init())
-                }
-                return await MainActor.run {
-                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    guard let expectedTarget,
-                          undoManager.canUndo,
-                          handlerStore.undoTarget(windowID: windowID) == expectedTarget
-                    else {
-                        return .init(
-                            didInvoke: false,
-                            availability: makeAvailability(
-                                undoManager: undoManager,
-                                handlerStore: handlerStore,
-                                windowID: windowID,
-                            ),
-                        )
-                    }
-                    undoManager.undo()
-                    return .init(
-                        didInvoke: true,
-                        availability: makeAvailability(
-                            undoManager: undoManager,
-                            handlerStore: handlerStore,
-                            windowID: windowID,
-                        ),
-                    )
-                }
+                await invokeLegacyUndoManager(
+                    windowID: windowID,
+                    expectedTarget: expectedTarget,
+                    direction: .undo,
+                    resolveUndoManager: resolveUndoManager,
+                )
             },
             redo: { windowID, expectedTarget in
-                guard let undoManager = await resolveUndoManager(windowID) else {
-                    return .init(didInvoke: false, availability: .init())
-                }
-                return await MainActor.run {
-                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    guard let expectedTarget,
-                          undoManager.canRedo,
-                          handlerStore.redoTarget(windowID: windowID) == expectedTarget
-                    else {
-                        return .init(
-                            didInvoke: false,
-                            availability: makeAvailability(
-                                undoManager: undoManager,
-                                handlerStore: handlerStore,
-                                windowID: windowID,
-                            ),
-                        )
-                    }
-                    undoManager.redo()
-                    return .init(
-                        didInvoke: true,
-                        availability: makeAvailability(
-                            undoManager: undoManager,
-                            handlerStore: handlerStore,
-                            windowID: windowID,
-                        ),
-                    )
-                }
+                await invokeLegacyUndoManager(
+                    windowID: windowID,
+                    expectedTarget: expectedTarget,
+                    direction: .redo,
+                    resolveUndoManager: resolveUndoManager,
+                )
             },
             availability: { windowID in
-                guard let undoManager = await resolveUndoManager(windowID) else {
-                    return .init()
-                }
-                return await MainActor.run {
-                    makeAvailability(
-                        undoManager: undoManager,
-                        handlerStore: UndoManagerHandlerStore.store(for: undoManager),
-                        windowID: windowID,
-                    )
-                }
+                await legacyUndoManagerAvailability(
+                    windowID: windowID,
+                    resolveUndoManager: resolveUndoManager,
+                )
             },
             invalidateOwner: { windowID, ownerID in
-                guard let undoManager = await resolveUndoManager(windowID) else {
-                    return .init(succeeded: false, availability: .init())
-                }
-                return await MainActor.run {
-                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    let handlers = handlerStore.invalidateOwner(windowID: windowID, ownerID: ownerID)
-                    for handler in handlers {
-                        undoManager.removeAllActions(withTarget: handler)
-                    }
-                    return .init(
-                        succeeded: true,
-                        availability: makeAvailability(
-                            undoManager: undoManager,
-                            handlerStore: handlerStore,
-                            windowID: windowID,
-                        ),
-                    )
-                }
+                await invalidateLegacyUndoOwner(
+                    windowID: windowID,
+                    ownerID: ownerID,
+                    resolveUndoManager: resolveUndoManager,
+                )
             },
             invalidateWindow: { windowID in
-                guard let undoManager = await resolveUndoManager(windowID) else {
-                    return .init(succeeded: false, availability: .init())
-                }
-                return await MainActor.run {
-                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    let handlers = handlerStore.invalidateWindow(windowID: windowID)
-                    for handler in handlers {
-                        undoManager.removeAllActions(withTarget: handler)
-                    }
-                    eventBridge.finish(windowID: windowID)
-                    return UndoManagerInvalidationResult(
-                        succeeded: true,
-                        availability: makeAvailability(
-                            undoManager: undoManager,
-                            handlerStore: handlerStore,
-                            windowID: windowID,
-                        ),
-                    )
-                }
+                await invalidateLegacyUndoWindow(
+                    windowID: windowID,
+                    resolveUndoManager: resolveUndoManager,
+                    eventBridge: eventBridge,
+                )
             },
+        )
+    }
+}
+
+private enum UndoManagerInvocationDirection {
+    case undo
+    case redo
+}
+
+private func registerLegacyUndo(
+    windowID: UUID,
+    ownerID: UUID,
+    record: EntryActionRecord,
+    resolveUndoManager: @escaping @Sendable (_ windowID: UUID?) async -> UndoManager?,
+    eventBridge: UndoManagerEventBridge,
+) async {
+    guard let undoManager = await resolveUndoManager(windowID) else {
+        return
+    }
+    await MainActor.run {
+        let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+        guard handlerStore.canRegister(windowID: windowID, ownerID: ownerID) else {
+            return
+        }
+        let handler = UndoManagerHandler(
+            undoManager: undoManager,
+            windowID: windowID,
+            ownerID: ownerID,
+            eventBridge: eventBridge,
+            handlerStore: handlerStore,
+        )
+        handlerStore.add(handler)
+        undoManager.registerUndo(withTarget: handler) { target in
+            target.handleUndo(record)
+        }
+        handlerStore.didRegister(
+            windowID: windowID,
+            identity: .init(ownerID: ownerID, recordID: record.id),
+        )
+    }
+}
+
+private func invokeLegacyUndoManager(
+    windowID: UUID?,
+    expectedTarget: UndoManagerRecordIdentity?,
+    direction: UndoManagerInvocationDirection,
+    resolveUndoManager: @escaping @Sendable (_ windowID: UUID?) async -> UndoManager?,
+) async -> UndoManagerInvocationResult {
+    guard let undoManager = await resolveUndoManager(windowID) else {
+        return .init(didInvoke: false, availability: .init())
+    }
+    return await MainActor.run {
+        let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+        let targetMatches = switch direction {
+        case .undo:
+            undoManager.canUndo && handlerStore.undoTarget(windowID: windowID) == expectedTarget
+        case .redo:
+            undoManager.canRedo && handlerStore.redoTarget(windowID: windowID) == expectedTarget
+        }
+        guard expectedTarget != nil, targetMatches else {
+            return .init(
+                didInvoke: false,
+                availability: makeAvailability(
+                    undoManager: undoManager,
+                    handlerStore: handlerStore,
+                    windowID: windowID,
+                ),
+            )
+        }
+        switch direction {
+        case .undo:
+            undoManager.undo()
+        case .redo:
+            undoManager.redo()
+        }
+        return .init(
+            didInvoke: true,
+            availability: makeAvailability(
+                undoManager: undoManager,
+                handlerStore: handlerStore,
+                windowID: windowID,
+            ),
+        )
+    }
+}
+
+private func legacyUndoManagerAvailability(
+    windowID: UUID?,
+    resolveUndoManager: @escaping @Sendable (_ windowID: UUID?) async -> UndoManager?,
+) async -> UndoManagerAvailability {
+    guard let undoManager = await resolveUndoManager(windowID) else {
+        return .init()
+    }
+    return await MainActor.run {
+        makeAvailability(
+            undoManager: undoManager,
+            handlerStore: UndoManagerHandlerStore.store(for: undoManager),
+            windowID: windowID,
+        )
+    }
+}
+
+private func invalidateLegacyUndoOwner(
+    windowID: UUID,
+    ownerID: UUID,
+    resolveUndoManager: @escaping @Sendable (_ windowID: UUID?) async -> UndoManager?,
+) async -> UndoManagerInvalidationResult {
+    guard let undoManager = await resolveUndoManager(windowID) else {
+        return .init(succeeded: false, availability: .init())
+    }
+    return await MainActor.run {
+        let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+        let handlers = handlerStore.invalidateOwner(windowID: windowID, ownerID: ownerID)
+        for handler in handlers {
+            undoManager.removeAllActions(withTarget: handler)
+        }
+        return .init(
+            succeeded: true,
+            availability: makeAvailability(
+                undoManager: undoManager,
+                handlerStore: handlerStore,
+                windowID: windowID,
+            ),
+        )
+    }
+}
+
+private func invalidateLegacyUndoWindow(
+    windowID: UUID,
+    resolveUndoManager: @escaping @Sendable (_ windowID: UUID?) async -> UndoManager?,
+    eventBridge: UndoManagerEventBridge,
+) async -> UndoManagerInvalidationResult {
+    guard let undoManager = await resolveUndoManager(windowID) else {
+        return .init(succeeded: false, availability: .init())
+    }
+    return await MainActor.run {
+        let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+        let handlers = handlerStore.invalidateWindow(windowID: windowID)
+        for handler in handlers {
+            undoManager.removeAllActions(withTarget: handler)
+        }
+        eventBridge.finish(windowID: windowID)
+        return .init(
+            succeeded: true,
+            availability: makeAvailability(
+                undoManager: undoManager,
+                handlerStore: handlerStore,
+                windowID: windowID,
+            ),
         )
     }
 }

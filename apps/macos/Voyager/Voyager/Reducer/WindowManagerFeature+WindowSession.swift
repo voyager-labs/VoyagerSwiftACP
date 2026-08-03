@@ -72,6 +72,7 @@ extension WindowManagerFeature {
             state.closingWindowIDs.formUnion(openWindowIDs)
             state.focusedWindowID = nil
             state.lastUsedWindowIDs.removeAll()
+            state.refreshContentTabMoveTargets()
             state.defaultWindowBootstrapRequestID = nil
             state.defaultWindowBootstrapWindowIDs.removeAll()
             state.authorizedExternalOpenBatchID = nil
@@ -115,6 +116,7 @@ extension WindowManagerFeature {
         state.focusedWindowID = windowSession.id
         state.moveWindowToMRUFront(windowSession.id)
         state.pendingWindowOpenIDs.insert(windowSession.id)
+        state.refreshContentTabMoveTargets()
         state.trackedSingletonWindow = .init(requestID: requestID, windowID: windowSession.id)
         var effects: [Effect<Action>] = [
             windowIDChangedEffect(for: windowSession.id),
@@ -215,6 +217,7 @@ extension WindowManagerFeature {
     func closeWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
         guard state.windows[id: id] != nil, !state.closingWindowIDs.contains(id) else { return .none }
         state.closingWindowIDs.insert(id)
+        state.refreshContentTabMoveTargets()
         if state.focusedWindowID == id {
             state.focusedWindowID = nil
         }
@@ -333,6 +336,7 @@ extension WindowManagerFeature {
             state.defaultWindowBootstrapRequestID = nil
             effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
         }
+        state.refreshContentTabMoveTargets()
         return effects.isEmpty ? .none : .merge(effects)
     }
 
@@ -353,6 +357,7 @@ extension WindowManagerFeature {
         state.focusedWindowID = windowSession.id
         state.moveWindowToMRUFront(windowSession.id)
         state.pendingWindowOpenIDs.insert(windowSession.id)
+        state.refreshContentTabMoveTargets()
         var effects: [Effect<Action>] = [
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
@@ -372,6 +377,7 @@ extension WindowManagerFeature {
         state.focusedWindowID = windowSession.id
         state.moveWindowToMRUFront(windowSession.id)
         state.pendingWindowOpenIDs.insert(windowSession.id)
+        state.refreshContentTabMoveTargets()
         return .concatenate(
             windowIDChangedEffect(for: windowSession.id),
             .send(.windows(.element(

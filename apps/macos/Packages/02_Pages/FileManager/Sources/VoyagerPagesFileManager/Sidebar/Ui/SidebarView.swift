@@ -228,6 +228,8 @@ struct SidebarView: View {
     @State private var activeTopNavigationReorderBoundaryID: Int?
     @State private var activeUnpinnedReorderBoundaryID: Int?
 
+    @State private var isContentTabsDropTargeted = false
+
     var body: some View {
         VStack(spacing: 0) {
             if !sidebarStore.allFixedLocationItems.isEmpty {
@@ -235,38 +237,7 @@ struct SidebarView: View {
                     .padding(.top, 50)
             }
 
-            GeometryReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        reorderablePinnedContentTabRows(pinnedTopNavigationItems)
-
-                        if !pinnedTopNavigationItems.isEmpty,
-                           !sidebarStore.unpinnedContentTabItems.isEmpty
-                        {
-                            contentTabSectionDivider
-                        }
-
-                        reorderableContentTabRows(sidebarStore.unpinnedContentTabItems)
-
-                        Spacer()
-                            .frame(height: 4)
-
-                        newContentTabRow
-
-                        Spacer()
-                            .frame(height: 8)
-
-                        Spacer(minLength: 0)
-                            .frame(maxWidth: .infinity)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                sidebarStore.send(.view(.collapseContentTabSelectionToActive))
-                            }
-                    }
-                    .frame(minHeight: proxy.size.height, alignment: .top)
-                }
-                .clipped()
-            }
+            contentTabsViewport
         }
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
@@ -290,6 +261,77 @@ struct SidebarView: View {
             activeUnpinnedReorderBoundaryID = nil
             reorderSessionStore.clear()
         }
+    }
+
+    private var contentTabsViewport: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.clear
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            reorderablePinnedContentTabRows(pinnedTopNavigationItems)
+
+                            if !pinnedTopNavigationItems.isEmpty,
+                               !sidebarStore.unpinnedContentTabItems.isEmpty
+                            {
+                                contentTabSectionDivider
+                            }
+
+                            reorderableContentTabRows(sidebarStore.unpinnedContentTabItems)
+
+                            Spacer()
+                                .frame(height: 4)
+
+                            newContentTabRow
+
+                            Spacer()
+                                .frame(height: 8)
+                        }
+
+                        Spacer(minLength: 0)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                sidebarStore.send(.view(.collapseContentTabSelectionToActive))
+                            }
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: proxy.size.height,
+                        alignment: .top,
+                    )
+                }
+            }
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
+                    .fill(
+                        isContentTabsDropTargeted
+                            ? VoyagerDS.Interaction.hoverFill(for: colorScheme)
+                            : Color.clear,
+                    ),
+            )
+            .accessibilityIdentifier(ContentTabMoveProjection.dropZoneIdentifier)
+            .onDrop(
+                of: [ContentTabDragPayload.contentType],
+                delegate: ContentTabDropDelegate(
+                    isTargeted: $isContentTabsDropTargeted,
+                    onPayload: receiveContentTabDrag,
+                ),
+            )
+            .clipped()
+        }
+    }
+
+    private func receiveContentTabDrag(_ payload: ContentTabDragPayload) {
+        guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
+              let currentWindowID = sidebarStore.currentWindowID,
+              currentWindowID != payload.sourceWindowID,
+              sidebarStore.pendingContentTabMoveRequest == nil
+        else { return }
+        sidebarStore.send(.view(.receiveContentTabDrag(payload)))
     }
 
     private var contentTabSelectionPresentation: ContentTabSelectionPresentation {
@@ -381,7 +423,7 @@ struct SidebarView: View {
 
                 Divider()
 
-                ForEach(sidebarStore.allFixedLocationItems) { item in
+                ForEach(sidebarStore.fixedLocationVisibilityMenuItems) { item in
                     Toggle(
                         isOn: Binding(
                             get: { !sidebarStore.hiddenFixedLocationItemIDs.contains(item.id) },
@@ -479,13 +521,34 @@ struct SidebarView: View {
         }
     }
 
+    private func contentTabDragSource(
+        for item: ContentTabProjection.ContentTabSidebarItem,
+        owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> FileManagerTopNavigationReorderDragSourceConfiguration? {
+        guard let sourceWindowID = sidebarStore.currentWindowID,
+              sidebarStore.pendingContentTabMoveRequest == nil
+        else { return nil }
+        return FileManagerTopNavigationReorderDragSourceConfiguration(
+            payload: FileManagerTopNavigationReorderDragPayload(
+                sourceID: .contentTab(item.id),
+                dragScopeID: reorderDragScopeID(for: owner),
+            ),
+            sessionStore: reorderSessionStore,
+            movePayload: ContentTabDragPayload(
+                schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+                sourceWindowID: sourceWindowID,
+                tabID: item.id,
+            ),
+        )
+    }
+
     private func reorderableContentTabRow(
         _ item: ContentTabProjection.ContentTabSidebarItem,
     ) -> some View {
         entryDroppableContentTabRow(
             item,
-            reorderDragSource: reorderDragSource(
-                for: .contentTab(item.id),
+            reorderDragSource: contentTabDragSource(
+                for: item,
                 owner: .unpinnedContentTabs,
             ),
         )
@@ -546,6 +609,12 @@ struct SidebarView: View {
         return ContentTabSidebarRow(
             item: item,
             reorderDragSource: reorderDragSource,
+            moveTargets: ContentTabMoveProjection.availableTargets(
+                sidebarStore.contentTabMoveTargets,
+                currentWindowID: sidebarStore.currentWindowID,
+                tabID: item.id,
+            ),
+            isMovePending: sidebarStore.pendingContentTabMoveRequest?.tabID == item.id,
             isHovered: contentTabHoveredItemID == item.id,
             isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
             isSelected: contentTabSelectionPresentation.isSelected(item.id),
@@ -575,6 +644,9 @@ struct SidebarView: View {
             },
             onContextMenuClose: {
                 sidebarStore.send(.delegate(closePresentation.delegateAction))
+            },
+            onMove: { targetWindowID in
+                sidebarStore.send(.view(.moveContentTab(tabID: item.id, targetWindowID: targetWindowID)))
             },
             onHover: { isHovered in
                 contentTabHoveredItemID = isHovered ? item.id : nil
@@ -654,8 +726,8 @@ private extension SidebarView {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     entryDroppableContentTabRow(
                         item,
-                        reorderDragSource: reorderDragSource(
-                            for: .contentTab(item.id),
+                        reorderDragSource: contentTabDragSource(
+                            for: item,
                             owner: .topNavigation,
                         ),
                     )
@@ -823,9 +895,50 @@ private struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier
     }
 }
 
+private struct ContentTabDropDelegate: DropDelegate {
+    @Binding var isTargeted: Bool
+    let onPayload: @MainActor @Sendable (ContentTabDragPayload) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [ContentTabDragPayload.contentType])
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        validateDrop(info: info)
+            ? DropProposal(operation: .move)
+            : DropProposal(operation: .forbidden)
+    }
+
+    func dropEntered(info _: DropInfo) {
+        isTargeted = true
+    }
+
+    func dropExited(info _: DropInfo) {
+        isTargeted = false
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        guard validateDrop(info: info) else { return false }
+        let providers = info.itemProviders(for: [ContentTabDragPayload.contentType])
+        guard providers.count == 1, let provider = providers.first else { return false }
+
+        _ = provider.loadTransferable(type: ContentTabDragPayload.self) { result in
+            guard case let .success(payload) = result else { return }
+            Task { @MainActor in
+                onPayload(payload)
+            }
+        }
+        return true
+    }
+}
+
 private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
     let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
+    let moveTargets: [ContentTabMoveTarget]
+    let isMovePending: Bool
+
     let isHovered: Bool
     let isDropTarget: Bool
     let isSelected: Bool
@@ -840,6 +953,7 @@ private struct ContentTabSidebarRow: View {
     let onUnpin: (() -> Void)?
     let onClose: () -> Void
     let onContextMenuClose: () -> Void
+    let onMove: (UUID) -> Void
     let onHover: (Bool) -> Void
 
     @Environment(\.colorScheme)
@@ -854,6 +968,8 @@ private struct ContentTabSidebarRow: View {
         ContentTabSidebarButtonHost(
             item: item,
             reorderDragSource: reorderDragSource,
+            moveTargets: moveTargets,
+            isMovePending: isMovePending,
             backgroundColor: backgroundColor,
             accessibilityStateValue: accessibilityStateValue,
             duplicateTitle: duplicatePresentation.title,
@@ -874,6 +990,7 @@ private struct ContentTabSidebarRow: View {
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onContextMenuClose,
+            onMove: onMove,
         )
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
@@ -939,6 +1056,9 @@ private struct ContentTabSidebarRow: View {
 private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let item: ContentTabProjection.ContentTabSidebarItem
     let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
+    let moveTargets: [ContentTabMoveTarget]
+    let isMovePending: Bool
+
     let backgroundColor: Color
     let accessibilityStateValue: String
     let duplicateTitle: String
@@ -959,6 +1079,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let onPin: (() -> Void)?
     let onUnpin: (() -> Void)?
     let onClose: () -> Void
+    let onMove: (UUID) -> Void
 
     func makeNSView(context _: Context) -> ContentTabSidebarButton {
         let button = ContentTabSidebarButton(frame: .zero)
@@ -982,10 +1103,13 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             rootView: AnyView(hostedRoot),
             accessibilityLabel: item.title ?? "Untitled",
             accessibilityValue: accessibilityStateValue,
+            tabID: item.id,
             duplicateAccessibilityIdentifier: duplicateAccessibilityIdentifier,
             isPinned: item.isPinned,
             isEnabled: true,
             reorderDragSource: reorderDragSource,
+            moveTargets: moveTargets,
+            isMovePending: isMovePending,
             onActivate: onActivate,
             onToggleSelection: onToggleSelection,
             onSelectRange: onSelectRange,
@@ -993,6 +1117,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onClose,
+            onMove: onMove,
             duplicateTitle: duplicateTitle,
             isDuplicateEnabled: isDuplicateEnabled,
             pinTitle: pinTitle,
@@ -1010,6 +1135,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
         ContentTabSidebarButtonRoot(
             item: item,
             backgroundColor: backgroundColor,
+            isMovePending: isMovePending,
         )
     }
 }
@@ -1041,6 +1167,11 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var pointerState = PointerState.idle
     private var pointerRoute: PointerRoute?
     private var reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
+    private var moveTargets: [ContentTabMoveTarget] = []
+    private var moveTargetsTabID = ContentTabID(rawValue: "")
+    private var isMovePending = false
+    private var onMove: (UUID) -> Void = { _ in }
+
     private var onActivate: () -> Void = {}
     private var onToggleSelection: () -> Void = {}
     private var onSelectRange: () -> Void = {}
@@ -1081,10 +1212,14 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         rootView: AnyView,
         accessibilityLabel: String,
         accessibilityValue: String,
+        tabID: ContentTabID? = nil,
         duplicateAccessibilityIdentifier: String,
         isPinned: Bool,
         isEnabled: Bool,
         reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?,
+        moveTargets: [ContentTabMoveTarget] = [],
+        isMovePending: Bool = false,
+
         onActivate: @escaping () -> Void,
         onToggleSelection: @escaping () -> Void,
         onSelectRange: @escaping () -> Void,
@@ -1092,6 +1227,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         onPin: (() -> Void)?,
         onUnpin: (() -> Void)?,
         onClose: @escaping () -> Void,
+        onMove: @escaping (UUID) -> Void = { _ in },
         duplicateTitle: String = "Duplicate",
         isDuplicateEnabled: Bool = true,
         pinTitle: String? = nil,
@@ -1104,6 +1240,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         showsCloseCommand: Bool? = nil,
     ) {
         self.reorderDragSource = reorderDragSource
+        self.moveTargets = moveTargets
+        if let tabID { moveTargetsTabID = tabID }
+        self.isMovePending = isMovePending
+        self.onMove = onMove
         self.onActivate = onActivate
         self.onToggleSelection = onToggleSelection
         self.onSelectRange = onSelectRange
@@ -1127,6 +1267,9 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         presentationView.rootView = rootView
         setAccessibilityLabel(accessibilityLabel)
         setAccessibilityValue(accessibilityValue)
+        if let tabID {
+            setAccessibilityIdentifier(ContentTabMoveProjection.rowIdentifier(tabID: tabID))
+        }
         menu = makeContextMenu()
         presentationView.invalidateIntrinsicContentSize()
         invalidateIntrinsicContentSize()
@@ -1282,8 +1425,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     ) {
         do {
             let writer = try FileManagerTopNavigationReorderPasteboardWriter(
-                payload: tracking.dragSource.payload,
-                sessionStore: tracking.dragSource.sessionStore,
+                configuration: tracking.dragSource,
             )
             let draggingItem = NSDraggingItem(pasteboardWriter: writer)
             draggingItem.setDraggingFrame(bounds, contents: draggingImage())
@@ -1385,6 +1527,29 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             closeItem.isEnabled = isCloseEnabled
             menu.addItem(closeItem)
         }
+        if !moveTargets.isEmpty {
+            let moveItem = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
+            moveItem.identifier = NSUserInterfaceItemIdentifier(
+                ContentTabMoveProjection.menuIdentifier(tabID: moveTargetsTabID),
+            )
+            moveItem.isEnabled = !isMovePending
+            let submenu = NSMenu(title: "Move to Window")
+            submenu.autoenablesItems = false
+            for target in moveTargets {
+                let targetItem = menuItem(title: target.displayTitle, action: #selector(moveToWindow(_:)))
+                targetItem.identifier = NSUserInterfaceItemIdentifier(
+                    ContentTabMoveProjection.targetIdentifier(
+                        tabID: moveTargetsTabID,
+                        windowID: target.windowID,
+                    ),
+                )
+                targetItem.representedObject = target.windowID.uuidString
+                targetItem.isEnabled = !isMovePending
+                submenu.addItem(targetItem)
+            }
+            moveItem.submenu = submenu
+            menu.addItem(moveItem)
+        }
         return menu
     }
 
@@ -1413,11 +1578,20 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         guard isCloseEnabled else { return }
         onClose()
     }
+
+    @objc private func moveToWindow(_ sender: NSMenuItem) {
+        guard !isMovePending,
+              let rawWindowID = sender.representedObject as? String,
+              let windowID = UUID(uuidString: rawWindowID)
+        else { return }
+        onMove(windowID)
+    }
 }
 
 private struct ContentTabSidebarButtonRoot: View {
     let item: ContentTabProjection.ContentTabSidebarItem
     let backgroundColor: Color
+    let isMovePending: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1427,6 +1601,11 @@ private struct ContentTabSidebarButtonRoot: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
+            if isMovePending {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityIdentifier(ContentTabMoveProjection.progressIdentifier(tabID: item.id))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)

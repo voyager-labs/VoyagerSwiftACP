@@ -346,9 +346,14 @@ struct FileManagerWindowRoutingReducer {
                 return resyncContentNavigationEffect(state: state)
 
             case let .sidebar(.delegate(.selectContentTab(tabID))):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
                 return .merge(
-                    .send(.contentTabs(.setCurrent(tabID))),
+                    .concatenate(
+                        .send(.contentTabs(.setCurrent(tabID))),
+                        .send(.contentTabs(.collapseSelectionToActive)),
+                    ),
                     brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
                 )
 

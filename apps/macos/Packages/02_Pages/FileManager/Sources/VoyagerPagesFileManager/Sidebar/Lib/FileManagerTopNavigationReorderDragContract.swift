@@ -33,7 +33,18 @@ struct FileManagerTopNavigationReorderDragPayload: Codable, Equatable {
 
 struct FileManagerTopNavigationReorderDragSourceConfiguration {
     let payload: FileManagerTopNavigationReorderDragPayload
+    let movePayload: ContentTabDragPayload?
     let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
+
+    init(
+        payload: FileManagerTopNavigationReorderDragPayload,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
+        movePayload: ContentTabDragPayload? = nil,
+    ) {
+        self.payload = payload
+        self.movePayload = movePayload
+        self.sessionStore = sessionStore
+    }
 }
 
 extension UTType {
@@ -51,6 +62,7 @@ extension UTType {
 extension NSPasteboard.PasteboardType {
     static let fileManagerTopNavigationReorder = Self(UTType.fileManagerTopNavigationReorder.identifier)
     static let fileManagerTopNavigationReorderLocal = Self(UTType.fileManagerTopNavigationReorderLocal.identifier)
+    static let contentTabMove = Self(ContentTabDragPayload.contentType.identifier)
 }
 
 struct FileManagerTopNavigationReorderLocalToken: Equatable {
@@ -140,23 +152,46 @@ final class FileManagerTopNavigationReorderLocalSessionStore {
 final class FileManagerTopNavigationReorderPasteboardWriter: NSObject, NSPasteboardWriting {
     let token: FileManagerTopNavigationReorderLocalToken
 
-    private let payloadData: Data
+    private let reorderPayloadData: Data
+    private let movePayloadData: Data?
     private let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
 
     @MainActor
-    init(
+    convenience init(
         payload: FileManagerTopNavigationReorderDragPayload,
         sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
         token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
     ) throws {
-        payloadData = try JSONEncoder().encode(payload)
-        self.sessionStore = sessionStore
-        self.token = sessionStore.begin(payload: payload, token: token)
+        try self.init(
+            configuration: FileManagerTopNavigationReorderDragSourceConfiguration(
+                payload: payload,
+                sessionStore: sessionStore,
+            ),
+            token: token,
+        )
+    }
+
+    @MainActor
+    init(
+        configuration: FileManagerTopNavigationReorderDragSourceConfiguration,
+        token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
+    ) throws {
+        reorderPayloadData = try JSONEncoder().encode(configuration.payload)
+        movePayloadData = try configuration.movePayload.map(JSONEncoder().encode)
+        sessionStore = configuration.sessionStore
+        self.token = sessionStore.begin(payload: configuration.payload, token: token)
         super.init()
     }
 
     func writableTypes(for _: NSPasteboard) -> [NSPasteboard.PasteboardType] {
-        [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal]
+        var types: [NSPasteboard.PasteboardType] = [
+            .fileManagerTopNavigationReorder,
+            .fileManagerTopNavigationReorderLocal,
+        ]
+        if movePayloadData != nil {
+            types.append(.contentTabMove)
+        }
+        return types
     }
 
     func writingOptions(
@@ -169,9 +204,11 @@ final class FileManagerTopNavigationReorderPasteboardWriter: NSObject, NSPastebo
     func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
         switch type {
         case .fileManagerTopNavigationReorder:
-            payloadData
+            reorderPayloadData
         case .fileManagerTopNavigationReorderLocal:
             token.data
+        case .contentTabMove:
+            movePayloadData
         default:
             nil
         }

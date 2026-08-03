@@ -253,6 +253,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionList.errorMessage = nil
         if let restoreSessionID, restoreSessionID != sessionID {
             self.restoreSessionID = nil
+            settleCancelledSessionRestoreIfNeeded()
             if sessionList.selectedSessionID == restoreSessionID {
                 sessionList.selectedSessionID = nil
             }
@@ -286,7 +287,7 @@ public struct AiChatState: Equatable, Sendable {
               deferredChatSessionRestoreID == sessionID
         else { return false }
         deferredChatSessionRestoreID = nil
-        restoreSessionID = sessionID
+        beginSessionRestore(for: sessionID)
         sessionList.selectedSessionID = sessionID
         restoreOutcome = nil
         restoreFailure = nil
@@ -342,6 +343,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionList.selectedSessionID = sessionID
         guard let restoreSessionID, restoreSessionID != sessionID else { return false }
         self.restoreSessionID = nil
+        settleCancelledSessionRestoreIfNeeded()
         return true
     }
 
@@ -663,6 +665,16 @@ public struct AiChatState: Equatable, Sendable {
 }
 
 public extension AiChatState {
+    mutating func beginSessionRestore(for sessionID: AiChatSessionID) {
+        restoreSessionID = sessionID
+        sessionStatus = .restoring
+    }
+
+    mutating func settleCancelledSessionRestoreIfNeeded() {
+        guard sessionStatus == .restoring else { return }
+        sessionStatus = sessionID == nil || emptyDraftSessionID == sessionID ? .idle : .active
+    }
+
     var newChatPreparationProvenance: AiChatNewChatPreparationProvenance {
         AiChatNewChatPreparationProvenance(
             ownerID: cancellationOwnerID,

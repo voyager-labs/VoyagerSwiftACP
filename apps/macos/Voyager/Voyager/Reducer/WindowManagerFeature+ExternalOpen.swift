@@ -78,6 +78,7 @@ extension WindowManagerFeature {
         for windowID in ownedWindowIDs {
             effects.append(closeWindow(windowID, state: &state))
         }
+        state.refreshContentTabMoveTargets()
         return .concatenate(effects)
     }
 

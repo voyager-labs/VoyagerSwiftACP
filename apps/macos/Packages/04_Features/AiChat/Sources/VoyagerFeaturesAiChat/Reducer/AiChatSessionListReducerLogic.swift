@@ -161,7 +161,7 @@ extension AiChatFeature {
             state.sessionList.selectedSessionID = sessionID
             state.restoreOutcome = nil
             state.restoreFailure = nil
-            state.restoreSessionID = sessionID
+            state.beginSessionRestore(for: sessionID)
             state.mode = .sessions
             return restoreSession(sessionID: sessionID, state: state)
         }
@@ -380,6 +380,7 @@ extension AiChatFeature {
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.sessionList.selectedSessionID = nil
+            state.settleCancelledSessionRestoreIfNeeded()
             preDeleteEffects.append(.cancel(id: CancelID.restore))
         }
         if state.sessionID == sessionID {
@@ -417,13 +418,21 @@ extension AiChatFeature {
             state.currentContextFolderStructureModes = [:]
         }
 
+        if state.sessionID == sessionID,
+           let restoreSessionID = state.restoreSessionID,
+           restoreSessionID != sessionID
+        {
+            _ = state.prepareChatPresentation(for: sessionID)
+            return .cancel(id: CancelID.restore)
+        }
+
         if state.executionPhase.isProcessing, state.sessionID == sessionID {
             state.mode = .chat
             return .none
         }
 
         state.mode = .sessions
-        state.restoreSessionID = sessionID
+        state.beginSessionRestore(for: sessionID)
         return restoreSession(sessionID: sessionID, state: state)
     }
 
@@ -434,6 +443,7 @@ extension AiChatFeature {
             state.restoreSessionID = nil
             state.restoreOutcome = nil
             state.restoreFailure = nil
+            state.settleCancelledSessionRestoreIfNeeded()
         }
         guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
             return exitEffects

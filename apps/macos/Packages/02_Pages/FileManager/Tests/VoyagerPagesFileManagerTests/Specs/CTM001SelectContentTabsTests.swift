@@ -375,6 +375,43 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
     }
 
+    /// CTM-001-select_content_tabs: Sidebar 빈 viewport가 행과 분리된 hit target을 사용함
+    /// eager VStack의 잔여 Spacer만 빈 공간 pointer surface를 소유하는지 확인함
+    /// - 검증 내용: viewport minHeight, LazyVStack 형제 Spacer, canonical collapse action wiring
+    /// - 사전 조건: production SidebarView source
+    /// - 기대 결과: background gesture 없이 전용 Spacer만 collapse action을 전송함
+    func testSidebarEmptyViewportUsesDedicatedSiblingHitTarget() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let geometryStart = try XCTUnwrap(source.range(of: "GeometryReader { proxy in"))
+        let geometryEnd = try XCTUnwrap(source.range(
+            of: ".clipped()",
+            range: geometryStart.upperBound ..< source.endIndex,
+        ))
+        let geometrySource = source[geometryStart.lowerBound ..< geometryEnd.upperBound]
+        let hitTargetStart = try XCTUnwrap(geometrySource.range(of: "Spacer(minLength: 0)"))
+        let hitTargetEnd = try XCTUnwrap(geometrySource.range(
+            of: "                    }\n                    .frame(",
+            range: hitTargetStart.upperBound ..< geometrySource.endIndex,
+        ))
+        let hitTargetSource = geometrySource[hitTargetStart.lowerBound ..< hitTargetEnd.lowerBound]
+
+        XCTAssertTrue(geometrySource.contains("minHeight: proxy.size.height"))
+        XCTAssertTrue(geometrySource.contains("VStack(spacing: 0)"))
+        XCTAssertTrue(geometrySource.contains("LazyVStack(alignment: .leading, spacing: 0)"))
+        XCTAssertTrue(hitTargetSource.contains(".frame(maxWidth: .infinity)"))
+        XCTAssertTrue(hitTargetSource.contains(".contentShape(Rectangle())"))
+        XCTAssertTrue(hitTargetSource.contains(".onTapGesture"))
+        XCTAssertTrue(hitTargetSource.contains("collapseContentTabSelectionToActive"))
+        XCTAssertFalse(geometrySource.contains(".background {"))
+    }
+
     /// CTM-001-select_content_tabs: Window Sidebar selection Delegate routing 검증
     /// Window boundary가 toggle/range만 기존 ContentTab action으로 변환하는지 확인함
     /// - 검증 내용: toggle/range Delegate→ContentTab action 순서와 payload
@@ -446,12 +483,12 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertFalse(store.state.contentTabs.selectedTabIDs.contains(tabB))
     }
 
-    /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 selection 독립성 검증
-    /// Sidebar plain activation이 active만 바꾸고 explicit selection을 보존하는지 확인함
-    /// - 검증 내용: setCurrent 단일 route와 selected IDs/anchor 및 active identity
+    /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 exclusive selection 검증
+    /// Sidebar plain activation이 새 active 하나로 explicit selection을 축소하는지 확인함
+    /// - 검증 내용: setCurrent 이후 collapse 순서와 selected IDs/anchor 및 active identity
     /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
-    /// - 기대 결과: active가 B로 전환되고 selection/anchor는 그대로 유지됨
-    func testPlainClickDifferentTab_activatesWithoutChangingSelection() async {
+    /// - 기대 결과: active가 B로 전환되고 selection/anchor도 B 하나로 축소됨
+    func testPlainClickDifferentTab_activatesAndCollapsesSelectionToTarget() async {
         let tabA = ContentTabID(rawValue: "plain-different-A")
         let tabB = ContentTabID(rawValue: "plain-different-B")
         var state = FileManagerFeature.State()
@@ -481,17 +518,19 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             $0.contentTabs.previousActiveTabID = tabA
             $0.contentTabs.selectedTabIDs = [tabA, tabB]
         }
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [tabA, tabB])
-        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabB)
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [tabB]
+            $0.contentTabs.selectionAnchorID = tabB
+        }
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
     }
 
-    /// CTM-001-select_content_tabs: 현재 active Content Tab plain click의 selection 독립성 검증
-    /// 이미 active인 row의 재활성화도 explicit selection을 보존하는지 확인함
-    /// - 검증 내용: setCurrent no-op route와 selected IDs/anchor 및 active identity
+    /// CTM-001-select_content_tabs: 현재 active Content Tab plain click의 exclusive selection 검증
+    /// 이미 active인 row의 재활성화도 해당 active 하나로 explicit selection을 축소하는지 확인함
+    /// - 검증 내용: setCurrent no-op 이후 collapse 순서와 selected IDs/anchor 및 active identity
     /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
-    /// - 기대 결과: active identity와 selection/anchor가 모두 유지됨
-    func testPlainClickActiveTab_preservesSelection() async {
+    /// - 기대 결과: active identity는 유지되고 selection/anchor는 A 하나로 축소됨
+    func testPlainClickActiveTab_collapsesSelectionToActive() async {
         let tabA = ContentTabID(rawValue: "plain-active-A")
         let tabB = ContentTabID(rawValue: "plain-active-B")
         var state = FileManagerFeature.State()
@@ -517,9 +556,37 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == tabA
         }
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [tabA, tabB])
-        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabB)
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [tabA]
+            $0.contentTabs.selectionAnchorID = tabA
+        }
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+    }
+
+    /// CTM-001-select_content_tabs: 사라진 Content Tab plain click의 selection 보존 검증
+    /// stale Sidebar row가 현재 active 기준 collapse를 유발하지 않는지 확인함
+    /// - 검증 내용: routed ContentTab action 부재와 active/selected IDs/anchor 불변
+    /// - 사전 조건: A active, A/B selected이며 요청 target은 tabs에 없는 Window 상태
+    /// - 기대 결과: stale activation 요청은 무시되고 canonical ContentTab state가 유지됨
+    func testPlainClickMissingTab_doesNotCollapseCurrentSelection() async {
+        let tabA = ContentTabID(rawValue: "plain-missing-A")
+        let tabB = ContentTabID(rawValue: "plain-missing-B")
+        let missingTab = ContentTabID(rawValue: "plain-missing-target")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tab(id: tabA, isPinned: false), tab(id: tabB, isPinned: false)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        let originalContentTabs = state.contentTabs
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.selectContentTab(missingTab))))
+
+        XCTAssertEqual(store.state.contentTabs, originalContentTabs)
     }
 
     /// CTM-001-select_content_tabs: Sidebar New Tab 성공 시 selection 독립성 전체 chain 검증
