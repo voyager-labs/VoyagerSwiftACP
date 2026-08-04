@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { SFSymbol } from "../../Foundations/SFSymbol"
 import { Button } from "./Button"
 import { IconButton } from "./IconButton"
 import { Tooltip } from "./Tooltip"
@@ -20,6 +21,10 @@ export const Default: Story = {}
 export const WithIconButton: Story = {
   args: {
     text: "New Chat",
-    children: <IconButton aria-label="New Chat">✦</IconButton>,
+    children: (
+      <IconButton aria-label="New Chat">
+        <SFSymbol name="sidebar.trailing" size={16} />
+      </IconButton>
+    ),
   },
 }
