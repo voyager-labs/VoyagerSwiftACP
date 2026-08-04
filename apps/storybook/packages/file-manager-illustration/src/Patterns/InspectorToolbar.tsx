@@ -1,4 +1,5 @@
 import type { FC } from "react"
+import { SFSymbol } from "../Foundations/SFSymbol"
 import { IconButton } from "../UI/Controls/IconButton"
 import { SegmentedControl } from "../UI/Navigation/SegmentedControl"
 
@@ -23,8 +24,12 @@ export const InspectorToolbar: FC<InspectorToolbarProps> = ({ mode, onModeChange
         onChange={(v) => onModeChange(v as InspectorMode)}
       />
       <div className="pane-actions">
-        <IconButton aria-label="More">•••</IconButton>
-        <IconButton aria-label="Layout">▣</IconButton>
+        <IconButton aria-label="More">
+          <SFSymbol name="ellipsis" size={16} />
+        </IconButton>
+        <IconButton aria-label="Layout">
+          <SFSymbol name="rectangle.3.group" size={16} />
+        </IconButton>
       </div>
     </header>
   )

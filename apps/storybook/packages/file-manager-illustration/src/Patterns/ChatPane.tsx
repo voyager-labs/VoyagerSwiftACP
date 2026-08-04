@@ -1,4 +1,5 @@
 import type { FC, FormEvent } from "react"
+import { SFSymbol } from "../Foundations/SFSymbol"
 import { IconButton } from "../UI/Controls/IconButton"
 import type { Entry } from "../model/types"
 
@@ -33,9 +34,11 @@ export const ChatPane: FC<ChatPaneProps> = ({
       <label className="vc-composer">
         <textarea rows={5} placeholder="Ask anything…" value={requestText} onInput={handleInput} />
         <span className="vc-composer-footer">
-          <span>＋</span>
+          <SFSymbol name="plus" size={16} />
           <em>GPT-5.2</em>
-          <IconButton aria-label="Send">↑</IconButton>
+          <IconButton aria-label="Send">
+            <SFSymbol name="arrow.up" size={16} />
+          </IconButton>
         </span>
       </label>
     </section>
