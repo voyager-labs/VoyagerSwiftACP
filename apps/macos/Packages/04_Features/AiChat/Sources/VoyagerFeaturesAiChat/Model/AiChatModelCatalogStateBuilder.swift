@@ -95,13 +95,19 @@ struct AiChatModelCatalogStateBuilder {
     }
 
     func lockedModelDisplayModel(for lock: AiChatRequestLock) -> AiChatLockedModelDisplayModel {
-        if let row = lock.selectedModelRow ?? state.resolvedModelRow(for: lock.selectedModelHandle) {
-            return AiChatLockedModelDisplayModel(handle: row.handle, label: AiChatModelLabel(title: row.displayName))
-        }
-        return AiChatLockedModelDisplayModel(
+        AiChatLockedModelDisplayModel(
             handle: lock.selectedModelHandle,
-            label: AiChatModelLabel(title: lock.selectedModelHandle.rawValue),
+            label: AiChatModelLabel(title: lockedModelTitle(for: lock)),
         )
+    }
+
+    private func lockedModelTitle(for lock: AiChatRequestLock) -> String {
+        [lock.selectedModelRow?.displayName, lock.selectedModelHandle.rawValue]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.flatMap { $0.isEmpty ? nil : $0 }
+            }
+            .first ?? "Assistant"
     }
 
     private func modelCatalogSections(

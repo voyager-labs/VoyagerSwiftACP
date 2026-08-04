@@ -43,7 +43,9 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var chatInputDisplayModel: AiChatInputDisplayModel {
-        let stopEnabled = isVisibleRequestProcessing && (cancelAffordance?.isEnabled ?? false)
+        let showsStop = hasVisiblePendingRequest || isVisibleRequestProcessing
+        let stopEnabled = hasVisiblePendingRequest
+            || (isVisibleRequestProcessing && (cancelAffordance?.isEnabled ?? false))
         return AiChatInputDisplayModel(
             placeholder: "Ask anything…",
             contextAffordanceLabel: "+",
@@ -51,10 +53,11 @@ struct AiChatStateDisplayModelBuilder {
             effortLabel: chatInputThinkingLabel,
             submitAccessibilityLabel: "Send",
             stopAccessibilityLabel: "Stop",
-            isSubmitVisible: !isVisibleRequestProcessing,
-            isStopVisible: isVisibleRequestProcessing,
+            isSubmitVisible: !showsStop,
+            isStopVisible: showsStop,
             canSubmit: canSubmit,
             canStop: stopEnabled,
+            isComposerEditingDisabled: hasVisiblePendingRequest,
         )
     }
 
@@ -83,21 +86,57 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var streamingAssistantDisplayModel: AiChatStreamingAssistantDisplayModel? {
-        guard let draft = state.streamingAssistantDraft,
-              !draft.isEmpty
-        else {
-            return nil
-        }
-
         switch state.executionPhase {
-        case .processing:
-            return AiChatStreamingAssistantDisplayModel(content: draft)
+        case let .processing(lock):
+            guard isVisibleRequest(lock: lock) else { return nil }
+            return streamingAssistantDisplayModel(lock: lock)
         case let .failed(lock, failure):
-            guard lock.observabilitySummary.chunkCount > 0 else { return nil }
-            return AiChatStreamingAssistantDisplayModel(content: draft, failure: failure)
+            guard isVisibleRequest(lock: lock) else { return nil }
+            return streamingAssistantDisplayModel(lock: lock, failure: failure)
         case .idle, .completed, .cancelled, .persistenceRecovery:
             return nil
         }
+    }
+
+    private func streamingAssistantDisplayModel(
+        lock: AiChatRequestLock,
+        failure: AiChatExecutionFailure? = nil,
+    ) -> AiChatStreamingAssistantDisplayModel {
+        let content = nonEmptyStreamingContent
+        return AiChatStreamingAssistantDisplayModel(
+            requestID: lock.requestID,
+            content: content,
+            title: modelCatalogBuilder.lockedModelDisplayModel(for: lock).title,
+            thinkingLabel: lock.context.selectedThinking.map(AiChatStateSelection.thinkingLabel(for:)),
+            acceptedChunkRevision: lock.observabilitySummary.chunkCount,
+            failure: failure,
+            activityStatusLabel: activityStatusLabel(
+                lock: lock,
+                hasContent: content != nil,
+                isProcessing: failure == nil,
+            ),
+        )
+    }
+
+    private func activityStatusLabel(
+        lock: AiChatRequestLock,
+        hasContent: Bool,
+        isProcessing: Bool,
+    ) -> String? {
+        guard isProcessing else { return nil }
+        if let activity = lock.activityState.selectedActivity {
+            return activity.kind.aiChatStatusLabel
+        }
+        return hasContent ? nil : "Waiting for response…"
+    }
+
+    private var nonEmptyStreamingContent: String? {
+        guard let draft = state.streamingAssistantDraft,
+              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+        return draft
     }
 
     var modelCatalogState: AiChatModelCatalogState {
@@ -113,7 +152,7 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var modelSelectorIsDisabled: Bool {
-        modelCatalogBuilder.modelSelectorIsDisabled
+        hasVisiblePendingRequest || modelCatalogBuilder.modelSelectorIsDisabled
     }
 
     var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
@@ -281,8 +320,12 @@ struct AiChatStateDisplayModelBuilder {
         visibleProcessingLock != nil
     }
 
+    private var hasVisiblePendingRequest: Bool {
+        state.visiblePendingRequestStart != nil
+    }
+
     private var hasInFlightRequest: Bool {
-        if state.executionPhase.isProcessing { return true }
+        if isVisibleRequestProcessing { return true }
         guard let sessionID = state.sessionID else { return false }
         if state.backgroundPendingRequestStarts.values.contains(where: { $0.sessionID == sessionID }) {
             return true
@@ -293,7 +336,8 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     private func isVisibleRequest(lock: AiChatRequestLock) -> Bool {
-        state.sessionList.rows.isEmpty || state.sessionID == lock.context.sessionID
+        guard let sessionID = state.sessionID else { return false }
+        return lock.context.sessionID == sessionID
     }
 
     private var chatInputModelLabel: String? {
