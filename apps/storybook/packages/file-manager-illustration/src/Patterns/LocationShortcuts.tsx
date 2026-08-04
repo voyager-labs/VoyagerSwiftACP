@@ -1,4 +1,5 @@
 import type { FC } from "react"
+import { SFSymbol } from "../Foundations/SFSymbol"
 import { IconButton } from "../UI/Controls/IconButton"
 import type { LocationShortcutsProps } from "../model/types"
 
@@ -11,7 +12,7 @@ export const LocationShortcuts: FC<LocationShortcutsProps> = ({ shortcuts, onSel
           aria-label={shortcut.label}
           onClick={() => onSelect?.(shortcut)}
         >
-          {shortcut.glyph}
+          <SFSymbol name={shortcut.symbolName} size={16} />
         </IconButton>
       ))}
     </div>

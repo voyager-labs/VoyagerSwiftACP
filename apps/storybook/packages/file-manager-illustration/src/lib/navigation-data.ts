@@ -1,9 +1,9 @@
 import type { LocationShortcut, SidebarTabItem } from "../model/types"
 
 export const locationShortcuts: readonly LocationShortcut[] = [
-  { id: "local-entries", label: "Local Entries", glyph: "▣" },
-  { id: "cloud-entries", label: "Cloud Entries", glyph: "☁" },
-  { id: "trash", label: "Trash", glyph: "⌫" },
+  { id: "local-entries", label: "Local Entries", symbolName: "rectangle.3.group" },
+  { id: "cloud-entries", label: "Cloud Entries", symbolName: "icloud" },
+  { id: "trash", label: "Trash", symbolName: "trash" },
 ]
 
 export const pinnedTabs: readonly SidebarTabItem[] = [

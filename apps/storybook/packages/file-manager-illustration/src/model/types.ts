@@ -53,7 +53,7 @@ export type SearchFieldProps = {
 export type LocationShortcut = {
   readonly id: string
   readonly label: string
-  readonly glyph: string
+  readonly symbolName: string
 }
 
 export type LocationShortcutsProps = {
