@@ -10,6 +10,34 @@ final class CBW003ProviderRequestPayloadLoweringTests: XCTestCase {
 
     // MARK: - CBW-003-build_contextual_request_payload
 
+    /// CBW-003-build_contextual_request_payload: message timestamp는 provider payload에 노출하지 않는다.
+    /// 영속 timestamp가 있는 Entity message도 provider 경계에서는 role과 content만 전달되는지 검증합니다.
+    /// - 검증 내용: lowering 결과와 encoded provider message의 정확한 JSON key set을 확인합니다.
+    /// - 사전 조건: createdAtMs가 설정된 user message를 포함한 Entity request를 사용합니다.
+    /// - 기대 결과: provider message에는 role/content만 있고 createdAtMs key는 없습니다.
+    func testLowerRequest_omitsMessageTimestampFromProviderPayload() throws {
+        let fixture = providerExecutionMakePreparedRequestFixture()
+        let timestampedMessage = AiChatMessage(
+            role: .user,
+            content: "Timestamped question",
+            createdAtMs: Int64.max,
+        )
+        let request = AiChatRequest(
+            context: fixture.context,
+            messages: [timestampedMessage],
+            responseContract: fixture.responseContract,
+        )
+
+        let payload = try AiChatProviderRequestPayload.lower(request)
+        let providerMessage = try XCTUnwrap(payload.messages.first)
+        let encoded = try JSONEncoder().encode(providerMessage)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertEqual(payload.messages, [AiChatProviderMessage(role: .user, content: "Timestamped question")])
+        XCTAssertEqual(Set(object.keys), Set(["role", "content"]))
+        XCTAssertNil(object["createdAtMs"])
+    }
+
     /// CBW-003-build_contextual_request_payload: OpenAI request는 streaming execution timeout을 사용한다.
     /// OpenAI HTTP request 생성 시 장기 streaming에 맞는 timeout 계약을 추적합니다.
     /// - 검증 내용: request timeout이 공용 streamingExecutionRequestTimeout과 일치하는지 확인합니다.
