@@ -1252,12 +1252,19 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--fm-space-4);
+  justify-content: flex-start;
+  gap: var(--fm-space-2);
   height: 32px;
   border-radius: var(--fm-radius-md);
   padding: 0 var(--fm-space-3);
   transition: background-color var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .toolbar-title-content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-2);
+  min-width: 0;
 }
 
 [data-file-manager-illustration] .toolbar-title-area:hover,
@@ -1277,7 +1284,8 @@
 [data-file-manager-illustration] .toolbar-title-controls {
   display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-3);
+  gap: var(--fm-space-4);
+  margin-left: auto;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--fm-motion-fast) ease;
@@ -1294,12 +1302,6 @@
   height: 18px;
   margin: 0 var(--fm-space-1);
   background: var(--fm-separator);
-}
-
-[data-file-manager-illustration] .fm-symbol-icon {
-  width: 16px;
-  height: 16px;
-  flex: none;
 }
 
 [data-file-manager-illustration] .toolbar-left {

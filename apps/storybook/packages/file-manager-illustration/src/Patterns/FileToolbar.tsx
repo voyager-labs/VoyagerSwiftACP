@@ -1,6 +1,6 @@
 import type { FC } from "react"
+import { SFSymbol } from "../Foundations/SFSymbol"
 import { IconButton } from "../UI/Controls/IconButton"
-import { FileManagerIcon } from "../UI/Display/FileManagerIcon"
 
 export type EntryViewMode = "grid" | "list"
 
@@ -32,44 +32,36 @@ export const FileToolbar: FC<FileToolbarProps> = ({
     <header className="toolbar">
       <div className="toolbar-left">
         <IconButton className="subtle" aria-label="Back">
-          <FileManagerIcon name="back" />
+          <SFSymbol name="chevron.left" size={13} weight={500} />
         </IconButton>
         <IconButton className="subtle" aria-label="Forward">
-          <FileManagerIcon name="forward" />
+          <SFSymbol name="chevron.right" size={13} weight={500} />
         </IconButton>
         <IconButton className="subtle" aria-label="Parent">
-          <FileManagerIcon name="parent" />
+          <SFSymbol name="chevron.up" size={13} weight={500} />
         </IconButton>
       </div>
 
       <div className="toolbar-title-area">
-        <span className="toolbar-title-label">{title}</span>
+        <span className="toolbar-title-content">
+          <SFSymbol name="folder" size={12} />
+          <span className="toolbar-title-label">{title}</span>
+        </span>
         {content === "directory" && (
           <span className="toolbar-title-controls">
             <IconButton
-              active={viewMode === "grid"}
-              aria-label="Grid view"
-              aria-pressed={viewMode === "grid"}
+              aria-label={viewMode === "grid" ? "Grid view" : "List view"}
               className="subtle"
-              onClick={() => onViewModeChange("grid")}
+              onClick={() => onViewModeChange(viewMode === "grid" ? "list" : "grid")}
             >
-              <FileManagerIcon name="grid" />
+              <SFSymbol
+                name={viewMode === "grid" ? "square.grid.2x2" : "list.bullet"}
+                size={13}
+                weight={500}
+              />
             </IconButton>
-            <IconButton
-              active={viewMode === "list"}
-              aria-label="List view"
-              aria-pressed={viewMode === "list"}
-              className="subtle"
-              onClick={() => onViewModeChange("list")}
-            >
-              <FileManagerIcon name="list" />
-            </IconButton>
-            <span className="toolbar-control-divider" />
-            <IconButton className="subtle" aria-label="Sort by name">
-              <FileManagerIcon name="sort" />
-            </IconButton>
-            <IconButton className="subtle" aria-label="Group by kind">
-              <FileManagerIcon name="group" />
+            <IconButton className="subtle" aria-label="Sort and group">
+              <SFSymbol name="arrow.up.arrow.down" size={13} weight={500} />
             </IconButton>
           </span>
         )}
@@ -78,12 +70,12 @@ export const FileToolbar: FC<FileToolbarProps> = ({
       <div className="toolbar-right">
         {onNewChat && (
           <IconButton className="subtle" aria-label="New Chat" onClick={onNewChat}>
-            <FileManagerIcon name="inspector" />
+            <SFSymbol name="sidebar.trailing" size={13} weight={500} />
           </IconButton>
         )}
         {showSidebarButton && (
           <IconButton className="subtle" aria-label="Show Sidebar" onClick={onToggleSidebar}>
-            <FileManagerIcon name="sidebar" />
+            <SFSymbol name="sidebar.left" size={13} weight={500} />
           </IconButton>
         )}
       </div>
