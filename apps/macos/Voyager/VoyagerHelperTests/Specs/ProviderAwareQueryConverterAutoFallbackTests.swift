@@ -24,6 +24,32 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         XCTAssertEqual(modelLoader.loadCount(for: .anthropic), 1)
     }
 
+    func testExplicitProviderSelectionIgnoresSearchingStatusBeforeFinal() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini")],
+        ])
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeStatusThenFinalExecutionClient(),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.outcome, .generatedChangeSet)
+        XCTAssertEqual(result.providerId, AiProvider.openai.rawValue)
+        XCTAssertEqual(result.conditions, [])
+    }
+
     func testExplicitProviderSelectionBuildsRequestWithSelectedModelThinkingAndResponseContract() async {
         let file = Self.makeConnectionsFile(updatedAtMs: 1)
         let fileBox = ConnectionFileBox(file)
@@ -184,6 +210,35 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
                 return Self.makeSuccessfulStream(for: request)
             default:
                 throw AiChatExecutionFailure.unsupportedProvider
+            }
+        })
+    }
+
+    private static func makeStatusThenFinalExecutionClient() -> AiChatProviderExecutionClient {
+        AiChatProviderExecutionClient(execute: { request, _ in
+            AsyncThrowingStream { continuation in
+                continuation.yield(.status(
+                    context: request.context,
+                    signal: AiChatExecutionActivitySignal(
+                        activityID: AiChatExecutionActivityID(rawValue: "provider-search"),
+                        kind: .searching,
+                        phase: .began,
+                        evidence: AiChatExecutionActivityEvidence(
+                            origin: .providerWire,
+                            providerEventType: "response.web_search_call.in_progress",
+                        ),
+                    ),
+                ))
+                let response = AiChatResponse(
+                    context: request.context,
+                    assistantMessage: AiChatMessage(
+                        role: .assistant,
+                        content: #"{"conditions":[],"scopes":null,"error":null}"#,
+                    ),
+                    completedAtMs: 2,
+                )
+                continuation.yield(.final(response: response))
+                continuation.finish()
             }
         })
     }
