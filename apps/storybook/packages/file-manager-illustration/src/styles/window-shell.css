@@ -46,6 +46,16 @@
   box-shadow: var(--fm-shadow-window);
 }
 
+[data-file-manager-illustration] .content-pane-review {
+  display: flex;
+  flex-direction: column;
+  width: min(var(--fm-native-window-width), 100%);
+  min-width: var(--fm-native-content-min-width);
+  height: min(var(--fm-native-window-height), calc(100dvh - var(--fm-window-height-inset)));
+  min-height: var(--fm-native-window-min-height);
+  overflow: hidden;
+}
+
 [data-file-manager-illustration] .mac-titlebar-controls {
   display: flex;
   position: absolute;
@@ -61,6 +71,10 @@
 
 [data-file-manager-illustration] .mac-titlebar-controls .traffic-lights {
   padding-left: 14px;
+}
+
+[data-file-manager-illustration] .mac-window.sidebar-closed .mac-titlebar-controls {
+  display: none;
 }
 
 [data-file-manager-illustration] .traffic-lights {
@@ -168,9 +182,10 @@
   display: flex;
   flex-direction: row;
   overflow: hidden;
+  isolation: isolate;
   border-radius: var(--fm-radius-md);
+  clip-path: inset(0 round var(--fm-radius-md));
   background: var(--fm-content);
-  box-shadow: inset 0 0 0 0.5px var(--fm-separator);
 }
 
 [data-file-manager-illustration] .fm-layout-main-inner {
