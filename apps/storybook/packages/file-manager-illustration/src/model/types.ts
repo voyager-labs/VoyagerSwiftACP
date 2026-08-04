@@ -54,6 +54,7 @@ export type LocationShortcut = {
   readonly id: string
   readonly label: string
   readonly symbolName: string
+  readonly iconSrc?: string
 }
 
 export type LocationShortcutsProps = {
@@ -69,6 +70,7 @@ export type SidebarSectionProps = {
 
 export type SidebarIconProps = {
   readonly icon: SidebarIconKind
+  readonly isActive?: boolean
 }
 
 export type SidebarNavItemProps = {
