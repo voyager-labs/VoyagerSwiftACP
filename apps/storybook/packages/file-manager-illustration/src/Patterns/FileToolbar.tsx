@@ -31,13 +31,13 @@ export const FileToolbar: FC<FileToolbarProps> = ({
   return (
     <header className="toolbar">
       <div className="toolbar-left">
-        <IconButton aria-label="Back">
+        <IconButton className="subtle" aria-label="Back">
           <FileManagerIcon name="back" />
         </IconButton>
-        <IconButton aria-label="Forward">
+        <IconButton className="subtle" aria-label="Forward">
           <FileManagerIcon name="forward" />
         </IconButton>
-        <IconButton aria-label="Parent">
+        <IconButton className="subtle" aria-label="Parent">
           <FileManagerIcon name="parent" />
         </IconButton>
       </div>
@@ -50,6 +50,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
               active={viewMode === "grid"}
               aria-label="Grid view"
               aria-pressed={viewMode === "grid"}
+              className="subtle"
               onClick={() => onViewModeChange("grid")}
             >
               <FileManagerIcon name="grid" />
@@ -58,15 +59,16 @@ export const FileToolbar: FC<FileToolbarProps> = ({
               active={viewMode === "list"}
               aria-label="List view"
               aria-pressed={viewMode === "list"}
+              className="subtle"
               onClick={() => onViewModeChange("list")}
             >
               <FileManagerIcon name="list" />
             </IconButton>
             <span className="toolbar-control-divider" />
-            <IconButton aria-label="Sort by name">
+            <IconButton className="subtle" aria-label="Sort by name">
               <FileManagerIcon name="sort" />
             </IconButton>
-            <IconButton aria-label="Group by kind">
+            <IconButton className="subtle" aria-label="Group by kind">
               <FileManagerIcon name="group" />
             </IconButton>
           </span>
@@ -75,12 +77,12 @@ export const FileToolbar: FC<FileToolbarProps> = ({
 
       <div className="toolbar-right">
         {onNewChat && (
-          <IconButton aria-label="New Chat" onClick={onNewChat}>
-            <FileManagerIcon name="chat" />
+          <IconButton className="subtle" aria-label="New Chat" onClick={onNewChat}>
+            <FileManagerIcon name="inspector" />
           </IconButton>
         )}
         {showSidebarButton && (
-          <IconButton aria-label="Show Sidebar" onClick={onToggleSidebar}>
+          <IconButton className="subtle" aria-label="Show Sidebar" onClick={onToggleSidebar}>
             <FileManagerIcon name="sidebar" />
           </IconButton>
         )}

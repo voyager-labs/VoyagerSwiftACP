@@ -7,6 +7,7 @@ export type FileManagerIconName =
   | "forward"
   | "grid"
   | "group"
+  | "inspector"
   | "list"
   | "parent"
   | "plus"
@@ -36,6 +37,12 @@ const ICON_PATHS: Readonly<Record<FileManagerIconName, ReactNode>> = {
     <>
       <rect x="5" y="5" width="6" height="6" rx="1" />
       <rect x="13" y="13" width="6" height="6" rx="1" />
+    </>
+  ),
+  inspector: (
+    <>
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <path d="M15 5v14" />
     </>
   ),
   list: <path d="M8 6h11M8 12h11M8 18h11M5 6h.01M5 12h.01M5 18h.01" />,
