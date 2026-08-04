@@ -3,6 +3,8 @@ import { SFSymbol } from "../Foundations/SFSymbol"
 import { IconButton } from "../UI/Controls/IconButton"
 import type { LocationShortcutsProps } from "../model/types"
 
+const LOCATION_ICON_SIZE = 18
+
 export const LocationShortcuts: FC<LocationShortcutsProps> = ({ shortcuts, onSelect }) => {
   return (
     <div className="location-shortcuts" aria-label="Location shortcuts">
@@ -12,7 +14,17 @@ export const LocationShortcuts: FC<LocationShortcutsProps> = ({ shortcuts, onSel
           aria-label={shortcut.label}
           onClick={() => onSelect?.(shortcut)}
         >
-          <SFSymbol name={shortcut.symbolName} size={16} />
+          {shortcut.iconSrc ? (
+            <img
+              className="location-shortcut-icon"
+              src={shortcut.iconSrc}
+              alt=""
+              width={LOCATION_ICON_SIZE}
+              height={LOCATION_ICON_SIZE}
+            />
+          ) : (
+            <SFSymbol name={shortcut.symbolName} size={LOCATION_ICON_SIZE} weight={500} />
+          )}
         </IconButton>
       ))}
     </div>
