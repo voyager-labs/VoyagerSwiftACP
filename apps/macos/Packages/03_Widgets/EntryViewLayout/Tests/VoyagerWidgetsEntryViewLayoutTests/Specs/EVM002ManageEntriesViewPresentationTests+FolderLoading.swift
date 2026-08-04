@@ -124,14 +124,12 @@ extension EVM002ManageEntriesViewPresentationTests {
             1,
         )
 
-        let retryAction = session.accept(.retry(folder.id, revision: projection.revision))
-        XCTAssertEqual(retryAction, .folderRetryRequested(folder.id))
-        guard case let .folderRetryRequested(retryFolderID)? = retryAction else {
-            return XCTFail("retry action is missing")
-        }
+        state.outlineProjectionRevision = projection.revision
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.sendProjectionIntent(.retry(folder.id, revision: projection.revision))
 
-        _ = reducer.reduce(into: &state, action: .hierarchy(.folderRetryRequested(id: retryFolderID)))
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id], .init(phase: .loading, generation: 2))
+        XCTAssertEqual(store.state.hierarchy.foldersByID[folder.id], .init(phase: .loading, generation: 2))
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: empty core finish는 enrichment 중에도 기존 empty row를 표시한다.

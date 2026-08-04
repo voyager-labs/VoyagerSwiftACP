@@ -7,83 +7,24 @@ import XCTest
 extension EVM002ManageEntriesViewPresentationTests {
     // MARK: - EVM-002-toggle_directory_expansion_in_list
 
-    /// EVM-002-toggle_directory_expansion_in_list: disclosure는 hierarchy expansion만 전달하고 활성화는 navigation으로 분리한다.
-    /// - 검증 내용: 같은 folder에서 disclosure와 activation intent의 종류가 섞이지 않는다.
-    /// - 사전 조건: revision 1의 hierarchy-enabled projection과 folder entry가 있다.
-    /// - 기대 결과: disclosure는 expand이고 activation은 navigate이며 서로 대체되지 않는다.
-    func testDisclosureDispatchesExpansionWithoutNavigation() {
-        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
-        let session = EntryListCoordinatorProjectionSession()
-        session.apply(outlineProjection(revision: 1, roots: [folder])) { _, _ in }
-
-        XCTAssertEqual(
-            session.accept(.disclosureExpand(folder.id, revision: 1)),
-            .folderExpansionRequested(folder.id),
-        )
-        XCTAssertEqual(
-            session.accept(.activate(folder.id, revision: 1)),
-            .navigate(folder.id),
-        )
-    }
-
-    /// EVM-002-toggle_directory_expansion_in_list: double-click과 Enter activation은 disclosure state를 바꾸지 않고 navigation을
-    /// 유지한다.
-    /// - 검증 내용: canonical activation intent가 hierarchy action 대신 navigation 결과로 변환된다.
-    /// - 사전 조건: revision 1의 folder entry가 선택되어 있다.
-    /// - 기대 결과: activation은 navigate만 반환하며 expand/collapse을 반환하지 않는다.
-    func testDoubleClickAndEnterStillNavigateFolder() {
-        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
-        let session = EntryListCoordinatorProjectionSession()
-        session.apply(outlineProjection(revision: 1, roots: [folder])) { _, _ in }
-
-        let doubleClick = session.accept(.activate(folder.id, revision: 1))
-        let enter = session.accept(.activate(folder.id, revision: 1))
-
-        XCTAssertEqual(doubleClick, .navigate(folder.id))
-        XCTAssertEqual(enter, .navigate(folder.id))
-    }
-
-    /// EVM-002-toggle_directory_expansion_in_list: error status retry는 현재 revision의 요청 folder에만 전달한다.
-    /// - 검증 내용: retry intent가 synthetic row의 parent folder ID를 보존한다.
-    /// - 사전 조건: revision 1 projection에서 /root/a가 failed 상태다.
-    /// - 기대 결과: retry는 folderRetryRequested(/root/a)이며 selection/navigation이 아니다.
-    func testFolderLocalErrorRetryUsesCurrentProjectionRevision() {
-        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
-        var hierarchy = EntryListHierarchyState(rootPath: "/root")
-        hierarchy.expandedFolderIDs = [folder.id]
-        hierarchy.foldersByID[folder.id] = .init(phase: .failed(.permissionDenied), generation: 1)
-        let projection = EntryListOutlineProjection(
-            revision: 1,
-            rootEntries: [folder],
-            hierarchyState: hierarchy,
-            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
-            sortKey: .name,
-            sortOrder: .ascending,
-        )
-        let session = EntryListCoordinatorProjectionSession()
-        session.apply(projection) { _, _ in }
-
-        XCTAssertEqual(
-            session.accept(.retry(folder.id, revision: 1)),
-            .folderRetryRequested(folder.id),
-        )
-    }
-
     /// EVM-002-toggle_directory_expansion_in_list: stale revision callback은 현재 hierarchy나 selection으로 전달되지 않는다.
-    /// - 검증 내용: rendered revision과 다른 intent를 gate가 거부한다.
-    /// - 사전 조건: revision 2 projection이 현재 rendered 상태다.
-    /// - 기대 결과: revision 1 expansion/selection callback은 nil이고 revision 2만 전달된다.
+    /// - 검증 내용: store revision과 다른 intent를 coordinator가 거부한다.
+    /// - 사전 조건: revision 2가 현재 store 상태다.
+    /// - 기대 결과: revision 1 expansion은 무시되고 revision 2 expansion만 반영된다.
     func testStaleProjectionIntentIsIgnored() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
-        let session = EntryListCoordinatorProjectionSession()
-        session.apply(outlineProjection(revision: 2, roots: [folder])) { _, _ in }
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.outlineProjectionRevision = 2
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
 
-        XCTAssertNil(session.accept(.disclosureExpand(folder.id, revision: 1)))
-        XCTAssertNil(session.accept(.selection([folder.id], revision: 1)))
-        XCTAssertEqual(
-            session.accept(.selection([folder.id], revision: 2)),
-            .selection([folder.id]),
-        )
+        coordinator.sendProjectionIntent(.disclosureExpand(folder.id, revision: 1))
+        XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
+
+        coordinator.sendProjectionIntent(.disclosureExpand(folder.id, revision: 2))
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: projection 교체는 이전 revision item instance를 재사용하지 않는다.
@@ -197,7 +138,7 @@ extension EVM002ManageEntriesViewPresentationTests {
     /// - 검증 내용: 같은 outline item의 expand callback 직후 collapse callback이 canonical view action 경계를 통과한다.
     /// - 사전 조건: revision 1의 collapsed folder가 렌더되어 있고 첫 callback 뒤 store revision만 먼저 증가한다.
     /// - 기대 결과: render loop가 새 projection을 적용하기 전에도 최종 hierarchy 상태는 collapsed다.
-    func testRapidExpandThenCollapseBeforeRenderSettles() {
+    func testRapidExpandThenCollapseBeforeRenderSettles() throws {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var state = EntryViewLayoutState()
         state.entries = [folder]
@@ -207,9 +148,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let coordinator = EntryListCoordinator(store: store)
         coordinator.bind(to: EntryListView(frame: .zero))
 
-        guard let item = coordinator.entryItemById[folder.id] else {
-            return XCTFail("entryItemById should contain the folder after projection apply")
-        }
+        let item = try XCTUnwrap(coordinator.entryItemById[folder.id])
         coordinator.outlineViewItemDidExpand(Notification(
             name: NSOutlineView.itemDidExpandNotification,
             object: nil,
@@ -253,19 +192,18 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(view.tableView.numberOfRows, 1)
     }
 
-    /// EVM-002-toggle_directory_expansion_in_list: guarded programmatic apply 중 callback과 older pending revision은 전달하지
-    /// 않는다.
-    /// - 검증 내용: reentrant update는 newest revision만 pending slot에 보관하고 delegate intent를 차단한다.
+    /// EVM-002-toggle_directory_expansion_in_list: guarded programmatic apply 중 newest pending revision만 보관한다.
+    /// - 검증 내용: reentrant update는 newest revision만 pending slot에 보관한다.
     /// - 사전 조건: revision 1 apply callback 안에서 revision 2와 stale revision 1을 요청한다.
-    /// - 기대 결과: callback intent는 nil이며 apply 종료 뒤 revision 2만 rendered 된다.
-    func testProgrammaticApplyDoesNotReenterDelegates() {
+    /// - 기대 결과: apply 중 guard가 활성화되고 종료 뒤 revision 2만 rendered 된다.
+    func testProgrammaticApplyKeepsNewestPendingProjection() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let session = EntryListCoordinatorProjectionSession()
         var appliedRevisions: [Int] = []
 
         session.apply(outlineProjection(revision: 1, roots: [folder])) { projection, _ in
             appliedRevisions.append(projection.revision)
-            XCTAssertNil(session.accept(.disclosureExpand(folder.id, revision: 1)))
+            XCTAssertTrue(session.isApplyingStoreProjection)
             session.apply(outlineProjection(revision: 2, roots: [folder])) { pendingProjection, _ in
                 appliedRevisions.append(pendingProjection.revision)
             }

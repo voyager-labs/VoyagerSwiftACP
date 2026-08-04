@@ -288,7 +288,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard !projectionSession.isApplyingStoreProjection else { return }
         let revision: Int = switch intent {
         case let .disclosureExpand(_, revision), let .disclosureCollapse(_, revision),
-             let .retry(_, revision), let .selection(_, revision), let .activate(_, revision):
+             let .retry(_, revision):
             revision
         }
         guard revision == state.outlineProjectionRevision else { return }
@@ -299,8 +299,6 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             store.send(.view(.collapseFolder(id)))
         case let .retry(id, _):
             store.send(.view(.retryFolder(id)))
-        case .selection, .activate:
-            return
         }
     }
 }

@@ -119,16 +119,6 @@ enum EntryListCoordinatorProjectionIntent: Equatable {
     case disclosureExpand(EntryModel.ID, revision: Int)
     case disclosureCollapse(EntryModel.ID, revision: Int)
     case retry(EntryModel.ID, revision: Int)
-    case selection(Set<EntryModel.ID>, revision: Int)
-    case activate(EntryModel.ID, revision: Int)
-}
-
-enum EntryListCoordinatorAcceptedIntent: Equatable {
-    case folderExpansionRequested(EntryModel.ID)
-    case folderCollapseRequested(EntryModel.ID)
-    case folderRetryRequested(EntryModel.ID)
-    case selection(Set<EntryModel.ID>)
-    case navigate(EntryModel.ID)
 }
 
 @MainActor
@@ -178,29 +168,6 @@ final class EntryListCoordinatorProjectionSession {
             return projection.revision > current.revision
         }
         return !projection.hasSameStructure(as: current)
-    }
-
-    func accept(_ intent: EntryListCoordinatorProjectionIntent) -> EntryListCoordinatorAcceptedIntent? {
-        guard !isApplyingStoreProjection else { return nil }
-        let revision: Int = switch intent {
-        case let .disclosureExpand(_, revision), let .disclosureCollapse(_, revision),
-             let .retry(_, revision), let .selection(_, revision), let .activate(_, revision):
-            revision
-        }
-        guard revision == renderedProjectionRevision else { return nil }
-
-        switch intent {
-        case let .disclosureExpand(id, _):
-            return .folderExpansionRequested(id)
-        case let .disclosureCollapse(id, _):
-            return .folderCollapseRequested(id)
-        case let .retry(id, _):
-            return .folderRetryRequested(id)
-        case let .selection(ids, _):
-            return .selection(ids)
-        case let .activate(id, _):
-            return .navigate(id)
-        }
     }
 
     private static func makeOutlineItems(from projection: EntryListOutlineProjection) -> [EntryListOutlineItem] {
