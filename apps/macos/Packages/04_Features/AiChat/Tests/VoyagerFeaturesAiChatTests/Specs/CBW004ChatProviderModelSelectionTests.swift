@@ -44,6 +44,54 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(supportedThinkingState.chatInputDisplayModel.effortLabel, "default")
     }
 
+    /// CBW-004-show_active_chat_provider_and_model: streaming metadata는 selected request lock에서만 투영한다.
+    /// processing 중 selector, catalog, current session 값이 바뀌어도 응답 header가 submit 시점 metadata를 유지하는지 검증합니다.
+    /// - 검증 내용: trimmed locked row title, lock thinking label, waiting content,
+    ///   selector/catalog/session mutation 불변성을 확인합니다.
+    /// - 사전 조건: high thinking과 공백이 포함된 display name을 가진 request lock이 processing 중입니다.
+    /// - 기대 결과: projection은 mutable state를 무시하고 trimmed lock title과 thinking label을 유지합니다.
+    func testShowActiveChatProviderAndModelProjectsOnlyLockedStreamingMetadata() throws {
+        let rows = makeCatalogRows()
+        let lockedRow = AiModelCatalogRow(
+            handle: rows[0].handle,
+            displayName: "  Locked GPT  ",
+            authMethod: rows[0].authMethod,
+            subtitle: rows[0].subtitle,
+            sortOrder: rows[0].sortOrder,
+            isDefault: rows[0].isDefault,
+            isRecommended: rows[0].isRecommended,
+        )
+        let lockedSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114004"))
+        let context = makeRequestContext(
+            sessionID: lockedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224004")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334004")),
+            model: lockedRow.handle,
+            selectedRow: lockedRow,
+            selectedThinking: .effort(.high),
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: lockedRow.handle,
+            selectedRow: lockedRow,
+            assistantReplacementIndex: nil,
+        )
+        let mutatedState = AiChatFeature.State(
+            sessionID: lockedSessionID,
+            catalogRows: [rows[1]],
+            modelListState: .loaded([makeThinkingCapableProviderModels()[1]]),
+            selectedModelHandle: rows[1].handle,
+            selectedThinking: .effort(.minimal),
+            executionPhase: .processing(lock),
+        )
+
+        let projection = try XCTUnwrap(mutatedState.streamingAssistantDisplayModel)
+        XCTAssertNil(projection.content)
+        XCTAssertEqual(projection.title, "Locked GPT")
+        XCTAssertEqual(projection.thinkingLabel, "high")
+    }
+
     // MARK: - CBW-004-open_chat_model_selector
 
     /// CBW-004-open_chat_model_selector: 모델 selector presentation은 선택 상태를 변경하지 않는다.
@@ -114,11 +162,13 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
     /// - 사전 조건: OpenAI 모델로 첫 요청이 processing 중인 상태
     /// - 기대 결과: 첫 request는 OpenAI로 유지되고 두 번째 request는 Anthropic으로 생성된다.
     func testSelectActiveChatModelAppliesOnlyToNextRequest() async throws {
+        let persistence = AiChatSessionPersistenceSpy()
         let fixture = makeCBW004SubmitFixture(
             draftText: "Draft",
             selectedHandle: makeCatalogRows()[0].handle,
             selectedThinking: .effort(.medium),
             fixedMs: 1_700_000_000_600,
+            persistence: persistence,
         )
         let store = fixture.store
         applyCBW004ObservationFocusedExhaustivity(to: store)
@@ -133,18 +183,40 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             state.selectedModelHandle = fixture.catalogRows[1].handle
             state.unavailableSelectedModelHandle = nil
         }
+        await store.send(.selectedThinkingChanged(.effort(.minimal))) { state in
+            state.selectedThinking = .effort(.minimal)
+        }
 
         guard case let .processing(lock) = store.state.executionPhase else {
             return XCTFail("Expected request to remain locked while processing")
         }
         XCTAssertEqual(lock.context.model, fixture.catalogRows[0].handle)
+        XCTAssertEqual(lock.context.selectedThinking, .effort(.medium))
         XCTAssertEqual(store.state.selectedModelHandle, fixture.catalogRows[1].handle)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.minimal))
 
-        await store.send(.resetTapped)
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: firstRequest.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+            completedAtMs: 1_700_000_000_601,
+        ))))
+        await store.receive { action in
+            guard case let .sessionSnapshotSaved(_, snapshot, requestID, runID) = action else { return false }
+            return snapshot?.model == fixture.catalogRows[0].handle
+                && requestID == firstRequest.context.requestID
+                && runID == firstRequest.context.runID
+        }
+
+        let persistedSnapshot = try XCTUnwrap(persistence.snapshots.last)
+        XCTAssertEqual(persistedSnapshot.model, fixture.catalogRows[0].handle)
+        XCTAssertEqual(persistedSnapshot.selectedThinking, .effort(.medium))
+        XCTAssertEqual(store.state.selectedModelHandle, fixture.catalogRows[1].handle)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.minimal))
+
         await store.send(.draftTextChanged("Second request")) { state in
             state.draftText = "Second request"
         }
-        store.dependencies.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_601))
+        store.dependencies.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_602))
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store)
 
@@ -152,6 +224,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(fixture.stream.requests.count, 2)
         XCTAssertEqual(secondRequest.context.model, fixture.catalogRows[1].handle)
         XCTAssertEqual(secondRequest.context.selectedModel, fixture.models[1])
+        XCTAssertEqual(secondRequest.context.selectedThinking, .effort(.minimal))
     }
 
     // MARK: - CBW-004-select_chat_model_thinking
@@ -225,6 +298,71 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             state.selectedThinking = nil
         }
         XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
+    }
+
+    /// CBW-004-select_chat_model_thinking: row가 없는 lock은 raw handle과 Assistant fallback을 사용한다.
+    /// catalog에 같은 handle의 mutable row가 있거나 locked handle이 공백이어도 deterministic title fallback을 유지하는지 검증합니다.
+    /// - 검증 내용: trimmed raw handle, mutable catalog 무시, Assistant fallback, nil thinking projection을 확인합니다.
+    /// - 사전 조건: selectedModelRow가 없는 두 processing lock과 서로 다른 current catalog 상태를 구성합니다.
+    /// - 기대 결과: title은 lock handle 또는 Assistant이고 thinking label은 nil입니다.
+    func testSelectChatModelThinkingUsesRawLockedAndAssistantFallbacksWithoutMutableCatalog() throws {
+        let mutableRow = makeCatalogRows()[0]
+        let lockedSessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555554004"))
+        let rawHandle = AiModelHandle(provider: .openai, rawValue: "  locked-raw-model  ")
+        let rawContext = makeRequestContext(
+            sessionID: lockedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666664004")),
+            runID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777774004")),
+            model: rawHandle,
+            selectedRow: mutableRow,
+        )
+        let rawLock = makeTask4LockWithoutSelectedRow(
+            request: AiChatRequest(context: rawContext, messages: []),
+            selectedHandle: rawHandle,
+        )
+        let mutableCatalogRow = AiModelCatalogRow(
+            handle: rawHandle,
+            displayName: "Mutable Catalog Name",
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: false,
+            isRecommended: false,
+        )
+        let rawState = AiChatFeature.State(
+            sessionID: lockedSessionID,
+            catalogRows: [mutableCatalogRow],
+            executionPhase: .processing(rawLock),
+        )
+        let rawProjection = try XCTUnwrap(rawState.streamingAssistantDisplayModel)
+        XCTAssertEqual(rawProjection.title, "locked-raw-model")
+        XCTAssertNil(rawProjection.thinkingLabel)
+
+        let blankHandle = AiModelHandle(provider: .openai, rawValue: "  ")
+        let blankContext = makeRequestContext(
+            sessionID: lockedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("88888888-8888-8888-8888-888888884004")),
+            runID: AiChatRunID(rawValue: makeUUID("99999999-9999-9999-9999-999999994004")),
+            model: blankHandle,
+            selectedRow: mutableRow,
+        )
+        let blankLock = makeTask4LockWithoutSelectedRow(
+            request: AiChatRequest(context: blankContext, messages: []),
+            selectedHandle: blankHandle,
+        )
+        let blankState = AiChatFeature.State(sessionID: lockedSessionID, executionPhase: .processing(blankLock))
+        let blankProjection = try XCTUnwrap(blankState.streamingAssistantDisplayModel)
+        XCTAssertEqual(blankProjection.title, "Assistant")
+        XCTAssertNil(blankProjection.thinkingLabel)
+
+        let blankThinkingProjection = AiChatStreamingAssistantDisplayModel(
+            requestID: blankContext.requestID,
+            content: nil,
+            title: "Assistant",
+            thinkingLabel: "  \n",
+            acceptedChunkRevision: 0,
+        )
+        XCTAssertNil(blankThinkingProjection.thinkingLabel)
     }
 
     // MARK: - CBW-004-show_unavailable_chat_model_state
@@ -1870,12 +2008,14 @@ private func makeCBW004SubmitFixture(
     selectedHandle: AiModelHandle,
     selectedThinking: AiThinkingSelection?,
     fixedMs: Int64,
+    persistence: AiChatSessionPersistenceSpy? = nil,
 ) -> CBW004SubmitFixture {
     let catalogRows = makeCatalogRows()
     let models = makeThinkingCapableProviderModels()
     let stream = AiChatExecutionStreamDriver()
     let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114004"))
     let store = TestStore(initialState: AiChatFeature.State(
+        mode: .chat,
         sessionID: sessionID,
         sessionStatus: .active,
         currentContext: makeContextSnapshot(),
@@ -1897,6 +2037,14 @@ private func makeCBW004SubmitFixture(
         $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
             stream.stream(for: request)
         })
+        $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+            loadSession: { _ in nil },
+            saveSession: { snapshot in
+                guard let persistence else { return snapshot }
+                return await persistence.save(snapshot)
+            },
+            deleteSession: { _ in },
+        )
         $0.aiConnectionsFileClient = AIConnectionsFileClient(
             load: {
                 makeConnectionsFile(providers: [
@@ -1920,5 +2068,22 @@ private func makeCBW004SubmitFixture(
         stream: stream,
         catalogRows: catalogRows,
         models: models,
+    )
+}
+
+private func makeTask4LockWithoutSelectedRow(
+    request: AiChatRequest,
+    selectedHandle: AiModelHandle,
+) -> AiChatRequestLock {
+    AiChatRequestLock(
+        kind: .submit,
+        requestID: request.context.requestID,
+        runID: request.context.runID,
+        context: request.context,
+        request: request,
+        selectedModelHandle: selectedHandle,
+        selectedModelRow: nil,
+        assistantReplacementIndex: nil,
+        observabilitySummary: .init(submittedAtMs: 0),
     )
 }

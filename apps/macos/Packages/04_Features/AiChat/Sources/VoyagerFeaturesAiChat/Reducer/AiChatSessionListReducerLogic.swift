@@ -460,8 +460,6 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lastRequestContext = snapshot.lastRequestContext
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
-        state.selectedModelHandle = snapshot.model
-        state.selectedThinking = snapshot.selectedThinking
         state.transcriptAutoScrollVersion += 1
     }
 

@@ -19,8 +19,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         configure(scrollView: scrollView)
         configure(textView: textView, coordinator: context.coordinator)
 
-        context.coordinator.textView = textView
-        context.coordinator.scrollView = scrollView
+        context.coordinator.activate(textView: textView, scrollView: scrollView)
         return scrollView
     }
 
@@ -28,6 +27,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         guard let textView = context.coordinator.textView else { return }
 
         context.coordinator.parent = self
+        context.coordinator.activate(textView: textView, scrollView: scrollView)
 
         if textView.string != text {
             textView.string = text
@@ -42,10 +42,12 @@ struct AiChatInputTextView: NSViewRepresentable {
         updateMeasuredHeight(for: textView)
 
         if isFocused, textView.window?.firstResponder !== textView {
-            DispatchQueue.main.async {
-                textView.window?.makeFirstResponder(textView)
-            }
+            context.coordinator.scheduleFocusAcquisition(for: textView)
         }
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        coordinator.invalidateOwnership(of: scrollView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -180,13 +182,63 @@ struct AiChatInputTextView: NSViewRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: AiChatInputTextView
         weak var textView: NSTextView?
         weak var scrollView: NSScrollView?
 
+        private var focusAcquisitionGeneration = 0
+        private var isActive = true
+
         init(parent: AiChatInputTextView) {
             self.parent = parent
+        }
+
+        func activate(textView: NSTextView, scrollView: NSScrollView) {
+            if self.textView !== textView || self.scrollView !== scrollView {
+                focusAcquisitionGeneration += 1
+            }
+            self.textView = textView
+            self.scrollView = scrollView
+            isActive = true
+        }
+
+        func scheduleFocusAcquisition(for textView: NSTextView) {
+            focusAcquisitionGeneration += 1
+            let generation = focusAcquisitionGeneration
+
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self,
+                      let textView,
+                      isActive,
+                      focusAcquisitionGeneration == generation,
+                      self.textView === textView,
+                      let scrollView,
+                      textView.enclosingScrollView === scrollView,
+                      let window = textView.window,
+                      parent.isFocused,
+                      !self.parent.isDisabled,
+                      textView.isEditable,
+                      textView.isSelectable,
+                      window.firstResponder !== textView,
+                      window.makeFirstResponder(textView),
+                      window.firstResponder === textView
+                else { return }
+            }
+        }
+
+        func invalidateOwnership(of scrollView: NSScrollView) {
+            guard self.scrollView === scrollView else { return }
+
+            focusAcquisitionGeneration += 1
+            isActive = false
+            if let textView = textView as? AttachmentDroppingTextView {
+                textView.delegate = nil
+                textView.onAttachmentsDropped = nil
+            }
+            textView = nil
+            self.scrollView = nil
         }
 
         func textDidChange(_ notification: Notification) {
@@ -201,8 +253,22 @@ struct AiChatInputTextView: NSViewRepresentable {
             parent.isFocused = true
         }
 
-        func textDidEndEditing(_: Notification) {
-            parent.isFocused = false
+        func textDidEndEditing(_ notification: Notification) {
+            guard let endedTextView = notification.object as? AttachmentDroppingTextView else { return }
+            if textView === endedTextView {
+                focusAcquisitionGeneration += 1
+            }
+
+            DispatchQueue.main.async { [weak self, weak endedTextView] in
+                guard let self,
+                      let endedTextView,
+                      textView === endedTextView,
+                      let window = endedTextView.window,
+                      !(window.firstResponder is AttachmentDroppingTextView)
+                else { return }
+
+                parent.isFocused = false
+            }
         }
 
         @MainActor

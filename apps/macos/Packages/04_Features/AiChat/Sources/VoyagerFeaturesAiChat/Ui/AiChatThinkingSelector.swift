@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerShared
 
 struct AiChatThinkingSelectorButton: View {
     let store: StoreOf<AiChatFeature>
@@ -35,13 +36,20 @@ struct AiChatThinkingSelectorButton: View {
                 }
             }
         }
-        .disabled(AiChatSelectorLabels.thinkingSelectorIsDisabled(for: state))
+        .onChange(of: input.isComposerEditingDisabled) { isDisabled in
+            if isDisabled {
+                isPresented = false
+            }
+        }
+        .disabled(input.isComposerEditingDisabled || AiChatSelectorLabels.thinkingSelectorIsDisabled(for: state))
         .accessibilityLabel("Thinking")
         .accessibilityValue(AiChatSelectorLabels.thinkingSelectorAccessibilityValue(for: state))
     }
 }
 
 private struct AiChatThinkingSelectorRow: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
     let store: StoreOf<AiChatFeature>
     let option: ThinkingSelectorOption
     let isSelected: Bool
@@ -70,8 +78,8 @@ private struct AiChatThinkingSelectorRow: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear),
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                    .fill(isSelected ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : Color.clear),
             )
         }
         .buttonStyle(.plain)

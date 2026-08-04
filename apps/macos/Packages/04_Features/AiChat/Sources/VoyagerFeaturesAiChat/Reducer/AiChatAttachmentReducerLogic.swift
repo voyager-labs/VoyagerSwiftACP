@@ -4,7 +4,10 @@ import UniformTypeIdentifiers
 import VoyagerEntitiesAi
 
 extension AiChatFeature {
-    func loadDroppedAttachmentURLs(from providers: [AiChatAttachmentDropProvider]) -> Effect<Action> {
+    func loadDroppedAttachmentURLs(
+        from providers: [AiChatAttachmentDropProvider],
+        originSessionID: AiChatSessionID,
+    ) -> Effect<Action> {
         .run { send in
             var urls: [URL] = []
             for droppedProvider in providers {
@@ -25,9 +28,9 @@ extension AiChatFeature {
                 }
             }
             guard !urls.isEmpty else { return }
-            await send(.attachmentDropSelection(urls))
+            await send(.attachmentDropSelection(originSessionID, urls))
         }
-        .cancellable(id: CancelID.attachmentDrop, cancelInFlight: true)
+        .cancellable(id: CancelID.attachmentDrop(originSessionID), cancelInFlight: true)
     }
 
     static func droppedFileURL(from provider: NSItemProvider, typeIdentifier: String) async -> URL? {

@@ -1,9 +1,11 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct AiChatModelSelectorButton: View {
     let store: StoreOf<AiChatFeature>
     let state: AiChatState
+    let isEditingDisabled: Bool
 
     @Binding var isPresented: Bool
 
@@ -32,14 +34,18 @@ struct AiChatModelSelectorButton: View {
                 store.send(.modelSelectorDismissed)
             }
         }
-        .onChange(of: state.modelSelectorIsDisabled) { isDisabled in
+        .onChange(of: isDisabled) { isDisabled in
             guard isDisabled, isPresented else { return }
             isPresented = false
             store.send(.modelSelectorDismissed)
         }
-        .disabled(state.modelSelectorIsDisabled)
+        .disabled(isDisabled)
         .accessibilityLabel("Model")
         .accessibilityValue(AiChatSelectorLabels.modelSelectorAccessibilityValue(for: state))
+    }
+
+    private var isDisabled: Bool {
+        isEditingDisabled || state.modelSelectorIsDisabled
     }
 }
 
@@ -99,6 +105,8 @@ private struct AiChatModelSelectorDropdown: View {
 }
 
 struct AiChatSelectorPopoverContainer<Content: View>: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -106,14 +114,18 @@ struct AiChatSelectorPopoverContainer<Content: View>: View {
             .padding(8)
             .frame(width: Self.width, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor)),
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1),
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                    .strokeBorder(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
             )
-            .shadow(color: Color.black.opacity(0.16), radius: 12, x: 0, y: 6)
+            .shadow(
+                color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+                radius: VoyagerDS.Shadow.popoverRadius,
+                y: VoyagerDS.Shadow.popoverYOffset,
+            )
     }
 
     private static var width: CGFloat {
@@ -150,6 +162,8 @@ private struct AiChatModelSelectorStatusRow: View {
 }
 
 private struct AiChatModelSelectorRow: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
     let store: StoreOf<AiChatFeature>
     let row: AiChatModelCatalogRowDisplayModel
 
@@ -177,8 +191,8 @@ private struct AiChatModelSelectorRow: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(row.isSelected ? Color.primary.opacity(0.08) : Color.clear),
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                    .fill(row.isSelected ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : Color.clear),
             )
         }
         .buttonStyle(.plain)
