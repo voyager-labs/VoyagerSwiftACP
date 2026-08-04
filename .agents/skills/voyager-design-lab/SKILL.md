@@ -3,7 +3,7 @@ name: voyager-design-lab
 description: "Operate Voyager's React Storybook Design Lab as an evidence-backed File Manager review surface, including native macOS parity claims. Use when adding, changing, reviewing, or retiring apps/storybook stories, File Manager visual states, component taxonomy, fixtures, token mappings, or design-lab handoff evidence. Triggers on: Design Lab, Storybook state, File Manager illustration, native parity, visual QA, AppKit, SwiftUI, Tahoe, Sequoia, component catalog, workflow prototype, story taxonomy."
 compatibility: opencode
 metadata:
-  workflow: design-lab
+    workflow: design-lab
 ---
 
 # Voyager Design Lab
@@ -17,11 +17,12 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 
 ## Conditional references
 
-| Situation | Read | Do not read when |
-| --- | --- | --- |
-| Story placement, root consumer, workflow proposal, or retirement | `references/authority-and-state-contract.md` | Editing an existing isolated atom with unchanged ownership |
-| SwiftUI/AppKit source, screenshot, Tahoe/Sequoia, material, geometry, or token claim | `references/native-evidence-contract.md` | Product behavior has no native-visual claim |
-| Implementation review, validation, or handoff | `references/review-and-verification.md` | Planning-only work with no changed state |
+| Situation                                                                            | Read                                         | Do not read when                                                     |
+| ------------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
+| Story placement, root consumer, workflow proposal, or retirement                     | `references/authority-and-state-contract.md` | Editing an existing isolated atom with unchanged ownership           |
+| SwiftUI/AppKit source, screenshot, Tahoe/Sequoia, material, geometry, or token claim | `references/native-evidence-contract.md`     | Product behavior has no native-visual claim                          |
+| File Manager control icon, navigation glyph, or system symbol                        | `references/sf-symbol-contract.md`           | The visual is a file thumbnail, preview, or other non-symbol content |
+| Implementation review, validation, or handoff                                        | `references/review-and-verification.md`      | Planning-only work with no changed state                             |
 
 ## Workflow
 
