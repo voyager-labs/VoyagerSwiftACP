@@ -192,6 +192,40 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: render settle 전 연속 expand/collapse 입력도 순서대로 반영한다.
+    /// 사용자가 disclosure를 빠르게 두 번 조작해도 이전 rendered revision gate가 두 번째 입력을 버리지 않는지 검증한다.
+    /// - 검증 내용: 같은 outline item의 expand callback 직후 collapse callback이 canonical view action 경계를 통과한다.
+    /// - 사전 조건: revision 1의 collapsed folder가 렌더되어 있고 첫 callback 뒤 store revision만 먼저 증가한다.
+    /// - 기대 결과: render loop가 새 projection을 적용하기 전에도 최종 hierarchy 상태는 collapsed다.
+    func testRapidExpandThenCollapseBeforeRenderSettles() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.outlineProjectionRevision = 1
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+
+        guard let item = coordinator.entryItemById[folder.id] else {
+            return XCTFail("entryItemById should contain the folder after projection apply")
+        }
+        coordinator.outlineViewItemDidExpand(Notification(
+            name: NSOutlineView.itemDidExpandNotification,
+            object: nil,
+            userInfo: ["NSObject": item],
+        ))
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
+
+        coordinator.outlineViewItemDidCollapse(Notification(
+            name: NSOutlineView.itemDidCollapseNotification,
+            object: nil,
+            userInfo: ["NSObject": item],
+        ))
+
+        XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: list로 시작한 뒤 첫 entries load가 도착하면 초기 rows를 렌더링한다.
     /// 사용자가 list mode로 앱을 열었을 때 첫 store emission과 entry load가 같은 main queue turn에 도착하는 경계를 검증한다.
     /// - 검증 내용: initial bind 직후 entries가 채워져도 coordinator가 첫 populated snapshot을 table rows로 반영한다.

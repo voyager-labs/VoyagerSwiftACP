@@ -285,16 +285,22 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     }
 
     func sendProjectionIntent(_ intent: EntryListCoordinatorProjectionIntent) {
-        guard let acceptedIntent = projectionSession.accept(intent) else { return }
-        switch acceptedIntent {
-        case let .folderExpansionRequested(id):
-            store.send(.hierarchy(.folderExpansionRequested(id: id)))
-        case let .folderCollapseRequested(id):
-            store.send(.hierarchy(.folderCollapseRequested(id: id)))
-        case let .folderRetryRequested(id):
-            store.send(.hierarchy(.folderRetryRequested(id: id)))
-        case .selection, .navigate:
-            break
+        guard !projectionSession.isApplyingStoreProjection else { return }
+        let revision: Int = switch intent {
+        case let .disclosureExpand(_, revision), let .disclosureCollapse(_, revision),
+             let .retry(_, revision), let .selection(_, revision), let .activate(_, revision):
+            revision
+        }
+        guard revision == state.outlineProjectionRevision else { return }
+        switch intent {
+        case let .disclosureExpand(id, _):
+            store.send(.view(.expandFolder(id)))
+        case let .disclosureCollapse(id, _):
+            store.send(.view(.collapseFolder(id)))
+        case let .retry(id, _):
+            store.send(.view(.retryFolder(id)))
+        case .selection, .activate:
+            return
         }
     }
 }
