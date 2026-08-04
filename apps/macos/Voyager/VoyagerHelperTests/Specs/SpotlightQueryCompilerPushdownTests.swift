@@ -74,14 +74,6 @@ private extension SpotlightQueryCompilerPushdownTests {
     }
 
     func loadRegistry<T: Decodable>(fileName: String) throws -> T {
-        let rootURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fileURL = rootURL.appendingPathComponent("shared").appendingPathComponent(fileName)
-        let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(T.self, from: data)
+        try RepositorySharedFixture.decode(fileName: fileName, sourceFilePath: #filePath)
     }
 }

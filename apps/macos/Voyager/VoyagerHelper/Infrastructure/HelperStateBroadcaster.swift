@@ -6,20 +6,29 @@ final class HelperStateBroadcaster {
     /// DB 초기화/마이그레이션 완료 전에는 false. 완료 후 true로 설정해 메인 앱에 준비 완료를 알린다.
     private var helperFullyReady = false
     nonisolated(unsafe) private var observer: NSObjectProtocol?
+    private let requestNotificationName: Notification.Name
+    private let stateDidUpdateNotificationName: Notification.Name
 
-    /// 등록된 알림 옵저버를 정리한다
+    init(
+        requestNotificationName: Notification.Name = Notification.Name("voyagerHelperStateRequest"),
+        stateDidUpdateNotificationName: Notification.Name = Notification.Name("voyagerHelperStateDidUpdate"),
+    ) {
+        self.requestNotificationName = requestNotificationName
+        self.stateDidUpdateNotificationName = stateDidUpdateNotificationName
+    }
+
+    /// 명시적 종료가 누락된 경우 등록된 알림 옵저버를 정리한다
     deinit {
         guard let observer else { return }
-        Task { @MainActor in
-            DistributedNotificationCenter.default().removeObserver(observer)
-        }
+        self.observer = nil
+        DistributedNotificationCenter.default().removeObserver(observer)
     }
 
     /// Helper 상태 요청 알림을 구독한다
     func startObservingRequests() {
         guard observer == nil else { return }
         let token = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("voyagerHelperStateRequest"),
+            forName: requestNotificationName,
             object: nil,
             queue: .main,
         ) { [weak self] _ in
@@ -28,6 +37,13 @@ final class HelperStateBroadcaster {
             }
         }
         observer = token
+    }
+
+    /// Helper 상태 요청 알림 구독을 중지한다
+    func stopObservingRequests() {
+        guard let observer else { return }
+        self.observer = nil
+        DistributedNotificationCenter.default().removeObserver(observer)
     }
 
     /// DB 초기화/마이그레이션 완료 후 호출한다. 이후 postCurrentState()는 helperReady: true로 전송한다.
@@ -39,7 +55,7 @@ final class HelperStateBroadcaster {
     func postCurrentState() {
         let payload = buildPayload()
         DistributedNotificationCenter.default().post(
-            name: Notification.Name("voyagerHelperStateDidUpdate"),
+            name: stateDidUpdateNotificationName,
             object: nil,
             userInfo: payload,
         )

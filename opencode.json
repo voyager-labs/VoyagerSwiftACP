@@ -5,8 +5,7 @@
     ".agents/skills/common/internal/sisyphus-wiki/plugins/sisyphus-wiki.js",
     ".agents/skills/common/vendor/ponytail/.opencode/plugins/ponytail.mjs",
     ".agents/skills/common/vendor/caveman/.opencode/plugins/caveman/plugin.js",
-    "context-mode",
-    "rtk"
+    "context-mode"
   ],
   "lsp": {
       "sourcekit-lsp": {
@@ -17,35 +16,16 @@
     "cupertino": {
       "type": "local",
       "command": ["mise", "exec", "--", "cupertino", "serve"],
-      "enabled": true
-    },
-    "XcodeBuildMCP": {
-      "type": "local",
-      "command": ["mise", "exec", "--", "xcodebuildmcp", "mcp"],
-      "enabled": true
-    },
-    "codegraph": {
-      "type": "local",
-      "command": ["mise", "exec", "--", "codegraph", "serve", "--mcp"],
-      "enabled": true
-    },
-    "ast-grep": {
-      "type": "local",
-      "command": ["mise", "exec", "--", "uvx", "--from", "git+https://github.com/ast-grep/ast-grep-mcp", "ast-grep-server"],
-      "enabled": true
+      "enabled": false
     }
   },
   "formatter": {
     "prettier": {
-      "command": ["npx", "prettier", "--write", "--config", "docs/canonical/.prettierrc.json", "$FILE"],
+      "command": ["npm", "exec", "--prefix", "docs/canonical", "--", "prettier", "--write", "--config", "docs/canonical/.prettierrc.json", "$FILE"],
       "extensions": [".md"]
     },
     "swiftformat": {
       "command": ["mise", "exec", "--", "swiftformat", "--config", "apps/macos/.swiftformat", "$FILE"],
-      "extensions": [".swift"]
-    },
-    "swiftlint": {
-      "command": ["mise", "exec", "--", "swiftlint", "--fix", "--config", "apps/macos/.swiftlint.yml", "$FILE"],
       "extensions": [".swift"]
     }
   }

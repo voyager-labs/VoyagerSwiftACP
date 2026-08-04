@@ -72,9 +72,9 @@ extension ContentHomeChatHistoryTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeAppeared)))
+        await store.sendTabContent(.view(.homeAppeared))
         await store.receive { action in
-            guard case let .content(.internal(.homeChatHistoryLoaded(items))) = action else {
+            guard case let .tabContent(_, .internal(.homeChatHistoryLoaded(items))) = action else {
                 return false
             }
             return items.count == 5
@@ -118,9 +118,9 @@ extension ContentHomeChatHistoryTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeAppeared)))
+        await store.sendTabContent(.view(.homeAppeared))
         await store.receive { action in
-            guard case .content(.internal(.homeChatHistoryLoadFailed)) = action else {
+            guard case .tabContent(_, .internal(.homeChatHistoryLoadFailed)) = action else {
                 return false
             }
             return true
@@ -181,9 +181,9 @@ extension ContentHomeChatHistoryTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.chatHistory(sessionID)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.chatHistory(sessionID))))
         await store.receive { action in
-            guard case let .content(.delegate(.homeChatHistorySessionSelected(receivedSessionID))) = action else {
+            guard case let .tabContent(_, .delegate(.homeChatHistorySessionSelected(receivedSessionID))) = action else {
                 return false
             }
             return receivedSessionID == sessionID
@@ -204,13 +204,16 @@ extension ContentHomeChatHistoryTests {
         }
 
         await store.receive { action in
-            guard case let .content(.aiChat(.setup(setup))) = action else {
+            guard case let .tabContent(_, .aiChat(.setup(setup))) = action else {
                 return false
             }
             return setup.restoreSessionID == sessionID && setup.sessionID == nil
         }
         await store.receive { action in
-            guard case let .content(.aiChat(.restoreOutcome(requestedSessionID, .restored(snapshot: snapshot), nil))) =
+            guard case let .tabContent(
+                _,
+                .aiChat(.restoreOutcome(requestedSessionID, .restored(snapshot: snapshot), nil)),
+            ) =
                 action
             else {
                 return false
@@ -218,7 +221,7 @@ extension ContentHomeChatHistoryTests {
             return requestedSessionID == sessionID && snapshot.sessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
+            guard case let .tabContent(_, .delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
                 return false
             }
             return receivedSessionID == sessionID && title == "Existing session title"

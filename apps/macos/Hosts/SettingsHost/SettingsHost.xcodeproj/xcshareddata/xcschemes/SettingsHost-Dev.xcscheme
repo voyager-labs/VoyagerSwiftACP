@@ -64,6 +64,11 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
+            key = "VOYAGER_PROJECT_ROOT"
+            value = "$(SRCROOT)/../../../.."
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "SETTINGS_HOST_SMOKE"
             value = "1"
             isEnabled = "NO">

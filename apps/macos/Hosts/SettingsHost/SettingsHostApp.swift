@@ -11,7 +11,9 @@ import VoyagerShared
 
 private enum SmokeMode {
     static var isEnabled: Bool {
-        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
+        // Smoke/Reset/Scenario는 호스트 전용 디버그 launch 환경변수이다.
+        // Dotenv로 전환하지 않고 ProcessInfo를 직접 읽는다 — 이는 호스트 제어이므로
+        // 런타임 설정(.env)과 분리된 상태를 유지한다.
         ProcessInfo.processInfo.environment["SETTINGS_HOST_SMOKE"] == "1"
     }
 
@@ -126,6 +128,12 @@ struct SettingsHostApp: App {
     private var appDelegate
 
     init() {
+        // EnvironmentLoader는 shared Dotenv를 통해 런타임 설정을 .env.dev에서 로드한다.
+        // smoke/reset/scenario는 의도적으로 ProcessInfo launch 환경변수로 남겨두며,
+        // 이는 호스트 전용 디버그 제어이므로 Dotenv로 전환하지 않는다.
+        try? EnvironmentLoader.loadEnvFiles()
+        EnvironmentLoader.requireAppEnv()
+
         // Smoke gate runs BEFORE SwiftUI body is evaluated
         if SmokeMode.isEnabled {
             SmokeMode.run()

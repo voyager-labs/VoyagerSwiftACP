@@ -57,7 +57,7 @@ extension AiChatProviderExecutionClient {
 
         if let filesystemText = CodexContextPromptBuilder.makeFilesystemPrompt(
             from: payload.context.requestContext,
-            workingDirectory: codexWorkingDirectory(),
+            workingDirectory: nil,
         ), !filesystemText.isEmpty {
             sections.append(filesystemText)
         }
@@ -162,7 +162,6 @@ extension AiChatProviderExecutionClient {
             thinking: request.thinking,
         )
         process.environment = codexProcessEnvironment(codexHomeURL: request.codexHomeURL)
-        process.currentDirectoryURL = codexWorkingDirectory()
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -314,9 +313,38 @@ extension AiChatProviderExecutionClient {
         return directory
     }
 
-    static func codexProcessEnvironment(codexHomeURL: URL) -> [String: String] {
-        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
-        var environment = ProcessInfo.processInfo.environment
+    static func codexProcessEnvironment(
+        codexHomeURL: URL,
+        parentEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+    ) -> [String: String] {
+        let inheritedKeys: Set = [
+            "ALL_PROXY",
+            "CURL_CA_BUNDLE",
+            "HOME",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "LANG",
+            "LC_ALL",
+            "LC_COLLATE",
+            "LC_CTYPE",
+            "LC_MESSAGES",
+            "LC_MONETARY",
+            "LC_NUMERIC",
+            "LC_TIME",
+            "NODE_EXTRA_CA_CERTS",
+            "NO_PROXY",
+            "PATH",
+            "SSL_CERT_DIR",
+            "SSL_CERT_FILE",
+            "TEMP",
+            "TMP",
+            "TMPDIR",
+            "all_proxy",
+            "http_proxy",
+            "https_proxy",
+            "no_proxy",
+        ]
+        var environment = parentEnvironment.filter { inheritedKeys.contains($0.key) }
         let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         if let path = environment["PATH"], !path.isEmpty {
             environment["PATH"] = "\(defaultPath):\(path)"
@@ -325,15 +353,6 @@ extension AiChatProviderExecutionClient {
         }
         environment["CODEX_HOME"] = codexHomeURL.path
         return environment
-    }
-
-    static func codexWorkingDirectory() -> URL? {
-        if let workingDirectory = ProcessInfo.processInfo.environment["VOYAGER_CODEX_WORKING_DIRECTORY"],
-           !workingDirectory.isEmpty
-        {
-            return URL(fileURLWithPath: workingDirectory)
-        }
-        return nil
     }
 
     struct CodexProcessRequest {

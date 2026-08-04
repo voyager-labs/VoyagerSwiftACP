@@ -44,8 +44,9 @@ struct MenuCommandItem: Identifiable, Equatable {
     enum EditCommand: Equatable {
         case requestUndo
         case requestRedo
+        case find
         case toggleComposer
-        case newChat
+        case openChat
         case showChatHistory
 
         case cut

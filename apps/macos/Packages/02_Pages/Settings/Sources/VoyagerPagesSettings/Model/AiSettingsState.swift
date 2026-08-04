@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiProviderConnection
@@ -11,6 +12,11 @@ public struct AiSettingsState: Equatable {
     public var collectionSearchSettings: CollectionSearchAISettings
     public var collectionSearchModelsByProvider: [AiProvider: [AiProviderModel]]
     public var collectionSearchLoadError: String?
+    public var chatDefaultSettings: AiChatDefaultSettings
+    public var chatModelsByProvider: [AiProvider: [AiProviderModel]]
+    public var chatModelCatalogPhase: AiChatModelCatalogPhase
+    public var chatModelRequestID: UUID?
+    public var chatModelLoadError: String?
 
     public init(
         didBootstrap: Bool = false,
@@ -19,6 +25,11 @@ public struct AiSettingsState: Equatable {
         collectionSearchSettings: CollectionSearchAISettings = .default,
         collectionSearchModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
         collectionSearchLoadError: String? = nil,
+        chatDefaultSettings: AiChatDefaultSettings = .default,
+        chatModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
+        chatModelCatalogPhase: AiChatModelCatalogPhase = .idle,
+        chatModelRequestID: UUID? = nil,
+        chatModelLoadError: String? = nil,
     ) {
         self.didBootstrap = didBootstrap
         self.bootstrapPhase = bootstrapPhase
@@ -26,6 +37,11 @@ public struct AiSettingsState: Equatable {
         self.collectionSearchSettings = collectionSearchSettings
         self.collectionSearchModelsByProvider = collectionSearchModelsByProvider
         self.collectionSearchLoadError = collectionSearchLoadError
+        self.chatDefaultSettings = chatDefaultSettings
+        self.chatModelsByProvider = chatModelsByProvider
+        self.chatModelCatalogPhase = chatModelCatalogPhase
+        self.chatModelRequestID = chatModelRequestID
+        self.chatModelLoadError = chatModelLoadError
     }
 
     /// Builds initial row states from the v1 provider catalog with all providers `notVerified`.
@@ -89,6 +105,94 @@ public struct AiSettingsState: Equatable {
     public var collectionSearchHasLoadedModels: Bool {
         !collectionSearchModelsByProvider.isEmpty
     }
+
+    public var chatSelectedProvider: AiProvider? {
+        guard let rawValue = chatDefaultSettings.provider?.rawValue else { return nil }
+        return AiProvider(rawValue: rawValue)
+    }
+
+    public var chatSelectedProviderIsAvailable: Bool {
+        guard let provider = chatSelectedProvider else { return false }
+        return rows[id: provider]?.connectionState == .connected
+    }
+
+    public var chatSelectedProviderIsUnavailable: Bool {
+        chatDefaultSettings.provider != nil && !chatSelectedProviderIsAvailable
+    }
+
+    public var chatAvailableModels: [AiProviderModel] {
+        guard let provider = chatSelectedProvider else { return [] }
+        return chatModelsByProvider[provider] ?? []
+    }
+
+    public var chatSelectedModel: AiProviderModel? {
+        guard let selection = chatDefaultSettings.model,
+              selection.providerRawValue == chatDefaultSettings.provider?.rawValue,
+              let provider = AiProvider(rawValue: selection.providerRawValue)
+        else { return nil }
+
+        return chatModelsByProvider[provider]?.first {
+            $0.rawModelID == selection.modelRawValue || $0.id.rawValue == selection.modelRawValue
+        }
+    }
+
+    public var chatSelectedModelIsUnavailable: Bool {
+        chatDefaultSettings.model != nil && chatSelectedModel == nil
+    }
+
+    public var chatThinkingSelection: AiThinkingSelection? {
+        switch chatDefaultSettings.thinking {
+        case .providerDefault:
+            nil
+        case .none:
+            .some(.none)
+        case let .effort(rawValue):
+            AiThinkingEffort(rawValue: rawValue).map(AiThinkingSelection.effort)
+        case let .tokenBudget(value):
+            .tokenBudget(value)
+        }
+    }
+
+    public var chatThinkingOptions: [AiThinkingOption] {
+        guard let model = chatSelectedModel else {
+            return [
+                AiThinkingOption(selection: nil, title: "Provider default"),
+            ]
+        }
+
+        let options = AiThinkingSelectionPolicy.options(
+            capability: model.thinkingCapability,
+            supportsNone: model.supportsThinkingNone,
+        )
+        if !options.isEmpty { return options }
+
+        return [
+            AiThinkingOption(
+                selection: nil,
+                title: AiThinkingSelectionPolicy.defaultLabel(for: model.thinkingCapability),
+            ),
+        ]
+    }
+
+    public var chatThinkingIsUnavailable: Bool {
+        guard chatDefaultSettings.thinking != .providerDefault else { return false }
+        guard let model = chatSelectedModel,
+              let selection = chatThinkingSelection
+        else { return true }
+
+        return AiThinkingSelectionPolicy.normalize(
+            selection,
+            capability: model.thinkingCapability,
+            supportsNone: model.supportsThinkingNone,
+        ) != selection
+    }
+}
+
+public enum AiChatModelCatalogPhase: Equatable, Sendable {
+    case idle
+    case loading
+    case loaded
+    case failed
 }
 
 /// AI Settings bootstrap 단계 상태 머신.

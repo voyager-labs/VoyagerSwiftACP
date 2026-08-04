@@ -4,41 +4,41 @@
     {
       "id": 1,
       "prompt": "ComposerSaveReducer.Action이 어디서 호출되는지 찾아줘.",
-      "expected_output": "Selects codegraph_callers (not grep or rg), reports call sites with file:line locations for each caller.",
+      "expected_output": "Uses one codegraph_explore query asking for callers and returns file:line evidence without reopening returned files.",
       "assertions": [
-        "Uses codegraph_callers, not grep or rg",
-        "Reports file:line locations for each call site",
-        "Does not read all files in the Composer package"
+        "Uses codegraph_explore",
+        "Does not call removed CodeGraph tools",
+        "Reports file:line evidence"
       ]
     },
     {
       "id": 2,
       "prompt": "SearchGateway에서 search_router까지 호출 경로를 추적해줘.",
-      "expected_output": "Uses codegraph_trace to find a multi-hop call path crossing Swift-to-Python boundary. If trace fails due to hop limit, explains fallback strategy using intermediate symbols.",
+      "expected_output": "Names both endpoints in one codegraph_explore query and reports the discovered call path.",
       "assertions": [
-        "Uses codegraph_trace, not manual file-by-file reading",
-        "Result shows a chain of hops from frontend to backend",
-        "If trace fails, mentions picking an intermediate symbol as fallback"
+        "Uses codegraph_explore",
+        "Includes both flow endpoints in the query",
+        "Does not reconstruct the flow with grep and repeated reads"
       ]
     },
     {
       "id": 3,
-      "prompt": "VoyagerFeaturesComposer 패키지 시그니처를 바꾸면 뭐가 깨지는지 영향 분석해줘.",
-      "expected_output": "Uses codegraph_impact for initial scope analysis, then explicitly states that actual compilation and testing are still required to confirm breakage.",
+      "prompt": "VoyagerFeaturesComposer 시그니처를 바꾸면 뭐가 깨지는지 분석해줘.",
+      "expected_output": "Uses codegraph_explore for blast-radius analysis and requires compiler or test verification before claiming correctness.",
       "assertions": [
-        "Uses codegraph_impact for initial scope analysis",
-        "Does NOT claim impact analysis replaces build/test verification",
-        "Mentions running actual build or test commands to confirm"
+        "Uses codegraph_explore",
+        "Requests impact or dependent context",
+        "Does not claim CodeGraph replaces build or test verification"
       ]
     },
     {
       "id": 4,
-      "prompt": "codegraph 도구를 쓰려는데 인덱스가 없거나 stale한 것 같아.",
-      "expected_output": "Checks index status first via codegraph_status or mise run codegraph-status, runs init or reindex if needed, then proceeds with the query only after confirming index is ready.",
+      "prompt": "CodeGraph 인덱스가 없거나 stale한 것 같아.",
+      "expected_output": "Calls codegraph_explore once, follows its banner or missing-index guidance, and does not invoke removed status/init commands.",
       "assertions": [
-        "Runs codegraph_status or mise run codegraph-status first",
-        "If index missing, runs mise run codegraph-init or mise run codegraph-reindex",
-        "Does not proceed with queries before confirming index is ready"
+        "Uses codegraph_explore",
+        "Does not call codegraph_status or local init tasks",
+        "Handles the tool response before continuing"
       ]
     }
   ]

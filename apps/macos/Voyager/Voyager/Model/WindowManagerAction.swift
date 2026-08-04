@@ -215,10 +215,16 @@ enum ExternalOpenPlacementPlanner {
 }
 
 enum ExternalOpenPlacementApplication {
+    struct ExistingWindowActivation {
+        let windowID: WindowManagerState.WindowID
+        let tabIDs: [ContentTabID]
+        let activeTabID: ContentTabID
+    }
+
     struct Result {
         let windows: IdentifiedArrayOf<WindowSessionFeature.State>
         let newWindowIDs: [WindowManagerState.WindowID]
-        let existingWindowActivations: [(windowID: WindowManagerState.WindowID, tabID: ContentTabID)]
+        let existingWindowActivations: [ExistingWindowActivation]
     }
 
     static func apply(
@@ -233,7 +239,7 @@ enum ExternalOpenPlacementApplication {
 
         var updatedWindows = windows
         var newWindowIDs: [WindowManagerState.WindowID] = []
-        var existingWindowActivations: [(windowID: WindowManagerState.WindowID, tabID: ContentTabID)] = []
+        var existingWindowActivations: [ExistingWindowActivation] = []
         for placementWindow in plan.windows {
             let reservations = placementWindow.items.compactMap { item -> ExternalContentTabReservation? in
                 guard let reservation = reservationsByItemID[item.itemID],
@@ -258,9 +264,10 @@ enum ExternalOpenPlacementApplication {
                 else { return nil }
                 updatedWindows[id: placementWindow.windowID]?.window = window
                 guard let activeReservation = reservations.last else { return nil }
-                existingWindowActivations.append((
+                existingWindowActivations.append(.init(
                     windowID: placementWindow.windowID,
-                    tabID: activeReservation.id,
+                    tabIDs: reservations.map(\.id),
+                    activeTabID: activeReservation.id,
                 ))
             }
         }
@@ -378,8 +385,9 @@ enum WindowManagerAction: CasePathable {
     enum EditCommand: CasePathable {
         case requestUndo
         case requestRedo
+        case find
         case toggleComposer
-        case newChat
+        case openChat
         case showChatHistory
         case cut
         case copy

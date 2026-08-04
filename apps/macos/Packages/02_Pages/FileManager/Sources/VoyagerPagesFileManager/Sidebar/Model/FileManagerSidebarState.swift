@@ -8,6 +8,10 @@ public struct FileManagerSidebarState: Equatable {
     var allFixedLocationItems: [FileManagerFixedLocationItem] = []
     var fixedLocationItems: [FileManagerFixedLocationItem] = []
     var hiddenFixedLocationItemIDs: Set<FileManagerFixedLocationItem.ID> = []
+    var shouldShowFixedLocationSection: Bool {
+        !fixedLocationItems.isEmpty
+    }
+
     var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
 

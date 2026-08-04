@@ -33,6 +33,7 @@ public extension FileManagerWindowState {
         let selectedIds = content.entryViewLayout.selectedIds
         let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
         let canPerformEntryCommands = !content.isOrdinaryDirectoryLoading
+        let isComposerPresented = content.composer.isPresented
 
         return FileManagerWindowMenuCommandProjection(
             canPerformEntryCommands: canPerformEntryCommands,
@@ -51,10 +52,10 @@ public extension FileManagerWindowState {
             groupKey: content.entryViewLayout.entryArrangements.groupKey,
             sortKey: content.entryViewLayout.entryArrangements.sortKey,
             sortOrder: content.entryViewLayout.entryArrangements.sortOrder,
-            canUndo: content.entryViewLayout.entryOperations.canUndoEntryAction,
-            canRedo: content.entryViewLayout.entryOperations.canRedoEntryAction,
+            canUndo: !isComposerPresented && content.entryViewLayout.entryOperations.canUndoEntryAction,
+            canRedo: !isComposerPresented && content.entryViewLayout.entryOperations.canRedoEntryAction,
             selectedItemCount: selectedIds.count,
-            isComposerPresented: content.composer.isPresented,
+            isComposerPresented: isComposerPresented,
             isContextualAiChatPresented: inspector.inspectorVisible
                 && inspector.inspectorPaneExists
                 && inspector.activeMode == .chat,

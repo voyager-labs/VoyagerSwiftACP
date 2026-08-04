@@ -226,6 +226,52 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-003-undo_entry_action: filesystem replay 실패 후에도 선행된 stack 전이를 되돌리지 않는다.
+    /// 사용자가 Trash 이동을 undo할 때 put-back이 실패하면 현재 production의 비원자적 실패 상태를 유지하는지 검증한다.
+    /// - 검증 내용: 실제 `.undoEntryAction` replay가 lifecycle failure를 남기고 stack rollback이나 filesystem 보상을 수행하지 않는다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 fake Trash로 옮긴 undo record가 하나 있고 putBack dependency는 실패한다.
+    /// - 기대 결과: undo stack은 비고 redo stack은 record를 유지하며, Trash 경로의 작업 상태는 오류와 함께 종료되고 파일은 Trash에 남는다.
+    func testUndoEntryAction_replayFailureKeepsStackTransitionAndLifecycleError() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let recorder = FileOpsRecorder()
+        let trashRoot = sandbox.root.appendingPathComponent(".Trash")
+        let sourcePath = sandbox.fileURL.path
+        let trashPath = trashRoot.appendingPathComponent(sandbox.fileURL.lastPathComponent).path
+        let record = try prepareTrashRecord(sourceURL: sandbox.fileURL, trashRoot: trashRoot)
+        let expectedError = FileOpError.system(message: "put back unavailable")
+        var entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder, trashRoot: trashRoot)
+        entryFileOpsClient.putBackFromTrash = { _, _ in
+            throw expectedError
+        }
+
+        let store = EntryOperationsTestSupport.makeStore(initialState: {
+            var state = EntryOperationsFeature.State()
+            state.undoRecords = [record]
+            return state
+        }()) {
+            $0.entryFileOpsClient = entryFileOpsClient
+        }
+
+        // store.exhaustivity = .off: undo replay의 비동기 lifecycle chain 이후 최종 실패 상태와 stack 의미를 검증한다.
+        // skipReceivedActions로 수신된 action들을 소비해 store.state를 최종 상태로 갱신한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.undoEntryAction(record)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.redoRecords, [record])
+        XCTAssertEqual(store.state.itemStates[trashPath]?.isBusy, false)
+        XCTAssertEqual(store.state.itemStates[trashPath]?.lastError, expectedError)
+        XCTAssertTrue(recorder.movedPaths.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
     // MARK: - EOP-003-redo_entry_action
 
     /// EOP-003-redo_entry_action: undo된 move-to-trash 기록을 redo 하면 다시 Trash로 이동하는지 검증한다.
@@ -471,82 +517,12 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         initialState.redoRecords = [record]
         initialState.itemStates[sourcePath] = ItemOperationState(isBusy: true)
 
-        let spy = UndoManagerSpy()
-        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.undoManagerClient = spy.client
-        }
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState)
 
         await store.send(.undoRedo(.requestRedo))
         await store.finish()
 
         // AC: EOP-003-redo_entry_action Edge Case #8 — busy guard가 redo를 차단한다
-        XCTAssertEqual(store.state.redoRecords.count, 1)
-        XCTAssertTrue(store.state.undoRecords.isEmpty)
-        XCTAssertEqual(spy.redoCalls.count, 0)
-    }
-
-    // AC: EOP-003-redo_entry_action Edge Case #9
-    /// EOP-003-redo_entry_action: requestRedo가 UndoManagerClient.redo를 호출한다
-    /// `requestRedo`가 들어오면 reducer가 `undoManagerClient.redo(windowID)`를 호출하는지 검증한다.
-    /// - 검증 내용: `requestRedo` 전송 시 spy.redoCalls가 1 이상 증가한다.
-    /// - 사전 조건: redoRecords에 record가 있고, target path가 busy가 아니다.
-    /// - 기대 결과: UndoManagerClient.redo가 호출된다.
-    func testRedo_undoManagerResolved_callsRedo() async {
-        let sourcePath = "/a/old.txt"
-        let destPath = "/a/new.txt"
-        let record = EntryActionRecord(
-            operationKind: .rename,
-            targets: [.init(beforePath: sourcePath, afterPath: destPath)],
-        )
-
-        var initialState = EntryOperationsState()
-        initialState.redoRecords = [record]
-
-        let spy = UndoManagerSpy()
-        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.undoManagerClient = spy.client
-        }
-
-        store.exhaustivity = .off
-
-        // requestRedo는 .run 이펙트로 undoManagerClient.redo만 호출하고 store로 action을 돌려보내지 않는다.
-        await store.send(.undoRedo(.requestRedo))
-        await store.finish()
-
-        // AC: EOP-003-redo_entry_action Edge Case #9 — UndoManagerClient.redo가 호출되었다
-        XCTAssertGreaterThanOrEqual(spy.redoCalls.count, 1)
-    }
-
-    // AC: EOP-003-redo_entry_action Edge Case #9
-    /// EOP-003-redo_entry_action: UndoManager가 콜백을 실행하지 않으면 상태가 유지된다
-    /// `requestRedo` 전송 후 UndoManagerClient.redo가 onRedo 콜백을 실행하지 않으면
-    /// (해결되지 않은 UndoManager) redoRecords와 undoRecords가 그대로 유지된다.
-    /// - 검증 내용: spy가 redo 호출만 기록하고 onRedo 콜백을 실행하지 않으면 상태 불변.
-    /// - 사전 조건: redoRecords에 record가 있고, spy.client를 주입한다.
-    /// - 기대 결과: redoRecords가 유지되고 undoRecords는 비어있다.
-    func testRedo_undoManagerUnresolved_ignoresRedo() async {
-        let sourcePath = "/a/old.txt"
-        let destPath = "/a/new.txt"
-        let record = EntryActionRecord(
-            operationKind: .rename,
-            targets: [.init(beforePath: sourcePath, afterPath: destPath)],
-        )
-
-        var initialState = EntryOperationsState()
-        initialState.redoRecords = [record]
-
-        let spy = UndoManagerSpy()
-        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.undoManagerClient = spy.client
-        }
-
-        store.exhaustivity = .off
-
-        // requestRedo는 .run 이펙트로 undoManagerClient.redo만 호출하고 store로 action을 돌려보내지 않는다.
-        await store.send(.undoRedo(.requestRedo))
-        await store.finish()
-
-        // AC: EOP-003-redo_entry_action Edge Case #9 — UndoManager 미해결 시 상태 유지
         XCTAssertEqual(store.state.redoRecords.count, 1)
         XCTAssertTrue(store.state.undoRecords.isEmpty)
     }
@@ -581,64 +557,77 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(store.state.undoRecords.isEmpty)
     }
 
-    // AC: EOP-003-undo_entry_action Edge Case #9
+    // MARK: - EOP-003-undo_entry_action
 
-    /// EOP-003-undo_entry_action: UndoManager가 resolve되면 registerUndo 핸들러가 등록된다
-    /// `entryActionCompleted`가 isUndoable 작업으로 들어오면 `undoManagerClient.registerUndo`를 호출한다.
-    /// - 검증 내용: `entryActionCompleted` 이후 spy에 registerUndo 호출이 기록되고, record가 일치한다.
-    /// - 사전 조건: UndoManagerSpy를 주입하고 undoRecords가 비어있다.
-    /// - 기대 결과: spy.registerUndoCalls에 1개의 호출이 기록되며, record가 전송한 것과 일치한다.
-    func testUndo_undoManagerResolved_registersUndoHandler() async {
-        let spy = UndoManagerSpy()
+    /// EOP-003-undo_entry_action: activate되지 않은 explicit scope의 register와 undo는 fail-closed된다.
+    /// native manager가 없는 탭 scope에 요청해도 manager를 암묵 생성하거나 다른 scope로 fallback하지 않는지 검증한다.
+    /// - 검증 내용: `FileOperationUndoManagerClient`의 registerUndo/requestUndo가 false를 반환하고 manager lookup이 nil이다.
+    /// - 사전 조건: 새 registry와 activate하지 않은 `(windowID, contentTabID)` scope가 있다.
+    /// - 기대 결과: 등록과 undo 요청이 모두 거부되고 registry에는 manager가 생성되지 않는다.
+    func testFileOperationClientMissingScopeFailsClosedForRegisterAndUndo() async {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let scope = UndoManagerScope(windowID: UUID(), contentTabID: "missing-tab")
         let record = EntryActionRecord(
             operationKind: .rename,
             targets: [.init(beforePath: "/a/old.txt", afterPath: "/a/new.txt")],
         )
 
-        let store = EntryOperationsTestSupport.makeStore(initialState: EntryOperationsState()) {
-            $0.undoManagerClient = spy.client
-        }
+        let didRegister = client.registerUndo(scope, 0, record)
+        let outcome = client.performUndoRedo(scope, 0, .undo, record.id)
+        let manager = await client.undoManager(scope)
 
-        await store.send(.lifecycle(.entryActionCompleted(record))) {
-            $0.undoRecords = [record]
-            $0.redoRecords = []
-        }
-
-        await store.finish()
-
-        // AC: EOP-003-undo_entry_action Edge Case #9 — registerUndo 핸들러가 등록되었다
-        XCTAssertEqual(spy.registerUndoCalls.count, 1)
-        XCTAssertEqual(spy.registeredRecords.first, record)
+        XCTAssertFalse(didRegister)
+        XCTAssertEqual(outcome, .rejected(.missingScope))
+        XCTAssertNil(manager)
     }
 
-    /// EOP-003-undo_entry_action: UndoManager가 resolve되지 않으면 undo 요청이 무시된다
-    /// `requestUndo`가 `undoManagerClient.undo`를 호출하지만 spy가 onUndo 핸들러를 실행하지 않으면
-    /// (실제 UndoManager가 resolve되지 않은 상황), 상태가 그대로 유지된다.
-    /// - 검증 내용: `requestUndo` 이후 spy.undoCalls에 기록은 남지만, state의 undoRecords/redoRecords는 변하지 않는다.
-    /// - 사전 조건: undoRecords에 record가 있고 UndoManagerSpy를 주입한다.
-    /// - 기대 결과: spy.undoCalls에 1개의 호출이 기록되며, undoRecords와 redoRecords는 그대로 유지된다.
-    func testUndo_undoManagerUnresolved_ignoresUndo() async {
-        let spy = UndoManagerSpy()
-        let record = EntryActionRecord(
-            operationKind: .rename,
-            targets: [.init(beforePath: "/a/old.txt", afterPath: "/a/new.txt")],
-        )
+    /// EOP-003-undo_entry_action: 같은 event turn의 파일 작업은 native Undo step을 각각 소유한다.
+    /// 연속 등록된 두 logical record가 AppKit event grouping으로 한 번에 소비되지 않는지 검증한다.
+    /// - 검증 내용: B Undo 후 A가 native undo top에 남고 B는 redo 가능하며 A Undo도 이어서 성공한다.
+    /// - 사전 조건: 동일 scope와 generation에 A, B record를 동기적으로 연속 등록한다.
+    /// - 기대 결과: 각 perform 요청이 정확히 한 record만 이동하고 scope가 invalidated되지 않는다.
+    func testFileOperationRegistrySeparatesSameEventRegistrationsIntoNativeUndoSteps() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let scope = UndoManagerScope(windowID: UUID(), contentTabID: "same-event-tab")
+        let recordA = EntryActionRecord(operationKind: .rename, targets: [])
+        let recordB = EntryActionRecord(operationKind: .pasteFileCopy, targets: [])
+        _ = client.activate(scope)
+        let generation = try XCTUnwrap(client.generation(scope))
 
-        var initialState = EntryOperationsState()
-        initialState.undoRecords = [record]
+        XCTAssertTrue(client.registerUndo(scope, generation, recordA))
+        XCTAssertTrue(client.registerUndo(scope, generation, recordB))
 
-        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.undoManagerClient = spy.client
-        }
+        let firstOutcome = client.performUndoRedo(scope, generation, .undo, recordB.id)
+        let managerValue = await client.undoManager(scope)
+        let manager = try XCTUnwrap(managerValue)
+        XCTAssertEqual(firstOutcome, .applied)
+        XCTAssertTrue(manager.canUndo)
+        XCTAssertTrue(manager.canRedo)
 
-        await store.send(.undoRedo(.requestUndo))
-        await store.finish()
+        let secondOutcome = client.performUndoRedo(scope, generation, .undo, recordA.id)
+        XCTAssertEqual(secondOutcome, .applied)
+        XCTAssertFalse(manager.canUndo)
+    }
 
-        // AC: EOP-003-undo_entry_action Edge Case #9 — UndoManager 미해결 시 상태 유지
-        XCTAssertEqual(spy.undoCalls.count, 1)
-        XCTAssertEqual(store.state.undoRecords.count, 1)
-        XCTAssertEqual(store.state.undoRecords.first?.id, record.id)
-        XCTAssertTrue(store.state.redoRecords.isEmpty)
+    // MARK: - EOP-003-redo_entry_action
+
+    /// EOP-003-redo_entry_action: activate되지 않은 explicit scope의 redo는 fail-closed된다.
+    /// native manager가 없는 탭 scope의 redo가 key window나 responder manager로 fallback하지 않는지 검증한다.
+    /// - 검증 내용: `FileOperationUndoManagerClient.requestRedo`가 false를 반환하고 manager lookup이 nil이다.
+    /// - 사전 조건: 새 registry와 activate하지 않은 `(windowID, contentTabID)` scope가 있다.
+    /// - 기대 결과: redo 요청이 거부되고 registry에는 manager가 생성되지 않는다.
+    func testFileOperationClientMissingScopeFailsClosedForRedo() async {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let scope = UndoManagerScope(windowID: UUID(), contentTabID: "missing-tab")
+
+        let outcome = client.performUndoRedo(scope, 0, .redo, UUID())
+        let manager = await client.undoManager(scope)
+
+        XCTAssertEqual(outcome, .rejected(.missingScope))
+        XCTAssertNil(manager)
     }
 
     // MARK: - EOP-003-load_entry_items

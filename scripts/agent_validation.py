@@ -38,6 +38,7 @@ BARE_REFERENCE_LITERAL = re.compile(
 )
 CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
 TODO = re.compile(r"^\s{0,3}- \[[ xX]] \d+\. .+")
+LOCAL_ARTIFACT_PREFIXES = (".omo/", ".omx/", ".sisyphus/", ".codegraph/")
 
 
 def diagnostic(
@@ -198,7 +199,7 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
         if not path.is_file():
             continue
         if mode in {"staged", "base-ref"} and path_string.startswith(
-            (".sisyphus/", ".omx/")
+            LOCAL_ARTIFACT_PREFIXES
         ):
             diagnostics.append(
                 Diagnostic(
@@ -209,7 +210,7 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
                 )
             )
             continue
-        if path_string.startswith((".sisyphus/", ".omx/")):
+        if path_string.startswith(LOCAL_ARTIFACT_PREFIXES):
             continue
         if (
             path_string.startswith(".agents/rules/")

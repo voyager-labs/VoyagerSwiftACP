@@ -1,6 +1,9 @@
 import AppKit
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -352,6 +355,190 @@ final class FileManagerWindowManagerTests: XCTestCase {
         }
     }
 
+    /// 두 window의 explicit Chat 선택은 각 window의 다음 New Chat에만 적용된다.
+    /// - 검증 내용: A의 OpenAI/high와 B의 Anthropic/none 선택 및 focused New Chat 결과
+    /// - 사전 조건: 두 window의 inspector Chat catalog에 두 모델이 로드되어 있다.
+    /// - 기대 결과: 각 New Chat은 자기 window의 마지막 explicit pair를 사용하고 다른 window 선택을 변경하지 않는다.
+    func test_multiWindowExplicitChatSelectionsApplyOnlyToEachNextNewChat() async {
+        let openAIModel = Self.makeChatModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            supportsThinkingNone: false,
+        )
+        let anthropicModel = Self.makeChatModel(
+            provider: .anthropic,
+            rawValue: "claude-sonnet",
+            supportsThinkingNone: true,
+        )
+        let firstID = UUID()
+        let secondID = UUID()
+        var firstWindow = FileManagerWindowFeature.State.makeInitial(path: Spec.firstPath)
+        Self.prepareChatInspector(&firstWindow, models: [openAIModel, anthropicModel])
+        var secondWindow = FileManagerWindowFeature.State.makeInitial(path: Spec.secondPath)
+        Self.prepareChatInspector(&secondWindow, models: [openAIModel, anthropicModel])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = .init(uniqueElements: [
+            WindowSessionState(id: firstID, window: firstWindow),
+            WindowSessionState(id: secondID, window: secondWindow),
+        ])
+        initialState.focusedWindowID = firstID
+        let store = makeStore(initialState: initialState) {
+            $0.uuid = .incrementing
+            $0.aiChatDefaultSettingsClient.load = { .default }
+        }
+        // store.exhaustivity = .off: WindowManager와 두 FileManager child의 production routing 결과만 선별 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: firstID,
+            action: .window(.inspector(.aiChat(.selectedModelChanged(openAIModel.id)))),
+        )))
+        await store.send(.windows(.element(
+            id: firstID,
+            action: .window(.inspector(.aiChat(.selectedThinkingChanged(.effort(.high))))),
+        )))
+        await store.send(.windows(.element(
+            id: secondID,
+            action: .window(.inspector(.aiChat(.selectedModelChanged(anthropicModel.id)))),
+        )))
+        await store.send(.windows(.element(
+            id: secondID,
+            action: .window(.inspector(.aiChat(.selectedThinkingChanged(AiThinkingSelection.none)))),
+        )))
+
+        XCTAssertEqual(
+            store.state.windows[id: firstID]?.window.lastExplicitAiChatSelection,
+            FileManagerAiChatSelection(modelHandle: openAIModel.id, thinking: .effort(.high)),
+        )
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.lastExplicitAiChatSelection,
+            FileManagerAiChatSelection(modelHandle: anthropicModel.id, thinking: AiThinkingSelection.none),
+        )
+
+        await store.send(.edit(.openChat))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
+            )) = action else { return false }
+            return id == firstID
+                && application.seed == AiChatNewChatSelectionSeed(
+                    modelHandle: openAIModel.id,
+                    selectedThinking: .effort(.high),
+                )
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.inspector.aiChat.selectedModelHandle, openAIModel.id)
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.inspector.aiChat.selectedThinking, .effort(.high))
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.inspector.aiChat.selectedModelHandle,
+            anthropicModel.id,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.inspector.aiChat.selectedThinking,
+            AiThinkingSelection.none,
+        )
+
+        await store.send(.event(.windowBecameKey(secondID)))
+        await store.send(.edit(.openChat))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
+            )) = action else { return false }
+            return id == secondID
+                && application.seed == AiChatNewChatSelectionSeed(
+                    modelHandle: anthropicModel.id,
+                    selectedThinking: AiThinkingSelection.none,
+                )
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.inspector.aiChat.selectedModelHandle, openAIModel.id)
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.inspector.aiChat.selectedThinking, .effort(.high))
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.inspector.aiChat.selectedModelHandle,
+            anthropicModel.id,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.inspector.aiChat.selectedThinking,
+            AiThinkingSelection.none,
+        )
+    }
+
+    /// window state를 재생성하면 window-last는 사라지고 persisted Chat default가 다음 New Chat에 적용된다.
+    /// - 검증 내용: 재생성 전후 lastExplicitAiChatSelection lifetime과 persisted fallback 결과
+    /// - 사전 조건: 이전 window에는 OpenAI/high가 있었고 persisted default는 Anthropic/none이다.
+    /// - 기대 결과: 새 window의 window-last는 nil이며 다음 New Chat은 Anthropic/none으로 시작한다.
+    func test_recreatedWindowClearsLastChatSelectionAndUsesPersistedDefault() async {
+        let previousModel = Self.makeChatModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            supportsThinkingNone: false,
+        )
+        let persistedModel = Self.makeChatModel(
+            provider: .anthropic,
+            rawValue: "claude-sonnet",
+            supportsThinkingNone: true,
+        )
+        var previousWindow = FileManagerWindowFeature.State.makeInitial(path: Spec.firstPath)
+        previousWindow.lastExplicitAiChatSelection = FileManagerAiChatSelection(
+            modelHandle: previousModel.id,
+            thinking: .effort(.high),
+        )
+        XCTAssertNotNil(previousWindow.lastExplicitAiChatSelection)
+
+        let recreatedID = UUID()
+        var recreatedWindow = FileManagerWindowFeature.State.makeInitial(path: Spec.firstPath)
+        Self.prepareChatInspector(&recreatedWindow, models: [previousModel, persistedModel])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = .init(uniqueElements: [
+            WindowSessionState(id: recreatedID, window: recreatedWindow),
+        ])
+        initialState.focusedWindowID = recreatedID
+        let persistedSettings = AiChatDefaultSettings(
+            provider: PersistedAIProviderSelection(rawValue: AiProvider.anthropic.rawValue),
+            model: PersistedAIModelSelection(
+                providerRawValue: AiProvider.anthropic.rawValue,
+                modelRawValue: persistedModel.rawModelID,
+            ),
+            thinking: .none,
+        )
+        let store = makeStore(initialState: initialState) {
+            $0.uuid = .incrementing
+            $0.aiChatDefaultSettingsClient.load = { persistedSettings }
+        }
+        // store.exhaustivity = .off: 재생성된 window lifetime과 persisted fallback의 최종 selection만 검증한다.
+        store.exhaustivity = .off
+
+        XCTAssertNil(store.state.windows[id: recreatedID]?.window.lastExplicitAiChatSelection)
+
+        await store.send(.edit(.openChat))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
+            )) = action else { return false }
+            return id == recreatedID
+                && application.seed == AiChatNewChatSelectionSeed(
+                    modelHandle: persistedModel.id,
+                    selectedThinking: AiThinkingSelection.none,
+                )
+        }
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.windows[id: recreatedID]?.window.inspector.aiChat.selectedModelHandle,
+            persistedModel.id,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: recreatedID]?.window.inspector.aiChat.selectedThinking,
+            AiThinkingSelection.none,
+        )
+        XCTAssertNil(store.state.windows[id: recreatedID]?.window.lastExplicitAiChatSelection)
+    }
+
     /// 등록은 native activation을 한 번 요청하지만 didBecomeKey 전에는 waiter를 완료하지 않는다.
     func test_activationTrackerWaitsForDidBecomeKeyAfterRegistration() async {
         let windowID = UUID()
@@ -521,6 +708,36 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertEqual(cancelledResult, .discarded)
         XCTAssertEqual(cancellationCompletionCount.value, 1)
         XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+    }
+}
+
+private extension FileManagerWindowManagerTests {
+    static func makeChatModel(
+        provider: AiProvider,
+        rawValue: String,
+        supportsThinkingNone: Bool,
+    ) -> AiProviderModel {
+        AiProviderModel(
+            id: .init(provider: provider, rawValue: rawValue),
+            provider: provider,
+            rawModelID: rawValue,
+            displayName: rawValue,
+            providerDisplayName: provider.rawValue,
+            thinkingCapability: .effort(values: [.low, .medium, .high], defaultValue: .medium),
+            supportsThinkingNone: supportsThinkingNone,
+        )
+    }
+
+    static func prepareChatInspector(
+        _ state: inout FileManagerWindowFeature.State,
+        models: [AiProviderModel],
+    ) {
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loaded(models),
+        )
     }
 }
 

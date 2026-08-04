@@ -22,14 +22,14 @@ schemaVersion: 2
 ## Decision Rules
 
 - For a package-local test outcome, run the focused `xcrun swift test --package-path <path>` route. A project test result does not substitute for this outcome unless its executed targets explicitly include the package suite.
-- For a simulator project test outcome, use XcodeBuildMCP only after `session_show_defaults` confirms a project, scheme, and simulator; use its test result to establish executed target parity.
-- For a macOS scheme test outcome, use the existing `mise run macos-test` repository task because the currently exposed MCP surface has simulator-only build/test operations. If the task needs a focused result, record that the repository task is a broader fallback before inspecting its recorded result/log for target parity.
+- For a simulator project test outcome, stop and record a coverage gap unless the repository defines a canonical simulator test task that exposes executed target names.
+- For a macOS scheme test outcome, use the existing `mise run macos-test` repository task. If the task needs a focused result, use `mise run macos-test-flow` when a mapped flow owns the behavior; otherwise record that the full repository task is a broader fallback before inspecting its result/log for target parity.
 - When an explicit `.xcctestplan` exists, use it as the source for intended target membership. An auto-created plan is not proof that all package targets executed.
 
 ## Stop Conditions
 
 - Do not assume that a passing test run executed every intended target, or that a build proves test execution.
-- Do not invent an unavailable XcodeBuildMCP macOS or device operation, and do not replace an existing repository task with raw `xcodebuild`.
+- Do not invent an unavailable platform operation, and do not replace an existing repository task with raw `xcodebuild`.
 - Stop and record a coverage gap when the selected executor cannot identify executed targets, an intended package suite is absent, or no matrix-supported route exists.
 
 ## Verification

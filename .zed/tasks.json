@@ -1,166 +1,183 @@
 [
-  {
-    "label": "Voyager Dev: Launch (Dev-Debug)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "Voyager-Dev",
-      "--configuration",
-      "Dev-Debug",
-      "--env",
-       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
-       "--env",
-       "VOYAGER_SCHEME_FORCE_ONBOARDING=0"
-     ],
-     "cwd": "$ZED_WORKTREE_ROOT"
-   },
-  {
-    "label": "Voyager Dev: Launch (Dev-Release)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "Voyager-Dev",
-      "--configuration",
-      "Dev-Release",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "Voyager Prod: Launch (Prod-Debug)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "Voyager-Prod",
-      "--configuration",
-      "Prod-Debug"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "Voyager Prod: Launch (Prod-Release)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "Voyager-Prod",
-      "--configuration",
-      "Prod-Release"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "VoyagerHelper Dev: Launch (Dev-Debug)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "VoyagerHelper-Dev",
-      "--configuration",
-      "Dev-Debug",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "VoyagerHelper Dev: Launch (Dev-Release)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "VoyagerHelper-Dev",
-      "--configuration",
-      "Dev-Release",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "OnboardingHost Dev: Launch (Dev-Debug)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "OnboardingHost-Dev",
-      "--configuration",
-      "Dev-Debug",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
-      "--env",
-      "VOYAGER_ONBOARDING_MOCK_BETA=1"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "OnboardingHost Dev: Launch (Dev-Release)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "OnboardingHost-Dev",
-      "--configuration",
-      "Dev-Release",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
-      "--env",
-      "VOYAGER_ONBOARDING_MOCK_BETA=1"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "SettingsHost Dev: Launch (Dev-Debug)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "SettingsHost-Dev",
-      "--configuration",
-      "Dev-Debug",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "SettingsHost Dev: Launch (Dev-Release)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "SettingsHost-Dev",
-      "--configuration",
-      "Dev-Release",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "FileManagerHost Dev: Launch (Dev-Debug)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "FileManagerHost-Dev",
-      "--configuration",
-      "Dev-Debug",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "FileManagerHost Dev: Launch with Injection (Dev-Debug)",
-    "command": "mise",
-    "args": ["run", "macos-filemanager-injection"],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  },
-  {
-    "label": "FileManagerHost Dev: Launch (Dev-Release)",
-    "command": "./scripts/dev/macos-launch.sh",
-    "args": [
-      "--scheme",
-      "FileManagerHost-Dev",
-      "--configuration",
-      "Dev-Release",
-      "--env",
-      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
-    ],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  }
+	{
+		"label": "Voyager Dev: Launch (Dev-Debug)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"Voyager-Dev",
+			"--configuration",
+			"Dev-Debug",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
+			"--env",
+			"VOYAGER_SCHEME_FORCE_ONBOARDING=0"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "Voyager Dev: Launch (Dev-Release)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"Voyager-Dev",
+			"--configuration",
+			"Dev-Release",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "Voyager Prod: Launch (Prod-Debug)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"Voyager-Prod",
+			"--configuration",
+			"Prod-Debug"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "Voyager Prod: Launch (Prod-Release)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"Voyager-Prod",
+			"--configuration",
+			"Prod-Release"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "VoyagerHelper Dev: Launch (Dev-Debug)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"VoyagerHelper-Dev",
+			"--configuration",
+			"Dev-Debug",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "VoyagerHelper Dev: Launch (Dev-Release)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"VoyagerHelper-Dev",
+			"--configuration",
+			"Dev-Release",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "OnboardingHost Dev: Launch (Dev-Debug)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"OnboardingHost-Dev",
+			"--configuration",
+			"Dev-Debug",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "OnboardingHost Dev: Launch (Dev-Release)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"OnboardingHost-Dev",
+			"--configuration",
+			"Dev-Release",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "SettingsHost Dev: Launch (Dev-Debug)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"SettingsHost-Dev",
+			"--configuration",
+			"Dev-Debug",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "SettingsHost Dev: Launch (Dev-Release)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"SettingsHost-Dev",
+			"--configuration",
+			"Dev-Release",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "FileManagerHost Dev: Launch (Dev-Debug)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"FileManagerHost-Dev",
+			"--configuration",
+			"Dev-Debug",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "FileManagerHost Dev: Launch with Injection (Dev-Debug)",
+		"command": "mise",
+		"args": [
+			"run",
+			"macos-filemanager-injection"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "FileManagerHost Dev: Launch (Dev-Release)",
+		"command": "./scripts/dev/macos-launch.sh",
+		"args": [
+			"--scheme",
+			"FileManagerHost-Dev",
+			"--configuration",
+			"Dev-Release",
+			"--env",
+			"VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "Storybook: Dev Server",
+		"command": "mise",
+		"args": [
+			"run",
+			"storybook"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "Voyager Dev: Test",
+		"command": "mise",
+		"args": [
+			"run",
+			"macos-test"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	}
 ]

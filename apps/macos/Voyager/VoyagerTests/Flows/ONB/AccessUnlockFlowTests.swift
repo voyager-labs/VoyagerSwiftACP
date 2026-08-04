@@ -42,8 +42,11 @@ final class AccessUnlockFlowTests: XCTestCase {
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )
-        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in },
-                                                        delete: { _ in })
+        let accountSessionClient = AccountSessionClient(
+            read: { _ in session },
+            persist: { _ in },
+            delete: { _ in },
+        )
         let sessionSynced = expectation(description: "AccountAccess session sync completes")
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
@@ -123,8 +126,11 @@ final class AccessUnlockFlowTests: XCTestCase {
     /// - 사전 조건: hasAccountSession = false, auth_state = logged_out
     /// - 기대 결과: Next 비활성화, Login route 노출, entitlement fetch 미실행
     func testSignInRequiredKeepsAccessBlockedAndExposesLoginRoute() throws {
-        let accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
-                                                        delete: { _ in })
+        let accountSessionClient = AccountSessionClient(
+            read: { _ in nil },
+            persist: { _ in },
+            delete: { _ in },
+        )
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { throw SessionSyncError.capabilityMiss },
@@ -539,9 +545,19 @@ final class AccessUnlockFlowTests: XCTestCase {
         onboardingController.window?.contentViewController = nil
 
         wait(for: [sessionSyncAttempts], timeout: 10)
-        let observerDelivered = expectation(description: "Onboarding observer delivery completes")
-        DispatchQueue.main.async { observerDelivered.fulfill() }
-        wait(for: [observerDelivered], timeout: 1)
+
+        // retry 소진 후 cachedSnapshotRestoreAction async 경로가 완료되고
+        // observer bridge를 통해 onboardingStore.access에 errorMessage가 전파될 때까지 poll한다.
+        // ContinuousClock retry로 인해 sessionSyncAttempts 이후에 비동기 에러 처리가 결정된다.
+        let errorPropagated = expectation(description: "Access error propagates to onboarding store")
+        let pollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            if onboardingStore.withState(\.access.errorMessage) != nil {
+                errorPropagated.fulfill()
+                timer.invalidate()
+            }
+        }
+        wait(for: [errorPropagated], timeout: 5)
+        pollTimer.invalidate()
 
         XCTAssertFalse(accountAccessStore.withState(\.isComplete))
         XCTAssertNotNil(accountAccessStore.withState(\.errorMessage))
