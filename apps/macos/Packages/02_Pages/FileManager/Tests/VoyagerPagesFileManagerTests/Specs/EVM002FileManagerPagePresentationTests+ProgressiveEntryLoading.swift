@@ -46,6 +46,67 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(view.tableView.numberOfRows, 1)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: File Manager composition이 disclosure child stream을 실제 outline row로
+    /// 반영한다.
+    /// package reducer 상태가 아니라 scoped coordinator와 parent bridge를 함께 실행해 사용자가 보는 행 변화를 검증한다.
+    /// - 검증 내용: NSOutlineView expand callback → staged child load → folderChildrenResponse → row graph → collapse
+    /// callback 전체 경로
+    /// - 사전 조건: `/root` list에 collapsed `/root/folder`가 있고 child stream은 `/root/folder/child`를 반환한다.
+    /// - 기대 결과: expand 후 두 행, collapse 후 한 행이며 child는 parent 아래에 표시된다.
+    func testFolderDisclosureLoadsAndCollapsesRowsThroughFileManagerComposition() async throws {
+        let rootPath = "/root"
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryOperations.items = [folder]
+        state.entryViewLayout.entries = [folder]
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        let store = Store(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryLoadingClient.stagedLoadItems = { url, _, _ in
+                XCTAssertEqual(url.path, folder.fullPath)
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.coreBatch(items: [child], batchIndex: 0))
+                    continuation.yield(.coreFinished(batchCount: 1))
+                    continuation.finish()
+                }
+            }
+        }
+        let coordinator = EntryListCoordinator(store: store.scope(
+            state: \.entryViewLayout,
+            action: \.entryViewLayout,
+        ))
+        let view = EntryListView(frame: .zero)
+        coordinator.bind(to: view)
+        let folderItem = try XCTUnwrap(view.tableView.item(atRow: 0) as? EntryListOutlineItem)
+        XCTAssertEqual(view.tableView.outlineTableColumn?.identifier.rawValue, EntryListColumn.name.rawValue)
+        XCTAssertTrue(view.tableView.isExpandable(folderItem))
+        XCTAssertFalse(view.tableView.frameOfOutlineCell(atRow: 0).isEmpty)
+
+        coordinator.outlineViewItemDidExpand(Notification(
+            name: NSOutlineView.itemDidExpandNotification,
+            object: view.tableView,
+            userInfo: ["NSObject": folderItem],
+        ))
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(view.tableView.numberOfRows, 2)
+        XCTAssertEqual(outlineEntryIDs(in: view.tableView), [folder.id, child.id])
+
+        let expandedFolderItem = try XCTUnwrap(coordinator.entryItemById[folder.id])
+        coordinator.outlineViewItemDidCollapse(Notification(
+            name: NSOutlineView.itemDidCollapseNotification,
+            object: view.tableView,
+            userInfo: ["NSObject": expandedFolderItem],
+        ))
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(view.tableView.numberOfRows, 1)
+    }
+
     /// EVM-002-update_entry_selection: expanded child row의 AppKit 선택은 FileManager content state에 유지된다.
     /// 마우스 또는 native 상하 방향키가 NSOutlineView selection을 바꾼 뒤 root-only 동기화가 child ID를 지우지 않는지 검증한다.
     /// - 검증 내용: coordinator selection callback과 FileManagerContentFeature 전체 sync chain
@@ -246,5 +307,14 @@ extension EVM002FileManagerPagePresentationTests {
             renderSettled.fulfill()
         }
         await fulfillment(of: [renderSettled], timeout: 1)
+    }
+
+    private func outlineEntryIDs(in tableView: NSOutlineView) -> [EntryModel.ID] {
+        (0 ..< tableView.numberOfRows).compactMap { row in
+            guard let item = tableView.item(atRow: row) as? EntryListOutlineItem,
+                  case let .entry(entry) = item.kind
+            else { return nil }
+            return entry.id
+        }
     }
 }
