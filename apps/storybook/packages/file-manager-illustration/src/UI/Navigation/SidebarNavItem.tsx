@@ -1,4 +1,5 @@
 import type { FC } from "react"
+import { SFSymbol } from "../../Foundations/SFSymbol"
 import type { SidebarNavItemProps } from "../../model/types"
 import { SidebarIcon } from "./SidebarIcon"
 
@@ -29,7 +30,7 @@ export const SidebarNavItem: FC<SidebarNavItemProps> = ({
         aria-current={item.active ? "page" : undefined}
         onClick={() => onSelect?.(item)}
       >
-        <SidebarIcon icon={item.icon} />
+        <SidebarIcon icon={item.icon} isActive={item.active ?? false} />
         <strong>{item.secondary ?? item.label}</strong>
       </button>
       <button
@@ -38,7 +39,7 @@ export const SidebarNavItem: FC<SidebarNavItemProps> = ({
         aria-label={item.isPinned ? `Unpin ${item.label}` : `Close ${item.label}`}
         onClick={handleAction}
       >
-        {item.isPinned ? "−" : "×"}
+        <SFSymbol name={item.isPinned ? "minus" : "xmark"} size={10} weight={500} />
       </button>
     </div>
   )

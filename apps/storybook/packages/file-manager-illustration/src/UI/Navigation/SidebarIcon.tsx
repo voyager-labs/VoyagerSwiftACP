@@ -11,10 +11,10 @@ const SF_SYMBOL_MAP: Record<string, string> = {
   "folder-blue": "folder",
 }
 
-export const SidebarIcon: FC<SidebarIconProps> = ({ icon }) => {
+export const SidebarIcon: FC<SidebarIconProps> = ({ icon, isActive = false }) => {
   return (
-    <span className={`nav-icon ${icon}`} aria-hidden="true">
-      <SFSymbol name={SF_SYMBOL_MAP[icon] ?? "folder"} size={18} />
+    <span className={`nav-icon ${icon} ${isActive ? "active" : ""}`} aria-hidden="true">
+      <SFSymbol name={SF_SYMBOL_MAP[icon] ?? "folder"} size={12} weight={600} />
     </span>
   )
 }
