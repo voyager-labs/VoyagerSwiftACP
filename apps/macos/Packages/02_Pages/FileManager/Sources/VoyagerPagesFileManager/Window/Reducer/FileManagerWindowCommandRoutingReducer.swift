@@ -181,8 +181,8 @@ struct FileManagerWindowCommandRoutingReducer {
             case .inspector(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
-            case .inspector(.delegate(.requestAttachmentPicker)):
-                return .send(.delegate(.requestAttachmentPicker))
+            case let .inspector(.delegate(.requestAttachmentPicker(originSessionID))):
+                return .send(.delegate(.requestAttachmentPicker(originSessionID)))
 
             case .inspector(.delegate(.clearCurrentContextSelection)):
                 return .send(.content(.entryViewLayout(.internal(.applyClearSelection))))

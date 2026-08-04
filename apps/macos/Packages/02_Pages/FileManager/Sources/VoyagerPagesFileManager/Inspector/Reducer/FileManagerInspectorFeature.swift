@@ -82,8 +82,8 @@ public struct FileManagerInspectorFeature {
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
-            case .aiChat(.delegate(.requestAttachmentPicker)):
-                return .send(.delegate(.requestAttachmentPicker))
+            case let .aiChat(.delegate(.requestAttachmentPicker(originSessionID))):
+                return .send(.delegate(.requestAttachmentPicker(originSessionID)))
 
             case .aiChat(.delegate(.clearCurrentContextSelection)):
                 return .send(.delegate(.clearCurrentContextSelection))

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
@@ -427,8 +428,11 @@ struct WindowManagerFeature {
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
                 return .none
 
-            case let .windows(.element(id: id, action: .window(.delegate(.requestAttachmentPicker)))):
-                return requestAttachmentPicker(for: id)
+            case let .windows(.element(
+                id: id,
+                action: .window(.delegate(.requestAttachmentPicker(originSessionID))),
+            )):
+                return requestAttachmentPicker(for: id, originSessionID: originSessionID)
 
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
@@ -600,14 +604,17 @@ extension WindowManagerFeature {
 }
 
 private extension WindowManagerFeature {
-    func requestAttachmentPicker(for windowID: WindowManagerState.WindowID) -> Effect<Action> {
+    func requestAttachmentPicker(
+        for windowID: WindowManagerState.WindowID,
+        originSessionID: AiChatSessionID,
+    ) -> Effect<Action> {
         .run { [attachmentPickerClient] send in
             let urls = await attachmentPickerClient.pickAttachments()
             guard !urls.isEmpty else { return }
             let action = await MainActor.run {
                 Action.windows(.element(
                     id: windowID,
-                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(urls)))),
+                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(originSessionID, urls)))),
                 ))
             }
             await send(action)

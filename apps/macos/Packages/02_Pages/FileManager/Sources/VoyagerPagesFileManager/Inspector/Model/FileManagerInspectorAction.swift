@@ -25,7 +25,7 @@ public enum FileManagerInspectorAction: CasePathable, Sendable {
     public enum Delegate: Sendable {
         case newChatRequested
         case openAISettings
-        case requestAttachmentPicker
+        case requestAttachmentPicker(AiChatSessionID)
         case clearCurrentContextSelection
     }
 }
