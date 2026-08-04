@@ -301,6 +301,72 @@ private struct AiChatRestoreFixture {
 final class CTM005IndependentContentTabSessionTests: XCTestCase {
     // MARK: - CTM-005-independent_content_tab_session
 
+    /// CTM-005-independent_content_tab_session: background content status는 일치하는 실행 소유자만 갱신한다.
+    /// 화면 밖 content 실행의 activity status가 visible/parked content와 durable 상태를 건드리지 않는지 검증한다.
+    /// - 검증 내용: matching status 전달, session/request/run identity guard, non-terminal owner 유지, persistence 미호출
+    /// - 사전 조건: visible/parked content와 별도의 processing background content owner가 존재함
+    /// - 기대 결과: matching owner의 activity만 갱신되고 mismatch와 visible state, tab, transcript, draft, autoscroll은 불변임
+    func testBackgroundContentStatusRoutesOnlyToMatchingOwnerWithoutTerminalSideEffects() async {
+        let fixture = makeBackgroundContentStatusFixture()
+        let store = fixture.store
+
+        await store.send(.content(.aiChat(.executionEvent(.status(
+            context: fixture.ownerLock.context,
+            signal: fixture.signal,
+        )))))
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[fixture.ownerSessionID]?.aiChat.executionPhase,
+            .processing(fixture.ownerLock.recordingActivity(fixture.signal)),
+        )
+        XCTAssertEqual(store.state.content, fixture.visibleContent)
+        XCTAssertEqual(store.state.tabContentStates[fixture.parkedTabID], fixture.parkedContent)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.visibleTabID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.visibleTabID]?.title, "Visible chat")
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.parkedTabID]?.title, "Parked chat")
+        XCTAssertEqual(fixture.savedSnapshots.value.count, 0)
+
+        let afterMatchingStatus = store.state
+        for context in mismatchedStatusContexts(for: fixture.ownerLock) {
+            await store.send(.content(.aiChat(.executionEvent(.status(
+                context: context,
+                signal: fixture.signal,
+            )))))
+            XCTAssertEqual(store.state, afterMatchingStatus)
+        }
+
+        XCTAssertNotNil(store.state.backgroundAiChatStates[fixture.ownerSessionID])
+        XCTAssertEqual(fixture.savedSnapshots.value.count, 0)
+    }
+
+    /// CTM-005-independent_content_tab_session: background inspector status는 inspector 소유 경로로 전달한다.
+    /// 화면 밖 inspector 실행의 status가 active/parked inspector와 content state를 변경하지 않는지 검증한다.
+    /// - 검증 내용: background inspector identity routing과 non-terminal owner 유지
+    /// - 사전 조건: active/parked inspector와 별도의 processing background inspector owner가 존재함
+    /// - 기대 결과: matching background inspector activity만 갱신되고 다른 inspector와 content는 불변임
+    func testBackgroundInspectorStatusRoutesToMatchingOwnerWithoutPromotionOrRemoval() async {
+        let fixture = makeBackgroundInspectorStatusFixture()
+        let store = fixture.store
+
+        await store.send(.inspector(.aiChat(.executionEvent(.status(
+            context: fixture.ownerLock.context,
+            signal: fixture.signal,
+        )))))
+
+        XCTAssertEqual(
+            store.state.backgroundInspectorAiChatStates[fixture.ownerSessionID]?.aiChat.executionPhase,
+            .processing(fixture.ownerLock.recordingActivity(fixture.signal)),
+        )
+        XCTAssertEqual(store.state.inspector, fixture.activeInspector)
+        XCTAssertEqual(
+            store.state.tabInspectorStates[fixture.parkedTabID],
+            fixture.parkedInspector.tabSnapshot(),
+        )
+        XCTAssertEqual(store.state.content, fixture.content)
+        XCTAssertNotNil(store.state.backgroundInspectorAiChatStates[fixture.ownerSessionID])
+        XCTAssertNil(store.state.backgroundAiChatStates[fixture.ownerSessionID])
+    }
+
     /// CTM-005-independent_content_tab_session (VOY-578): inactive watcher gap 이후 Directory snapshot을 reload함
     /// Directory watcher가 중단된 동안 발생해 event로 전달되지 않은 backing mutation을 복원 시 재검증한다.
     /// - 검증 내용: 저장 presentation 즉시 복원, 정확히 한 번 loadItems 실행, fresh entries commit, watcher 재시작
@@ -5942,7 +6008,7 @@ extension CTM005IndependentContentTabSessionTests {
         )
         let expectedTranscript = [
             AiChatMessage(role: .user, content: "test"),
-            assistantMessage,
+            AiChatMessage(role: .assistant, content: "done", createdAtMs: 1_234_567_891_000),
         ]
         let expectedSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
@@ -10582,6 +10648,329 @@ private extension CTM005IndependentContentTabSessionTests {
         // 각 시나리오에서 검증하는 핵심 상태 변화만 명시적으로 확인한다.
         store.exhaustivity = .off
         return store
+    }
+}
+
+private struct BackgroundContentStatusFixture {
+    let store: TestStore<FileManagerFeature.State, FileManagerWindowAction>
+    let ownerSessionID: AiChatSessionID
+    let ownerLock: AiChatRequestLock
+    let signal: AiChatExecutionActivitySignal
+    let visibleTabID: ContentTabID
+    let parkedTabID: ContentTabID
+    let visibleContent: FileManagerContentFeature.State
+    let parkedContent: FileManagerContentFeature.State
+    let savedSnapshots: LockIsolated<[AiChatSessionSnapshot]>
+}
+
+private struct BackgroundInspectorStatusFixture {
+    let store: TestStore<FileManagerFeature.State, FileManagerWindowAction>
+    let ownerSessionID: AiChatSessionID
+    let ownerLock: AiChatRequestLock
+    let signal: AiChatExecutionActivitySignal
+    let parkedTabID: ContentTabID
+    let activeInspector: FileManagerInspectorFeature.State
+    let parkedInspector: FileManagerInspectorFeature.State
+    let content: FileManagerContentFeature.State
+}
+
+@MainActor
+private extension CTM005IndependentContentTabSessionTests {
+    func makeBackgroundContentStatusFixture() -> BackgroundContentStatusFixture {
+        let ownerSessionID = AiChatSessionID(rawValue: UUID())
+        let visibleSessionID = AiChatSessionID(rawValue: UUID())
+        let parkedSessionID = AiChatSessionID(rawValue: UUID())
+        let ownerLock = makeRequestLock(sessionID: ownerSessionID)
+        let visibleLock = makeRequestLock(sessionID: visibleSessionID)
+        let parkedLock = makeRequestLock(sessionID: parkedSessionID)
+        let visibleTabID = ContentTabID()
+        let parkedTabID = ContentTabID()
+        let signal = makeStatusSignal(id: "background-content-search", kind: .searching)
+        let visibleContent = makeStatusContent(
+            sessionID: visibleSessionID,
+            lock: visibleLock,
+            transcript: "Visible transcript",
+            draft: "Visible draft",
+            autoScrollVersion: 7,
+        )
+        let parkedContent = makeStatusContent(
+            sessionID: parkedSessionID,
+            lock: parkedLock,
+            transcript: "Parked transcript",
+        )
+        let backgroundContent = makeStatusContent(
+            sessionID: ownerSessionID,
+            lock: ownerLock,
+            transcript: "Background prompt",
+            role: .user,
+        )
+        let state = makeBackgroundContentStatusState(
+            visibleTabID: visibleTabID,
+            parkedTabID: parkedTabID,
+            visibleContent: visibleContent,
+            parkedContent: parkedContent,
+            backgroundContent: backgroundContent,
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = makeBackgroundContentStatusStore(state: state, savedSnapshots: savedSnapshots)
+        return BackgroundContentStatusFixture(
+            store: store,
+            ownerSessionID: ownerSessionID,
+            ownerLock: ownerLock,
+            signal: signal,
+            visibleTabID: visibleTabID,
+            parkedTabID: parkedTabID,
+            visibleContent: visibleContent,
+            parkedContent: parkedContent,
+            savedSnapshots: savedSnapshots,
+        )
+    }
+
+    func makeBackgroundInspectorStatusFixture() -> BackgroundInspectorStatusFixture {
+        let ownerSessionID = AiChatSessionID(rawValue: UUID())
+        let activeSessionID = AiChatSessionID(rawValue: UUID())
+        let parkedSessionID = AiChatSessionID(rawValue: UUID())
+        let ownerLock = makeRequestLock(sessionID: ownerSessionID)
+        let activeLock = makeRequestLock(sessionID: activeSessionID)
+        let parkedLock = makeRequestLock(sessionID: parkedSessionID)
+        let parkedTabID = ContentTabID()
+        let activeInspector = makeStatusInspector(
+            sessionID: activeSessionID,
+            lock: activeLock,
+            transcript: "Active inspector",
+            draft: "Active draft",
+            autoScrollVersion: 3,
+        )
+        let parkedInspector = makeStatusInspector(
+            sessionID: parkedSessionID,
+            lock: parkedLock,
+            transcript: "Parked inspector",
+        )
+        let backgroundInspector = makeStatusInspector(
+            sessionID: ownerSessionID,
+            lock: ownerLock,
+            transcript: "Background inspector prompt",
+            role: .user,
+        )
+        let content = makeStatusVisibleContent()
+        let state = makeBackgroundInspectorStatusState(
+            parkedTabID: parkedTabID,
+            activeInspector: activeInspector,
+            parkedInspector: parkedInspector,
+            backgroundInspector: backgroundInspector,
+            content: content,
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+        // store.exhaustivity = .off: background inspector 전용 route의 owner 격리 결과만 집중 검증함
+        store.exhaustivity = .off
+        return BackgroundInspectorStatusFixture(
+            store: store,
+            ownerSessionID: ownerSessionID,
+            ownerLock: ownerLock,
+            signal: makeStatusSignal(id: "background-inspector-tool", kind: .toolExecution),
+            parkedTabID: parkedTabID,
+            activeInspector: activeInspector,
+            parkedInspector: parkedInspector,
+            content: content,
+        )
+    }
+
+    private func makeStatusContent(
+        sessionID: AiChatSessionID,
+        lock: AiChatRequestLock,
+        transcript: String,
+        role: AiChatMessageRole = .assistant,
+        draft: String? = nil,
+        autoScrollVersion: Int = 0,
+    ) -> FileManagerContentFeature.State {
+        var content = FileManagerContentFeature.State()
+        content.navigation.navigationState = .aiChat(sessionID.rawValue.uuidString)
+        content.aiChat.sessionID = sessionID
+        content.aiChat.sessionStatus = .active
+        content.aiChat.executionPhase = .processing(lock)
+        content.aiChat.transcriptHistory = [AiChatMessage(role: role, content: transcript)]
+        content.aiChat.streamingAssistantDraft = draft
+        content.aiChat.transcriptAutoScrollVersion = autoScrollVersion
+        return content
+    }
+
+    private func makeStatusInspector(
+        sessionID: AiChatSessionID,
+        lock: AiChatRequestLock,
+        transcript: String,
+        role: AiChatMessageRole = .assistant,
+        draft: String? = nil,
+        autoScrollVersion: Int = 0,
+    ) -> FileManagerInspectorFeature.State {
+        var inspector = FileManagerInspectorFeature.State()
+        inspector.inspectorVisible = true
+        inspector.activeMode = .chat
+        inspector.aiChat.sessionID = sessionID
+        inspector.aiChat.sessionStatus = .active
+        inspector.aiChat.executionPhase = .processing(lock)
+        inspector.aiChat.transcriptHistory = [AiChatMessage(role: role, content: transcript)]
+        inspector.aiChat.streamingAssistantDraft = draft
+        inspector.aiChat.transcriptAutoScrollVersion = autoScrollVersion
+        return inspector
+    }
+
+    private func makeBackgroundContentStatusState(
+        visibleTabID: ContentTabID,
+        parkedTabID: ContentTabID,
+        visibleContent: FileManagerContentFeature.State,
+        parkedContent: FileManagerContentFeature.State,
+        backgroundContent: FileManagerContentFeature.State,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                makeStatusTab(id: visibleTabID, content: visibleContent, title: "Visible chat"),
+                makeStatusTab(id: parkedTabID, content: parkedContent, title: "Parked chat"),
+            ],
+            activeTabID: visibleTabID,
+        )
+        state.content = visibleContent
+        state.tabContentStates[parkedTabID] = parkedContent
+        if let ownerSessionID = backgroundContent.aiChat.sessionID {
+            state.backgroundAiChatStates[ownerSessionID] = backgroundContent
+        }
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    private func makeBackgroundInspectorStatusState(
+        parkedTabID: ContentTabID,
+        activeInspector: FileManagerInspectorFeature.State,
+        parkedInspector: FileManagerInspectorFeature.State,
+        backgroundInspector: FileManagerInspectorFeature.State,
+        content: FileManagerContentFeature.State,
+    ) -> FileManagerFeature.State {
+        let activeTabID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: parkedTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Parked"),
+                    isPinned: false,
+                    title: "Parked",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeTabID,
+        )
+        state.content = content
+        state.inspector = activeInspector
+        state.tabInspectorStates[parkedTabID] = parkedInspector.tabSnapshot()
+        if let ownerSessionID = backgroundInspector.aiChat.sessionID {
+            state.backgroundInspectorAiChatStates[ownerSessionID] = backgroundInspector.tabSnapshot()
+        }
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    private func makeBackgroundContentStatusStore(
+        state: FileManagerFeature.State,
+        savedSnapshots: LockIsolated<[AiChatSessionSnapshot]>,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: window routing의 owner 선택 결과와 비가시 상태 불변만 집중 검증함
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func makeStatusTab(
+        id: ContentTabID,
+        content: FileManagerContentFeature.State,
+        title: String,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: .aiChat,
+            anchor: .aiChat(sessionID: content.aiChat.sessionID?.rawValue.uuidString ?? ""),
+            isPinned: false,
+            title: title,
+            iconName: "message",
+        )
+    }
+
+    private func makeStatusVisibleContent() -> FileManagerContentFeature.State {
+        var content = FileManagerContentFeature.State()
+        content.navigation.navigationState = .home
+        content.aiChat.transcriptHistory = [AiChatMessage(role: .assistant, content: "Visible content")]
+        return content
+    }
+
+    private func makeStatusSignal(
+        id: String,
+        kind: AiChatExecutionActivityKind,
+    ) -> AiChatExecutionActivitySignal {
+        AiChatExecutionActivitySignal(
+            activityID: AiChatExecutionActivityID(rawValue: id),
+            kind: kind,
+            phase: .began,
+            evidence: .init(origin: .providerWire, providerEventType: "test.filemanager.status"),
+        )
+    }
+
+    private func mismatchedStatusContexts(for lock: AiChatRequestLock) -> [AiChatRequestContextSnapshot] {
+        [
+            replacingStatusIdentity(
+                in: lock.context,
+                sessionID: AiChatSessionID(rawValue: UUID()),
+                requestID: lock.requestID,
+                runID: lock.runID,
+            ),
+            replacingStatusIdentity(
+                in: lock.context,
+                sessionID: lock.context.sessionID,
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: lock.runID,
+            ),
+            replacingStatusIdentity(
+                in: lock.context,
+                sessionID: lock.context.sessionID,
+                requestID: lock.requestID,
+                runID: AiChatRunID(rawValue: UUID()),
+            ),
+        ]
+    }
+
+    private func replacingStatusIdentity(
+        in context: AiChatRequestContextSnapshot,
+        sessionID: AiChatSessionID?,
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+    ) -> AiChatRequestContextSnapshot {
+        AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: context.provider,
+            model: context.model,
+            selectedModel: context.selectedModel,
+            selectedModelRow: context.selectedModelRow,
+            selectedThinking: context.selectedThinking,
+            sessionStatus: context.sessionStatus,
+            requestContext: context.requestContext,
+            promptSummary: context.promptSummary,
+            submittedAtMs: context.submittedAtMs,
+        )
     }
 }
 
