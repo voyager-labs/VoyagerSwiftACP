@@ -3,6 +3,268 @@ import ComposableArchitecture
 import Perception
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerShared
+
+struct AiChatTimestampTooltipGeometry: Equatable {
+    enum VerticalPlacement: Equatable { case above, below }
+    let frame: CGRect
+    let verticalPlacement: VerticalPlacement
+
+    static func resolve(
+        viewportBounds: CGRect,
+        messageBounds: CGRect,
+        clockBounds: CGRect,
+        preferredSize: CGSize,
+    ) -> Self {
+        let edgeInset: CGFloat = 4
+        let spacing: CGFloat = 4
+        let availableSize = CGSize(
+            width: max(0, viewportBounds.width - edgeInset * 2),
+            height: max(0, viewportBounds.height - edgeInset * 2),
+        )
+        let size = CGSize(
+            width: min(preferredSize.width, availableSize.width),
+            height: min(preferredSize.height, availableSize.height),
+        )
+        let minimumX = viewportBounds.minX + edgeInset
+        let maximumX = max(minimumX, viewportBounds.maxX - edgeInset - size.width)
+        let originX = min(max(clockBounds.midX - size.width / 2, minimumX), maximumX)
+        let minimumY = viewportBounds.minY + edgeInset
+        let maximumY = max(minimumY, viewportBounds.maxY - edgeInset - size.height)
+        let aboveY = messageBounds.minY - spacing - size.height
+        let belowY = messageBounds.maxY + spacing
+        let aboveFits = aboveY >= minimumY
+        let belowFits = belowY <= maximumY
+        let availableAbove = max(0, messageBounds.minY - spacing - minimumY)
+        let availableBelow = max(0, viewportBounds.maxY - edgeInset - messageBounds.maxY - spacing)
+        let verticalPlacement: VerticalPlacement = if aboveFits {
+            .above
+        } else if belowFits {
+            .below
+        } else {
+            availableAbove >= availableBelow ? .above : .below
+        }
+        let preferredY = verticalPlacement == .above ? aboveY : belowY
+        let originY = min(max(preferredY, minimumY), maximumY)
+        return Self(
+            frame: CGRect(origin: CGPoint(x: originX, y: originY), size: size),
+            verticalPlacement: verticalPlacement,
+        )
+    }
+}
+
+struct AiChatAssistantMetadataPanelGeometry: Equatable {
+    enum VerticalPlacement: Equatable { case above, below }
+    let frame: CGRect
+    let visibleBodyBounds: CGRect
+    let verticalPlacement: VerticalPlacement
+
+    static func resolve(
+        viewportBounds: CGRect,
+        bodyBounds: CGRect,
+        preferredSize: CGSize,
+    ) -> Self? {
+        let edgeInset: CGFloat = 4
+        let spacing: CGFloat = 4
+        let visibleBodyBounds = bodyBounds.intersection(viewportBounds)
+        let finiteGeometry = [
+            visibleBodyBounds.minX, visibleBodyBounds.minY,
+            visibleBodyBounds.width, visibleBodyBounds.height,
+            preferredSize.width, preferredSize.height,
+        ].allSatisfy(\.isFinite)
+        guard finiteGeometry, !visibleBodyBounds.isNull, !visibleBodyBounds.isEmpty else { return nil }
+        let availableWidth = viewportBounds.width - edgeInset * 2
+        let availableHeight = viewportBounds.height - edgeInset * 2
+        guard availableWidth > 0, availableHeight > 0 else { return nil }
+        let size = CGSize(
+            width: min(preferredSize.width, availableWidth),
+            height: min(preferredSize.height, availableHeight),
+        )
+        let minimumX = viewportBounds.minX + edgeInset
+        let maximumX = viewportBounds.maxX - edgeInset - size.width
+        let originX = min(max(visibleBodyBounds.minX, minimumX), max(minimumX, maximumX))
+        let minimumY = viewportBounds.minY + edgeInset
+        let maximumY = viewportBounds.maxY - edgeInset - size.height
+        let aboveY = visibleBodyBounds.minY - spacing - size.height
+        let belowY = visibleBodyBounds.maxY + spacing
+        let aboveFits = aboveY >= minimumY
+        let belowFits = belowY <= maximumY
+        let availableAbove = max(0, visibleBodyBounds.minY - spacing - minimumY)
+        let availableBelow = max(0, viewportBounds.maxY - edgeInset - visibleBodyBounds.maxY - spacing)
+        let verticalPlacement: VerticalPlacement = if aboveFits {
+            .above
+        } else if belowFits {
+            .below
+        } else {
+            availableAbove >= availableBelow ? .above : .below
+        }
+        let preferredY = verticalPlacement == .above ? aboveY : belowY
+        let originY = min(max(preferredY, minimumY), max(minimumY, maximumY))
+        return Self(
+            frame: CGRect(origin: CGPoint(x: originX, y: originY), size: size),
+            visibleBodyBounds: visibleBodyBounds,
+            verticalPlacement: verticalPlacement,
+        )
+    }
+}
+
+enum AiChatTimestampTooltipTrigger: Int {
+    case focus
+    case hover
+
+    func outranks(_ current: Self?) -> Bool {
+        current.map { rawValue > $0.rawValue } ?? true
+    }
+}
+
+struct AiChatTimestampTooltipSizing: Equatable {
+    static func resolve(label: String, availableWidth: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let horizontalPadding = AiChatTimestampAffordancePresentation.tooltipHorizontalPadding * 2
+        let verticalPadding = AiChatTimestampAffordancePresentation.tooltipVerticalPadding * 2
+        let availablePanelWidth = max(1, availableWidth - 8)
+        let maximumWidth = min(
+            AiChatTimestampAffordancePresentation.tooltipMaximumWidth,
+            availablePanelWidth,
+        )
+        let intrinsicTextWidth = ceil((label as NSString).size(withAttributes: attributes).width)
+        let width = min(intrinsicTextWidth + horizontalPadding, maximumWidth)
+        let contentWidth = max(1, width - horizontalPadding)
+        let textBounds = (label as NSString).boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes,
+        )
+        return CGSize(
+            width: width,
+            height: max(
+                AiChatTimestampAffordancePresentation.controlSize,
+                ceil(textBounds.height) + verticalPadding,
+            ),
+        )
+    }
+}
+
+struct AiChatTimestampTooltipAnchor {
+    let label: String
+    let trigger: AiChatTimestampTooltipTrigger
+    let clockBounds: Anchor<CGRect>
+    var messageBounds: Anchor<CGRect>?
+}
+
+struct AiChatTimestampTooltipAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: AiChatTimestampTooltipAnchor? = nil
+    static func reduce(value: inout AiChatTimestampTooltipAnchor?, nextValue: () -> AiChatTimestampTooltipAnchor?) {
+        guard let candidate = nextValue() else { return }
+        if candidate.trigger.outranks(value?.trigger) {
+            value = candidate
+        }
+    }
+}
+
+struct AiChatAssistantMetadataAnchor {
+    let requestID: AiChatRequestID
+    let label: String
+    let bodyBounds: Anchor<CGRect>
+}
+
+struct AiChatAssistantMetadataAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: [AiChatRequestID: AiChatAssistantMetadataAnchor] = [:]
+
+    static func reduce(
+        value: inout [AiChatRequestID: AiChatAssistantMetadataAnchor],
+        nextValue: () -> [AiChatRequestID: AiChatAssistantMetadataAnchor],
+    ) {
+        value.merge(nextValue()) { _, candidate in candidate }
+    }
+}
+
+struct AiChatAssistantMetadataPanelSizing: Equatable {
+    static func resolve(label: String, availableWidth: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let horizontalPadding = AiChatTimestampAffordancePresentation.tooltipHorizontalPadding * 2
+        let verticalPadding = AiChatTimestampAffordancePresentation.tooltipVerticalPadding * 2
+        let maximumWidth = min(
+            AiChatTimestampAffordancePresentation.tooltipMaximumWidth,
+            max(1, availableWidth - 8),
+        )
+        let textWidth = ceil((label as NSString).size(withAttributes: attributes).width)
+        let width = min(textWidth + horizontalPadding, maximumWidth)
+        let contentWidth = max(1, width - horizontalPadding)
+        let textBounds = (label as NSString).boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes,
+        )
+        return CGSize(width: width, height: ceil(textBounds.height) + verticalPadding)
+    }
+}
+
+private struct AiChatTimestampTooltip: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
+    let label: String
+    let size: CGSize
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: NSFont.smallSystemFontSize))
+            .lineLimit(nil)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, AiChatTimestampAffordancePresentation.tooltipHorizontalPadding)
+            .padding(.vertical, AiChatTimestampAffordancePresentation.tooltipVerticalPadding)
+            .frame(width: size.width, height: size.height, alignment: .leading)
+            .background(
+                VoyagerDS.Surface.popoverBackground(for: colorScheme),
+                in: RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                    .strokeBorder(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+            )
+            .shadow(
+                color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+                radius: VoyagerDS.Shadow.popoverRadius,
+                y: VoyagerDS.Shadow.popoverYOffset,
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct AiChatAssistantMetadataPanel: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
+    let label: String
+    let size: CGSize
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: NSFont.smallSystemFontSize))
+            .lineLimit(nil)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, AiChatTimestampAffordancePresentation.tooltipHorizontalPadding)
+            .padding(.vertical, AiChatTimestampAffordancePresentation.tooltipVerticalPadding)
+            .frame(width: size.width, height: size.height, alignment: .leading)
+            .background(
+                VoyagerDS.Surface.popoverBackground(for: colorScheme),
+                in: RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                    .strokeBorder(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+            )
+            .shadow(
+                color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+                radius: VoyagerDS.Shadow.popoverRadius,
+                y: VoyagerDS.Shadow.popoverYOffset,
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
 
 public struct AiChatView: View {
     let store: StoreOf<AiChatFeature>
@@ -45,78 +307,27 @@ public struct AiChatView: View {
                 hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs,
             )
 
+            let presentation = AiChatViewPresentation.resolve(
+                state: state,
+                hasCenteredEmptyContent: centeredEmptyContent != nil,
+            )
+
             Group {
-                if state.mode == .sessions {
+                if presentation == .sessions {
                     AiChatSessionsView(
                         store: store,
                         state: state,
                         displayModel: sessions,
                         onSessionSelected: onSessionSelected,
                     )
-                } else if let centeredEmptyContent, isCenteredEmptyChat(state: state) {
-                    centeredEmptyChatView(
+                } else {
+                    chatView(
+                        presentation: presentation,
                         centeredEmptyContent: centeredEmptyContent,
                         state: state,
                         skeleton: skeleton,
                         requestContext: requestContext,
                     )
-                } else {
-                    ScrollViewReader { scrollProxy in
-                        VStack(spacing: 0) {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    AiChatConversationSurface(
-                                        state: state,
-                                        skeleton: skeleton,
-                                        onOpenSettings: { store.send(.openSettingsTapped) },
-                                        onErrorRecovery: { store.send(.errorRecoveryTapped) },
-                                        onRegenerate: { store.send(.regenerateTapped) },
-                                        onRebindContext: { store.send(.rebindContextTapped) },
-                                        onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) },
-                                    )
-                                    Color.clear
-                                        .frame(height: 0)
-                                        .background(
-                                            AiChatTranscriptScrollObserver(
-                                                sessionID: state.sessionID,
-                                                restoreRequest: transcriptScrollRestoreRequest,
-                                                onScrollOffsetChanged: { offsetY, sessionID in
-                                                    guard let sessionID else { return }
-                                                    store.send(.transcriptScrollOffsetChanged(sessionID, offsetY))
-                                                },
-                                            ),
-                                        )
-
-                                    Color.clear
-                                        .frame(height: 1)
-                                        .id(Self.transcriptBottomAnchorID)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 10)
-                                .padding(.bottom, 8)
-                            }
-                            .onAppear {
-                                requestTranscriptScrollOffsetRestore(for: state)
-                            }
-                            .onChange(of: state.sessionID) { _ in
-                                requestTranscriptScrollOffsetRestore(for: state)
-                            }
-                            .onChange(of: state.transcriptAutoScrollVersion) { _ in
-                                scrollTranscriptToBottom(scrollProxy)
-                            }
-
-                            inputBar(
-                                state: state,
-                                input: skeleton.chatInput,
-                                requestContext: requestContext,
-                            )
-                            .padding(.horizontal, 10)
-                            .padding(.top, 8)
-                            .padding(.bottom, 10)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    }
                 }
             }
             .onAppear {
@@ -125,32 +336,140 @@ public struct AiChatView: View {
         }
     }
 
-    private func isCenteredEmptyChat(state: AiChatState) -> Bool {
-        state.transcriptHistory.isEmpty
-            && state.streamingAssistantDraft == nil
-            && !state.executionPhase.isProcessing
-            && state.sessionStatus != .restoring
-    }
-
-    private func centeredEmptyChatView(
-        centeredEmptyContent: AnyView,
+    private func chatView(
+        presentation: AiChatViewPresentation,
+        centeredEmptyContent: AnyView?,
         state: AiChatState,
         skeleton: AiChatSkeletonDisplayModel,
         requestContext: AiChatRequestContextDisplayModel,
     ) -> some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 0)
-            centeredEmptyContent
-            compactConnectionCTA(for: skeleton.surface)
-            inputBar(
-                state: state,
-                input: skeleton.chatInput,
-                requestContext: requestContext,
-            )
-            Spacer(minLength: 0)
+        ScrollViewReader { scrollProxy in
+            VStack(spacing: presentation == .centeredEmpty ? 20 : 0) {
+                if presentation == .centeredEmpty, let centeredEmptyContent {
+                    Spacer(minLength: 0)
+                    centeredEmptyContent
+                    compactConnectionCTA(for: skeleton.surface)
+                } else {
+                    transcriptView(state: state, skeleton: skeleton, scrollProxy: scrollProxy)
+                }
+
+                AiChatInputBar(
+                    store: store,
+                    state: state,
+                    input: skeleton.chatInput,
+                    requestContext: requestContext,
+                    colorScheme: colorScheme,
+                    isChatInputFocused: $isChatInputFocused,
+                    chatInputTextHeight: $chatInputTextHeight,
+                    isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
+                    isThinkingSelectorPresented: $isThinkingSelectorPresented,
+                )
+                .padding(.horizontal, presentation == .transcript ? 10 : 0)
+                .padding(.top, presentation == .transcript ? 8 : 0)
+                .padding(.bottom, presentation == .transcript ? 10 : 0)
+
+                if presentation == .centeredEmpty {
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.vertical, presentation == .centeredEmpty ? 40 : 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 40)
+    }
+
+    private func transcriptView(
+        state: AiChatState,
+        skeleton: AiChatSkeletonDisplayModel,
+        scrollProxy: ScrollViewProxy,
+    ) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                AiChatConversationSurface(
+                    state: state,
+                    skeleton: skeleton,
+                    onOpenSettings: { store.send(.openSettingsTapped) },
+                    onErrorRecovery: { store.send(.errorRecoveryTapped) },
+                    onRegenerate: { store.send(.regenerateTapped) },
+                    onRebindContext: { store.send(.rebindContextTapped) },
+                    onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) },
+                )
+                Color.clear
+                    .frame(height: 0)
+                    .background(
+                        AiChatTranscriptScrollObserver(
+                            sessionID: state.sessionID,
+                            restoreRequest: transcriptScrollRestoreRequest,
+                            onScrollOffsetChanged: { offsetY, sessionID in
+                                guard let sessionID else { return }
+                                store.send(.transcriptScrollOffsetChanged(sessionID, offsetY))
+                            },
+                        ),
+                    )
+
+                Color.clear
+                    .frame(height: 1)
+                    .id(Self.transcriptBottomAnchorID)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+        }
+        .overlayPreferenceValue(AiChatTimestampTooltipAnchorPreferenceKey.self) { anchor in
+            timestampTooltipViewport(anchor)
+        }
+        .overlayPreferenceValue(AiChatAssistantMetadataAnchorPreferenceKey.self) { anchors in
+            assistantMetadataViewport(
+                (state.streamingAssistantDisplayModel?.requestID).flatMap { anchors[$0] },
+            )
+        }
+        .onAppear {
+            requestTranscriptScrollOffsetRestore(for: state)
+        }
+        .onChange(of: state.sessionID) { _ in
+            requestTranscriptScrollOffsetRestore(for: state)
+        }
+        .onChange(of: state.transcriptAutoScrollVersion) { _ in
+            scrollTranscriptToBottom(scrollProxy)
+        }
+    }
+
+    private func timestampTooltipViewport(_ anchor: AiChatTimestampTooltipAnchor?) -> some View {
+        GeometryReader { proxy in
+            if let anchor, let messageBounds = anchor.messageBounds {
+                let geometry = AiChatTimestampTooltipGeometry.resolve(
+                    viewportBounds: CGRect(origin: .zero, size: proxy.size),
+                    messageBounds: proxy[messageBounds],
+                    clockBounds: proxy[anchor.clockBounds],
+                    preferredSize: AiChatTimestampTooltipSizing.resolve(
+                        label: anchor.label,
+                        availableWidth: proxy.size.width,
+                    ),
+                )
+                AiChatTimestampTooltip(label: anchor.label, size: geometry.frame.size)
+                    .position(x: geometry.frame.midX, y: geometry.frame.midY)
+            }
+        }
+    }
+
+    private func assistantMetadataViewport(_ anchor: AiChatAssistantMetadataAnchor?) -> some View {
+        GeometryReader { proxy in
+            if let anchor {
+                let viewportBounds = CGRect(origin: .zero, size: proxy.size)
+                let preferredSize = AiChatAssistantMetadataPanelSizing.resolve(
+                    label: anchor.label,
+                    availableWidth: proxy.size.width,
+                )
+                if let geometry = AiChatAssistantMetadataPanelGeometry.resolve(
+                    viewportBounds: viewportBounds,
+                    bodyBounds: proxy[anchor.bodyBounds],
+                    preferredSize: preferredSize,
+                ) {
+                    AiChatAssistantMetadataPanel(label: anchor.label, size: geometry.frame.size)
+                        .position(x: geometry.frame.midX, y: geometry.frame.midY)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -192,7 +511,7 @@ public struct AiChatView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -206,12 +525,12 @@ public struct AiChatView: View {
                     .padding(.horizontal, 10)
                     .frame(height: 24)
                     .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.primary.opacity(0.06)),
+                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                            .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1),
+                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                            .strokeBorder(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
                     )
             }
             .buttonStyle(.borderless)
@@ -220,30 +539,12 @@ public struct AiChatView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.045)),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                .fill(VoyagerDS.Surface.overlayBackground(for: colorScheme)),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
-        )
-    }
-
-    private func inputBar(
-        state: AiChatState,
-        input: AiChatInputDisplayModel,
-        requestContext: AiChatRequestContextDisplayModel,
-    ) -> some View {
-        AiChatInputBar(
-            store: store,
-            state: state,
-            input: input,
-            requestContext: requestContext,
-            colorScheme: colorScheme,
-            isChatInputFocused: $isChatInputFocused,
-            chatInputTextHeight: $chatInputTextHeight,
-            isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-            isThinkingSelectorPresented: $isThinkingSelectorPresented,
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                .strokeBorder(VoyagerDS.Surface.overlayBorder, lineWidth: 1),
         )
     }
 
@@ -271,6 +572,23 @@ public struct AiChatView: View {
     static let transcriptBottomAnchorID = "ai-chat-transcript-bottom"
     static let chatInputMinTextHeight: CGFloat = 46
     static let chatInputMaxTextHeight: CGFloat = 96
+}
+
+enum AiChatViewPresentation: Equatable {
+    case sessions
+    case centeredEmpty
+    case transcript
+
+    static func resolve(state: AiChatState, hasCenteredEmptyContent: Bool) -> Self {
+        guard state.mode == .chat else { return .sessions }
+        guard hasCenteredEmptyContent,
+              state.transcriptHistory.isEmpty,
+              state.streamingAssistantDraft == nil,
+              !state.isProcessing,
+              state.sessionStatus != .restoring
+        else { return .transcript }
+        return .centeredEmpty
+    }
 }
 
 private struct AiChatTranscriptScrollRestoreRequest: Equatable {
