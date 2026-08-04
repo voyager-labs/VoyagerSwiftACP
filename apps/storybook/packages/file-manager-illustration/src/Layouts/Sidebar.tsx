@@ -15,7 +15,6 @@ export interface SidebarProps {
   readonly onTabUnpin?: SidebarTabAction
   readonly onTabClose?: SidebarTabAction
   readonly onNewTab?: () => void
-  readonly onToggleSidebar?: () => void
 }
 
 export const Sidebar: FC<SidebarProps> = ({
@@ -29,22 +28,12 @@ export const Sidebar: FC<SidebarProps> = ({
   onTabUnpin,
   onTabClose,
   onNewTab,
-  onToggleSidebar,
 }) => {
   const classes = ["sidebar", standalone ? "standalone" : ""].filter(Boolean).join(" ")
 
   return (
     <aside className={classes} aria-label="Sidebar">
-      <div className="sidebar-titlebar">
-        <button
-          className="sidebar-hide-button"
-          type="button"
-          aria-label="Hide Sidebar"
-          onClick={onToggleSidebar}
-        >
-          <FileManagerIcon name="sidebar" />
-        </button>
-      </div>
+      <div className="sidebar-titlebar" aria-hidden="true" />
 
       {/* Fixed locations grid — outside scroll area (native: .padding(.top, 50)) */}
       <LocationShortcuts shortcuts={locationShortcuts} onSelect={onLocationSelect} />

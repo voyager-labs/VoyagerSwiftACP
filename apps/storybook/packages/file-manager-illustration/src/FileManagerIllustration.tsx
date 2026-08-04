@@ -158,7 +158,6 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onTabUnpin={handleTabUnpin}
                 onTabClose={handleTabClose}
                 onNewTab={handleNewTab}
-                onToggleSidebar={handleToggleSidebar}
               />
             }
             toolbar={

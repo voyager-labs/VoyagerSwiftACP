@@ -30,6 +30,7 @@ export const Default: Story = {
   },
   play: async ({ canvasElement }) => {
     const gridBtn = within(canvasElement).getByRole("button", { name: "Grid view" })
+    gridBtn.focus()
     await userEvent.click(gridBtn)
     const listBtn = within(canvasElement).getByRole("button", { name: "List view" })
     await userEvent.click(listBtn)
@@ -42,7 +43,9 @@ export const ListView: Story = {
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
   },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "List view" }))
+    const listBtn = within(canvasElement).getByRole("button", { name: "List view" })
+    listBtn.focus()
+    await userEvent.click(listBtn)
     const entry = canvasElement.querySelector(".entry-list-row")
     if (entry instanceof HTMLElement) await userEvent.click(entry)
   },
@@ -54,9 +57,6 @@ export const FocusMode: Story = {
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
   },
   play: async ({ canvasElement }) => {
-    const sidebarBtn = within(canvasElement).getByRole("button", { name: "Hide Sidebar" })
-    await userEvent.click(sidebarBtn)
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Show Sidebar" }))
     await userEvent.click(within(canvasElement).getByRole("button", { name: "New Chat" }))
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Close AI Chat" }))
   },

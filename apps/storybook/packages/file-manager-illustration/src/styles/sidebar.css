@@ -4,9 +4,8 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  background: var(--fm-sidebar);
+  background: transparent;
   padding: 0;
-  backdrop-filter: var(--fm-backdrop-blur);
 }
 
 [data-file-manager-illustration] .sidebar-titlebar {
