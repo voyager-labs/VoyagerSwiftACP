@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { FileManagerIcon } from "../UI/Display/FileManagerIcon"
+import { SFSymbol } from "../Foundations/SFSymbol"
 import type { Entry } from "../model/types"
 
 export type InspectorChatHeader = "sessions" | "chat"
@@ -50,7 +50,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
                 aria-label="Close AI Chat"
                 onClick={onCloseChat}
               >
-                <FileManagerIcon name="close" />
+                <SFSymbol name="sidebar.trailing" size={16} />
               </button>
             </div>
           </>
@@ -62,7 +62,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
               aria-label="Back to Chat History"
               onClick={onOpenChatHistory}
             >
-              <FileManagerIcon name="back" />
+              <SFSymbol name="chevron.left" size={16} />
             </button>
             <span className="inspector-header-title">{chatTitle}</span>
             <div className="inspector-header-actions">
@@ -72,7 +72,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
                 aria-label="Close AI Chat"
                 onClick={onCloseChat}
               >
-                <FileManagerIcon name="close" />
+                <SFSymbol name="sidebar.trailing" size={16} />
               </button>
             </div>
           </>
@@ -96,10 +96,10 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
             onInput={(e) => onRequestTextChange(e.currentTarget.value)}
           />
           <span className="composer-footer">
-            <FileManagerIcon name="plus" />
+            <SFSymbol name="plus" size={16} />
             <em>GPT-5.2</em>
             <span className="vc-send-button">
-              <FileManagerIcon name="send" />
+              <SFSymbol name="arrow.up" size={16} />
             </span>
           </span>
         </label>

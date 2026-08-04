@@ -1,6 +1,6 @@
 import type { FC } from "react"
+import { SFSymbol } from "../Foundations/SFSymbol"
 import { LocationShortcuts } from "../Patterns/LocationShortcuts"
-import { FileManagerIcon } from "../UI/Display/FileManagerIcon"
 import { SidebarNavItem } from "../UI/Navigation/SidebarNavItem"
 import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../model/types"
 
@@ -66,7 +66,7 @@ export const Sidebar: FC<SidebarProps> = ({
             aria-label="Create new tab"
             onClick={onNewTab}
           >
-            <FileManagerIcon name="plus" />
+            <SFSymbol name="plus" size={16} />
             <span>New Tab</span>
           </button>
         )}
