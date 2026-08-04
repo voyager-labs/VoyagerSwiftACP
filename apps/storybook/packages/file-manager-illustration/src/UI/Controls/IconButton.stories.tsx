@@ -15,6 +15,10 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {}
 
+export const Bordered: Story = {
+  args: { bordered: true },
+}
+
 export const Active: Story = {
   args: { active: true },
 }

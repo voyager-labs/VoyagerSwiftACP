@@ -1,17 +1,27 @@
 import type { ButtonHTMLAttributes, FC, ReactNode } from "react"
+import { Button } from "./Button"
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean
+  bordered?: boolean
   children: ReactNode
 }
 
-export const IconButton: FC<IconButtonProps> = ({ active, className = "", children, ...props }) => {
-  const classes = ["vc-icon-button", active ? "active" : "", className].filter(Boolean).join(" ")
+export const IconButton: FC<IconButtonProps> = ({
+  bordered,
+  active,
+  className = "",
+  children,
+  ...props
+}) => {
+  const classes = ["vc-icon-button", active ? "active" : "", bordered ? "bordered" : "", className]
+    .filter(Boolean)
+    .join(" ")
 
   return (
-    <button type="button" className={classes} {...props}>
+    <Button bordered={bordered} className={classes} {...props}>
       {children}
-    </button>
+    </Button>
   )
 }
 

@@ -101,10 +101,10 @@
   --fm-red: var(--macos-system-red);
   --fm-yellow: var(--macos-system-yellow);
 
-  --fm-canvas: #18181a;
-  --fm-canvas-top: #202024;
-  --fm-canvas-bottom: #101012;
-  --fm-canvas-glow: #ffffff12;
+  --fm-canvas: var(--macos-under-page-background-color);
+  --fm-canvas-top: var(--macos-window-background-color);
+  --fm-canvas-bottom: var(--macos-under-page-background-color);
+  --fm-canvas-glow: color-mix(in srgb, var(--macos-window-background-color) 48%, transparent);
   --fm-window: var(--macos-window-background-color);
   --fm-window-border: var(--macos-window-border-color);
   --fm-window-hairline: var(--macos-window-border-color);
@@ -146,6 +146,7 @@
   --fm-control: var(--macos-control-color);
   --fm-control-hover: var(--macos-secondary-system-fill);
   --fm-control-pressed: var(--macos-tertiary-system-fill);
+  --fm-toolbar-title-hover: rgb(0 0 0 / 8%);
   --fm-control-gloss-top: #ffffffd1;
   --fm-control-gloss-bottom: #ffffff5c;
   --fm-control-inner-highlight: #ffffffad;
@@ -290,6 +291,7 @@
     --fm-control-gloss-bottom: #ffffff12;
     --fm-control-inner-highlight: #ffffff2e;
     --fm-control-outline: #ffffff24;
+    --fm-toolbar-title-hover: rgb(0 0 0 / 35%);
     --fm-shadow-window: 0 32px 88px #000000a3, 0 12px 32px #00000052, 0 0 0 1px
       var(--fm-window-hairline);
   }
@@ -309,6 +311,7 @@
   --fm-control-gloss-bottom: #ffffff12;
   --fm-control-inner-highlight: #ffffff2e;
   --fm-control-outline: #ffffff24;
+  --fm-toolbar-title-hover: rgb(0 0 0 / 35%);
   --fm-shadow-window: 0 32px 88px #000000a3, 0 12px 32px #00000052, 0 0 0 1px
     var(--fm-window-hairline);
 }
@@ -382,7 +385,7 @@
 [data-file-manager-illustration] .vc-button,
 [data-file-manager-illustration] .vc-icon-button,
 [data-file-manager-illustration] .vc-pill-button {
-  border: 1px solid var(--fm-separator);
+  border: 1px solid transparent;
   background: var(--fm-control);
   color: var(--fm-text-primary);
   font: inherit;
@@ -435,11 +438,17 @@
 }
 
 [data-file-manager-illustration] .vc-pill-button {
+  border-color: color-mix(in srgb, var(--fm-separator) 50%, transparent);
   height: 28px;
   border-radius: var(--fm-radius-round);
   padding: 0 var(--fm-space-7);
   font-size: var(--fm-font-size-caption);
   font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .vc-button.bordered,
+[data-file-manager-illustration] .vc-icon-button.bordered {
+  border-color: var(--fm-separator);
 }
 
 [data-file-manager-illustration] .vc-icon-button {
@@ -569,7 +578,7 @@
   background: var(--fm-blue-pressed);
 }
 
-[data-file-manager-illustration] .vc-button.subtle,
+[data-file-manager-illustration] .vc-button.subtle:not(.active),
 [data-file-manager-illustration] .vc-pill-button.subtle {
   border-color: transparent;
   background: transparent;
@@ -577,14 +586,31 @@
   color: var(--fm-text-secondary);
 }
 
-[data-file-manager-illustration] .vc-button.subtle:hover,
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .vc-button.subtle:not(.active):hover,
 [data-file-manager-illustration] .vc-pill-button.subtle:hover {
   background: color-mix(in srgb, var(--fm-control-hover) 40%, transparent);
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .vc-button.subtle:active,
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):hover {
+  background: color-mix(in srgb, var(--fm-control-hover) 40%, transparent);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .vc-button.subtle:not(.active):active,
 [data-file-manager-illustration] .vc-pill-button.subtle:active {
+  background: color-mix(in srgb, var(--fm-control-pressed) 52%, transparent);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):active {
   background: color-mix(in srgb, var(--fm-control-pressed) 52%, transparent);
   color: var(--fm-text-primary);
 }
@@ -1228,15 +1254,15 @@
   align-items: center;
   justify-content: center;
   gap: var(--fm-space-4);
-  height: 100%;
+  height: 32px;
   border-radius: var(--fm-radius-md);
-  padding: 0 var(--fm-space-4);
+  padding: 0 var(--fm-space-3);
   transition: background-color var(--fm-motion-fast) ease;
 }
 
 [data-file-manager-illustration] .toolbar-title-area:hover,
 [data-file-manager-illustration] .toolbar-title-area:focus-within {
-  background: var(--fm-control-hover);
+  background: var(--fm-toolbar-title-hover);
 }
 
 [data-file-manager-illustration] .toolbar-title-label {
@@ -1276,7 +1302,13 @@
   flex: none;
 }
 
-[data-file-manager-illustration] .toolbar-left,
+[data-file-manager-illustration] .toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
 [data-file-manager-illustration] .toolbar-right {
   display: flex;
   align-items: center;

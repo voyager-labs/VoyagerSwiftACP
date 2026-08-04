@@ -4,6 +4,7 @@ type ButtonVariant = "default" | "primary" | "subtle" | "destructive"
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
+  bordered?: boolean
   loading?: boolean
   pill?: boolean
   children: ReactNode
@@ -11,6 +12,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button: FC<ButtonProps> = ({
   variant = "default",
+  bordered,
   loading,
   pill,
   className = "",
@@ -20,6 +22,7 @@ export const Button: FC<ButtonProps> = ({
   const classes = [
     "vc-button",
     variant !== "default" ? variant : "",
+    bordered ? "bordered" : "",
     pill ? "pill" : "",
     loading ? "loading" : "",
     className,
