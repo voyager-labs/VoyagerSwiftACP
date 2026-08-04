@@ -1,11 +1,35 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { locationIconFixtures } from "../data/location-icon-fixtures"
 import type { SidebarTabItem } from "../model/types"
 import { Sidebar } from "./Sidebar"
 
 const locationShortcuts = [
-  { id: "local-entries", label: "Local Entries", symbolName: "rectangle.3.group" },
-  { id: "cloud-entries", label: "Cloud Entries", symbolName: "icloud" },
-  { id: "trash", label: "Trash", symbolName: "trash" },
+  { id: "home", label: "Home", symbolName: "house", iconSrc: locationIconFixtures.home },
+  {
+    id: "icloud-drive",
+    label: "iCloud Drive",
+    symbolName: "icloud",
+    iconSrc: locationIconFixtures.iCloudDrive,
+  },
+  {
+    id: "google-drive",
+    label: "Google Drive",
+    symbolName: "folder",
+    iconSrc: locationIconFixtures.googleDrive,
+  },
+  {
+    id: "macintosh-hd",
+    label: "Macintosh HD",
+    symbolName: "internaldrive",
+    iconSrc: locationIconFixtures.macintoshHD,
+  },
+  {
+    id: "external-drive",
+    label: "External Drive",
+    symbolName: "externaldrive",
+    iconSrc: locationIconFixtures.externalDrive,
+  },
+  { id: "trash", label: "Trash", symbolName: "trash", iconSrc: locationIconFixtures.trash },
 ] as const
 
 const pinnedTabs: readonly SidebarTabItem[] = [
