@@ -5,7 +5,7 @@ typealias AiChatProviderCodexExecutor = @Sendable (
     _ prompt: String,
     _ thinking: AiChatProviderThinkingPayload?,
     _ credential: OAuthCredentialFile,
-    _ onDelta: @escaping @Sendable (String) -> Void,
+    _ onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void,
 ) async throws -> String
 
 struct AiChatProviderExecutionInput {

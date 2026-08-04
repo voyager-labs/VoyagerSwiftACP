@@ -167,8 +167,8 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
                 XCTAssertTrue(prompt.contains("Notes.txt [resolvedText]"))
                 XCTAssertTrue(prompt.contains("Attachment body from locked snapshot"))
                 XCTAssertTrue(prompt.contains("User:\nPing"))
-                onDelta("Codex ")
-                onDelta("answer")
+                onDelta(.agentMessageDelta(itemID: "message-legacy", delta: "Codex "))
+                onDelta(.agentMessageDelta(itemID: "message-legacy", delta: "answer"))
                 return "Codex answer\n"
             },
         )
@@ -196,6 +196,144 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
     /// - 검증 내용: registry executor의 quotaExceeded failure event를 그대로 수집합니다.
     /// - 사전 조건: OpenAI request와 실패 이벤트를 방출하는 registry executor를 사용합니다.
     /// - 기대 결과: started 이후 quotaExceeded failed event가 반환됩니다.
+    /// CBW-003-prepare_contextual_chat_request: Codex App Server typed notifications가 execution stream으로 라우팅된다.
+    /// injectable executor seam이 reasoning/search/tool/retry/answer lifecycle을 explicit notification으로 전달하는지 검증합니다.
+    /// - 검증 내용: activity ID, begin/end ordering, retry boundary evidence, text delta/final을 확인합니다.
+    /// - 사전 조건: App Server notification sequence를 방출하는 Codex executor fixture를 사용합니다.
+    /// - 기대 결과: status는 typed notification에서만 발생하고 retry는 다음 explicit item boundary에서 종료됩니다.
+    func testExecute_chatgptCodexAppServerNotifications_emitTypedActivities() throws {
+        let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
+        let client = AiChatProviderExecutionClient.live(
+            now: { 30003 },
+            codexExecutor: { _, _, _, _, onEvent in
+                onEvent(.itemStarted(id: "reason-1", kind: .reasoning, providerEventType: "item/started"))
+                onEvent(.reasoningDelta(itemID: "reason-1"))
+                onEvent(.itemCompleted(id: "reason-1", kind: .reasoning, providerEventType: "item/completed"))
+                onEvent(.itemStarted(id: "search-1", kind: .webSearch, providerEventType: "item/started"))
+                onEvent(.itemCompleted(id: "search-1", kind: .webSearch, providerEventType: "item/completed"))
+                onEvent(.itemStarted(id: "command-1", kind: .commandExecution, providerEventType: "item/started"))
+                onEvent(.itemCompleted(id: "command-1", kind: .commandExecution, providerEventType: "item/completed"))
+                onEvent(.itemStarted(id: "mcp-1", kind: .mcpToolCall, providerEventType: "item/started"))
+                onEvent(.itemCompleted(id: "mcp-1", kind: .mcpToolCall, providerEventType: "item/completed"))
+                onEvent(.error(turnID: "turn-1", willRetry: true, providerEventType: "error"))
+                onEvent(.error(turnID: "turn-1", willRetry: true, providerEventType: "error"))
+                onEvent(.itemStarted(
+                    id: "message-1",
+                    kind: .agentMessage(phase: nil),
+                    providerEventType: "item/started",
+                ))
+                onEvent(.agentMessageDelta(itemID: "message-1", delta: "Codex answer"))
+                onEvent(.itemCompleted(
+                    id: "message-1",
+                    kind: .agentMessage(phase: nil),
+                    providerEventType: "item/completed",
+                ))
+                return "Codex answer"
+            },
+        )
+
+        let events = try providerExecutionCollect(client.execute(
+            request,
+            .oauth(OAuthCredentialFile(accessToken: "codex-token")),
+        ))
+        let retryID = "\(request.context.requestID.rawValue.uuidString.lowercased()):codex:retry:turn-1"
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            providerExecutionStatus(request.context, "reason-1", .thinking, .began, "item/started"),
+            providerExecutionStatus(request.context, "reason-1", .thinking, .ended, "item/completed"),
+            providerExecutionStatus(request.context, "search-1", .searching, .began, "item/started"),
+            providerExecutionStatus(request.context, "search-1", .searching, .ended, "item/completed"),
+            providerExecutionStatus(request.context, "command-1", .toolExecution, .began, "item/started"),
+            providerExecutionStatus(request.context, "command-1", .toolExecution, .ended, "item/completed"),
+            providerExecutionStatus(request.context, "mcp-1", .toolExecution, .began, "item/started"),
+            providerExecutionStatus(request.context, "mcp-1", .toolExecution, .ended, "item/completed"),
+            providerExecutionStatus(request.context, retryID, .retrying, .began, "error"),
+            providerExecutionStatus(
+                request.context,
+                retryID,
+                .retrying,
+                .ended,
+                "item/started",
+                origin: .voyagerClient,
+                boundaryEventTypes: ["error", "item/started"],
+            ),
+            providerExecutionStatus(request.context, "message-1", .answerGeneration, .began, "item/started"),
+            .delta(context: request.context, text: "Codex answer"),
+            providerExecutionStatus(request.context, "message-1", .answerGeneration, .ended, "item/completed"),
+            .final(response: AiChatResponse(
+                context: request.context,
+                assistantMessage: AiChatMessage(role: .assistant, content: "Codex answer"),
+                completedAtMs: 30003,
+            )),
+        ])
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex App Server parser는 unknown을 무시하고 malformed known을 실패시킨다.
+    /// protocol evolution과 손상된 known event를 구분해 forward compatibility와 classified failure를 함께 보장합니다.
+    /// - 검증 내용: unknown method/item은 nil, malformed item/started는 invalidRequest error인지 확인합니다.
+    /// - 사전 조건: unknown notification, unknown item, 필수 item.id가 빠진 known notification을 사용합니다.
+    /// - 기대 결과: unknown은 무시되고 malformed known event만 parsing error를 던집니다.
+    func testCodexAppServerParser_ignoresUnknownAndRejectsMalformedKnownEvents() throws {
+        XCTAssertNil(try AiChatProviderExecutionClient.codexAppServerEvent(
+            fromJSONLine: #"{"method":"future/event","params":{"secret":"must-not-log"}}"#,
+        ))
+        XCTAssertNil(try AiChatProviderExecutionClient.codexAppServerEvent(
+            fromJSONLine: #"{"method":"item/started","params":{"threadId":"t","turnId":"u","startedAtMs":1,"item":{"id":"future-1","type":"futureItem"}}}"#,
+        ))
+        XCTAssertThrowsError(try AiChatProviderExecutionClient.codexAppServerEvent(
+            fromJSONLine: #"{"method":"item/started","params":{"threadId":"t","turnId":"u","startedAtMs":1,"item":{"type":"reasoning"}}}"#,
+        )) { error in
+            XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("item/started"))
+        }
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex JSONL buffer는 split UTF-8 scalar를 보존한다.
+    /// Pipe chunk가 한글 byte 중간에서 나뉘어도 complete notification이 유실되지 않는지 검증합니다.
+    /// - 검증 내용: byte accumulator가 newline 전까지 Data를 보존하고 원문 JSON line을 복원하는지 확인합니다.
+    /// - 사전 조건: agent message delta의 한글 scalar 내부를 기준으로 두 chunk로 나눕니다.
+    /// - 기대 결과: 첫 chunk는 line을 만들지 않고 두 번째 chunk 뒤 정확한 한 줄을 반환합니다.
+    func testCodexJSONLineBuffer_preservesSplitUTF8Scalar() throws {
+        let line = #"{"method":"item/agentMessage/delta","params":{"threadId":"t","turnId":"u","itemId":"i","delta":"한글"}}"#
+        let bytes = Data((line + "\n").utf8)
+        let scalarStart = try XCTUnwrap(bytes.firstRange(of: Data("한".utf8)))
+        let splitIndex = scalarStart.lowerBound + 1
+        let buffer = CodexJSONLineBuffer()
+
+        XCTAssertTrue(buffer.append(Data(bytes[..<splitIndex])).isEmpty)
+        let lines = buffer.append(Data(bytes[splitIndex...]))
+
+        XCTAssertEqual(lines, [Data(line.utf8)])
+        XCTAssertNil(buffer.finish())
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex completed notification은 terminal status만 허용한다.
+    /// known terminal method의 invalid/in-progress status가 무한 대기로 이어지지 않고 malformed로 분류되는지 검증합니다.
+    /// - 검증 내용: `turn/completed`의 inProgress status가 malformed known error인지 확인합니다.
+    /// - 사전 조건: schema에는 존재하지만 completed notification에는 부적절한 inProgress status를 사용합니다.
+    /// - 기대 결과: parser가 `malformedKnownEvent("turn/completed")`를 던집니다.
+    func testCodexAppServerParser_rejectsNonterminalCompletedStatus() {
+        XCTAssertThrowsError(try AiChatProviderExecutionClient.codexAppServerEvent(
+            fromJSONLine: #"{"method":"turn/completed","params":{"threadId":"t","turn":{"id":"u","items":[],"status":"inProgress"}}}"#,
+        )) { error in
+            XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("turn/completed"))
+        }
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex process는 공식 App Server stdio 명령을 사용한다.
+    /// transport migration이 legacy `exec --json` argument로 회귀하지 않는지 검증합니다.
+    /// - 검증 내용: command argument가 app-server stdio이고 exec/json/output-last-message가 없는지 확인합니다.
+    /// - 사전 조건: 설치된 Codex 0.144.5가 제공하는 app-server CLI 계약을 사용합니다.
+    /// - 기대 결과: arguments는 `app-server --listen stdio://`만 포함합니다.
+    func testCodexArguments_useOfficialAppServerStdioInterface() {
+        let arguments = AiChatProviderExecutionClient.codexArguments()
+
+        XCTAssertEqual(arguments, ["app-server", "--listen", "stdio://"])
+        XCTAssertFalse(arguments.contains("exec"))
+        XCTAssertFalse(arguments.contains("--json"))
+        XCTAssertFalse(arguments.contains("--output-last-message"))
+    }
+
     func testExecute_registryExecutorFailureEvent_preservesFailureSurface() throws {
         let request = providerExecutionMakeRequest(provider: .openai, rawModelID: "gpt-5.5")
         let registry = AiChatProviderExecutorRegistry(executors: [

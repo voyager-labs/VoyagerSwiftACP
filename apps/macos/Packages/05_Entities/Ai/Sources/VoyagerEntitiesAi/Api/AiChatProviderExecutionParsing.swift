@@ -114,10 +114,11 @@ extension AiChatProviderExecutionClient {
         let (data, response) = try await session.data(for: request)
         let httpResponse = try httpResponse(from: response)
         try validateHTTPStatus(httpResponse.statusCode, data: data)
-        let parsed = try parseOpenAIResponse(data: data, response: httpResponse)
-        for delta in parsed.deltas where !delta.isEmpty {
-            continuation.yield(.delta(context: context, text: delta))
+        if isEventStream(httpResponse) || looksLikeSSE(data) {
+            return try consumeBufferedOpenAISSE(data, context: context, continuation: continuation)
         }
+        let parsed = try parseOpenAIResponse(data: data, response: httpResponse)
+        yieldDeltas(parsed.deltas, context: context, continuation: continuation)
         return parsed.finalText
     }
 
@@ -130,10 +131,11 @@ extension AiChatProviderExecutionClient {
         let (data, response) = try await session.data(for: request)
         let httpResponse = try httpResponse(from: response)
         try validateHTTPStatus(httpResponse.statusCode, data: data)
-        let parsed = try parseAnthropicResponse(data: data, response: httpResponse)
-        for delta in parsed.deltas where !delta.isEmpty {
-            continuation.yield(.delta(context: context, text: delta))
+        if isEventStream(httpResponse) || looksLikeAnthropicSSE(data) {
+            return try consumeBufferedAnthropicSSE(data, context: context, continuation: continuation)
         }
+        let parsed = try parseAnthropicResponse(data: data, response: httpResponse)
+        yieldDeltas(parsed.deltas, context: context, continuation: continuation)
         return parsed.finalText
     }
 
@@ -166,28 +168,51 @@ extension AiChatProviderExecutionClient {
         continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
     ) async throws -> String? where Lines.Element == String {
         var accumulator = SSEPayloadAccumulator()
-        var deltas: [String] = []
-        var finalText: String?
+        var state = OpenAIStreamConsumptionState(context: context)
 
         for try await line in lines {
             try Task.checkCancellation()
             for payload in accumulator.consume(line) {
-                if let delta = try consumeOpenAIPayload(payload, deltas: &deltas, finalText: &finalText),
-                   !delta.isEmpty
-                {
-                    continuation.yield(.delta(context: context, text: delta))
-                }
+                try emitOpenAIPayload(payload, state: &state, context: context, continuation: continuation)
             }
         }
-
-        if let payload = accumulator.finish(),
-           let delta = try consumeOpenAIPayload(payload, deltas: &deltas, finalText: &finalText),
-           !delta.isEmpty
-        {
-            continuation.yield(.delta(context: context, text: delta))
+        if let payload = accumulator.finish() {
+            try emitOpenAIPayload(payload, state: &state, context: context, continuation: continuation)
         }
+        return state.resolvedText
+    }
 
-        return finalText ?? (deltas.isEmpty ? nil : deltas.joined())
+    static func consumeBufferedOpenAISSE(
+        _ data: Data,
+        context: AiChatRequestContextSnapshot,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) throws -> String? {
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw AiHTTPError.networkError("OpenAI stream was not valid UTF-8.")
+        }
+        var state = OpenAIStreamConsumptionState(context: context)
+        var bufferedEmissions: [AiChatProviderPayloadEmission] = []
+        for payload in ssePayloads(from: text) where payload != "[DONE]" {
+            let event = try JSONDecoder().decode(OpenAIResponsesStreamEvent.self, from: Data(payload.utf8))
+            try bufferedEmissions.append(contentsOf: state.consume(event))
+        }
+        for emission in bufferedEmissions {
+            emitProviderPayload(emission, context: context, continuation: continuation)
+        }
+        return state.resolvedText
+    }
+
+    static func emitOpenAIPayload(
+        _ payload: String,
+        state: inout OpenAIStreamConsumptionState,
+        context: AiChatRequestContextSnapshot,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) throws {
+        guard payload != "[DONE]" else { return }
+        let event = try JSONDecoder().decode(OpenAIResponsesStreamEvent.self, from: Data(payload.utf8))
+        for emission in try state.consume(event) {
+            emitProviderPayload(emission, context: context, continuation: continuation)
+        }
     }
 
     static func consumeOpenAIPayload(
@@ -204,13 +229,9 @@ extension AiChatProviderExecutionClient {
                 return delta
             }
         case "response.output_text.done":
-            if let text = event.text, !text.isEmpty {
-                finalText = text
-            }
+            if let text = event.text, !text.isEmpty { finalText = text }
         case "response.completed":
-            if let completedText = event.resolvedText, !completedText.isEmpty {
-                finalText = completedText
-            }
+            if let completedText = event.resolvedText, !completedText.isEmpty { finalText = completedText }
         case "response.failed", "error":
             throw openAIStreamFailure(event)
         default:
@@ -233,31 +254,29 @@ extension AiChatProviderExecutionClient {
     ) async throws -> String? where Bytes.Element == UInt8 {
         var accumulator = SSEByteFrameAccumulator()
         var state = AnthropicStreamConsumptionState()
-        let decoder = JSONDecoder()
+        var activityState = AnthropicActivityState(context: context)
 
         for try await byte in bytes {
             try Task.checkCancellation()
             for payload in try accumulator.consume(byte) {
-                if let delta = try consumeAnthropicPayload(
+                try emitAnthropicPayload(
                     payload,
-                    decoder: decoder,
                     state: &state,
-                ), !delta.isEmpty {
-                    continuation.yield(.delta(context: context, text: delta))
-                }
+                    activityState: &activityState,
+                    context: context,
+                    continuation: continuation,
+                )
             }
         }
-
         for payload in try accumulator.finish() {
-            if let delta = try consumeAnthropicPayload(
+            try emitAnthropicPayload(
                 payload,
-                decoder: decoder,
                 state: &state,
-            ), !delta.isEmpty {
-                continuation.yield(.delta(context: context, text: delta))
-            }
+                activityState: &activityState,
+                context: context,
+                continuation: continuation,
+            )
         }
-
         return state.response.finalText
     }
 
@@ -268,32 +287,65 @@ extension AiChatProviderExecutionClient {
     ) async throws -> String? where Lines.Element == String {
         var accumulator = SSEPayloadAccumulator()
         var state = AnthropicStreamConsumptionState()
-        let decoder = JSONDecoder()
-
+        var activityState = AnthropicActivityState(context: context)
         for try await line in lines {
             try Task.checkCancellation()
             for payload in accumulator.consume(line) {
-                if let delta = try consumeAnthropicPayload(
+                try emitAnthropicPayload(
                     payload,
-                    decoder: decoder,
                     state: &state,
-                ), !delta.isEmpty {
-                    continuation.yield(.delta(context: context, text: delta))
-                }
+                    activityState: &activityState,
+                    context: context,
+                    continuation: continuation,
+                )
             }
         }
-
-        if let payload = accumulator.finish(),
-           let delta = try consumeAnthropicPayload(
-               payload,
-               decoder: decoder,
-               state: &state,
-           ), !delta.isEmpty
-        {
-            continuation.yield(.delta(context: context, text: delta))
+        if let payload = accumulator.finish() {
+            try emitAnthropicPayload(
+                payload,
+                state: &state,
+                activityState: &activityState,
+                context: context,
+                continuation: continuation,
+            )
         }
-
         return state.response.finalText
+    }
+
+    static func consumeBufferedAnthropicSSE(
+        _ data: Data,
+        context: AiChatRequestContextSnapshot,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) throws -> String? {
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw AiHTTPError.networkError("Anthropic stream was not valid UTF-8.")
+        }
+        var state = AnthropicStreamConsumptionState()
+        var activityState = AnthropicActivityState(context: context)
+        for payload in ssePayloads(from: text) where payload != "[DONE]" {
+            try emitAnthropicPayload(
+                payload,
+                state: &state,
+                activityState: &activityState,
+                context: context,
+                continuation: continuation,
+            )
+        }
+        return state.response.finalText
+    }
+
+    static func emitAnthropicPayload(
+        _ payload: String,
+        state: inout AnthropicStreamConsumptionState,
+        activityState: inout AnthropicActivityState,
+        context: AiChatRequestContextSnapshot,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) throws {
+        guard payload != "[DONE]" else { return }
+        let event = try decodeAnthropicStreamEvent(payload, decoder: JSONDecoder())
+        for emission in try state.consume(event, activityState: &activityState) {
+            emitProviderPayload(emission, context: context, continuation: continuation)
+        }
     }
 
     static func consumeAnthropicPayload(
@@ -302,8 +354,20 @@ extension AiChatProviderExecutionClient {
         state: inout AnthropicStreamConsumptionState,
     ) throws -> String? {
         guard payload != "[DONE]" else { return nil }
-        let event = try decodeAnthropicStreamEvent(payload, decoder: decoder)
-        return try state.consume(event)
+        return try state.consume(decodeAnthropicStreamEvent(payload, decoder: decoder))
+    }
+
+    static func emitProviderPayload(
+        _ emission: AiChatProviderPayloadEmission,
+        context: AiChatRequestContextSnapshot,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) {
+        switch emission {
+        case let .status(signal):
+            continuation.yield(.status(context: context, signal: signal))
+        case let .delta(text):
+            continuation.yield(.delta(context: context, text: text))
+        }
     }
 
     static func decodeAnthropicStreamEvent(

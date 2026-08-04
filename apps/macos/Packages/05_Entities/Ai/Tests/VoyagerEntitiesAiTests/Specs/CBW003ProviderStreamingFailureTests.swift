@@ -80,6 +80,30 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
         XCTAssertFalse(events.providerExecutionContainsTerminalEvent)
     }
 
+    /// CBW-003-stream_contextual_chat_response: malformed known Codex notification은 classified failure로 수렴한다.
+    /// App Server parser가 known lifecycle 손상을 unknown처럼 무시하지 않고 기존 failure surface로 전달하는지 검증합니다.
+    /// - 검증 내용: injected executor의 malformed-known parsing error가 invalidRequest event로 변환되는지 확인합니다.
+    /// - 사전 조건: Codex OAuth request와 `item/started` malformed parsing error fixture를 사용합니다.
+    /// - 기대 결과: started 이후 invalidRequest failed event가 한 번만 반환됩니다.
+    func testExecute_chatgptCodexMalformedKnownEvent_emitsInvalidRequestFailure() throws {
+        let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
+        let client = AiChatProviderExecutionClient.live(
+            codexExecutor: { _, _, _, _, _ in
+                throw CodexAppServerParsingError.malformedKnownEvent("item/started")
+            },
+        )
+
+        let events = try providerExecutionCollect(client.execute(
+            request,
+            .oauth(OAuthCredentialFile(accessToken: "codex-token")),
+        ))
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            .failed(context: request.context, reason: .invalidRequest),
+        ])
+    }
+
     /// CBW-003-stream_contextual_chat_response: Codex CLI network output은 auth 단어가 섞여도 network failure로 분류된다.
     /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
     /// - 검증 내용: 오프라인/네트워크 차단 출력이 authentication보다 network reason으로 우선 분류되는지 확인합니다.
@@ -179,10 +203,13 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
+        let answerID = "\(request.context.requestID.rawValue.uuidString.lowercased()):openai:answerGeneration:0"
         XCTAssertEqual(events, [
             .started(context: request.context),
+            providerExecutionStatus(request.context, answerID, .answerGeneration, .began, "response.output_text.delta"),
             .delta(context: request.context, text: "Hel"),
             .delta(context: request.context, text: "lo"),
+            providerExecutionStatus(request.context, answerID, .answerGeneration, .ended, "response.output_text.done"),
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
@@ -197,6 +224,127 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     /// - 검증 내용: SSE error payload가 invalidRequest failure로 변환되는지 확인합니다.
     /// - 사전 조건: OpenAI stream failure body fixture를 사용합니다.
     /// - 기대 결과: started 이후 invalidRequest failed event가 반환됩니다.
+    /// CBW-003-stream_contextual_chat_response: OpenAI typed activity는 provider item 경계를 순서대로 보존한다.
+    /// Responses wire의 reasoning, search, managed tool, answer 경계가 추론 없이 status event로 전달되는지 검증합니다.
+    /// - 검증 내용: stable item ID, activity kind, begin/end 순서, provider event evidence를 확인합니다.
+    /// - 사전 조건: 병렬 search와 reasoning/tool/output 경계를 포함한 OpenAI SSE fixture를 사용합니다.
+    /// - 기대 결과: 병렬 activity가 서로 교차 종료되지 않고 status와 기존 delta/final이 함께 반환됩니다.
+    func testExecute_openAITypedActivities_preserveWireOrderingIDsAndEvidence() throws {
+        let request = providerExecutionMakePreparedRequestFixture()
+        let client = providerExecutionMakeLiveClient(now: 10002) { _ in
+            providerExecutionMakeHTTPResponse(
+                statusCode: 200,
+                contentType: "text/event-stream",
+                body: providerExecutionOpenAITypedActivityBody(),
+            )
+        }
+
+        let events = try providerExecutionCollect(client.execute(
+            request,
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+        ))
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            providerExecutionStatus(
+                request.context,
+                "reason-1",
+                .thinking,
+                .began,
+                "response.reasoning_summary_text.delta",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "reason-1",
+                .thinking,
+                .ended,
+                "response.reasoning_summary_text.done",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "search-a",
+                .searching,
+                .began,
+                "response.web_search_call.in_progress",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "search-b",
+                .searching,
+                .began,
+                "response.web_search_call.searching",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "search-b",
+                .searching,
+                .ended,
+                "response.web_search_call.completed",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "search-a",
+                .searching,
+                .ended,
+                "response.web_search_call.completed",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "file-1",
+                .searching,
+                .began,
+                "response.file_search_call.in_progress",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "file-1",
+                .searching,
+                .ended,
+                "response.file_search_call.completed",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "code-1",
+                .toolExecution,
+                .began,
+                "response.code_interpreter_call.in_progress",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "code-1",
+                .toolExecution,
+                .ended,
+                "response.code_interpreter_call.completed",
+            ),
+            providerExecutionStatus(request.context, "mcp-1", .toolExecution, .began, "response.mcp_call.in_progress"),
+            providerExecutionStatus(request.context, "mcp-1", .toolExecution, .ended, "response.mcp_call.failed"),
+            providerExecutionStatus(
+                request.context,
+                "message-1",
+                .answerGeneration,
+                .began,
+                "response.output_text.delta",
+            ),
+            .delta(context: request.context, text: "Hello"),
+            providerExecutionStatus(
+                request.context,
+                "message-1",
+                .answerGeneration,
+                .ended,
+                "response.output_text.done",
+            ),
+            .final(response: AiChatResponse(
+                context: request.context,
+                assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
+                completedAtMs: 10002,
+            )),
+        ])
+        XCTAssertFalse(events.contains { event in
+            guard case let .status(_, signal) = event else { return false }
+            return signal.kind == .retrying
+        })
+    }
+
     func testExecute_openAIStreamingFailureEvent_emitsFailureInsteadOfFinal() throws {
         let request = providerExecutionMakePreparedRequestFixture()
         let client = providerExecutionMakeLiveClient { outboundRequest in
@@ -362,10 +510,13 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
+        let answerID = "\(request.context.requestID.rawValue.uuidString.lowercased()):anthropic:block:0"
         XCTAssertEqual(events, [
             .started(context: request.context),
+            providerExecutionStatus(request.context, answerID, .answerGeneration, .began, "content_block_start"),
             .delta(context: request.context, text: "Hi"),
             .delta(context: request.context, text: " there"),
+            providerExecutionStatus(request.context, answerID, .answerGeneration, .ended, "content_block_stop"),
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
@@ -379,6 +530,52 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
     /// - 검증 내용: message_delta completion을 정상 종료로 처리하는지 확인합니다.
     /// - 사전 조건: message_delta가 포함된 Anthropic SSE fixture를 사용합니다.
     /// - 기대 결과: failed event 없이 final response가 반환됩니다.
+    /// CBW-003-stream_contextual_chat_response: Anthropic typed activity는 block과 server-tool result 경계를 보존한다.
+    /// thinking/text/server tool wire 경계만 status로 내보내고 client tool argument 생성은 실행으로 오인하지 않는지 검증합니다.
+    /// - 검증 내용: deterministic block ID, server tool ID, activity ordering, tool_use 제외를 확인합니다.
+    /// - 사전 조건: thinking, web search, server tool, client tool_use, text block이 섞인 SSE fixture를 사용합니다.
+    /// - 기대 결과: explicit block/result 경계만 status가 되고 기존 text delta/final은 유지됩니다.
+    func testExecute_anthropicTypedActivities_mapExplicitBlocksAndIgnoreClientToolUse() throws {
+        let request = providerExecutionMakeAnthropicPreparedRequestFixture()
+        let client = providerExecutionMakeLiveClient(now: 20012) { _ in
+            providerExecutionMakeHTTPResponse(
+                statusCode: 200,
+                contentType: "text/event-stream",
+                body: providerExecutionAnthropicTypedActivityBody(),
+                url: "https://api.anthropic.com/v1/messages",
+            )
+        }
+        let thinkingID = "\(request.context.requestID.rawValue.uuidString.lowercased()):anthropic:block:0"
+        let answerID = "\(request.context.requestID.rawValue.uuidString.lowercased()):anthropic:block:7"
+
+        let events = try providerExecutionCollect(client.execute(
+            request,
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
+        ))
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            providerExecutionStatus(request.context, thinkingID, .thinking, .began, "content_block_start"),
+            providerExecutionStatus(request.context, thinkingID, .thinking, .ended, "content_block_stop"),
+            providerExecutionStatus(request.context, "srv-search", .searching, .began, "content_block_start"),
+            providerExecutionStatus(request.context, "srv-search", .searching, .ended, "content_block_start"),
+            providerExecutionStatus(request.context, "srv-code", .toolExecution, .began, "content_block_start"),
+            providerExecutionStatus(request.context, "srv-code", .toolExecution, .ended, "content_block_start"),
+            providerExecutionStatus(request.context, answerID, .answerGeneration, .began, "content_block_start"),
+            .delta(context: request.context, text: "Answer"),
+            providerExecutionStatus(request.context, answerID, .answerGeneration, .ended, "content_block_stop"),
+            .final(response: AiChatResponse(
+                context: request.context,
+                assistantMessage: AiChatMessage(role: .assistant, content: "Answer"),
+                completedAtMs: 20012,
+            )),
+        ])
+        XCTAssertFalse(events.contains { event in
+            guard case let .status(_, signal) = event else { return false }
+            return signal.activityID.rawValue == "client-tool"
+        })
+    }
+
     func testExecute_anthropicStreamingSSEWithMessageDelta_emitsFinalInsteadOfFailure() throws {
         let request = providerExecutionMakeAnthropicPreparedRequestFixture(
             selectedThinking: .effort(.low),
@@ -403,10 +600,39 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
+        let requestScope = request.context.requestID.rawValue.uuidString.lowercased()
         XCTAssertEqual(events, [
             .started(context: request.context),
+            providerExecutionStatus(
+                request.context,
+                "\(requestScope):anthropic:block:0",
+                .thinking,
+                .began,
+                "content_block_start",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "\(requestScope):anthropic:block:0",
+                .thinking,
+                .ended,
+                "content_block_stop",
+            ),
+            providerExecutionStatus(
+                request.context,
+                "\(requestScope):anthropic:block:1",
+                .answerGeneration,
+                .began,
+                "content_block_start",
+            ),
             .delta(context: request.context, text: "Final"),
             .delta(context: request.context, text: " answer"),
+            providerExecutionStatus(
+                request.context,
+                "\(requestScope):anthropic:block:1",
+                .answerGeneration,
+                .ended,
+                "content_block_stop",
+            ),
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Final answer"),

@@ -26,6 +26,7 @@ extension AiChatProviderExecutionClient {
     ) async throws -> String? where Events.Element == AnthropicStreamingDataTaskEvent {
         var accumulator = SSEByteFrameAccumulator()
         var state = AnthropicStreamConsumptionState()
+        var activityState = AnthropicActivityState(context: context)
         var errorData = Data()
         var isSuccessResponse = false
         var responseStatusCode: Int?
@@ -39,7 +40,12 @@ extension AiChatProviderExecutionClient {
                 isSuccessResponse = (200 ... 299).contains(response.statusCode)
             case let .data(data):
                 if isSuccessResponse {
-                    try emitter.consume(data, accumulator: &accumulator, state: &state)
+                    try emitter.consume(
+                        data,
+                        accumulator: &accumulator,
+                        state: &state,
+                        activityState: &activityState,
+                    )
                 } else {
                     errorData.append(data)
                 }
@@ -53,7 +59,7 @@ extension AiChatProviderExecutionClient {
             )
         }
 
-        try emitter.consume(accumulator.finish(), state: &state)
+        try emitter.consume(accumulator.finish(), state: &state, activityState: &activityState)
         return state.response.finalText
     }
 }
@@ -67,23 +73,26 @@ struct AnthropicPayloadEmitter {
         _ data: Data,
         accumulator: inout SSEByteFrameAccumulator,
         state: inout AnthropicStreamConsumptionState,
+        activityState: inout AnthropicActivityState,
     ) throws {
         for byte in data {
-            try consume(accumulator.consume(byte), state: &state)
+            try consume(accumulator.consume(byte), state: &state, activityState: &activityState)
         }
     }
 
     func consume(
         _ payloads: [String],
         state: inout AnthropicStreamConsumptionState,
+        activityState: inout AnthropicActivityState,
     ) throws {
-        for payload in payloads {
-            if let delta = try AiChatProviderExecutionClient.consumeAnthropicPayload(
-                payload,
-                decoder: decoder,
-                state: &state,
-            ), !delta.isEmpty {
-                continuation.yield(.delta(context: context, text: delta))
+        for payload in payloads where payload != "[DONE]" {
+            let event = try AiChatProviderExecutionClient.decodeAnthropicStreamEvent(payload, decoder: decoder)
+            for emission in try state.consume(event, activityState: &activityState) {
+                AiChatProviderExecutionClient.emitProviderPayload(
+                    emission,
+                    context: context,
+                    continuation: continuation,
+                )
             }
         }
     }

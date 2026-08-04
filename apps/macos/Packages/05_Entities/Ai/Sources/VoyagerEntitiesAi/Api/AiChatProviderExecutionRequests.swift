@@ -101,13 +101,10 @@ extension AiChatProviderExecutionClient {
         prompt: String,
         thinking: AiChatProviderThinkingPayload?,
         credential: OAuthCredentialFile,
-        onDelta: @escaping @Sendable (String) -> Void,
+        onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void,
     ) async throws -> String {
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("voyager-codex-\(UUID().uuidString).txt")
         let codexHomeURL = try makeCodexHome(credential: credential)
-        let processState = CodexProcessState(cleanupURLs: [outputURL, codexHomeURL])
-
+        let processState = CodexProcessState(cleanupURLs: [codexHomeURL])
         defer { processState.cleanup() }
 
         return try await withTaskCancellationHandler {
@@ -115,10 +112,9 @@ extension AiChatProviderExecutionClient {
                 model: model,
                 prompt: prompt,
                 thinking: thinking,
-                outputURL: outputURL,
                 codexHomeURL: codexHomeURL,
                 processState: processState,
-                onDelta: onDelta,
+                onEvent: onEvent,
             ))
         } onCancel: {
             processState.cancel()
@@ -129,21 +125,25 @@ extension AiChatProviderExecutionClient {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             do {
-                let processIO = try configureCodexProcess(process, request: request)
+                let processIO = try configureCodexProcess(
+                    process,
+                    request: request,
+                    continuation: continuation,
+                )
                 waitForCodexProcess(
                     process,
-                    outputURL: request.outputURL,
                     processState: request.processState,
                     processIO: processIO,
                     continuation: continuation,
                 )
                 try process.run()
                 request.processState.set(process: process)
+                try processIO.protocolDriver.start()
             } catch let error as CodexCLIExecutionError {
-                outputPipeCleanup(process.standardOutput)
+                cleanupCodexPipes(processIO: nil, process: process)
                 resumeCodexLaunchFailure(error, processState: request.processState, continuation: continuation)
             } catch {
-                outputPipeCleanup(process.standardOutput)
+                cleanupCodexPipes(processIO: nil, process: process)
                 resumeCodexLaunchFailure(.launchFailed, processState: request.processState, continuation: continuation)
             }
         }
@@ -152,28 +152,38 @@ extension AiChatProviderExecutionClient {
     static func configureCodexProcess(
         _ process: Process,
         request: CodexProcessRequest,
+        continuation: CheckedContinuation<String, Error>,
     ) throws -> CodexProcessIO {
         let resolvedCommand = try resolveCodexCommand()
         process.executableURL = resolvedCommand.executableURL
-        process.arguments = codexArguments(
-            model: request.model,
-            outputURL: request.outputURL,
-            prompt: request.prompt,
-            thinking: request.thinking,
-        )
+        process.arguments = resolvedCommand.argumentsPrefix + codexArguments()
         process.environment = codexProcessEnvironment(codexHomeURL: request.codexHomeURL)
         process.currentDirectoryURL = codexWorkingDirectory()
 
+        let inputPipe = Pipe()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        let jsonLineParser = CodexJSONLineParser(onDelta: request.onDelta)
         let errorAccumulator = CodexPipeDataAccumulator()
+        let protocolDriver = CodexAppServerProtocolDriver(
+            input: inputPipe.fileHandleForWriting,
+            model: request.model,
+            prompt: request.prompt,
+            thinking: request.thinking,
+            workingDirectory: codexWorkingDirectory(),
+            onEvent: request.onEvent,
+            onComplete: { result in
+                guard request.processState.markCompleted() else { return }
+                if process.isRunning { process.terminate() }
+                continuation.resume(with: result)
+            },
+        )
+        process.standardInput = inputPipe
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            jsonLineParser.append(data)
+            protocolDriver.append(data)
         }
         errorPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -181,35 +191,16 @@ extension AiChatProviderExecutionClient {
             errorAccumulator.append(data)
         }
         return CodexProcessIO(
+            inputPipe: inputPipe,
             outputPipe: outputPipe,
             errorPipe: errorPipe,
-            jsonLineParser: jsonLineParser,
+            protocolDriver: protocolDriver,
             errorAccumulator: errorAccumulator,
         )
     }
 
-    static func codexArguments(
-        model: String,
-        outputURL: URL,
-        prompt: String,
-        thinking: AiChatProviderThinkingPayload?,
-    ) -> [String] {
-        var arguments = [
-            "exec",
-            "--json",
-            "--skip-git-repo-check",
-            "--model",
-            model,
-            "--output-last-message",
-            outputURL.path,
-        ]
-
-        if let reasoningEffort = codexReasoningEffort(from: thinking) {
-            arguments.append(contentsOf: ["-c", "model_reasoning_effort=\"\(reasoningEffort)\""])
-        }
-
-        arguments.append(prompt)
-        return arguments
+    static func codexArguments() -> [String] {
+        ["app-server", "--listen", "stdio://"]
     }
 
     static func codexReasoningEffort(from thinking: AiChatProviderThinkingPayload?) -> String? {
@@ -225,43 +216,37 @@ extension AiChatProviderExecutionClient {
 
     static func waitForCodexProcess(
         _ process: Process,
-        outputURL: URL,
         processState: CodexProcessState,
         processIO: CodexProcessIO,
         continuation: CheckedContinuation<String, Error>,
     ) {
         process.terminationHandler = { terminatedProcess in
             terminatedProcess.terminationHandler = nil
-            processIO.outputPipe.fileHandleForReading.readabilityHandler = nil
-            processIO.errorPipe.fileHandleForReading.readabilityHandler = nil
-            processIO.jsonLineParser.finish()
-            let errorOutput = processIO.errorAccumulator.stringValue()
-
+            cleanupCodexPipes(processIO: processIO, process: terminatedProcess)
+            processIO.protocolDriver.finish()
             guard processState.markCompleted() else { return }
-            resumeCodexProcessResult(
-                terminatedProcess,
-                outputURL: outputURL,
-                errorOutput: errorOutput,
-                continuation: continuation,
-            )
+            if processState.wasCancelled {
+                continuation.resume(throwing: CancellationError())
+                return
+            }
+            let errorOutput = processIO.errorAccumulator.stringValue()
+            if terminatedProcess.terminationStatus == 0 {
+                continuation.resume(throwing: CodexCLIExecutionError.outputMissing(errorOutput))
+            } else {
+                continuation.resume(throwing: CodexCLIExecutionError.nonZeroExit(errorOutput))
+            }
         }
     }
 
-    static func resumeCodexProcessResult(
-        _ process: Process,
-        outputURL: URL,
-        errorOutput: String,
-        continuation: CheckedContinuation<String, Error>,
-    ) {
-        guard process.terminationStatus == 0 else {
-            continuation.resume(throwing: CodexCLIExecutionError.nonZeroExit(errorOutput))
-            return
-        }
-        do {
-            let output = try String(contentsOf: outputURL, encoding: .utf8)
-            continuation.resume(returning: output)
-        } catch {
-            continuation.resume(throwing: CodexCLIExecutionError.outputMissing(errorOutput))
+    static func cleanupCodexPipes(processIO: CodexProcessIO?, process: Process) {
+        if let processIO {
+            processIO.outputPipe.fileHandleForReading.readabilityHandler = nil
+            processIO.errorPipe.fileHandleForReading.readabilityHandler = nil
+            try? processIO.inputPipe.fileHandleForWriting.close()
+        } else {
+            outputPipeCleanup(process.standardOutput)
+            outputPipeCleanup(process.standardError)
+            outputPipeCleanup(process.standardInput)
         }
     }
 
@@ -270,14 +255,13 @@ extension AiChatProviderExecutionClient {
         processState: CodexProcessState,
         continuation: CheckedContinuation<String, Error>,
     ) {
-        if processState.markCompleted() {
-            continuation.resume(throwing: error)
-        }
+        if processState.markCompleted() { continuation.resume(throwing: error) }
     }
 
     static func outputPipeCleanup(_ output: Any?) {
         guard let pipe = output as? Pipe else { return }
         pipe.fileHandleForReading.readabilityHandler = nil
+        try? pipe.fileHandleForWriting.close()
     }
 
     static func resolveCodexCommand() throws -> (executableURL: URL, argumentsPrefix: [String]) {
@@ -291,9 +275,7 @@ extension AiChatProviderExecutionClient {
     }
 
     static func codexCredential(from credential: AiChatProviderValidatedCredential) throws -> OAuthCredentialFile {
-        guard case let .oauth(payload) = credential else {
-            throw CodexCLIExecutionError.launchFailed
-        }
+        guard case let .oauth(payload) = credential else { throw CodexCLIExecutionError.launchFailed }
         return payload
     }
 
@@ -301,6 +283,10 @@ extension AiChatProviderExecutionClient {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("voyager-codex-home-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        var completed = false
+        defer {
+            if !completed { try? FileManager.default.removeItem(at: directory) }
+        }
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
 
         let auth = CodexCLIAuthFile(credential: credential)
@@ -311,6 +297,7 @@ extension AiChatProviderExecutionClient {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryAuthURL.path)
         try FileManager.default.moveItem(at: temporaryAuthURL, to: authURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authURL.path)
+        completed = true
         return directory
     }
 
@@ -340,16 +327,16 @@ extension AiChatProviderExecutionClient {
         var model: String
         var prompt: String
         var thinking: AiChatProviderThinkingPayload?
-        var outputURL: URL
         var codexHomeURL: URL
         var processState: CodexProcessState
-        var onDelta: @Sendable (String) -> Void
+        var onEvent: @Sendable (CodexAppServerEvent) -> Void
     }
 
     struct CodexProcessIO {
+        var inputPipe: Pipe
         var outputPipe: Pipe
         var errorPipe: Pipe
-        var jsonLineParser: CodexJSONLineParser
+        var protocolDriver: CodexAppServerProtocolDriver
         var errorAccumulator: CodexPipeDataAccumulator
     }
 }
