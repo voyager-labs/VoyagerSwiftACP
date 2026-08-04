@@ -91,7 +91,7 @@ extension EVM002FileManagerPagePresentationTests {
             object: view.tableView,
             userInfo: ["NSObject": folderItem],
         ))
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitForOutlineRowCount(2, in: view.tableView)
 
         XCTAssertEqual(view.tableView.numberOfRows, 2)
         XCTAssertEqual(outlineEntryIDs(in: view.tableView), [folder.id, child.id])
@@ -102,7 +102,7 @@ extension EVM002FileManagerPagePresentationTests {
             object: view.tableView,
             userInfo: ["NSObject": expandedFolderItem],
         ))
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitForOutlineRowCount(1, in: view.tableView)
 
         XCTAssertEqual(view.tableView.numberOfRows, 1)
     }
@@ -307,6 +307,15 @@ extension EVM002FileManagerPagePresentationTests {
             renderSettled.fulfill()
         }
         await fulfillment(of: [renderSettled], timeout: 1)
+    }
+
+    private func waitForOutlineRowCount(_ expectedCount: Int, in tableView: NSOutlineView) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while tableView.numberOfRows != expectedCount, clock.now < deadline {
+            try await clock.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(tableView.numberOfRows, expectedCount)
     }
 
     private func outlineEntryIDs(in tableView: NSOutlineView) -> [EntryModel.ID] {
