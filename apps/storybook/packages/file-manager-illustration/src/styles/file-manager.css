@@ -175,8 +175,12 @@
   --fm-home-card-hover-stroke: var(--macos-home-card-hover-stroke);
   --fm-home-row-hover: var(--macos-home-row-hover-fill);
   --fm-home-icon-tile: var(--macos-home-icon-tile-fill);
+  --fm-sidebar-selection: var(--macos-sidebar-selection-background);
+  --fm-sidebar-hover: var(--macos-sidebar-hover-fill);
   --fm-sidebar-location: var(--macos-sidebar-location-fill);
   --fm-sidebar-location-hover: var(--macos-sidebar-location-hover-fill);
+  --fm-sidebar-location-border: var(--macos-sidebar-location-border-color);
+  --fm-sidebar-location-hover-border: var(--macos-sidebar-location-hover-border-color);
 
   --fm-folder: var(--macos-system-cyan);
   --fm-folder-deep: var(--macos-system-blue);
@@ -217,6 +221,8 @@
   --fm-radius-lg: 12px;
   --fm-radius-xl: 16px;
   --fm-radius-window: 10px;
+  --fm-sidebar-location-radius: 10px;
+  --fm-sidebar-row-radius: 6px;
   --fm-radius-round: 999px;
 
   --fm-space-1: 2px;
@@ -245,8 +251,7 @@
   --fm-home-card-shadow: 0 2px 5px #0000000a;
   --fm-home-card-hover-shadow: 0 2px 8px #00000014;
 
-  --fm-shadow-window: 0 28px 72px #0000003d, 0 8px 24px #0000001f, 0 0 0 1px
-    var(--fm-window-hairline);
+  --fm-shadow-window: 0 28px 72px #0000003d, 0 8px 24px #0000001f;
   --fm-shadow-paper: 0 1px 2px #00000024;
   --fm-shadow-card: 0 1px 2px #0000000f, 0 18px 42px #00000012;
   --fm-shadow-thumbnail-filter: drop-shadow(0 1px 1px #00000026) drop-shadow(0 7px 12px #00000012);
@@ -268,8 +273,7 @@
   --fm-radius-lg: 10px;
   --fm-radius-xl: 14px;
   --fm-radius-window: 6px;
-  --fm-shadow-window: 0 24px 60px #0000004d, 0 8px 20px #00000029, 0 0 0 1px
-    var(--fm-window-hairline);
+  --fm-shadow-window: 0 24px 60px #0000004d, 0 8px 20px #00000029;
   --fm-shadow-paper: 0 1px 2px #00000029;
   --fm-shadow-card: 0 1px 2px #0000000d, 0 10px 28px #0000000d;
   --fm-shadow-thumbnail-filter: drop-shadow(0 1px 1px #00000029) drop-shadow(0 5px 10px #00000010);
@@ -287,13 +291,13 @@
     --fm-photo-shadow: #111;
     --fm-screen-dark: #08080a;
     --fm-window-hairline: #ffffff24;
+    --fm-window-border: var(--fm-window-hairline);
     --fm-control-gloss-top: #ffffff38;
     --fm-control-gloss-bottom: #ffffff12;
     --fm-control-inner-highlight: #ffffff2e;
     --fm-control-outline: #ffffff24;
     --fm-toolbar-title-hover: rgb(0 0 0 / 35%);
-    --fm-shadow-window: 0 32px 88px #000000a3, 0 12px 32px #00000052, 0 0 0 1px
-      var(--fm-window-hairline);
+    --fm-shadow-window: 0 32px 88px #000000a3, 0 12px 32px #00000052;
   }
 }
 
@@ -307,37 +311,37 @@
   --fm-photo-shadow: #111;
   --fm-screen-dark: #08080a;
   --fm-window-hairline: #ffffff24;
+  --fm-window-border: var(--fm-window-hairline);
   --fm-control-gloss-top: #ffffff38;
   --fm-control-gloss-bottom: #ffffff12;
   --fm-control-inner-highlight: #ffffff2e;
   --fm-control-outline: #ffffff24;
   --fm-toolbar-title-hover: rgb(0 0 0 / 35%);
-  --fm-shadow-window: 0 32px 88px #000000a3, 0 12px 32px #00000052, 0 0 0 1px
-    var(--fm-window-hairline);
+  --fm-shadow-window: 0 32px 88px #000000a3, 0 12px 32px #00000052;
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-voyager-visual-baseline="sequoia"]:not([data-voyager-color-scheme="light"])
     [data-file-manager-illustration] {
     --fm-window-hairline: #0000002e;
+    --fm-window-border: var(--fm-window-hairline);
     --fm-control-gloss-top: #ffffff24;
     --fm-control-gloss-bottom: #ffffff0f;
     --fm-control-inner-highlight: #ffffff1f;
     --fm-control-outline: #0000002e;
-    --fm-shadow-window: 0 28px 72px #00000096, 0 10px 28px #00000047, 0 0 0 1px
-      var(--fm-window-hairline);
+    --fm-shadow-window: 0 28px 72px #00000096, 0 10px 28px #00000047;
   }
 }
 
 :root[data-voyager-color-scheme="dark"][data-voyager-visual-baseline="sequoia"]
   [data-file-manager-illustration] {
   --fm-window-hairline: #0000002e;
+  --fm-window-border: var(--fm-window-hairline);
   --fm-control-gloss-top: #ffffff24;
   --fm-control-gloss-bottom: #ffffff0f;
   --fm-control-inner-highlight: #ffffff1f;
   --fm-control-outline: #0000002e;
-  --fm-shadow-window: 0 28px 72px #00000096, 0 10px 28px #00000047, 0 0 0 1px
-    var(--fm-window-hairline);
+  --fm-shadow-window: 0 28px 72px #00000096, 0 10px 28px #00000047;
 }
 
 /* === Shared Controls (ported from legacy shared-controls.css) === */
