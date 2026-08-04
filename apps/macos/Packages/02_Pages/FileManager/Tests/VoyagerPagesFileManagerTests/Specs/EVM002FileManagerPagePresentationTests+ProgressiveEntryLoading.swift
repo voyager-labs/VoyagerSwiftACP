@@ -2,11 +2,68 @@ import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
 extension EVM002FileManagerPagePresentationTests {
+    // MARK: - EVM-002-show_hide_hidden_entry
+
+    /// EVM-002-show_hide_hidden_entry: 실제 dotfile은 숨김 설정을 켤 때 outline 행에 나타난다.
+    /// 사용자가 일반 폴더에서 숨김 항목 표시를 켜면 같은 FileManager composition이 실제 filesystem 결과를 렌더하는지 검증한다.
+    /// - 검증 내용: live staged loading과 toggle reload가 dotfile filtering 및 NSOutlineView row projection까지 연결된다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/98.txt` 복사본과 `.hidden-98.txt` sibling이 있는 격리 sandbox다.
+    /// - 기대 결과: 초기에는 일반 파일 한 행이고 toggle 후에는 일반 파일과 dotfile 두 행이다.
+    func testShowHiddenToggleRendersHiddenFixtureEntry() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/98.txt",
+        )
+        defer { sandbox.cleanup() }
+        let root = sandbox.fileURL.deletingLastPathComponent()
+        let hiddenFile = root.appendingPathComponent(".hidden-98.txt")
+        try FileManager.default.copyItem(at: sandbox.originalFixture, to: hiddenFile)
+        let visibleEntryID = FileChangeScopePolicy.canonicalPath(sandbox.fileURL.path)
+        let hiddenEntryID = FileChangeScopePolicy.canonicalPath(hiddenFile.path)
+
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(root.path)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: root.path)
+        let store = Store(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryLoadingClient = .liveValue
+            configureDeterministicDate(&$0)
+        }
+        let coordinator = EntryListCoordinator(store: store.scope(
+            state: \.entryViewLayout,
+            action: \.entryViewLayout,
+        ))
+        let view = EntryListView(frame: .zero)
+        coordinator.bind(to: view)
+
+        store.send(.entryOperations(.loading(.loadItems(
+            path: root.path,
+            showHidden: false,
+            priority: .none,
+        ))))
+        try await waitForOutlineRowCount(1, in: view.tableView)
+        XCTAssertEqual(
+            Set(outlineEntryIDs(in: view.tableView).map(FileChangeScopePolicy.canonicalPath)),
+            [visibleEntryID],
+        )
+
+        store.send(.view(.toggleShowHiddenFilesAndReload))
+        try await waitForOutlineRowCount(2, in: view.tableView)
+
+        XCTAssertTrue(store.state.entryViewLayout.showHiddenFiles)
+        XCTAssertEqual(
+            Set(outlineEntryIDs(in: view.tableView).map(FileChangeScopePolicy.canonicalPath)),
+            [visibleEntryID, hiddenEntryID],
+        )
+    }
+
     // MARK: - EVM-002-progressive_entry_loading
 
     /// EVM-002-progressive_entry_loading: 일반 디렉터리 첫 로드는 list outline projection revision을 갱신한다.
@@ -24,6 +81,8 @@ extension EVM002FileManagerPagePresentationTests {
         let initialRevision = state.entryViewLayout.outlineProjectionRevision
         let store = Store(initialState: state) {
             FileManagerContentFeature()
+        } withDependencies: {
+            configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(
             state: \.entryViewLayout,
@@ -127,6 +186,8 @@ extension EVM002FileManagerPagePresentationTests {
         )
         let store = Store(initialState: state) {
             FileManagerContentFeature()
+        } withDependencies: {
+            configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(
             state: \.entryViewLayout,
@@ -161,6 +222,8 @@ extension EVM002FileManagerPagePresentationTests {
         let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
         let store = Store(initialState: nestedSelectionState(folder: folder, child: child)) {
             FileManagerContentFeature()
+        } withDependencies: {
+            configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(
             state: \.entryViewLayout,
@@ -194,6 +257,8 @@ extension EVM002FileManagerPagePresentationTests {
         let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
         let store = Store(initialState: nestedSelectionState(folder: folder, child: child)) {
             FileManagerContentFeature()
+        } withDependencies: {
+            configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(
             state: \.entryViewLayout,
@@ -326,4 +391,8 @@ extension EVM002FileManagerPagePresentationTests {
             return entry.id
         }
     }
+}
+
+private func configureDeterministicDate(_ dependencies: inout DependencyValues) {
+    dependencies.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
 }

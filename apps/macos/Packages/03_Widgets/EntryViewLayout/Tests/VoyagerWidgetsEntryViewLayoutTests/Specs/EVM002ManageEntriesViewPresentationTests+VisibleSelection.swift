@@ -46,6 +46,46 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    // MARK: - EVM-002-show_hide_hidden_entry
+
+    /// EVM-002-show_hide_hidden_entry: 숨김 항목을 다시 가리면 hierarchy selection에서도 제거한다.
+    /// 사용자가 숨김 항목을 표시한 상태에서 nested dotfile을 선택한 뒤 숨김 표시를 끄는 경계를 검증한다.
+    /// - 검증 내용: hidden-files setting 변경이 expanded folder cache를 재시작하고 보이지 않는 child selection을 정리한다.
+    /// - 사전 조건: `/root/a/.secret.txt`가 선택된 expanded hierarchy이며 showHiddenFiles가 true다.
+    /// - 기대 결과: showHiddenFiles가 false가 되고 selection, focus, anchor가 모두 제거된다.
+    func testShowHiddenTogglePrunesHiddenDescendantSelection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let hiddenChild = visibleSelectionFile(id: "/root/a/.secret.txt", isHidden: true)
+        var state = visibleSelectionState(
+            roots: [folder],
+            expandedFolderIDs: [folder.id],
+            childrenByFolderID: [folder.id: [hiddenChild]],
+            selection: .init(
+                ids: [hiddenChild.id],
+                lastSelectedID: hiddenChild.id,
+                rangeAnchorID: hiddenChild.id,
+            ),
+        )
+        state.showHiddenFiles = true
+        let store = TestStore(initialState: state) {
+            EntryViewLayoutFeature()
+        }
+        // store.exhaustivity = .off: folder reload delegate는 별도 hierarchy loading 테스트가 소유하며 selection 정리만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.view(.toggleShowHiddenFiles)) {
+            $0.showHiddenFiles = false
+        }
+        await store.receive(\.hierarchy.hiddenFilesSettingChanged)
+
+        XCTAssertTrue(store.state.selectedIds.isEmpty)
+        XCTAssertNil(store.state.lastSelectedId)
+        XCTAssertNil(store.state.rangeAnchorId)
+        XCTAssertFalse(store.state.shouldScrollToSelection)
+    }
+
+    // MARK: - EVM-002-update_entry_selection
+
     /// EVM-002-update_entry_selection: shift range는 visible outline preorder만 사용한다.
     /// expanded outline에서 range selection이 selectable entries를 연속으로 선택하는지 검증한다.
     /// - 검증 내용: applySelectionOffset이 preorder [a, a/one, a/two, b]에서 anchor-to-target range를 만든다.
@@ -257,12 +297,12 @@ extension EVM002ManageEntriesViewPresentationTests {
         return state
     }
 
-    private func visibleSelectionFile(id: String) -> EntryModel {
+    private func visibleSelectionFile(id: String, isHidden: Bool = false) -> EntryModel {
         EntryModel(
             name: URL(fileURLWithPath: id).lastPathComponent,
             fullPath: id,
             isFolder: false,
-            isHidden: false,
+            isHidden: isHidden,
             size: 0,
             modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
             fileExtension: "txt",
