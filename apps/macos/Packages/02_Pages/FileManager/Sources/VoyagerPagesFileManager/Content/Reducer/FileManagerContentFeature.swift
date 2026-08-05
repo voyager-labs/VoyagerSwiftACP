@@ -152,7 +152,7 @@ public struct FileManagerContentFeature {
             let isRootCompletion = FileManagerContentFeature.isRootCompletion(action, state: &state)
                 && !state.entryViewLayout.hierarchy.rootPath.isEmpty
             if isRootCompletion {
-                let rootFolders = arrangedEntries.filter(\.isFolder)
+                let rootFolders = arrangedEntries.filter(\.supportsListHierarchyExpansion)
                 return .concatenate(
                     .send(.entryViewLayout(.view(.applyContentProjection(projection)))),
                     .send(.entryViewLayout(.hierarchy(.rootSnapshotCompleted(
