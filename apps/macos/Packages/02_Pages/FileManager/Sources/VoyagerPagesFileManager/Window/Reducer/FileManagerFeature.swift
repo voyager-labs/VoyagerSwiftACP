@@ -24,7 +24,7 @@ public struct FileManagerFeature {
             switch action {
             case let .content(contentAction):
                 guard state.pendingSelectedContentTabClose == nil
-                    || !contentAction.isComposerSaveRequest
+                    || !isComposerSaveRequest(contentAction)
                 else { return .none }
                 guard let activeTabID = state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: activeTabID] != nil
@@ -186,14 +186,14 @@ public struct FileManagerFeature {
                     switch pending.intent {
                     case let .pin(id), let .unpin(id), let .close(id), let .update(id):
                         id == tabID
-                    case .move:
+                    case .move, .movePinnedGroup:
                         false
                     }
                 }
                 state.replayTopNavigationOverlays()
                 return .none
 
-            case let .contentTabs(contentTabAction) where contentTabAction.isPinnedRecordPersistenceTerminal:
+            case let .contentTabs(contentTabAction) where isPinnedRecordPersistenceTerminal(contentTabAction):
                 return completeContentTabPinnedRecordPersistence(
                     action: contentTabAction,
                     state: &state,
@@ -345,7 +345,7 @@ public struct FileManagerFeature {
             case let .contentTabs(contentTabAction):
                 if let pending = state.pendingSelectedContentTabPinMutation,
                    let currentTabID = pending.currentTabID,
-                   contentTabAction.isSelectedContentTabPinMutationPersistenceReplacement(for: currentTabID)
+                   isSelectedContentTabPinMutationPersistenceReplacement(contentTabAction, for: currentTabID)
                 {
                     return .send(.performSelectedContentTabPinMutation(
                         operationID: pending.operationID,
@@ -354,10 +354,10 @@ public struct FileManagerFeature {
                     ))
                 }
                 guard state.pendingSelectedContentTabClose == nil
-                    || contentTabAction.isSelectionAllowedDuringBatchClose
+                    || isSelectionAllowedDuringBatchClose(contentTabAction)
                 else { return .none }
                 guard state.pendingSelectedContentTabPinMutation == nil
-                    || (!contentTabAction.isDirectPinMutation && !contentTabAction.isDirectCloseMutation)
+                    || (!isDirectPinMutation(contentTabAction) && !isDirectCloseMutation(contentTabAction))
                 else { return .none }
                 return reduceContentTabAction(contentTabAction, state: &state)
 
@@ -366,8 +366,9 @@ public struct FileManagerFeature {
                       let pending = state.pendingSelectedContentTabPinMutation,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
-                      !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs),
-                      contentTabAction.isCorrelatedSelectedContentTabPinMutation(
+                      !isStalePinnedRecordPersistenceResult(contentTabAction, in: state.contentTabs),
+                      isCorrelatedSelectedContentTabPinMutation(
+                          contentTabAction,
                           for: tabID,
                           target: pending.target,
                       )
@@ -390,7 +391,7 @@ public struct FileManagerFeature {
                     .performSelectedContentTabPinMutation(
                         operationID: operationID,
                         tabID: tabID,
-                        action: $0.rebasingPinnedRecordRollback(to: rollback),
+                        action: rebasingPinnedRecordRollback($0, to: rollback),
                     )
                 }
                 .cancellable(id: SelectedContentTabPinMutationOperationCancelID(operationID: operationID))
@@ -400,8 +401,8 @@ public struct FileManagerFeature {
                       let pending = state.pendingSelectedContentTabClose,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
-                      !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs),
-                      contentTabAction.isCorrelatedSelectedContentTabCloseMutation(for: tabID)
+                      !isStalePinnedRecordPersistenceResult(contentTabAction, in: state.contentTabs),
+                      isCorrelatedSelectedContentTabCloseMutation(contentTabAction, for: tabID)
                 else { return .none }
                 let childEffect = withDependencies {
                     $0.contentTabPinnedRecordPersistenceRouting = pinnedRecordPersistenceRouting(
@@ -532,7 +533,7 @@ extension FileManagerFeature {
         guard let pending = state.pendingTopNavigationIntents.last(where: { candidate in
             switch candidate.intent {
             case let .pin(id), let .unpin(id), let .close(id), let .update(id): id == tabID
-            case .move: false
+            case .move, .movePinnedGroup: false
             }
         }) else {
             if case let .failed(.storeUnavailable(failure)) = terminal {
@@ -567,7 +568,7 @@ extension FileManagerFeature {
         action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
-        guard let result = action.pinnedRecordPersistenceResult else { return .none }
+        guard let result = pinnedRecordPersistenceResult(action) else { return .none }
         return completeTopNavigationLifecycleIfNeeded(
             tabID: result.tabID,
             context: result.context,
@@ -637,7 +638,7 @@ extension FileManagerFeature {
             switch pending.intent {
             case let .pin(tabID), let .unpin(tabID), let .close(tabID), let .update(tabID):
                 return tabID == request.tabID
-            case .move:
+            case .move, .movePinnedGroup:
                 return false
             }
         }) else { return .none }
@@ -770,6 +771,19 @@ extension FileManagerFeature {
         destination: FileManagerTopNavigationMoveDestination,
         state: inout State,
     ) -> Effect<Action> {
+        if case let .contentTab(sourceTabID) = source,
+           let snapshot = state.sidebar.contentTabDragSnapshot,
+           snapshot.initiatingTabID == sourceTabID,
+           snapshot.orderedTabIDs.contains(sourceTabID),
+           snapshot.orderedTabIDs.count > 1
+        {
+            return requestTopNavigationPinnedGroupMove(
+                orderedIDs: snapshot.orderedTabIDs,
+                destination: destination,
+                state: &state,
+            )
+        }
+
         let movedOrder = FileManagerTopNavigationOrderPolicy.moving(
             source,
             to: destination,
@@ -788,6 +802,38 @@ extension FileManagerFeature {
         return .send(.delegate(.persistTopNavigationMove(
             token: token,
             source: source,
+            destination: destination,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )))
+    }
+
+    private func requestTopNavigationPinnedGroupMove(
+        orderedIDs: [ContentTabID],
+        destination: FileManagerTopNavigationMoveDestination,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard Set(orderedIDs).count == orderedIDs.count,
+              orderedIDs.allSatisfy({ state.contentTabs.tabs[id: $0]?.isPinned == true })
+        else { return .none }
+
+        let movedOrder = FileManagerTopNavigationOrderPolicy.movingPinnedContentTabs(
+            orderedIDs,
+            to: destination,
+            in: state.optimisticTopNavigationOrder,
+        )
+        guard movedOrder != state.optimisticTopNavigationOrder else { return .none }
+
+        let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.pendingTopNavigationIntents.append(.init(
+            token: token,
+            intent: .movePinnedGroup(orderedIDs: orderedIDs, destination: destination),
+        ))
+        state.optimisticTopNavigationOrder = movedOrder
+
+        let discoveredLocationIDs = state.sidebar.allFixedLocationItems.map(\.id)
+        return .send(.delegate(.persistTopNavigationPinnedGroupMove(
+            token: token,
+            orderedIDs: orderedIDs,
             destination: destination,
             discoveredLocationIDs: discoveredLocationIDs,
         )))
@@ -954,171 +1000,180 @@ func fileManagerContentState(
     state.contentTabs.activeTabID == tabID ? state.content : state.tabContentStates[tabID]
 }
 
-private extension FileManagerContentAction {
-    var isComposerSaveRequest: Bool {
-        switch self {
-        case .composer(.view(.saveCollection)),
-             .composer(.view(.saveCollectionAs)):
-            true
-        default:
-            false
-        }
+private func isComposerSaveRequest(_ action: FileManagerContentAction) -> Bool {
+    switch action {
+    case .composer(.view(.saveCollection)),
+         .composer(.view(.saveCollectionAs)):
+        true
+    default:
+        false
     }
 }
 
-extension ContentTabAction {
-    var isPinnedRecordPersistenceTerminal: Bool {
-        pinnedRecordPersistenceResult != nil
-    }
+private func isPinnedRecordPersistenceTerminal(_ action: ContentTabAction) -> Bool {
+    pinnedRecordPersistenceResult(action) != nil
+}
 
-    fileprivate var pinnedRecordPersistenceResult: ContentTabPinnedRecordPersistenceResult? {
-        switch self {
-        case let .pinnedRecordSaveSucceeded(tabID, context):
-            .init(tabID: tabID, context: context, terminal: nil)
-        case let .pinnedRecordSaveFailed(tabID, context, _):
-            .init(tabID: tabID, context: context, terminal: .failed(.save))
-        case let .pinnedRecordStoreUnavailable(tabID, context, failure, _):
-            .init(
-                tabID: tabID,
-                context: context,
-                terminal: .failed(.storeUnavailable(failure)),
-            )
-        case let .pinnedRecordSaveNotApplied(tabID, context, reason, _):
-            .init(
-                tabID: tabID,
-                context: context,
-                terminal: .failed(reason == .superseded ? .superseded : .cancelled),
-            )
-        default:
-            nil
-        }
+private func pinnedRecordPersistenceResult(
+    _ action: ContentTabAction,
+) -> ContentTabPinnedRecordPersistenceResult? {
+    switch action {
+    case let .pinnedRecordSaveSucceeded(tabID, context):
+        .init(tabID: tabID, context: context, terminal: nil)
+    case let .pinnedRecordSaveFailed(tabID, context, _):
+        .init(tabID: tabID, context: context, terminal: .failed(.save))
+    case let .pinnedRecordStoreUnavailable(tabID, context, failure, _):
+        .init(
+            tabID: tabID,
+            context: context,
+            terminal: .failed(.storeUnavailable(failure)),
+        )
+    case let .pinnedRecordSaveNotApplied(tabID, context, reason, _):
+        .init(
+            tabID: tabID,
+            context: context,
+            terminal: .failed(reason == .superseded ? .superseded : .cancelled),
+        )
+    default:
+        nil
     }
+}
 
-    var isSelectionAllowedDuringBatchClose: Bool {
-        switch self {
-        case .delegate,
-             .toggleSelection,
-             .selectRange,
-             .collapseSelectionToActive,
-             .pinnedRecordSaveSucceeded,
-             .pinnedRecordSaveFailed,
-             .pinnedRecordStoreUnavailable,
-             .pinnedRecordSaveNotApplied:
-            true
-        default:
-            false
-        }
+func isSelectionAllowedDuringBatchClose(_ action: ContentTabAction) -> Bool {
+    switch action {
+    case .delegate,
+         .toggleSelection,
+         .selectRange,
+         .collapseSelectionToActive,
+         .pinnedRecordSaveSucceeded,
+         .pinnedRecordSaveFailed,
+         .pinnedRecordStoreUnavailable,
+         .pinnedRecordSaveNotApplied:
+        true
+    default:
+        false
     }
+}
 
-    func rebasingPinnedRecordRollback(
-        to rollback: ContentTabPinnedRecordRollbackSnapshot?,
-    ) -> Self {
-        guard let rollback else { return self }
-        return switch self {
-        case let .pinnedRecordSaveFailed(tabID, context, _):
-            .pinnedRecordSaveFailed(tabID: tabID, context: context, rollback: rollback)
-        case let .pinnedRecordStoreUnavailable(tabID, context, failure, _):
-            .pinnedRecordStoreUnavailable(
-                tabID: tabID,
-                context: context,
-                failure: failure,
-                rollback: rollback,
-            )
-        case let .pinnedRecordSaveNotApplied(tabID, context, reason, _):
-            .pinnedRecordSaveNotApplied(
-                tabID: tabID,
-                context: context,
-                reason: reason,
-                rollback: rollback,
-            )
-        default:
-            self
-        }
+private func rebasingPinnedRecordRollback(
+    _ action: ContentTabAction,
+    to rollback: ContentTabPinnedRecordRollbackSnapshot?,
+) -> ContentTabAction {
+    guard let rollback else { return action }
+    return switch action {
+    case let .pinnedRecordSaveFailed(tabID, context, _):
+        .pinnedRecordSaveFailed(tabID: tabID, context: context, rollback: rollback)
+    case let .pinnedRecordStoreUnavailable(tabID, context, failure, _):
+        .pinnedRecordStoreUnavailable(
+            tabID: tabID,
+            context: context,
+            failure: failure,
+            rollback: rollback,
+        )
+    case let .pinnedRecordSaveNotApplied(tabID, context, reason, _):
+        .pinnedRecordSaveNotApplied(
+            tabID: tabID,
+            context: context,
+            reason: reason,
+            rollback: rollback,
+        )
+    default:
+        action
     }
+}
 
-    func isStalePinnedRecordPersistenceResult(in state: ContentTabState) -> Bool {
-        switch self {
-        case let .pinnedRecordSaveSucceeded(tabID, context),
-             let .pinnedRecordSaveFailed(tabID, context, _),
-             let .pinnedRecordStoreUnavailable(tabID, context, _, _),
-             let .pinnedRecordSaveNotApplied(tabID, context, _, _):
-            !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID)
-        default:
-            false
-        }
+func isStalePinnedRecordPersistenceResult(
+    _ action: ContentTabAction,
+    in state: ContentTabState,
+) -> Bool {
+    switch action {
+    case let .pinnedRecordSaveSucceeded(tabID, context),
+         let .pinnedRecordSaveFailed(tabID, context, _),
+         let .pinnedRecordStoreUnavailable(tabID, context, _, _),
+         let .pinnedRecordSaveNotApplied(tabID, context, _, _):
+        !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID)
+    default:
+        false
     }
+}
 
-    var isDirectPinMutation: Bool {
-        switch self {
-        case .pin, .unpin:
-            true
-        default:
-            false
-        }
+private func isDirectPinMutation(_ action: ContentTabAction) -> Bool {
+    switch action {
+    case .pin, .unpin:
+        true
+    default:
+        false
     }
+}
 
-    var isDirectCloseMutation: Bool {
-        switch self {
-        case .requestClose, .close, .commitClose:
-            true
-        default:
-            false
-        }
+func isDirectCloseMutation(_ action: ContentTabAction) -> Bool {
+    switch action {
+    case .requestClose, .close, .commitClose:
+        true
+    default:
+        false
     }
+}
 
-    func isSelectedContentTabPinMutationPersistenceReplacement(for tabID: ContentTabID) -> Bool {
-        guard case let .updateActivePageAnchor(id, _) = self else { return false }
-        return id == tabID
+private func isSelectedContentTabPinMutationPersistenceReplacement(
+    _ action: ContentTabAction,
+    for tabID: ContentTabID,
+) -> Bool {
+    guard case let .updateActivePageAnchor(id, _) = action else { return false }
+    return id == tabID
+}
+
+func isCorrelatedSelectedContentTabPinMutation(
+    _ action: ContentTabAction,
+    for tabID: ContentTabID,
+    target: SelectedContentTabPinMutationTargetState,
+) -> Bool {
+    switch action {
+    case let .delegate(.persistPinnedRecord(request)):
+        request.tabID == tabID
+    case let .pin(id):
+        id == tabID && target == .pinned
+    case let .unpin(id):
+        id == tabID && target == .unpinned
+    case let .updateActivePageAnchor(id, _):
+        id == tabID
+    case let .pinnedRecordSaveSucceeded(id, _),
+         let .pinnedRecordSaveFailed(id, _, _),
+         let .pinnedRecordStoreUnavailable(id, _, _, _),
+         let .pinnedRecordSaveNotApplied(id, _, _, _):
+        id == tabID
+    default:
+        false
     }
+}
 
-    func isCorrelatedSelectedContentTabPinMutation(
-        for tabID: ContentTabID,
-        target: SelectedContentTabPinMutationTargetState,
-    ) -> Bool {
-        switch self {
-        case let .delegate(.persistPinnedRecord(request)):
-            request.tabID == tabID
-        case let .pin(id):
-            id == tabID && target == .pinned
-        case let .unpin(id):
-            id == tabID && target == .unpinned
-        case let .updateActivePageAnchor(id, _):
-            id == tabID
-        case let .pinnedRecordSaveSucceeded(id, _),
-             let .pinnedRecordSaveFailed(id, _, _),
-             let .pinnedRecordStoreUnavailable(id, _, _, _),
-             let .pinnedRecordSaveNotApplied(id, _, _, _):
-            id == tabID
-        default:
-            false
-        }
-    }
-
-    func isCorrelatedSelectedContentTabCloseMutation(for tabID: ContentTabID) -> Bool {
-        switch self {
-        case let .delegate(.persistPinnedRecord(request)):
-            request.tabID == tabID
-        case let .setCurrent(id),
-             let .requestClose(id),
-             let .close(id),
-             let .commitClose(id),
-             let .pin(id),
-             let .pinUsingDormantSlot(id, _),
-             let .unpin(id):
-            id == tabID
-        case let .updateActivePageAnchor(id, _):
-            id == tabID
-        case let .pinnedRecordSaveSucceeded(id, _):
-            id == tabID
-        case let .pinnedRecordSaveFailed(id, _, _):
-            id == tabID
-        case let .pinnedRecordStoreUnavailable(id, _, _, _):
-            id == tabID
-        case let .pinnedRecordSaveNotApplied(id, _, _, _):
-            id == tabID
-        default:
-            false
-        }
+func isCorrelatedSelectedContentTabCloseMutation(
+    _ action: ContentTabAction,
+    for tabID: ContentTabID,
+) -> Bool {
+    switch action {
+    case let .delegate(.persistPinnedRecord(request)):
+        request.tabID == tabID
+    case let .setCurrent(id),
+         let .requestClose(id),
+         let .close(id),
+         let .commitClose(id),
+         let .pin(id),
+         let .pinUsingDormantSlot(id, _),
+         let .unpin(id):
+        id == tabID
+    case let .updateActivePageAnchor(id, _):
+        id == tabID
+    case let .pinnedRecordSaveSucceeded(id, _):
+        id == tabID
+    case let .pinnedRecordSaveFailed(id, _, _):
+        id == tabID
+    case let .pinnedRecordStoreUnavailable(id, _, _, _):
+        id == tabID
+    case let .pinnedRecordSaveNotApplied(id, _, _, _):
+        id == tabID
+    default:
+        false
     }
 }
 
