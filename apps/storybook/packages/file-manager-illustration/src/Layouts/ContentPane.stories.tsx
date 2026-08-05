@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import { FileToolbar } from "../Patterns/FileToolbar"
 import { StatusBar } from "../Patterns/StatusBar"
 import { files, noSelection } from "../data/mock-data"
+import { directoryBreadcrumb } from "../lib/navigation-data"
 import { FileManagerPrimaryContent } from "./FileManagerPrimaryContent"
 
 const contentPaneFiles = files.slice(0, 12)
@@ -38,7 +39,7 @@ export const ContentPane: Story = {
             onToggleSidebar={() => undefined}
           />
           <FileManagerPrimaryContent {...args} />
-          <StatusBar selectedLabel={`${contentPaneFiles.length} items`} breadcrumb="Directory" />
+          <StatusBar selectedLabel={`${contentPaneFiles.length} items`} breadcrumb={directoryBreadcrumb} />
         </section>
       </main>
     </div>

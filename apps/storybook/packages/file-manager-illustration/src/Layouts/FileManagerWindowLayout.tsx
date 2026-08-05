@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import type { FC, ReactNode } from "react"
 
 /** Native sidebar min/max from FileManagerSidebarSync. */
@@ -163,8 +163,48 @@ export const FileManagerWindowLayout: FC<FileManagerWindowLayoutProps> = ({
     inspectorOpen,
   )
 
+  const maskId = useId()
+  const holeRef = useRef<SVGRectElement | null>(null)
+
+  useLayoutEffect(() => {
+    const main = mainRef.current
+    const layout = main?.closest<HTMLElement>(".fm-window-layout")
+    if (!main || !layout || typeof ResizeObserver === "undefined") return
+
+    const updateHole = () => {
+      const hole = holeRef.current
+      if (!hole) return
+      const lr = layout.getBoundingClientRect()
+      const mr = main.getBoundingClientRect()
+      hole.setAttribute("x", String(mr.x - lr.x))
+      hole.setAttribute("y", String(mr.y - lr.y))
+      hole.setAttribute("width", String(mr.width))
+      hole.setAttribute("height", String(mr.height))
+      const radius = getComputedStyle(main).getPropertyValue("--fm-main-frame-radius").trim()
+      if (radius) {
+        const parsed = Number.parseFloat(radius)
+        if (!Number.isNaN(parsed)) hole.setAttribute("rx", String(parsed))
+      }
+    }
+
+    const ro = new ResizeObserver(updateHole)
+    ro.observe(main)
+    ro.observe(layout)
+    updateHole()
+    return () => ro.disconnect()
+  }, [])
+
   return (
     <div className="fm-window-layout">
+      <svg className="fm-window-material" aria-hidden="true">
+        <defs>
+          <mask id={maskId}>
+            <rect width="100%" height="100%" fill="white" />
+            <rect ref={holeRef} fill="black" />
+          </mask>
+        </defs>
+        <rect width="100%" height="100%" fill="var(--fm-window)" mask={`url(#${maskId})`} />
+      </svg>
       {sidebarOpen && (
         <div
           id="fm-sidebar-pane"
@@ -189,7 +229,7 @@ export const FileManagerWindowLayout: FC<FileManagerWindowLayoutProps> = ({
         />
       )}
       <div
-        className="fm-layout-main"
+        className="fm-layout-main-frame"
         ref={mainRef}
         style={{
           marginTop: CONTENT_INSET,
@@ -199,34 +239,36 @@ export const FileManagerWindowLayout: FC<FileManagerWindowLayoutProps> = ({
           minWidth: CONTENT_MIN,
         }}
       >
-        <div id="fm-content-pane" className="fm-layout-main-inner">
-          <div className="fm-layout-toolbar-area">{toolbar}</div>
-          <div className="fm-layout-content-area">{content}</div>
-          <div className="fm-layout-breadcrumb-area">{breadcrumb}</div>
-        </div>
-        {inspectorOpen && (
-          <div
-            className="fm-layout-split-handle"
-            ref={iRef}
-            role="separator"
-            tabIndex={0}
-            aria-orientation="vertical"
-            aria-valuemin={INSPECTOR_MIN}
-            aria-valuemax={inspectorMax}
-            aria-valuenow={iW}
-            aria-valuetext={`${Math.round(iW)} pixels`}
-            aria-controls="fm-inspector-pane"
-          />
-        )}
-        {inspectorOpen && (
-          <div
-            id="fm-inspector-pane"
-            className="fm-layout-inspector"
-            style={{ width: iW, minWidth: INSPECTOR_MIN }}
-          >
-            {inspector}
+        <div className="fm-layout-main-pane">
+          <div id="fm-content-pane" className="fm-layout-main-inner">
+            <div className="fm-layout-toolbar-area">{toolbar}</div>
+            <div className="fm-layout-content-area">{content}</div>
+            <div className="fm-layout-breadcrumb-area">{breadcrumb}</div>
           </div>
-        )}
+          {inspectorOpen && (
+            <div
+              className="fm-layout-split-handle"
+              ref={iRef}
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-valuemin={INSPECTOR_MIN}
+              aria-valuemax={inspectorMax}
+              aria-valuenow={iW}
+              aria-valuetext={`${Math.round(iW)} pixels`}
+              aria-controls="fm-inspector-pane"
+            />
+          )}
+          {inspectorOpen && (
+            <div
+              id="fm-inspector-pane"
+              className="fm-layout-inspector"
+              style={{ width: iW, minWidth: INSPECTOR_MIN }}
+            >
+              {inspector}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -1,221 +1,317 @@
 [data-file-manager-illustration] {
-  margin: 0;
-  min-width: 0;
-  min-height: 100vh;
-  background: var(--fm-canvas);
-  color: var(--fm-text-primary);
-  font-family: var(--fm-font-ui);
-  -webkit-font-smoothing: antialiased;
-  font-synthesis-weight: none;
+    margin: 0;
+    min-width: 0;
+    min-height: 100vh;
+    background: var(--fm-canvas);
+    color: var(--fm-text-primary);
+    font-family: var(--fm-font-ui);
+    -webkit-font-smoothing: antialiased;
+    font-synthesis-weight: none;
 }
 
 [data-file-manager-illustration] button,
 [data-file-manager-illustration] textarea {
-  font: inherit;
+    font: inherit;
 }
 
 [data-file-manager-illustration] button {
-  cursor: default;
+    cursor: default;
 }
 
 [data-file-manager-illustration] .stage {
-  display: grid;
-  width: 100%;
-  min-height: 100dvh;
-  overflow: auto;
-  place-items: center;
-  padding: var(--fm-stage-padding);
-  box-sizing: border-box;
-  background: radial-gradient(circle at 50% 18%, var(--fm-canvas-glow), transparent 34rem),
-    var(--fm-canvas);
+    display: grid;
+    width: 100%;
+    min-height: 100dvh;
+    overflow: auto;
+    place-items: center;
+    padding: var(--fm-stage-padding);
+    box-sizing: border-box;
+    background:
+        radial-gradient(
+            circle at 50% 18%,
+            var(--fm-canvas-glow),
+            transparent 34rem
+        ),
+        var(--fm-canvas);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-voyager-color-scheme="light"])
+        [data-file-manager-illustration]
+        .stage {
+        background:
+            radial-gradient(
+                ellipse 72% 54% at 14% 4%,
+                color-mix(in srgb, var(--fm-amber) 74%, transparent),
+                transparent 74%
+            ),
+            radial-gradient(
+                ellipse 68% 56% at 12% 66%,
+                color-mix(in srgb, var(--fm-red) 54%, transparent),
+                transparent 76%
+            ),
+            radial-gradient(
+                ellipse 72% 68% at 94% 92%,
+                color-mix(in srgb, var(--fm-green) 30%, transparent),
+                transparent 78%
+            ),
+            linear-gradient(
+                142deg,
+                color-mix(in srgb, var(--fm-amber) 28%, var(--fm-canvas)),
+                var(--fm-canvas) 48%,
+                color-mix(in srgb, var(--fm-green) 16%, var(--fm-canvas))
+            );
+    }
+}
+
+:root[data-voyager-color-scheme="dark"]
+    [data-file-manager-illustration]
+    .stage {
+    background:
+        radial-gradient(
+            ellipse 72% 54% at 14% 4%,
+            color-mix(in srgb, var(--fm-amber) 74%, transparent),
+            transparent 74%
+        ),
+        radial-gradient(
+            ellipse 68% 56% at 12% 66%,
+            color-mix(in srgb, var(--fm-red) 54%, transparent),
+            transparent 76%
+        ),
+        radial-gradient(
+            ellipse 72% 68% at 94% 92%,
+            color-mix(in srgb, var(--fm-green) 30%, transparent),
+            transparent 78%
+        ),
+        linear-gradient(
+            142deg,
+            color-mix(in srgb, var(--fm-amber) 28%, var(--fm-canvas)),
+            var(--fm-canvas) 48%,
+            color-mix(in srgb, var(--fm-green) 16%, var(--fm-canvas))
+        );
 }
 
 [data-file-manager-illustration] .mac-window {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  width: min(var(--fm-native-window-width), 100%);
-  min-width: var(--fm-native-window-min-width);
-  height: min(var(--fm-native-window-height), calc(100dvh - var(--fm-window-height-inset)));
-  min-height: var(--fm-native-window-min-height);
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--fm-window-border);
-  border-radius: var(--fm-radius-window);
-  background: var(--fm-window);
-  box-shadow: var(--fm-shadow-window);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    width: min(var(--fm-native-window-width), 100%);
+    min-width: var(--fm-native-window-min-width);
+    height: min(
+        var(--fm-native-window-height),
+        calc(100dvh - var(--fm-window-height-inset))
+    );
+    min-height: var(--fm-native-window-min-height);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--fm-window-border);
+    border-radius: var(--fm-radius-window);
+    background: transparent;
+    box-shadow: var(--fm-shadow-window);
 }
 
 [data-file-manager-illustration] .content-pane-review {
-  display: flex;
-  flex-direction: column;
-  width: min(var(--fm-native-window-width), 100%);
-  min-width: var(--fm-native-content-min-width);
-  height: min(var(--fm-native-window-height), calc(100dvh - var(--fm-window-height-inset)));
-  min-height: var(--fm-native-window-min-height);
-  overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    width: min(var(--fm-native-window-width), 100%);
+    min-width: var(--fm-native-content-min-width);
+    height: min(
+        var(--fm-native-window-height),
+        calc(100dvh - var(--fm-window-height-inset))
+    );
+    min-height: var(--fm-native-window-min-height);
+    overflow: hidden;
 }
 
 [data-file-manager-illustration] .mac-titlebar-controls {
-  display: flex;
-  position: absolute;
-  z-index: 20;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: var(--fm-window-chrome-height);
-  align-items: center;
-  pointer-events: none;
-  -webkit-app-region: drag;
+    display: flex;
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: var(--fm-window-chrome-height);
+    align-items: center;
+    pointer-events: none;
+    -webkit-app-region: drag;
 }
 
 [data-file-manager-illustration] .mac-titlebar-controls .traffic-lights {
-  padding-left: 14px;
+    padding-left: 14px;
 }
 
-[data-file-manager-illustration] .mac-window.sidebar-closed .mac-titlebar-controls {
-  display: none;
+[data-file-manager-illustration]
+    .mac-window.sidebar-closed
+    .mac-titlebar-controls {
+    display: none;
 }
 
 [data-file-manager-illustration] .traffic-lights {
-  display: flex;
-  gap: var(--fm-space-4);
+    display: flex;
+    gap: var(--fm-space-4);
 }
 
 [data-file-manager-illustration] .traffic-lights span {
-  display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: var(--fm-radius-round);
-  box-shadow: inset 0 0 0 0.5px var(--fm-control-outline);
+    display: block;
+    width: 12px;
+    height: 12px;
+    border-radius: var(--fm-radius-round);
+    box-shadow: inset 0 0 0 0.5px var(--fm-control-outline);
 }
 
 [data-file-manager-illustration] .traffic-lights .red {
-  background: var(--fm-red);
+    background: var(--fm-red);
 }
 
 [data-file-manager-illustration] .traffic-lights .yellow {
-  background: var(--fm-yellow);
+    background: var(--fm-yellow);
 }
 
 [data-file-manager-illustration] .traffic-lights .green {
-  background: var(--fm-green);
+    background: var(--fm-green);
 }
 
 [data-file-manager-illustration] .mac-window:not(.sidebar-closed) {
-  min-width: calc(var(--fm-native-window-min-width) + var(--fm-native-sidebar-min-width));
+    min-width: calc(
+        var(--fm-native-window-min-width) + var(--fm-native-sidebar-min-width)
+    );
 }
 
-[data-file-manager-illustration] .mac-window:not(.inspector-closed).sidebar-closed {
-  min-width: calc(var(--fm-native-content-min-width) + var(--fm-native-inspector-min-width) + 5px);
+[data-file-manager-illustration]
+    .mac-window:not(.inspector-closed).sidebar-closed {
+    min-width: calc(
+        var(--fm-native-content-min-width) +
+            var(--fm-native-inspector-min-width) + 5px
+    );
 }
 
-[data-file-manager-illustration] .mac-window:not(.inspector-closed):not(.sidebar-closed) {
-  min-width: calc(
-    var(--fm-native-sidebar-min-width) +
-    var(--fm-native-content-min-width) +
-    var(--fm-native-inspector-min-width) +
-    10px
-  );
+[data-file-manager-illustration]
+    .mac-window:not(.inspector-closed):not(.sidebar-closed) {
+    min-width: calc(
+        var(--fm-native-sidebar-min-width) +
+            var(--fm-native-content-min-width) +
+            var(--fm-native-inspector-min-width) + 10px
+    );
 }
 
 [data-file-manager-illustration] .fm-window-layout {
-  display: flex;
-  flex-direction: row;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+    isolation: isolate;
+}
+
+[data-file-manager-illustration] .fm-window-material {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: -1;
+    overflow: visible;
 }
 
 [data-file-manager-illustration] .fm-layout-sidebar {
-  flex-shrink: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 [data-file-manager-illustration] .fm-layout-split-handle {
-  width: 5px;
-  cursor: col-resize;
-  flex-shrink: 0;
-  margin-left: -2px;
-  margin-right: -2px;
-  z-index: 10;
-  position: relative;
+    width: 5px;
+    cursor: col-resize;
+    flex-shrink: 0;
+    margin-left: -2px;
+    margin-right: -2px;
+    z-index: 10;
+    position: relative;
 }
 
 [data-file-manager-illustration] .fm-layout-split-handle::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 2px;
-  right: 2px;
-  border-radius: 2px;
-  transition: background var(--fm-motion-fast) ease;
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2px;
+    right: 2px;
+    border-radius: 2px;
+    transition: background var(--fm-motion-fast) ease;
 }
 
 [data-file-manager-illustration] .fm-layout-split-handle:hover::after {
-  background: var(--fm-selection-label);
-  opacity: 0.3;
+    background: var(--fm-selection-label);
+    opacity: 0.3;
 }
 
 [data-file-manager-illustration] .fm-layout-split-handle:active::after {
-  background: var(--fm-selection-label);
-  opacity: 0.5;
+    background: var(--fm-selection-label);
+    opacity: 0.5;
 }
 
 [data-file-manager-illustration] .fm-layout-split-handle:focus-visible {
-  outline: none;
+    outline: none;
 }
 
 [data-file-manager-illustration] .fm-layout-split-handle:focus-visible::after {
-  background: var(--fm-focus-ring);
-  opacity: 0.65;
+    background: var(--fm-focus-ring);
+    opacity: 0.65;
 }
 
-[data-file-manager-illustration] .fm-layout-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: row;
-  overflow: hidden;
-  isolation: isolate;
-  border-radius: var(--fm-radius-md);
-  clip-path: inset(0 round var(--fm-radius-md));
-  background: var(--fm-content);
+[data-file-manager-illustration] .fm-layout-main-frame {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    position: relative;
+    z-index: 0;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: var(--fm-main-frame-radius);
+    clip-path: inset(0 round var(--fm-main-frame-radius));
+    background: var(--fm-content);
+}
+
+[data-file-manager-illustration] .fm-layout-main-pane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    box-shadow: inset 0 0 0 1px var(--fm-main-frame-border);
 }
 
 [data-file-manager-illustration] .fm-layout-main-inner {
-  flex: 1;
-  min-width: var(--fm-native-content-min-width);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+    flex: 1;
+    min-width: var(--fm-native-content-min-width);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 [data-file-manager-illustration] .fm-layout-toolbar-area {
-  flex-shrink: 0;
+    flex-shrink: 0;
 }
 
 [data-file-manager-illustration] .fm-layout-content-area {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 [data-file-manager-illustration] .fm-layout-breadcrumb-area {
-  flex-shrink: 0;
+    flex-shrink: 0;
 }
 
 [data-file-manager-illustration] .fm-layout-inspector {
-  flex-shrink: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--fm-separator);
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--fm-separator);
 }
