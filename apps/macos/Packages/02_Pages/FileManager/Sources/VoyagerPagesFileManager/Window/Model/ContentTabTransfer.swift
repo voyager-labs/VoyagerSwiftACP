@@ -367,7 +367,11 @@ private extension ContentTabTransfer {
     ) -> Rejection? {
         switch source.transferEligibility(tabID: tabID) {
         case .eligible:
-            source.hasValidPinParity(tabID: tabID) ? nil : .sourcePinParity
+            if source.pendingDirectoryReloadTabIDs.contains(tabID) {
+                .ineligible(.windowBusy)
+            } else {
+                source.hasValidPinParity(tabID: tabID) ? nil : .sourcePinParity
+            }
         case let .rejected(reason):
             .ineligible(EligibilityRejection(reason))
         }

@@ -198,6 +198,30 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertNil(result.target.contentTabs.previousActiveTabID)
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: pending directory reload tab은 이동 전에 거절한다.
+    /// Window-owned reload marker를 source에 고립시키거나 target에서 유실하지 않는 fail-closed 계약을 검증한다.
+    /// - 검증 내용: pending reload moved tab의 windowBusy rejection과 source/target 전체 상태 불변
+    /// - 사전 조건: inactive Directory tab이 파일 작업 후 pending reload marker를 보유함
+    /// - 기대 결과: preflight는 busy로 거절되고 marker와 양 window logical state가 그대로 유지됨
+    func testPreflightRejectsPendingDirectoryReloadTabWithoutMutation() throws {
+        let activeID = ContentTabID(rawValue: "pending-reload-active")
+        let movedID = ContentTabID(rawValue: "pending-reload-moved")
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(activeID, path: "/active"), Fixture.tab(movedID, path: "/pending")],
+            active: activeID,
+        )
+        source.pendingDirectoryReloadTabIDs = [movedID]
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+
+        try assertRejected(
+            .ineligible(.windowBusy),
+            source: source,
+            target: target,
+            tabID: movedID,
+        )
+    }
+
     /// CTM-001-move_content_tab_to_another_file_manager_window: last tab 이동은 source close disposition을 반환한다.
     /// Home replacement나 열린 empty source를 만들지 않는 closing 계약을 검증한다.
     /// - 검증 내용: closeSourceWindow disposition과 target logical commit
