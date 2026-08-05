@@ -11,8 +11,9 @@ struct AiChatInputBar: View {
     let input: AiChatInputDisplayModel
     let requestContext: AiChatRequestContextDisplayModel
     let colorScheme: ColorScheme
+    let composerIdentity: AiChatComposerIdentity
+    @ObservedObject var focusOwner: AiChatInputFocusOwner
 
-    @Binding var isChatInputFocused: Bool
     @Binding var chatInputTextHeight: CGFloat
     @Binding var isModelSelectorPopoverPresented: Bool
     @Binding var isThinkingSelectorPresented: Bool
@@ -60,7 +61,7 @@ struct AiChatInputBar: View {
         }
         .padding(8)
         .onChange(of: state.isProcessing) { isProcessing in
-            if !isProcessing, isChatInputFocused {
+            if !isProcessing, focusOwner.isFocused(for: composerIdentity) {
                 restoreChatInputFocus()
             }
         }
@@ -84,8 +85,9 @@ struct AiChatInputBar: View {
                     get: { state.draftText },
                     set: { store.send(.draftTextChanged($0)) },
                 ),
-                isFocused: $isChatInputFocused,
                 measuredHeight: $chatInputTextHeight,
+                composerIdentity: composerIdentity,
+                focusOwner: focusOwner,
                 isDisabled: input.isComposerEditingDisabled,
                 maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
                 onSubmit: { submitAndRestoreInputFocus() },
@@ -181,8 +183,8 @@ struct AiChatInputBar: View {
     }
 
     private func restoreChatInputFocus() {
-        Task { @MainActor in
-            isChatInputFocused = true
+        Task { @MainActor [composerIdentity, focusOwner] in
+            focusOwner.requestFocus(for: composerIdentity)
         }
     }
 

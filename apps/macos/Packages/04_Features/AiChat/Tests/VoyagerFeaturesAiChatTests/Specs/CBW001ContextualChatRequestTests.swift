@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import Perception
 import SwiftUI
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
@@ -31,74 +32,115 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         assertOpenContextualChatSurface(store.state)
     }
 
-    /// CBW-001-open_contextual_chat: 분리된 이전 입력의 늦은 편집 종료는 공유 focus를 해제하지 않는다.
-    /// centered/full branch remount 중 제거된 입력 callback이 새 입력의 focus를 덮어쓰지 않는지 검증합니다.
-    /// - 검증 내용: 별도 coordinator가 소유한 새 입력으로 교체하고 이전 입력을 분리한 뒤 main queue를 drain합니다.
-    /// - 사전 조건: 이전 coordinator는 계속 이전 입력을 가리키고 새 coordinator는 교체 입력을 가리킵니다.
-    /// - 기대 결과: 분리된 이전 입력의 늦은 callback 처리 후에도 공유 focus는 true로 유지됩니다.
-    func testOpenContextualChatIgnoresDetachedInputEndEditingAfterRemount() async {
-        let focusState = CBW001InputFocusState()
-        let oldCoordinator = makeInputCoordinator(focusState: focusState)
-        let replacementCoordinator = makeInputCoordinator(focusState: focusState)
+    /// CBW-001-open_contextual_chat: 같은 composer identity의 remount는 focus를 보존한다.
+    /// centered-empty와 transcript 전환에서 representable lease가 교체되어도 동일 session composer의 focus가 이어지는지 검증합니다.
+    /// - 검증 내용: 새 coordinator 활성화 뒤 이전 coordinator의 end-editing과 dismantle을 처리하고 focus owner를 확인합니다.
+    /// - 사전 조건: 두 입력은 같은 AiChatView scope와 displayed session identity를 사용하고 이전 입력이 focused입니다.
+    /// - 기대 결과: 이전 lease의 늦은 callback은 무시되고 새 입력이 focused first responder로 유지됩니다.
+    func testOpenContextualChatPreservesFocusAcrossSameComposerRemount() async {
+        let focusOwner = AiChatInputFocusOwner()
+        let identity = makeComposerIdentity(sessionUUID: "11111111-1111-1111-1111-111111111001")
+        let oldCoordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
+        let replacementCoordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
         let window = NSWindow()
         let container = NSView()
-        let endedTextView = AiChatInputTextView.AttachmentDroppingTextView()
+        let oldTextView = AiChatInputTextView.AttachmentDroppingTextView()
         let replacementTextView = AiChatInputTextView.AttachmentDroppingTextView()
-        container.addSubview(endedTextView)
-        container.addSubview(replacementTextView)
+        let oldScrollView = NSScrollView()
+        let replacementScrollView = NSScrollView()
+        oldScrollView.documentView = oldTextView
+        replacementScrollView.documentView = replacementTextView
+        container.addSubview(oldScrollView)
+        container.addSubview(replacementScrollView)
         window.contentView = container
-        oldCoordinator.textView = endedTextView
-        replacementCoordinator.textView = replacementTextView
-        XCTAssertTrue(window.makeFirstResponder(endedTextView))
+        oldCoordinator.activate(textView: oldTextView, scrollView: oldScrollView, identity: identity)
+        XCTAssertEqual(oldTextView.composerIdentity, identity)
+        focusOwner.requestFocus(for: identity)
+        XCTAssertTrue(window.makeFirstResponder(oldTextView))
 
-        oldCoordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: endedTextView))
-        endedTextView.removeFromSuperview()
+        oldCoordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: oldTextView))
+        replacementCoordinator.activate(
+            textView: replacementTextView,
+            scrollView: replacementScrollView,
+            identity: identity,
+        )
+        XCTAssertEqual(replacementTextView.composerIdentity, identity)
+        AiChatInputTextView.dismantleNSView(oldScrollView, coordinator: oldCoordinator)
         XCTAssertTrue(window.makeFirstResponder(replacementTextView))
         await drainMainQueue()
 
-        XCTAssertTrue(oldCoordinator.textView === endedTextView)
-        XCTAssertTrue(replacementCoordinator.textView === replacementTextView)
-        XCTAssertTrue(focusState.isFocused)
+        XCTAssertIdentical(window.firstResponder, replacementTextView)
+        XCTAssertTrue(focusOwner.isFocused(for: identity))
     }
 
-    /// CBW-001-open_contextual_chat: 겹쳐 남은 이전 입력의 늦은 종료는 새 chat responder focus를 해제하지 않는다.
-    /// remount 전환 중 이전 입력이 아직 window에 붙어 있어도 현재 AiChat 입력을 first responder로 존중하는지 검증합니다.
-    /// - 검증 내용: 이전 입력 callback 예약 후 별도 coordinator의 교체 입력을 first responder로 만들고 main queue를 drain합니다.
-    /// - 사전 조건: 두 입력은 동시에 window에 붙어 있고 각 coordinator는 자신의 입력을 계속 가리킵니다.
-    /// - 기대 결과: 이전 callback 처리 후에도 교체 입력이 first responder이고 공유 focus는 true입니다.
-    func testOpenContextualChatIgnoresOverlappingInputEndEditingWhenReplacementIsFocused() async {
-        let focusState = CBW001InputFocusState()
-        let oldCoordinator = makeInputCoordinator(focusState: focusState)
-        let replacementCoordinator = makeInputCoordinator(focusState: focusState)
+    /// CBW-001-open_contextual_chat: 독립 AiChatView A의 rerender는 B composer focus를 침범하지 않는다.
+    /// Content와 Inspector가 각자 focus owner를 가져도 window의 responder identity로 cross-view acquisition을 차단하는지 검증합니다.
+    /// - 검증 내용: 서로 다른 owner/scope의 A→B 전환 뒤 A를 다시 activate·schedule하고 end-editing을 처리합니다.
+    /// - 사전 조건: 두 composer는 같은 session을 표시하지만 독립 AiChatView scope와 focus owner를 사용합니다.
+    /// - 기대 결과: A rerender는 B를 탈취하지 않고 A owner만 clear되며 B owner와 first responder는 유지됩니다.
+    func testOpenContextualChatPreventsIndependentComposerFromStealingFocusAfterRerender() async {
+        let focusOwnerA = AiChatInputFocusOwner()
+        let focusOwnerB = AiChatInputFocusOwner()
+        let sessionUUID = "11111111-1111-1111-1111-111111111002"
+        let identityA = makeComposerIdentity(
+            sessionUUID: sessionUUID,
+            scopeID: makeUUID("22222222-2222-2222-2222-222222222001"),
+        )
+        let identityB = makeComposerIdentity(
+            sessionUUID: sessionUUID,
+            scopeID: makeUUID("22222222-2222-2222-2222-222222222002"),
+        )
+        let coordinatorA = makeInputCoordinator(focusOwner: focusOwnerA, identity: identityA)
+        let coordinatorB = makeInputCoordinator(focusOwner: focusOwnerB, identity: identityB)
         let window = NSWindow()
         let container = NSView()
-        let endedTextView = AiChatInputTextView.AttachmentDroppingTextView()
-        let replacementTextView = AiChatInputTextView.AttachmentDroppingTextView()
-        container.addSubview(endedTextView)
-        container.addSubview(replacementTextView)
+        let textViewA = AiChatInputTextView.AttachmentDroppingTextView()
+        let textViewB = AiChatInputTextView.AttachmentDroppingTextView()
+        let scrollViewA = NSScrollView()
+        let scrollViewB = NSScrollView()
+        scrollViewA.documentView = textViewA
+        scrollViewB.documentView = textViewB
+        container.addSubview(scrollViewA)
+        container.addSubview(scrollViewB)
         window.contentView = container
-        oldCoordinator.textView = endedTextView
-        replacementCoordinator.textView = replacementTextView
-        XCTAssertTrue(window.makeFirstResponder(endedTextView))
+        coordinatorA.activate(textView: textViewA, scrollView: scrollViewA, identity: identityA)
+        focusOwnerA.requestFocus(for: identityA)
+        XCTAssertTrue(window.makeFirstResponder(textViewA))
 
-        oldCoordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: endedTextView))
-        XCTAssertTrue(window.makeFirstResponder(replacementTextView))
+        coordinatorB.activate(textView: textViewB, scrollView: scrollViewB, identity: identityB)
+        focusOwnerB.requestFocus(for: identityB)
+        XCTAssertTrue(window.makeFirstResponder(textViewB))
+        XCTAssertEqual(textViewA.composerIdentity, identityA)
+        XCTAssertEqual(textViewB.composerIdentity, identityB)
+        XCTAssertNotEqual(identityA, identityB)
+
+        coordinatorA.activate(textView: textViewA, scrollView: scrollViewA, identity: identityA)
+        coordinatorA.scheduleFocusAcquisition(for: textViewA)
         await drainMainQueue()
 
-        XCTAssertTrue(oldCoordinator.textView === endedTextView)
-        XCTAssertTrue(replacementCoordinator.textView === replacementTextView)
-        XCTAssertTrue(window.firstResponder === replacementTextView)
-        XCTAssertTrue(focusState.isFocused)
+        XCTAssertIdentical(window.firstResponder, textViewB)
+        XCTAssertTrue(focusOwnerA.isFocused(for: identityA))
+        XCTAssertTrue(focusOwnerB.isFocused(for: identityB))
+
+        coordinatorA.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: textViewA))
+        await drainMainQueue()
+        coordinatorA.scheduleFocusAcquisition(for: textViewA)
+        await drainMainQueue()
+
+        XCTAssertIdentical(window.firstResponder, textViewB)
+        XCTAssertFalse(focusOwnerA.isFocused(for: identityA))
+        XCTAssertTrue(focusOwnerB.isFocused(for: identityB))
     }
 
     /// CBW-001-open_contextual_chat: dismantle된 입력의 예약 focus 획득은 교체 responder를 침범하지 않는다.
     /// representable 수명이 끝난 뒤 실행되는 main queue 작업이 obsolete NSTextView를 다시 first responder로 만들지 않는지 검증합니다.
     /// - 검증 내용: focus 예약, dismantle, 교체 responder 지정, main queue drain 뒤 실제 first responder를 확인합니다.
-    /// - 사전 조건: focused binding은 true이고 이전 입력과 교체 입력이 같은 window에 연결되어 있습니다.
-    /// - 기대 결과: 이전 입력의 예약 작업은 무효화되고 교체 responder가 유지됩니다.
+    /// - 사전 조건: 현재 identity가 focus를 소유하고 이전 입력과 교체 responder가 같은 window에 연결되어 있습니다.
+    /// - 기대 결과: 이전 입력의 예약 작업은 무효화되고 focus owner는 inactive이며 교체 responder가 유지됩니다.
     func testOpenContextualChatRejectsScheduledFocusAfterInputDismantle() async {
-        let focusState = CBW001InputFocusState()
-        let coordinator = makeInputCoordinator(focusState: focusState)
+        let focusOwner = AiChatInputFocusOwner()
+        let identity = makeComposerIdentity(sessionUUID: "11111111-1111-1111-1111-111111111004")
+        let coordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
         let window = NSWindow()
         let container = NSView()
         let staleTextView = AiChatInputTextView.AttachmentDroppingTextView()
@@ -108,60 +150,29 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         container.addSubview(scrollView)
         container.addSubview(replacementTextView)
         window.contentView = container
-        coordinator.textView = staleTextView
-        coordinator.scrollView = scrollView
+        coordinator.activate(textView: staleTextView, scrollView: scrollView, identity: identity)
+        focusOwner.requestFocus(for: identity)
 
         coordinator.scheduleFocusAcquisition(for: staleTextView)
         AiChatInputTextView.dismantleNSView(scrollView, coordinator: coordinator)
         XCTAssertTrue(window.makeFirstResponder(replacementTextView))
         await drainMainQueue()
 
-        XCTAssertTrue(window.firstResponder === replacementTextView)
+        XCTAssertIdentical(window.firstResponder, replacementTextView)
         XCTAssertNil(coordinator.textView)
         XCTAssertNil(coordinator.scrollView)
-        XCTAssertTrue(focusState.isFocused)
+        XCTAssertFalse(focusOwner.isFocused(for: identity))
     }
 
-    /// CBW-001-open_contextual_chat: 교체 입력으로 ownership이 넘어가면 이전 예약 focus를 거부한다.
-    /// 같은 coordinator가 새 representable view를 소유한 뒤 obsolete generation이 이전 NSTextView를 다시 선택하지 않는지 검증합니다.
-    /// - 검증 내용: 이전 입력 focus 예약, 새 text/scroll ownership 활성화, main queue drain 뒤 responder를 확인합니다.
-    /// - 사전 조건: focused binding은 true이고 이전 입력과 교체 입력이 같은 window에 연결되어 있습니다.
-    /// - 기대 결과: 이전 generation은 무효화되고 교체 입력이 first responder로 유지됩니다.
-    func testOpenContextualChatRejectsScheduledFocusAfterInputReplacement() async {
-        let focusState = CBW001InputFocusState()
-        let coordinator = makeInputCoordinator(focusState: focusState)
-        let window = NSWindow()
-        let container = NSView()
-        let staleTextView = AiChatInputTextView.AttachmentDroppingTextView()
-        let replacementTextView = AiChatInputTextView.AttachmentDroppingTextView()
-        let staleScrollView = NSScrollView()
-        let replacementScrollView = NSScrollView()
-        staleScrollView.documentView = staleTextView
-        replacementScrollView.documentView = replacementTextView
-        container.addSubview(staleScrollView)
-        container.addSubview(replacementScrollView)
-        window.contentView = container
-        coordinator.activate(textView: staleTextView, scrollView: staleScrollView)
-
-        coordinator.scheduleFocusAcquisition(for: staleTextView)
-        coordinator.activate(textView: replacementTextView, scrollView: replacementScrollView)
-        XCTAssertTrue(window.makeFirstResponder(replacementTextView))
-        await drainMainQueue()
-
-        XCTAssertTrue(coordinator.textView === replacementTextView)
-        XCTAssertTrue(coordinator.scrollView === replacementScrollView)
-        XCTAssertTrue(window.firstResponder === replacementTextView)
-        XCTAssertTrue(focusState.isFocused)
-    }
-
-    /// CBW-001-open_contextual_chat: 예약 focus가 있어도 비-AiChat responder로의 정상 resign을 되돌리지 않는다.
-    /// acquisition과 end-editing이 같은 main queue turn에서 경쟁할 때 사용자 blur 의도가 우선하는지 검증합니다.
-    /// - 검증 내용: focus 예약 후 일반 responder 전환과 end-editing을 발생시키고 main queue를 drain합니다.
-    /// - 사전 조건: 현재 입력은 focused binding과 coordinator ownership을 유지한 채 window의 first responder입니다.
-    /// - 기대 결과: 예약 acquisition은 무효화되고 일반 responder와 false focus binding이 유지됩니다.
-    func testOpenContextualChatCancelsScheduledFocusAfterGenuineInputResign() async {
-        let focusState = CBW001InputFocusState()
-        let coordinator = makeInputCoordinator(focusState: focusState)
+    /// CBW-001-open_contextual_chat: active composer의 실제 resign은 해당 identity focus를 해제한다.
+    /// stale callback 방어가 현재 lease에서 발생한 정상적인 focus 이탈 동작을 보존하는지 검증합니다.
+    /// - 검증 내용: active 입력에서 일반 responder로 전환한 뒤 end-editing callback과 main queue를 처리합니다.
+    /// - 사전 조건: 현재 identity와 coordinator lease가 focused 입력을 소유합니다.
+    /// - 기대 결과: 일반 responder가 유지되고 active identity의 focus는 false가 됩니다.
+    func testOpenContextualChatClearsFocusAfterGenuineInputResign() async {
+        let focusOwner = AiChatInputFocusOwner()
+        let identity = makeComposerIdentity(sessionUUID: "11111111-1111-1111-1111-111111111005")
+        let coordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
         let window = NSWindow()
         let container = NSView()
         let textView = AiChatInputTextView.AttachmentDroppingTextView()
@@ -171,41 +182,17 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         container.addSubview(scrollView)
         container.addSubview(nextResponder)
         window.contentView = container
-        coordinator.activate(textView: textView, scrollView: scrollView)
+        coordinator.activate(textView: textView, scrollView: scrollView, identity: identity)
+        XCTAssertEqual(textView.composerIdentity, identity)
+        focusOwner.requestFocus(for: identity)
         XCTAssertTrue(window.makeFirstResponder(textView))
 
-        coordinator.scheduleFocusAcquisition(for: textView)
         XCTAssertTrue(window.makeFirstResponder(nextResponder))
         coordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: textView))
         await drainMainQueue()
 
-        XCTAssertTrue(window.firstResponder === nextResponder)
-        XCTAssertFalse(focusState.isFocused)
-    }
-
-    /// CBW-001-open_contextual_chat: 비-AiChat responder로의 실제 resign은 공유 focus를 해제한다.
-    /// stale callback 방어가 정상적인 focus 이탈 동작을 보존하는지 검증합니다.
-    /// - 검증 내용: 입력의 end-editing 이후 일반 text field를 first responder로 전환하고 main queue를 drain합니다.
-    /// - 사전 조건: 공유 focus는 true이고 입력과 일반 responder가 같은 window에 연결되어 있습니다.
-    /// - 기대 결과: callback 처리 후 공유 focus는 false가 됩니다.
-    func testOpenContextualChatClearsFocusAfterGenuineInputResign() async {
-        let focusState = CBW001InputFocusState()
-        let coordinator = makeInputCoordinator(focusState: focusState)
-        let window = NSWindow()
-        let container = NSView()
-        let endedTextView = AiChatInputTextView.AttachmentDroppingTextView()
-        let nextResponder = NSTextField()
-        container.addSubview(endedTextView)
-        container.addSubview(nextResponder)
-        window.contentView = container
-        coordinator.textView = endedTextView
-        XCTAssertTrue(window.makeFirstResponder(endedTextView))
-
-        coordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: endedTextView))
-        XCTAssertTrue(window.makeFirstResponder(nextResponder))
-        await drainMainQueue()
-
-        XCTAssertFalse(focusState.isFocused)
+        XCTAssertIdentical(window.firstResponder, nextResponder)
+        XCTAssertFalse(focusOwner.isFocused(for: identity))
     }
 
     // MARK: - CBW-001-submit_chat_request
@@ -1707,6 +1694,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         for lifecycleCase in lifecycleCases {
             state.executionPhase = lifecycleCase.phase
             let announcement = try XCTUnwrap(AiChatLifecycleAnnouncement(state: state))
+            XCTAssertEqual(announcement.key.sessionID, requestSessionID)
             XCTAssertEqual(announcement.key.requestID, requestID)
             XCTAssertEqual(announcement.key.phase, lifecycleCase.expectedPhase)
             XCTAssertEqual(announcement.message, lifecycleCase.message)
@@ -1721,6 +1709,61 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             AiChatMessage(role: .user, content: "Question", createdAtMs: 1_700_000_005_001),
         ]
         XCTAssertEqual(AiChatLifecycleAnnouncement(state: state), processing)
+    }
+
+    /// CBW-001-show_request_processing_state: mounted stable chat root는 lifecycle announcement를 정확히 한 번씩 전달한다.
+    /// 실제 SwiftUI observer가 centered-empty 전환과 rerender에서 started를 중복하지 않고 sessions에는 발화하지 않는지 검증합니다.
+    /// - 검증 내용: initial, processing, same-processing rerender, completed, sessions 순서의 injected sink post를 확인합니다.
+    /// - 사전 조건: centered content가 있는 chat mode AiChatView를 NSHostingView에 mount하고 내부 sink를 주입합니다.
+    /// - 기대 결과: initial 0회, started 1회, rerender 추가 0회, completed 추가 1회, sessions 추가 0회입니다.
+    func testShowRequestProcessingStatePostsMountedStableRootLifecycleExactlyOnce() async {
+        let wasPerceptionCheckingEnabled = isPerceptionCheckingEnabled
+        isPerceptionCheckingEnabled = false
+        defer { isPerceptionCheckingEnabled = wasPerceptionCheckingEnabled }
+
+        let rows = makeCatalogRows()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111115002"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222225002")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333335002")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let fixture = makeMountedLifecycleAnnouncementFixture(sessionID: sessionID, lock: lock)
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(fixture.recorder.announcements, [])
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.processing))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(fixture.recorder.announcements.map(\.message), ["Assistant response started."])
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.processingRerender))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(fixture.recorder.announcements.map(\.message), ["Assistant response started."])
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.completed))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(
+            fixture.recorder.announcements.map(\.message),
+            ["Assistant response started.", "Assistant response completed."],
+        )
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.sessions))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(
+            fixture.recorder.announcements.map(\.message),
+            ["Assistant response started.", "Assistant response completed."],
+        )
+        XCTAssertEqual(fixture.recorder.announcements.map(\.key.phase), [.processing, .final])
+        XCTAssertIdentical(fixture.window.contentView, fixture.hostingView)
     }
 
     /// CBW-001-show_request_processing_state: provider status를 손실 없이 Feature event로 전달한다.
@@ -1903,6 +1946,16 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         state.executionPhase = .completed(lock.recordingTerminal(at: 10, failure: nil, wasCancelled: false))
         let final = try XCTUnwrap(AiChatLifecycleAnnouncement(state: state))
         XCTAssertTrue(deduper.shouldAnnounce(final.key))
+
+        let otherSessionKey = AiChatLifecycleAnnouncementKey(
+            sessionID: AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444103")),
+            requestID: activity.key.requestID,
+            phase: activity.key.phase,
+            activityID: activity.key.activityID,
+            activityKind: activity.key.activityKind,
+            activityPhase: activity.key.activityPhase,
+        )
+        XCTAssertTrue(deduper.shouldAnnounce(otherSessionKey))
     }
 
     // MARK: - CBW-001-cancel_active_chat_request
@@ -4019,8 +4072,27 @@ private struct CBW001StreamFixture {
     let store: TestStore<AiChatFeature.State, AiChatFeature.Action>
 }
 
-private final class CBW001InputFocusState {
-    var isFocused = true
+private enum CBW001LifecycleViewCommand {
+    static let processing = "lifecycle-processing"
+    static let processingRerender = "lifecycle-processing-rerender"
+    static let completed = "lifecycle-completed"
+    static let sessions = "lifecycle-sessions"
+}
+
+@MainActor
+private final class CBW001LifecycleAnnouncementRecorder {
+    private(set) var announcements: [AiChatLifecycleAnnouncement] = []
+
+    func record(_ announcement: AiChatLifecycleAnnouncement) {
+        announcements.append(announcement)
+    }
+}
+
+private struct CBW001MountedLifecycleAnnouncementFixture {
+    let store: StoreOf<AiChatFeature>
+    let hostingView: NSHostingView<AnyView>
+    let window: NSWindow
+    let recorder: CBW001LifecycleAnnouncementRecorder
 }
 
 private final class CBW001FocusableView: NSView {
@@ -4038,19 +4110,91 @@ private struct CBW001MalformedFinalUserFixture {
 }
 
 private extension CBW001ContextualChatRequestTests {
-    func makeInputCoordinator(focusState: CBW001InputFocusState) -> AiChatInputTextView.Coordinator {
+    func makeMountedLifecycleAnnouncementFixture(
+        sessionID: AiChatSessionID,
+        lock: AiChatRequestLock,
+    ) -> CBW001MountedLifecycleAnnouncementFixture {
+        let recorder = CBW001LifecycleAnnouncementRecorder()
+        let store = Store<AiChatFeature.State, AiChatFeature.Action>(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+        )) {
+            Reduce<AiChatFeature.State, AiChatFeature.Action> { state, action in
+                guard case let .draftTextChanged(command) = action else { return .none }
+                switch command {
+                case CBW001LifecycleViewCommand.processing:
+                    state.executionPhase = .processing(lock)
+                case CBW001LifecycleViewCommand.processingRerender:
+                    state.draftText = command
+                case CBW001LifecycleViewCommand.completed:
+                    state.executionPhase = .completed(lock)
+                case CBW001LifecycleViewCommand.sessions:
+                    state.mode = .sessions
+                    state.executionPhase = .processing(lock)
+                default:
+                    break
+                }
+                return .none
+            }
+        }
+        let sink = AiChatAccessibilityAnnouncementSink { announcement in
+            recorder.record(announcement)
+        }
+        let rootView = AnyView(WithPerceptionTracking {
+            AiChatView(
+                store: store,
+                centeredEmptyContent: AnyView(Text("Centered content")),
+            )
+            .environment(\.aiChatAccessibilityAnnouncementSink, sink)
+        })
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        let window = NSWindow(contentRect: hostingView.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = hostingView
+        return CBW001MountedLifecycleAnnouncementFixture(
+            store: store,
+            hostingView: hostingView,
+            window: window,
+            recorder: recorder,
+        )
+    }
+
+    func settleMountedLifecycleAnnouncementView(_ hostingView: NSView) async {
+        for _ in 0 ..< 6 {
+            hostingView.layoutSubtreeIfNeeded()
+            await drainMainQueue()
+            await Task.yield()
+        }
+    }
+
+    func makeInputCoordinator(
+        focusOwner: AiChatInputFocusOwner,
+        identity: AiChatComposerIdentity,
+    ) -> AiChatInputTextView.Coordinator {
         var text = ""
         var measuredHeight: CGFloat = 0
         let input = AiChatInputTextView(
             text: Binding(get: { text }, set: { text = $0 }),
-            isFocused: Binding(get: { focusState.isFocused }, set: { focusState.isFocused = $0 }),
             measuredHeight: Binding(get: { measuredHeight }, set: { measuredHeight = $0 }),
+            composerIdentity: identity,
+            focusOwner: focusOwner,
             isDisabled: false,
             maxVisibleHeight: 120,
             onSubmit: {},
             onAttachmentsDropped: { _ in },
         )
         return input.makeCoordinator()
+    }
+
+    func makeComposerIdentity(
+        sessionUUID: String,
+        scopeID: UUID = makeUUID("99999999-9999-9999-9999-999999999001"),
+    ) -> AiChatComposerIdentity {
+        AiChatComposerIdentity(
+            viewScopeID: scopeID,
+            displayedSessionID: AiChatSessionID(rawValue: makeUUID(sessionUUID)),
+        )
     }
 
     func drainMainQueue() async {

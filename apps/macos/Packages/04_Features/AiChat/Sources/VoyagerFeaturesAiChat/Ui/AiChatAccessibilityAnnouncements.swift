@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import VoyagerEntitiesAi
 
 enum AiChatLifecycleAnnouncementPhase: Hashable { case processing, activity, final, failure, cancel }
@@ -15,6 +16,7 @@ enum AiChatLifecycleAnnouncementPriority: Equatable {
 }
 
 struct AiChatLifecycleAnnouncementKey: Hashable {
+    let sessionID: AiChatSessionID
     let requestID: AiChatRequestID
     let phase: AiChatLifecycleAnnouncementPhase
     var activityID: AiChatExecutionActivityID?
@@ -35,13 +37,15 @@ struct AiChatLifecycleAnnouncement: Equatable {
 
     init?(state: AiChatState) {
         guard let lock = state.executionPhase.lock,
-              state.sessionID == lock.context.sessionID
+              let sessionID = lock.context.sessionID,
+              state.sessionID == sessionID
         else { return nil }
         let presentation: Presentation
         switch state.executionPhase {
         case let .processing(lock):
             if let signal = lock.activityState.latestTransition {
                 key = AiChatLifecycleAnnouncementKey(
+                    sessionID: sessionID,
                     requestID: lock.requestID,
                     phase: .activity,
                     activityID: signal.activityID,
@@ -63,6 +67,7 @@ struct AiChatLifecycleAnnouncement: Equatable {
             return nil
         }
         key = AiChatLifecycleAnnouncementKey(
+            sessionID: sessionID,
             requestID: lock.requestID,
             phase: presentation.phase,
             activityID: nil,
@@ -94,6 +99,18 @@ struct AiChatAccessibilityAnnouncementDeduper {
     mutating func shouldAnnounce(_ key: AiChatLifecycleAnnouncementKey) -> Bool {
         announcedKeys.insert(key).inserted
     }
+}
+
+struct AiChatAccessibilityAnnouncementSink {
+    let post: @MainActor (AiChatLifecycleAnnouncement) -> Void
+
+    static let live = Self { announcement in
+        AiChatAccessibilityAnnouncer.post(announcement)
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var aiChatAccessibilityAnnouncementSink = AiChatAccessibilityAnnouncementSink.live
 }
 
 @MainActor

@@ -273,8 +273,11 @@ public struct AiChatView: View {
 
     @Environment(\.colorScheme)
     var colorScheme
+    @Environment(\.aiChatAccessibilityAnnouncementSink)
+    private var accessibilityAnnouncementSink
 
-    @State private var isChatInputFocused = false
+    @State private var viewScope = AiChatViewScope()
+    @StateObject private var inputFocusOwner = AiChatInputFocusOwner()
     @State private var chatInputTextHeight = Self.chatInputMinTextHeight
     @State private var isModelSelectorPopoverPresented = false
     @State private var isThinkingSelectorPresented = false
@@ -343,38 +346,65 @@ public struct AiChatView: View {
         skeleton: AiChatSkeletonDisplayModel,
         requestContext: AiChatRequestContextDisplayModel,
     ) -> some View {
-        ScrollViewReader { scrollProxy in
-            VStack(spacing: presentation == .centeredEmpty ? 20 : 0) {
-                if presentation == .centeredEmpty, let centeredEmptyContent {
-                    Spacer(minLength: 0)
-                    centeredEmptyContent
-                    compactConnectionCTA(for: skeleton.surface)
-                } else {
-                    transcriptView(state: state, skeleton: skeleton, scrollProxy: scrollProxy)
-                }
+        let composerIdentity = viewScope.composerIdentity(displayedSessionID: state.sessionID)
+        let announcement = AiChatLifecycleAnnouncement(state: state)
+        return observeLifecycleAnnouncements(
+            ScrollViewReader { scrollProxy in
+                VStack(spacing: presentation == .centeredEmpty ? 20 : 0) {
+                    if presentation == .centeredEmpty, let centeredEmptyContent {
+                        Spacer(minLength: 0)
+                        centeredEmptyContent
+                        compactConnectionCTA(for: skeleton.surface)
+                    } else {
+                        transcriptView(state: state, skeleton: skeleton, scrollProxy: scrollProxy)
+                    }
 
-                AiChatInputBar(
-                    store: store,
-                    state: state,
-                    input: skeleton.chatInput,
-                    requestContext: requestContext,
-                    colorScheme: colorScheme,
-                    isChatInputFocused: $isChatInputFocused,
-                    chatInputTextHeight: $chatInputTextHeight,
-                    isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-                    isThinkingSelectorPresented: $isThinkingSelectorPresented,
-                )
-                .padding(.horizontal, presentation == .transcript ? 10 : 0)
-                .padding(.top, presentation == .transcript ? 8 : 0)
-                .padding(.bottom, presentation == .transcript ? 10 : 0)
+                    AiChatInputBar(
+                        store: store,
+                        state: state,
+                        input: skeleton.chatInput,
+                        requestContext: requestContext,
+                        colorScheme: colorScheme,
+                        composerIdentity: composerIdentity,
+                        focusOwner: inputFocusOwner,
+                        chatInputTextHeight: $chatInputTextHeight,
+                        isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
+                        isThinkingSelectorPresented: $isThinkingSelectorPresented,
+                    )
+                    .padding(.horizontal, presentation == .transcript ? 10 : 0)
+                    .padding(.top, presentation == .transcript ? 8 : 0)
+                    .padding(.bottom, presentation == .transcript ? 10 : 0)
 
-                if presentation == .centeredEmpty {
-                    Spacer(minLength: 0)
+                    if presentation == .centeredEmpty {
+                        Spacer(minLength: 0)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.vertical, presentation == .centeredEmpty ? 40 : 0)
+            },
+            announcement: announcement,
+        )
+    }
+
+    @ViewBuilder
+    private func observeLifecycleAnnouncements(
+        _ content: some View,
+        announcement: AiChatLifecycleAnnouncement?,
+    ) -> some View {
+        if #available(macOS 14.0, *) {
+            content.onChange(of: announcement, initial: false) { _, newAnnouncement in
+                postLifecycleAnnouncement(newAnnouncement)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.vertical, presentation == .centeredEmpty ? 40 : 0)
+        } else {
+            content.onChange(of: announcement) { newAnnouncement in
+                postLifecycleAnnouncement(newAnnouncement)
+            }
         }
+    }
+
+    private func postLifecycleAnnouncement(_ announcement: AiChatLifecycleAnnouncement?) {
+        guard let announcement else { return }
+        accessibilityAnnouncementSink.post(announcement)
     }
 
     private func transcriptView(

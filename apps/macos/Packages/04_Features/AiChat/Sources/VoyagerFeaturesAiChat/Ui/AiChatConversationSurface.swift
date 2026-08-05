@@ -132,53 +132,51 @@ struct AiChatConversationSurface: View {
     let onRebindContext: () -> Void
     let onStartNewChatFromRebind: () -> Void
     var body: some View {
-        observeLifecycleAnnouncements(
-            VStack(alignment: .leading, spacing: 12) {
-                if state.sessionStatus == .rebindRequired {
-                    AiChatRebindRecoveryBanner(
-                        onRebindContext: onRebindContext, onStartNewChat: onStartNewChatFromRebind,
-                    )
-                }
-                switch skeleton.surface {
-                case let .unconnected(connection):
-                    AiChatStatusBanner(
-                        title: connection.title,
-                        detail: connection.detail,
-                        actionLabel: connection.fixLabel,
-                        action: onOpenSettings,
-                    )
-                    transcriptSectionIfNeeded(isProcessing: false, canRegenerate: state.canRegenerate)
-                case let .error(connection):
-                    AiChatStatusBanner(
-                        title: connection.title,
-                        detail: connection.detail,
-                        actionLabel: connection.fixLabel,
-                        action: onErrorRecovery,
-                    )
-                    transcriptSectionIfNeeded(isProcessing: false, canRegenerate: state.canRegenerate)
-                case .empty:
-                    EmptyView()
-                case .ready:
-                    AiChatTranscriptSection(
-                        messages: state.transcriptHistory,
-                        isProcessing: false,
-                        canRegenerate: state.canRegenerate,
-                        statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
-                        streamingAssistant: state.streamingAssistantDisplayModel,
-                        onRegenerate: onRegenerate,
-                    )
-                case .processing:
-                    AiChatTranscriptSection(
-                        messages: state.transcriptHistory,
-                        isProcessing: true,
-                        canRegenerate: false,
-                        streamingAssistant: state.streamingAssistantDisplayModel,
-                        onRegenerate: onRegenerate,
-                    )
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            if state.sessionStatus == .rebindRequired {
+                AiChatRebindRecoveryBanner(
+                    onRebindContext: onRebindContext, onStartNewChat: onStartNewChatFromRebind,
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading),
-        )
+            switch skeleton.surface {
+            case let .unconnected(connection):
+                AiChatStatusBanner(
+                    title: connection.title,
+                    detail: connection.detail,
+                    actionLabel: connection.fixLabel,
+                    action: onOpenSettings,
+                )
+                transcriptSectionIfNeeded(isProcessing: false, canRegenerate: state.canRegenerate)
+            case let .error(connection):
+                AiChatStatusBanner(
+                    title: connection.title,
+                    detail: connection.detail,
+                    actionLabel: connection.fixLabel,
+                    action: onErrorRecovery,
+                )
+                transcriptSectionIfNeeded(isProcessing: false, canRegenerate: state.canRegenerate)
+            case .empty:
+                EmptyView()
+            case .ready:
+                AiChatTranscriptSection(
+                    messages: state.transcriptHistory,
+                    isProcessing: false,
+                    canRegenerate: state.canRegenerate,
+                    statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
+                    streamingAssistant: state.streamingAssistantDisplayModel,
+                    onRegenerate: onRegenerate,
+                )
+            case .processing:
+                AiChatTranscriptSection(
+                    messages: state.transcriptHistory,
+                    isProcessing: true,
+                    canRegenerate: false,
+                    streamingAssistant: state.streamingAssistantDisplayModel,
+                    onRegenerate: onRegenerate,
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -193,25 +191,6 @@ struct AiChatConversationSurface: View {
                 onRegenerate: onRegenerate,
             )
         }
-    }
-
-    @ViewBuilder
-    private func observeLifecycleAnnouncements(_ content: some View) -> some View {
-        let announcement = AiChatLifecycleAnnouncement(state: state)
-        if #available(macOS 14.0, *) {
-            content.onChange(of: announcement, initial: false) { _, newAnnouncement in
-                postLifecycleAnnouncement(newAnnouncement)
-            }
-        } else {
-            content.onChange(of: announcement) { newAnnouncement in
-                postLifecycleAnnouncement(newAnnouncement)
-            }
-        }
-    }
-
-    private func postLifecycleAnnouncement(_ announcement: AiChatLifecycleAnnouncement?) {
-        guard let announcement else { return }
-        AiChatAccessibilityAnnouncer.post(announcement)
     }
 }
 
