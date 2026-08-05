@@ -213,14 +213,17 @@ extension FileManagerWindowRoutingReducer {
                     else {
                         return .none
                     }
-                    let orderedMovingIDs = if let snapshot = state.sidebar.contentTabDragSnapshot,
-                                              snapshot.initiatingTabID == sourceTabID,
-                                              snapshot.orderedTabIDs.contains(sourceTabID)
+                    let activeDragSnapshot: ContentTabDragSnapshot? = if let snapshot =
+                        state.sidebar.contentTabDragSnapshot,
+                        snapshot.lifecycle == .inFlight,
+                        snapshot.initiatingTabID == sourceTabID,
+                        snapshot.orderedTabIDs.contains(sourceTabID)
                     {
-                        snapshot.orderedTabIDs
+                        snapshot
                     } else {
-                        [sourceTabID]
+                        nil
                     }
+                    let orderedMovingIDs = activeDragSnapshot?.orderedTabIDs ?? [sourceTabID]
                     guard ContentTabFeature.reorderedTabs(
                         state.contentTabs.tabs,
                         orderedMovingIDs: orderedMovingIDs,
@@ -228,6 +231,9 @@ extension FileManagerWindowRoutingReducer {
                         placement: placement,
                     ) != nil else {
                         return .none
+                    }
+                    if activeDragSnapshot != nil {
+                        state.sidebar.contentTabDragSnapshot = nil
                     }
                     guard orderedMovingIDs.count > 1 else {
                         return .send(.contentTabs(.reorder(

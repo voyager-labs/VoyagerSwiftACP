@@ -5276,7 +5276,42 @@ final class CTM001HandleContentTabTests: XCTestCase {
             XCTAssertEqual(store.state.contentTabs.previousActiveTabID, initialState.contentTabs.previousActiveTabID)
             XCTAssertEqual(store.state.contentTabs.selectedTabIDs, initialState.contentTabs.selectedTabIDs)
             XCTAssertEqual(store.state.contentTabs.selectionAnchorID, initialState.contentTabs.selectionAnchorID)
+            XCTAssertNil(store.state.sidebar.contentTabDragSnapshot)
         }
+    }
+
+    /// CTM-001-reorder_content_tab: 종료된 drag snapshot은 후속 singleton 이동에 재사용되지 않음
+    /// awaiting payload 상태의 이전 다중 선택이 키보드·접근성 이동을 group reorder로 승격하지 않는지 검증한다.
+    /// - 검증 내용: D 하나의 이동 결과와 기존 awaiting snapshot 보존
+    /// - 사전 조건: frozen `[D, B]` snapshot이 drag terminal 이후 awaiting payload 상태임
+    /// - 기대 결과: D만 E 뒤로 이동하고 B는 기존 상대 위치를 유지함
+    func testReorderSelectedContentTabs_awaitingSnapshotDoesNotPromoteLaterSingletonMove() async throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tabD = ContentTabID(rawValue: "D")
+        let tabE = ContentTabID(rawValue: "E")
+        var initialState = try makeSelectedGroupReorderState(
+            orderedMovingIDs: [tabD, tabB],
+            initiatingID: tabD,
+        )
+        initialState.sidebar.contentTabDragSnapshot?.lifecycle = .awaitingPayload
+        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        // store.exhaustivity = .off: routing action보다 최종 singleton reorder invariant를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(tabD),
+            anchorID: .contentTab(tabE),
+            placement: .after,
+        ))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(
+            store.state.contentTabs.tabs.filter { !$0.isPinned }.map(\.id),
+            [tabA, tabB, tabC, tabE, tabD],
+        )
+        XCTAssertEqual(store.state.sidebar.contentTabDragSnapshot?.lifecycle, .awaitingPayload)
     }
 
     /// CTM-001-reorder_content_tab: invalid 선택 그룹 destination은 whole-state no-op임
