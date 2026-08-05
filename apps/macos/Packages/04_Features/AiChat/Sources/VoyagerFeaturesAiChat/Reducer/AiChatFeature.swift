@@ -549,12 +549,13 @@ private extension AiChatAction {
         case .selectedThinkingChanged,
              .currentContextChanged,
              .draftTextChanged,
-             .attachmentPickerSelection,
-             .attachmentDrop,
-             .attachmentDropSelection,
              .removeAddedAttachment,
              .folderStructureModeChanged:
             return true
+        case let .attachmentPickerSelection(originSessionID, _),
+             let .attachmentDrop(originSessionID, _),
+             let .attachmentDropSelection(originSessionID, _):
+            return state.sessionID == originSessionID
         default:
             return false
         }

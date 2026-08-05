@@ -128,8 +128,8 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     /// 비동기 첨부 결과가 시작 session을 벗어나 현재 session의 draft에 local file을 추가하지 않는지 검증합니다.
     /// - 검증 내용: picker delegate 시작 owner와 stale picker/drop result 이후 B attachment 불변성을 확인합니다.
     /// - 사전 조건: session A에서 첨부 선택을 시작한 뒤 결과가 오기 전에 session B setup을 적용합니다.
-    /// - 기대 결과: A origin 결과는 B의 addedAttachments와 current context를 변경하지 않습니다.
-    func testAttachmentResultsFromPreviousSessionDoNotMutateCurrentDraft() async {
+    /// - 기대 결과: A origin 결과는 B의 attachments, current context, new-chat preparation provenance를 변경하지 않습니다.
+    func testAttachmentResultsFromPreviousSessionDoNotMutateCurrentDraftOrPreparationProvenance() async {
         let catalogRows = makeCatalogRows()
         let models = makeProviderModels()
         let sessionA = AiChatSessionID(rawValue: makeUUID("15151515-2222-3333-4444-000000000635"))
@@ -161,22 +161,29 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         await pickerStore.send(.attachmentPickerTapped)
         await pickerStore.receive(.delegate(.requestAttachmentPicker(sessionA)))
         await pickerStore.send(.setup(setupB))
+        let preparationProvenance = pickerStore.state.newChatPreparationProvenance
         await pickerStore.send(.attachmentPickerSelection(sessionA, [URL(fileURLWithPath: "/tmp/A-picker.txt")]))
 
         XCTAssertEqual(pickerStore.state.sessionID, sessionB)
         XCTAssertEqual(pickerStore.state.draftText, "B draft")
         XCTAssertTrue(pickerStore.state.addedAttachments.isEmpty)
         XCTAssertEqual(pickerStore.state.currentContext.summary, "B context")
+        XCTAssertEqual(pickerStore.state.newChatPreparationProvenance, preparationProvenance)
 
         let dropStore = TestStore(initialState: pickerStore.state) {
             AiChatFeature()
         }
-        // store.exhaustivity = .off: stale drop result가 B state를 변경하지 않는지만 검증합니다.
+        // store.exhaustivity = .off: stale drop result가 B state와 preparation provenance를 변경하지 않는지 검증합니다.
         dropStore.exhaustivity = .off(showSkippedAssertions: false)
+        let staleDropProvider = AiChatAttachmentDropProvider(provider: NSItemProvider())
+        await dropStore.send(.attachmentDrop(sessionA, [staleDropProvider]))
+        XCTAssertEqual(dropStore.state.newChatPreparationProvenance, preparationProvenance)
+
         await dropStore.send(.attachmentDropSelection(sessionA, [URL(fileURLWithPath: "/tmp/A-drop.txt")]))
 
         XCTAssertTrue(dropStore.state.addedAttachments.isEmpty)
         XCTAssertEqual(dropStore.state.currentContext.summary, "B context")
+        XCTAssertEqual(dropStore.state.newChatPreparationProvenance, preparationProvenance)
     }
 
     // MARK: - CBW-002-add_attachment_from_picker
