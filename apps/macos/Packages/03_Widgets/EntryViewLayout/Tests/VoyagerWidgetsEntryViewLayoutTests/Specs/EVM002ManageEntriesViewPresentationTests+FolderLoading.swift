@@ -682,6 +682,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: folderA.id)))
         }
 
+        XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folderA.id))
         XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folderB.id))
         XCTAssertEqual(state.hierarchy.nodesByID[folderB.id as String]?.folder.children, [childFile])
         XCTAssertEqual(state.hierarchy.nodesByID[folderA.id as String]?.generation, 1)
