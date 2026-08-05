@@ -29,6 +29,24 @@ enum ContentTabOwnershipInvariant: Equatable {
 }
 
 extension FileManagerWindowState {
+    var isContentTabMoveBusy: Bool {
+        guard !isClosing,
+              pendingSelectedContentTabClose == nil,
+              pendingSelectedContentTabPinMutation == nil,
+              pendingContentTabClose == nil,
+              pendingContentTabTeardown == nil,
+              pendingTopNavigationIntents.isEmpty,
+              contentTabs.pendingPinnedRecordIDs.isEmpty
+        else { return true }
+
+        switch undoRedoPhase {
+        case .idle, .desynchronized:
+            return false
+        case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+            return true
+        }
+    }
+
     func transferEligibility(tabID: ContentTabID) -> ContentTabTransferEligibility {
         if let rejection = ownershipRejection(tabID: tabID) {
             return .rejected(rejection)

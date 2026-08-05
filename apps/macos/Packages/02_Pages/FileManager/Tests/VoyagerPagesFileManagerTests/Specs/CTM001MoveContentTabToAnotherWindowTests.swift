@@ -57,7 +57,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
     }
 
     /// CTM-001-move_content_tab_to_another_file_manager_window: complete work unit identity가 target에서 유지된다.
-    /// pinned tab도 target 기존 순서를 바꾸지 않고 끝에 append되는지 검증한다.
+    /// pinned tab이 target 기존 순서를 보존하며 pinned domain 끝에 배치되는지 검증한다.
     /// - 검증 내용: exact tab/pin/Content/Inspector/AI identity, target active/previous, destination context,
     /// recently-closed 불변
     /// - 사전 조건: settled AI transcript와 pinned record를 포함한 complete transfer scenario
@@ -66,7 +66,11 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         let scenario = CompleteTransferScenario()
         let postCommit = try scenario.postCommit()
 
-        XCTAssertEqual(postCommit.target.contentTabs.tabs.last, scenario.movedTab)
+        XCTAssertEqual(
+            Array(postCommit.target.contentTabs.tabs.ids),
+            [scenario.movedID, scenario.targetID],
+        )
+        XCTAssertEqual(postCommit.target.contentTabs.tabs[id: scenario.movedID], scenario.movedTab)
         XCTAssertEqual(postCommit.target.contentTabs.activeTabID, scenario.movedID)
         XCTAssertEqual(postCommit.target.contentTabs.previousActiveTabID, scenario.targetID)
         XCTAssertEqual(postCommit.target.contentTabs.pinnedRecords[scenario.movedID], scenario.pinRecord)
@@ -452,6 +456,40 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         busyTarget.content.aiChat.streamingAssistantDraft = "streaming"
         busyTarget.tabContentStates[targetID] = busyTarget.content
         try assertRejected(.ineligible(.pendingAiChatOperation), source: source, target: busyTarget, tabID: movedID)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: destination window-level busy는 preflight에서 거절한다.
+    /// target work-unit projection 전에 close와 Undo lifecycle gate를 동일하게 적용하는지 검증한다.
+    /// - 검증 내용: target isClosing/active undoRedoPhase rejection과 source/target snapshot equality
+    /// - 사전 조건: valid source/target에서 target만 closing 또는 Undo invoking 상태다.
+    /// - 기대 결과: 두 preflight 모두 success token을 만들지 않고 양 window state가 변경되지 않는다.
+    func testPreflightRejectsTargetWindowBusyBeforeProjectionWithoutMutation() {
+        let movedID = ContentTabID(rawValue: "window-busy-source")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(movedID, path: "/window-busy/source")],
+            active: movedID,
+        )
+        let targetID = ContentTabID(rawValue: "window-busy-target")
+        let target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(targetID, path: "/window-busy/target")],
+            active: targetID,
+        )
+        let requestID = UUID(uuid: (45, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+        var closingTarget = target
+        closingTarget.isClosing = true
+        var undoBusyTarget = target
+        undoBusyTarget.undoRedoPhase = .invoking(requestID: requestID, direction: .undo)
+
+        for busyTarget in [closingTarget, undoBusyTarget] {
+            let sourceBefore = source
+            let targetBefore = busyTarget
+            let result = ContentTabTransfer.preflight(source: source, target: busyTarget, tabID: movedID)
+            XCTAssertEqual(result.rejection, .ineligible(.windowBusy))
+            XCTAssertEqual(source, sourceBefore)
+            XCTAssertEqual(busyTarget, targetBefore)
+        }
     }
 
     /// CTM-001-move_content_tab_to_another_file_manager_window: destination의 ambiguous background AI provenance를
@@ -894,6 +932,505 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(token.targetOutgoingOwner).canCancelComposerExclusively)
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: mixed domain batch는 frozen 순서로 이동한다.
+    /// 비연속 pinned/unpinned 선택의 work unit과 immutable projection/lifecycle token을 검증한다.
+    /// - 검증 내용: frozen WorkUnit 순서, domain별 append, snapshot fingerprint, apply projection
+    /// - 사전 조건: source에 비연속 mixed 선택, target에 기존 pinned/unpinned tab이 있다.
+    /// - 기대 결과: 각 domain 상대 순서와 owner identity가 보존되고 apply는 token projection을 그대로 반환한다.
+    func testBatchPreflightPreservesMixedDomainFrozenOrderAndProjectsImmutableToken() throws {
+        let scenario = MixedBatchTransferScenario()
+        let sourceBefore = scenario.source
+        let targetBefore = scenario.target
+        let preflight = ContentTabTransfer.preflight(
+            source: scenario.source,
+            target: scenario.target,
+            orderedTabIDs: scenario.orderedIDs,
+            primaryTabID: scenario.unpinnedID,
+        )
+        let token = try preflight.successToken()
+
+        XCTAssertEqual(scenario.source, sourceBefore)
+        XCTAssertEqual(scenario.target, targetBefore)
+        XCTAssertEqual(token.workUnits.map(\.item.id), scenario.orderedIDs)
+        XCTAssertEqual(token.workUnits.map(\.content.pendingSelectEntryID), [
+            "pinned-second-owner",
+            "pinned-first-owner",
+            "unpinned-owner",
+        ])
+        XCTAssertEqual(token.sourceFingerprint.windowID, Fixture.sourceWindowID)
+        XCTAssertEqual(token.sourceFingerprint.tabIDs, Array(sourceBefore.contentTabs.tabs.ids))
+        XCTAssertEqual(token.targetFingerprint.windowID, Fixture.targetWindowID)
+        XCTAssertEqual(token.targetFingerprint.tabIDs, Array(targetBefore.contentTabs.tabs.ids))
+        XCTAssertEqual(token.rebindIntents.map(\.tabID), scenario.orderedIDs)
+        XCTAssertEqual(
+            Array(token.projectedTarget.contentTabs.tabs.ids),
+            scenario.expectedTargetIDs,
+        )
+        XCTAssertEqual(
+            token.projectedTarget.contentTabs.tabs.filter(\.isPinned).map(\.id),
+            [scenario.targetPinnedID, scenario.pinnedSecondID, scenario.pinnedFirstID],
+        )
+        XCTAssertEqual(
+            token.projectedTarget.contentTabs.tabs.filter { !$0.isPinned }.map(\.id),
+            [scenario.targetUnpinnedID, scenario.unpinnedID],
+        )
+        XCTAssertEqual(token.projectedTarget.contentTabs.selectedTabIDs, Set(scenario.orderedIDs))
+        XCTAssertEqual(token.projectedTarget.contentTabs.activeTabID, scenario.unpinnedID)
+        XCTAssertEqual(token.projectedTarget.contentTabs.selectionAnchorID, scenario.unpinnedID)
+        XCTAssertEqual(token.projectedSource.contentTabs.activeTabID, scenario.survivorID)
+        XCTAssertEqual(token.projectedSource.contentTabs.selectedTabIDs, [scenario.survivorID])
+        XCTAssertEqual(token.projectedSource.contentTabs.selectionAnchorID, scenario.survivorID)
+
+        let postCommit = try ContentTabTransfer.apply(token).movedPostCommit()
+        XCTAssertEqual(postCommit.source, token.projectedSource)
+        XCTAssertEqual(postCommit.target, token.projectedTarget)
+        XCTAssertEqual(postCommit.rebinds, token.rebindIntents)
+        XCTAssertEqual(postCommit.teardownIntents, token.teardownIntents)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: shared lifecycle owner는 한 번만 teardown한다.
+    /// loading/composer scope가 같은 두 moved tab에서 frozen 첫 owner가 token intent를 소유하는지 검증한다.
+    /// - 검증 내용: loading/composer scope별 ordered-unique teardown과 primary compatibility owner
+    /// - 사전 조건: 같은 source window owner를 공유하는 두 tab을 역순 frozen batch로 모두 이동한다.
+    /// - 기대 결과: teardown intent는 하나이고 첫 frozen tab이 scope correlation을 소유한다.
+    func testBatchDeduplicatesSharedTeardownScopesByFirstFrozenOwner() throws {
+        let primaryID = ContentTabID(rawValue: "batch-shared-primary")
+        let firstFrozenID = ContentTabID(rawValue: "batch-shared-first-frozen")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(primaryID, path: "/batch/shared-primary"),
+                Fixture.tab(firstFrozenID, path: "/batch/shared-first-frozen"),
+            ],
+            active: primaryID,
+        )
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+
+        let preflight = ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [firstFrozenID, primaryID],
+            primaryTabID: primaryID,
+        )
+        let token = try preflight.successToken()
+
+        let teardown = try XCTUnwrap(token.teardownIntents.first)
+        XCTAssertEqual(token.teardownIntents.count, 1)
+        XCTAssertEqual(teardown.tabID, firstFrozenID)
+        XCTAssertEqual(teardown.loadingScope?.windowID, Fixture.sourceWindowID)
+        XCTAssertEqual(teardown.loadingScope?.ownerID, Fixture.sourceWindowID)
+        XCTAssertEqual(teardown.composerScope?.ownerID, Fixture.sourceWindowID)
+        XCTAssertEqual(token.sourceOutgoingOwner.tabID, primaryID)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: nil composer owner는 teardown scope가 아니다.
+    /// composer owner가 없는 moved tab이 가짜 nil scope를 만들지 않는지 검증한다.
+    /// - 검증 내용: valid loading teardown 유지와 nil composer teardown 제거
+    /// - 사전 조건: source의 유일한 moved tab은 loading owner만 있고 composer owner는 nil이다.
+    /// - 기대 결과: teardown intent에는 loading scope만 있고 composer scope는 없다.
+    func testBatchOmitsComposerTeardownScopeWhenOwnerIsNil() throws {
+        let movedID = ContentTabID(rawValue: "batch-nil-composer")
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(movedID, path: "/batch/nil-composer")],
+            active: movedID,
+        )
+        source.content.composer.cancellationOwnerID = nil
+        source.tabContentStates[movedID] = source.content
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+        let preflight = ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [movedID],
+            primaryTabID: movedID,
+        )
+
+        let teardown = try XCTUnwrap(preflight.successToken().teardownIntents.first)
+        XCTAssertEqual(teardown.loadingScope?.windowID, Fixture.sourceWindowID)
+        XCTAssertEqual(teardown.loadingScope?.ownerID, Fixture.sourceWindowID)
+        XCTAssertNil(teardown.composerScope)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: batch 이동 후 surviving source 상태를 보존한다.
+    /// 이동하지 않은 active, selection, anchor가 batch projection에서 흔들리지 않는지 검증한다.
+    /// - 검증 내용: active survivor와 surviving selected IDs/anchor 보존
+    /// - 사전 조건: active와 selection anchor는 source에 남고 선택 멤버 하나만 이동한다.
+    /// - 기대 결과: source active/selection/anchor는 원래 surviving 값으로 유지된다.
+    func testBatchKeepsSurvivingSourceActiveSelectionAndAnchor() throws {
+        let anchorID = ContentTabID(rawValue: "batch-source-anchor")
+        let movedID = ContentTabID(rawValue: "batch-source-moved")
+        let activeID = ContentTabID(rawValue: "batch-source-active")
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(anchorID, path: "/batch/anchor"),
+                Fixture.tab(movedID, path: "/batch/moved"),
+                Fixture.tab(activeID, path: "/batch/active"),
+            ],
+            active: activeID,
+        )
+        source.contentTabs.selectedTabIDs = [anchorID, movedID]
+        source.contentTabs.selectionAnchorID = anchorID
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+
+        let postCommit = try batchPostCommit(
+            source: source,
+            target: target,
+            orderedTabIDs: [movedID],
+            primaryTabID: movedID,
+        )
+
+        XCTAssertEqual(postCommit.source.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(postCommit.source.contentTabs.selectedTabIDs, [anchorID])
+        XCTAssertEqual(postCommit.source.contentTabs.selectionAnchorID, anchorID)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: batch source fallback은 deterministic하다.
+    /// active가 이동될 때 previous, 오른쪽, 왼쪽 survivor 우선순위를 검증한다.
+    /// - 검증 내용: previous → first right → last left fallback과 singleton selection/anchor
+    /// - 사전 조건: 세 source가 각각 valid previous, right-only, left-only survivor를 가진다.
+    /// - 기대 결과: 각 source가 정의된 우선순위의 active/selection/anchor를 선택한다.
+    func testBatchChoosesPreviousThenRightThenLeftSourceFallback() throws {
+        let leftID = ContentTabID(rawValue: "batch-fallback-left")
+        let movedID = ContentTabID(rawValue: "batch-fallback-moved")
+        let rightID = ContentTabID(rawValue: "batch-fallback-right")
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+        let cases: [(FileManagerWindowState, ContentTabID)] = [
+            (Fixture.window(
+                windowID: Fixture.sourceWindowID,
+                tabs: [
+                    Fixture.tab(leftID, path: "/batch/previous-left"),
+                    Fixture.tab(movedID, path: "/batch/previous-moved"),
+                    Fixture.tab(rightID, path: "/batch/previous-right"),
+                ],
+                active: movedID,
+                previous: leftID,
+            ), leftID),
+            (Fixture.window(
+                windowID: Fixture.sourceWindowID,
+                tabs: [
+                    Fixture.tab(leftID, path: "/batch/right-left"),
+                    Fixture.tab(movedID, path: "/batch/right-moved"),
+                    Fixture.tab(rightID, path: "/batch/right-right"),
+                ],
+                active: movedID,
+            ), rightID),
+            (Fixture.window(
+                windowID: Fixture.sourceWindowID,
+                tabs: [
+                    Fixture.tab(leftID, path: "/batch/left-left"),
+                    Fixture.tab(movedID, path: "/batch/left-moved"),
+                ],
+                active: movedID,
+            ), leftID),
+        ]
+
+        for (source, expectedFallbackID) in cases {
+            let result = try batchPostCommit(
+                source: source,
+                target: target,
+                orderedTabIDs: [movedID],
+                primaryTabID: movedID,
+            )
+            XCTAssertEqual(result.source.contentTabs.activeTabID, expectedFallbackID)
+            XCTAssertEqual(result.source.contentTabs.selectedTabIDs, [expectedFallbackID])
+            XCTAssertEqual(result.source.contentTabs.selectionAnchorID, expectedFallbackID)
+        }
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 전체 batch 이동은 empty source로 종료한다.
+    /// source-empty token과 close disposition이 fallback이나 selection을 만들지 않는지 검증한다.
+    /// - 검증 내용: sourceIsEmpty, nil active/previous/anchor, empty selection, closeSourceWindow
+    /// - 사전 조건: source의 두 tab 모두 이동하고 target에는 기존 tab이 있다.
+    /// - 기대 결과: source-empty가 한 번의 close disposition으로 표현되고 target commit은 완성된다.
+    func testBatchEmptiesSourceWithoutFallbackAndClosesOnce() throws {
+        let firstID = ContentTabID(rawValue: "batch-empty-first")
+        let secondID = ContentTabID(rawValue: "batch-empty-second")
+        let targetID = ContentTabID(rawValue: "batch-empty-target")
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/batch/empty-first"),
+                Fixture.tab(secondID, path: "/batch/empty-second"),
+            ],
+            active: firstID,
+            previous: secondID,
+        )
+        source.contentTabs.selectedTabIDs = [firstID, secondID]
+        source.contentTabs.selectionAnchorID = firstID
+        let target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(targetID, path: "/batch/empty-target")],
+            active: targetID,
+        )
+
+        let preflight = ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [secondID, firstID],
+            primaryTabID: firstID,
+        )
+        let token = try preflight.successToken()
+
+        XCTAssertTrue(token.sourceIsEmpty)
+        XCTAssertTrue(token.projectedSource.contentTabs.tabs.isEmpty)
+        XCTAssertNil(token.projectedSource.contentTabs.activeTabID)
+        XCTAssertNil(token.projectedSource.contentTabs.previousActiveTabID)
+        XCTAssertTrue(token.projectedSource.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertNil(token.projectedSource.contentTabs.selectionAnchorID)
+        let postCommit = try ContentTabTransfer.apply(token).closeSourceWindowPostCommit()
+        XCTAssertEqual(postCommit.source, token.projectedSource)
+        XCTAssertEqual(postCommit.target, token.projectedTarget)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: target selection은 moved batch로 교체한다.
+    /// 기존 target selection을 병합하지 않고 primary를 active/anchor로 사용하는지 검증한다.
+    /// - 검증 내용: moved-only target selection, primary active/anchor, prior active previous
+    /// - 사전 조건: source 두 tab과 별도 selection을 가진 target 두 tab이 있다.
+    /// - 기대 결과: target selection은 정확히 moved IDs이고 primary가 active/anchor가 된다.
+    func testBatchReplacesTargetSelectionWithMovedIDsAndPrimary() throws {
+        let firstID = ContentTabID(rawValue: "batch-selection-first")
+        let primaryID = ContentTabID(rawValue: "batch-selection-primary")
+        let targetActiveID = ContentTabID(rawValue: "batch-selection-target-active")
+        let targetSelectedID = ContentTabID(rawValue: "batch-selection-target-selected")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/batch/selection-first"),
+                Fixture.tab(primaryID, path: "/batch/selection-primary"),
+            ],
+            active: firstID,
+        )
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetActiveID, path: "/batch/target-active"),
+                Fixture.tab(targetSelectedID, path: "/batch/target-selected"),
+            ],
+            active: targetActiveID,
+        )
+        target.contentTabs.selectedTabIDs = [targetActiveID, targetSelectedID]
+        target.contentTabs.selectionAnchorID = targetSelectedID
+
+        let postCommit = try batchPostCommit(
+            source: source,
+            target: target,
+            orderedTabIDs: [firstID, primaryID],
+            primaryTabID: primaryID,
+            closesSource: true,
+        )
+
+        XCTAssertEqual(postCommit.target.contentTabs.selectedTabIDs, [firstID, primaryID])
+        XCTAssertEqual(postCommit.target.contentTabs.activeTabID, primaryID)
+        XCTAssertEqual(postCommit.target.contentTabs.selectionAnchorID, primaryID)
+        XCTAssertEqual(postCommit.target.contentTabs.previousActiveTabID, targetActiveID)
+        XCTAssertFalse(postCommit.target.contentTabs.selectedTabIDs.contains(targetSelectedID))
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: passive replacements를 누적 capacity로 계산한다.
+    /// full target의 두 passive pinned slot을 batch 전체에서 함께 교체할 수 있는지 검증한다.
+    /// - 검증 내용: effective capacity, 두 passive projection 교체, final maxTabs 유지
+    /// - 사전 조건: target은 maxTabs이고 두 pinned ID는 replaceable passive projection이다.
+    /// - 기대 결과: capacity rejection 없이 두 source runtime work unit이 target projection을 교체한다.
+    func testBatchUsesAllPassivePinnedReplacementsForCapacity() throws {
+        let firstID = ContentTabID(rawValue: "batch-capacity-first")
+        let secondID = ContentTabID(rawValue: "batch-capacity-second")
+        let firstProjection = Fixture.tab(firstID, path: "/batch/passive-first", pinned: true)
+        let secondProjection = Fixture.tab(secondID, path: "/batch/passive-second", pinned: true)
+        let firstRuntime = Fixture.tab(firstID, path: "/batch/runtime-first", pinned: true)
+        let secondRuntime = Fixture.tab(secondID, path: "/batch/runtime-second", pinned: true)
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [firstRuntime, secondRuntime],
+            active: firstID,
+        )
+        source.contentTabs.pinnedRecords[firstID] = Fixture.pinRecord(for: firstProjection)
+        source.contentTabs.pinnedRecords[secondID] = Fixture.pinRecord(for: secondProjection)
+        var targetTabs = [firstProjection, secondProjection]
+        targetTabs += (0 ..< ContentTabConstants.maxTabs - 2).map {
+            Fixture.tab(ContentTabID(rawValue: "batch-capacity-filler-\($0)"), path: "/batch/filler/\($0)")
+        }
+        let targetActiveID = try XCTUnwrap(targetTabs.last?.id)
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: targetTabs,
+            active: targetActiveID,
+        )
+        target.contentTabs.pinnedRecords[firstID] = Fixture.pinRecord(for: firstProjection)
+        target.contentTabs.pinnedRecords[secondID] = Fixture.pinRecord(for: secondProjection)
+
+        let postCommit = try batchPostCommit(
+            source: source,
+            target: target,
+            orderedTabIDs: [secondID, firstID],
+            primaryTabID: firstID,
+            closesSource: true,
+        )
+
+        XCTAssertEqual(postCommit.target.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertEqual(postCommit.target.contentTabs.tabs[id: firstID], firstRuntime)
+        XCTAssertEqual(postCommit.target.contentTabs.tabs[id: secondID], secondRuntime)
+        XCTAssertEqual(postCommit.target.contentTabs.tabs.count(where: { $0.id == firstID }), 1)
+        XCTAssertEqual(postCommit.target.contentTabs.tabs.count(where: { $0.id == secondID }), 1)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 마지막 invalid member는 batch 전체를 reject한다.
+    /// 앞선 valid work unit을 부분 적용하지 않고 collision과 work-unit 실패를 fail-closed로 처리한다.
+    /// - 검증 내용: last member tab collision/malformed ownership rejection과 full snapshot equality
+    /// - 사전 조건: ordered batch의 첫 member는 valid이고 마지막 member만 invalid하다.
+    /// - 기대 결과: 두 경우 모두 source/target이 완전히 동일하고 success token이 생성되지 않는다.
+    func testBatchRejectsLastMemberCollisionAndMalformedWorkUnitWithoutMutation() throws {
+        let firstID = ContentTabID(rawValue: "batch-reject-first")
+        let lastID = ContentTabID(rawValue: "batch-reject-last")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/batch/reject-first"),
+                Fixture.tab(lastID, path: "/batch/reject-last"),
+            ],
+            active: firstID,
+        )
+        let collisionTarget = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(lastID, path: "/batch/divergent-last")],
+            active: lastID,
+        )
+        try assertBatchRejected(
+            .targetTabCollision,
+            source: source,
+            target: collisionTarget,
+            orderedTabIDs: [firstID, lastID],
+            primaryTabID: firstID,
+        )
+
+        var malformedSource = source
+        malformedSource.tabContentStates[lastID] = nil
+        let emptyTarget = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+        try assertBatchRejected(
+            .ineligible(.malformedOwnership),
+            source: malformedSource,
+            target: emptyTarget,
+            orderedTabIDs: [firstID, lastID],
+            primaryTabID: firstID,
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: batch ordered IDs와 primary를 엄격히 normalize한다.
+    /// empty/duplicate/missing/member가 아닌 primary가 mutation 전에 reject되는지 검증한다.
+    /// - 검증 내용: ordered IDs nonempty/unique/source membership와 primary membership
+    /// - 사전 조건: valid source/target에 invalid batch 입력만 각각 주입한다.
+    /// - 기대 결과: sourceTabMissing/sourceTabAmbiguous로 reject되고 양 snapshot은 불변이다.
+    func testBatchRejectsInvalidOrderedIDsAndPrimaryWithoutMutation() throws {
+        let firstID = ContentTabID(rawValue: "batch-normalize-first")
+        let secondID = ContentTabID(rawValue: "batch-normalize-second")
+        let missingID = ContentTabID(rawValue: "batch-normalize-missing")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/batch/normalize-first"),
+                Fixture.tab(secondID, path: "/batch/normalize-second"),
+            ],
+            active: firstID,
+        )
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+        let cases: [BatchRejectionCase] = [
+            .init(expected: .sourceTabMissing, orderedTabIDs: [], primaryTabID: firstID),
+            .init(expected: .sourceTabAmbiguous, orderedTabIDs: [firstID, firstID], primaryTabID: firstID),
+            .init(expected: .sourceTabMissing, orderedTabIDs: [firstID, missingID], primaryTabID: firstID),
+            .init(expected: .sourceTabMissing, orderedTabIDs: [firstID], primaryTabID: secondID),
+        ]
+
+        for rejectionCase in cases {
+            try assertBatchRejected(
+                rejectionCase.expected,
+                source: source,
+                target: target,
+                orderedTabIDs: rejectionCase.orderedTabIDs,
+                primaryTabID: rejectionCase.primaryTabID,
+            )
+        }
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: single API는 batch-of-one과 동등하다.
+    /// 기존 preflight/apply/transfer wrapper가 새 batch token과 결과를 그대로 재사용하는지 검증한다.
+    /// - 검증 내용: singleton SuccessToken equality와 final Result equality
+    /// - 사전 조건: 기존 complete single transfer scenario
+    /// - 기대 결과: single과 batch preflight token 및 transfer outcome이 완전히 동일하다.
+    func testSingletonPreflightAndTransferDelegateToBatchOfOne() throws {
+        let scenario = CompleteTransferScenario()
+
+        let singlePreflight = ContentTabTransfer.preflight(
+            source: scenario.source,
+            target: scenario.target,
+            tabID: scenario.movedID,
+        )
+        let batchPreflight = ContentTabTransfer.preflight(
+            source: scenario.source,
+            target: scenario.target,
+            orderedTabIDs: [scenario.movedID],
+            primaryTabID: scenario.movedID,
+        )
+        let singleToken = try singlePreflight.successToken()
+        let batchToken = try batchPreflight.successToken()
+
+        XCTAssertEqual(singleToken, batchToken)
+        XCTAssertEqual(ContentTabTransfer.apply(singleToken), ContentTabTransfer.apply(batchToken))
+        XCTAssertEqual(
+            ContentTabTransfer.transfer(
+                source: scenario.source,
+                target: scenario.target,
+                tabID: scenario.movedID,
+            ),
+            ContentTabTransfer.transfer(
+                source: scenario.source,
+                target: scenario.target,
+                orderedTabIDs: [scenario.movedID],
+                primaryTabID: scenario.movedID,
+            ),
+        )
+    }
+
+    private func batchPostCommit(
+        source: FileManagerWindowState,
+        target: FileManagerWindowState,
+        orderedTabIDs: [ContentTabID],
+        primaryTabID: ContentTabID,
+        closesSource: Bool = false,
+    ) throws -> ContentTabTransfer.PostCommit {
+        let preflight = ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: orderedTabIDs,
+            primaryTabID: primaryTabID,
+        )
+        let result = try ContentTabTransfer.apply(preflight.successToken())
+        return closesSource
+            ? try result.closeSourceWindowPostCommit()
+            : try result.movedPostCommit()
+    }
+
+    private func assertBatchRejected(
+        _ expected: ContentTabTransfer.Rejection,
+        source: FileManagerWindowState,
+        target: FileManagerWindowState,
+        orderedTabIDs: [ContentTabID],
+        primaryTabID: ContentTabID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) throws {
+        let sourceBefore = source
+        let targetBefore = target
+        let result = ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: orderedTabIDs,
+            primaryTabID: primaryTabID,
+        )
+        XCTAssertEqual(result.rejection, expected, file: file, line: line)
+        XCTAssertEqual(source, sourceBefore, file: file, line: line)
+        XCTAssertEqual(target, targetBefore, file: file, line: line)
+    }
+
     private func assertRejected(
         _ expected: ContentTabTransfer.Rejection,
         source: FileManagerWindowState,
@@ -909,6 +1446,67 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(source, sourceBefore, file: file, line: line)
         XCTAssertEqual(target, targetBefore, file: file, line: line)
     }
+}
+
+private struct MixedBatchTransferScenario {
+    let survivorID = ContentTabID(rawValue: "batch-survivor")
+    let pinnedFirstID = ContentTabID(rawValue: "batch-pinned-first")
+    let pinnedSecondID = ContentTabID(rawValue: "batch-pinned-second")
+    let unpinnedID = ContentTabID(rawValue: "batch-unpinned")
+    let targetPinnedID = ContentTabID(rawValue: "batch-target-pinned")
+    let targetUnpinnedID = ContentTabID(rawValue: "batch-target-unpinned")
+    let source: FileManagerWindowState
+    let target: FileManagerWindowState
+
+    var orderedIDs: [ContentTabID] {
+        [pinnedSecondID, pinnedFirstID, unpinnedID]
+    }
+
+    var expectedTargetIDs: [ContentTabID] {
+        [targetPinnedID, pinnedSecondID, pinnedFirstID, targetUnpinnedID, unpinnedID]
+    }
+
+    init() {
+        let unrelatedID = ContentTabID(rawValue: "batch-unrelated")
+        let pinnedFirst = Fixture.tab(pinnedFirstID, path: "/batch/pinned-first", pinned: true)
+        let pinnedSecond = Fixture.tab(pinnedSecondID, path: "/batch/pinned-second", pinned: true)
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(survivorID, path: "/batch/survivor"),
+                pinnedFirst,
+                Fixture.tab(unrelatedID, path: "/batch/unrelated"),
+                pinnedSecond,
+                Fixture.tab(unpinnedID, path: "/batch/unpinned"),
+            ],
+            active: survivorID,
+        )
+        source.contentTabs.pinnedRecords[pinnedFirstID] = Fixture.pinRecord(for: pinnedFirst)
+        source.contentTabs.pinnedRecords[pinnedSecondID] = Fixture.pinRecord(for: pinnedSecond)
+        source.contentTabs.selectedTabIDs = [pinnedFirstID, pinnedSecondID, unpinnedID]
+        source.contentTabs.selectionAnchorID = pinnedFirstID
+        source.tabContentStates[pinnedFirstID]?.pendingSelectEntryID = "pinned-first-owner"
+        source.tabContentStates[pinnedSecondID]?.pendingSelectEntryID = "pinned-second-owner"
+        source.tabContentStates[unpinnedID]?.pendingSelectEntryID = "unpinned-owner"
+        self.source = source
+
+        let targetPinned = Fixture.tab(targetPinnedID, path: "/batch/target-pinned", pinned: true)
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [targetPinned, Fixture.tab(targetUnpinnedID, path: "/batch/target-unpinned")],
+            active: targetUnpinnedID,
+        )
+        target.contentTabs.pinnedRecords[targetPinnedID] = Fixture.pinRecord(for: targetPinned)
+        target.contentTabs.selectedTabIDs = [targetPinnedID, targetUnpinnedID]
+        target.contentTabs.selectionAnchorID = targetPinnedID
+        self.target = target
+    }
+}
+
+private struct BatchRejectionCase {
+    let expected: ContentTabTransfer.Rejection
+    let orderedTabIDs: [ContentTabID]
+    let primaryTabID: ContentTabID
 }
 
 private struct CompleteTransferScenario {
