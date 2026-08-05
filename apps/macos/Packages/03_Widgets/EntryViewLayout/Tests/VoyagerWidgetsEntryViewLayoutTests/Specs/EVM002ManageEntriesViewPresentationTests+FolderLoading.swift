@@ -20,24 +20,27 @@ extension EVM002ManageEntriesViewPresentationTests {
         let reducer = EntryListHierarchyReducer()
 
         _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: folder.id)))
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id], .init(phase: .loading, generation: 1))
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String],
+            .init(expansionIntent: true, generation: 1, loadPhase: .loadingCore),
+        )
 
         _ = reducer.reduce(
             into: &state,
             action: folderResponse(folder.id, .event(.coreBatch(items: [child], batchIndex: 0))),
         )
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children, [child])
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.expectedBatchIndex, 1)
-        XCTAssertFalse(state.hierarchy.foldersByID[folder.id]?.coreFinished ?? true)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [child])
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex, 1)
+        XCTAssertFalse(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? true)
         assertLoadingProjection(folder: folder, child: child, hierarchy: state.hierarchy, isLoading: true)
 
         _ = reducer.reduce(into: &state, action: folderResponse(folder.id, .event(.coreFinished(batchCount: 1))))
-        XCTAssertTrue(state.hierarchy.foldersByID[folder.id]?.coreFinished ?? false)
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.phase, .loading)
+        XCTAssertTrue(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? false)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .enriching)
         assertLoadingProjection(folder: folder, child: child, hierarchy: state.hierarchy, isLoading: false)
 
         _ = reducer.reduce(into: &state, action: folderResponse(folder.id, .streamCompleted))
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.phase, .loaded)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loaded)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: malformed, stale, duplicate, post-finished event는 현재 folder state를
@@ -51,9 +54,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let first = hierarchyFile(id: "/root/a/first", name: "first")
         let stale = hierarchyFile(id: "/root/a/stale", name: "stale")
         var state = hierarchyState(roots: [folder])
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(
-            children: [first], phase: .loading, generation: 2, expectedBatchIndex: 1,
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [first], loadPhase: .loadingCore, generation: 2, expectedBatchIndex: 1,
         )
         let reducer = EntryListHierarchyReducer()
 
@@ -69,9 +72,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         _ = reducer.reduce(into: &state, action: folderResponse(folder.id, .event(.coreFinished(batchCount: 0))))
 
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children, [first])
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.expectedBatchIndex, 1)
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.phase, .loading)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [first])
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex, 1)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loadingCore)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: 첫 core batch 뒤 partial failure는 child를 보존한 단일 retry row를 표시한다.
@@ -86,14 +89,14 @@ extension EVM002ManageEntriesViewPresentationTests {
             hierarchyFile(id: "/root/a/file-\(index)", name: "file-\(index)")
         }
         var state = hierarchyState(roots: [folder])
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(
-            children: children, phase: .loading, generation: 1, expectedBatchIndex: 1,
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: children, loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1,
         )
+        state.hierarchy.setExpandedIDs([folder.id as String])
         let reducer = EntryListHierarchyReducer()
 
         _ = reducer.reduce(into: &state, action: folderResponse(folder.id, .failed(.permissionDenied)))
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.phase, .failed(.permissionDenied))
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .failed(.permissionDenied))
         let projection = hierarchyProjection(folder: folder, hierarchy: state.hierarchy)
         let projectedItemIDs = projection.childrenByParent[.entry(folder.id)] ?? []
         XCTAssertEqual(projectedItemIDs.count, 33)
@@ -129,7 +132,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         let coordinator = EntryListCoordinator(store: store)
         coordinator.sendProjectionIntent(.retry(folder.id, revision: projection.revision))
 
-        XCTAssertEqual(store.state.hierarchy.foldersByID[folder.id], .init(phase: .loading, generation: 2))
+        XCTAssertEqual(
+            store.state.hierarchy.nodesByID[folder.id as String],
+            .init(expansionIntent: true, generation: 2, loadPhase: .loadingCore),
+        )
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: empty core finish는 enrichment 중에도 기존 empty row를 표시한다.
@@ -140,11 +146,11 @@ extension EVM002ManageEntriesViewPresentationTests {
     func testEmptyCoreFinishedProjectsExistingEmptyRow() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var hierarchy = EntryListHierarchyState(rootPath: "/root")
-        hierarchy.expandedFolderIDs = [folder.id]
-        hierarchy.foldersByID[folder.id] = .init(
-            phase: .loading,
+        hierarchy.nodesByID[folder.id as String] = .init(
+            folder: FolderSnapshot(coreFinished: true),
+            expansionIntent: true,
             generation: 1,
-            coreFinished: true,
+            loadPhase: .loadingCore,
         )
 
         let projection = hierarchyProjection(folder: folder, hierarchy: hierarchy)
@@ -167,24 +173,25 @@ extension EVM002ManageEntriesViewPresentationTests {
         let child = hierarchyFile(id: "/root/a/file", name: "file")
         let cachedChild = hierarchyFile(id: "/root/b/file", name: "file")
         var state = hierarchyState(roots: [loadingFolder, loadedFolder])
-        state.hierarchy.expandedFolderIDs = [loadingFolder.id, loadedFolder.id]
-        state.hierarchy.foldersByID[loadingFolder.id] = .init(
-            children: [child], phase: .loading, generation: 1, expectedBatchIndex: 1,
+        state.hierarchy.setExpandedIDs([loadingFolder.id, loadedFolder.id])
+        state.hierarchy.nodesByID[loadingFolder.id] = .init(
+            children: [child], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1,
         )
-        state.hierarchy.foldersByID[loadedFolder.id] = .init(
-            children: [cachedChild], phase: .loaded, generation: 1, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID[loadedFolder.id] = .init(
+            children: [cachedChild], loadPhase: .loaded, generation: 1, expectedBatchIndex: 1, coreFinished: true,
         )
         let reducer = EntryListHierarchyReducer()
 
         _ = reducer.reduce(into: &state, action: .hierarchy(.folderCollapseRequested(id: loadingFolder.id)))
-        XCTAssertEqual(state.hierarchy.foldersByID[loadingFolder.id], .init(phase: .idle, generation: 2))
+        XCTAssertEqual(state.hierarchy.nodesByID[loadingFolder.id], .init(generation: 2, loadPhase: .idle))
         _ = reducer.reduce(into: &state, action: .hierarchy(.folderCollapseRequested(id: loadedFolder.id)))
         _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: loadedFolder.id)))
-        XCTAssertEqual(state.hierarchy.foldersByID[loadedFolder.id]?.children, [cachedChild])
-        XCTAssertEqual(state.hierarchy.foldersByID[loadedFolder.id]?.generation, 1)
+        XCTAssertEqual(state.hierarchy.nodesByID[loadedFolder.id]?.folder.children, [cachedChild])
+        XCTAssertEqual(state.hierarchy.nodesByID[loadedFolder.id]?.generation, 1)
     }
 
-    /// EVM-002-toggle_directory_expansion_in_list: showHidden refresh는 모든 child cache를 비우고 확장 folder만 재시작한다.
+    /// EVM-002-toggle_directory_expansion_in_list: hiddenFilesSettingChanged는 모든 child cache를 비우고 확장 folder만 재시작한다.
+    /// consolidated hidden refresh path(toggleShowHiddenFiles → hiddenFilesSettingChanged)의 단일 refresh 경로를 검증한다.
     ///
     /// - 검증 내용: 모든 known folder의 요청 generation과 cached children을 무효화하고, collapsed folder는 idle/empty로 남긴다.
     /// - 사전 조건: 하나의 expanded loaded folder와 하나의 collapsed loaded folder가 있다.
@@ -195,20 +202,28 @@ extension EVM002ManageEntriesViewPresentationTests {
         let expandedChild = hierarchyFile(id: "/root/expanded/child", name: "child")
         let collapsedChild = hierarchyFile(id: "/root/collapsed/child", name: "child")
         var state = hierarchyState(roots: [expanded, collapsed])
-        state.hierarchy.expandedFolderIDs = [expanded.id]
-        state.hierarchy.foldersByID[expanded.id] = .init(
-            children: [expandedChild], phase: .loaded, generation: 1, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID[expanded.id] = .init(
+            children: [expandedChild], loadPhase: .loaded, generation: 1, expectedBatchIndex: 1, coreFinished: true,
         )
-        state.hierarchy.foldersByID[collapsed.id] = .init(
-            children: [collapsedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID[collapsed.id] = .init(
+            children: [collapsedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
+        state.hierarchy.setExpandedIDs([expanded.id])
         state.showHiddenFiles = true
         state.sortKey = .kind
         let store = TestStore(initialState: state) { EntryListHierarchyReducer() }
 
-        await store.send(.hierarchy(.showHiddenFilesRefreshRequested)) {
-            $0.hierarchy.foldersByID[expanded.id] = .init(phase: .loading, generation: 2)
-            $0.hierarchy.foldersByID[collapsed.id] = .init(phase: .idle, generation: 5)
+        await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
+            $0.hierarchy.nodesByID[expanded.id as String] = .init(
+                expansionIntent: true,
+                generation: 2,
+                loadPhase: .loadingCore,
+            )
+            $0.hierarchy.nodesByID[collapsed.id as String] = .init(
+                expansionIntent: false,
+                generation: 5,
+                loadPhase: .idle,
+            )
             $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = Set(["/root/collapsed", "/root/expanded"])
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
@@ -217,8 +232,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.internal.reconcileHierarchySelection)
 
         XCTAssertEqual(store.state.hierarchy.expandedFolderIDs, [expanded.id])
-        XCTAssertEqual(store.state.hierarchy.foldersByID[expanded.id]?.children, [])
-        XCTAssertEqual(store.state.hierarchy.foldersByID[collapsed.id]?.children, [])
+        XCTAssertEqual(store.state.hierarchy.nodesByID[expanded.id]?.folder.children, [])
+        XCTAssertEqual(store.state.hierarchy.nodesByID[collapsed.id]?.folder.children, [])
         await store.finish()
     }
 
@@ -231,20 +246,25 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let cachedChild = hierarchyFile(id: "/root/a/old-file", name: "old-file")
         var state = hierarchyState(roots: [folder])
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(
-            children: [cachedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
+        state.hierarchy.setExpandedIDs([folder.id as String])
 
         _ = EntryListHierarchyReducer().reduce(
             into: &state,
             action: .hierarchy(.hierarchyInvalidated(affectedPaths: ["/root"], removedPrefixes: [])),
         )
 
-        XCTAssertEqual(state.hierarchy.expandedFolderIDs, [folder.id])
+        XCTAssertEqual(state.hierarchy.expandedFolderIDs, [folder.id as String])
         XCTAssertEqual(
-            state.hierarchy.foldersByID[folder.id],
-            .init(children: [cachedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true),
+            state.hierarchy.nodesByID[folder.id as String],
+            FolderNodeState(
+                folder: FolderSnapshot(children: [cachedChild], expectedBatchIndex: 1, coreFinished: true),
+                expansionIntent: true,
+                generation: 4,
+                loadPhase: .loaded,
+            ),
         )
     }
 
@@ -257,21 +277,21 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let cachedChild = hierarchyFile(id: "/root/a/old-file", name: "old-file")
         var state = hierarchyState(roots: [folder])
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(
-            children: [cachedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
 
         _ = EntryListHierarchyReducer().reduce(
             into: &state,
             action: .hierarchy(.hierarchyInvalidated(
                 affectedPaths: ["/root"],
-                removedPrefixes: [folder.id],
+                removedPrefixes: [folder.id as String],
             )),
         )
 
         XCTAssertFalse(state.hierarchy.expandedFolderIDs.contains(folder.id))
-        XCTAssertNil(state.hierarchy.foldersByID[folder.id])
+        XCTAssertNil(state.hierarchy.nodesByID[folder.id as String])
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: complete legacy root snapshot은 같은 path의 비확장 항목으로 바뀐 folder cache를
@@ -284,9 +304,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let disappeared = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let cachedChild = hierarchyFile(id: "/root/a/old-file", name: "old-file")
         var state = hierarchyState(roots: [disappeared])
-        state.hierarchy.expandedFolderIDs = [disappeared.id]
-        state.hierarchy.foldersByID[disappeared.id] = .init(
-            children: [cachedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.setExpandedIDs([disappeared.id])
+        state.hierarchy.nodesByID[disappeared.id] = .init(
+            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
         let store = TestStore(initialState: state) { EntryViewLayoutFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
@@ -294,15 +314,15 @@ extension EVM002ManageEntriesViewPresentationTests {
         // store.exhaustivity = .off: 이 시나리오는 root snapshot 뒤 hierarchy cache reconciliation만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.hierarchy(.rootSnapshotCompleted(rootFolderIDs: []))) {
-            $0.hierarchy.expandedFolderIDs = []
-            $0.hierarchy.foldersByID = [:]
+        await store.send(.hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: []))) {
+            $0.hierarchy.setExpandedIDs([])
+            $0.hierarchy.nodesByID = [:]
             $0.outlineProjectionRevision = 1
         }
         await store.finish()
 
         XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(disappeared.id))
-        XCTAssertNil(store.state.hierarchy.foldersByID[disappeared.id])
+        XCTAssertNil(store.state.hierarchy.nodesByID[disappeared.id])
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: accepted staged root core finish는 같은 path의 비확장 항목으로 바뀐 folder cache를
@@ -318,9 +338,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let cachedChild = hierarchyFile(id: "/root/a/old-file", name: "old-file")
         var state = hierarchyState(roots: [disappeared])
         state.entries = [replacement]
-        state.hierarchy.expandedFolderIDs = [disappeared.id]
-        state.hierarchy.foldersByID[disappeared.id] = .init(
-            children: [cachedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.setExpandedIDs([disappeared.id])
+        state.hierarchy.nodesByID[disappeared.id] = .init(
+            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
         let store = TestStore(initialState: state) { EntryViewLayoutFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
@@ -328,15 +348,15 @@ extension EVM002ManageEntriesViewPresentationTests {
         // store.exhaustivity = .off: staged loading과 arrangement reapply의 후속 action은 각 owner suite에서 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.hierarchy(.rootSnapshotCompleted(rootFolderIDs: []))) {
-            $0.hierarchy.expandedFolderIDs = []
-            $0.hierarchy.foldersByID = [:]
+        await store.send(.hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: []))) {
+            $0.hierarchy.setExpandedIDs([])
+            $0.hierarchy.nodesByID = [:]
             $0.outlineProjectionRevision = 1
         }
         await store.finish()
 
         XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(disappeared.id))
-        XCTAssertNil(store.state.hierarchy.foldersByID[disappeared.id])
+        XCTAssertNil(store.state.hierarchy.nodesByID[disappeared.id])
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: 삭제 후 재생성된 folder는 새 generation에서 stale child 없이 다시 확장한다.
@@ -348,19 +368,25 @@ extension EVM002ManageEntriesViewPresentationTests {
         let deletedFolder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let cachedChild = hierarchyFile(id: "/root/a/old-file", name: "old-file")
         var state = hierarchyState(roots: [deletedFolder])
-        state.hierarchy.expandedFolderIDs = [deletedFolder.id]
-        state.hierarchy.foldersByID[deletedFolder.id] = .init(
-            children: [cachedChild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.setExpandedIDs([deletedFolder.id])
+        state.hierarchy.nodesByID[deletedFolder.id] = .init(
+            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
         let reducer = EntryListHierarchyReducer()
 
-        _ = reducer.reduce(into: &state, action: .hierarchy(.rootSnapshotCompleted(rootFolderIDs: [])))
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: [])),
+        )
         let recreatedFolder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         state.entries = [recreatedFolder]
         _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: recreatedFolder.id)))
 
         XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(recreatedFolder.id))
-        XCTAssertEqual(state.hierarchy.foldersByID[recreatedFolder.id], .init(phase: .loading, generation: 1))
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[recreatedFolder.id],
+            .init(expansionIntent: true, generation: 1, loadPhase: .loadingCore),
+        )
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: parent folder의 authoritative snapshot은 사라진 immediate descendant
@@ -368,18 +394,18 @@ extension EVM002ManageEntriesViewPresentationTests {
     ///
     /// - 검증 내용: parent coreFinished가 도착한 뒤 parent의 children에 없는 expanded descendant cache와 expanded ID를 정리한다.
     /// - 사전 조건: /root/a/b가 expanded 상태이고, /root/a는 children이 없는 상태에서 coreFinished를 받는다.
-    /// - 기대 결과: /root/a/b의 foldersByID와 expandedFolderIDs가 제거되고, /root/a/b의 in-flight load는 취소 효과를 받는다.
+    /// - 기대 결과: /root/a/b의 nodesByID와 expandedFolderIDs가 제거되고, /root/a/b의 in-flight load는 취소 효과를 받는다.
     func testParentSnapshotPrunesDisappearedImmediateFolderCacheOnCoreFinished() {
         let parentFolder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let cachedGrandchild = hierarchyFile(id: "/root/a/b/old-file", name: "old-file")
         var state = hierarchyState(roots: [parentFolder])
-        state.hierarchy.expandedFolderIDs = ["/root/a", "/root/a/b"]
-        state.hierarchy.foldersByID["/root/a"] = .init(
-            children: [], phase: .loading, generation: 1, expectedBatchIndex: 0, coreFinished: false,
+        state.hierarchy.nodesByID["/root/a"] = .init(
+            children: [], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 0, coreFinished: false,
         )
-        state.hierarchy.foldersByID["/root/a/b"] = .init(
-            children: [cachedGrandchild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID["/root/a/b"] = .init(
+            children: [cachedGrandchild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
+        state.hierarchy.setExpandedIDs(["/root/a", "/root/a/b"])
         let reducer = EntryListHierarchyReducer()
 
         _ = reducer.reduce(
@@ -388,28 +414,28 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
 
         XCTAssertFalse(state.hierarchy.expandedFolderIDs.contains("/root/a/b"))
-        XCTAssertNil(state.hierarchy.foldersByID["/root/a/b"])
+        XCTAssertNil(state.hierarchy.nodesByID["/root/a/b"])
         XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains("/root/a"))
-        XCTAssertNotNil(state.hierarchy.foldersByID["/root/a"])
+        XCTAssertNotNil(state.hierarchy.nodesByID["/root/a"])
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: parent snapshot이 여전히 존재하는 immediate descendant cache는 보존한다.
     ///
     /// - 검증 내용: parent coreFinished가 도착했을 때 parent의 children에 여전히 있는 expanded descendant의 cache는 유지된다.
     /// - 사전 조건: /root/a/b가 expanded 상태이고, /root/a의 마지막 coreBatch에 /root/a/b가 포함된 뒤 coreFinished가 도착한다.
-    /// - 기대 결과: /root/a/b의 foldersByID와 expandedFolderIDs가 그대로 유지된다.
+    /// - 기대 결과: /root/a/b의 nodesByID와 expandedFolderIDs가 그대로 유지된다.
     func testParentSnapshotPreservesCachedFolderWhenChildStillPresentOnCoreFinished() {
         let parentFolder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let childFolder = EntryModel.temporaryFolder(id: "/root/a/b", name: "b")
         let cachedGrandchild = hierarchyFile(id: "/root/a/b/old-file", name: "old-file")
         var state = hierarchyState(roots: [parentFolder])
-        state.hierarchy.expandedFolderIDs = ["/root/a", "/root/a/b"]
-        state.hierarchy.foldersByID["/root/a"] = .init(
-            children: [childFolder], phase: .loading, generation: 1, expectedBatchIndex: 1, coreFinished: false,
+        state.hierarchy.nodesByID["/root/a"] = .init(
+            children: [childFolder], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1, coreFinished: false,
         )
-        state.hierarchy.foldersByID["/root/a/b"] = .init(
-            children: [cachedGrandchild], phase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID["/root/a/b"] = .init(
+            children: [cachedGrandchild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
         )
+        state.hierarchy.setExpandedIDs(["/root/a", "/root/a/b"])
         let reducer = EntryListHierarchyReducer()
 
         _ = reducer.reduce(
@@ -419,7 +445,7 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains("/root/a/b"))
         XCTAssertEqual(
-            state.hierarchy.foldersByID["/root/a/b"]?.children.map(\.id),
+            state.hierarchy.nodesByID["/root/a/b"]?.folder.children.map(\.id),
             [cachedGrandchild.id],
         )
     }
@@ -434,9 +460,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         let first = hierarchyFile(id: "/root/a/first", name: "first")
         let second = hierarchyFile(id: "/root/a/second", name: "second")
         var state = hierarchyState(roots: [folder])
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(
-            children: [first, second], phase: .loading, generation: 1, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [first, second], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1,
+            coreFinished: true,
         )
 
         _ = EntryListHierarchyReducer().reduce(into: &state, action: folderResponse(
@@ -458,11 +485,14 @@ extension EVM002ManageEntriesViewPresentationTests {
             ])),
         ))
 
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children.map(\.id), [first.id, second.id])
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children.first?.facets.kind, first.facets.kind)
-        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children.last?.facets.kind, "Patched")
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children.map(\.id), [first.id, second.id])
         XCTAssertEqual(
-            state.hierarchy.foldersByID[folder.id]?.children.last?.facets.supplementaryMetadata,
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children.first?.facets.kind,
+            first.facets.kind,
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children.last?.facets.kind, "Patched")
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children.last?.facets.supplementaryMetadata,
             .compressedFileSize(42),
         )
     }
@@ -479,10 +509,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         let second = hierarchyFile(id: "/root/a/second", name: "second")
         var state = hierarchyState(roots: [folder])
         state.sortKey = .kind
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(
-            children: [first, second], phase: .loading, generation: 1, expectedBatchIndex: 1, coreFinished: true,
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [first, second], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1,
+            coreFinished: true,
         )
+        state.hierarchy.setExpandedIDs([folder.id as String])
         let patch = EntryMetadataPatch.spotlight(
             id: second.id,
             kind: "Patched",
@@ -498,12 +529,15 @@ extension EVM002ManageEntriesViewPresentationTests {
             folderGeneration: 1,
             .event(.metadataPatches([patch])),
         ))) {
-            $0.hierarchy.foldersByID[folder.id]?.children = [first, patchedSecond]
+            $0.hierarchy.nodesByID[folder.id as String]?.folder.children = [first, patchedSecond]
             $0.outlineProjectionRevision = 1
             $0.lastVisibleSelectableEntryIDs = Set([folder.id, second.id, first.id])
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
-        XCTAssertEqual(store.state.hierarchy.foldersByID[folder.id]?.children.map(\.id), [first.id, second.id])
+        XCTAssertEqual(
+            store.state.hierarchy.nodesByID[folder.id as String]?.folder.children.map(\.id),
+            [first.id, second.id],
+        )
         let projection = EntryListOutlineProjection(
             revision: store.state.outlineProjectionRevision,
             rootEntries: [folder],
@@ -524,10 +558,14 @@ extension EVM002ManageEntriesViewPresentationTests {
     func testFolderPermissionDeniedDelegatePreservesFailureSemantics() async {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var state = hierarchyState(roots: [folder])
-        state.hierarchy.expandedFolderIDs = [folder.id]
-        state.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 1)
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loadingCore,
+        )
         state.outlineProjectionRevision = 1
-        state.lastVisibleSelectableEntryIDs = [folder.id]
+        state.lastVisibleSelectableEntryIDs = [folder.id as String]
         let store = TestStore(initialState: state) { EntryViewLayoutFeature() }
 
         await store.send(.hierarchy(.folderChildrenResponse(
@@ -536,7 +574,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             folderGeneration: 1,
             .failed(.permissionDenied),
         ))) {
-            $0.hierarchy.foldersByID[folder.id]?.phase = .failed(.permissionDenied)
+            $0.hierarchy.nodesByID[folder.id as String]?.loadPhase = .failed(.permissionDenied)
             $0.outlineProjectionRevision = 2
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
@@ -552,10 +590,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         let app = hierarchyFolder(id: "/root/Voyager.app", name: "Voyager.app", isPackage: true, fileExtension: "app")
         let collection = hierarchyFolder(id: "/root/Library.voycoll", name: "Library.voycoll", fileExtension: "voycoll")
         var hierarchy = EntryListHierarchyState(rootPath: "/root")
-        hierarchy.expandedFolderIDs = [folder.id, app.id, collection.id]
-        hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 1)
-        hierarchy.foldersByID[app.id] = .init(phase: .loading, generation: 1)
-        hierarchy.foldersByID[collection.id] = .init(phase: .loading, generation: 1)
+        hierarchy.setExpandedIDs([folder.id, app.id, collection.id])
+        hierarchy.nodesByID[folder.id as String] = .init(expansionIntent: true, generation: 1, loadPhase: .loadingCore)
+        hierarchy.nodesByID[app.id] = .init(expansionIntent: true, generation: 1, loadPhase: .loadingCore)
+        hierarchy.nodesByID[collection.id] = .init(expansionIntent: true, generation: 1, loadPhase: .loadingCore)
         var coordinatorState = EntryViewLayoutState()
         coordinatorState.hierarchy = .init(rootPath: "/root")
         let projection = EntryListOutlineProjection(
@@ -612,8 +650,47 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.send(.hierarchy(.folderRetryRequested(id: collection.id)))
 
         XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.isEmpty)
-        XCTAssertTrue(store.state.hierarchy.foldersByID.isEmpty)
+        XCTAssertTrue(store.state.hierarchy.nodesByID.isEmpty)
         await store.finish()
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: depth-2 expansion과 완료된 child data가 3회의 parent collapse/re-expand
+    /// cycle에서도 생존하며 outline projection revision이 안정적으로 유지된다.
+    ///
+    /// - 검증 내용: 3회 collapse/re-expand 후에도 child expansion intent와 completed children이 유지되며
+    ///   outlineProjectionRevision이 첫 번째 expansion 이후 증가하지 않음
+    /// - 사전 조건: A(expanded, loaded) → B(expanded, loaded) → child files, 두 folder 모두 loaded 상태
+    /// - 기대 결과: 각 re-expand에서 outlineProjectionRevision이 안정적이며 B의 expansion과 children이 유지되고
+    ///   generation이 증가하지 않음
+    func testDepth2ExpansionSurvivesThreeCollapseReexpandCyclesWithoutReloading() {
+        let folderA = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let folderB = EntryModel.temporaryFolder(id: "/root/a/b", name: "b")
+        let childFile = hierarchyFile(id: "/root/a/b/file", name: "file")
+        var state = hierarchyState(roots: [folderA])
+        state.hierarchy.nodesByID[folderA.id as String] = .init(
+            children: [folderB], loadPhase: .loaded, generation: 1, expectedBatchIndex: 1, coreFinished: true,
+        )
+        state.hierarchy.nodesByID[folderB.id as String] = .init(
+            children: [childFile], loadPhase: .loaded, generation: 1, expectedBatchIndex: 1, coreFinished: true,
+        )
+        state.hierarchy.setExpandedIDs([folderA.id, folderB.id])
+        let baselineRevision = state.outlineProjectionRevision
+        let reducer = EntryListHierarchyReducer()
+
+        for _ in 0 ..< 3 {
+            _ = reducer.reduce(into: &state, action: .hierarchy(.folderCollapseRequested(id: folderA.id)))
+            _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: folderA.id)))
+        }
+
+        XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folderB.id))
+        XCTAssertEqual(state.hierarchy.nodesByID[folderB.id as String]?.folder.children, [childFile])
+        XCTAssertEqual(state.hierarchy.nodesByID[folderA.id as String]?.generation, 1)
+        XCTAssertEqual(state.hierarchy.nodesByID[folderB.id as String]?.generation, 1)
+        XCTAssertEqual(state.hierarchy.nodesByID[folderA.id as String]?.loadPhase, .loaded)
+        XCTAssertEqual(state.hierarchy.nodesByID[folderB.id as String]?.loadPhase, .loaded)
+        // outlineProjectionRevision이 첫 expansion 이후 증가하지 않아야 한다.
+        // normalize된 state에서는 loaded folder의 collapse/expand가 revision을 바꾸지 않아야 한다.
+        XCTAssertEqual(state.outlineProjectionRevision, baselineRevision)
     }
 
     private func hierarchyState(roots: [EntryModel]) -> EntryViewLayoutState {

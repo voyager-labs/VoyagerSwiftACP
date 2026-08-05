@@ -161,11 +161,11 @@ private extension EntryListOutlineProjection {
 
         mutating func append(entry: EntryModel) -> ItemID {
             let entryID = ItemID.entry(entry.id)
-            let folderState = hierarchyState.foldersByID[entry.id]
+            let nodeState = hierarchyState.nodesByID[entry.id]
             let isLoadingChildren = entry.supportsListHierarchyExpansion
                 && hierarchyState.expandedFolderIDs.contains(entry.id)
-                && folderState?.phase == .loading
-                && folderState?.coreFinished == false
+                && nodeState?.loadPhase == .loadingCore
+                && nodeState?.folder.coreFinished == false
             itemPayloads[entryID] = .entry(entry, isLoadingChildren: isLoadingChildren)
             visibleRows.append(entryID)
             visibleSelectableEntryIDs.append(entry.id)
@@ -184,34 +184,45 @@ private extension EntryListOutlineProjection {
         }
 
         mutating func childItems(for folderID: EntryModel.ID) -> [ItemID] {
-            let folderState = hierarchyState.foldersByID[folderID] ?? .init()
-            switch folderState.phase {
+            let nodeState = hierarchyState.nodesByID[folderID]
+            let snapshot = nodeState?.folder ?? FolderSnapshot()
+            switch nodeState?.loadPhase ?? .idle {
             case .idle:
                 return []
 
-            case .loading:
-                guard !folderState.coreFinished || !folderState.children.isEmpty else {
+            case .loadingCore:
+                guard !snapshot.coreFinished || !snapshot.children.isEmpty else {
                     let itemID = ItemID.empty(parent: folderID)
                     itemPayloads[itemID] = .empty(parent: folderID)
                     visibleRows.append(itemID)
                     return [itemID]
                 }
-                let sortedChildren = EntrySiblingSorter().sort(folderState.children, by: sortKey, order: sortOrder)
+                let sortedChildren = EntrySiblingSorter().sort(snapshot.children, by: sortKey, order: sortOrder)
+                return append(entries: sortedChildren)
+
+            case .enriching:
+                guard !snapshot.children.isEmpty else {
+                    let itemID = ItemID.empty(parent: folderID)
+                    itemPayloads[itemID] = .empty(parent: folderID)
+                    visibleRows.append(itemID)
+                    return [itemID]
+                }
+                let sortedChildren = EntrySiblingSorter().sort(snapshot.children, by: sortKey, order: sortOrder)
                 return append(entries: sortedChildren)
 
             case .loaded:
-                guard !folderState.children.isEmpty else {
+                guard !snapshot.children.isEmpty else {
                     let itemID = ItemID.empty(parent: folderID)
                     itemPayloads[itemID] = .empty(parent: folderID)
                     visibleRows.append(itemID)
                     return [itemID]
                 }
-                let sortedChildren = EntrySiblingSorter().sort(folderState.children, by: sortKey, order: sortOrder)
+                let sortedChildren = EntrySiblingSorter().sort(snapshot.children, by: sortKey, order: sortOrder)
                 return append(entries: sortedChildren)
 
             case let .failed(failure):
                 var itemIDs = append(entries: EntrySiblingSorter().sort(
-                    folderState.children,
+                    snapshot.children,
                     by: sortKey,
                     order: sortOrder,
                 ))

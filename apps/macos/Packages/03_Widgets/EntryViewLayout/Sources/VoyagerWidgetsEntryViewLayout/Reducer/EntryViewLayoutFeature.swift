@@ -557,7 +557,7 @@ public struct EntryViewLayoutFeature {
     static func setShowHiddenFiles(_ showHiddenFiles: Bool, state: inout State) -> Effect<Action> {
         guard state.showHiddenFiles != showHiddenFiles else { return .none }
         state.showHiddenFiles = showHiddenFiles
-        guard !state.hierarchy.foldersByID.isEmpty else { return .none }
+        guard !state.hierarchy.nodesByID.isEmpty else { return .none }
         return .send(.hierarchy(.hiddenFilesSettingChanged))
     }
 
