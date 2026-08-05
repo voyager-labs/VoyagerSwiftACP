@@ -48,7 +48,6 @@ struct FileManagerContentNavigationBridgeReducer {
                 let showHidden = !state.entryViewLayout.showHiddenFiles
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
-                    .send(.entryViewLayout(.hierarchy(.showHiddenFilesRefreshRequested))),
                     FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,

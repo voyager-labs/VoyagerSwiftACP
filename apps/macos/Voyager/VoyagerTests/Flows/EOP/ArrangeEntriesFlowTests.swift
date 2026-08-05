@@ -36,9 +36,13 @@ final class ArrangeEntriesFlowTests: XCTestCase {
         state.entryViewLayout.entries = [sourceEntry, parentEntry]
         state.entryViewLayout.hierarchy = .init(
             rootPath: sandbox.root.path,
-            expandedFolderIDs: [parentEntry.id],
-            foldersByID: [
-                parentEntry.id: .init(children: [targetEntry], phase: .loaded, generation: 1),
+            nodesByID: [
+                parentEntry.id: FolderNodeState(
+                    folder: .init(children: [targetEntry]),
+                    expansionIntent: true,
+                    generation: 1,
+                    loadPhase: .loaded,
+                ),
             ],
         )
         let store = TestStore(initialState: state) {

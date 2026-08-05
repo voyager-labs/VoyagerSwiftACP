@@ -170,7 +170,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     ) -> Effect<Action>? {
         switch delegateAction {
         case let .expandRequested(id):
-            guard let folderGeneration = state.entryViewLayout.hierarchy.foldersByID[id]?.generation
+            guard let folderGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation
             else { return .none }
             let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
             return sendEntryOperations(.loading(.loadFolderItems(.init(
@@ -192,7 +192,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return sendEntryOperations(.loading(.cancelAllFolderItems))
 
         case let .retryRequested(id):
-            guard let folderGeneration = state.entryViewLayout.hierarchy.foldersByID[id]?.generation
+            guard let folderGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation
             else { return .none }
             let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
             return sendEntryOperations(.loading(.loadFolderItems(.init(

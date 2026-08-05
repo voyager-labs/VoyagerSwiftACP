@@ -97,8 +97,8 @@ final class ManageEntriesViewPresentationFlowTests: XCTestCase {
                 && result == .event(.coreBatch(items: [child], batchIndex: 0))
         }
 
-        XCTAssertEqual(store.state.entryViewLayout.hierarchy.foldersByID[folder.id]?.phase, .loading)
-        XCTAssertFalse(store.state.entryViewLayout.hierarchy.foldersByID[folder.id]?.coreFinished ?? true)
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
+        XCTAssertFalse(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.coreFinished ?? true)
         XCTAssertEqual(
             store.state.entryViewLayout.visibleSelectableEntryIDs(isNormalDirectoryPage: true),
             [folder.id, child.id],
@@ -119,7 +119,7 @@ final class ManageEntriesViewPresentationFlowTests: XCTestCase {
                 && folderGeneration == 1
                 && result == .event(.coreFinished(batchCount: 1))
         }
-        XCTAssertTrue(store.state.entryViewLayout.hierarchy.foldersByID[folder.id]?.coreFinished ?? false)
+        XCTAssertTrue(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.coreFinished ?? false)
 
         await store.receive { action in
             guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
@@ -136,7 +136,7 @@ final class ManageEntriesViewPresentationFlowTests: XCTestCase {
                 && folderGeneration == 1
                 && result == .streamCompleted
         }
-        XCTAssertEqual(store.state.entryViewLayout.hierarchy.foldersByID[folder.id]?.phase, .loaded)
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.loadPhase, .loaded)
 
         XCTAssertEqual(store.state.navigation.navigationState, initialRoute)
         XCTAssertEqual(store.state.navigation.backHistory, initialHistory)

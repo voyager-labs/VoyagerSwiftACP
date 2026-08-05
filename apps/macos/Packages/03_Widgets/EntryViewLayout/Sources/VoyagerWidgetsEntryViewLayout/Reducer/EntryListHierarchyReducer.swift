@@ -45,35 +45,66 @@ struct EntryListHierarchyReducer {
                     state: &state,
                 )
 
-            case let .rootSnapshotCompleted(rootFolderIDs):
-                let removedPrefixes = state.hierarchy.foldersByID.keys.filter {
-                    isImmediateRootFolder($0, rootPath: state.hierarchy.rootPath)
-                        && !rootFolderIDs.contains($0)
+            case let .rootSnapshotCompleted(rootContextGeneration, rootFolders):
+                // generation이 일치하지 않으면 NO-OP: stale root completion을 무시한다.
+                guard rootContextGeneration == state.hierarchy.rootContextGeneration else { return .none }
+                let rootFolderIDs = Set(rootFolders.map(\.id))
+                var removedPrefixes: [String] = []
+                for id in state.hierarchy.nodesByID.keys {
+                    guard isImmediateRootFolder(id, rootPath: state.hierarchy.rootPath),
+                          !rootFolderIDs.contains(id)
+                    else { continue }
+                    removedPrefixes.append(id)
                 }
-                return invalidateHierarchy(
-                    affectedPaths: [],
-                    removedPrefixes: removedPrefixes,
-                    reloadCachedFolders: false,
-                    state: &state,
-                )
-
-            case .showHiddenFilesRefreshRequested:
-                return refreshHierarchyForShowHiddenFiles(state: &state)
+                // recursive eviction via parentID edges
+                var idsToRemove = Set<EntryModel.ID>()
+                for id in removedPrefixes {
+                    idsToRemove.insert(id)
+                    let descendants = state.hierarchy.nodesByID.keys.filter {
+                        isDescendantViaParentID($0, of: id, in: state.hierarchy.nodesByID)
+                    }
+                    idsToRemove.formUnion(descendants)
+                }
+                for id in idsToRemove {
+                    state.hierarchy.nodesByID[id] = nil
+                }
+                // authoritative root folder가 nodesByID에 없으면 생성한다.
+                for folder in rootFolders {
+                    if state.hierarchy.nodesByID[folder.id] == nil {
+                        state.hierarchy.nodesByID[folder.id] = FolderNodeState()
+                    }
+                }
+                // visible expanded intent 중 reload가 필요한 folder를 restart한다.
+                var effects: [Effect<Action>] = []
+                for folder in rootFolders {
+                    guard let nodeState = state.hierarchy.nodesByID[folder.id],
+                          nodeState.expansionIntent,
+                          nodeState.loadPhase != .loaded
+                    else { continue }
+                    var refreshedNode = nodeState
+                    refreshedNode.generation &+= 1
+                    refreshedNode.loadPhase = .loadingCore
+                    refreshedNode.folder = FolderSnapshot()
+                    state.hierarchy.nodesByID[folder.id] = refreshedNode
+                    effects.append(.send(.delegate(.expandRequested(folder.id))))
+                }
+                state.reconcileSelectionWithVisibleEntries()
+                return .merge(effects)
 
             case .coarseHierarchyRefreshRequested:
-                return refreshHierarchyForShowHiddenFiles(state: &state)
+                return reloadFoldersForPresentationChange(state: &state)
 
             case let .folderExpansionRequested(id):
                 guard hierarchyInteractionsAreEnabled(in: state) else { return .none }
                 guard let folder = folder(id: id, in: state),
                       folder.supportsListHierarchyExpansion else { return .none }
                 guard folderIsWithinCurrentRoot(id, state: state) else { return .none }
-                state.hierarchy.expandedFolderIDs.insert(id)
 
-                let folderState = state.hierarchy.foldersByID[id] ?? .init()
-                switch folderState.phase {
-                case .loaded, .loading:
-                    state.reconcileSelectionWithVisibleEntries()
+                var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
+                nodeState.expansionIntent = true
+                state.hierarchy.nodesByID[id] = nodeState
+                switch nodeState.loadPhase {
+                case .loaded, .enriching, .loadingCore:
                     return .none
                 case .idle, .failed:
                     return startLoad(folder: folder, id: id, state: &state)
@@ -84,21 +115,20 @@ struct EntryListHierarchyReducer {
                 guard let folder = folder(id: id, in: state),
                       folder.supportsListHierarchyExpansion else { return .none }
                 guard folderIsWithinCurrentRoot(id, state: state) else { return .none }
-                state.hierarchy.expandedFolderIDs.insert(id)
+                state.hierarchy.nodesByID[id, default: FolderNodeState()].expansionIntent = true
                 return startLoad(folder: folder, id: id, state: &state)
 
             case let .folderCollapseRequested(id):
-                state.hierarchy.expandedFolderIDs.remove(id)
-                var folderState = state.hierarchy.foldersByID[id] ?? .init()
-                let shouldCancelLoad = folderState.phase == .loading
-                if folderState.phase != .loaded {
-                    folderState.generation &+= 1
-                    folderState.children = []
-                    folderState.phase = .idle
-                    folderState.expectedBatchIndex = 0
-                    folderState.coreFinished = false
+                var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
+                nodeState.expansionIntent = false
+                let shouldCancelLoad = nodeState.loadPhase == .loadingCore
+                    || nodeState.loadPhase == .enriching
+                if nodeState.loadPhase != .loaded {
+                    nodeState.generation &+= 1
+                    nodeState.folder = FolderSnapshot()
+                    nodeState.loadPhase = FolderLoadPhase.idle
                 }
-                state.hierarchy.foldersByID[id] = folderState
+                state.hierarchy.nodesByID[id] = nodeState
                 let reconcileEffect = Effect<Action>.send(.internal(.reconcileHierarchySelection))
                 guard shouldCancelLoad else { return reconcileEffect }
                 return .concatenate(
@@ -108,39 +138,73 @@ struct EntryListHierarchyReducer {
 
             case let .folderChildrenResponse(rootContextGeneration, folderID, folderGeneration, response):
                 guard rootContextGeneration == state.hierarchy.rootContextGeneration,
-                      var folderState = state.hierarchy.foldersByID[folderID],
-                      folderState.generation == folderGeneration,
-                      folderState.phase == .loading
+                      var nodeState = state.hierarchy.nodesByID[folderID],
+                      nodeState.generation == folderGeneration,
+                      nodeState.loadPhase == .loadingCore || nodeState.loadPhase == .enriching
                 else { return .none }
 
                 let previousRevision = state.outlineProjectionRevision
-                let wasCoreFinished = folderState.coreFinished
-                guard apply(response: response, to: &folderState) else { return .none }
-                state.hierarchy.foldersByID[folderID] = folderState
+                let wasCoreFinished = nodeState.folder.coreFinished
+                guard apply(response: response, to: &nodeState.folder) else { return .none }
+
+                // Update load phase based on response type
+                switch response {
+                case .event(.coreFinished):
+                    if nodeState.loadPhase == .loadingCore {
+                        nodeState.loadPhase = .enriching
+                    }
+                case .streamCompleted:
+                    guard nodeState.folder.coreFinished else { return .none }
+                    nodeState.loadPhase = .loaded
+                case let .failed(failure):
+                    nodeState.loadPhase = .failed(failure)
+                case .event(.coreBatch), .event(.metadataPatches):
+                    break
+                }
+
+                state.hierarchy.nodesByID[folderID] = nodeState
 
                 if !wasCoreFinished,
-                   folderState.coreFinished,
+                   nodeState.folder.coreFinished,
                    case .event(.coreFinished) = response
                 {
                     let childIDs = Set(
-                        folderState.children
+                        nodeState.folder.children
                             .filter(\.supportsListHierarchyExpansion)
                             .map(\.id),
                     )
-                    let staleDescendants = state.hierarchy.foldersByID.keys.filter {
-                        isImmediateChildFolder($0, parentID: folderID) && !childIDs.contains($0)
+
+                    // parentID edge를 설정한다: children 중 nodesByID에 있는 node에 parentID를 기록한다.
+                    for childID in childIDs {
+                        if state.hierarchy.nodesByID[childID] != nil {
+                            state.hierarchy.nodesByID[childID]?.parentID = folderID
+                        }
+                    }
+
+                    // parentID edge로 stale descendant를 찾는다.
+                    // parentID가 없는 node는 path-based fallback(isImmediateChildFolder)으로 보완한다.
+                    let staleDescendants = state.hierarchy.nodesByID.keys.filter {
+                        (state.hierarchy.nodesByID[$0]?.parentID == folderID
+                            || isImmediateChildFolder($0, parentID: folderID))
+                            && !childIDs.contains($0)
                     }
                     if !staleDescendants.isEmpty {
-                        let effect = invalidateHierarchy(
-                            affectedPaths: [],
-                            removedPrefixes: Array(staleDescendants),
-                            reloadCachedFolders: false,
-                            state: &state,
-                        )
+                        // parentID edge를 따라 recursive eviction: 각 stale node의 모든 하위 node도 제거한다.
+                        var idsToRemove = Set(staleDescendants)
+                        for staleID in staleDescendants {
+                            let descendants = state.hierarchy.nodesByID.keys.filter {
+                                isDescendantViaParentID($0, of: staleID, in: state.hierarchy.nodesByID)
+                            }
+                            idsToRemove.formUnion(descendants)
+                        }
+                        for id in idsToRemove {
+                            state.hierarchy.nodesByID[id] = nil
+                        }
+                        state.reconcileSelectionWithVisibleEntries()
                         if state.outlineProjectionRevision == previousRevision {
                             state.advanceOutlineProjectionRevision()
                         }
-                        return effect
+                        return .none
                     }
                 }
 
@@ -158,13 +222,17 @@ struct EntryListHierarchyReducer {
         id: EntryModel.ID,
         state: inout State,
     ) -> Effect<Action> {
-        var folderState = state.hierarchy.foldersByID[id] ?? .init()
-        folderState.generation &+= 1
-        folderState.phase = .loading
-        folderState.children = []
-        folderState.expectedBatchIndex = 0
-        folderState.coreFinished = false
-        state.hierarchy.foldersByID[id] = folderState
+        var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
+        nodeState.generation &+= 1
+        nodeState.loadPhase = FolderLoadPhase.loadingCore
+        nodeState.folder = FolderSnapshot()
+        // parentID를 설정한다: nodesByID에서 이 node를 children으로 포함하는 node를 찾는다.
+        if nodeState.parentID == nil {
+            nodeState.parentID = state.hierarchy.nodesByID.first(where: { _, node in
+                node.folder.children.contains(where: { $0.id == id })
+            })?.key
+        }
+        state.hierarchy.nodesByID[id] = nodeState
         let previousRevision = state.outlineProjectionRevision
         state.reconcileSelectionWithVisibleEntries()
         if state.outlineProjectionRevision == previousRevision {
@@ -180,14 +248,13 @@ struct EntryListHierarchyReducer {
         reloadCachedFolders: Bool,
         state: inout State,
     ) -> Effect<Action> {
-        let removedIDs = Set(state.hierarchy.foldersByID.keys.filter { id in
+        let removedIDs = Set(state.hierarchy.nodesByID.keys.filter { id in
             removedPrefixes.contains { isSameOrDescendant(path: id, of: $0) }
         })
         var effects: [Effect<Action>] = []
 
         for id in removedIDs {
-            state.hierarchy.expandedFolderIDs.remove(id)
-            state.hierarchy.foldersByID[id] = nil
+            state.hierarchy.nodesByID[id] = nil
         }
 
         if reloadCachedFolders {
@@ -197,7 +264,7 @@ struct EntryListHierarchyReducer {
         var affectedIDs = Set<EntryModel.ID>()
         for path in affectedPaths {
             let canonicalPath = normalizedPath(path)
-            if let folderID = state.hierarchy.foldersByID.keys.first(where: {
+            if let folderID = state.hierarchy.nodesByID.keys.first(where: {
                 normalizedPath($0) == canonicalPath
             }) {
                 affectedIDs.insert(folderID)
@@ -217,13 +284,11 @@ struct EntryListHierarchyReducer {
             if state.hierarchy.expandedFolderIDs.contains(id) {
                 effects.append(startLoad(folder: folder, id: id, state: &state))
             } else {
-                var folderState = state.hierarchy.foldersByID[id] ?? .init()
-                folderState.children = []
-                folderState.phase = .idle
-                folderState.generation &+= 1
-                folderState.expectedBatchIndex = 0
-                folderState.coreFinished = false
-                state.hierarchy.foldersByID[id] = folderState
+                var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
+                nodeState.folder = FolderSnapshot()
+                nodeState.loadPhase = FolderLoadPhase.idle
+                nodeState.generation &+= 1
+                state.hierarchy.nodesByID[id] = nodeState
             }
         }
 
@@ -232,7 +297,7 @@ struct EntryListHierarchyReducer {
     }
 
     private func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
-        let folderIDs = Array(state.hierarchy.foldersByID.keys)
+        let folderIDs = Array(state.hierarchy.nodesByID.keys)
         let expandedFolders = state.hierarchy.expandedFolderIDs
             .compactMap { id in
                 folder(id: id, in: state)
@@ -242,15 +307,13 @@ struct EntryListHierarchyReducer {
             }
 
         for id in folderIDs {
-            var folderState = state.hierarchy.foldersByID[id] ?? .init()
+            var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
             if !state.hierarchy.expandedFolderIDs.contains(id) {
-                folderState.generation &+= 1
+                nodeState.generation &+= 1
             }
-            folderState.children = []
-            folderState.phase = .idle
-            folderState.expectedBatchIndex = 0
-            folderState.coreFinished = false
-            state.hierarchy.foldersByID[id] = folderState
+            nodeState.folder = FolderSnapshot()
+            nodeState.loadPhase = FolderLoadPhase.idle
+            state.hierarchy.nodesByID[id] = nodeState
         }
         if !folderIDs.isEmpty {
             state.advanceOutlineProjectionRevision()
@@ -265,14 +328,10 @@ struct EntryListHierarchyReducer {
         )
     }
 
-    private func refreshHierarchyForShowHiddenFiles(state: inout State) -> Effect<Action> {
-        reloadFoldersForPresentationChange(state: &state)
-    }
-
     private func folder(id: EntryModel.ID, in state: State) -> EntryModel? {
         state.entries.first(where: { $0.id == id })
-            ?? state.hierarchy.foldersByID.values.lazy
-            .flatMap(\.children)
+            ?? state.hierarchy.nodesByID.values.lazy
+            .flatMap(\.folder.children)
             .first(where: { $0.id == id })
     }
 
@@ -301,6 +360,23 @@ struct EntryListHierarchyReducer {
             && childComponents.starts(with: parentComponents)
     }
 
+    /// parentID edge를 따라 `ancestor`가 `id`의 조상인지 확인한다.
+    /// nodesByID의 parentID chain을 따라 올라가며 ancestor를 찾는다.
+    private func isDescendantViaParentID(
+        _ id: EntryModel.ID,
+        of ancestor: EntryModel.ID,
+        in nodesByID: [EntryModel.ID: FolderNodeState],
+    ) -> Bool {
+        var current = id
+        while let parentID = nodesByID[current]?.parentID {
+            if parentID == ancestor {
+                return true
+            }
+            current = parentID
+        }
+        return false
+    }
+
     private static func metadataPriority(
         for sortKey: VoyagerShared.SortKey,
     ) -> EntryMetadataPriority {
@@ -311,25 +387,23 @@ struct EntryListHierarchyReducer {
 
     private func apply(
         response: EntryListFolderChildrenResponse,
-        to folderState: inout EntryListHierarchyState.FolderChildrenState,
+        to snapshot: inout FolderSnapshot,
     ) -> Bool {
         switch response {
         case let .event(.coreBatch(items, batchIndex)):
-            return applyCoreBatch(items, batchIndex: batchIndex, to: &folderState)
+            return applyCoreBatch(items, batchIndex: batchIndex, to: &snapshot)
 
         case let .event(.coreFinished(batchCount)):
-            return applyCoreFinished(batchCount, to: &folderState)
+            return applyCoreFinished(batchCount, to: &snapshot)
 
         case let .event(.metadataPatches(patches)):
-            return applyMetadataPatches(patches, to: &folderState)
+            return applyMetadataPatches(patches, to: &snapshot)
 
         case .streamCompleted:
-            guard folderState.coreFinished else { return false }
-            folderState.phase = .loaded
+            guard snapshot.coreFinished else { return false }
             return true
 
-        case let .failed(failure):
-            folderState.phase = .failed(failure)
+        case .failed:
             return true
         }
     }
@@ -337,36 +411,36 @@ struct EntryListHierarchyReducer {
     private func applyCoreBatch(
         _ items: [EntryModel],
         batchIndex: Int,
-        to folderState: inout EntryListHierarchyState.FolderChildrenState,
+        to snapshot: inout FolderSnapshot,
     ) -> Bool {
-        guard !folderState.coreFinished, batchIndex == folderState.expectedBatchIndex else { return false }
+        guard !snapshot.coreFinished, batchIndex == snapshot.expectedBatchIndex else { return false }
         for item in items {
-            if let index = folderState.children.firstIndex(where: { $0.id == item.id }) {
-                folderState.children[index] = item
+            if let index = snapshot.children.firstIndex(where: { $0.id == item.id }) {
+                snapshot.children[index] = item
             } else {
-                folderState.children.append(item)
+                snapshot.children.append(item)
             }
         }
-        folderState.expectedBatchIndex &+= 1
+        snapshot.expectedBatchIndex &+= 1
         return true
     }
 
     private func applyCoreFinished(
         _ batchCount: Int,
-        to folderState: inout EntryListHierarchyState.FolderChildrenState,
+        to snapshot: inout FolderSnapshot,
     ) -> Bool {
-        guard !folderState.coreFinished, batchCount == folderState.expectedBatchIndex else { return false }
-        folderState.coreFinished = true
+        guard !snapshot.coreFinished, batchCount == snapshot.expectedBatchIndex else { return false }
+        snapshot.coreFinished = true
         return true
     }
 
     private func applyMetadataPatches(
         _ patches: [EntryMetadataPatch],
-        to folderState: inout EntryListHierarchyState.FolderChildrenState,
+        to snapshot: inout FolderSnapshot,
     ) -> Bool {
-        guard folderState.coreFinished else { return false }
+        guard snapshot.coreFinished else { return false }
         let patchesByEntryID = Dictionary(grouping: patches, by: metadataPatchEntryID)
-        folderState.children = folderState.children.map { child in
+        snapshot.children = snapshot.children.map { child in
             guard let childPatches = patchesByEntryID[child.id] else { return child }
             return childPatches.reduce(child) { $0.applying($1) }
         }
@@ -383,15 +457,22 @@ struct EntryListHierarchyReducer {
     }
 
     private func nearestLoadedParentID(for path: String, state: State) -> EntryModel.ID? {
-        state.hierarchy.foldersByID
+        state.hierarchy.nodesByID
             .filter {
-                ($0.value.phase == .loaded || $0.value.phase == .loading)
+                isLoadedOrLoading($0.value.loadPhase)
                     && isSameOrDescendant(path: path, of: $0.key)
             }
             .map(\.key)
             .max { lhs, rhs in
                 pathComponents(for: lhs).count < pathComponents(for: rhs).count
             }
+    }
+
+    private func isLoadedOrLoading(_ phase: FolderLoadPhase) -> Bool {
+        switch phase {
+        case .loadingCore, .enriching, .loaded: true
+        case .idle, .failed: false
+        }
     }
 
     private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {

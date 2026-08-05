@@ -112,7 +112,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.hierarchy = .init(rootPath: "/root", expandedFolderIDs: [folder.id])
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.setExpandedIDs([folder.id])
         state.outlineProjectionRevision = 1
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let coordinator = EntryListCoordinator(store: store)
@@ -476,7 +477,7 @@ private func makePresentationFile(id: String, name: String) -> EntryModel {
 
 private func outlineProjection(revision: Int, roots: [EntryModel]) -> EntryListOutlineProjection {
     var hierarchy = EntryListHierarchyState(rootPath: "/root")
-    hierarchy.expandedFolderIDs = Set(roots.filter(\.isFolder).map(\.id))
+    hierarchy.setExpandedIDs(Set(roots.filter(\.isFolder).map(\.id)))
     return EntryListOutlineProjection(
         revision: revision,
         rootEntries: roots,

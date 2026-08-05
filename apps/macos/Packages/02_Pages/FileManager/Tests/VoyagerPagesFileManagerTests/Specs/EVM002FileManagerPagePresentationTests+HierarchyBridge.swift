@@ -22,7 +22,7 @@ extension EVM002FileManagerPagePresentationTests {
         let folderID = "/root/folder"
         var state = FileManagerContentState()
         state.entryArrangements.sortKey = .kind
-        state.entryViewLayout.hierarchy.foldersByID[folderID] = .init(generation: 3)
+        state.entryViewLayout.hierarchy.nodesByID[folderID] = .init(generation: 3)
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
         }
@@ -42,7 +42,7 @@ extension EVM002FileManagerPagePresentationTests {
         let folderID = "/root/folder"
         var state = FileManagerContentState()
         state.entryArrangements.groupKey = .tags
-        state.entryViewLayout.hierarchy.foldersByID[folderID] = .init(generation: 4)
+        state.entryViewLayout.hierarchy.nodesByID[folderID] = .init(generation: 4)
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
         }

@@ -49,27 +49,118 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = [folder]
         state.showHiddenFiles = true
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [
-                folder.id: .init(
-                    children: [staleChild],
-                    phase: .loaded,
-                    generation: 4,
-                ),
-            ],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [staleChild],
+                loadPhase: .loaded,
+                generation: 4,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
         store.exhaustivity = .off
 
         await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 5)
+            $0.hierarchy.nodesByID[folder.id as String] = .init(
+                expansionIntent: true,
+                generation: 5,
+                loadPhase: .loadingCore,
+            )
             $0.outlineProjectionRevision = 2
         }
         await store.receive(\.delegate.expandRequested, folder.id)
+    }
+
+    // MARK: - EVM-002-show_hide_hidden_entry
+
+    /// EVM-002-show_hide_hidden_entry: hidden expanded folder는 OFF→ON 전환 시 expansion intent를 보존하고
+    /// child를 자동으로 다시 로드한다.
+    ///
+    /// - 검증 내용: hidden files OFF→ON 전환 시 expansionIntent가 유지되고 reload된다.
+    /// - 사전 조건: /root/a가 expanded·loaded 상태이고 showHiddenFiles = true, child가 하나 있다.
+    /// - 기대 결과: OFF 후에도 expansionIntent = true, loadPhase = .loadingCore, child는 비워진다.
+    ///   ON 후에도 expansionIntent = true, loadPhase = .loadingCore, 새 generation으로 재시작한다.
+    func testHiddenExpandedRootFolderRestoresOnToggleOn() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = makeHierarchyIntegrationEntry(id: "/root/a/visible.txt", name: "visible.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.showHiddenFiles = true
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [child],
+                loadPhase: .loaded,
+                generation: 4,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        // OFF: hidden files 숨김, cache는 무효화되지만 expansionIntent는 유지된다.
+        await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
+            $0.hierarchy.nodesByID[folder.id as String] = .init(
+                expansionIntent: true,
+                generation: 5,
+                loadPhase: .loadingCore,
+            )
+        }
+        await store.receive(\.delegate.expandRequested, folder.id)
+        // OFF 상태에서도 nodesByID와 expansionIntent는 유지된다.
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
+        XCTAssertTrue(store.state.hierarchy.nodesByID[folder.id]?.expansionIntent == true)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.folder.children, [])
+        let revisionAfterOff = store.state.outlineProjectionRevision
+
+        // ON: 다시 활성화, 새 generation으로 재시작한다.
+        await store.send(.hierarchy(.hiddenFilesSettingChanged))
+        await store.receive(\.delegate.expandRequested, folder.id)
+        // 확장 의도는 모든 전환에서 유지된다.
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
+        XCTAssertTrue(store.state.hierarchy.nodesByID[folder.id]?.expansionIntent == true)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.generation, 6)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
+        // revision은 OFF 이후보다 증가해야 한다.
+        XCTAssertGreaterThan(store.state.outlineProjectionRevision, revisionAfterOff)
+    }
+
+    /// EVM-002-show_hide_hidden_entry: consolidated hidden refresh path는 정확히 하나의 hierarchy invalidation만
+    /// 발생시킨다.
+    ///
+    /// - 검증 내용: `hiddenFilesSettingChanged`가 단일 `reloadFoldersForPresentationChange` 호출만 발생시킨다.
+    /// - 사전 조건: collapsed folder가 generation 1, loaded 상태다.
+    /// - 기대 결과: 한 번의 refresh로 generation이 1→2가 되고, 추가 refresh action 없이 종료된다.
+    func testHiddenToggleFiresExactlyOneHierarchyRefresh() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(generation: 1, loadPhase: .loaded),
+        ]
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        // 단일 consolidated path: hiddenFilesSettingChanged → reloadFoldersForPresentationChange
+        // collapsed folder는 generation 1→2, loadPhase는 .idle이 된다.
+        await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
+            $0.hierarchy.nodesByID[folder.id as String] = .init(generation: 2, loadPhase: .idle)
+            $0.outlineProjectionRevision = 1
+        }
+        // 추가 refresh action이 없어야 한다.
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.generation, 2)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.loadPhase, .idle)
     }
 
     /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 expanded folder cache reload
@@ -82,18 +173,20 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = [folder]
         state.sortKey = .kind
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(phase: .loaded, generation: 2)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(generation: 2, loadPhase: .loaded)]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
         store.exhaustivity = .off
 
         await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.hierarchy.nodesByID[folder.id as String] = .init(
+                expansionIntent: true,
+                generation: 3,
+                loadPhase: .loadingCore,
+            )
             $0.outlineProjectionRevision = 2
         }
         await store.receive(\.delegate.expandRequested, folder.id)
@@ -112,8 +205,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         state.sortKey = .kind
         state.hierarchy = .init(
             rootPath: "/root",
-            foldersByID: [
-                folder.id: .init(children: [staleChild], phase: .loaded, generation: 2),
+            nodesByID: [
+                folder.id: .init(children: [staleChild], loadPhase: .loaded, generation: 2),
             ],
         )
         let store = TestStore(initialState: state) {
@@ -122,13 +215,17 @@ extension EVM002ManageEntriesViewPresentationTests {
         store.exhaustivity = .off
 
         await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .idle, generation: 3)
+            $0.hierarchy.nodesByID[folder.id as String] = .init(generation: 3, loadPhase: .idle)
             $0.outlineProjectionRevision = 1
         }
         await store.skipReceivedActions()
         await store.send(.hierarchy(.folderExpansionRequested(id: folder.id))) {
-            $0.hierarchy.expandedFolderIDs = [folder.id]
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 4)
+            $0.hierarchy.setExpandedIDs([folder.id])
+            $0.hierarchy.nodesByID[folder.id as String] = .init(
+                expansionIntent: true,
+                generation: 4,
+                loadPhase: .loadingCore,
+            )
             $0.outlineProjectionRevision = 2
         }
         await store.receive(\.delegate.expandRequested, folder.id)
@@ -159,11 +256,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(phase: .loading, generation: 4)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(expansionIntent: true, generation: 4, loadPhase: .loadingCore)]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
@@ -171,8 +266,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         store.exhaustivity = .off
 
         await store.send(.hierarchy(.folderCollapseRequested(id: folder.id))) {
-            $0.hierarchy.expandedFolderIDs = []
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .idle, generation: 5)
+            $0.hierarchy.setExpandedIDs([])
+            $0.hierarchy.nodesByID[folder.id as String] = .init(generation: 5, loadPhase: .idle)
         }
         await store.receive(\.delegate.collapseRequested, folder.id)
     }
@@ -183,11 +278,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let child = makeHierarchyIntegrationEntry(id: "/root/a/file", name: "file")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)]
+        state.hierarchy.setExpandedIDs([folder.id])
 
         XCTAssertEqual(
             state.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id),
@@ -202,11 +295,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let sibling = makeHierarchyIntegrationEntry(id: "/root/sibling", name: "sibling")
         var state = EntryViewLayoutState()
         state.entries = [folder, sibling]
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)]
+        state.hierarchy.setExpandedIDs([folder.id])
         state.outlineProjectionRevision = 1
         let store = Store(initialState: state) {
             EntryViewLayoutFeature()
@@ -259,17 +350,15 @@ extension EVM002ManageEntriesViewPresentationTests {
         let staleChild = makeHierarchyIntegrationEntry(id: "/var/stale.txt", name: "stale.txt")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.hierarchy = .init(
-            rootPath: "/",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [
-                folder.id: .init(
-                    children: [staleChild],
-                    phase: .loaded,
-                    generation: 2,
-                ),
-            ],
-        )
+        state.hierarchy = .init(rootPath: "/")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [staleChild],
+                loadPhase: .loaded,
+                generation: 2,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
@@ -278,7 +367,11 @@ extension EVM002ManageEntriesViewPresentationTests {
             affectedPaths: ["/private/var"],
             removedPrefixes: [],
         ))) {
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.hierarchy.nodesByID[folder.id as String] = .init(
+                expansionIntent: true,
+                generation: 3,
+                loadPhase: .loadingCore,
+            )
             $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = [folder.id]
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
@@ -296,18 +389,16 @@ extension EVM002ManageEntriesViewPresentationTests {
         let partialChild = makeHierarchyIntegrationEntry(id: "/var/partial.txt", name: "partial.txt")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.hierarchy = .init(
-            rootPath: "/",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [
-                folder.id: .init(
-                    children: [partialChild],
-                    phase: .loading,
-                    generation: 2,
-                    expectedBatchIndex: 1,
-                ),
-            ],
-        )
+        state.hierarchy = .init(rootPath: "/")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [partialChild],
+                loadPhase: .loadingCore,
+                generation: 2,
+                expectedBatchIndex: 1,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
@@ -316,7 +407,11 @@ extension EVM002ManageEntriesViewPresentationTests {
             affectedPaths: ["/var/new.txt"],
             removedPrefixes: [],
         ))) {
-            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.hierarchy.nodesByID[folder.id as String] = .init(
+                expansionIntent: true,
+                generation: 3,
+                loadPhase: .loadingCore,
+            )
             $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = [folder.id]
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
@@ -335,14 +430,12 @@ extension EVM002ManageEntriesViewPresentationTests {
         let staleChild = makeHierarchyIntegrationEntry(id: "/root/A/B/stale.txt", name: "stale.txt")
         var state = EntryViewLayoutState()
         state.entries = [folderA]
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folderA.id, folderB.id],
-            foldersByID: [
-                folderA.id: .init(children: [folderB], phase: .loaded, generation: 2),
-                folderB.id: .init(children: [staleChild], phase: .loaded, generation: 4),
-            ],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folderA.id: .init(children: [folderB], loadPhase: .loaded, generation: 2),
+            folderB.id: .init(children: [staleChild], loadPhase: .loaded, generation: 4),
+        ]
+        state.hierarchy.setExpandedIDs([folderA.id, folderB.id])
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
@@ -350,8 +443,16 @@ extension EVM002ManageEntriesViewPresentationTests {
         store.exhaustivity = .off
 
         await store.send(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes: []))) {
-            $0.hierarchy.foldersByID[folderA.id] = .init(phase: .loading, generation: 3)
-            $0.hierarchy.foldersByID[folderB.id] = .init(phase: .loading, generation: 5)
+            $0.hierarchy.nodesByID[folderA.id as String] = .init(
+                expansionIntent: true,
+                generation: 3,
+                loadPhase: .loadingCore,
+            )
+            $0.hierarchy.nodesByID[folderB.id as String] = .init(
+                expansionIntent: true,
+                generation: 5,
+                loadPhase: .loadingCore,
+            )
             $0.outlineProjectionRevision = 3
         }
         await store.skipReceivedActions()
@@ -369,11 +470,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = [folder]
         state.selectedIds = [child.id]
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = Store(initialState: state) {
             Reduce<EntryViewLayoutState, EntryViewLayoutAction> { state, action in
                 guard case let .view(.startRename(item, _)) = action else { return .none }
@@ -434,11 +533,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = [folder]
         state.renamingItemId = child.id
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)]
+        state.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
         } withDependencies: {
@@ -496,12 +593,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
         let child = makeHierarchyIntegrationEntry(id: "/root/folder/child.txt", name: "child.txt")
         var state = EntryViewLayoutState()
-        state.hierarchy = .init(
-            rootContextGeneration: 3,
-            rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 2)],
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 2)]
+        state.hierarchy.setExpandedIDs([folder.id])
         state.selectedIds = [child.id]
         state.lastSelectedId = child.id
         state.rangeAnchorId = child.id
@@ -611,6 +705,145 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(Set(rowIDs).count, 2)
         XCTAssertEqual(coordinator.entryItemsByID[entry.id]?.count, 2)
         XCTAssertEqual(selectedEntryIDs, [entry.id, entry.id])
+    }
+
+    // MARK: - EVM-002-toggle_directory_expansion_in_list (parentID reconciliation)
+
+    /// EVM-002-toggle_directory_expansion_in_list: parentID edge 기반 reconciliation이 삭제/rename된 subtree를
+    /// evict하고 새 ID에 expansion을 합성하지 않는지 검증한다.
+    ///
+    /// - 검증 내용: parentID edge 기반 eviction, recursive descendant 제거, rename된 ID의 expansionIntent = false
+    /// - 사전 조건: Folder A의 children에 B, C가 있고 B/C 모두 parentID = A.id로 expanded 상태임.
+    ///   A의 coreFinished snapshot에 children = [B, D] (C 삭제, D rename 추가).
+    /// - 기대 결과: C가 nodesByID/expandedFolderIDs/projection에서 제거됨. D는 expansionIntent = false.
+    func testReconciliationUsesParentIDEdgesAndEvictsRenamedAndDeletedSubtrees() {
+        let folderA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let folderB = EntryModel.temporaryFolder(id: "/root/A/B", name: "B")
+        let folderC = EntryModel.temporaryFolder(id: "/root/A/C", name: "C")
+        let folderD = EntryModel.temporaryFolder(id: "/root/A/D", name: "D")
+        let grandchild = makeHierarchyIntegrationEntry(id: "/root/A/B/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folderA]
+        state.hierarchy = .init(rootPath: "/root")
+        // A: loadingCore, children [B, D], coreFinished=false, batchCount=2 expected
+        state.hierarchy.nodesByID[folderA.id] = FolderNodeState(
+            folder: FolderSnapshot(children: [folderB, folderD], expectedBatchIndex: 2, coreFinished: false),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loadingCore,
+        )
+        // B: expanded, loaded, parentID는 reducer가 설정해야 하므로 일부러 nil로 둠
+        state.hierarchy.nodesByID[folderB.id] = FolderNodeState(
+            folder: FolderSnapshot(children: [grandchild], coreFinished: true),
+            parentID: nil,
+            expansionIntent: true,
+            generation: 2,
+            loadPhase: .loaded,
+        )
+        // C: expanded, loaded, parentID는 reducer가 설정해야 하므로 일부러 nil로 둠
+        state.hierarchy.nodesByID[folderC.id] = FolderNodeState(
+            folder: FolderSnapshot(children: [], coreFinished: true),
+            parentID: nil,
+            expansionIntent: true,
+            generation: 3,
+            loadPhase: .loaded,
+        )
+        state.hierarchy.setExpandedIDs([folderA.id, folderB.id, folderC.id])
+        let reducer = EntryListHierarchyReducer()
+
+        // Act: A receives coreFinished with children = [B, D]
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.folderChildrenResponse(
+                rootContextGeneration: 0,
+                folderID: folderA.id,
+                folderGeneration: 1,
+                .event(.coreFinished(batchCount: 2)),
+            )),
+        )
+
+        // Assert: C is evicted from nodesByID
+        XCTAssertNil(state.hierarchy.nodesByID[folderC.id], "C should be evicted from nodesByID")
+        // Assert: C is absent from expandedFolderIDs
+        XCTAssertFalse(
+            state.hierarchy.expandedFolderIDs.contains(folderC.id),
+            "C should be absent from expandedFolderIDs",
+        )
+        // Assert: B is preserved
+        XCTAssertNotNil(state.hierarchy.nodesByID[folderB.id], "B should be preserved")
+        XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folderB.id), "B should remain expanded")
+        // Assert: B's parentID was set to A.id by the reducer during reconciliation
+        XCTAssertEqual(state.hierarchy.nodesByID[folderB.id]?.parentID, folderA.id,
+                       "B's parentID should be set to A.id after reconciliation")
+        // Assert: D (new rename ID) does NOT have expansionIntent
+        XCTAssertNil(state.hierarchy.nodesByID[folderD.id], "D should not have a node state (never expanded)")
+        // Assert: C is absent from projection visible rows
+        let projection = EntryListOutlineProjection(
+            revision: 1,
+            rootEntries: [folderA],
+            hierarchyState: state.hierarchy,
+            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+        let cItemID = EntryListOutlineProjection.ItemID.entry(folderC.id)
+        XCTAssertFalse(projection.visibleRows.contains(cItemID), "C should not be in projection visible rows")
+        // Assert: B's grandchild is still in projection via parentID traversal
+        let bItemID = EntryListOutlineProjection.ItemID.entry(folderB.id)
+        XCTAssertTrue(projection.visibleRows.contains(bItemID), "B should remain in projection visible rows")
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: stale folderGeneration을 가진 response는 nodesByID와
+    /// projection revision을 변경하지 않는지 검증한다.
+    ///
+    /// - 검증 내용: folderGeneration mismatch가 nodesByID, loadPhase, children, projection revision을 보존함
+    /// - 사전 조건: Folder A가 generation 5, loadingCore phase, expectedBatchIndex=1
+    /// - 기대 결과: folderGeneration=4인 stale response가 A의 state를 전혀 변경하지 않음
+    func testStaleFolderCompletionDoesNotAlterNodesOrProjection() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID[folder.id] = FolderNodeState(
+            folder: FolderSnapshot(children: [child], expectedBatchIndex: 1, coreFinished: false),
+            expansionIntent: true,
+            generation: 5,
+            loadPhase: .loadingCore,
+        )
+        state.hierarchy.setExpandedIDs([folder.id])
+        state.outlineProjectionRevision = 1
+        let reducer = EntryListHierarchyReducer()
+
+        // Act: stale response with mismatched folderGeneration (4 != 5)
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.folderChildrenResponse(
+                rootContextGeneration: 0,
+                folderID: folder.id,
+                folderGeneration: 4,
+                .event(.coreBatch(items: [child], batchIndex: 1)),
+            )),
+        )
+
+        // Assert: nothing changed
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id]?.generation, 5, "generation should remain 5")
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id]?.loadPhase,
+            .loadingCore,
+            "loadPhase should remain .loadingCore",
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id]?.folder.expectedBatchIndex,
+            1,
+            "expectedBatchIndex should remain 1",
+        )
+        if let children = state.hierarchy.nodesByID[folder.id]?.folder.children {
+            XCTAssertEqual(children, [child], "children should be unchanged")
+        } else {
+            XCTFail("folder node should exist")
+        }
+        XCTAssertEqual(state.outlineProjectionRevision, 1, "projection revision should be unchanged")
     }
 
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {

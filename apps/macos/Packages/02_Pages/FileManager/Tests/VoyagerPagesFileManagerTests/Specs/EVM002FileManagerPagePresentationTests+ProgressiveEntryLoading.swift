@@ -181,9 +181,9 @@ extension EVM002FileManagerPagePresentationTests {
         state.entryViewLayout.entries = [folder]
         state.entryViewLayout.hierarchy = .init(
             rootPath: rootPath,
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 1)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 1)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let store = Store(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -360,9 +360,9 @@ extension EVM002FileManagerPagePresentationTests {
         state.entryViewLayout.rangeAnchorId = folder.id
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 1)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 1)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         return state
     }
 

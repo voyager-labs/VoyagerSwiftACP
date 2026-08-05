@@ -33,7 +33,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
 
         await store.send(.hierarchy(.folderCollapseRequested(id: folder.id))) {
-            $0.hierarchy.expandedFolderIDs = []
+            $0.hierarchy.setExpandedIDs([])
         }
         await store.receive(\.internal.reconcileHierarchySelection) {
             $0.selectedIds = []
@@ -283,13 +283,11 @@ extension EVM002ManageEntriesViewPresentationTests {
     ) -> EntryViewLayoutState {
         var state = EntryViewLayoutState()
         state.entries = roots
-        state.hierarchy = .init(
-            rootPath: "/root",
-            expandedFolderIDs: expandedFolderIDs,
-            foldersByID: childrenByFolderID.mapValues {
-                .init(children: $0, phase: .loaded, generation: 0)
-            },
-        )
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = childrenByFolderID.mapValues {
+            FolderNodeState(children: $0, loadPhase: .loaded, generation: 0)
+        }
+        state.hierarchy.setExpandedIDs(expandedFolderIDs)
         state.selectedIds = selection.ids
         state.lastSelectedId = selection.lastSelectedID
         state.rangeAnchorId = selection.rangeAnchorID

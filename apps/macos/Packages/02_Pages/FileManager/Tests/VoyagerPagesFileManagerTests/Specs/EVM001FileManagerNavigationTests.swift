@@ -29,9 +29,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.entries = [folder, sibling]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             FileManagerContentNavigationBridgeReducer()
         }
@@ -59,9 +59,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.entries = [folder, sibling]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             FileManagerContentKeyCommandReducer()
         }
@@ -98,9 +98,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.selectedIds = [child.id]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             FileManagerContentKeyCommandReducer()
         }
@@ -149,9 +149,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.entries = [folder, sibling]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
         }
@@ -233,7 +233,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let expandedFolderPath = Self.fixtureDir("texts/plain")
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(folderPath)
-        state.entryViewLayout.hierarchy.expandedFolderIDs = [expandedFolderPath]
+        state.entryViewLayout.hierarchy.setExpandedIDs([expandedFolderPath])
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents(
