@@ -12,6 +12,12 @@ export type FileEntry = {
 
 export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
 
+/** Internal breadcrumb segment with SF Symbol name for icon rendering. */
+export type BreadcrumbSegment = {
+  readonly label: string
+  readonly symbolName: string
+}
+
 export type SidebarTabItem = {
   readonly id: string
   readonly label: string
@@ -20,6 +26,7 @@ export type SidebarTabItem = {
   readonly isPinned?: boolean
   readonly secondary?: string
   readonly pageAnchor?: string
+  readonly breadcrumb?: readonly BreadcrumbSegment[]
 }
 
 export type SidebarTabAction = (item: SidebarTabItem) => void

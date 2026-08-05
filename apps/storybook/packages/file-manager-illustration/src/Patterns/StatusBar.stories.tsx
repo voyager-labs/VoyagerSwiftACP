@@ -6,7 +6,12 @@ const meta = {
   tags: ["autodocs"],
   args: {
     selectedLabel: "5 of 72 selected",
-    breadcrumb: "Users / voyager / Desktop / Research",
+    breadcrumb: [
+      { label: "Users", symbolName: "folder" },
+      { label: "voyager", symbolName: "folder" },
+      { label: "Desktop", symbolName: "folder" },
+      { label: "Research", symbolName: "folder" },
+    ],
   },
 } satisfies Meta<typeof StatusBar>
 

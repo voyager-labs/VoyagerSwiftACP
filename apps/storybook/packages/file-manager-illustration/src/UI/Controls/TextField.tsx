@@ -1,4 +1,7 @@
-import type { ChangeEvent, FC } from "react"
+import type { ChangeEvent, CSSProperties, FC } from "react"
+
+export type TextFieldVariant = "default" | "rounded" | "plain"
+export type TextFieldSize = "small" | "regular"
 
 export interface TextFieldProps {
   value?: string
@@ -6,6 +9,12 @@ export interface TextFieldProps {
   multiline?: boolean
   rows?: number
   readOnly?: boolean
+  disabled?: boolean
+  invalid?: boolean
+  variant?: TextFieldVariant
+  size?: TextFieldSize
+  className?: string
+  style?: CSSProperties
   ariaLabel?: string
   onChange?: (value: string) => void
 }
@@ -16,6 +25,12 @@ export const TextField: FC<TextFieldProps> = ({
   multiline = false,
   rows = 3,
   readOnly = false,
+  disabled = false,
+  invalid = false,
+  variant = "default",
+  size = "regular",
+  className = "",
+  style,
   ariaLabel,
   onChange,
 }) => {
@@ -23,16 +38,28 @@ export const TextField: FC<TextFieldProps> = ({
     onChange?.(event.currentTarget.value)
   }
 
+  const classes = [
+    "vc-form-field",
+    variant !== "default" ? `vc-form-field--${variant}` : "",
+    size !== "regular" ? `vc-form-field--${size}` : "",
+    invalid ? "vc-form-field--invalid" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ")
+
   if (multiline) {
     return (
       <textarea
-        className="vc-form-field"
+        className={classes}
         value={value}
         placeholder={placeholder}
         rows={rows}
         readOnly={readOnly}
+        disabled={disabled}
         aria-label={ariaLabel}
         spellCheck={false}
+        style={style}
         onChange={handleChange}
       />
     )
@@ -40,13 +67,15 @@ export const TextField: FC<TextFieldProps> = ({
 
   return (
     <input
-      className="vc-form-field"
+      className={classes}
       type="text"
       value={value}
       placeholder={placeholder}
       readOnly={readOnly}
+      disabled={disabled}
       aria-label={ariaLabel}
       spellCheck={false}
+      style={style}
       onChange={handleChange}
     />
   )

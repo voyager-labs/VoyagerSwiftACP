@@ -10,7 +10,7 @@ import { FileToolbar } from "./Patterns/FileToolbar"
 import { StatusBar } from "./Patterns/StatusBar"
 import { TrafficLights } from "./UI/Display/TrafficLights"
 import {
-  deriveBreadcrumb,
+  deriveBreadcrumbSegments,
   deriveSelectionLabel,
   propsToInitialParams,
 } from "./lib/file-manager-adapter"
@@ -21,6 +21,10 @@ import type { Entry, FileManagerIllustrationProps, SidebarTabItem } from "./mode
 import "./styles/macos-tokens.css"
 import "./styles/file-manager.css"
 import "./styles/atoms.css"
+import "./styles/form-controls.css"
+import "./styles/menu-controls.css"
+import "./styles/feedback.css"
+import "./styles/overlays.css"
 import "./styles/inspector.css"
 import "./styles/sidebar.css"
 import "./styles/window-shell.css"
@@ -130,7 +134,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
 
   const toolbarContent: FileToolbarContent = route.kind === "home" ? "home" : "directory"
   const inspectorChatTitle = state.inspectorChatHeader === "sessions" ? "Chat History" : windowTitle
-  const breadcrumbText = deriveBreadcrumb(route, activeTab)
+  const breadcrumbSegments = deriveBreadcrumbSegments(activeTab, selectedEntries)
 
   return (
     <div data-file-manager-illustration>
@@ -171,7 +175,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onNewChat={handleOpenContextualChat}
               />
             }
-            breadcrumb={<StatusBar selectedLabel={selectedLabel} breadcrumb={breadcrumbText} />}
+            breadcrumb={<StatusBar selectedLabel={selectedLabel} breadcrumb={breadcrumbSegments} />}
             content={
               <FileManagerPrimaryContent
                 route={route}

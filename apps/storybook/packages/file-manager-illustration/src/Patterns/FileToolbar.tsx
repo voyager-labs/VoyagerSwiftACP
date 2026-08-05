@@ -44,7 +44,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
 
       <div className="toolbar-title-area">
         <span className="toolbar-title-content">
-          <SFSymbol name="folder" size={12} />
+          <SFSymbol name="folder" size={12} weight={300} />
           <span className="toolbar-title-label">{title}</span>
         </span>
         {content === "directory" && (

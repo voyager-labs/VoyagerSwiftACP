@@ -1,11 +1,12 @@
-import type { ContentRoute } from "../model/content-route"
 import type {
+  BreadcrumbSegment,
   ContentTab,
   Entry,
   FileEntry,
   FileManagerIllustrationProps,
   SidebarTabItem,
 } from "../model/types"
+import { contentTabs } from "./navigation-data"
 
 /** Convert public FileEntry to internal Entry. */
 export function toEntry(f: FileEntry): Entry {
@@ -22,7 +23,8 @@ export function toEntry(f: FileEntry): Entry {
 export function toSidebarTabItem(tab: ContentTab): SidebarTabItem {
   const icon = tab.id === "home" ? "home" : "folder-blue"
   const isPinned = ["recents", "downloads", "desktop", "documents", "projects"].includes(tab.id)
-  return { id: tab.id, label: tab.label, icon, isPinned }
+  const knownTab = contentTabs.find((ct) => ct.id === tab.id)
+  return { id: tab.id, label: tab.label, icon, isPinned, breadcrumb: knownTab?.breadcrumb }
 }
 
 /** Convert public props to reducer initial params. */
@@ -38,15 +40,21 @@ export function propsToInitialParams(props: FileManagerIllustrationProps): {
   }
 }
 
-/** Derive breadcrumb text from route. */
-export function deriveBreadcrumb(route: ContentRoute, activeTab: SidebarTabItem | null): string {
-  if (route.kind === "browser") {
-    const segments = route.pageAnchor?.split("/").filter((segment) => segment.length > 0)
-    return segments && segments.length > 0
-      ? segments.join(" / ")
-      : (activeTab?.label ?? "Directory")
+/** Derive icon-bearing breadcrumb segments from active tab and selection state. */
+export function deriveBreadcrumbSegments(
+  activeTab: SidebarTabItem | null,
+  selectedEntries: readonly Entry[],
+): readonly BreadcrumbSegment[] {
+  const base = activeTab?.breadcrumb
+    ?? (activeTab ? [{ label: activeTab.label, symbolName: "folder" }] : [])
+
+  if (selectedEntries.length === 1) {
+    const entry = selectedEntries[0]
+    const leafSymbol = entry.kind === "folder" ? "folder" : "doc"
+    return [...base, { label: entry.name, symbolName: leafSymbol }]
   }
-  return ""
+
+  return base
 }
 
 /** Derive selection status label. */

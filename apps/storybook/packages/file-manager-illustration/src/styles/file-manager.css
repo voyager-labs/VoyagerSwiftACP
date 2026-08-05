@@ -108,6 +108,7 @@
   --fm-window: var(--macos-window-background-color);
   --fm-window-border: var(--macos-window-border-color);
   --fm-window-hairline: var(--macos-window-border-color);
+  --fm-main-frame-border: color-mix(in srgb, var(--fm-text-primary) 3%, transparent);
   --fm-titlebar: var(--macos-material-titlebar);
   --fm-stage-padding: var(--fm-space-10);
   --fm-window-max-width: 1280px;
@@ -220,6 +221,7 @@
   --fm-radius-md: 8px;
   --fm-radius-lg: 12px;
   --fm-radius-xl: 16px;
+  --fm-main-frame-radius: 16px;
   --fm-radius-window: 10px;
   --fm-sidebar-location-radius: 10px;
   --fm-sidebar-row-radius: 6px;
@@ -272,6 +274,7 @@
   --fm-radius-md: 8px;
   --fm-radius-lg: 10px;
   --fm-radius-xl: 14px;
+  --fm-main-frame-radius: 6px;
   --fm-radius-window: 6px;
   --fm-shadow-window: 0 24px 60px #0000004d, 0 8px 20px #00000029;
   --fm-shadow-paper: 0 1px 2px #00000029;
@@ -1236,7 +1239,6 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  background: var(--fm-content);
 }
 
 [data-file-manager-illustration] .toolbar {
@@ -1246,8 +1248,6 @@
   gap: var(--fm-space-6);
   height: 40px;
   border-bottom: 1px solid var(--fm-separator);
-  background: var(--fm-toolbar);
-  backdrop-filter: var(--fm-backdrop-blur);
   padding: 0 var(--fm-space-7);
 }
 
@@ -1267,7 +1267,7 @@
 [data-file-manager-illustration] .toolbar-title-content {
   display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-2);
+  gap: var(--fm-space-3);
   min-width: 0;
 }
 
@@ -1279,7 +1279,7 @@
 [data-file-manager-illustration] .toolbar-title-label {
   overflow: hidden;
   color: var(--fm-text-primary);
-  font-size: var(--fm-font-size-body);
+  font-size: 15px;
   font-weight: var(--fm-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1562,22 +1562,53 @@
   justify-content: space-between;
   height: 24px;
   border-top: 1px solid var(--fm-separator);
-  background: var(--fm-statusbar);
-  backdrop-filter: var(--fm-backdrop-blur);
-  padding: 0 var(--fm-space-6);
+  padding: 0 16px;
   color: var(--fm-text-secondary);
   font-size: var(--fm-font-size-caption);
   font-weight: var(--fm-weight-medium);
 }
 
 [data-file-manager-illustration] .statusbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 50%;
+  gap: 4px;
+}
+
+[data-file-manager-illustration] .statusbar-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-1);
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .statusbar-chevron-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .statusbar-breadcrumb-item .sf-symbol {
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .statusbar-breadcrumb-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
   color: var(--fm-text-secondary);
-  font-size: var(--fm-font-size-caption);
-  font-weight: var(--fm-weight-medium);
+  font-size: 12px;
+  font-weight: var(--fm-weight-regular);
+}
+
+[data-file-manager-illustration] .statusbar-breadcrumb-item + .statusbar-breadcrumb-item {
+  margin-left: 0;
 }
 
 [data-file-manager-illustration] .statusbar-count {

@@ -26,3 +26,62 @@ export const Multiline: Story = {
     placeholder: "Ask anything…",
   },
 }
+
+export const Rounded: Story = {
+  args: {
+    variant: "rounded",
+    value: "Rounded search field",
+  },
+}
+
+export const Plain: Story = {
+  args: {
+    variant: "plain",
+    value: "Plain inline field",
+    placeholder: "Type here…",
+  },
+}
+
+export const Small: Story = {
+  args: {
+    size: "small",
+    value: "Small field",
+  },
+}
+
+export const SmallRounded: Story = {
+  args: {
+    variant: "rounded",
+    size: "small",
+    value: "Small rounded",
+  },
+}
+
+export const SmallPlain: Story = {
+  args: {
+    variant: "plain",
+    size: "small",
+    value: "Small plain",
+  },
+}
+
+export const Disabled: Story = {
+  args: {
+    disabled: true,
+    value: "Disabled field",
+  },
+}
+
+export const Invalid: Story = {
+  args: {
+    invalid: true,
+    value: "Invalid input",
+  },
+}
+
+export const ReadOnly: Story = {
+  args: {
+    readOnly: true,
+    value: "Read-only content",
+  },
+}
