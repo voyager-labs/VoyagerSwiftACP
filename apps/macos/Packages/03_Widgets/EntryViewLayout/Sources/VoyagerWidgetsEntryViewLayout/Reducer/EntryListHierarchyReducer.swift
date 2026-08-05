@@ -100,8 +100,9 @@ struct EntryListHierarchyReducer {
                       folder.supportsListHierarchyExpansion else { return .none }
                 guard folderIsWithinCurrentRoot(id, state: state) else { return .none }
 
-                let nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
-                state.hierarchy.nodesByID[id, default: FolderNodeState()].expansionIntent = true
+                var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
+                nodeState.expansionIntent = true
+                state.hierarchy.nodesByID[id] = nodeState
                 switch nodeState.loadPhase {
                 case .loaded, .enriching, .loadingCore:
                     return .none

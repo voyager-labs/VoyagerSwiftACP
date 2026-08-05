@@ -147,11 +147,23 @@ private extension EntryListOutlineProjection {
         let hierarchyState: EntryListHierarchyState
         let sortKey: SortKey
         let sortOrder: VoyagerShared.SortOrder
+        let expandedFolderIDs: Set<EntryModel.ID>
         var childrenByParent: [ItemID: [ItemID]] = [:]
         var itemPayloads: [ItemID: ItemPayload] = [:]
         var visibleRows: [ItemID] = []
         var visibleSelectableEntryIDs: [EntryModel.ID] = []
         var visitedFolders: Set<EntryModel.ID> = []
+
+        init(
+            hierarchyState: EntryListHierarchyState,
+            sortKey: SortKey,
+            sortOrder: VoyagerShared.SortOrder,
+        ) {
+            self.hierarchyState = hierarchyState
+            self.sortKey = sortKey
+            self.sortOrder = sortOrder
+            expandedFolderIDs = hierarchyState.expandedFolderIDs
+        }
 
         mutating func append(entries: [EntryModel]) -> [ItemID] {
             entries.map { entry in
@@ -163,7 +175,7 @@ private extension EntryListOutlineProjection {
             let entryID = ItemID.entry(entry.id)
             let nodeState = hierarchyState.nodesByID[entry.id]
             let isLoadingChildren = entry.supportsListHierarchyExpansion
-                && hierarchyState.expandedFolderIDs.contains(entry.id)
+                && expandedFolderIDs.contains(entry.id)
                 && nodeState?.loadPhase == .loadingCore
                 && nodeState?.folder.coreFinished == false
             itemPayloads[entryID] = .entry(entry, isLoadingChildren: isLoadingChildren)
@@ -171,7 +183,7 @@ private extension EntryListOutlineProjection {
             visibleSelectableEntryIDs.append(entry.id)
 
             guard entry.supportsListHierarchyExpansion,
-                  hierarchyState.expandedFolderIDs.contains(entry.id),
+                  expandedFolderIDs.contains(entry.id),
                   !visitedFolders.contains(entry.id)
             else {
                 return entryID

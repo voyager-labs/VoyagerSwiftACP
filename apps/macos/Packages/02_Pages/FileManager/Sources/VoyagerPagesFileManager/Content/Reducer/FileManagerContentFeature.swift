@@ -372,9 +372,14 @@ public struct FileManagerContentFeature {
     static func isRootCompletion(_ action: Action) -> Bool {
         switch action {
         case .entryOperations(.loading(.itemsLoaded)):
-            true
+            return true
+        case let .entryOperations(.loading(.streamEvent(streamEvent))):
+            if case .coreFinished = streamEvent.event {
+                return true
+            }
+            return false
         default:
-            false
+            return false
         }
     }
 
