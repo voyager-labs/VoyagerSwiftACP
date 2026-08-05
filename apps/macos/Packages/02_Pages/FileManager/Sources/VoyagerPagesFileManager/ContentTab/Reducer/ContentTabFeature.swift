@@ -63,7 +63,20 @@ public struct ContentTabFeature {
                 return duplicateSelected(requests: requests, state: &state)
 
             case let .reorder(sourceID, targetID, placement):
-                return reorder(sourceID: sourceID, targetID: targetID, placement: placement, state: &state)
+                return reorder(
+                    orderedMovingIDs: [sourceID],
+                    anchorID: targetID,
+                    placement: placement,
+                    state: &state,
+                )
+
+            case let .reorderGroup(orderedMovingIDs, anchorID, placement):
+                return reorder(
+                    orderedMovingIDs: orderedMovingIDs,
+                    anchorID: anchorID,
+                    placement: placement,
+                    state: &state,
+                )
 
             case let .pin(id):
                 return pin(id: id, dormantSlot: nil, state: &state)
@@ -441,51 +454,80 @@ extension ContentTabFeature {
         )
     }
 
-    private func reorder(
-        sourceID: ContentTabID,
-        targetID: ContentTabID,
+    static func reorderedTabs(
+        _ tabs: IdentifiedArrayOf<ContentTabItem>,
+        orderedMovingIDs: [ContentTabID],
+        anchorID: ContentTabID,
         placement: FileManagerTopNavigationReorderPlacement,
-        state: inout ContentTabState,
-    ) -> Effect<ContentTabAction> {
-        guard sourceID != targetID,
-              let source = state.tabs[id: sourceID],
-              let target = state.tabs[id: targetID],
-              !source.isPinned,
-              !target.isPinned
+    ) -> [ContentTabItem]? {
+        let movingIDSet = Set(orderedMovingIDs)
+        guard !orderedMovingIDs.isEmpty,
+              movingIDSet.count == orderedMovingIDs.count,
+              !movingIDSet.contains(anchorID),
+              let anchor = tabs[id: anchorID],
+              !anchor.isPinned,
+              orderedMovingIDs.allSatisfy({ id in
+                  guard let tab = tabs[id: id] else { return false }
+                  return !tab.isPinned
+              })
         else {
-            return .none
+            return nil
         }
 
-        let originalUnpinnedIDs = state.tabs.filter { !$0.isPinned }.map(\.id)
-        var reorderedUnpinnedIDs = originalUnpinnedIDs
-        reorderedUnpinnedIDs.removeAll { $0 == sourceID }
-
-        guard let targetIndex = reorderedUnpinnedIDs.firstIndex(of: targetID) else {
-            return .none
+        let originalUnpinnedIDs = tabs.filter { !$0.isPinned }.map(\.id)
+        var reducedUnpinnedIDs = originalUnpinnedIDs.filter { !movingIDSet.contains($0) }
+        guard let anchorIndex = reducedUnpinnedIDs.firstIndex(of: anchorID) else {
+            return nil
         }
 
-        let proposedIndex = placement == .before ? targetIndex : targetIndex + 1
-        let insertionIndex = min(max(proposedIndex, reorderedUnpinnedIDs.startIndex), reorderedUnpinnedIDs.endIndex)
-        reorderedUnpinnedIDs.insert(sourceID, at: insertionIndex)
-
-        guard reorderedUnpinnedIDs != originalUnpinnedIDs else {
-            return .none
+        let insertionIndex = placement == .before ? anchorIndex : anchorIndex + 1
+        reducedUnpinnedIDs.insert(contentsOf: orderedMovingIDs, at: insertionIndex)
+        guard reducedUnpinnedIDs != originalUnpinnedIDs,
+              reducedUnpinnedIDs.count == originalUnpinnedIDs.count,
+              Set(reducedUnpinnedIDs) == Set(originalUnpinnedIDs)
+        else {
+            return nil
         }
 
-        var reorderedUnpinnedIterator = reorderedUnpinnedIDs.makeIterator()
-        var reorderedTabs: [ContentTabItem] = []
-        for tab in state.tabs {
+        var reorderedUnpinnedIterator = reducedUnpinnedIDs.makeIterator()
+        var result: [ContentTabItem] = []
+        result.reserveCapacity(tabs.count)
+        for tab in tabs {
             if tab.isPinned {
-                reorderedTabs.append(tab)
+                result.append(tab)
                 continue
             }
 
             guard let reorderedID = reorderedUnpinnedIterator.next(),
-                  let reorderedTab = state.tabs[id: reorderedID]
+                  let reorderedTab = tabs[id: reorderedID]
             else {
-                return .none
+                return nil
             }
-            reorderedTabs.append(reorderedTab)
+            result.append(reorderedTab)
+        }
+
+        guard reorderedUnpinnedIterator.next() == nil,
+              result.count == tabs.count,
+              Set(result.map(\.id)) == Set(tabs.map(\.id))
+        else {
+            return nil
+        }
+        return result
+    }
+
+    private func reorder(
+        orderedMovingIDs: [ContentTabID],
+        anchorID: ContentTabID,
+        placement: FileManagerTopNavigationReorderPlacement,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard let reorderedTabs = Self.reorderedTabs(
+            state.tabs,
+            orderedMovingIDs: orderedMovingIDs,
+            anchorID: anchorID,
+            placement: placement,
+        ) else {
+            return .none
         }
         state.tabs = .init(uniqueElements: reorderedTabs)
         return .none

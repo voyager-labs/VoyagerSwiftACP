@@ -1125,6 +1125,47 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state, validSelectionState)
     }
 
+    /// CTM-001-select_content_tabs: drag snapshot은 표시 순서와 initiating membership을 고정한다.
+    /// 선택된 row와 비선택 row에서 frozen batch 경계가 달라지는 계약을 검증한다.
+    /// - 검증 내용: displayed-order stable dedup/source filter와 non-member singleton 준비
+    /// - 사전 조건: storage A/B/C/D와 다른 표시 D/B/A/C/D/stale, 선택 D/B/stale
+    /// - 기대 결과: D drag는 D/B를 고정하고 비선택 A drag는 A singleton이며 missing initiating은 거부된다.
+    func testContentTabDragSnapshotUsesDisplayedOrderAndNonMemberSingleton() {
+        let tabA = ContentTabID(rawValue: "drag-a")
+        let tabB = ContentTabID(rawValue: "drag-b")
+        let tabC = ContentTabID(rawValue: "drag-c")
+        let tabD = ContentTabID(rawValue: "drag-d")
+        let staleTab = ContentTabID(rawValue: "drag-stale")
+        let sourceTabIDs = Set([tabA, tabB, tabC, tabD])
+        let displayedOrder = [tabD, tabB, tabA, tabC, tabD, staleTab]
+        let selectedTabIDs = Set([tabD, tabB, staleTab])
+
+        XCTAssertEqual(
+            ContentTabDragSnapshot.frozenOrderedTabIDs(
+                initiatingTabID: tabD,
+                selectedTabIDs: selectedTabIDs,
+                displayedOrderedTabIDs: displayedOrder,
+                sourceTabIDs: sourceTabIDs,
+            ),
+            [tabD, tabB],
+        )
+        XCTAssertEqual(
+            ContentTabDragSnapshot.frozenOrderedTabIDs(
+                initiatingTabID: tabA,
+                selectedTabIDs: selectedTabIDs,
+                displayedOrderedTabIDs: displayedOrder,
+                sourceTabIDs: sourceTabIDs,
+            ),
+            [tabA],
+        )
+        XCTAssertNil(ContentTabDragSnapshot.frozenOrderedTabIDs(
+            initiatingTabID: staleTab,
+            selectedTabIDs: selectedTabIDs,
+            displayedOrderedTabIDs: displayedOrder,
+            sourceTabIDs: sourceTabIDs,
+        ))
+    }
+
     private enum ContentTabButtonRoute: Equatable {
         case activate
         case toggleSelection
@@ -1215,7 +1256,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         isPinned: Bool = false,
         isEnabled: Bool = true,
     ) {
-        button.update(
+        button.update(configuration: .init(
             rootView: rootView,
             accessibilityLabel: "Content Tab",
             accessibilityValue: accessibilityValue,
@@ -1236,7 +1277,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             onPin: { recorder.menuActions.append(.pin) },
             onUnpin: { recorder.menuActions.append(.unpin) },
             onClose: { recorder.menuActions.append(.close) },
-        )
+        ))
     }
 
     private func dispatchPrimaryClick(
