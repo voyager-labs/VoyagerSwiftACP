@@ -92,7 +92,8 @@ final class ManageFileManagerWindowPanesFlowTests: XCTestCase {
 
         // focused window로만 toggleSidebar 명령이 라우팅되었는지 확인
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .request(.toggleSidebar))) = action else { return false }
+            guard case let .windows(.element(id: id, action: .window(.request(.toggleSidebar)))) = action
+            else { return false }
             return id == focusedID
         }
 
@@ -171,7 +172,8 @@ final class ManageFileManagerWindowPanesFlowTests: XCTestCase {
 
         await store.send(.window(.toggleSidebar))
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .request(.toggleSidebar))) = action else { return false }
+            guard case let .windows(.element(id: id, action: .window(.request(.toggleSidebar)))) = action
+            else { return false }
             return id == focusedID
         }
 
