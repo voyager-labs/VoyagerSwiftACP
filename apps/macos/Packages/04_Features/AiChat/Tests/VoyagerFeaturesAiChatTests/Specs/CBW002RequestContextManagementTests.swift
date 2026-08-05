@@ -1131,6 +1131,79 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     }
 }
 
+extension CBW002RequestContextManagementTests {
+    // MARK: - CBW-002-show_request_context
+
+    /// CBW-002-show_request_context: file icon 완료는 current path와 generation이 일치하고 취소되지 않을 때만 반영한다.
+    /// chip이 빠르게 재사용될 때 이전 detached 결과가 현재 icon state를 덮어쓰지 않는 경계를 검증합니다.
+    /// - 검증 내용: same path/generation 성공과 path mismatch, generation mismatch, cancellation 거부를 확인합니다.
+    /// - 사전 조건: captured file path와 current path/generation 조합을 직접 구성합니다.
+    /// - 기대 결과: 현재 uncancelled request만 true이고 stale 또는 cancelled request는 모두 false입니다.
+    func testShowRequestContextRejectsCancelledOrStaleFileIconResolution() {
+        XCTAssertTrue(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Current.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 3,
+            currentGeneration: 3,
+            isCancelled: false,
+        ))
+        XCTAssertFalse(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Old.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 3,
+            currentGeneration: 3,
+            isCancelled: false,
+        ))
+        XCTAssertFalse(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Current.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 2,
+            currentGeneration: 3,
+            isCancelled: false,
+        ))
+        XCTAssertFalse(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Current.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 3,
+            currentGeneration: 3,
+            isCancelled: true,
+        ))
+    }
+
+    /// CBW-002-show_request_context: file icon은 WorkspaceClient 비동기 task와 고정 placeholder를 사용한다.
+    /// chip body가 AppKit singleton을 동기 호출하지 않고 asset/system icon 경로는 즉시 렌더링하는지 검증합니다.
+    /// - 검증 내용: dependency, @State, task(id:), explicit cancellation, path guard, 11x11 placeholder source 계약을 확인합니다.
+    /// - 사전 조건: production AiChatInputBar source의 request-context chip subtree를 읽습니다.
+    /// - 기대 결과: NSWorkspace 직접 호출은 없고 file만 async이며 asset/system branch는 synchronous 상태로 남습니다.
+    func testShowRequestContextLoadsFileIconAsynchronouslyWithStablePlaceholder() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift"),
+            encoding: .utf8,
+        )
+        let chipStart = try XCTUnwrap(source.range(of: "private struct AiChatRemovableRequestContextChip: View"))
+        let resolutionStart = try XCTUnwrap(source.range(of: "enum AiChatRequestContextIconResolution"))
+        let chip = String(source[chipStart.lowerBound ..< resolutionStart.lowerBound])
+
+        XCTAssertTrue(chip.contains("@Dependency(\\.workspaceClient)\n    private var workspaceClient"))
+        XCTAssertTrue(chip.contains("@State private var resolvedFileIcon: NSImage?"))
+        XCTAssertTrue(chip.contains(".task(id: iconFilePath)"))
+        XCTAssertTrue(chip.contains("let icon = await workspaceClient.iconForFileAsync(path)"))
+        XCTAssertTrue(chip.contains("iconLoadTask?.cancel()"))
+        XCTAssertTrue(chip.contains("currentPath: currentIconFilePath"))
+        XCTAssertTrue(chip.contains("resolvedFileIcon = nil"))
+        XCTAssertTrue(chip.contains("Color.clear"))
+        XCTAssertTrue(chip.contains(".frame(width: 11, height: 11)"))
+        XCTAssertTrue(chip.contains("} else if let iconAssetName {"))
+        XCTAssertTrue(chip.contains("} else if let iconSystemName {"))
+        XCTAssertFalse(chip.contains("NSWorkspace.shared.icon(forFile:"))
+    }
+}
+
 private extension CBW002RequestContextManagementTests {
     func applyCBW002ObservationFocusedExhaustivity(
         to store: TestStore<AiChatFeature.State, AiChatFeature.Action>,

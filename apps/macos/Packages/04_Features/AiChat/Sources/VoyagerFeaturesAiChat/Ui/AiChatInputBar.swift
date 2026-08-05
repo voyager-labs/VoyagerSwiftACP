@@ -511,7 +511,13 @@ private struct AiChatRemovableRequestContextChip: View {
     @State private var isHovering = false
     @State private var isFolderMenuPresented = false
     @State private var isFolderMenuHovering = false
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
     @State private var isRemoveHovering = false
+    @State private var resolvedFileIcon: NSImage?
+    @State private var currentIconFilePath: String?
+    @State private var iconLoadTask: Task<Void, Never>?
+    @State private var iconLoadGeneration = 0
 
     var body: some View {
         HStack(spacing: 4) {
@@ -551,6 +557,12 @@ private struct AiChatRemovableRequestContextChip: View {
             if !isEnabled {
                 isFolderMenuPresented = false
             }
+        }
+        .task(id: iconFilePath) {
+            await resolveFileIcon(for: iconFilePath)
+        }
+        .onDisappear {
+            cancelFileIconLoad()
         }
     }
 
@@ -655,12 +667,18 @@ private struct AiChatRemovableRequestContextChip: View {
     }
 
     @ViewBuilder private var chipIcon: some View {
-        if let iconFilePath {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: iconFilePath))
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 11, height: 11)
-                .accessibilityHidden(true)
+        if iconFilePath != nil {
+            Group {
+                if let resolvedFileIcon {
+                    Image(nsImage: resolvedFileIcon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 11, height: 11)
+            .accessibilityHidden(true)
         } else if let iconAssetName {
             Image(iconAssetName)
                 .resizable()
@@ -673,6 +691,50 @@ private struct AiChatRemovableRequestContextChip: View {
                 .foregroundStyle(chipIconForegroundStyle(for: iconSystemName))
                 .accessibilityHidden(true)
         }
+    }
+
+    @MainActor
+    private func resolveFileIcon(for path: String?) async {
+        iconLoadTask?.cancel()
+        iconLoadGeneration += 1
+        let generation = iconLoadGeneration
+        currentIconFilePath = path
+        resolvedFileIcon = nil
+        guard let path else {
+            iconLoadTask = nil
+            return
+        }
+
+        let workspaceClient = workspaceClient
+        let task = Task { @MainActor in
+            let icon = await workspaceClient.iconForFileAsync(path)
+            guard AiChatRequestContextIconResolution.shouldApply(
+                capturedPath: path,
+                currentPath: currentIconFilePath,
+                capturedGeneration: generation,
+                currentGeneration: iconLoadGeneration,
+                isCancelled: Task.isCancelled,
+            ) else { return }
+            resolvedFileIcon = icon
+        }
+        iconLoadTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if currentIconFilePath == path, iconLoadGeneration == generation {
+            iconLoadTask = nil
+        }
+    }
+
+    @MainActor
+    private func cancelFileIconLoad() {
+        iconLoadTask?.cancel()
+        iconLoadTask = nil
+        iconLoadGeneration += 1
+        currentIconFilePath = nil
+        resolvedFileIcon = nil
     }
 
     private func chipIconSystemName(_ systemName: String) -> String {
@@ -707,5 +769,19 @@ private struct AiChatRemovableRequestContextChip: View {
     private var chipBorder: some View {
         Capsule(style: .continuous)
             .strokeBorder(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 1)
+    }
+}
+
+enum AiChatRequestContextIconResolution {
+    static func shouldApply(
+        capturedPath: String,
+        currentPath: String?,
+        capturedGeneration: Int,
+        currentGeneration: Int,
+        isCancelled: Bool,
+    ) -> Bool {
+        !isCancelled
+            && currentPath == capturedPath
+            && currentGeneration == capturedGeneration
     }
 }
