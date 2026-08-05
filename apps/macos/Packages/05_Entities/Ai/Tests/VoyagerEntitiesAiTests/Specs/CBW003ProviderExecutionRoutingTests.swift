@@ -419,6 +419,47 @@ extension CBW003ProviderExecutionRoutingTests {
         XCTAssertFalse(arguments.contains("--output-last-message"))
     }
 
+    /// CBW-003-prepare_contextual_chat_request: reference-only Codex chat은 workspace write를 허용하지 않는다.
+    /// approval prompt가 없는 실행에서도 활성 workspace 파일을 수정할 수 없도록 thread sandbox를 검증합니다.
+    func testCodexAppServerDriver_startsReferenceChatWithReadOnlySandbox() throws {
+        func readRequests(from handle: FileHandle, expectedCount: Int) throws -> [[String: Any]] {
+            var data = Data()
+            var lines: [Data.SubSequence] = []
+            while lines.count < expectedCount {
+                let chunk = handle.availableData
+                guard !chunk.isEmpty else { break }
+                data.append(chunk)
+                lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+            }
+            return try lines.map { line in
+                try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line)) as? [String: Any])
+            }
+        }
+
+        let inputPipe = Pipe()
+        let driver = CodexAppServerProtocolDriver(
+            input: inputPipe.fileHandleForWriting,
+            model: "gpt-5-codex",
+            prompt: "Summarize this project",
+            thinking: nil,
+            workingDirectory: URL(fileURLWithPath: "/tmp/ReferenceProject"),
+            onEvent: { _ in },
+            onComplete: { _ in },
+        )
+
+        try driver.start()
+        _ = try readRequests(from: inputPipe.fileHandleForReading, expectedCount: 1)
+        driver.append(Data("{\"id\":1,\"result\":{}}\n".utf8))
+        let requests = try readRequests(from: inputPipe.fileHandleForReading, expectedCount: 2)
+        let threadStart = try XCTUnwrap(requests.first { $0["method"] as? String == "thread/start" })
+        let params = try XCTUnwrap(threadStart["params"] as? [String: Any])
+
+        XCTAssertEqual(params["approvalPolicy"] as? String, "never")
+        XCTAssertEqual(params["sandbox"] as? String, "read-only")
+        XCTAssertEqual(params["cwd"] as? String, "/tmp/ReferenceProject")
+        XCTAssertNotEqual(params["sandbox"] as? String, "workspace-write")
+    }
+
     func testExecute_registryExecutorFailureEvent_preservesFailureSurface() throws {
         let request = providerExecutionMakeRequest(provider: .openai, rawModelID: "gpt-5.5")
         let registry = AiChatProviderExecutorRegistry(executors: [

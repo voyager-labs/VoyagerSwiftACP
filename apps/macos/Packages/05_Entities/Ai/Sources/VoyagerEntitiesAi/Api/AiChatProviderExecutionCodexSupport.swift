@@ -333,7 +333,7 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
                 "model": model,
                 "ephemeral": true,
                 "approvalPolicy": "never",
-                "sandbox": "workspace-write",
+                "sandbox": "read-only",
             ]
             if let path = workingDirectory?.path { params["cwd"] = path }
             try send(["id": 2, "method": "thread/start", "params": params])
