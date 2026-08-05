@@ -64,6 +64,12 @@ public struct ContentTabPinnedRecordClient: Sendable {
         FileManagerTopNavigationItemID,
         FileManagerTopNavigationMoveDestination,
     ) async throws -> FileManagerTopNavigationCommit
+    public var moveTopNavigationPinnedGroupCommitted: @Sendable (
+        UserDefaultsClient,
+        [String],
+        [ContentTabID],
+        FileManagerTopNavigationMoveDestination,
+    ) async throws -> FileManagerTopNavigationCommit
     public var loadTopNavigationCommit: @Sendable (
         UserDefaultsClient,
         [String],
@@ -108,6 +114,12 @@ public struct ContentTabPinnedRecordClient: Sendable {
             UserDefaultsClient,
             [String],
             FileManagerTopNavigationItemID,
+            FileManagerTopNavigationMoveDestination,
+        ) async throws -> FileManagerTopNavigationCommit)? = nil,
+        moveTopNavigationPinnedGroupCommitted: (@Sendable (
+            UserDefaultsClient,
+            [String],
+            [ContentTabID],
             FileManagerTopNavigationMoveDestination,
         ) async throws -> FileManagerTopNavigationCommit)? = nil,
         loadTopNavigationCommit: (@Sendable (
@@ -164,6 +176,12 @@ public struct ContentTabPinnedRecordClient: Sendable {
                 let store = try resolvedMoveTopNavigationItem(defaults, locationIDs, source, destination)
                 return FileManagerTopNavigationCommit(order: store.topNavigationOrder, revision: 0)
             }
+        self.moveTopNavigationPinnedGroupCommitted = moveTopNavigationPinnedGroupCommitted
+            ?? Self.defaultMoveTopNavigationPinnedGroupCommitted(
+                loadStore: loadStore,
+                classifyStoreLoad: classifyStoreLoad,
+                saveStore: saveStore,
+            )
         self.loadTopNavigationCommit = loadTopNavigationCommit ?? { defaults, locationIDs in
             let outcome: ContentTabPinnedRecordStoreLoadOutcome = if let classifyStoreLoad {
                 try classifyStoreLoad(defaults, locationIDs)
@@ -239,6 +257,45 @@ public struct ContentTabPinnedRecordClient: Sendable {
             updatedStore.topNavigationOrder = movedOrder
             try saveStore(updatedStore, defaults)
             return updatedStore
+        }
+    }
+
+    private static func defaultMoveTopNavigationPinnedGroupCommitted(
+        loadStore: @escaping @Sendable (UserDefaultsClient) throws -> ContentTabPinnedRecordStore,
+        classifyStoreLoad: (@Sendable (
+            UserDefaultsClient,
+            [String],
+        ) throws -> ContentTabPinnedRecordStoreLoadOutcome)?,
+        saveStore: @escaping @Sendable (ContentTabPinnedRecordStore, UserDefaultsClient) throws -> Void,
+    ) -> @Sendable (
+        UserDefaultsClient,
+        [String],
+        [ContentTabID],
+        FileManagerTopNavigationMoveDestination,
+    ) async throws -> FileManagerTopNavigationCommit {
+        { defaults, locationIDs, orderedIDs, destination in
+            let outcome: ContentTabPinnedRecordStoreLoadOutcome = if let classifyStoreLoad {
+                try classifyStoreLoad(defaults, locationIDs)
+            } else {
+                try .currentV2(loadStore(defaults))
+            }
+            let store = try writableStore(from: outcome)
+            let projection = FileManagerTopNavigationOrderPolicy.normalize(
+                store: store,
+                discoveredLocationIDs: locationIDs,
+            )
+            let movedOrder = FileManagerTopNavigationOrderPolicy.movingPinnedContentTabs(
+                orderedIDs,
+                to: destination,
+                in: projection.durableOrder,
+            )
+            guard movedOrder != projection.durableOrder else {
+                return FileManagerTopNavigationCommit(order: store.topNavigationOrder, revision: 0)
+            }
+            var updatedStore = projection.normalizedStore
+            updatedStore.topNavigationOrder = movedOrder
+            try saveStore(updatedStore, defaults)
+            return FileManagerTopNavigationCommit(order: movedOrder, revision: 0)
         }
     }
 
@@ -330,6 +387,14 @@ extension ContentTabPinnedRecordClient: DependencyKey {
                     defaults,
                     discoveredLocationIDs: locationIDs,
                     source: source,
+                    destination: destination,
+                )
+            },
+            moveTopNavigationPinnedGroupCommitted: { defaults, locationIDs, orderedIDs, destination in
+                try Self.moveTopNavigationPinnedGroupCommittedValue(
+                    defaults,
+                    discoveredLocationIDs: locationIDs,
+                    orderedIDs: orderedIDs,
                     destination: destination,
                 )
             },
@@ -467,6 +532,47 @@ extension ContentTabPinnedRecordClient: DependencyKey {
         )
         let movedOrder = FileManagerTopNavigationOrderPolicy.moving(
             source,
+            to: destination,
+            in: projection.durableOrder,
+        )
+        let committedStore: ContentTabPinnedRecordStore
+        if movedOrder == projection.durableOrder {
+            committedStore = store
+        } else {
+            var updatedStore = projection.normalizedStore
+            updatedStore.topNavigationOrder = movedOrder
+            let data = try JSONEncoder().encode(updatedStore)
+            try Task.checkCancellation()
+            userDefaultsClient.setObject(data, storageKey)
+            committedStore = updatedStore
+        }
+        latestTopNavigationCommitRevision &+= 1
+        return FileManagerTopNavigationCommit(
+            order: committedStore.topNavigationOrder,
+            revision: latestTopNavigationCommitRevision,
+        )
+    }
+
+    private static func moveTopNavigationPinnedGroupCommittedValue(
+        _ userDefaultsClient: UserDefaultsClient,
+        discoveredLocationIDs: [String],
+        orderedIDs: [ContentTabID],
+        destination: FileManagerTopNavigationMoveDestination,
+    ) throws -> FileManagerTopNavigationCommit {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+        try Task.checkCancellation()
+        let outcome = try loadStoreOutcomeValue(
+            userDefaultsClient,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        let store = try writableStore(from: outcome)
+        let projection = FileManagerTopNavigationOrderPolicy.normalize(
+            store: store,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        let movedOrder = FileManagerTopNavigationOrderPolicy.movingPinnedContentTabs(
+            orderedIDs,
             to: destination,
             in: projection.durableOrder,
         )

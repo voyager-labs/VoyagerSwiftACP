@@ -173,6 +173,39 @@ public enum FileManagerTopNavigationOrderPolicy {
         return items == order.items ? order : .init(items: items)
     }
 
+    public static func movingPinnedContentTabs(
+        _ orderedIDs: [ContentTabID],
+        to destination: FileManagerTopNavigationMoveDestination,
+        in order: FileManagerTopNavigationOrder,
+    ) -> FileManagerTopNavigationOrder {
+        guard !orderedIDs.isEmpty,
+              Set(orderedIDs).count == orderedIDs.count,
+              orderedIDs.allSatisfy({ FileManagerTopNavigationItemID.isValidRawID($0.rawValue) })
+        else { return order }
+
+        let movingItems = orderedIDs.map(FileManagerTopNavigationItemID.contentTab)
+        let movingItemSet = Set(movingItems)
+        let anchor: FileManagerTopNavigationItemID
+        let placesAfter: Bool
+        switch destination {
+        case let .before(item):
+            anchor = item
+            placesAfter = false
+        case let .after(item):
+            anchor = item
+            placesAfter = true
+        }
+        guard !movingItemSet.contains(anchor),
+              order.items.contains(anchor),
+              movingItems.allSatisfy(order.items.contains)
+        else { return order }
+
+        var items = order.items.filter { !movingItemSet.contains($0) }
+        guard let anchorIndex = items.firstIndex(of: anchor) else { return order }
+        items.insert(contentsOf: movingItems, at: placesAfter ? anchorIndex + 1 : anchorIndex)
+        return items == order.items ? order : .init(items: items)
+    }
+
     private static func normalizedDurableItems(
         store: ContentTabPinnedRecordStore,
         discoveredLocationIDs: [String],
