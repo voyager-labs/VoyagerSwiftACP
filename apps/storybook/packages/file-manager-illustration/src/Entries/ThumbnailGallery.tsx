@@ -1,7 +1,7 @@
 import type { FC } from "react"
 import type { EntryKind } from "../model/types"
-import type { EntryThumbnailComparisonEntry } from "./EntryThumbnailComparison"
 import { EntryThumbnail } from "./EntryThumbnail"
+import type { EntryThumbnailComparisonEntry } from "./EntryThumbnailComparison"
 
 const KIND_ORDER: readonly EntryKind[] = [
   "pdf",

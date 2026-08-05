@@ -45,8 +45,8 @@ export function deriveBreadcrumbSegments(
   activeTab: SidebarTabItem | null,
   selectedEntries: readonly Entry[],
 ): readonly BreadcrumbSegment[] {
-  const base = activeTab?.breadcrumb
-    ?? (activeTab ? [{ label: activeTab.label, symbolName: "folder" }] : [])
+  const base =
+    activeTab?.breadcrumb ?? (activeTab ? [{ label: activeTab.label, symbolName: "folder" }] : [])
 
   if (selectedEntries.length === 1) {
     const entry = selectedEntries[0]

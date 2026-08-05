@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import type { EntryKind } from "../model/types"
 import { thumbnailComparisonEntries } from "../data/mock-data"
+import type { EntryKind } from "../model/types"
 import { EntryThumbnail } from "./EntryThumbnail"
 import type { EntryThumbnailComparisonEntry } from "./EntryThumbnailComparison"
 import { EntryThumbnailComparison } from "./EntryThumbnailComparison"

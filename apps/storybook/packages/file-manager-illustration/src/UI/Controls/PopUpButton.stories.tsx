@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { fn } from "@storybook/test"
 import { PopUpButton } from "./PopUpButton"
+
+const fn = (): (() => void) => () => {}
 
 const fruitOptions = [
   { value: "apple", label: "Apple" },

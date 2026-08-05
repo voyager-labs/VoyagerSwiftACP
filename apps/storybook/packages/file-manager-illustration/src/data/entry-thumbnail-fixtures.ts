@@ -19,7 +19,8 @@ export const entryThumbnailFixtures = {
 
   // Image (4 variations: PNG x2, JPEG, GIF)
   image: new URL("../assets/entry-thumbnails/image-hopper.png", import.meta.url).href,
-  imageTransparent: new URL("../assets/entry-thumbnails/image-transparent.png", import.meta.url).href,
+  imageTransparent: new URL("../assets/entry-thumbnails/image-transparent.png", import.meta.url)
+    .href,
   imageJpeg: new URL("../assets/entry-thumbnails/image-jpeg.png", import.meta.url).href,
 
   // GIF
@@ -33,8 +34,10 @@ export const entryThumbnailFixtures = {
 
   // Spreadsheet (4 variations)
   workbook: new URL("../assets/entry-thumbnails/office-excel.png", import.meta.url).href,
-  workbookBudget: new URL("../assets/entry-thumbnails/office-excel-budget.png", import.meta.url).href,
-  workbookCharts: new URL("../assets/entry-thumbnails/office-excel-charts.png", import.meta.url).href,
+  workbookBudget: new URL("../assets/entry-thumbnails/office-excel-budget.png", import.meta.url)
+    .href,
+  workbookCharts: new URL("../assets/entry-thumbnails/office-excel-charts.png", import.meta.url)
+    .href,
   workbook46535: new URL("../assets/entry-thumbnails/office-excel-46535.png", import.meta.url).href,
 
   // Pages (2 variations)

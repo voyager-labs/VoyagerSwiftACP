@@ -3,25 +3,110 @@ import type { ContextMenuAction, Entry, FileEntry } from "../model/types"
 import { entryThumbnailFixtures } from "./entry-thumbnail-fixtures"
 
 export const files: readonly Entry[] = [
-  { id: "e01", name: "IDC20on20The20Hig...tion.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf },
-  { id: "e02", name: "3_iis_2020_236-244.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdfTest },
-  { id: "e03", name: "Asso for Info Scienc...ior.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf1mb },
-  { id: "e04", name: "Asso for Info Scienc...ion.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf150k },
-  { id: "e05", name: "Asso for Info Scienc...ure.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdfTest },
-  { id: "e06", name: "fileOrganizationFrom...top.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf5mb },
+  {
+    id: "e01",
+    name: "IDC20on20The20Hig...tion.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf,
+  },
+  {
+    id: "e02",
+    name: "3_iis_2020_236-244.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdfTest,
+  },
+  {
+    id: "e03",
+    name: "Asso for Info Scienc...ior.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf1mb,
+  },
+  {
+    id: "e04",
+    name: "Asso for Info Scienc...ion.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf150k,
+  },
+  {
+    id: "e05",
+    name: "Asso for Info Scienc...ure.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdfTest,
+  },
+  {
+    id: "e06",
+    name: "fileOrganizationFrom...top.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf5mb,
+  },
   { id: "e07", name: "C04-1083 (1).pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf },
-  { id: "e08", name: "thesis_fulltext.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf1mb },
-  { id: "e09", name: "fitchett2014.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdfTest },
-  { id: "e10", name: "View of Usabili...iew.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf150k },
-  { id: "e20", name: "cursor-brand-assets...924 (1)", kind: "folder", thumbnailSrc: entryThumbnailFixtures.folder },
-  { id: "e23", name: "SCR-20251209-noh.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.image },
-  { id: "e24", name: "SCR-20251209-new.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.imageJpeg },
-  { id: "e53", name: "Voyager waitlist...er.xlsx", kind: "sheet", thumbnailSrc: entryThumbnailFixtures.workbook },
-  { id: "e56", name: "privacy-policy-v25.11.27.md", kind: "doc", thumbnailSrc: entryThumbnailFixtures.text },
-  { id: "e70", name: "Introducing our New Fi...c).mp4", kind: "video", thumbnailSrc: entryThumbnailFixtures.video },
-  { id: "e40", name: "Windsurf-darwin...5.dmg", kind: "archive", thumbnailSrc: entryThumbnailFixtures.archive },
+  {
+    id: "e08",
+    name: "thesis_fulltext.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf1mb,
+  },
+  {
+    id: "e09",
+    name: "fitchett2014.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdfTest,
+  },
+  {
+    id: "e10",
+    name: "View of Usabili...iew.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf150k,
+  },
+  {
+    id: "e20",
+    name: "cursor-brand-assets...924 (1)",
+    kind: "folder",
+    thumbnailSrc: entryThumbnailFixtures.folder,
+  },
+  {
+    id: "e23",
+    name: "SCR-20251209-noh.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.image,
+  },
+  {
+    id: "e24",
+    name: "SCR-20251209-new.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.imageJpeg,
+  },
+  {
+    id: "e53",
+    name: "Voyager waitlist...er.xlsx",
+    kind: "sheet",
+    thumbnailSrc: entryThumbnailFixtures.workbook,
+  },
+  {
+    id: "e56",
+    name: "privacy-policy-v25.11.27.md",
+    kind: "doc",
+    thumbnailSrc: entryThumbnailFixtures.text,
+  },
+  {
+    id: "e70",
+    name: "Introducing our New Fi...c).mp4",
+    kind: "video",
+    thumbnailSrc: entryThumbnailFixtures.video,
+  },
+  {
+    id: "e40",
+    name: "Windsurf-darwin...5.dmg",
+    kind: "archive",
+    thumbnailSrc: entryThumbnailFixtures.archive,
+  },
 
-  { id: "e80", name: "sample-local-pdf.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf },
+  {
+    id: "e80",
+    name: "sample-local-pdf.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf,
+  },
   { id: "e88", name: "pdf-test.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdfTest },
   {
     id: "e89",
@@ -45,7 +130,12 @@ export const files: readonly Entry[] = [
     kind: "doc",
     thumbnailSrc: entryThumbnailFixtures.wordTest,
   },
-  { id: "e87", name: "Booleans.xlsx", kind: "sheet", thumbnailSrc: entryThumbnailFixtures.workbook },
+  {
+    id: "e87",
+    name: "Booleans.xlsx",
+    kind: "sheet",
+    thumbnailSrc: entryThumbnailFixtures.workbook,
+  },
   {
     id: "e90",
     name: "monthly-budget.xlsx",
@@ -65,18 +155,48 @@ export const files: readonly Entry[] = [
     thumbnailSrc: entryThumbnailFixtures.pagesVideo,
   },
   { id: "e93", name: "test-1s.mp4", kind: "video", thumbnailSrc: entryThumbnailFixtures.video },
-  { id: "e94", name: "movie_5.mp4", kind: "video", thumbnailSrc: entryThumbnailFixtures.videoMovie },
+  {
+    id: "e94",
+    name: "movie_5.mp4",
+    kind: "video",
+    thumbnailSrc: entryThumbnailFixtures.videoMovie,
+  },
   { id: "e95", name: "SampleDoc.txt", kind: "doc", thumbnailSrc: entryThumbnailFixtures.text },
   { id: "e96", name: "notes-259.txt", kind: "doc", thumbnailSrc: entryThumbnailFixtures.textShort },
 
   { id: "e97", name: "WithTabs.docx", kind: "doc", thumbnailSrc: entryThumbnailFixtures.wordTabs },
-  { id: "e98", name: "report-59378.docx", kind: "doc", thumbnailSrc: entryThumbnailFixtures.word59378 },
-  { id: "e99", name: "charts-123233.xlsx", kind: "sheet", thumbnailSrc: entryThumbnailFixtures.workbookCharts },
-  { id: "e100", name: "data-46535.xlsx", kind: "sheet", thumbnailSrc: entryThumbnailFixtures.workbook46535 },
-  { id: "e101", name: "counting.mp4", kind: "video", thumbnailSrc: entryThumbnailFixtures.videoCounting },
+  {
+    id: "e98",
+    name: "report-59378.docx",
+    kind: "doc",
+    thumbnailSrc: entryThumbnailFixtures.word59378,
+  },
+  {
+    id: "e99",
+    name: "charts-123233.xlsx",
+    kind: "sheet",
+    thumbnailSrc: entryThumbnailFixtures.workbookCharts,
+  },
+  {
+    id: "e100",
+    name: "data-46535.xlsx",
+    kind: "sheet",
+    thumbnailSrc: entryThumbnailFixtures.workbook46535,
+  },
+  {
+    id: "e101",
+    name: "counting.mp4",
+    kind: "video",
+    thumbnailSrc: entryThumbnailFixtures.videoCounting,
+  },
   { id: "e102", name: "log-3296.txt", kind: "doc", thumbnailSrc: entryThumbnailFixtures.text3296 },
   { id: "e103", name: "data-1497.txt", kind: "doc", thumbnailSrc: entryThumbnailFixtures.text1497 },
-  { id: "e104", name: "file-example_1MB.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf1mb },
+  {
+    id: "e104",
+    name: "file-example_1MB.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf1mb,
+  },
   { id: "e105", name: "5mB-sample.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf5mb },
 ]
 
@@ -92,18 +212,78 @@ export const publicFiles: readonly FileEntry[] = files.map((file) => ({
 export const selectedInitial: readonly string[] = ["e04", "e05", "e06", "e07", "e08"]
 
 export const imageEntries: readonly Entry[] = [
-  { id: "e23", name: "SCR-20251209-noh.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.image },
-  { id: "e24", name: "SCR-20251209-new.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.imageJpeg },
-  { id: "e25", name: "SCR-20251209-noh.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.imageTransparent },
-  { id: "e26", name: "SCR-20251209-nou.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.image },
-  { id: "e27", name: "SCR-20251209-noi.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.imageJpeg },
-  { id: "e28", name: "SCR-20251209-noiz.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.gif },
-  { id: "e29", name: "SCR-20251209-nold.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.image },
-  { id: "e30", name: "SCR-20251209-pmcm.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.imageTransparent },
-  { id: "e31", name: "SCR-20251209-pnld.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.imageJpeg },
-  { id: "e32", name: "SCR-20251209-pnce.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.image },
-  { id: "e33", name: "SCR-20251209-pnfg.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.gif },
-  { id: "e34", name: "SCR-20251209-pnity.png", kind: "image", thumbnailSrc: entryThumbnailFixtures.image },
+  {
+    id: "e23",
+    name: "SCR-20251209-noh.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.image,
+  },
+  {
+    id: "e24",
+    name: "SCR-20251209-new.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.imageJpeg,
+  },
+  {
+    id: "e25",
+    name: "SCR-20251209-noh.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.imageTransparent,
+  },
+  {
+    id: "e26",
+    name: "SCR-20251209-nou.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.image,
+  },
+  {
+    id: "e27",
+    name: "SCR-20251209-noi.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.imageJpeg,
+  },
+  {
+    id: "e28",
+    name: "SCR-20251209-noiz.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.gif,
+  },
+  {
+    id: "e29",
+    name: "SCR-20251209-nold.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.image,
+  },
+  {
+    id: "e30",
+    name: "SCR-20251209-pmcm.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.imageTransparent,
+  },
+  {
+    id: "e31",
+    name: "SCR-20251209-pnld.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.imageJpeg,
+  },
+  {
+    id: "e32",
+    name: "SCR-20251209-pnce.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.image,
+  },
+  {
+    id: "e33",
+    name: "SCR-20251209-pnfg.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.gif,
+  },
+  {
+    id: "e34",
+    name: "SCR-20251209-pnity.png",
+    kind: "image",
+    thumbnailSrc: entryThumbnailFixtures.image,
+  },
 ]
 
 export const pdfEntries: readonly Entry[] = files.filter((file) => file.kind === "pdf")
@@ -112,7 +292,12 @@ export const noSelection: readonly string[] = []
 export const singleSelection: readonly string[] = ["e04"]
 
 /** 폴백 엔트리 — 모두 PNG 썸네일 사용 */
-const pdfFallback: Entry = { id: "e01", name: "IDC20on20The20Hig...tion.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf }
+const pdfFallback: Entry = {
+  id: "e01",
+  name: "IDC20on20The20Hig...tion.pdf",
+  kind: "pdf",
+  thumbnailSrc: entryThumbnailFixtures.pdf,
+}
 const imageFallback: Entry = {
   id: "e23",
   name: "SCR-20251209-noh.png",
@@ -127,8 +312,18 @@ const folderFallback: Entry = {
   count: "3 items",
   thumbnailSrc: entryThumbnailFixtures.folder,
 }
-const sheetFallback: Entry = { id: "e53", name: "Voyager waitlist...er.xlsx", kind: "sheet", thumbnailSrc: entryThumbnailFixtures.workbook }
-const docFallback: Entry = { id: "e56", name: "privacy-policy-v25.11.27.md", kind: "doc", thumbnailSrc: entryThumbnailFixtures.text }
+const sheetFallback: Entry = {
+  id: "e53",
+  name: "Voyager waitlist...er.xlsx",
+  kind: "sheet",
+  thumbnailSrc: entryThumbnailFixtures.workbook,
+}
+const docFallback: Entry = {
+  id: "e56",
+  name: "privacy-policy-v25.11.27.md",
+  kind: "doc",
+  thumbnailSrc: entryThumbnailFixtures.text,
+}
 const videoFallback: Entry = {
   id: "e70",
   name: "Introducing our New Fi...c).mp4",
@@ -382,7 +577,12 @@ export const thumbnailComparisonEntries: readonly EntryThumbnailComparisonEntry[
     label: "Transparent PNG",
     thumbnailSrc: entryThumbnailFixtures.imageTransparent,
   },
-  { id: "e83", kind: "image", label: "JPEG preview", thumbnailSrc: entryThumbnailFixtures.imageJpeg },
+  {
+    id: "e83",
+    kind: "image",
+    label: "JPEG preview",
+    thumbnailSrc: entryThumbnailFixtures.imageJpeg,
+  },
   { id: "e84", kind: "image", label: "GIF preview", thumbnailSrc: entryThumbnailFixtures.gif },
 
   {

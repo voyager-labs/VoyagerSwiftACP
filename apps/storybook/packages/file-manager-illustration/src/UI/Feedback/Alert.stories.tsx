@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { Alert } from "./Alert"
 import { Button } from "../Controls/Button"
+import { Alert } from "./Alert"
 
 const meta = {
   component: Alert,
@@ -61,7 +61,8 @@ export const CriticalWithAction: Story = {
   args: {
     variant: "critical",
     title: "Connection lost",
-    message: "Your connection to the server has been interrupted. Check your network and try again.",
+    message:
+      "Your connection to the server has been interrupted. Check your network and try again.",
     actions: <Button variant="primary">Retry</Button>,
   },
 }

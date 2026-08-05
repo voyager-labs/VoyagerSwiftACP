@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { fn } from "@storybook/test"
 import { Toggle } from "./Toggle"
+
+const fn = (): (() => void) => () => {}
 
 const meta = {
   component: Toggle,

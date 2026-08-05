@@ -21,7 +21,7 @@ export interface ComboBoxProps<Value = string> {
   onOpenChange?: (open: boolean) => void
 }
 
-export const ComboBox: FC<ComboBoxProps> = <Value = string,>({
+export const ComboBox: FC<ComboBoxProps> = <Value = string>({
   options,
   value,
   placeholder,
@@ -40,9 +40,7 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string,>({
   const listboxId = useId()
   const labelId = useId()
 
-  const selectedOption = value != null
-    ? options.find((o) => o.value === value) ?? null
-    : null
+  const selectedOption = value != null ? (options.find((o) => o.value === value) ?? null) : null
 
   // 외부 클릭 시 닫기
   useEffect(() => {
@@ -168,7 +166,6 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string,>({
       <button
         ref={triggerRef}
         type="button"
-        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={listboxId}
@@ -201,7 +198,6 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string,>({
         <div
           ref={listboxRef}
           id={listboxId}
-          role="listbox"
           aria-labelledby={labelId}
           className="vc-combo-box-popover"
         >
@@ -211,9 +207,7 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string,>({
               <button
                 key={String(option.value)}
                 type="button"
-                role="option"
                 aria-selected={isSelected}
-                aria-disabled={option.disabled}
                 className="vc-combo-box-option"
                 disabled={option.disabled}
                 onClick={() => handleOptionClick(option.value)}

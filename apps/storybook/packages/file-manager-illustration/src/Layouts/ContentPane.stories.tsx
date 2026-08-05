@@ -39,7 +39,10 @@ export const ContentPane: Story = {
             onToggleSidebar={() => undefined}
           />
           <FileManagerPrimaryContent {...args} />
-          <StatusBar selectedLabel={`${contentPaneFiles.length} items`} breadcrumb={directoryBreadcrumb} />
+          <StatusBar
+            selectedLabel={`${contentPaneFiles.length} items`}
+            breadcrumb={directoryBreadcrumb}
+          />
         </section>
       </main>
     </div>

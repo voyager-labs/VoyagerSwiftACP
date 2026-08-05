@@ -1,4 +1,4 @@
-import type { FC, ReactNode, CSSProperties } from "react"
+import type { CSSProperties, FC, ReactNode } from "react"
 
 export interface SheetProps {
   open: boolean
@@ -27,9 +27,9 @@ export const Sheet: FC<SheetProps> = ({
 
   return (
     <div className="fm-sheet-backdrop" onMouseDown={onClose}>
-      <section
+      <dialog
+        open
         className={classes}
-        role="dialog"
         aria-modal="true"
         aria-label={title}
         style={style}
@@ -37,18 +37,13 @@ export const Sheet: FC<SheetProps> = ({
       >
         <div className="fm-sheet-header">
           <h2 className="fm-sheet-title">{title}</h2>
-          <button
-            type="button"
-            className="fm-sheet-close"
-            aria-label="Close"
-            onClick={onClose}
-          >
+          <button type="button" className="fm-sheet-close" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </div>
         <div className="fm-sheet-body">{children}</div>
         {actions && <div className="fm-sheet-footer">{actions}</div>}
-      </section>
+      </dialog>
     </div>
   )
 }

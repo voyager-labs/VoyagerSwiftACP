@@ -11,7 +11,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
 const macosTokens = readFileSync(resolve(packageRoot, "src/styles/macos-tokens.css"), "utf8")
 const generatedMaterialMetadata = readFileSync(
-  resolve(packageRoot, "src/foundations/swiftui-material-metadata.generated.ts"),
+  resolve(packageRoot, "src/Foundations/swiftui-material-metadata.generated.ts"),
   "utf8",
 )
 const styleSheets = [
@@ -28,7 +28,7 @@ const css = [
 ].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
 const designTokensStorySource = readFileSync(
-  resolve(packageRoot, "src/foundations/DesignTokens.stories.tsx"),
+  resolve(packageRoot, "src/Foundations/DesignTokens.stories.tsx"),
   "utf8",
 )
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
@@ -168,8 +168,8 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 114)
-assert.equal(fileManagerPaths.size, 34)
+assert.equal(fileManagerStories.length, 164)
+assert.equal(fileManagerPaths.size, 42)
 assert.equal(nonFileManagerStories.length, 0)
 
 /* ── RED→GREEN contract: thumbnailSrc data path + asset verification ── */

@@ -89,12 +89,11 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
       </button>
 
       {open ? (
-        <div id={listboxId} className="vc-popup-menu" role="listbox" tabIndex={-1}>
+        <div id={listboxId} className="vc-popup-menu">
           {options.map((opt) => (
             <button
               key={String(opt.value)}
               type="button"
-              role="option"
               aria-selected={opt.value === value}
               aria-disabled={opt.disabled || undefined}
               disabled={opt.disabled}

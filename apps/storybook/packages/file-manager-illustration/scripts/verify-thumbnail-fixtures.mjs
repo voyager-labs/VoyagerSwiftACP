@@ -34,10 +34,7 @@ const qlmanageThumbnailPngs = [
 ]
 
 // NSWorkspace가 별도 생성한 시스템 아이콘 (provenance에 포함되지 않음)
-const systemIconPngs = [
-  "archive-system.png",
-  "folder-system.png",
-]
+const systemIconPngs = ["archive-system.png", "folder-system.png"]
 
 const expectedThumbnailPngs = [...qlmanageThumbnailPngs, ...systemIconPngs]
 
@@ -55,7 +52,11 @@ export function verifyThumbnailFixtures(packageRoot, thumbnailMarkup) {
   )
 
   /* 2. folder는 thumbnailSrc가 없으면 SVG 아이콘을 렌더링 */
-  assert.match(thumbnailMarkup, /entry-svg-icon--folder/, "folder without thumbnail should render folder SVG icon")
+  assert.match(
+    thumbnailMarkup,
+    /entry-svg-icon--folder/,
+    "folder without thumbnail should render folder SVG icon",
+  )
 
   /* 3. thumbnail 없는 PDF는 SVG 아이콘을 렌더링 */
   assert.match(
@@ -84,7 +85,11 @@ export function verifyThumbnailFixtures(packageRoot, thumbnailMarkup) {
   const provenancePath = resolve(thumbnailDir, "provenance.json")
   assert.ok(existsSync(provenancePath), "Missing provenance.json")
   const provenance = JSON.parse(readFileSync(provenancePath, "utf8"))
-  assert.equal(provenance.assets.length, 26, "provenance must have exactly 26 qlmanage asset entries")
+  assert.equal(
+    provenance.assets.length,
+    26,
+    "provenance must have exactly 26 qlmanage asset entries",
+  )
 
   // 2. provenance output 이름이 qlmanage 세트와 정확히 일치하는지 확인
   const outputNames = provenance.assets.map((a) => a.output)
@@ -147,5 +152,7 @@ export function verifyThumbnailFixtures(packageRoot, thumbnailMarkup) {
     )
   }
 
-  console.log(`thumbnail fixtures: pass (${expectedThumbnailPngs.length}/${expectedThumbnailPngs.length} PNGs, ${qlmanageThumbnailPngs.length} provenance, ${systemIconPngs.length} system icons)`)
+  console.log(
+    `thumbnail fixtures: pass (${expectedThumbnailPngs.length}/${expectedThumbnailPngs.length} PNGs, ${qlmanageThumbnailPngs.length} provenance, ${systemIconPngs.length} system icons)`,
+  )
 }

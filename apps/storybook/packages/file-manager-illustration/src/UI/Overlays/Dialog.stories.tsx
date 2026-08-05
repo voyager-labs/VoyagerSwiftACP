@@ -9,6 +9,8 @@ const meta = {
     title: "Dialog Title",
     children: "This is a dialog with some content describing what the user should do.",
     size: "small",
+    open: false,
+    onClose: () => {},
   },
   render: function Render(args) {
     const [open, setOpen] = useState(false)
@@ -51,8 +53,8 @@ export const Medium: Story = {
       <div style={{ display: "grid", gap: "12px" }}>
         <p style={{ margin: 0 }}>This is a medium-sized dialog with more content.</p>
         <p style={{ margin: 0 }}>
-          It can accommodate longer messages and additional controls while keeping a
-          comfortable reading width.
+          It can accommodate longer messages and additional controls while keeping a comfortable
+          reading width.
         </p>
       </div>
     ),

@@ -132,7 +132,12 @@ const FIXTURES = [
     mode: "content",
     outputName: "video-test-1s",
   },
-  { key: "video", sourceRel: "media/video/movie_5.mp4", mode: "content", outputName: "video-movie5" },
+  {
+    key: "video",
+    sourceRel: "media/video/movie_5.mp4",
+    mode: "content",
+    outputName: "video-movie5",
+  },
   {
     key: "video",
     sourceRel: "media/video/counting.mp4",

@@ -9,6 +9,8 @@ const meta = {
     trigger: "Open",
     children: "Popover content",
     placement: "bottom",
+    open: false,
+    onOpenChange: () => {},
   },
   render: function Render(args) {
     const [open, setOpen] = useState(false)

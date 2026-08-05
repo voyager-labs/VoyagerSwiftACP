@@ -1,4 +1,4 @@
-import type { FC, ReactNode, CSSProperties } from "react"
+import type { CSSProperties, FC, ReactNode } from "react"
 
 export type PopoverPlacement = "top" | "right" | "bottom" | "left"
 
@@ -34,7 +34,7 @@ export const Popover: FC<PopoverProps> = ({
       >
         {trigger}
       </button>
-{open && (
+      {open && (
         <section className={classes} aria-label="Popover" style={style}>
           {children}
         </section>

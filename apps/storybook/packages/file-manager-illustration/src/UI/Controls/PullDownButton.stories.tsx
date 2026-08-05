@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { fn } from "@storybook/test"
 import { PullDownButton } from "./PullDownButton"
+
+const fn = (): (() => void) => () => {}
 
 const actions = [
   { value: "duplicate", label: "Duplicate" },

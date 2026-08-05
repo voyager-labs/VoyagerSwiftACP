@@ -9,6 +9,8 @@ const meta = {
     title: "Sheet Title",
     children: "This is a sheet panel with some content.",
     size: "small",
+    open: false,
+    onClose: () => {},
   },
   render: function Render(args) {
     const [open, setOpen] = useState(false)
@@ -55,8 +57,8 @@ export const Medium: Story = {
     children: (
       <div style={{ display: "grid", gap: "16px" }}>
         <p style={{ margin: 0 }}>
-          A medium sheet provides more room for settings forms, detailed content, or
-          multi-section layouts while keeping the context of the main window visible.
+          A medium sheet provides more room for settings forms, detailed content, or multi-section
+          layouts while keeping the context of the main window visible.
         </p>
         <div className="vc-control-row">
           <div className="vc-control-row-copy">

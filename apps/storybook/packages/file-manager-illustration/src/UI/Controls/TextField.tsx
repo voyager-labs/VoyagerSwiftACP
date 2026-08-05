@@ -1,4 +1,4 @@
-import type { ChangeEvent, CSSProperties, FC } from "react"
+import type { CSSProperties, ChangeEvent, FC } from "react"
 
 export type TextFieldVariant = "default" | "rounded" | "plain"
 export type TextFieldSize = "small" | "regular"

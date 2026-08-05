@@ -1,4 +1,4 @@
-import type { FC, ReactNode, CSSProperties } from "react"
+import type { CSSProperties, FC, ReactNode } from "react"
 
 export interface DialogProps {
   open: boolean
@@ -36,12 +36,7 @@ export const Dialog: FC<DialogProps> = ({
       >
         <div className="fm-dialog-header">
           <h2 className="fm-dialog-title">{title}</h2>
-          <button
-            type="button"
-            className="fm-dialog-close"
-            aria-label="Close"
-            onClick={onClose}
-          >
+          <button type="button" className="fm-dialog-close" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </div>

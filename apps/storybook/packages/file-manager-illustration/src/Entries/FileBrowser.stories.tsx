@@ -4,15 +4,30 @@ import type { Entry } from "../model/types"
 import { FileBrowser } from "./FileBrowser"
 
 const entries: readonly Entry[] = [
-  { id: "e01", name: "IDC20on20The20Hig...tion.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf },
-  { id: "e02", name: "3_iis_2020_236-244.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdfTest },
+  {
+    id: "e01",
+    name: "IDC20on20The20Hig...tion.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf,
+  },
+  {
+    id: "e02",
+    name: "3_iis_2020_236-244.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdfTest,
+  },
   {
     id: "e03",
     name: "Asso for Info Scienc...ior.pdf",
     kind: "pdf",
     thumbnailSrc: entryThumbnailFixtures.pdf1mb,
   },
-  { id: "e04", name: "Asso for Info Scienc...ion.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf150k },
+  {
+    id: "e04",
+    name: "Asso for Info Scienc...ion.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf150k,
+  },
   {
     id: "e05",
     name: "Asso for Info Scienc...ure.pdf",
@@ -32,9 +47,25 @@ const entries: readonly Entry[] = [
     kind: "pdf",
     thumbnailSrc: entryThumbnailFixtures.pdf1mb,
   },
-  { id: "e09", name: "fitchett2014.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdfTest },
-  { id: "e10", name: "View of Usabili...iew.pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf150k },
-  { id: "e20", name: "cursor-brand-assets...924 (1)", kind: "folder", count: "3 items", thumbnailSrc: entryThumbnailFixtures.folder },
+  {
+    id: "e09",
+    name: "fitchett2014.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdfTest,
+  },
+  {
+    id: "e10",
+    name: "View of Usabili...iew.pdf",
+    kind: "pdf",
+    thumbnailSrc: entryThumbnailFixtures.pdf150k,
+  },
+  {
+    id: "e20",
+    name: "cursor-brand-assets...924 (1)",
+    kind: "folder",
+    count: "3 items",
+    thumbnailSrc: entryThumbnailFixtures.folder,
+  },
   {
     id: "e23",
     name: "SCR-20251209-noh.png",
@@ -164,10 +195,34 @@ const entries: readonly Entry[] = [
     kind: "doc",
     thumbnailSrc: entryThumbnailFixtures.textShort,
   },
-  { id: "e40", name: "Windsurf-darwin...5.dmg", kind: "archive", meta: "229.2 MB", thumbnailSrc: entryThumbnailFixtures.archive },
-  { id: "e41", name: "installer-v2.1.0.zip", kind: "archive", meta: "85.4 MB", thumbnailSrc: entryThumbnailFixtures.archive },
-  { id: "e21", name: "screenshots-2025", kind: "folder", count: "12 items", thumbnailSrc: entryThumbnailFixtures.folder },
-  { id: "e22", name: "design-assets", kind: "folder", count: "8 items", thumbnailSrc: entryThumbnailFixtures.folder },
+  {
+    id: "e40",
+    name: "Windsurf-darwin...5.dmg",
+    kind: "archive",
+    meta: "229.2 MB",
+    thumbnailSrc: entryThumbnailFixtures.archive,
+  },
+  {
+    id: "e41",
+    name: "installer-v2.1.0.zip",
+    kind: "archive",
+    meta: "85.4 MB",
+    thumbnailSrc: entryThumbnailFixtures.archive,
+  },
+  {
+    id: "e21",
+    name: "screenshots-2025",
+    kind: "folder",
+    count: "12 items",
+    thumbnailSrc: entryThumbnailFixtures.folder,
+  },
+  {
+    id: "e22",
+    name: "design-assets",
+    kind: "folder",
+    count: "8 items",
+    thumbnailSrc: entryThumbnailFixtures.folder,
+  },
 ]
 
 const selectedInitial: readonly string[] = ["e04", "e05", "e06", "e07", "e08"]
