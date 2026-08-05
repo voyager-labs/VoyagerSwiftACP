@@ -101,6 +101,31 @@ public enum FileOperationUndoScopeTargetPolicy: Equatable, Sendable {
     case replaceEmpty
 }
 
+public struct FileOperationUndoScopeMoveDescriptor: Equatable, Sendable {
+    public let source: UndoManagerScope
+    public let target: UndoManagerScope
+    public let targetPolicy: FileOperationUndoScopeTargetPolicy
+
+    public init(
+        source: UndoManagerScope,
+        target: UndoManagerScope,
+        targetPolicy: FileOperationUndoScopeTargetPolicy = .requireVacant,
+    ) {
+        self.source = source
+        self.target = target
+        self.targetPolicy = targetPolicy
+    }
+}
+
+public enum FileOperationUndoScopesMoveOutcome: Equatable, Sendable {
+    case moved
+    case emptyBatch
+    case duplicateSource(UndoManagerScope)
+    case duplicateTarget(UndoManagerScope)
+    case sourceMissing(UndoManagerScope)
+    case targetOccupied(UndoManagerScope)
+}
+
 @MainActor
 public final class FileOperationUndoManagerRegistry {
     public typealias Generation = UInt64
@@ -122,6 +147,12 @@ public final class FileOperationUndoManagerRegistry {
         let direction: FileOperationUndoDirection
         let recordID: UUID
         var didComplete = false
+    }
+
+    private struct PlannedScopeMove {
+        let descriptor: FileOperationUndoScopeMoveDescriptor
+        let entry: Entry
+        let replacedTarget: Entry?
     }
 
     private var entries: [UndoManagerScope: Entry] = [:]
@@ -162,22 +193,39 @@ public final class FileOperationUndoManagerRegistry {
         to target: UndoManagerScope,
         targetPolicy: FileOperationUndoScopeTargetPolicy = .requireVacant,
     ) -> FileOperationUndoScopeMoveOutcome {
-        guard source != target else {
-            return entries[source] == nil ? .sourceMissing : .targetOccupied
+        let outcome = moveScopes([
+            FileOperationUndoScopeMoveDescriptor(
+                source: source,
+                target: target,
+                targetPolicy: targetPolicy,
+            ),
+        ])
+        switch outcome {
+        case .moved:
+            return .moved
+        case .sourceMissing:
+            return .sourceMissing
+        case .emptyBatch, .duplicateSource, .duplicateTarget, .targetOccupied:
+            return .targetOccupied
         }
-        guard let entry = entries[source] else { return .sourceMissing }
-        if let targetEntry = entries[target] {
-            guard targetPolicy == .replaceEmpty, isHistoryEmpty(targetEntry) else {
-                return .targetOccupied
-            }
+    }
+
+    public func moveScopes(
+        _ descriptors: [FileOperationUndoScopeMoveDescriptor],
+    ) -> FileOperationUndoScopesMoveOutcome {
+        guard !descriptors.isEmpty else { return .emptyBatch }
+        if let failure = duplicateScopeFailure(in: descriptors) {
+            return failure
         }
 
-        entries.removeValue(forKey: source)
-        if let replacedTarget = entries.removeValue(forKey: target) {
-            clearNativeHistory(replacedTarget)
+        let originalEntries = entries
+        if let failure = originalEntryFailure(in: descriptors, entries: originalEntries) {
+            return failure
         }
-        FileOperationUndoManagerHandlerStore.store(for: entry.manager).rebind(to: target)
-        entries[target] = entry
+
+        let plannedMoves = makePlannedMoves(descriptors, entries: originalEntries)
+        precondition(plannedMoves.count == descriptors.count, "Validated Undo scope source disappeared")
+        commit(plannedMoves, originalEntries: originalEntries)
         return .moved
     }
 
@@ -299,6 +347,81 @@ public final class FileOperationUndoManagerRegistry {
         entry.generation = nextGeneration()
     }
 
+    private func duplicateScopeFailure(
+        in descriptors: [FileOperationUndoScopeMoveDescriptor],
+    ) -> FileOperationUndoScopesMoveOutcome? {
+        var seenSources: Set<UndoManagerScope> = []
+        var seenTargets: Set<UndoManagerScope> = []
+        for descriptor in descriptors {
+            guard seenSources.insert(descriptor.source).inserted else {
+                return .duplicateSource(descriptor.source)
+            }
+            guard seenTargets.insert(descriptor.target).inserted else {
+                return .duplicateTarget(descriptor.target)
+            }
+        }
+        return nil
+    }
+
+    private func originalEntryFailure(
+        in descriptors: [FileOperationUndoScopeMoveDescriptor],
+        entries originalEntries: [UndoManagerScope: Entry],
+    ) -> FileOperationUndoScopesMoveOutcome? {
+        let sourceScopes = Set(descriptors.map(\.source))
+        for descriptor in descriptors {
+            guard originalEntries[descriptor.source] != nil else {
+                return .sourceMissing(descriptor.source)
+            }
+            guard descriptor.source != descriptor.target else {
+                return .targetOccupied(descriptor.target)
+            }
+            guard let targetEntry = originalEntries[descriptor.target] else { continue }
+            let replacesIndependentEmptyTarget = !sourceScopes.contains(descriptor.target)
+                && descriptor.targetPolicy == .replaceEmpty
+                && isHistoryEmpty(targetEntry)
+            guard replacesIndependentEmptyTarget else {
+                return .targetOccupied(descriptor.target)
+            }
+        }
+        return nil
+    }
+
+    private func makePlannedMoves(
+        _ descriptors: [FileOperationUndoScopeMoveDescriptor],
+        entries originalEntries: [UndoManagerScope: Entry],
+    ) -> [PlannedScopeMove] {
+        descriptors.compactMap { descriptor in
+            originalEntries[descriptor.source].map { entry in
+                PlannedScopeMove(
+                    descriptor: descriptor,
+                    entry: entry,
+                    replacedTarget: originalEntries[descriptor.target],
+                )
+            }
+        }
+    }
+
+    private func commit(
+        _ plannedMoves: [PlannedScopeMove],
+        originalEntries: [UndoManagerScope: Entry],
+    ) {
+        var updatedEntries = originalEntries
+        for move in plannedMoves {
+            updatedEntries.removeValue(forKey: move.descriptor.source)
+            updatedEntries.removeValue(forKey: move.descriptor.target)
+            updatedEntries[move.descriptor.target] = move.entry
+        }
+        entries = updatedEntries
+
+        for move in plannedMoves {
+            if let replacedTarget = move.replacedTarget {
+                clearNativeHistory(replacedTarget)
+            }
+            FileOperationUndoManagerHandlerStore.store(for: move.entry.manager)
+                .rebind(to: move.descriptor.target)
+        }
+    }
+
     private func isHistoryEmpty(_ entry: Entry) -> Bool {
         entry.undoRecordIDs.isEmpty
             && entry.redoRecordIDs.isEmpty
@@ -338,6 +461,9 @@ public struct FileOperationUndoManagerClient: Sendable {
         UndoManagerScope,
         FileOperationUndoScopeTargetPolicy,
     ) -> FileOperationUndoScopeMoveOutcome
+    public var moveScopes: @Sendable (
+        [FileOperationUndoScopeMoveDescriptor],
+    ) -> FileOperationUndoScopesMoveOutcome
     public var deactivateAll: @MainActor @Sendable (UUID) async -> Void
     public var undoManager: @MainActor @Sendable (UndoManagerScope) async -> UndoManager?
     public var registerUndo: @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool
@@ -357,6 +483,9 @@ public struct FileOperationUndoManagerClient: Sendable {
             UndoManagerScope,
             FileOperationUndoScopeTargetPolicy,
         ) -> FileOperationUndoScopeMoveOutcome,
+        moveScopes: @escaping @Sendable (
+            [FileOperationUndoScopeMoveDescriptor],
+        ) -> FileOperationUndoScopesMoveOutcome,
         deactivateAll: @escaping @MainActor @Sendable (UUID) async -> Void,
         undoManager: @escaping @MainActor @Sendable (UndoManagerScope) async -> UndoManager?,
         registerUndo: @escaping @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool,
@@ -371,6 +500,7 @@ public struct FileOperationUndoManagerClient: Sendable {
         self.activate = activate
         self.deactivate = deactivate
         self.moveScope = moveScope
+        self.moveScopes = moveScopes
         self.deactivateAll = deactivateAll
         self.undoManager = undoManager
         self.registerUndo = registerUndo
@@ -394,6 +524,9 @@ public extension FileOperationUndoManagerClient {
                 withRegistry(registry) {
                     $0.moveScope(from: source, to: target, targetPolicy: targetPolicy)
                 }
+            },
+            moveScopes: { descriptors in
+                withRegistry(registry) { $0.moveScopes(descriptors) }
             },
             deactivateAll: { registry.deactivateAll(windowID: $0) },
             undoManager: { registry.undoManager(for: $0) },
@@ -443,6 +576,10 @@ extension FileOperationUndoManagerClient: DependencyKey {
             activate: { _ in nil },
             deactivate: { _ in },
             moveScope: { _, _, _ in .sourceMissing },
+            moveScopes: { descriptors in
+                guard let first = descriptors.first else { return .emptyBatch }
+                return .sourceMissing(first.source)
+            },
             deactivateAll: { _ in },
             undoManager: { _ in nil },
             registerUndo: { _, _, _ in false },

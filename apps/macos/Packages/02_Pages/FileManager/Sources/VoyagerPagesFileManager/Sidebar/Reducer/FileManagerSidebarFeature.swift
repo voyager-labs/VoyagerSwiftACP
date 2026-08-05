@@ -165,6 +165,144 @@ struct FileManagerSidebarContentTabMoveReducer {
                 state.pendingContentTabMoveRequest = request
                 return .send(.delegate(.requestContentTabMove(request)))
 
+            case let .view(.moveSelectedContentTabs(initiatingTabID, orderedTabIDs, targetWindowID)):
+                guard state.pendingContentTabMoveRequest == nil,
+                      let sourceWindowID = state.currentWindowID,
+                      !orderedTabIDs.isEmpty,
+                      Set(orderedTabIDs).count == orderedTabIDs.count,
+                      orderedTabIDs.contains(initiatingTabID)
+                else { return .none }
+                let sourceTabIDs = Set(state.contentTabSidebarItems.map(\.id))
+                guard sourceTabIDs.contains(initiatingTabID) else { return .none }
+                let normalizedOrderedTabIDs = orderedTabIDs.filter(sourceTabIDs.contains)
+                guard !normalizedOrderedTabIDs.isEmpty else { return .none }
+
+                let availableTargets = ContentTabMoveProjection.availableTargets(
+                    state.contentTabMoveTargets,
+                    currentWindowID: sourceWindowID,
+                    orderedTabIDs: normalizedOrderedTabIDs,
+                )
+                guard availableTargets.contains(where: { $0.windowID == targetWindowID }) else {
+                    return .none
+                }
+
+                let requestID = uuid()
+                let request = if normalizedOrderedTabIDs.count == 1 {
+                    ContentTabMoveRequest(
+                        requestID: requestID,
+                        sourceWindowID: sourceWindowID,
+                        tabID: initiatingTabID,
+                        targetWindowID: targetWindowID,
+                    )
+                } else {
+                    ContentTabMoveRequest(
+                        operationID: requestID,
+                        requestID: requestID,
+                        sourceWindowID: sourceWindowID,
+                        initiatingTabID: initiatingTabID,
+                        orderedTabIDs: normalizedOrderedTabIDs,
+                        targetWindowID: targetWindowID,
+                    )
+                }
+                state.pendingContentTabMoveRequest = request
+                return .send(.delegate(.requestContentTabMove(request)))
+
+            case let .view(.moveContentTabs(payload, targetWindowID)):
+                guard state.pendingContentTabMoveRequest == nil,
+                      let sourceWindowID = state.currentWindowID,
+                      sourceWindowID == payload.sourceWindowID,
+                      !payload.orderedTabIDs.isEmpty,
+                      Set(payload.orderedTabIDs).count == payload.orderedTabIDs.count,
+                      payload.orderedTabIDs.contains(payload.initiatingTabID)
+                else { return .none }
+                let sourceTabIDs = Set(state.contentTabSidebarItems.map(\.id))
+                guard Set(payload.orderedTabIDs).isSubset(of: sourceTabIDs) else { return .none }
+
+                switch payload.schemaVersion {
+                case ContentTabDragPayload.legacySchemaVersion:
+                    return .none
+                case ContentTabDragPayload.supportedSchemaVersion:
+                    guard let snapshot = state.contentTabDragSnapshot,
+                          snapshot.lifecycle == .inFlight || snapshot.lifecycle == .awaitingPayload,
+                          snapshot.matches(payload)
+                    else { return .none }
+                default:
+                    return .none
+                }
+
+                let availableTargets = ContentTabMoveProjection.availableTargets(
+                    state.contentTabMoveTargets,
+                    currentWindowID: sourceWindowID,
+                    orderedTabIDs: payload.orderedTabIDs,
+                )
+                guard availableTargets.contains(where: { $0.windowID == targetWindowID }) else {
+                    return .none
+                }
+
+                let requestID = uuid()
+                let request = ContentTabMoveRequest(
+                    operationID: payload.operationID ?? requestID,
+                    requestID: requestID,
+                    sourceWindowID: sourceWindowID,
+                    initiatingTabID: payload.initiatingTabID,
+                    orderedTabIDs: payload.orderedTabIDs,
+                    targetWindowID: targetWindowID,
+                )
+                state.contentTabDragSnapshot = nil
+                state.pendingContentTabMoveRequest = request
+                return .send(.delegate(.requestContentTabMove(request)))
+
+            case let .view(.prepareContentTabDrag(initiatingTabID, selectedTabIDs)):
+                guard let sourceWindowID = state.currentWindowID,
+                      state.contentTabSidebarItems.contains(where: { $0.id == initiatingTabID })
+                else { return .none }
+                if case .inFlight = state.contentTabDragSnapshot?.lifecycle {
+                    return .none
+                }
+
+                let sourceTabIDs = Set(state.contentTabSidebarItems.map(\.id))
+                guard let orderedTabIDs = ContentTabDragSnapshot.frozenOrderedTabIDs(
+                    initiatingTabID: initiatingTabID,
+                    selectedTabIDs: selectedTabIDs,
+                    displayedOrderedTabIDs: state.contentTabSelectionOrderedIDs,
+                    sourceTabIDs: sourceTabIDs,
+                ) else { return .none }
+                state.contentTabDragSnapshot = ContentTabDragSnapshot(
+                    operationID: uuid(),
+                    sourceWindowID: sourceWindowID,
+                    initiatingTabID: initiatingTabID,
+                    orderedTabIDs: orderedTabIDs,
+                )
+                return .none
+
+            case let .view(.beginContentTabDrag(payload)):
+                guard var snapshot = state.contentTabDragSnapshot,
+                      snapshot.lifecycle == .prepared,
+                      snapshot.matches(payload)
+                else { return .none }
+                snapshot.lifecycle = .inFlight
+                state.contentTabDragSnapshot = snapshot
+                return .none
+
+            case let .view(.contentTabDragTerminal(operationID)):
+                guard var snapshot = state.contentTabDragSnapshot,
+                      snapshot.operationID == operationID
+                else { return .none }
+                switch snapshot.lifecycle {
+                case .prepared:
+                    state.contentTabDragSnapshot = nil
+                case .inFlight:
+                    snapshot.lifecycle = .awaitingPayload
+                    state.contentTabDragSnapshot = snapshot
+                case .awaitingPayload:
+                    break
+                }
+                return .none
+
+            case .view(.teardownContentTabDragSource):
+                state.contentTabDragSnapshot = nil
+                return .none
+
             case let .view(.receiveContentTabDrag(payload)):
                 guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
                       let currentWindowID = state.currentWindowID,

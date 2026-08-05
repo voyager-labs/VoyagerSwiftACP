@@ -95,6 +95,10 @@ public enum FileManagerTopNavigationIntent: Equatable, Sendable {
         source: FileManagerTopNavigationItemID,
         destination: FileManagerTopNavigationMoveDestination,
     )
+    case movePinnedGroup(
+        orderedIDs: [ContentTabID],
+        destination: FileManagerTopNavigationMoveDestination,
+    )
     case pin(ContentTabID)
     case unpin(ContentTabID)
     case close(ContentTabID)
@@ -191,6 +195,7 @@ public struct FileManagerWindowState: Equatable {
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
+    public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
     public var contentTabMoveFailurePresentation: ContentTabMoveFailurePresentation?
     var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
@@ -226,6 +231,7 @@ public struct FileManagerWindowState: Equatable {
         undoRedoPhase = .idle
         sidebarEntryDropOperations = .init()
         pendingCollectionOpenRequest = nil
+        pendingContentTabMove = nil
         contentTabMoveFailurePresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
@@ -384,6 +390,7 @@ public struct FileManagerWindowState: Equatable {
         sidebarEntryDropOperations.windowID = initialWindowID
         self.sidebarEntryDropOperations = sidebarEntryDropOperations
         pendingCollectionOpenRequest = nil
+        pendingContentTabMove = nil
         contentTabMoveFailurePresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
@@ -645,6 +652,13 @@ public extension FileManagerWindowState {
         case let .move(source, destination):
             FileManagerTopNavigationOrderPolicy.moving(source, to: destination, in: order)
 
+        case let .movePinnedGroup(orderedIDs, destination):
+            FileManagerTopNavigationOrderPolicy.movingPinnedContentTabs(
+                orderedIDs,
+                to: destination,
+                in: order,
+            )
+
         case let .pin(id):
             FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
                 id,
@@ -845,6 +859,7 @@ extension FileManagerWindowState {
         )
         sidebar = synchronizedSidebar
         optimisticTopNavigationOrder = synchronizedOrder
+        sidebar.contentTabSelectionOrderedIDs = contentTabSelectionOrderedIDs
     }
 
     var contentTabSelectionOrderedIDs: [ContentTabID] {

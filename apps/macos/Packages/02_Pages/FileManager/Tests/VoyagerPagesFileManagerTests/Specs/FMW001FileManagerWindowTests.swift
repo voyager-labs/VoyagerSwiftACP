@@ -1849,6 +1849,691 @@ private func makeFileManagerContentStore() -> TestStore<FileManagerContentState,
 extension FMW001FileManagerWindowTests {
     // MARK: - FMW-001-move_content_tab_to_window
 
+    /// FMW-001-move_content_tab_to_window: Move menu는 선택 동결 presentation과 semantic action wiring을 소유한다.
+    /// 우클릭 메뉴를 연 시점의 선택 순서가 이후 live selection 변경과 분리되는 source wiring 계약을 검증한다.
+    /// - 검증 내용: 순수 Move presentation 생성, ordered batch projection, presentation title과 frozen callback 연결
+    /// - 사전 조건: package checkout의 canonical SidebarView.swift source를 읽을 수 있다.
+    /// - 기대 결과: Move menu가 clicked row 기준 presentation과 ordered IDs를 사용하고 callback snapshot을 보존한다.
+    func testContentTabMoveSidebarWiresFrozenMenuPresentation() throws {
+        let source = try loadFMWSidebarUISources()
+
+        XCTAssertTrue(source.contains("struct ContentTabMoveMenuPresentation"))
+        XCTAssertTrue(source.contains("orderedTabIDs: movePresentation.orderedTabIDs"))
+        XCTAssertTrue(source.contains("moveTitle: movePresentation.title"))
+        XCTAssertTrue(source.contains("let frozenOnMove = onMove"))
+    }
+
+    /// FMW-001-move_content_tab_to_window: 선택된 clicked row는 display order의 전체 valid selection을 동결한다.
+    /// 여러 Content Tab을 선택한 상태에서 selection member를 우클릭하는 menu presentation 계약을 검증한다.
+    /// - 검증 내용: bulk title, clicked-row identifier, frozen ordered IDs, semantic menu batch action
+    /// - 사전 조건: display order `[C, B, A]`, valid selection `{A, C}`, clicked row A와 고정 target ID가 있다.
+    /// - 기대 결과: `Move 2 Tabs to Window`와 initiating A, ordered `[C, A]`가 batch view action에 보존된다.
+    func testContentTabMoveMenuPresentationFreezesSelectedRowsInDisplayOrder() throws {
+        let tabA = ContentTabID(rawValue: "move-menu-a")
+        let tabB = ContentTabID(rawValue: "move-menu-b")
+        let tabC = ContentTabID(rawValue: "move-menu-c")
+        let targetWindowID = try XCTUnwrap(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000390"),
+        )
+        let presentation = ContentTabMoveMenuPresentation(
+            clickedTabID: tabA,
+            validSelectedTabIDs: [tabA, tabC],
+            displayedOrderedTabIDs: [tabC, tabB, tabA],
+        )
+
+        XCTAssertEqual(presentation.title, "Move 2 Tabs to Window")
+        XCTAssertEqual(presentation.accessibilityIdentifier, ContentTabMoveProjection.menuIdentifier(tabID: tabA))
+        XCTAssertEqual(presentation.orderedTabIDs, [tabC, tabA])
+        guard case let .moveSelectedContentTabs(initiatingTabID, orderedTabIDs) = presentation.command else {
+            return XCTFail("selected clicked row should project the semantic menu batch command")
+        }
+        XCTAssertEqual(initiatingTabID, tabA)
+        XCTAssertEqual(orderedTabIDs, [tabC, tabA])
+        guard case let .moveSelectedContentTabs(actionInitiatingID, actionOrderedIDs, actionTargetID) =
+            presentation.viewAction(targetWindowID: targetWindowID)
+        else {
+            return XCTFail("menu batch command should map to the dedicated Sidebar view action")
+        }
+        XCTAssertEqual(actionInitiatingID, tabA)
+        XCTAssertEqual(actionOrderedIDs, [tabC, tabA])
+        XCTAssertEqual(actionTargetID, targetWindowID)
+    }
+
+    /// FMW-001-move_content_tab_to_window: selection 밖 clicked row와 단일 selection은 기존 singleton route를 유지한다.
+    /// bulk selection이 있어도 다른 row를 우클릭하면 clicked row 하나만 이동하는 VOY-450 호환 계약을 검증한다.
+    /// - 검증 내용: singleton title, `[clicked]` projection, 기존 `.moveContentTab` view action
+    /// - 사전 조건: valid selection `{A, C}`, display order `[C, B, A]`, clicked row B와 단일 selected row A가 있다.
+    /// - 기대 결과: 두 presentation 모두 `Move to Window`이며 각 clicked ID의 singleton action을 만든다.
+    func testContentTabMoveMenuPresentationKeepsUnselectedAndSingleSelectionSingleton() throws {
+        let tabA = ContentTabID(rawValue: "move-menu-single-a")
+        let tabB = ContentTabID(rawValue: "move-menu-single-b")
+        let tabC = ContentTabID(rawValue: "move-menu-single-c")
+        let targetWindowID = try XCTUnwrap(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000391"),
+        )
+        let presentations = [
+            ContentTabMoveMenuPresentation(
+                clickedTabID: tabB,
+                validSelectedTabIDs: [tabA, tabC],
+                displayedOrderedTabIDs: [tabC, tabB, tabA],
+            ),
+            ContentTabMoveMenuPresentation(
+                clickedTabID: tabA,
+                validSelectedTabIDs: [tabA],
+                displayedOrderedTabIDs: [tabC, tabB, tabA],
+            ),
+        ]
+
+        XCTAssertEqual(presentations.map(\.title), ["Move to Window", "Move to Window"])
+        XCTAssertEqual(presentations.map(\.orderedTabIDs), [[tabB], [tabA]])
+        for (presentation, expectedTabID) in zip(presentations, [tabB, tabA]) {
+            guard case let .moveContentTab(commandTabID) = presentation.command else {
+                return XCTFail("non-bulk presentation should keep the singleton command")
+            }
+            XCTAssertEqual(commandTabID, expectedTabID)
+            guard case let .moveContentTab(actionTabID, actionTargetID) =
+                presentation.viewAction(targetWindowID: targetWindowID)
+            else {
+                return XCTFail("singleton command should map to the existing Sidebar action")
+            }
+            XCTAssertEqual(actionTabID, expectedTabID)
+            XCTAssertEqual(actionTargetID, targetWindowID)
+        }
+    }
+
+    /// FMW-001-move_content_tab_to_window: pending batch의 모든 tab이 동일한 pending 상태로 투영된다.
+    /// initiating row에만 국한하지 않고 exact request의 전체 ordered IDs가 menu/progress disable 상태를 공유하는지 검증한다.
+    /// - 검증 내용: initiating 및 non-initiating tab pending true, unrelated tab과 nil request false
+    /// - 사전 조건: exact ordered IDs `[A, B]`를 가진 pending batch request가 있다.
+    /// - 기대 결과: A/B 모두 pending이고 C 및 pending request가 없는 경우는 pending이 아니다.
+    func testContentTabMovePendingProjectionIncludesEveryBatchTab() throws {
+        let tabA = ContentTabID(rawValue: "move-pending-a")
+        let tabB = ContentTabID(rawValue: "move-pending-b")
+        let tabC = ContentTabID(rawValue: "move-pending-c")
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000406"))
+        let request = ContentTabMoveRequest(
+            operationID: requestID,
+            requestID: requestID,
+            sourceWindowID: UUID(),
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabA, tabB],
+            targetWindowID: UUID(),
+        )
+
+        XCTAssertTrue(ContentTabMovePendingProjection.isPending(tabID: tabA, request: request))
+        XCTAssertTrue(ContentTabMovePendingProjection.isPending(tabID: tabB, request: request))
+        XCTAssertFalse(ContentTabMovePendingProjection.isPending(tabID: tabC, request: request))
+        XCTAssertFalse(ContentTabMovePendingProjection.isPending(tabID: tabA, request: nil))
+    }
+
+    /// FMW-001-move_content_tab_to_window: menu batch action은 한 UUID로 exact request를 만들고 기존 delegate path를 탄다.
+    /// drag payload 없이 clicked row와 이미 동결된 ordered IDs가 window/app atomic transaction 경계까지 유지되는지 검증한다.
+    /// - 검증 내용: request operation/request identity, initiating/ordered/source/target, Sidebar와 Window delegate equality
+    /// - 사전 조건: source에 A/B tab, ordered `[B, A]`, initiating A, batch capacity 2 target과 고정 UUID가 있다.
+    /// - 기대 결과: 하나의 exact request가 Sidebar pending과 Window pending을 거쳐 두 delegate 계층에 동일하게 전달된다.
+    func testContentTabMoveMenuBatchCreatesExactRequestAndPreservesDelegateIdentity() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000392"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000393"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000394"))
+        let fixture = try makeContentTabMoveMenuBatchFixture(
+            sourceWindowID: sourceWindowID,
+            targetWindowID: targetWindowID,
+            tabB: ContentTabID(rawValue: "move-menu-batch-b"),
+            availableSlots: 2,
+        )
+        let orderedTabIDs = [fixture.tabB, fixture.tabA]
+        let request = ContentTabMoveRequest(
+            operationID: requestID,
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: orderedTabIDs,
+            targetWindowID: targetWindowID,
+        )
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+        }
+
+        await store.send(.sidebar(.view(.moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: orderedTabIDs,
+            targetWindowID: targetWindowID,
+        )))) {
+            $0.sidebar.pendingContentTabMoveRequest = request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+        await store.send(.sidebar(.view(.moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: orderedTabIDs,
+            targetWindowID: targetWindowID,
+        ))))
+    }
+
+    /// FMW-001-move_content_tab_to_window: stale 비개시 ID 제거 후 하나만 남으면 singleton request로 축약한다.
+    /// menu-open 시점의 frozen 순서는 유지하되 실행 시점 source membership만 정규화하는 계약을 검증한다.
+    /// - 검증 내용: stale ID 제거, initiating identity 보존, 기존 singleton-compatible request/delegate identity
+    /// - 사전 조건: frozen `[stale, A]`, 현재 source `{A, B}`, initiating A와 고정 target/UUID가 있다.
+    /// - 기대 결과: exact ordered IDs `[A]`인 singleton request가 기존 pending/window/app delegate 경로로 전달된다.
+    func testContentTabMoveMenuBatchCollapsesStaleSelectionToSingletonRequest() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000398"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000399"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000400"))
+        let fixture = try makeContentTabMoveMenuBatchFixture(
+            sourceWindowID: sourceWindowID,
+            targetWindowID: targetWindowID,
+            tabB: ContentTabID(rawValue: "move-menu-collapse-b"),
+            availableSlots: 1,
+        )
+        let staleTabID = ContentTabID(rawValue: "move-menu-collapse-stale")
+        let request = ContentTabMoveRequest(
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            tabID: fixture.tabA,
+            targetWindowID: targetWindowID,
+        )
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.uuid = .constant(requestID)
+        }
+
+        await store.send(.sidebar(.view(.moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [staleTabID, fixture.tabA],
+            targetWindowID: targetWindowID,
+        )))) {
+            $0.sidebar.pendingContentTabMoveRequest = request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+    }
+
+    /// FMW-001-move_content_tab_to_window: stale 비개시 ID 제거 후 둘 이상 남으면 frozen 순서의 batch를 유지한다.
+    /// source membership 정규화가 surviving IDs를 재정렬하거나 live selection으로 대체하지 않는지 검증한다.
+    /// - 검증 내용: middle stale ID 제거, surviving `[B, A]` 순서, initiating A, exact batch request identity
+    /// - 사전 조건: frozen `[B, stale, A]`, 현재 source `{A, B}`, batch capacity 2 target과 고정 UUID가 있다.
+    /// - 기대 결과: exact ordered IDs `[B, A]`인 semantic batch request가 기존 delegate 경로로 전달된다.
+    func testContentTabMoveMenuBatchDropsStaleSelectionAndPreservesSurvivingOrder() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000401"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000402"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000403"))
+        let fixture = try makeContentTabMoveMenuBatchFixture(
+            sourceWindowID: sourceWindowID,
+            targetWindowID: targetWindowID,
+            tabB: ContentTabID(rawValue: "move-menu-surviving-b"),
+            availableSlots: 2,
+        )
+        let staleTabID = ContentTabID(rawValue: "move-menu-surviving-stale")
+        let normalizedOrderedTabIDs = [fixture.tabB, fixture.tabA]
+        let request = ContentTabMoveRequest(
+            operationID: requestID,
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: normalizedOrderedTabIDs,
+            targetWindowID: targetWindowID,
+        )
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.uuid = .constant(requestID)
+        }
+
+        await store.send(.sidebar(.view(.moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [fixture.tabB, staleTabID, fixture.tabA],
+            targetWindowID: targetWindowID,
+        )))) {
+            $0.sidebar.pendingContentTabMoveRequest = request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+    }
+
+    /// FMW-001-move_content_tab_to_window: frozen initiating tab이 source에서 사라졌으면 menu batch는 no-op이다.
+    /// 비개시 surviving ID가 있어도 clicked identity가 사라진 intent를 다른 tab 이동으로 변환하지 않는지 검증한다.
+    /// - 검증 내용: initiating source membership 누락 시 UUID/request/pending/delegate zero mutation
+    /// - 사전 조건: frozen `[B, stale initiating]`, 현재 source `{A, B}`, target은 batch를 수용한다.
+    /// - 기대 결과: surviving B가 있어도 request를 만들지 않고 state가 그대로 유지된다.
+    func testContentTabMoveMenuBatchIsNoOpWhenInitiatingTabIsMissing() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000404"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000405"))
+        let fixture = try makeContentTabMoveMenuBatchFixture(
+            sourceWindowID: sourceWindowID,
+            targetWindowID: targetWindowID,
+            tabB: ContentTabID(rawValue: "move-menu-missing-b"),
+            availableSlots: 2,
+        )
+        let missingInitiatingTabID = ContentTabID(rawValue: "move-menu-missing-initiating")
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.view(.moveSelectedContentTabs(
+            initiatingTabID: missingInitiatingTabID,
+            orderedTabIDs: [fixture.tabB, missingInitiatingTabID],
+            targetWindowID: targetWindowID,
+        ))))
+        XCTAssertEqual(store.state, fixture.state)
+    }
+
+    /// FMW-001-move_content_tab_to_window: menu batch reducer는 malformed identity와 full-batch capacity 부족을 거부한다.
+    /// reducer가 live selection을 재구성하지 않고 action에 동결된 값 자체만 검증하는 방어 계약을 확인한다.
+    /// - 검증 내용: empty/duplicate/missing initiating/unknown ID/capacity 부족 action의 zero mutation과 zero delegate
+    /// - 사전 조건: source A/B tab과 한 slot만 허용하는 target이 있고 pending request는 없다.
+    /// - 기대 결과: 모든 invalid action 뒤 state가 동일하고 UUID/request/delegate가 생성되지 않는다.
+    func testContentTabMoveMenuBatchRejectsMalformedIDsAndInsufficientCapacity() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000395"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000396"))
+        let fixture = try makeContentTabMoveMenuBatchFixture(
+            sourceWindowID: sourceWindowID,
+            targetWindowID: targetWindowID,
+            tabB: ContentTabID(rawValue: "move-menu-invalid-b"),
+            availableSlots: 1,
+        )
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() }
+        let invalidActions = contentTabMoveInvalidMenuBatchActions(
+            fixture: fixture,
+            targetWindowID: targetWindowID,
+        )
+
+        for action in invalidActions {
+            await store.send(.sidebar(.view(action)))
+            XCTAssertEqual(store.state, fixture.state)
+        }
+    }
+
+    /// FMW-001-move_content_tab_to_window: native menu target은 menu 생성 당시 callback을 동결한다.
+    /// menu가 열린 뒤 row update가 발생해도 이미 표시된 target action이 새로운 live selection callback으로 바뀌지 않는지 검증한다.
+    /// - 검증 내용: bulk menu title/identifier, target callback snapshot, 최신 callback과의 격리
+    /// - 사전 조건: clicked tab ID, 하나의 target, 첫 callback으로 만든 menu와 이후 두 번째 callback update가 있다.
+    /// - 기대 결과: 기존 target item 실행은 첫 callback만 호출하고 clicked-row accessibility identifier를 유지한다.
+    func testContentTabMoveNativeMenuFreezesPresentedCallback() throws {
+        _ = NSApplication.shared
+        let tabID = ContentTabID(rawValue: "move-menu-native")
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000397"))
+        let target = ContentTabMoveTarget(
+            windowID: targetWindowID,
+            displayTitle: "Target",
+            availableSlots: 2,
+        )
+        let button = ContentTabSidebarButton(frame: .zero)
+        var firstCallbackIDs: [UUID] = []
+        var latestCallbackIDs: [UUID] = []
+        func updateButton(moveTitle: String, onMove: @escaping (UUID) -> Void) {
+            button.update(configuration: .init(
+                rootView: AnyView(EmptyView()),
+                accessibilityLabel: "Content Tab",
+                accessibilityValue: "Selected",
+                tabID: tabID,
+                duplicateAccessibilityIdentifier: "duplicate-content-tab-\(tabID)",
+                isPinned: false,
+                isEnabled: true,
+                reorderDragSource: nil,
+                moveTargets: [target],
+                moveTitle: moveTitle,
+                onActivate: {},
+                onToggleSelection: {},
+                onSelectRange: {},
+                onDuplicate: {},
+                onPin: {},
+                onUnpin: {},
+                onClose: {},
+                onMove: onMove,
+            ))
+        }
+
+        updateButton(moveTitle: "Move 2 Tabs to Window") { firstCallbackIDs.append($0) }
+        let presentedMoveItem = try XCTUnwrap(button.menu?.items.last)
+        let presentedTargetItem = try XCTUnwrap(presentedMoveItem.submenu?.items.first)
+        XCTAssertEqual(presentedMoveItem.title, "Move 2 Tabs to Window")
+        XCTAssertEqual(
+            presentedMoveItem.identifier?.rawValue,
+            ContentTabMoveProjection.menuIdentifier(tabID: tabID),
+        )
+
+        updateButton(moveTitle: "Move to Window") { latestCallbackIDs.append($0) }
+        let action = try XCTUnwrap(presentedTargetItem.action)
+        XCTAssertTrue(NSApp.sendAction(action, to: presentedTargetItem.target, from: presentedTargetItem))
+        XCTAssertEqual(firstCallbackIDs, [targetWindowID])
+        XCTAssertTrue(latestCallbackIDs.isEmpty)
+    }
+
+    /// FMW-001-move_content_tab_to_window: 유효한 batch 요청은 app delegate로 정확히 한 번 전달한다.
+    /// 동일 request가 재생되어도 이미 시작한 transfer를 중복 위임하지 않는 lifecycle 계약을 검증한다.
+    /// - 검증 내용: 최초 request delegate 1회와 duplicate request delegate 0회
+    /// - 사전 조건: frozen batch identity를 가진 pending request가 source window에 있다.
+    /// - 기대 결과: 최초 요청만 전달되고 재생 요청은 추가 effect 없이 종료된다.
+    func testContentTabMoveRequestDelegatesExactlyOnce() async {
+        let request = makeTask7ContentTabMoveRequest()
+        let state = makeTask7ContentTabMoveState(request: request)
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.delegate(.requestContentTabMove(request)))) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+        await store.send(.sidebar(.delegate(.requestContentTabMove(request))))
+        await store.send(.contentTabMoveSucceeded(
+            request: replacingTask7Request(request, operationID: UUID()),
+        ))
+        await store.send(.contentTabMoveSucceeded(request: request)) {
+            $0.pendingContentTabMove = nil
+            $0.sidebar.pendingContentTabMoveRequest = nil
+        }
+        await store.send(.contentTabMoveSucceeded(request: request))
+        await store.finish()
+    }
+
+    /// FMW-001-move_content_tab_to_window: 교차 correlation 요청은 현재 pending을 변경하거나 위임하지 않는다.
+    /// operation/request/source/target 중 하나만 다른 replay가 frozen request identity를 탈취하지 못하는지 검증한다.
+    /// - 검증 내용: same operation/new request, same request/other operation, source/target mismatch no-op
+    /// - 사전 조건: 하나의 batch request가 source window의 pending으로 준비되어 있다.
+    /// - 기대 결과: 모든 foreign request 뒤에도 기존 pending이 유지되고 app delegate effect는 없다.
+    func testContentTabMoveCrossCorrelatedRequestsAreNoOps() async {
+        let request = makeTask7ContentTabMoveRequest()
+        let state = makeTask7ContentTabMoveState(request: request)
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+        let foreignRequests = [
+            replacingTask7Request(request, requestID: UUID()),
+            replacingTask7Request(request, operationID: UUID()),
+            replacingTask7Request(request, sourceWindowID: UUID()),
+            replacingTask7Request(request, targetWindowID: UUID()),
+        ]
+
+        for foreignRequest in foreignRequests {
+            await store.send(.sidebar(.delegate(.requestContentTabMove(foreignRequest))))
+            XCTAssertEqual(store.state.sidebar.pendingContentTabMoveRequest, request)
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-move_content_tab_to_window: package busy family는 app delegate 전에 batch 요청을 거절한다.
+    /// move topology, pin persistence, close/teardown, Undo 진행 중에는 transfer가 시작되지 않는지 검증한다.
+    /// - 검증 내용: 각 busy state에서 request delegate 0회
+    /// - 사전 조건: source window에 matching pending request와 busy family 하나가 설정되어 있다.
+    /// - 기대 결과: 요청은 package 경계에서 종료되고 app delegate effect가 발생하지 않는다.
+    func testContentTabMoveBusyFamiliesRejectBeforeDelegate() async {
+        let request = makeTask7ContentTabMoveRequest()
+        var topologyBusy = makeTask7ContentTabMoveState(request: request)
+        let overlappingRequest = replacingTask7Request(request, operationID: UUID())
+        topologyBusy.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+            request: overlappingRequest,
+            lifecycle: .inFlight,
+        )
+        topologyBusy.sidebar.pendingContentTabMoveRequest = overlappingRequest
+        let topologyStore = TestStore(initialState: topologyBusy) { FileManagerFeature() }
+        await topologyStore.send(.sidebar(.delegate(.requestContentTabMove(request))))
+        await topologyStore.finish()
+
+        var pinPersistenceBusy = makeTask7ContentTabMoveState(request: request)
+        pinPersistenceBusy.contentTabs.pendingPinnedRecordIDs.insert(request.initiatingTabID)
+
+        var closingBusy = makeTask7ContentTabMoveState(request: request)
+        closingBusy.isClosing = true
+
+        var teardownBusy = makeTask7ContentTabMoveState(request: request)
+        teardownBusy.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: UUID(),
+            tabID: request.initiatingTabID,
+            ownerID: UUID(),
+        )
+
+        var undoBusy = makeTask7ContentTabMoveState(request: request)
+        undoBusy.undoRedoPhase = .invoking(requestID: UUID(), direction: .undo)
+
+        for state in [pinPersistenceBusy, closingBusy, teardownBusy, undoBusy] {
+            let store = TestStore(initialState: state) { FileManagerFeature() }
+            await store.send(.sidebar(.delegate(.requestContentTabMove(request)))) {
+                $0.pendingContentTabMove = nil
+                $0.sidebar.pendingContentTabMoveRequest = nil
+                $0.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
+                    requestID: request.requestID,
+                    category: .busy,
+                )
+            }
+            await store.finish()
+        }
+    }
+
+    /// FMW-001-move_content_tab_to_window: batch target은 free slot과 passive replacement의 순용량으로 판정한다.
+    /// 일부 충돌 tab을 passive pinned replacement로 제거할 수 있을 때 나머지 삽입 수만 free slot을 소비하는 계약을 검증한다.
+    /// - 검증 내용: ordered batch acceptance, passive replacement 합산, 부족한 net capacity 거부
+    /// - 사전 조건: 세 tab batch와 free slot/replacement 조합이 다른 세 target이 있다.
+    /// - 기대 결과: 순필요 slot을 충족하는 두 target만 주입 순서로 남는다.
+    func testContentTabMoveProjectionUsesNetCapacityAndPassiveReplacement() throws {
+        let currentWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000370"))
+        let freeWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000371"))
+        let passiveWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000372"))
+        let insufficientWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000373"))
+        let tabA = ContentTabID(rawValue: "projection-batch-a")
+        let tabB = ContentTabID(rawValue: "projection-batch-b")
+        let tabC = ContentTabID(rawValue: "projection-batch-c")
+        let orderedTabIDs = [tabA, tabB, tabC]
+        let free = ContentTabMoveTarget(
+            windowID: freeWindowID,
+            displayTitle: "Free",
+            availableSlots: 3,
+        )
+        let passive = ContentTabMoveTarget(
+            windowID: passiveWindowID,
+            displayTitle: "Passive",
+            availableSlots: 1,
+            replaceablePinnedTabIDs: [tabA, tabB],
+        )
+        let insufficient = ContentTabMoveTarget(
+            windowID: insufficientWindowID,
+            displayTitle: "Insufficient",
+            availableSlots: 1,
+            replaceablePinnedTabIDs: [tabA],
+        )
+
+        XCTAssertEqual(
+            ContentTabMoveProjection.availableTargets(
+                [free, passive, insufficient],
+                currentWindowID: currentWindowID,
+                orderedTabIDs: orderedTabIDs,
+            ),
+            [free, passive],
+        )
+        XCTAssertTrue(passive.accepts(orderedTabIDs: orderedTabIDs))
+        XCTAssertFalse(insufficient.accepts(orderedTabIDs: orderedTabIDs))
+    }
+
+    /// FMW-001-move_content_tab_to_window: replacement projection은 실제 passive pinned collision만 집계한다.
+    /// target의 빈 용량 때문에 non-colliding source ID를 replaceable로 오분류하지 않는 policy 경계를 검증한다.
+    /// - 검증 내용: free-capacity acceptance와 passive collision replacement predicate의 분리
+    /// - 사전 조건: 빈 용량이 있는 target, 존재하지 않는 source ID, 실제 passive pinned home projection이 있다.
+    /// - 기대 결과: non-collision은 replaceable이 아니고 actual passive collision만 replaceable이며 net capacity가 정확하다.
+    func testContentTabMoveReplacementPolicyExcludesFreeCapacityWithoutCollision() throws {
+        var target = FileManagerWindowState()
+        let collisionID = try XCTUnwrap(target.contentTabs.activeTabID)
+        let nonCollisionID = ContentTabID(rawValue: "free-capacity-non-collision")
+        var collisionItem = try XCTUnwrap(target.contentTabs.tabs[id: collisionID])
+        collisionItem.isPinned = true
+        target.contentTabs.tabs[id: collisionID] = collisionItem
+        let collisionRecord = ContentTabPinnedRecord(
+            id: collisionID.rawValue,
+            page: collisionItem.page,
+            anchor: collisionItem.anchor,
+            title: collisionItem.title,
+            iconName: collisionItem.iconName,
+            pinnedAt: Date(timeIntervalSince1970: 1),
+        )
+        target.contentTabs.pinnedRecords[collisionID] = collisionRecord
+        target.tabContentStates[collisionID] = target.content
+
+        XCTAssertTrue(target.canAcceptContentTabMove(tabID: nonCollisionID, sourcePinnedRecord: nil))
+        XCTAssertFalse(target.canReplacePassivePinnedContentTab(
+            tabID: nonCollisionID,
+            sourcePinnedRecord: nil,
+        ))
+        XCTAssertTrue(target.canReplacePassivePinnedContentTab(
+            tabID: collisionID,
+            sourcePinnedRecord: collisionRecord,
+        ))
+
+        let withoutCollision = ContentTabMoveTarget(
+            windowID: UUID(),
+            displayTitle: "Free only",
+            availableSlots: 1,
+        )
+        let withCollision = ContentTabMoveTarget(
+            windowID: UUID(),
+            displayTitle: "Free plus replacement",
+            availableSlots: 1,
+            replaceablePinnedTabIDs: [collisionID],
+        )
+        let orderedTabIDs = [collisionID, nonCollisionID]
+        XCTAssertFalse(withoutCollision.accepts(orderedTabIDs: orderedTabIDs))
+        XCTAssertTrue(withCollision.accepts(orderedTabIDs: orderedTabIDs))
+    }
+
+    /// FMW-001-move_content_tab_to_window: drag terminal 뒤 도착한 payload도 frozen batch identity로 요청을 만든다.
+    /// async payload load보다 native terminal이 먼저 와도 exact payload만 한 번 소비하는 계약을 검증한다.
+    /// - 검증 내용: terminal-before-payload, exact request 생성, snapshot 소비, replay와 superseded payload zero mutation
+    /// - 사전 조건: inFlight `[A, B]` snapshot, 변경된 live order `[B]`, batch를 허용하는 target이 있다.
+    /// - 기대 결과: matching payload는 `[A, B]` request 하나를 만들고 replay/superseded payload는 state/effect를 변경하지 않는다.
+    func testContentTabDropConsumesFrozenPayloadAfterDragTerminal() async throws {
+        let fixture = try makeTerminalContentTabDropFixture()
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(fixture.request.requestID)
+        }
+
+        await store.send(.sidebar(.view(.contentTabDragTerminal(
+            operationID: fixture.snapshot.operationID,
+        )))) {
+            $0.sidebar.contentTabDragSnapshot?.lifecycle = .awaitingPayload
+        }
+        await store.send(.sidebar(.view(.moveContentTabs(
+            payload: fixture.snapshot.payload,
+            targetWindowID: fixture.request.targetWindowID,
+        )))) {
+            $0.sidebar.contentTabDragSnapshot = nil
+            $0.sidebar.pendingContentTabMoveRequest = fixture.request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: fixture.request)
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, fixture.request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, fixture.request)
+        let stateAfterRequest = store.state
+        await store.send(.sidebar(.view(.moveContentTabs(
+            payload: fixture.snapshot.payload,
+            targetWindowID: fixture.request.targetWindowID,
+        ))))
+        XCTAssertEqual(store.state, stateAfterRequest)
+        await assertSupersededContentTabDropIsNoOp(
+            state: fixture.state,
+            snapshot: fixture.snapshot,
+            supersedingOperationID: fixture.supersedingOperationID,
+            targetWindowID: fixture.request.targetWindowID,
+            tabID: fixture.snapshot.initiatingTabID,
+        )
+    }
+
+    /// FMW-001-move_content_tab_to_window: legacy v1 payload는 source-owned drag intent 없이 mutation을 만들지 않는다.
+    /// wire decode 호환 payload의 반복 실행과 같은 tab의 현재 v2 snapshot 기생을 source mutation 경계에서 차단한다.
+    /// - 검증 내용: no-snapshot v1 두 번과 same-tab current-v2-snapshot v1의 UUID, pending, delegate, full state mutation 0회
+    /// - 사전 조건: source/target/tab이 유효하고 두 번째 state에는 같은 source/tab의 inFlight v2 singleton snapshot이 있다.
+    /// - 기대 결과: 모든 v1 action이 zero mutation이며 현재 v2 snapshot도 그대로 보존된다.
+    func testLegacyContentTabDropRejectsReplayAndCurrentSnapshotForgeryWithoutMutation() async throws {
+        let fixture = try makeLegacyContentTabDropFixture()
+        let uuidCalls = LockIsolated(0)
+        let generatedRequestID = fixture.generatedRequestID
+        let replayStore = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = UUIDGenerator {
+                uuidCalls.withValue { $0 += 1 }
+                return generatedRequestID
+            }
+        }
+        let beforeReplay = replayStore.state
+
+        for _ in 0 ..< 2 {
+            await replayStore.send(.sidebar(.view(.moveContentTabs(
+                payload: fixture.payload,
+                targetWindowID: fixture.targetWindowID,
+            ))))
+            XCTAssertEqual(replayStore.state, beforeReplay)
+        }
+        XCTAssertEqual(uuidCalls.value, 0)
+        await replayStore.finish()
+
+        var snapshotState = fixture.state
+        snapshotState.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: fixture.operationID,
+            sourceWindowID: fixture.payload.sourceWindowID,
+            initiatingTabID: fixture.payload.initiatingTabID,
+            orderedTabIDs: fixture.payload.orderedTabIDs,
+            lifecycle: .inFlight,
+        )
+        let forgeryStore = TestStore(initialState: snapshotState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = UUIDGenerator {
+                uuidCalls.withValue { $0 += 1 }
+                return generatedRequestID
+            }
+        }
+        let beforeForgery = forgeryStore.state
+
+        await forgeryStore.send(.sidebar(.view(.moveContentTabs(
+            payload: fixture.payload,
+            targetWindowID: fixture.targetWindowID,
+        ))))
+        XCTAssertEqual(forgeryStore.state, beforeForgery)
+        XCTAssertEqual(uuidCalls.value, 0)
+        await forgeryStore.finish()
+    }
+
+    /// FMW-001-move_content_tab_to_window: batch terminal은 현재 pending의 전체 semantic identity와 일치해야 한다.
+    /// 같은 request ID를 재사용한 foreign operation이 새로운 pending batch를 지우지 않는 계약을 검증한다.
+    /// - 검증 내용: operation/request/source/target/ordered mismatch no-op과 exact success cleanup
+    /// - 사전 조건: batch pending request와 같은 request ID지만 다른 operation/ordered IDs를 가진 stale request가 있다.
+    /// - 기대 결과: stale terminal은 zero mutation이고 exact terminal만 pending을 정리한다.
+    func testContentTabMoveTerminalRequiresExactPendingIdentity() async throws {
+        let request = try ContentTabMoveRequest(
+            operationID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000379")),
+            requestID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000380")),
+            sourceWindowID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000381")),
+            initiatingTabID: ContentTabID(rawValue: "terminal-b"),
+            orderedTabIDs: [ContentTabID(rawValue: "terminal-a"), ContentTabID(rawValue: "terminal-b")],
+            targetWindowID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000382")),
+        )
+        let staleRequest = try ContentTabMoveRequest(
+            operationID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000383")),
+            requestID: request.requestID,
+            sourceWindowID: request.sourceWindowID,
+            initiatingTabID: request.initiatingTabID,
+            orderedTabIDs: [request.initiatingTabID],
+            targetWindowID: request.targetWindowID,
+        )
+        var state = FileManagerWindowState()
+        state.sidebar.pendingContentTabMoveRequest = request
+        state.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+            request: request,
+            lifecycle: .inFlight,
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.contentTabMoveSucceeded(request: staleRequest))
+        XCTAssertEqual(store.state.sidebar.pendingContentTabMoveRequest, request)
+        await store.send(.contentTabMoveSucceeded(request: request)) {
+            $0.sidebar.pendingContentTabMoveRequest = nil
+            $0.pendingContentTabMove = nil
+        }
+    }
+
     /// FMW-001-move_content_tab_to_window: target 선택은 request UUID를 한 번 생성해 모든 delegate 계층에 보존한다.
     /// 사용자가 같은 target을 반복 선택해도 pending tab에는 하나의 요청만 전달되는 계약을 검증한다.
     /// - 검증 내용: Sidebar pending state, Sidebar delegate, Window delegate의 request identity와 중복 억제.
@@ -1878,8 +2563,11 @@ extension FMW001FileManagerWindowTests {
 
         await store.send(.sidebar(.view(.moveContentTab(tabID: tabID, targetWindowID: targetWindowID)))) {
             $0.sidebar.pendingContentTabMoveRequest = request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
         }
-        await store.receive(\.sidebar.delegate.requestContentTabMove, request)
+        await store.receive(\.sidebar.delegate.requestContentTabMove, request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
         await store.receive(\.delegate.requestContentTabMove, request)
 
         await store.send(.sidebar(.view(.moveContentTab(tabID: tabID, targetWindowID: targetWindowID))))
@@ -1894,13 +2582,24 @@ extension FMW001FileManagerWindowTests {
         let request = try makeContentTabMoveRequest()
         var state = FileManagerWindowState()
         state.sidebar.pendingContentTabMoveRequest = request
+        state.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+            request: request,
+            lifecycle: .inFlight,
+        )
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         }
 
-        await store.send(.contentTabMoveSucceeded(requestID: UUID()))
-        await store.send(.contentTabMoveSucceeded(requestID: request.requestID)) {
+        let staleRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: request.sourceWindowID,
+            tabID: request.tabID,
+            targetWindowID: request.targetWindowID,
+        )
+        await store.send(.contentTabMoveSucceeded(request: staleRequest))
+        await store.send(.contentTabMoveSucceeded(request: request)) {
             $0.sidebar.pendingContentTabMoveRequest = nil
+            $0.pendingContentTabMove = nil
         }
     }
 
@@ -1914,12 +2613,17 @@ extension FMW001FileManagerWindowTests {
             let request = try makeContentTabMoveRequest()
             var state = FileManagerWindowState()
             state.sidebar.pendingContentTabMoveRequest = request
+            state.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+                request: request,
+                lifecycle: .inFlight,
+            )
             let store = TestStore(initialState: state) {
                 FileManagerFeature()
             }
 
-            await store.send(.contentTabMoveRejected(requestID: request.requestID, category: category)) {
+            await store.send(.contentTabMoveRejected(request: request, category: category)) {
                 $0.sidebar.pendingContentTabMoveRequest = nil
+                $0.pendingContentTabMove = nil
                 $0.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
                     requestID: request.requestID,
                     category: category,
@@ -1938,12 +2642,22 @@ extension FMW001FileManagerWindowTests {
         let presentation = ContentTabMoveFailurePresentation(requestID: UUID(), category: .busy)
         var state = FileManagerWindowState()
         state.sidebar.pendingContentTabMoveRequest = request
+        state.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+            request: request,
+            lifecycle: .inFlight,
+        )
         state.contentTabMoveFailurePresentation = presentation
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         }
 
-        await store.send(.contentTabMoveRejected(requestID: UUID(), category: .generic))
+        let staleRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: request.sourceWindowID,
+            tabID: request.tabID,
+            targetWindowID: request.targetWindowID,
+        )
+        await store.send(.contentTabMoveRejected(request: staleRequest, category: .generic))
         await store.send(.view(.dismissContentTabMoveFailure(requestID: UUID())))
     }
 
@@ -2050,18 +2764,10 @@ extension FMW001FileManagerWindowTests {
     /// - 사전 조건: package checkout의 canonical SidebarView.swift source를 읽을 수 있다.
     /// - 기대 결과: 요구된 wiring token이 모두 있고 view-side target sorting은 없다.
     func testContentTabMoveSidebarViewWiresMenuOrderPendingControlsAndIdentifiers() throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = packageRoot.appendingPathComponent(
-            "Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift",
-        )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try loadFMWSidebarUISources()
 
         XCTAssertTrue(source.contains("if !moveTargets.isEmpty"))
-        XCTAssertTrue(source.contains(#"NSMenuItem(title: "Move to Window""#))
+        XCTAssertTrue(source.contains("NSMenuItem(title: moveTitle"))
         XCTAssertTrue(source.contains("for target in moveTargets"))
         XCTAssertFalse(source.contains("moveTargets.sorted"))
         XCTAssertTrue(source.contains("moveItem.isEnabled = !isMovePending"))
@@ -2137,15 +2843,15 @@ extension FMW001FileManagerWindowTests {
         await store.receive(\.contentTabs.collapseSelectionToActive)
     }
 
-    /// FMW-001-move_content_tab_to_window: drag payload는 version/source/tab locator만 round-trip한다.
-    /// 외부 drop payload가 target/request/tab state를 권한 있는 값처럼 운반하지 않는 최소 계약을 검증한다.
-    /// - 검증 내용: Codable round-trip의 exact field 보존과 top-level encoded key allowlist.
-    /// - 사전 조건: 지원 schema version, source window UUID, ContentTabID가 있다.
-    /// - 기대 결과: 세 값만 복원되고 target/request/state 관련 key는 존재하지 않는다.
+    /// FMW-001-move_content_tab_to_window: legacy v1 drag payload는 version/source/tab locator만 round-trip한다.
+    /// 기존 외부 drop payload가 v2 correlation 필드나 live selection으로 확장되지 않는 호환 계약을 검증한다.
+    /// - 검증 내용: legacy Codable round-trip의 exact field 보존과 top-level encoded key allowlist.
+    /// - 사전 조건: legacy schema version, source window UUID, ContentTabID가 있다.
+    /// - 기대 결과: 세 값만 복원되고 operation/target/request/state 관련 key는 존재하지 않는다.
     func testContentTabDragPayloadRoundTripUsesMinimalVersionedLocatorKeys() throws {
         let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000351"))
         let payload = ContentTabDragPayload(
-            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            schemaVersion: ContentTabDragPayload.legacySchemaVersion,
             sourceWindowID: sourceWindowID,
             tabID: ContentTabID(rawValue: "drag-payload-tab"),
         )
@@ -2155,13 +2861,18 @@ extension FMW001FileManagerWindowTests {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(decoded, payload)
-        XCTAssertEqual(decoded.schemaVersion, ContentTabDragPayload.supportedSchemaVersion)
+        XCTAssertEqual(decoded.schemaVersion, ContentTabDragPayload.legacySchemaVersion)
         XCTAssertEqual(decoded.sourceWindowID, sourceWindowID)
         XCTAssertEqual(decoded.tabID, ContentTabID(rawValue: "drag-payload-tab"))
         XCTAssertEqual(Set(object.keys), ["schemaVersion", "sourceWindowID", "tabID"])
         XCTAssertTrue(ContentTabDragPayload.isSupported(schemaVersion: decoded.schemaVersion))
-        XCTAssertFalse(ContentTabDragPayload.isSupported(schemaVersion: decoded.schemaVersion + 1))
-        for forbiddenKey in ["targetWindowID", "requestID", "title", "path", "anchor", "state", "workUnit"] {
+        XCTAssertFalse(ContentTabDragPayload.isSupported(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion + 1,
+        ))
+        for forbiddenKey in [
+            "operationID", "initiatingTabID", "orderedTabIDs", "targetWindowID", "requestID",
+            "title", "path", "anchor", "state", "workUnit",
+        ] {
             XCTAssertNil(object[forbiddenKey])
         }
     }
@@ -2406,19 +3117,11 @@ extension FMW001FileManagerWindowTests {
     /// - 사전 조건: package checkout의 canonical SidebarView.swift source를 읽을 수 있다.
     /// - 기대 결과: move cursor용 DropDelegate wiring과 기존 Move to Window menu/pending control이 함께 유지된다.
     func testContentTabDragDropSidebarViewWiringPreservesMoveMenu() throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = packageRoot.appendingPathComponent(
-            "Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift",
-        )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try loadFMWSidebarUISources()
 
         XCTAssertTrue(source.contains("sidebarStore.pendingContentTabMoveRequest == nil"))
         XCTAssertTrue(source.contains("FileManagerTopNavigationReorderDragSourceConfiguration("))
-        XCTAssertTrue(source.contains("movePayload: ContentTabDragPayload("))
+        XCTAssertTrue(source.contains("prepareMovePayload: {"))
         XCTAssertTrue(source.contains("private var contentTabsViewport: some View"))
         XCTAssertTrue(source.contains("GeometryReader"))
         XCTAssertTrue(source.contains("minHeight: proxy.size.height"))
@@ -2431,13 +3134,286 @@ extension FMW001FileManagerWindowTests {
         XCTAssertFalse(source.contains(".dropDestination(for: ContentTabDragPayload.self)"))
         XCTAssertTrue(source.contains("ContentTabMoveProjection.dropZoneIdentifier"))
         XCTAssertEqual(ContentTabMoveProjection.dropZoneIdentifier, "content-tabs-drop-zone")
-        XCTAssertTrue(source.contains(#"NSMenuItem(title: "Move to Window""#))
+        XCTAssertTrue(source.contains("NSMenuItem(title: moveTitle"))
         XCTAssertTrue(source.contains("ContentTabMoveProjection.menuIdentifier(tabID: moveTargetsTabID)"))
         XCTAssertTrue(source.contains("ContentTabMoveProjection.targetIdentifier("))
         XCTAssertTrue(source.contains("ContentTabMoveProjection.progressIdentifier(tabID: item.id)"))
         XCTAssertTrue(source.contains("moveItem.isEnabled = !isMovePending"))
         XCTAssertTrue(source.contains("targetItem.isEnabled = !isMovePending"))
     }
+}
+
+private struct LegacyContentTabDropFixture {
+    let state: FileManagerWindowState
+    let payload: ContentTabDragPayload
+    let targetWindowID: UUID
+    let operationID: UUID
+    let generatedRequestID: UUID
+}
+
+private func fmwSidebarUIPackageRootURL() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui")
+}
+
+private func loadFMWSidebarUISource(named fileName: String) throws -> String {
+    try String(
+        contentsOf: fmwSidebarUIPackageRootURL().appendingPathComponent(fileName),
+        encoding: .utf8,
+    )
+}
+
+private func loadFMWSidebarUISources() throws -> String {
+    try [
+        "SidebarView.swift",
+        "ContentTabSidebarViewSupport.swift",
+        "FixedLocationSidebarViewSupport.swift",
+    ]
+    .map { try loadFMWSidebarUISource(named: $0) }
+    .joined(separator: "\n")
+}
+
+private func makeLegacyContentTabDropFixture() throws -> LegacyContentTabDropFixture {
+    let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000411"))
+    let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000412"))
+    var state = FileManagerWindowState.makeInitial(path: nil, windowID: sourceWindowID)
+    let tabID = try XCTUnwrap(state.contentTabs.activeTabID)
+    state.sidebar.currentWindowID = sourceWindowID
+    state.sidebar.contentTabMoveTargets = [
+        ContentTabMoveTarget(windowID: targetWindowID, displayTitle: "Target"),
+    ]
+    state.syncContentTabSidebarItems()
+    return try LegacyContentTabDropFixture(
+        state: state,
+        payload: ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.legacySchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+        ),
+        targetWindowID: targetWindowID,
+        operationID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000413")),
+        generatedRequestID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000414")),
+    )
+}
+
+private struct ContentTabMoveMenuBatchFixture {
+    let state: FileManagerWindowState
+    let tabA: ContentTabID
+    let tabB: ContentTabID
+}
+
+private func makeContentTabMoveMenuBatchFixture(
+    sourceWindowID: UUID,
+    targetWindowID: UUID,
+    tabB: ContentTabID,
+    availableSlots: Int,
+) throws -> ContentTabMoveMenuBatchFixture {
+    var state = FileManagerWindowState()
+    let tabA = try XCTUnwrap(state.contentTabs.activeTabID)
+    state.contentTabs.tabs.append(ContentTabItem(
+        id: tabB,
+        page: .home,
+        anchor: .homeDefault,
+        isPinned: false,
+        title: "B",
+        iconName: "house",
+    ))
+    state.syncContentTabSidebarItems()
+    state.sidebar.currentWindowID = sourceWindowID
+    state.sidebar.contentTabMoveTargets = [
+        ContentTabMoveTarget(
+            windowID: targetWindowID,
+            displayTitle: "Target",
+            availableSlots: availableSlots,
+        ),
+    ]
+    return ContentTabMoveMenuBatchFixture(state: state, tabA: tabA, tabB: tabB)
+}
+
+private func contentTabMoveInvalidMenuBatchActions(
+    fixture: ContentTabMoveMenuBatchFixture,
+    targetWindowID: UUID,
+) -> [FileManagerSidebarAction.View] {
+    let unknownTabID = ContentTabID(rawValue: "move-menu-unknown")
+    return [
+        .moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [],
+            targetWindowID: targetWindowID,
+        ),
+        .moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [fixture.tabA, fixture.tabA],
+            targetWindowID: targetWindowID,
+        ),
+        .moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [fixture.tabB],
+            targetWindowID: targetWindowID,
+        ),
+        .moveSelectedContentTabs(
+            initiatingTabID: unknownTabID,
+            orderedTabIDs: [fixture.tabA, unknownTabID],
+            targetWindowID: targetWindowID,
+        ),
+        .moveSelectedContentTabs(
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [fixture.tabB, fixture.tabA],
+            targetWindowID: targetWindowID,
+        ),
+    ]
+}
+
+private struct TerminalContentTabDropFixture {
+    let state: FileManagerWindowState
+    let snapshot: ContentTabDragSnapshot
+    let request: ContentTabMoveRequest
+    let supersedingOperationID: UUID
+}
+
+private func makeTerminalContentTabDropFixture() throws -> TerminalContentTabDropFixture {
+    let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000374"))
+    let supersedingOperationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000375"))
+    let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000376"))
+    let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000377"))
+    let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000378"))
+    let frozen = try makeFrozenContentTabDropState(
+        sourceWindowID: sourceWindowID,
+        targetWindowID: targetWindowID,
+    )
+    let snapshot = ContentTabDragSnapshot(
+        operationID: operationID,
+        sourceWindowID: sourceWindowID,
+        initiatingTabID: frozen.tabB,
+        orderedTabIDs: [frozen.tabA, frozen.tabB],
+        lifecycle: .inFlight,
+    )
+    var state = frozen.state
+    state.sidebar.contentTabDragSnapshot = snapshot
+    return TerminalContentTabDropFixture(
+        state: state,
+        snapshot: snapshot,
+        request: ContentTabMoveRequest(
+            operationID: operationID,
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: frozen.tabB,
+            orderedTabIDs: snapshot.orderedTabIDs,
+            targetWindowID: targetWindowID,
+        ),
+        supersedingOperationID: supersedingOperationID,
+    )
+}
+
+private struct FrozenContentTabDropState {
+    let state: FileManagerWindowState
+    let tabA: ContentTabID
+    let tabB: ContentTabID
+}
+
+private func makeFrozenContentTabDropState(
+    sourceWindowID: UUID,
+    targetWindowID: UUID,
+) throws -> FrozenContentTabDropState {
+    var state = FileManagerWindowState()
+    let tabA = try XCTUnwrap(state.contentTabs.activeTabID)
+    let tabB = ContentTabID(rawValue: "frozen-drop-b")
+    state.contentTabs.tabs.append(ContentTabItem(
+        id: tabB,
+        page: .home,
+        anchor: .homeDefault,
+        isPinned: false,
+        title: "B",
+        iconName: "house",
+    ))
+    state.tabContentStates[tabB] = FileManagerContentFeature.State.initialContent(
+        for: .homeDefault,
+        inheritingWindowContextFrom: state.content,
+    )
+    state.syncContentTabSidebarItems()
+    state.sidebar.currentWindowID = sourceWindowID
+    state.sidebar.contentTabSelectionOrderedIDs = [tabB]
+    state.sidebar.contentTabMoveTargets = [
+        ContentTabMoveTarget(
+            windowID: targetWindowID,
+            displayTitle: "Target",
+            availableSlots: 2,
+        ),
+    ]
+    return FrozenContentTabDropState(
+        state: state,
+        tabA: tabA,
+        tabB: tabB,
+    )
+}
+
+@MainActor
+private func assertSupersededContentTabDropIsNoOp(
+    state: FileManagerWindowState,
+    snapshot: ContentTabDragSnapshot,
+    supersedingOperationID: UUID,
+    targetWindowID: UUID,
+    tabID: ContentTabID,
+) async {
+    var staleState = state
+    staleState.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+        operationID: supersedingOperationID,
+        sourceWindowID: snapshot.sourceWindowID,
+        initiatingTabID: tabID,
+        orderedTabIDs: [tabID],
+        lifecycle: .inFlight,
+    )
+    let staleStore = TestStore(initialState: staleState) { FileManagerFeature() }
+    let beforeReplay = staleStore.state
+    await staleStore.send(.sidebar(.view(.moveContentTabs(
+        payload: snapshot.payload,
+        targetWindowID: targetWindowID,
+    ))))
+    XCTAssertEqual(staleStore.state, beforeReplay)
+    await staleStore.finish()
+}
+
+private func makeTask7ContentTabMoveRequest() -> ContentTabMoveRequest {
+    let initiatingTabID = ContentTabID(rawValue: "task-7-b")
+    return ContentTabMoveRequest(
+        operationID: UUID(),
+        requestID: UUID(),
+        sourceWindowID: UUID(),
+        initiatingTabID: initiatingTabID,
+        orderedTabIDs: [ContentTabID(rawValue: "task-7-a"), initiatingTabID],
+        targetWindowID: UUID(),
+    )
+}
+
+private func makeTask7ContentTabMoveState(
+    request: ContentTabMoveRequest,
+) -> FileManagerWindowState {
+    var state = FileManagerWindowState.makeInitial(path: nil, windowID: request.sourceWindowID)
+    state.sidebar.currentWindowID = request.sourceWindowID
+    state.sidebar.pendingContentTabMoveRequest = request
+    state.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+    return state
+}
+
+private func replacingTask7Request(
+    _ request: ContentTabMoveRequest,
+    operationID: UUID? = nil,
+    requestID: UUID? = nil,
+    sourceWindowID: UUID? = nil,
+    targetWindowID: UUID? = nil,
+) -> ContentTabMoveRequest {
+    ContentTabMoveRequest(
+        operationID: operationID ?? request.operationID,
+        requestID: requestID ?? request.requestID,
+        sourceWindowID: sourceWindowID ?? request.sourceWindowID,
+        initiatingTabID: request.initiatingTabID,
+        orderedTabIDs: request.orderedTabIDs,
+        targetWindowID: targetWindowID ?? request.targetWindowID,
+    )
 }
 
 private func makeContentTabMoveRequest() throws -> ContentTabMoveRequest {

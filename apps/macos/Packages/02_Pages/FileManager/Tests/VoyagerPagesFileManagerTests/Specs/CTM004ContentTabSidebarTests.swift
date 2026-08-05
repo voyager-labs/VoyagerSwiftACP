@@ -64,17 +64,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(sidebarItems[0].title, "Home")
         XCTAssertEqual(sidebarItems[0].iconName, "house")
         XCTAssertEqual(sidebarItems[0].pageType, .home)
-        XCTAssertEqual(sidebarItems[0].isPinned, false)
+        XCTAssertFalse(sidebarItems[0].isPinned)
         XCTAssertEqual(sidebarItems[1].id, directoryID)
         XCTAssertEqual(sidebarItems[1].title, "Test Folder")
         XCTAssertEqual(sidebarItems[1].iconName, "folder")
         XCTAssertEqual(sidebarItems[1].pageType, .directory)
-        XCTAssertEqual(sidebarItems[1].isPinned, true)
+        XCTAssertTrue(sidebarItems[1].isPinned)
         XCTAssertEqual(sidebarItems[2].id, collectionID)
         XCTAssertEqual(sidebarItems[2].title, "My Collection")
         XCTAssertEqual(sidebarItems[2].iconName, "list.bullet")
         XCTAssertEqual(sidebarItems[2].pageType, .collection)
-        XCTAssertEqual(sidebarItems[2].isPinned, false)
+        XCTAssertFalse(sidebarItems[2].isPinned)
     }
 
     /// CTM-004-sidebar_projection_content_tabs: Sidebar projection은 정확히 하나의 tab만 active로 표시함
@@ -800,7 +800,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
-        XCTAssertTrue(store.state.contentTabs.tabs.filter(\.isPinned).isEmpty)
+        XCTAssertFalse(store.state.contentTabs.tabs.contains { $0.isPinned })
     }
 
     /// CTM-004-home_dashboard_projection: active Home의 onAppear projection은 live/cache parity를 유지한다.
@@ -1374,6 +1374,566 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.filter(\.isActive).map(\.id), [fallbackID])
         XCTAssertEqual(state.contentTabs.selectedTabIDs, [failedID])
         XCTAssertFalse(state.contentTabs.selectedTabIDs.contains(fallbackID))
+    }
+
+    // MARK: - CTM-004-content_tab_drag_correlation
+
+    /// CTM-004-content_tab_drag_correlation: legacy v1은 advisory 필드가 있어도 batch-of-one으로 복원한다.
+    /// 이전 wire payload가 현재 live selection이나 추가 JSON ID로 확장되지 않는 호환 계약을 검증한다.
+    /// - 검증 내용: v1 decode/encode의 singleton identity와 legacy key allowlist
+    /// - 사전 조건: tabID 외에 forged orderedTabIDs를 포함한 schemaVersion 1 JSON
+    /// - 기대 결과: operationID는 nil이고 initiating/ordered는 legacy tab 하나이며 재인코딩은 v1 세 key만 가진다.
+    func testContentTabDragPayloadV1DecodesStrictlyAsBatchOfOne() throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000401"))
+        let legacyTabID = ContentTabID(rawValue: "legacy-tab")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": ContentTabDragPayload.legacySchemaVersion,
+            "sourceWindowID": sourceWindowID.uuidString,
+            "tabID": ["rawValue": legacyTabID.rawValue],
+            "orderedTabIDs": [["rawValue": "forged-peer"]],
+        ])
+
+        let payload = try JSONDecoder().decode(ContentTabDragPayload.self, from: data)
+        XCTAssertEqual(payload.schemaVersion, ContentTabDragPayload.legacySchemaVersion)
+        XCTAssertNil(payload.operationID)
+        XCTAssertEqual(payload.initiatingTabID, legacyTabID)
+        XCTAssertEqual(payload.orderedTabIDs, [legacyTabID])
+        XCTAssertEqual(payload.tabID, legacyTabID)
+
+        let currentV2Snapshot = try ContentTabDragSnapshot(
+            operationID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000402")),
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: legacyTabID,
+            orderedTabIDs: [legacyTabID],
+            lifecycle: .inFlight,
+        )
+        XCTAssertFalse(currentV2Snapshot.matches(payload))
+
+        let encoded = try JSONEncoder().encode(payload)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["schemaVersion", "sourceWindowID", "tabID"])
+    }
+
+    /// CTM-004-content_tab_drag_correlation: v2 convenience payload는 source와 독립된 operation identity를 사용한다.
+    /// 호출자가 deterministic ID를 주입할 수 있고 기본 생성은 drag마다 새 identity를 만드는지 검증한다.
+    /// - 검증 내용: explicit operationID 보존, sourceWindowID 비동일성, default UUID uniqueness
+    /// - 사전 조건: 같은 source/tab으로 생성한 explicit v2 하나와 default v2 둘
+    /// - 기대 결과: explicit 값은 그대로 보존되고 default 두 operationID는 source 및 서로와 모두 다르다.
+    func testContentTabDragPayloadV2UsesExplicitOrFreshOperationIdentity() throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000409"))
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000410"))
+        let tabID = ContentTabID(rawValue: "v2-convenience-tab")
+        let explicit = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+            operationID: operationID,
+        )
+        let firstDefault = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+        )
+        let secondDefault = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: tabID,
+        )
+
+        XCTAssertEqual(explicit.operationID, operationID)
+        XCTAssertNotEqual(explicit.operationID, sourceWindowID)
+        XCTAssertNotEqual(firstDefault.operationID, sourceWindowID)
+        XCTAssertNotEqual(secondDefault.operationID, sourceWindowID)
+        XCTAssertNotEqual(firstDefault.operationID, secondDefault.operationID)
+        XCTAssertEqual(explicit.orderedTabIDs, [tabID])
+    }
+
+    /// CTM-004-content_tab_drag_correlation: prepared supersession과 inFlight correlation은 exact payload만 허용한다.
+    /// forged/stale payload와 terminal이 source-owned snapshot을 변경하지 않는 fail-closed 경계를 검증한다.
+    /// - 검증 내용: prepared 교체, exact begin, inFlight prepare 거부, terminal payload 대기, 새 drag supersession
+    /// - 사전 조건: A/B source order, 이전 prepared operation, deterministic 새 operation과 forged advisory order
+    /// - 기대 결과: exact v2만 payload 대기로 전환되고 새 drag가 이를 supersede하며 모든 mismatch는 zero mutation이다.
+    func testContentTabDragLifecycleRejectsForgedStaleAndInFlightSupersession() async throws {
+        let fixture = try makeContentTabDragLifecycleFixture()
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.uuid = .constant(fixture.operationID)
+        }
+        let prepared = ContentTabDragSnapshot(
+            operationID: fixture.operationID,
+            sourceWindowID: fixture.sourceWindowID,
+            initiatingTabID: fixture.tabB,
+            orderedTabIDs: [fixture.tabA, fixture.tabB],
+        )
+        await store.send(.view(.prepareContentTabDrag(
+            initiatingTabID: fixture.tabB,
+            selectedTabIDs: [fixture.tabA, fixture.tabB],
+        ))) {
+            $0.contentTabDragSnapshot = prepared
+        }
+
+        let forgedPayload = ContentTabDragPayload(
+            operationID: fixture.operationID,
+            sourceWindowID: fixture.sourceWindowID,
+            initiatingTabID: fixture.tabB,
+            orderedTabIDs: [fixture.tabB, fixture.tabA],
+        )
+        await store.send(.view(.beginContentTabDrag(forgedPayload)))
+        await store.send(.view(.beginContentTabDrag(prepared.payload))) {
+            $0.contentTabDragSnapshot?.lifecycle = .inFlight
+        }
+        let inFlightState = store.state
+        await store.send(.view(.prepareContentTabDrag(
+            initiatingTabID: fixture.tabA,
+            selectedTabIDs: [fixture.tabA],
+        )))
+        XCTAssertEqual(store.state, inFlightState)
+        await store.send(.view(.contentTabDragTerminal(operationID: fixture.oldOperationID)))
+        XCTAssertEqual(store.state, inFlightState)
+        await store.send(.view(.contentTabDragTerminal(operationID: fixture.operationID))) {
+            $0.contentTabDragSnapshot?.lifecycle = .awaitingPayload
+        }
+
+        await assertContentTabDragLifecycleRejectsSupersededPayload(
+            fixture: fixture,
+            state: store.state,
+            preparedPayload: prepared.payload,
+        )
+    }
+
+    /// CTM-004-content_tab_drag_correlation: source teardown은 현재 prepared snapshot을 명시적으로 정리한다.
+    /// window/sidebar source가 사라질 때 abandoned prepared drag가 다음 lifecycle로 남지 않는지 검증한다.
+    /// - 검증 내용: teardown action의 snapshot-only cleanup
+    /// - 사전 조건: 아직 시작되지 않은 prepared snapshot
+    /// - 기대 결과: source teardown 후 snapshot은 nil이다.
+    func testContentTabDragSourceTeardownClearsPreparedSnapshot() async throws {
+        let fixture = try makeContentTabDragLifecycleFixture()
+        let store = TestStore(initialState: fixture.state) { FileManagerSidebarFeature() }
+
+        await store.send(.view(.teardownContentTabDragSource)) {
+            $0.contentTabDragSnapshot = nil
+        }
+    }
+
+    /// CTM-004-content_tab_drag_correlation: initiating tab이 snapshot batch에 없으면 v2 begin을 거부한다.
+    /// payload 자체가 snapshot 필드를 복제해도 source authority invariant를 우회하지 못하는지 검증한다.
+    /// - 검증 내용: initiating membership validation과 whole-state no-op
+    /// - 사전 조건: initiating B지만 ordered IDs는 A만 가진 malformed prepared snapshot
+    /// - 기대 결과: matching-looking v2 begin 이후에도 lifecycle은 prepared로 유지된다.
+    func testContentTabDragCorrelationRejectsSnapshotMissingInitiatingTab() async throws {
+        let tabA = ContentTabID(rawValue: "drag-missing-a")
+        let tabB = ContentTabID(rawValue: "drag-missing-b")
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000405"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000406"))
+        let malformedSnapshot = ContentTabDragSnapshot(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: tabB,
+            orderedTabIDs: [tabA],
+        )
+        var state = FileManagerSidebarState()
+        state.contentTabDragSnapshot = malformedSnapshot
+        let store = TestStore(initialState: state) { FileManagerSidebarFeature() }
+
+        await store.send(.view(.beginContentTabDrag(malformedSnapshot.payload)))
+        XCTAssertEqual(store.state.contentTabDragSnapshot, malformedSnapshot)
+    }
+
+    /// CTM-004-content_tab_drag_correlation: native writer는 prepared payload와 matching terminal을 한 번씩 연결한다.
+    /// 실제 pasteboard writer 생성/cleanup이 reducer lifecycle callback 순서를 보존하는지 검증한다.
+    /// - 검증 내용: prepare, didBegin, encoded v2 identity, idempotent didEnd
+    /// - 사전 조건: deterministic reorder payload와 source snapshot payload를 반환하는 drag configuration
+    /// - 기대 결과: begin은 생성 시 한 번, terminal은 cleanup 최초 한 번이며 encoded payload가 snapshot과 같다.
+    func testContentTabNativeDragWriterCorrelatesPreparedPayloadAndMatchingTerminalOnce() throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000407"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000408"))
+        let tabID = ContentTabID(rawValue: "drag-writer-tab")
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(tabID),
+            dragScopeID: fileManagerTopNavigationReorderScopeID,
+        )
+        let movePayload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: tabID,
+            orderedTabIDs: [ContentTabID(rawValue: "drag-writer-peer"), tabID],
+        )
+        let events = LockIsolated<[String]>([])
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let writer = try FileManagerTopNavigationReorderPasteboardWriter(configuration: .init(
+            payload: reorderPayload,
+            sessionStore: sessionStore,
+            prepareMovePayload: {
+                events.withValue { $0.append("prepare") }
+                return movePayload
+            },
+            onMovePayloadDidBegin: { payload in
+                XCTAssertEqual(payload, movePayload)
+                events.withValue { $0.append("begin") }
+            },
+            onMovePayloadDidEnd: { receivedOperationID in
+                XCTAssertEqual(receivedOperationID, operationID)
+                events.withValue { $0.append("end") }
+            },
+        ))
+        let pasteboard = NSPasteboard(name: .init("fm.voyager.tests.correlated-content-tab-drag"))
+        defer { pasteboard.clearContents() }
+
+        XCTAssertEqual(
+            Set(writer.writableTypes(for: pasteboard)),
+            [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal, .contentTabMove],
+        )
+        let reorderData = try XCTUnwrap(
+            writer.pasteboardPropertyList(forType: .fileManagerTopNavigationReorder) as? Data,
+        )
+        let moveData = try XCTUnwrap(writer.pasteboardPropertyList(forType: .contentTabMove) as? Data)
+        XCTAssertEqual(
+            try JSONDecoder().decode(FileManagerTopNavigationReorderDragPayload.self, from: reorderData),
+            reorderPayload,
+        )
+        XCTAssertEqual(try JSONDecoder().decode(ContentTabDragPayload.self, from: moveData), movePayload)
+        XCTAssertEqual(events.value, ["prepare", "begin"])
+        writer.cleanupOwnedToken()
+        writer.cleanupOwnedToken()
+        XCTAssertEqual(events.value, ["prepare", "begin", "end"])
+    }
+
+    private struct ContentTabDragLifecycleFixture {
+        let tabA: ContentTabID
+        let tabB: ContentTabID
+        let sourceWindowID: UUID
+        let oldOperationID: UUID
+        let operationID: UUID
+        let state: FileManagerSidebarState
+    }
+
+    private func makeContentTabDragLifecycleFixture() throws -> ContentTabDragLifecycleFixture {
+        let tabA = ContentTabID(rawValue: "drag-lifecycle-a")
+        let tabB = ContentTabID(rawValue: "drag-lifecycle-b")
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000402"))
+        let oldOperationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000403"))
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000404"))
+        let tabState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "A",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: tabB,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "B",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabA,
+        )
+        var state = FileManagerSidebarState()
+        state.currentWindowID = sourceWindowID
+        state.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: tabState)
+        state.contentTabSelectionOrderedIDs = [tabA, tabB]
+        state.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: oldOperationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabA],
+        )
+        return ContentTabDragLifecycleFixture(
+            tabA: tabA,
+            tabB: tabB,
+            sourceWindowID: sourceWindowID,
+            oldOperationID: oldOperationID,
+            operationID: operationID,
+            state: state,
+        )
+    }
+
+    private func assertContentTabDragLifecycleRejectsSupersededPayload(
+        fixture: ContentTabDragLifecycleFixture,
+        state: FileManagerSidebarState,
+        preparedPayload: ContentTabDragPayload,
+    ) async {
+        let supersedingStore = TestStore(initialState: state) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.uuid = .constant(fixture.oldOperationID)
+        }
+        let supersedingSnapshot = ContentTabDragSnapshot(
+            operationID: fixture.oldOperationID,
+            sourceWindowID: fixture.sourceWindowID,
+            initiatingTabID: fixture.tabA,
+            orderedTabIDs: [fixture.tabA],
+        )
+        await supersedingStore.send(.view(.prepareContentTabDrag(
+            initiatingTabID: fixture.tabA,
+            selectedTabIDs: [fixture.tabA],
+        ))) {
+            $0.contentTabDragSnapshot = supersedingSnapshot
+        }
+        await supersedingStore.send(.view(.beginContentTabDrag(preparedPayload)))
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: pinned 선택 그룹은 Location anchor 전후에 frozen 순서로 한 번 삽입된다.
+    /// drag 시작 시 동결된 `[C, A]`가 최신 mixed top-navigation 순서에서 하나의 block으로 이동하는 경로를 검증한다.
+    /// - 검증 내용: remove-first/one-insert 결과와 optimistic pending intent 단일 생성
+    /// - 사전 조건: `[Home, A, Downloads, B, C]`, pinned 선택 `[C, A]`, initiating tab C
+    /// - 기대 결과: Downloads 앞은 `[Home, C, A, Downloads, B]`, 뒤는 `[Home, Downloads, C, A, B]`이다.
+    func testPinnedTopNavigationSelectedGroupReordersAroundLocationUsingFrozenOrder() async {
+        let fixture = PinnedGroupReorderFixture()
+        for scenario in fixture.changedScenarios {
+            await assertPinnedGroupReorder(scenario, fixture: fixture)
+        }
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: 종료된 drag snapshot은 후속 singleton 이동에 재사용되지 않는다.
+    /// awaiting payload 상태의 이전 다중 선택이 키보드·접근성 이동을 group persistence로 승격하지 않는지 검증한다.
+    /// - 검증 내용: single move intent와 기존 awaiting snapshot 보존
+    /// - 사전 조건: pinned `[C, A]` snapshot이 drag terminal 이후 awaiting payload 상태임
+    /// - 기대 결과: C 하나만 이동하고 group persistence action은 발생하지 않음
+    func testPinnedTopNavigationAwaitingDragSnapshotDoesNotPromoteLaterSingletonMove() async {
+        let fixture = PinnedGroupReorderFixture()
+        let initialState = fixture.state(
+            order: fixture.initialOrder,
+            frozenIDs: [fixture.tabC, fixture.tabA],
+            lifecycle: .awaitingPayload,
+        )
+        let expectedOrder = FileManagerTopNavigationOrder(items: [
+            .location(fixture.homeID),
+            .contentTab(fixture.tabA),
+            .contentTab(fixture.tabC),
+            .location(fixture.downloadsID),
+            .contentTab(fixture.tabB),
+        ])
+        let destination = FileManagerTopNavigationMoveDestination.before(.location(fixture.downloadsID))
+        let store = TestStore(initialState: initialState) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+        }
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(fixture.tabC),
+            destination: destination,
+        )) {
+            $0.pendingTopNavigationIntents = [
+                .init(
+                    token: fixture.token,
+                    intent: .move(source: .contentTab(fixture.tabC), destination: destination),
+                ),
+            ]
+            $0.optimisticTopNavigationOrder = expectedOrder
+        }
+        await store.receive { action in
+            guard case let .delegate(.persistTopNavigationMove(token, source, receivedDestination, _)) = action
+            else { return false }
+            return token == fixture.token
+                && source == .contentTab(fixture.tabC)
+                && receivedDestination == destination
+        }
+        XCTAssertEqual(store.state.sidebar.contentTabDragSnapshot?.lifecycle, .awaitingPayload)
+        await store.finish()
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: invalid pinned 선택 그룹과 unchanged 최종 순서는 exact no-op이다.
+    /// selected/stale anchor, pinned·unpinned mixed group, 이미 같은 block 위치를 persistence intent 없이 거부한다.
+    /// - 검증 내용: optimistic order, pending intent count, group validation 전체 불변
+    /// - 사전 조건: pinned C가 initiating tab이고 각 scenario의 frozen snapshot 또는 destination이 유효하지 않다.
+    /// - 기대 결과: 모든 scenario에서 order가 그대로이고 pending persistence intent는 0개이다.
+    func testPinnedTopNavigationSelectedGroupInvalidAndUnchangedRequestsAreExactNoOps() async {
+        let fixture = PinnedGroupReorderFixture()
+        for scenario in fixture.noOpScenarios {
+            await assertPinnedGroupNoOp(scenario, fixture: fixture)
+        }
+    }
+
+    private struct PinnedGroupChangedScenario {
+        let placement: FileManagerTopNavigationReorderPlacement
+        let expectedOrder: FileManagerTopNavigationOrder
+    }
+
+    private struct PinnedGroupNoOpScenario {
+        let order: FileManagerTopNavigationOrder
+        let frozenIDs: [ContentTabID]
+        let anchorID: FileManagerTopNavigationItemID
+        let placement: FileManagerTopNavigationReorderPlacement
+    }
+
+    private struct PinnedGroupReorderFixture {
+        let tabA = ContentTabID(rawValue: "pinned-group-a")
+        let tabB = ContentTabID(rawValue: "pinned-group-b")
+        let tabC = ContentTabID(rawValue: "pinned-group-c")
+        let unpinned = ContentTabID(rawValue: "pinned-group-unpinned")
+        let homeID = "location-home"
+        let downloadsID = "location-downloads"
+        let sourceWindowID = UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 1,
+        ))
+        let operationID = UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 2,
+        ))
+        let token = FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 3,
+        )))
+
+        var initialOrder: FileManagerTopNavigationOrder {
+            .init(items: [
+                .location(homeID),
+                .contentTab(tabA),
+                .location(downloadsID),
+                .contentTab(tabB),
+                .contentTab(tabC),
+            ])
+        }
+
+        var unchangedOrder: FileManagerTopNavigationOrder {
+            .init(items: [
+                .location(homeID),
+                .contentTab(tabC),
+                .contentTab(tabA),
+                .location(downloadsID),
+                .contentTab(tabB),
+            ])
+        }
+
+        var changedScenarios: [PinnedGroupChangedScenario] {
+            [
+                .init(placement: .before, expectedOrder: unchangedOrder),
+                .init(placement: .after, expectedOrder: .init(items: [
+                    .location(homeID),
+                    .location(downloadsID),
+                    .contentTab(tabC),
+                    .contentTab(tabA),
+                    .contentTab(tabB),
+                ])),
+            ]
+        }
+
+        var noOpScenarios: [PinnedGroupNoOpScenario] {
+            [
+                .init(
+                    order: initialOrder,
+                    frozenIDs: [tabC, tabA],
+                    anchorID: .contentTab(tabA),
+                    placement: .before,
+                ),
+                .init(
+                    order: initialOrder,
+                    frozenIDs: [tabC, tabA],
+                    anchorID: .location("stale-location"),
+                    placement: .after,
+                ),
+                .init(
+                    order: initialOrder,
+                    frozenIDs: [tabC, unpinned],
+                    anchorID: .location(downloadsID),
+                    placement: .before,
+                ),
+                .init(
+                    order: unchangedOrder,
+                    frozenIDs: [tabC, tabA],
+                    anchorID: .location(downloadsID),
+                    placement: .before,
+                ),
+            ]
+        }
+
+        func state(
+            order: FileManagerTopNavigationOrder,
+            frozenIDs: [ContentTabID],
+            lifecycle: ContentTabDragSnapshot.Lifecycle = .inFlight,
+        ) -> FileManagerFeature.State {
+            var state = FileManagerFeature.State()
+            state.contentTabs = ContentTabState(
+                tabs: [
+                    item(tabA, path: "A", isPinned: true),
+                    item(tabB, path: "B", isPinned: true),
+                    item(tabC, path: "C", isPinned: true),
+                    item(unpinned, path: "U", isPinned: false),
+                ],
+                activeTabID: tabC,
+            )
+            state.contentTabs.selectedTabIDs = Set(frozenIDs)
+            state.lastConfirmedTopNavigationOrder = order
+            state.optimisticTopNavigationOrder = order
+            state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+                operationID: operationID,
+                sourceWindowID: sourceWindowID,
+                initiatingTabID: tabC,
+                orderedTabIDs: frozenIDs,
+                lifecycle: lifecycle,
+            )
+            return state
+        }
+
+        private func item(_ id: ContentTabID, path: String, isPinned: Bool) -> ContentTabItem {
+            ContentTabItem(
+                id: id,
+                page: .directory,
+                anchor: .directory(path: "/\(path)"),
+                isPinned: isPinned,
+                title: path,
+                iconName: "folder",
+            )
+        }
+    }
+
+    private func assertPinnedGroupReorder(
+        _ scenario: PinnedGroupChangedScenario,
+        fixture: PinnedGroupReorderFixture,
+    ) async {
+        let store = TestStore(
+            initialState: fixture.state(order: fixture.initialOrder, frozenIDs: [fixture.tabC, fixture.tabA]),
+        ) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+        }
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(fixture.tabC),
+            anchorID: .location(fixture.downloadsID),
+            placement: scenario.placement,
+        ))))
+        await store.receive(\.topNavigationMoveRequested) {
+            $0.sidebar.contentTabDragSnapshot = nil
+            $0.pendingTopNavigationIntents = [
+                .init(
+                    token: fixture.token,
+                    intent: .movePinnedGroup(
+                        orderedIDs: [fixture.tabC, fixture.tabA],
+                        destination: scenario.placement == .before
+                            ? .before(.location(fixture.downloadsID))
+                            : .after(.location(fixture.downloadsID)),
+                    ),
+                ),
+            ]
+            $0.optimisticTopNavigationOrder = scenario.expectedOrder
+        }
+        await store.receive { action in
+            guard case .delegate(.persistTopNavigationPinnedGroupMove) = action else { return false }
+            return true
+        }
+        XCTAssertEqual(store.state.pendingTopNavigationIntents.count, 1)
+        await store.finish()
+    }
+
+    private func assertPinnedGroupNoOp(
+        _ scenario: PinnedGroupNoOpScenario,
+        fixture: PinnedGroupReorderFixture,
+    ) async {
+        let state = fixture.state(order: scenario.order, frozenIDs: scenario.frozenIDs)
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(fixture.tabC),
+            anchorID: scenario.anchorID,
+            placement: scenario.placement,
+        ))))
+        await store.receive(\.topNavigationMoveRequested)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, scenario.order)
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        await store.finish()
     }
 
     // MARK: - CTM-004-content_tab_reorder_drop_contract
@@ -3015,7 +3575,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// CTM-004-sidebar_content_tab_reorder_routing: Window는 Sidebar Delegate를 ContentTab reorder 한 번으로 전달함
     /// Window routing shell이 semantic 값을 변형하거나 배열을 직접 변경하지 않는지 검증한다.
     /// - 검증 내용: Sidebar Delegate 입력 뒤 동일한 `.contentTabs(.reorder)` 한 개만 수신하고 Window state는 동일함
-    /// - 사전 조건: source A, target C, placement before인 Window state
+    /// - 사전 조건: source A, target C, placement after인 Window state
     /// - 기대 결과: 값이 보존된 ContentTab action 정확히 1회, routing reducer 직접 state mutation 0회
     func testWindowReorderDelegateRoutesOneContentTabActionWithoutMutation() async {
         let sourceID = ContentTabID(rawValue: "route-source")
@@ -3036,13 +3596,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
             sourceID: .contentTab(sourceID),
             anchorID: .contentTab(targetID),
-            placement: .before,
+            placement: .after,
         ))))
         await store.receive { action in
             guard case let .contentTabs(.reorder(source, target, placement)) = action else {
                 return false
             }
-            return source == sourceID && target == targetID && placement == .before
+            return source == sourceID && target == targetID && placement == .after
         }
 
         XCTAssertEqual(store.state, initialState)
@@ -3173,31 +3733,25 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 사전 조건: Task 7 SidebarView production source
     /// - 기대 결과: Location icon tile 외형은 유지되고 linear mixed Location row rendering은 사용하지 않는다.
     func testSidebarPreservesFixedLocationGridAbovePinnedScrollSurface() throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = packageRoot
-            .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try loadSidebarSource(named: "SidebarView.swift")
+        let supportSource = try loadSidebarSource(named: "ContentTabSidebarViewSupport.swift")
         let gridRange = try XCTUnwrap(source.range(of: "fixedLocationsGrid"))
         let scrollRange = try XCTUnwrap(source.range(of: "ScrollView {"))
-        let dropZoneStart = try XCTUnwrap(source.range(of: "private func fixedLocationReorderDropZone"))
-        let dropZoneEnd = try XCTUnwrap(source.range(
-            of: "private func activeReorderBoundaryID",
-            range: dropZoneStart.upperBound ..< source.endIndex,
+        let dropZoneStart = try XCTUnwrap(supportSource.range(of: "private func fixedLocationReorderDropZone"))
+        let dropZoneEnd = try XCTUnwrap(supportSource.range(
+            of: "struct SidebarContentTabSectionDivider",
+            range: dropZoneStart.upperBound ..< supportSource.endIndex,
         ))
-        let dropZoneSource = source[dropZoneStart.lowerBound ..< dropZoneEnd.lowerBound]
+        let dropZoneSource = supportSource[dropZoneStart.lowerBound ..< dropZoneEnd.lowerBound]
 
         XCTAssertLessThan(gridRange.lowerBound, scrollRange.lowerBound)
         XCTAssertEqual(source.components(separatedBy: "ScrollView {").count - 1, 1)
-        XCTAssertTrue(source.contains(".adaptive(minimum: fixedLocationMinimumCellWidth)"))
-        XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertTrue(supportSource.contains(".adaptive(minimum: fixedLocationMinimumCellWidth)"))
+        XCTAssertTrue(supportSource.contains(".fixedSize(horizontal: false, vertical: true)"))
         XCTAssertFalse(source.contains("fixedLocationGridHeight"))
         XCTAssertFalse(source.contains("sidebarStore.sidebarWidth - fixedLocationGridHorizontalPadding"))
-        XCTAssertTrue(source.contains("fixedLocationReorderDropOverlay"))
-        XCTAssertTrue(source.contains("reorderDragSource: reorderDragSource("))
+        XCTAssertTrue(supportSource.contains("fixedLocationReorderDropOverlay"))
+        XCTAssertTrue(supportSource.contains("reorderDragSource: reorderDragSource("))
         XCTAssertTrue(source.contains("reorderablePinnedContentTabRows"))
         XCTAssertTrue(source.contains("sidebarStore.topNavigationItems"))
         XCTAssertTrue(source.contains("ForEach(sidebarStore.fixedLocationVisibilityMenuItems)"))
@@ -3205,7 +3759,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertTrue(source.contains("sidebarStore.unpinnedContentTabItems"))
         XCTAssertTrue(source.contains("newContentTabRow"))
         XCTAssertFalse(source.contains("reorderableTopNavigationRows"))
-        XCTAssertTrue(dropZoneSource.contains("fileManagerTopNavigationReorderDropDestination(for: boundary)"))
+        XCTAssertTrue(source.contains("reorderDropDestination: fileManagerTopNavigationReorderDropDestination"))
+        XCTAssertTrue(dropZoneSource.contains("reorderDropDestination(boundary)"))
         XCTAssertFalse(dropZoneSource.contains("Color.clear"))
         XCTAssertFalse(dropZoneSource.contains(".contentShape(Rectangle())"))
         XCTAssertFalse(dropZoneSource.contains("activeTopNavigationReorderBoundaryID"))
@@ -3363,16 +3918,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 사전 조건: Task 7 SidebarView production source
     /// - 기대 결과: drag/keyboard/accessibility가 같은 fileManagerTopNavigationReorderRequested route를 사용한다.
     func testTopRowsExposeKeyboardAndAccessibilityMoveCommandsWithoutLocationLifecycleControls() throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = packageRoot
-            .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let fixedLocationStart = try XCTUnwrap(source.range(of: "private struct FixedLocationButton"))
-        let fixedLocationSource = source[fixedLocationStart.lowerBound ..< source.endIndex]
+        let source = try loadAllSidebarSources()
+        let fixedLocationSource = try loadSidebarSource(named: "FixedLocationSidebarViewSupport.swift")
 
         XCTAssertTrue(source.contains(".topNavigationMoveCommands("))
         XCTAssertTrue(source.contains("Text(\"Move Up\")"))
@@ -5895,7 +6442,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         let button = ContentTabSidebarButton(frame: .zero)
-        button.update(
+        button.update(configuration: .init(
             rootView: AnyView(EmptyView()),
             accessibilityLabel: "Selected Content Tab",
             accessibilityValue: "Selected",
@@ -5915,7 +6462,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             isCloseEnabled: presentation.isEnabled,
             usesUnpinCommand: isPinned,
             showsCloseCommand: !presentation.usesUnpinCommand,
-        )
+        ))
 
         let closeItem = try XCTUnwrap(button.menu?.items.last, file: file, line: line)
         XCTAssertEqual(closeItem.title, "Close 3 Tabs", file: file, line: line)
@@ -6067,8 +6614,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 기대 결과: pinned는 Unpin/minus, ordinary는 Close/xmark로 매핑된다.
     func testSidebarTrailingActionMapsPinnedToUnpinAndOrdinaryToClose() {
         let tabID = ContentTabID(rawValue: "trailing-action-tab")
-        let pinnedAction = ContentTabSidebarTrailingAction(isPinned: true)
-        let ordinaryAction = ContentTabSidebarTrailingAction(isPinned: false)
+        let pinnedAction = ContentTabSidebarTrailingCommand(isPinned: true)
+        let ordinaryAction = ContentTabSidebarTrailingCommand(isPinned: false)
 
         XCTAssertEqual(pinnedAction, .unpin)
         XCTAssertEqual(pinnedAction.systemName, "minus")
@@ -6121,7 +6668,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         onActivate: @escaping () -> Void,
         onTrailingAction: @escaping () -> Void,
     ) {
-        button.update(
+        button.update(configuration: .init(
             rootView: AnyView(Color.clear.frame(height: 24)),
             accessibilityLabel: "Content Tab",
             accessibilityValue: "Selected",
@@ -6140,7 +6687,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             trailingActionSystemName: "xmark",
             isTrailingActionEnabled: isActionEnabled,
             onTrailingAction: onTrailingAction,
-        )
+        ))
         button.layoutSubtreeIfNeeded()
     }
 
@@ -6260,7 +6807,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             isEnabled: true,
         )
         let button = ContentTabSidebarButton(frame: .zero)
-        button.update(
+        button.update(configuration: .init(
             rootView: AnyView(EmptyView()),
             accessibilityLabel: "Content Tab",
             accessibilityValue: "Selected",
@@ -6283,7 +6830,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             isCloseEnabled: close.isEnabled,
             usesUnpinCommand: pin.usesUnpinCommand,
             showsCloseCommand: !close.usesUnpinCommand,
-        )
+        ))
 
         XCTAssertEqual(button.menu?.items.map(\.title), expectedTitles)
     }
@@ -6301,7 +6848,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         _ = NSApplication.shared
         let button = ContentTabSidebarButton(frame: .zero)
         var closeActionCount = 0
-        button.update(
+        button.update(configuration: .init(
             rootView: AnyView(EmptyView()),
             accessibilityLabel: "Unavailable Content Tab",
             accessibilityValue: "Selected",
@@ -6320,7 +6867,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             closeAccessibilityIdentifier: "close-selected-content-tabs",
             isCloseEnabled: false,
             usesUnpinCommand: false,
-        )
+        ))
 
         let closeItem = try XCTUnwrap(button.menu?.items.last)
         XCTAssertFalse(closeItem.isEnabled)
@@ -6439,6 +6986,32 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             ]
         }
     }
+}
+
+private func sidebarUIPackageRootURL() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui")
+}
+
+private func loadSidebarSource(named fileName: String) throws -> String {
+    try String(
+        contentsOf: sidebarUIPackageRootURL().appendingPathComponent(fileName),
+        encoding: .utf8,
+    )
+}
+
+private func loadAllSidebarSources() throws -> String {
+    try [
+        "SidebarView.swift",
+        "ContentTabSidebarViewSupport.swift",
+        "FixedLocationSidebarViewSupport.swift",
+    ]
+    .map { try loadSidebarSource(named: $0) }
+    .joined(separator: "\n")
 }
 
 private final class ControlledFileURLItemProvider: @unchecked Sendable {

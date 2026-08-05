@@ -364,6 +364,16 @@ struct WindowManagerFeature {
             case let .contentTabMoveRequest(request):
                 return handleContentTabMoveRequest(request, state: &state)
 
+            case let .contentTabMoveLifecycleCompleted(request):
+                guard state.contentTabMoveTransactions[request.requestID]?.request == request else {
+                    return .none
+                }
+                state.contentTabMoveTransactions[request.requestID] = nil
+                return .none
+
+            case let .contentTabMoveNativeEffectsRequested(request):
+                return startContentTabMoveNativeEffects(request, state: &state)
+
             case let .contentTabMoveActivationResult(attempt, _):
                 guard state.contentTabMoveActivationAttempts[attempt.requestID] == attempt else {
                     return .none
@@ -382,12 +392,12 @@ struct WindowManagerFeature {
                 guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
                       payload.sourceWindowID != targetWindowID,
                       isWindowReady(payload.sourceWindowID, state: state),
-                      state.windows[id: targetWindowID] != nil
+                      isWindowReady(targetWindowID, state: state)
                 else { return .none }
                 return .send(.windows(.element(
                     id: payload.sourceWindowID,
-                    action: .window(.sidebar(.view(.moveContentTab(
-                        tabID: payload.tabID,
+                    action: .window(.sidebar(.view(.moveContentTabs(
+                        payload: payload,
                         targetWindowID: targetWindowID,
                     )))),
                 )))
@@ -430,6 +440,25 @@ struct WindowManagerFeature {
                     token: token,
                     operation: .move(
                         source: source,
+                        destination: destination,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    ),
+                )))
+
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.delegate(.persistTopNavigationPinnedGroupMove(
+                    token: token,
+                    orderedIDs: orderedIDs,
+                    destination: destination,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                ))),
+            )):
+                return .send(.topNavigationPersistenceRequested(.init(
+                    sourceWindowID: sourceWindowID,
+                    token: token,
+                    operation: .movePinnedGroup(
+                        orderedIDs: orderedIDs,
                         destination: destination,
                         discoveredLocationIDs: discoveredLocationIDs,
                     ),
@@ -840,6 +869,19 @@ extension WindowManagerFeature {
                 authoritativePinnedContentTabs: nil,
             )
 
+        case let .movePinnedGroup(orderedIDs, destination, discoveredLocationIDs):
+            let commit = try await client.moveTopNavigationPinnedGroupCommitted(
+                defaults,
+                discoveredLocationIDs,
+                orderedIDs,
+                destination,
+            )
+            return .init(
+                request: request,
+                terminal: .committed(commit),
+                authoritativePinnedContentTabs: nil,
+            )
+
         case let .pinnedRecord(_, persistenceRequest, discoveredLocationIDs):
             let committed = try await client.applyPersistenceMutationCommitted(
                 defaults,
@@ -936,7 +978,7 @@ extension WindowManagerFeature {
         else { return nil }
 
         switch result.request.operation {
-        case .move:
+        case .move, .movePinnedGroup:
             return .send(.windows(.element(
                 id: sourceWindowID,
                 action: .window(.internal(.topNavigationIntentCompleted(

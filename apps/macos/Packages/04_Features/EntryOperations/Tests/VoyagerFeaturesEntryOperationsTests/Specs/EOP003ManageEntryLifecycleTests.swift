@@ -915,6 +915,266 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(client.performUndoRedo(target, targetGeneration, .undo, targetRecord.id), .applied)
     }
 
+    /// EOP-003-undo_entry_action: 여러 scope를 한 번에 이동하면 모든 native history와 handler scope가 보존된다.
+    /// 창 간 다중 Content Tab 이동이 frozen descriptor 순서대로 하나의 registry commit으로 반영되는지 검증한다.
+    /// - 검증 내용: `moveScopes` 성공 outcome, manager identity, generation, target scope의 Undo/Redo를 비교한다.
+    /// - 사전 조건: 서로 다른 두 source scope에 각각 undo record가 있고 두 target scope는 비어 있다.
+    /// - 기대 결과: 두 source가 사라지고 각 target이 동일 manager와 history를 소유하며 callback이 새 scope에서 실행된다.
+    func testFileOperationRegistryMoveScopesMovesMultipleManagersAtomically() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let firstSource = UndoManagerScope(windowID: UUID(), contentTabID: "first-tab")
+        let secondSource = UndoManagerScope(windowID: UUID(), contentTabID: "second-tab")
+        let firstTarget = UndoManagerScope(windowID: UUID(), contentTabID: "first-tab")
+        let secondTarget = UndoManagerScope(windowID: UUID(), contentTabID: "second-tab")
+        let firstRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        let secondRecord = EntryActionRecord(operationKind: .pasteFileCopy, targets: [])
+        let firstManager = try XCTUnwrap(client.activate(firstSource))
+        let secondManager = try XCTUnwrap(client.activate(secondSource))
+        let firstGeneration = try XCTUnwrap(client.generation(firstSource))
+        let secondGeneration = try XCTUnwrap(client.generation(secondSource))
+        XCTAssertTrue(client.registerUndo(firstSource, firstGeneration, firstRecord))
+        XCTAssertTrue(client.registerUndo(secondSource, secondGeneration, secondRecord))
+
+        let outcome = client.moveScopes([
+            .init(source: firstSource, target: firstTarget),
+            .init(source: secondSource, target: secondTarget),
+        ])
+
+        let removedFirstManager = await client.undoManager(firstSource)
+        let removedSecondManager = await client.undoManager(secondSource)
+        let movedFirstManager = await client.undoManager(firstTarget)
+        let movedSecondManager = await client.undoManager(secondTarget)
+        XCTAssertEqual(outcome, .moved)
+        XCTAssertNil(removedFirstManager)
+        XCTAssertNil(removedSecondManager)
+        XCTAssertIdentical(firstManager, movedFirstManager)
+        XCTAssertIdentical(secondManager, movedSecondManager)
+        XCTAssertEqual(client.generation(firstTarget), firstGeneration)
+        XCTAssertEqual(client.generation(secondTarget), secondGeneration)
+        XCTAssertEqual(client.performUndoRedo(firstTarget, firstGeneration, .undo, firstRecord.id), .applied)
+        XCTAssertEqual(client.performUndoRedo(secondTarget, secondGeneration, .undo, secondRecord.id), .applied)
+        XCTAssertEqual(client.performUndoRedo(firstTarget, firstGeneration, .redo, firstRecord.id), .applied)
+        XCTAssertEqual(client.performUndoRedo(secondTarget, secondGeneration, .redo, secondRecord.id), .applied)
+    }
+
+    /// EOP-003-undo_entry_action: duplicate 및 교차 source/target은 batch 전체를 거절한다.
+    /// 중복 descriptor와 source로 이동 중인 target이 manager identity 변경 전에 검출되는지 검증한다.
+    /// - 검증 내용: duplicate/overlap outcome과 기존 source manager identity를 비교한다.
+    /// - 사전 조건: 서로 다른 두 source manager가 활성화되어 있고 target은 비어 있다.
+    /// - 기대 결과: 각 중복 batch가 거절되고 두 source manager가 원래 scope에 남는다.
+    func testFileOperationRegistryMoveScopesRejectsDuplicateAndOverlappingScopes() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let firstSource = UndoManagerScope(windowID: UUID(), contentTabID: "first-source")
+        let secondSource = UndoManagerScope(windowID: UUID(), contentTabID: "second-source")
+        let firstTarget = UndoManagerScope(windowID: UUID(), contentTabID: "first-target")
+        let secondTarget = UndoManagerScope(windowID: UUID(), contentTabID: "second-target")
+        let firstManager = try XCTUnwrap(client.activate(firstSource))
+        let secondManager = try XCTUnwrap(client.activate(secondSource))
+
+        XCTAssertEqual(client.moveScopes([
+            .init(source: firstSource, target: firstTarget),
+            .init(source: firstSource, target: secondTarget),
+        ]), .duplicateSource(firstSource))
+        XCTAssertEqual(client.moveScopes([
+            .init(source: firstSource, target: firstTarget),
+            .init(source: secondSource, target: firstTarget),
+        ]), .duplicateTarget(firstTarget))
+        XCTAssertEqual(client.moveScopes([
+            .init(source: firstSource, target: secondSource, targetPolicy: .replaceEmpty),
+            .init(source: secondSource, target: secondTarget),
+        ]), .targetOccupied(secondSource))
+
+        let unchangedFirstManager = await client.undoManager(firstSource)
+        let unchangedSecondManager = await client.undoManager(secondSource)
+        XCTAssertIdentical(firstManager, unchangedFirstManager)
+        XCTAssertIdentical(secondManager, unchangedSecondManager)
+        let absentFirstTarget = await client.undoManager(firstTarget)
+        let absentSecondTarget = await client.undoManager(secondTarget)
+        XCTAssertNil(absentFirstTarget)
+        XCTAssertNil(absentSecondTarget)
+    }
+
+    /// EOP-003-undo_entry_action: missing/occupied/nonempty validation 실패는 원본 registry를 변경하지 않는다.
+    /// source 누락과 target history 정책이 모두 side effect 전에 거절되는지 검증한다.
+    /// - 검증 내용: rejection outcome 뒤 manager identity, generation, native history를 비교한다.
+    /// - 사전 조건: source와 history가 있는 occupied target이 활성화되어 있다.
+    /// - 기대 결과: 모든 실패 뒤 각 scope와 handler가 원래 위치에 남고 기존 Undo가 정상 실행된다.
+    func testFileOperationRegistryMoveScopesRejectsInvalidEntriesWithoutMutation() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let source = UndoManagerScope(windowID: UUID(), contentTabID: "source")
+        let target = UndoManagerScope(windowID: UUID(), contentTabID: "target")
+        let occupiedTarget = UndoManagerScope(windowID: UUID(), contentTabID: "occupied-target")
+        let missingSource = UndoManagerScope(windowID: UUID(), contentTabID: "missing-source")
+        let sourceRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        let occupiedRecord = EntryActionRecord(operationKind: .createFolder, targets: [])
+        let sourceManager = try XCTUnwrap(client.activate(source))
+        let occupiedManager = try XCTUnwrap(client.activate(occupiedTarget))
+        let sourceGeneration = try XCTUnwrap(client.generation(source))
+        let occupiedGeneration = try XCTUnwrap(client.generation(occupiedTarget))
+        XCTAssertTrue(client.registerUndo(source, sourceGeneration, sourceRecord))
+        XCTAssertTrue(client.registerUndo(occupiedTarget, occupiedGeneration, occupiedRecord))
+
+        XCTAssertEqual(client.moveScopes([]), .emptyBatch)
+        XCTAssertEqual(client.moveScopes([
+            .init(source: source, target: target),
+            .init(source: missingSource, target: UndoManagerScope(windowID: UUID(), contentTabID: "other")),
+        ]), .sourceMissing(missingSource))
+        XCTAssertEqual(client.moveScopes([
+            .init(source: source, target: occupiedTarget),
+        ]), .targetOccupied(occupiedTarget))
+        XCTAssertEqual(client.moveScopes([
+            .init(source: source, target: occupiedTarget, targetPolicy: .replaceEmpty),
+        ]), .targetOccupied(occupiedTarget))
+
+        let unchangedSourceManager = await client.undoManager(source)
+        let unchangedOccupiedManager = await client.undoManager(occupiedTarget)
+        XCTAssertIdentical(sourceManager, unchangedSourceManager)
+        XCTAssertIdentical(occupiedManager, unchangedOccupiedManager)
+        XCTAssertEqual(client.generation(source), sourceGeneration)
+        XCTAssertEqual(client.generation(occupiedTarget), occupiedGeneration)
+        XCTAssertEqual(client.performUndoRedo(source, sourceGeneration, .undo, sourceRecord.id), .applied)
+        XCTAssertEqual(
+            client.performUndoRedo(occupiedTarget, occupiedGeneration, .undo, occupiedRecord.id),
+            .applied,
+        )
+    }
+
+    /// EOP-003-undo_entry_action: 마지막 descriptor 실패도 앞선 move의 registry와 handler를 변경하지 않는다.
+    /// batch validation이 live registry mutation보다 완전히 선행하는지 late failure로 검증한다.
+    /// - 검증 내용: 세 번째 occupied target rejection 뒤 앞선 두 source의 manager와 callback scope를 비교한다.
+    /// - 사전 조건: 세 source에 history가 있고 마지막 target만 별도 history로 점유되어 있다.
+    /// - 기대 결과: 새 target은 모두 비어 있고 세 source의 manager/history가 원래 scope에서 그대로 동작한다.
+    func testFileOperationRegistryMoveScopesLastDescriptorFailureLeavesEarlierMovesUntouched() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let sources = (0 ..< 3).map {
+            UndoManagerScope(windowID: UUID(), contentTabID: "source-\($0)")
+        }
+        let targets = (0 ..< 3).map {
+            UndoManagerScope(windowID: UUID(), contentTabID: "target-\($0)")
+        }
+        let records = [
+            EntryActionRecord(operationKind: .rename, targets: []),
+            EntryActionRecord(operationKind: .pasteFileCopy, targets: []),
+            EntryActionRecord(operationKind: .createFolder, targets: []),
+        ]
+        var managers: [UndoManager] = []
+        var generations: [FileOperationUndoManagerClient.Generation] = []
+        for (scope, record) in zip(sources, records) {
+            try managers.append(XCTUnwrap(client.activate(scope)))
+            let generation = try XCTUnwrap(client.generation(scope))
+            generations.append(generation)
+            XCTAssertTrue(client.registerUndo(scope, generation, record))
+        }
+        let occupiedManager = try XCTUnwrap(client.activate(targets[2]))
+        let occupiedGeneration = try XCTUnwrap(client.generation(targets[2]))
+        let occupiedRecord = EntryActionRecord(operationKind: .pasteFileMove, targets: [])
+        XCTAssertTrue(client.registerUndo(targets[2], occupiedGeneration, occupiedRecord))
+
+        let outcome = client.moveScopes(zip(sources, targets).map {
+            .init(source: $0, target: $1)
+        })
+
+        XCTAssertEqual(outcome, .targetOccupied(targets[2]))
+        for index in sources.indices {
+            let unchangedManager = await client.undoManager(sources[index])
+            XCTAssertIdentical(managers[index], unchangedManager)
+            if index < 2 {
+                let absentTargetManager = await client.undoManager(targets[index])
+                XCTAssertNil(absentTargetManager)
+            }
+            XCTAssertEqual(
+                client.performUndoRedo(sources[index], generations[index], .undo, records[index].id),
+                .applied,
+            )
+        }
+        let unchangedOccupiedManager = await client.undoManager(targets[2])
+        XCTAssertIdentical(occupiedManager, unchangedOccupiedManager)
+        XCTAssertEqual(
+            client.performUndoRedo(targets[2], occupiedGeneration, .undo, occupiedRecord.id),
+            .applied,
+        )
+    }
+
+    /// EOP-003-undo_entry_action: 성공한 replaceEmpty batch만 빈 target manager를 정리하고 source handler를 rebind한다.
+    /// passive pinned projection target 교체가 전체 validation 이후 한 번만 commit되는지 검증한다.
+    /// - 검증 내용: 교체된 manager 제거, source manager identity/history 보존, target callback 실행을 비교한다.
+    /// - 사전 조건: source에는 undo record가 있고 target은 native/logical history 없이 activate만 되어 있다.
+    /// - 기대 결과: 빈 target manager는 registry에서 교체되고 moved manager의 Undo/Redo가 새 target에서 성공한다.
+    func testFileOperationRegistryMoveScopesReplaceEmptyCommitsCleanupAndRebind() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let source = UndoManagerScope(windowID: UUID(), contentTabID: "pinned-source")
+        let target = UndoManagerScope(windowID: UUID(), contentTabID: "pinned-target")
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        let sourceManager = try XCTUnwrap(client.activate(source))
+        let replacedManager = try XCTUnwrap(client.activate(target))
+        let generation = try XCTUnwrap(client.generation(source))
+        XCTAssertTrue(client.registerUndo(source, generation, record))
+
+        let outcome = client.moveScopes([
+            .init(source: source, target: target, targetPolicy: .replaceEmpty),
+        ])
+
+        let removedSourceManager = await client.undoManager(source)
+        let movedTargetManager = await client.undoManager(target)
+        XCTAssertEqual(outcome, .moved)
+        XCTAssertNil(removedSourceManager)
+        XCTAssertIdentical(sourceManager, movedTargetManager)
+        XCTAssertNotIdentical(replacedManager, movedTargetManager)
+        XCTAssertFalse(replacedManager.canUndo)
+        XCTAssertFalse(replacedManager.canRedo)
+        XCTAssertEqual(client.performUndoRedo(target, generation, .undo, record.id), .applied)
+        XCTAssertEqual(client.performUndoRedo(target, generation, .redo, record.id), .applied)
+    }
+
+    /// EOP-003-undo_entry_action: legacy moveScope는 singleton batch와 동일한 결과를 반환한다.
+    /// 기존 호출자가 batch API 도입 뒤에도 manager identity와 history 의미를 그대로 유지하는지 검증한다.
+    /// - 검증 내용: legacy outcome mapping과 singleton batch의 registry 결과 및 Undo 실행을 비교한다.
+    /// - 사전 조건: 동일한 source/target/history 구성을 가진 두 독립 registry가 있다.
+    /// - 기대 결과: legacy는 moved, batch는 moved이며 두 경로 모두 원래 manager를 target으로 이동시킨다.
+    func testFileOperationRegistryMoveScopeMatchesSingletonBatch() async throws {
+        let legacyRegistry = FileOperationUndoManagerRegistry()
+        let batchRegistry = FileOperationUndoManagerRegistry()
+        let legacyClient = FileOperationUndoManagerClient.live(registry: legacyRegistry)
+        let batchClient = FileOperationUndoManagerClient.live(registry: batchRegistry)
+        let legacySource = UndoManagerScope(windowID: UUID(), contentTabID: "singleton")
+        let legacyTarget = UndoManagerScope(windowID: UUID(), contentTabID: "singleton")
+        let batchSource = UndoManagerScope(windowID: UUID(), contentTabID: "singleton")
+        let batchTarget = UndoManagerScope(windowID: UUID(), contentTabID: "singleton")
+        let legacyRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        let batchRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        let legacyManager = try XCTUnwrap(legacyClient.activate(legacySource))
+        let batchManager = try XCTUnwrap(batchClient.activate(batchSource))
+        let legacyGeneration = try XCTUnwrap(legacyClient.generation(legacySource))
+        let batchGeneration = try XCTUnwrap(batchClient.generation(batchSource))
+        XCTAssertTrue(legacyClient.registerUndo(legacySource, legacyGeneration, legacyRecord))
+        XCTAssertTrue(batchClient.registerUndo(batchSource, batchGeneration, batchRecord))
+
+        let legacyOutcome = legacyClient.moveScope(legacySource, legacyTarget, .requireVacant)
+        let batchOutcome = batchClient.moveScopes([
+            .init(source: batchSource, target: batchTarget),
+        ])
+
+        let movedLegacyManager = await legacyClient.undoManager(legacyTarget)
+        let movedBatchManager = await batchClient.undoManager(batchTarget)
+        XCTAssertEqual(legacyOutcome, .moved)
+        XCTAssertEqual(batchOutcome, .moved)
+        XCTAssertIdentical(legacyManager, movedLegacyManager)
+        XCTAssertIdentical(batchManager, movedBatchManager)
+        XCTAssertEqual(
+            legacyClient.performUndoRedo(legacyTarget, legacyGeneration, .undo, legacyRecord.id),
+            .applied,
+        )
+        XCTAssertEqual(
+            batchClient.performUndoRedo(batchTarget, batchGeneration, .undo, batchRecord.id),
+            .applied,
+        )
+    }
+
     // MARK: - EOP-003-redo_entry_action
 
     /// EOP-003-redo_entry_action: activate되지 않은 explicit scope의 redo는 fail-closed된다.

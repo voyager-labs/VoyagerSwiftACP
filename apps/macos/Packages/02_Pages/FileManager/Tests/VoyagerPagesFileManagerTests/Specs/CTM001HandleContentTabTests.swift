@@ -382,6 +382,18 @@ private struct SelectedCloseTerminalCase {
     let expectedOutcome: SelectedContentTabCloseOutcome
 }
 
+private struct SelectedGroupReorderCase {
+    let anchorID: ContentTabID
+    let placement: FileManagerTopNavigationReorderPlacement
+    let expectedUnpinnedIDs: [ContentTabID]
+}
+
+private struct InvalidSelectedGroupReorderCase {
+    let state: FileManagerFeature.State
+    let anchorID: ContentTabID
+    let placement: FileManagerTopNavigationReorderPlacement
+}
+
 private struct SelectedClosePersistenceError: Error {}
 
 @MainActor
@@ -1053,6 +1065,44 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
     }
 
+    private func makeSelectedGroupReorderState(
+        orderedMovingIDs: [ContentTabID],
+        initiatingID: ContentTabID,
+        selectedIDs: Set<ContentTabID>? = nil,
+    ) throws -> FileManagerFeature.State {
+        let tabA = makeReorderDirectoryTab("A", isPinned: false)
+        let pinned1 = makeReorderDirectoryTab("P1", isPinned: true)
+        let tabB = makeReorderDirectoryTab("B", isPinned: false)
+        let tabC = makeReorderDirectoryTab("C", isPinned: false)
+        let pinned2 = makeReorderDirectoryTab("P2", isPinned: true)
+        let tabD = makeReorderDirectoryTab("D", isPinned: false)
+        let tabE = makeReorderDirectoryTab("E", isPinned: false)
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000201"))
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tabA, pinned1, tabB, tabC, pinned2, tabD, tabE],
+            activeTabID: tabC.id,
+            previousActiveTabID: tabE.id,
+            pinnedRecords: [
+                pinned1.id: makePinnedRecord(pinned1, pinnedAt: 1),
+                pinned2.id: makePinnedRecord(pinned2, pinnedAt: 2),
+            ],
+        )
+        state.contentTabs.selectedTabIDs = selectedIDs ?? Set(orderedMovingIDs)
+        state.contentTabs.selectionAnchorID = ContentTabID(rawValue: "B")
+        state.syncContentTabSidebarItems()
+        state.sidebar.currentWindowID = sourceWindowID
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000202"))
+        state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: orderedMovingIDs,
+            lifecycle: .inFlight,
+        )
+        return state
+    }
+
     private func makePinnedRecord(_ tab: ContentTabItem, pinnedAt: TimeInterval) -> ContentTabPinnedRecord {
         ContentTabPinnedRecord(
             id: tab.id.rawValue,
@@ -1349,7 +1399,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let button = ContentTabSidebarButton(frame: .zero)
         var primaryActionCount = 0
         var duplicateActionCount = 0
-        button.update(
+        button.update(configuration: .init(
             rootView: AnyView(EmptyView()),
             accessibilityLabel: "Selected Content Tab",
             accessibilityValue: "Active, Selected",
@@ -1366,7 +1416,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             onClose: {},
             duplicateTitle: presentation.title,
             isDuplicateEnabled: presentation.isEnabled,
-        )
+        ))
 
         let menu = try XCTUnwrap(button.menu)
         let duplicateItem = try XCTUnwrap(menu.items.first)
@@ -1441,7 +1491,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         _ = NSApplication.shared
         let button = ContentTabSidebarButton(frame: .zero)
         var duplicateActionCount = 0
-        button.update(
+        button.update(configuration: .init(
             rootView: AnyView(EmptyView()),
             accessibilityLabel: "Selected Content Tab",
             accessibilityValue: "Active, Selected",
@@ -1458,7 +1508,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             onClose: {},
             duplicateTitle: presentation.title,
             isDuplicateEnabled: presentation.isEnabled,
-        )
+        ))
 
         let duplicateItem = try XCTUnwrap(button.menu?.items.first)
         XCTAssertFalse(duplicateItem.isEnabled)
@@ -5165,6 +5215,189 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(state, original)
         XCTAssertEqual(state.tabs.map(\.id), [unpinned1.id, pinned1.id, unpinned2.id])
+    }
+
+    /// CTM-001-reorder_content_tab: 비연속 선택 그룹을 frozen 표시 순서로 앞뒤 재배치함
+    /// 선택된 D/B를 한 block으로 제거한 뒤 reduced order의 anchor에 한 번 삽입하는 대표 양방향 경로를 검증한다.
+    /// - 검증 내용: `[A,B,C,D,E]`의 frozen `[D,B]`가 before A와 after E에서 요구 순서가 됨
+    /// - 사전 조건: raw tabs에 P1/P2 pinned slot이 섞이고 active C, selection anchor B, 고유 Page anchor가 있음
+    /// - 기대 결과: unpinned 순서는 각각 `[D,B,A,C,E]`, `[A,C,E,D,B]`이고 pinned slot과 모든 non-order state가 보존됨
+    func testReorderSelectedContentTabs_movesFrozenNonContiguousGroupBeforeAndAfter() async throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabD = ContentTabID(rawValue: "D")
+        let tabE = ContentTabID(rawValue: "E")
+        let cases = [
+            SelectedGroupReorderCase(
+                anchorID: tabA,
+                placement: .before,
+                expectedUnpinnedIDs: [tabD, tabB, tabA, ContentTabID(rawValue: "C"), tabE],
+            ),
+            SelectedGroupReorderCase(
+                anchorID: tabE,
+                placement: .after,
+                expectedUnpinnedIDs: [tabA, ContentTabID(rawValue: "C"), tabE, tabD, tabB],
+            ),
+        ]
+
+        for testCase in cases {
+            let initialState = try makeSelectedGroupReorderState(
+                orderedMovingIDs: [tabD, tabB],
+                initiatingID: tabD,
+            )
+            let originalPinnedSlots = initialState.contentTabs.tabs.enumerated().compactMap { index, tab in
+                tab.isPinned ? index : nil
+            }
+            let originalItemsByID = Dictionary(uniqueKeysWithValues: initialState.contentTabs.tabs.map { ($0.id, $0) })
+            let store = TestStore(initialState: initialState) { FileManagerFeature() }
+            // store.exhaustivity = .off: window routing이 방출하는 child action보다 최종 pure reorder invariant를 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                sourceID: .contentTab(tabD),
+                anchorID: .contentTab(testCase.anchorID),
+                placement: testCase.placement,
+            ))))
+            await store.skipReceivedActions(strict: false)
+
+            XCTAssertEqual(
+                store.state.contentTabs.tabs.filter { !$0.isPinned }.map(\.id),
+                testCase.expectedUnpinnedIDs,
+            )
+            XCTAssertEqual(
+                store.state.contentTabs.tabs.enumerated().compactMap { index, tab in tab.isPinned ? index : nil },
+                originalPinnedSlots,
+            )
+            XCTAssertEqual(
+                Dictionary(uniqueKeysWithValues: store.state.contentTabs.tabs.map { ($0.id, $0) }),
+                originalItemsByID,
+            )
+            XCTAssertEqual(store.state.contentTabs.activeTabID, initialState.contentTabs.activeTabID)
+            XCTAssertEqual(store.state.contentTabs.previousActiveTabID, initialState.contentTabs.previousActiveTabID)
+            XCTAssertEqual(store.state.contentTabs.selectedTabIDs, initialState.contentTabs.selectedTabIDs)
+            XCTAssertEqual(store.state.contentTabs.selectionAnchorID, initialState.contentTabs.selectionAnchorID)
+            XCTAssertNil(store.state.sidebar.contentTabDragSnapshot)
+        }
+    }
+
+    /// CTM-001-reorder_content_tab: 종료된 drag snapshot은 후속 singleton 이동에 재사용되지 않음
+    /// awaiting payload 상태의 이전 다중 선택이 키보드·접근성 이동을 group reorder로 승격하지 않는지 검증한다.
+    /// - 검증 내용: D 하나의 이동 결과와 기존 awaiting snapshot 보존
+    /// - 사전 조건: frozen `[D, B]` snapshot이 drag terminal 이후 awaiting payload 상태임
+    /// - 기대 결과: D만 E 뒤로 이동하고 B는 기존 상대 위치를 유지함
+    func testReorderSelectedContentTabs_awaitingSnapshotDoesNotPromoteLaterSingletonMove() async throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tabD = ContentTabID(rawValue: "D")
+        let tabE = ContentTabID(rawValue: "E")
+        var initialState = try makeSelectedGroupReorderState(
+            orderedMovingIDs: [tabD, tabB],
+            initiatingID: tabD,
+        )
+        initialState.sidebar.contentTabDragSnapshot?.lifecycle = .awaitingPayload
+        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        // store.exhaustivity = .off: routing action보다 최종 singleton reorder invariant를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(tabD),
+            anchorID: .contentTab(tabE),
+            placement: .after,
+        ))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(
+            store.state.contentTabs.tabs.filter { !$0.isPinned }.map(\.id),
+            [tabA, tabB, tabC, tabE, tabD],
+        )
+        XCTAssertEqual(store.state.sidebar.contentTabDragSnapshot?.lifecycle, .awaitingPayload)
+    }
+
+    /// CTM-001-reorder_content_tab: invalid 선택 그룹 destination은 whole-state no-op임
+    /// selected anchor, stale anchor, mixed pinned/unpinned group, unchanged final order를 atomic하게 거부하는지 검증한다.
+    /// - 검증 내용: 네 invalid/no-op 입력 각각에서 child state와 drag snapshot을 포함한 FileManager state equality
+    /// - 사전 조건: pinned slot이 섞인 `[A,B,C,D,E]`와 각 case의 frozen operation IDs
+    /// - 기대 결과: 어떤 case도 partial move 또는 state mutation을 만들지 않음
+    func testReorderSelectedContentTabs_invalidDestinationsAreWholeStateNoOps() async throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tabD = ContentTabID(rawValue: "D")
+        let pinned1 = ContentTabID(rawValue: "P1")
+        let missing = ContentTabID(rawValue: "missing")
+        let cases = try [
+            InvalidSelectedGroupReorderCase(
+                state: makeSelectedGroupReorderState(orderedMovingIDs: [tabD, tabB], initiatingID: tabD),
+                anchorID: tabB,
+                placement: .before,
+            ),
+            InvalidSelectedGroupReorderCase(
+                state: makeSelectedGroupReorderState(orderedMovingIDs: [tabD, tabB], initiatingID: tabD),
+                anchorID: tabD,
+                placement: .after,
+            ),
+            InvalidSelectedGroupReorderCase(
+                state: makeSelectedGroupReorderState(orderedMovingIDs: [tabD, tabB], initiatingID: tabD),
+                anchorID: missing,
+                placement: .before,
+            ),
+            InvalidSelectedGroupReorderCase(
+                state: makeSelectedGroupReorderState(orderedMovingIDs: [tabD, pinned1], initiatingID: tabD),
+                anchorID: tabA,
+                placement: .before,
+            ),
+            InvalidSelectedGroupReorderCase(
+                state: makeSelectedGroupReorderState(orderedMovingIDs: [tabA, tabB], initiatingID: tabA),
+                anchorID: tabC,
+                placement: .before,
+            ),
+        ]
+
+        for testCase in cases {
+            let store = TestStore(initialState: testCase.state) { FileManagerFeature() }
+            let initiatingID = try XCTUnwrap(testCase.state.sidebar.contentTabDragSnapshot?.initiatingTabID)
+
+            await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                sourceID: .contentTab(initiatingID),
+                anchorID: .contentTab(testCase.anchorID),
+                placement: testCase.placement,
+            ))))
+
+            XCTAssertEqual(store.state, testCase.state)
+        }
+    }
+
+    /// CTM-001-reorder_content_tab: 기존 single reorder는 batch-of-one과 동일함
+    /// single action이 generalized transform의 `[sourceID]` wrapper로 동작해 기존 의미를 바꾸지 않는지 검증한다.
+    /// - 검증 내용: 동일 원본에서 single action과 group action `[D] after E`의 whole-state equality
+    /// - 사전 조건: multi-selection D/B와 pinned raw slot이 있지만 moving input은 D 하나뿐임
+    /// - 기대 결과: 두 action 모두 D만 이동하며 결과 state가 정확히 동일함
+    func testReorderContentTab_singleActionMatchesBatchOfOne() throws {
+        let tabD = ContentTabID(rawValue: "D")
+        let tabE = ContentTabID(rawValue: "E")
+        let original = try makeSelectedGroupReorderState(
+            orderedMovingIDs: [tabD, ContentTabID(rawValue: "B")],
+            initiatingID: tabD,
+        ).contentTabs
+        var singleState = original
+        var batchState = original
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(
+            into: &singleState,
+            action: .reorder(sourceID: tabD, targetID: tabE, placement: .after),
+        )
+        _ = reducer.reduce(
+            into: &batchState,
+            action: .reorderGroup(orderedMovingIDs: [tabD], anchorID: tabE, placement: .after),
+        )
+
+        XCTAssertEqual(singleState, batchState)
+        XCTAssertEqual(
+            singleState.tabs.filter { !$0.isPinned }.map(\.id),
+            [ContentTabID(rawValue: "A"), ContentTabID(rawValue: "B"), ContentTabID(rawValue: "C"), tabE, tabD],
+        )
     }
 
     // MARK: - CTM-001-handle_content_tab_invariants

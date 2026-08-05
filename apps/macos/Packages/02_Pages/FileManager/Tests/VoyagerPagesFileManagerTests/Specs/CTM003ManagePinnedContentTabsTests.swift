@@ -780,6 +780,121 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
     }
 
+    /// CTM-003-reconcile_top_navigation_order: pinned group committed mutation은 변경 시 한 번, no-op 시 쓰지 않는다.
+    /// latest locked store에 frozen `[C, A]` block을 한 번 적용하고 invalid/unchanged 요청의 write 경계를 검증한다.
+    /// - 검증 내용: committed final order, changed write count 1, selected/stale/mixed/unchanged write count 0
+    /// - 사전 조건: `[Home, A, Downloads, B, C]` pinned store와 독립 defaults recorder
+    /// - 기대 결과: 변경은 `[Home, Downloads, C, A, B]`를 한 번 저장하고 모든 no-op은 원본 bytes를 보존한다.
+    func testPinnedRecordClient_groupMoveWritesChangedOrderOnceAndNoOpsZeroTimes() async throws {
+        let fixture = makePinnedGroupClientFixture()
+        let changedRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let changedCommit = try await ContentTabPinnedRecordClient.liveValue
+            .moveTopNavigationPinnedGroupCommitted(
+                changedRecorder.client(),
+                fixture.locationIDs,
+                fixture.orderedIDs,
+                fixture.destination,
+            )
+
+        XCTAssertEqual(changedCommit.order, fixture.expectedOrder)
+        XCTAssertEqual(changedRecorder.writeCount(), 1)
+        for scenario in fixture.noOps {
+            try await assertPinnedGroupClientNoOp(scenario, fixture: fixture)
+        }
+
+        let unchangedStore = ContentTabPinnedRecordStore(
+            records: fixture.records,
+            topNavigationOrder: fixture.expectedOrder,
+        )
+        let unchangedRecorder = try PinnedRecordDefaultsRecorder(store: unchangedStore)
+        let unchangedCommit = try await ContentTabPinnedRecordClient.liveValue
+            .moveTopNavigationPinnedGroupCommitted(
+                unchangedRecorder.client(),
+                fixture.locationIDs,
+                fixture.orderedIDs,
+                fixture.destination,
+            )
+        XCTAssertEqual(unchangedCommit.order, fixture.expectedOrder)
+        XCTAssertEqual(unchangedRecorder.writeCount(), 0)
+    }
+
+    private struct PinnedGroupClientNoOpScenario {
+        let orderedIDs: [ContentTabID]
+        let destination: FileManagerTopNavigationMoveDestination
+    }
+
+    private struct PinnedGroupClientFixture {
+        let records: [ContentTabPinnedRecord]
+        let initialStore: ContentTabPinnedRecordStore
+        let expectedOrder: FileManagerTopNavigationOrder
+        let locationIDs: [String]
+        let orderedIDs: [ContentTabID]
+        let destination: FileManagerTopNavigationMoveDestination
+        let noOps: [PinnedGroupClientNoOpScenario]
+    }
+
+    private func makePinnedGroupClientFixture() -> PinnedGroupClientFixture {
+        let tabA = ContentTabID(rawValue: "group-client-a")
+        let tabB = ContentTabID(rawValue: "group-client-b")
+        let tabC = ContentTabID(rawValue: "group-client-c")
+        let records = [
+            Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+            Self.pinnedRecord(id: tabC, anchor: .directory(path: "/C")),
+        ]
+        let initialStore = ContentTabPinnedRecordStore(
+            records: records,
+            topNavigationOrder: .init(items: [
+                .location("Home"),
+                .contentTab(tabA),
+                .location("Downloads"),
+                .contentTab(tabB),
+                .contentTab(tabC),
+            ]),
+        )
+        let expectedOrder = FileManagerTopNavigationOrder(items: [
+            .location("Home"),
+            .location("Downloads"),
+            .contentTab(tabC),
+            .contentTab(tabA),
+            .contentTab(tabB),
+        ])
+        return PinnedGroupClientFixture(
+            records: records,
+            initialStore: initialStore,
+            expectedOrder: expectedOrder,
+            locationIDs: ["Home", "Downloads"],
+            orderedIDs: [tabC, tabA],
+            destination: .after(.location("Downloads")),
+            noOps: [
+                .init(orderedIDs: [tabC, tabA], destination: .before(.contentTab(tabA))),
+                .init(orderedIDs: [tabC, tabA], destination: .after(.location("stale"))),
+                .init(
+                    orderedIDs: [tabC, ContentTabID(rawValue: "group-client-missing")],
+                    destination: .before(.location("Downloads")),
+                ),
+            ],
+        )
+    }
+
+    private func assertPinnedGroupClientNoOp(
+        _ scenario: PinnedGroupClientNoOpScenario,
+        fixture: PinnedGroupClientFixture,
+    ) async throws {
+        let recorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let sourceData = recorder.data()
+        let commit = try await ContentTabPinnedRecordClient.liveValue
+            .moveTopNavigationPinnedGroupCommitted(
+                recorder.client(),
+                fixture.locationIDs,
+                scenario.orderedIDs,
+                scenario.destination,
+            )
+        XCTAssertEqual(commit.order, fixture.initialStore.topNavigationOrder)
+        XCTAssertEqual(recorder.writeCount(), 0)
+        XCTAssertEqual(recorder.data(), sourceData)
+    }
+
     /// CTM-003-restore_pinned_content_tabs: 비정규화된 latest store의 no-op은 저장된 원본 snapshot을 반환한다.
     /// normalization이 move 판단에만 사용되고 쓰지 않은 projection을 committed 결과로 노출하지 않는지 검증한다.
     /// - 검증 내용: latest raw store load, normalized unchanged 판단, exact raw snapshot 반환, write count
@@ -1335,6 +1450,158 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.content, originalContent)
         XCTAssertEqual(store.state.tabContentStates[tabID], originalContent)
         XCTAssertEqual(store.state.topNavigationArrangementPresentation, .saveRollback)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: pinned 선택 그룹 persistence 실패는 confirmed order로 rollback한다.
+    /// frozen `[C, A]` optimistic block이 save/store-unavailable terminal에서 기존 presentation 정책과 함께 정리되는지 검증한다.
+    /// - 검증 내용: group pending correlation, confirmed rollback, pending cleanup, typed presentation
+    /// - 사전 조건: `[Home, A, Downloads, B, C]`와 Downloads 앞 group move, current operation token
+    /// - 기대 결과: 두 실패 모두 confirmed order를 복원하고 pending을 비우며 failure별 presentation을 표시한다.
+    func testPinnedTopNavigationSelectedGroupFailuresRollbackAndCleanPendingCorrelation() async {
+        let fixture = makePinnedGroupFailureFixture()
+        let expectations = [
+            PinnedGroupFailureExpectation(
+                terminal: .failed(.save),
+                availability: .available,
+                presentation: .saveRollback,
+            ),
+            PinnedGroupFailureExpectation(
+                terminal: .failed(.storeUnavailable(.corrupt)),
+                availability: .unavailable(.corrupt),
+                presentation: .loadUnavailable,
+            ),
+        ]
+
+        for expectation in expectations {
+            await assertPinnedGroupFailure(expectation, fixture: fixture)
+        }
+    }
+
+    private struct PinnedGroupFailureExpectation {
+        let terminal: FileManagerTopNavigationIntentTerminal
+        let availability: FileManagerTopNavigationArrangementAvailability
+        let presentation: FileManagerTopNavigationArrangementPresentation
+    }
+
+    private struct PinnedGroupFailureFixture {
+        let tabA: ContentTabID
+        let tabB: ContentTabID
+        let tabC: ContentTabID
+        let token: FileManagerTopNavigationOperationToken
+        let sourceWindowID: UUID
+        let operationID: UUID
+        let initialOrder: FileManagerTopNavigationOrder
+        let optimisticOrder: FileManagerTopNavigationOrder
+    }
+
+    private func makePinnedGroupFailureFixture() -> PinnedGroupFailureFixture {
+        let tabA = ContentTabID(rawValue: "group-failure-a")
+        let tabB = ContentTabID(rawValue: "group-failure-b")
+        let tabC = ContentTabID(rawValue: "group-failure-c")
+        return PinnedGroupFailureFixture(
+            tabA: tabA,
+            tabB: tabB,
+            tabC: tabC,
+            token: topNavigationToken(60),
+            sourceWindowID: UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1,
+            )),
+            operationID: UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2,
+            )),
+            initialOrder: .init(items: [
+                .location("Home"), .contentTab(tabA), .location("Downloads"),
+                .contentTab(tabB), .contentTab(tabC),
+            ]),
+            optimisticOrder: .init(items: [
+                .location("Home"), .contentTab(tabC), .contentTab(tabA),
+                .location("Downloads"), .contentTab(tabB),
+            ]),
+        )
+    }
+
+    private func makePinnedGroupFailureState(_ fixture: PinnedGroupFailureFixture) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        let records = [
+            fixture.tabA: Self.pinnedRecord(id: fixture.tabA, anchor: .directory(path: "/A"), title: "A"),
+            fixture.tabB: Self.pinnedRecord(id: fixture.tabB, anchor: .directory(path: "/B"), title: "B"),
+            fixture.tabC: Self.pinnedRecord(id: fixture.tabC, anchor: .directory(path: "/C"), title: "C"),
+        ]
+        state.contentTabs = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: fixture.tabA, anchor: .directory(path: "/A"), title: "A"),
+                Self.pinnedItem(id: fixture.tabB, anchor: .directory(path: "/B"), title: "B"),
+                Self.pinnedItem(id: fixture.tabC, anchor: .directory(path: "/C"), title: "C"),
+            ],
+            activeTabID: fixture.tabC,
+            pinnedRecords: records,
+        )
+        state.contentTabs.selectedTabIDs = [fixture.tabC, fixture.tabA]
+        state.lastConfirmedTopNavigationOrder = fixture.initialOrder
+        state.optimisticTopNavigationOrder = fixture.initialOrder
+        state.syncContentTabSidebarItems()
+        state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: fixture.operationID,
+            sourceWindowID: fixture.sourceWindowID,
+            initiatingTabID: fixture.tabC,
+            orderedTabIDs: [fixture.tabC, fixture.tabA],
+            lifecycle: .inFlight,
+        )
+        return state
+    }
+
+    private func assertPinnedGroupFailure(
+        _ expectation: PinnedGroupFailureExpectation,
+        fixture: PinnedGroupFailureFixture,
+    ) async {
+        let store = TestStore(initialState: makePinnedGroupFailureState(fixture)) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == fixture.token }
+        }
+
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(fixture.tabC),
+            anchorID: .location("Downloads"),
+            placement: .before,
+        ))))
+        await store.receive(\.topNavigationMoveRequested) {
+            $0.sidebar.contentTabDragSnapshot = nil
+            $0.pendingTopNavigationIntents = [
+                .init(
+                    token: fixture.token,
+                    intent: .movePinnedGroup(
+                        orderedIDs: [fixture.tabC, fixture.tabA],
+                        destination: .before(.location("Downloads")),
+                    ),
+                ),
+            ]
+            $0.optimisticTopNavigationOrder = fixture.optimisticOrder
+        }
+        await store.receive { action in
+            guard case let .delegate(.persistTopNavigationPinnedGroupMove(
+                token,
+                orderedIDs,
+                destination,
+                _,
+            )) = action else { return false }
+            return token == fixture.token
+                && orderedIDs == [fixture.tabC, fixture.tabA]
+                && destination == .before(.location("Downloads"))
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: fixture.token,
+            terminal: expectation.terminal,
+        ))) {
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.optimisticTopNavigationOrder = fixture.initialOrder
+            $0.topNavigationArrangementAvailability = expectation.availability
+            $0.topNavigationArrangementPresentation = expectation.presentation
+        }
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, fixture.initialOrder)
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        await store.finish()
     }
 
     // MARK: - CTM-003-reconcile_top_navigation_order

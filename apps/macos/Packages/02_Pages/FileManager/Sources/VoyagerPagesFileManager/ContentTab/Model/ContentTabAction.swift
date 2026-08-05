@@ -121,6 +121,11 @@ public enum ContentTabAction: Sendable {
         targetID: ContentTabID,
         placement: FileManagerTopNavigationReorderPlacement,
     )
+    case reorderGroup(
+        orderedMovingIDs: [ContentTabID],
+        anchorID: ContentTabID,
+        placement: FileManagerTopNavigationReorderPlacement,
+    )
     case pin(ContentTabID)
     case pinUsingDormantSlot(
         ContentTabID,

@@ -18,6 +18,8 @@ public struct FileManagerSidebarState: Equatable {
     public var currentWindowID: UUID?
     public var contentTabMoveTargets: [ContentTabMoveTarget] = []
     public var pendingContentTabMoveRequest: ContentTabMoveRequest?
+    public var contentTabSelectionOrderedIDs: [ContentTabID] = []
+    public var contentTabDragSnapshot: ContentTabDragSnapshot?
 
     var showsTopNavigationDivider: Bool {
         !topNavigationItems.isEmpty
