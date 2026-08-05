@@ -148,6 +148,7 @@ public struct EntryLoadingContextState: Equatable, Sendable {
     public var generation = 0
     public var expectedCoreBatchIndex = 0
     public var coreFinished = false
+    public var acceptedCoreFinishedGeneration: Int?
     public var streamTerminal = false
     public var isIncomplete = false
     public var sourceKind: EntryLoadingSourceKind?
@@ -156,6 +157,7 @@ public struct EntryLoadingContextState: Equatable, Sendable {
         generation &+= 1
         expectedCoreBatchIndex = 0
         coreFinished = false
+        acceptedCoreFinishedGeneration = nil
         streamTerminal = false
         isIncomplete = false
         self.sourceKind = sourceKind
@@ -169,6 +171,7 @@ public struct EntryLoadingContextState: Equatable, Sendable {
         generation &+= 1
         expectedCoreBatchIndex = 0
         coreFinished = false
+        acceptedCoreFinishedGeneration = nil
         streamTerminal = false
         isIncomplete = false
         sourceKind = nil

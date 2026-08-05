@@ -149,7 +149,7 @@ public struct FileManagerContentFeature {
                 collectionLoadingCancellationOwnerID: state.entryOperations.loadingCancellationOwnerID,
             )
             // hierarchy root가 설정된 경우에만 root completion을 전송한다.
-            let isRootCompletion = FileManagerContentFeature.isRootCompletion(action)
+            let isRootCompletion = FileManagerContentFeature.isRootCompletion(action, state: &state)
                 && !state.entryViewLayout.hierarchy.rootPath.isEmpty
             if isRootCompletion {
                 let rootFolders = arrangedEntries.filter(\.isFolder)
@@ -369,15 +369,16 @@ public struct FileManagerContentFeature {
         }
     }
 
-    static func isRootCompletion(_ action: Action) -> Bool {
+    static func isRootCompletion(_ action: Action, state: inout State) -> Bool {
         switch action {
         case .entryOperations(.loading(.itemsLoaded)):
             return true
         case let .entryOperations(.loading(.streamEvent(streamEvent))):
-            if case .coreFinished = streamEvent.event {
-                return true
-            }
-            return false
+            guard case .coreFinished = streamEvent.event,
+                  state.entryOperations.loadingContext.acceptedCoreFinishedGeneration == streamEvent.generation
+            else { return false }
+            state.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
+            return true
         default:
             return false
         }

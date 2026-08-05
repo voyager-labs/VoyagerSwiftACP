@@ -186,6 +186,7 @@ public struct EntryOperationsLoadingReducer {
                         state.loadingContext.items = []
                     }
                     state.loadingContext.coreFinished = true
+                    state.loadingContext.acceptedCoreFinishedGeneration = streamEvent.generation
                     state.isLoading = false
                     state.isReloading = false
                     return .none
