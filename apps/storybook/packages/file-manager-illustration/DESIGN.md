@@ -138,9 +138,8 @@ The provenance snapshot lives in `src/assets/entry-thumbnails/provenance.json`. 
 
 The `EntryThumbnail` component (`src/Entries/EntryThumbnail.tsx`) evaluates in this order:
 
-1. **Folder** — always renders `FolderIcon` SVG (folders never display a thumbnail image).
-2. **`thumbnailSrc` present** (non-folder) — renders an `<img>` with the provided URL/import path.
-3. **No thumbnailSrc** — falls back to the kind-specific SVG icon (`PdfIcon`, `ImageIcon`, `SheetIcon`, `VideoIcon`, `ArchiveIcon`, or generic `FileIcon`).
+1. **`thumbnailSrc` present** — renders an `<img>` with the provided URL/import path, including folder fixtures.
+2. **No thumbnailSrc** — falls back to the kind-specific SVG icon (`FolderIcon`, `PdfIcon`, `ImageIcon`, `SheetIcon`, `VideoIcon`, `ArchiveIcon`, or generic `FileIcon`).
 
 ### Shared size scaling
 
@@ -153,7 +152,7 @@ All three scaling tiers apply identically to both generated thumbnails and SVG f
 ### Fallback behavior
 
 - **Archive** has no generated thumbnail (Quick Look cannot generate previews for `.7z`); uses `ArchiveIcon` SVG.
-- **Folder** is always `FolderIcon` SVG regardless of `thumbnailSrc`.
+- **Folder** without `thumbnailSrc` uses `FolderIcon` SVG; a folder fixture with `thumbnailSrc` renders its image preview.
 - At least one no-thumbnail fallback entry is preserved per kind (`doc`, `pdf`, `image`, `sheet`, `video`, `archive`) in the root `files` data and the `entryKindEntries` array.
 
 ### Storybook wiring
