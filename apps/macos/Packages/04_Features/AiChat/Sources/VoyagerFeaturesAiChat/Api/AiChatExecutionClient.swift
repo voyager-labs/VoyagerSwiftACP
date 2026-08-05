@@ -51,17 +51,8 @@ public extension AiChatExecutionClient {
                                 break
                             }
 
-                            switch event {
-                            case .requestPrepared:
-                                continue
-                            case let .started(context):
-                                continuation.yield(.started(context: context))
-                            case let .delta(context, text):
-                                continuation.yield(.delta(context: context, text: text))
-                            case let .final(response):
-                                continuation.yield(.final(response: response))
-                            case let .failed(context, reason):
-                                continuation.yield(.failed(context: context, reason: reason))
+                            if let mappedEvent = mapProviderEvent(event) {
+                                continuation.yield(mappedEvent)
                             }
                         }
                     } catch {
@@ -81,6 +72,23 @@ public extension AiChatExecutionClient {
 }
 
 private extension AiChatExecutionClient {
+    static func mapProviderEvent(_ event: VoyagerEntitiesAi.AiChatProviderExecutionEvent) -> AiChatEvent? {
+        switch event {
+        case .requestPrepared:
+            nil
+        case let .started(context):
+            .started(context: context)
+        case let .delta(context, text):
+            .delta(context: context, text: text)
+        case let .status(context, signal):
+            .status(context: context, signal: signal)
+        case let .final(response):
+            .final(response: response)
+        case let .failed(context, reason):
+            .failed(context: context, reason: reason)
+        }
+    }
+
     static func immediateFailureStream(
         context: AiChatRequestContextSnapshot,
         error: Error,

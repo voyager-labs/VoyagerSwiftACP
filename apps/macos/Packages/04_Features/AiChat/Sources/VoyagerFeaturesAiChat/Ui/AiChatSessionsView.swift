@@ -5,6 +5,8 @@ import VoyagerEntitiesAi
 import VoyagerShared
 
 struct AiChatSessionsView: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
     @State private var hoveredRenameAction: RenameAction?
 
     let store: StoreOf<AiChatFeature>
@@ -18,7 +20,7 @@ struct AiChatSessionsView: View {
 
             if let errorMessage = state.sessionList.errorMessage, !errorMessage.isEmpty {
                 Text(errorMessage)
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -29,9 +31,9 @@ struct AiChatSessionsView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(displayModel.emptyTitle)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(VoyagerDS.Typography.title)
                         Text(displayModel.emptyDetail)
-                            .font(.system(size: 13))
+                            .font(VoyagerDS.Typography.body)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -101,12 +103,12 @@ struct AiChatSessionsView: View {
         .padding(.horizontal, 10)
         .frame(height: 30)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.05)),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                .stroke(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
         )
         .accessibilityElement(children: .contain)
     }
@@ -197,7 +199,7 @@ struct AiChatSessionsView: View {
 
             if let detail = row.detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -218,7 +220,9 @@ struct AiChatSessionsView: View {
                 .frame(height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(hoveredRenameAction == action ? Color.primary.opacity(0.08) : Color.clear),
+                        .fill(hoveredRenameAction == action
+                            ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+                            : .clear),
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
@@ -237,7 +241,7 @@ struct AiChatSessionsView: View {
 
             if let detail = row.detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(2)
@@ -320,10 +324,12 @@ private struct AiChatProcessingRowTextEffect: ViewModifier {
 }
 
 struct AiChatSessionActionsMenuButton: NSViewRepresentable {
+    @Environment(\.colorScheme)
+    private var colorScheme
     let onRename: () -> Void
     let onDelete: () -> Void
 
-    func makeNSView(context: Context) -> NSButton {
+    func makeNSView(context: Context) -> HoverTrackingMenuButton {
         let button = HoverTrackingMenuButton(frame: .zero)
         button.bezelStyle = .texturedRounded
         button.isBordered = false
@@ -344,18 +350,20 @@ struct AiChatSessionActionsMenuButton: NSViewRepresentable {
         button.focusRingType = .default
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
+        button.colorScheme = colorScheme
         button.onHoverChanged = { isHovered in
             button.contentTintColor = isHovered ? .labelColor : .secondaryLabelColor
             button.layer?.backgroundColor = isHovered
-                ? NSColor.labelColor.withAlphaComponent(0.08).cgColor
+                ? NSColor(VoyagerDS.Interaction.controlHoverFill(for: button.colorScheme)).cgColor
                 : NSColor.clear.cgColor
         }
         return button
     }
 
-    func updateNSView(_ button: NSButton, context: Context) {
+    func updateNSView(_ button: HoverTrackingMenuButton, context: Context) {
         context.coordinator.onRename = onRename
         context.coordinator.onDelete = onDelete
+        button.colorScheme = colorScheme
         button.needsDisplay = true
     }
 
@@ -409,9 +417,14 @@ struct AiChatSessionActionsMenuButton: NSViewRepresentable {
     }
 }
 
-private final class HoverTrackingMenuButton: NSButton {
+final class HoverTrackingMenuButton: NSButton {
+    var colorScheme: ColorScheme = .light {
+        didSet { onHoverChanged?(isHovered) }
+    }
+
     var onHoverChanged: ((Bool) -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
+    private var isHovered = false
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -430,11 +443,13 @@ private final class HoverTrackingMenuButton: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        isHovered = true
         onHoverChanged?(true)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        isHovered = false
         onHoverChanged?(false)
     }
 }

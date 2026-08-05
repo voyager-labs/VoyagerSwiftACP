@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import Perception
 import SwiftUI
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
@@ -30,6 +31,169 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.onAppear)
 
         assertOpenContextualChatSurface(store.state)
+    }
+
+    /// CBW-001-open_contextual_chat: 같은 composer identity의 remount는 focus를 보존한다.
+    /// centered-empty와 transcript 전환에서 representable lease가 교체되어도 동일 session composer의 focus가 이어지는지 검증합니다.
+    /// - 검증 내용: 새 coordinator 활성화 뒤 이전 coordinator의 end-editing과 dismantle을 처리하고 focus owner를 확인합니다.
+    /// - 사전 조건: 두 입력은 같은 AiChatView scope와 displayed session identity를 사용하고 이전 입력이 focused입니다.
+    /// - 기대 결과: 이전 lease의 늦은 callback은 무시되고 새 입력이 focused first responder로 유지됩니다.
+    func testOpenContextualChatPreservesFocusAcrossSameComposerRemount() async {
+        let focusOwner = AiChatInputFocusOwner()
+        let identity = makeComposerIdentity(sessionUUID: "11111111-1111-1111-1111-111111111001")
+        let oldCoordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
+        let replacementCoordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
+        let window = NSWindow()
+        let container = NSView()
+        let oldTextView = AiChatInputTextView.AttachmentDroppingTextView()
+        let replacementTextView = AiChatInputTextView.AttachmentDroppingTextView()
+        let oldScrollView = NSScrollView()
+        let replacementScrollView = NSScrollView()
+        oldScrollView.documentView = oldTextView
+        replacementScrollView.documentView = replacementTextView
+        container.addSubview(oldScrollView)
+        container.addSubview(replacementScrollView)
+        window.contentView = container
+        oldCoordinator.activate(textView: oldTextView, scrollView: oldScrollView, identity: identity)
+        XCTAssertEqual(oldTextView.composerIdentity, identity)
+        focusOwner.requestFocus(for: identity)
+        XCTAssertTrue(window.makeFirstResponder(oldTextView))
+
+        oldCoordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: oldTextView))
+        replacementCoordinator.activate(
+            textView: replacementTextView,
+            scrollView: replacementScrollView,
+            identity: identity,
+        )
+        XCTAssertEqual(replacementTextView.composerIdentity, identity)
+        AiChatInputTextView.dismantleNSView(oldScrollView, coordinator: oldCoordinator)
+        XCTAssertTrue(window.makeFirstResponder(replacementTextView))
+        await drainMainQueue()
+
+        XCTAssertIdentical(window.firstResponder, replacementTextView)
+        XCTAssertTrue(focusOwner.isFocused(for: identity))
+    }
+
+    /// CBW-001-open_contextual_chat: 독립 AiChatView A의 rerender는 B composer focus를 침범하지 않는다.
+    /// Content와 Inspector가 각자 focus owner를 가져도 window의 responder identity로 cross-view acquisition을 차단하는지 검증합니다.
+    /// - 검증 내용: 서로 다른 owner/scope의 A→B 전환 뒤 A를 다시 activate·schedule하고 end-editing을 처리합니다.
+    /// - 사전 조건: 두 composer는 같은 session을 표시하지만 독립 AiChatView scope와 focus owner를 사용합니다.
+    /// - 기대 결과: A rerender는 B를 탈취하지 않고 A owner만 clear되며 B owner와 first responder는 유지됩니다.
+    func testOpenContextualChatPreventsIndependentComposerFromStealingFocusAfterRerender() async {
+        let focusOwnerA = AiChatInputFocusOwner()
+        let focusOwnerB = AiChatInputFocusOwner()
+        let sessionUUID = "11111111-1111-1111-1111-111111111002"
+        let identityA = makeComposerIdentity(
+            sessionUUID: sessionUUID,
+            scopeID: makeUUID("22222222-2222-2222-2222-222222222001"),
+        )
+        let identityB = makeComposerIdentity(
+            sessionUUID: sessionUUID,
+            scopeID: makeUUID("22222222-2222-2222-2222-222222222002"),
+        )
+        let coordinatorA = makeInputCoordinator(focusOwner: focusOwnerA, identity: identityA)
+        let coordinatorB = makeInputCoordinator(focusOwner: focusOwnerB, identity: identityB)
+        let window = NSWindow()
+        let container = NSView()
+        let textViewA = AiChatInputTextView.AttachmentDroppingTextView()
+        let textViewB = AiChatInputTextView.AttachmentDroppingTextView()
+        let scrollViewA = NSScrollView()
+        let scrollViewB = NSScrollView()
+        scrollViewA.documentView = textViewA
+        scrollViewB.documentView = textViewB
+        container.addSubview(scrollViewA)
+        container.addSubview(scrollViewB)
+        window.contentView = container
+        coordinatorA.activate(textView: textViewA, scrollView: scrollViewA, identity: identityA)
+        focusOwnerA.requestFocus(for: identityA)
+        XCTAssertTrue(window.makeFirstResponder(textViewA))
+
+        coordinatorB.activate(textView: textViewB, scrollView: scrollViewB, identity: identityB)
+        focusOwnerB.requestFocus(for: identityB)
+        XCTAssertTrue(window.makeFirstResponder(textViewB))
+        XCTAssertEqual(textViewA.composerIdentity, identityA)
+        XCTAssertEqual(textViewB.composerIdentity, identityB)
+        XCTAssertNotEqual(identityA, identityB)
+
+        coordinatorA.activate(textView: textViewA, scrollView: scrollViewA, identity: identityA)
+        coordinatorA.scheduleFocusAcquisition(for: textViewA)
+        await drainMainQueue()
+
+        XCTAssertIdentical(window.firstResponder, textViewB)
+        XCTAssertTrue(focusOwnerA.isFocused(for: identityA))
+        XCTAssertTrue(focusOwnerB.isFocused(for: identityB))
+
+        coordinatorA.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: textViewA))
+        await drainMainQueue()
+        coordinatorA.scheduleFocusAcquisition(for: textViewA)
+        await drainMainQueue()
+
+        XCTAssertIdentical(window.firstResponder, textViewB)
+        XCTAssertFalse(focusOwnerA.isFocused(for: identityA))
+        XCTAssertTrue(focusOwnerB.isFocused(for: identityB))
+    }
+
+    /// CBW-001-open_contextual_chat: dismantle된 입력의 예약 focus 획득은 교체 responder를 침범하지 않는다.
+    /// representable 수명이 끝난 뒤 실행되는 main queue 작업이 obsolete NSTextView를 다시 first responder로 만들지 않는지 검증합니다.
+    /// - 검증 내용: focus 예약, dismantle, 교체 responder 지정, main queue drain 뒤 실제 first responder를 확인합니다.
+    /// - 사전 조건: 현재 identity가 focus를 소유하고 이전 입력과 교체 responder가 같은 window에 연결되어 있습니다.
+    /// - 기대 결과: 이전 입력의 예약 작업은 무효화되고 focus owner는 inactive이며 교체 responder가 유지됩니다.
+    func testOpenContextualChatRejectsScheduledFocusAfterInputDismantle() async {
+        let focusOwner = AiChatInputFocusOwner()
+        let identity = makeComposerIdentity(sessionUUID: "11111111-1111-1111-1111-111111111004")
+        let coordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
+        let window = NSWindow()
+        let container = NSView()
+        let staleTextView = AiChatInputTextView.AttachmentDroppingTextView()
+        let replacementTextView = AiChatInputTextView.AttachmentDroppingTextView()
+        let scrollView = NSScrollView()
+        scrollView.documentView = staleTextView
+        container.addSubview(scrollView)
+        container.addSubview(replacementTextView)
+        window.contentView = container
+        coordinator.activate(textView: staleTextView, scrollView: scrollView, identity: identity)
+        focusOwner.requestFocus(for: identity)
+
+        coordinator.scheduleFocusAcquisition(for: staleTextView)
+        AiChatInputTextView.dismantleNSView(scrollView, coordinator: coordinator)
+        XCTAssertTrue(window.makeFirstResponder(replacementTextView))
+        await drainMainQueue()
+
+        XCTAssertIdentical(window.firstResponder, replacementTextView)
+        XCTAssertNil(coordinator.textView)
+        XCTAssertNil(coordinator.scrollView)
+        XCTAssertFalse(focusOwner.isFocused(for: identity))
+    }
+
+    /// CBW-001-open_contextual_chat: active composer의 실제 resign은 해당 identity focus를 해제한다.
+    /// stale callback 방어가 현재 lease에서 발생한 정상적인 focus 이탈 동작을 보존하는지 검증합니다.
+    /// - 검증 내용: active 입력에서 일반 responder로 전환한 뒤 end-editing callback과 main queue를 처리합니다.
+    /// - 사전 조건: 현재 identity와 coordinator lease가 focused 입력을 소유합니다.
+    /// - 기대 결과: 일반 responder가 유지되고 active identity의 focus는 false가 됩니다.
+    func testOpenContextualChatClearsFocusAfterGenuineInputResign() async {
+        let focusOwner = AiChatInputFocusOwner()
+        let identity = makeComposerIdentity(sessionUUID: "11111111-1111-1111-1111-111111111005")
+        let coordinator = makeInputCoordinator(focusOwner: focusOwner, identity: identity)
+        let window = NSWindow()
+        let container = NSView()
+        let textView = AiChatInputTextView.AttachmentDroppingTextView()
+        let scrollView = NSScrollView()
+        let nextResponder = CBW001FocusableView()
+        scrollView.documentView = textView
+        container.addSubview(scrollView)
+        container.addSubview(nextResponder)
+        window.contentView = container
+        coordinator.activate(textView: textView, scrollView: scrollView, identity: identity)
+        XCTAssertEqual(textView.composerIdentity, identity)
+        focusOwner.requestFocus(for: identity)
+        XCTAssertTrue(window.makeFirstResponder(textView))
+
+        XCTAssertTrue(window.makeFirstResponder(nextResponder))
+        coordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: textView))
+        await drainMainQueue()
+
+        XCTAssertIdentical(window.firstResponder, nextResponder)
+        XCTAssertFalse(focusOwner.isFocused(for: identity))
     }
 
     /// CBW-001-open_contextual_chat: 이미 열린 transcript 검색을 다시 열면 새로운 focus 요청만 만든다.
@@ -485,7 +649,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
     private final class InputTextViewHarnessState {
         var text = ""
-        var isFocused = false
         var measuredHeight: CGFloat = 0
         var submitCount = 0
     }
@@ -501,19 +664,19 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         init() {
             _ = NSApplication.shared
             let state = state
+            let composerIdentity = AiChatViewScope().composerIdentity(displayedSessionID: nil)
+            let focusOwner = AiChatInputFocusOwner()
             parent = AiChatInputTextView(
                 text: Binding(
                     get: { state.text },
                     set: { state.text = $0 },
                 ),
-                isFocused: Binding(
-                    get: { state.isFocused },
-                    set: { state.isFocused = $0 },
-                ),
                 measuredHeight: Binding(
                     get: { state.measuredHeight },
                     set: { state.measuredHeight = $0 },
                 ),
+                composerIdentity: composerIdentity,
+                focusOwner: focusOwner,
                 isDisabled: false,
                 maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
                 onSubmit: { state.submitCount += 1 },
@@ -584,7 +747,12 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
-            self.applySubmitStartedState(&state, selectedHandle: fixture.selectedHandle, sessionID: fixture.sessionID)
+            self.applySubmitStartedState(
+                &state,
+                selectedHandle: fixture.selectedHandle,
+                sessionID: fixture.sessionID,
+                submittedAtMs: fixture.fixedMs,
+            )
         }
         guard case let .processing(lock) = store.state.executionPhase else {
             XCTFail("Expected processing state after submit")
@@ -594,6 +762,83 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let completedLock = await receiveSuccessfulSubmitEvents(on: store, lock: lock, fixture: fixture)
         await store.finish()
         await assertSuccessfulSubmitResult(store: store, lock: lock, completedLock: completedLock, fixture: fixture)
+    }
+
+    /// CBW-001-submit_chat_request: pending 해석 중에는 Stop을 유지하고 processing 경계의 늦은 다음 draft를 보존한다.
+    /// submit 시점에 고정된 prompt와 resolver가 늦은 AppKit text callback 때문에 다음 메시지 draft를 잃지 않는지 검증합니다.
+    /// - 검증 내용: pending Stop/Send projection, processing lock payload, live draft 보존을 확인합니다.
+    /// - 사전 조건: 원 prompt가 pending request에 캡처된 뒤 live draft에는 다음 메시지 text가 도착했습니다.
+    /// - 기대 결과: pending에는 Stop만 보이고 lock은 원 prompt를 유지하며 processing composer에는 다음 draft가 남습니다.
+    func testSubmitChatRequestPreservesLateNextDraftAcrossPendingResolutionBoundary() {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("10101010-1010-1010-1010-101010101635"))
+        let resolutionID = makeUUID("20202020-2020-2020-2020-202020202635")
+        let originalPrompt = "Original prompt"
+        let nextDraft = "Next turn draft"
+        let pending = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: models[0],
+            selectedRow: catalogRows[0],
+            selectedThinking: .effort(.medium),
+            preparedRequest: AiChatPreparedRequest(
+                prompt: originalPrompt,
+                messages: [AiChatMessage(role: .user, content: originalPrompt)],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: kAiChatHistoryCharacterBudget,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Original context"),
+            draftText: nextDraft,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            pendingRequestStart: pending,
+        )
+        let feature = AiChatFeature()
+
+        XCTAssertFalse(state.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertTrue(state.chatInputDisplayModel.isStopVisible)
+        XCTAssertTrue(state.chatInputDisplayModel.canStop)
+        XCTAssertTrue(state.chatInputDisplayModel.isComposerEditingDisabled)
+
+        _ = withDependencies {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_006_350))
+        } operation: {
+            feature.completeRequestContextResolution(
+                resolutionID: resolutionID,
+                resolvedContext: AiChatResolvedRequestContext(
+                    currentContext: makeContextSnapshot(summary: "Original context"),
+                    addedAttachments: [],
+                    parts: [],
+                ),
+                state: &state,
+            )
+        }
+
+        guard case let .processing(lock) = state.executionPhase else {
+            return XCTFail("Expected processing lock after pending resolution")
+        }
+        XCTAssertEqual(lock.request.messages.last?.content, originalPrompt)
+        XCTAssertEqual(lock.context.promptSummary, originalPrompt)
+        XCTAssertEqual(lock.context.selectedThinking, .effort(.medium))
+        XCTAssertEqual(state.draftText, nextDraft)
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertFalse(state.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertTrue(state.chatInputDisplayModel.isStopVisible)
+        XCTAssertFalse(state.chatInputDisplayModel.isComposerEditingDisabled)
     }
 
     /// CBW-001-submit_chat_request: 완료된 요청은 상태 문구를 제거하고 다음 submit을 허용한다.
@@ -610,6 +855,172 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
     // MARK: - CBW-001-show_request_processing_state
 
+    /// CBW-001-show_request_processing_state: matching session lock은 session rows와 무관하게 현재 processing으로 노출한다.
+    /// 정상 submit에서 만들어진 request owner가 목록 projection이 비어 있어도 composer disable과 stop affordance를 유지하는지 검증합니다.
+    /// - 검증 내용: matching session lock에서 processing, canSubmit, submit/stop visibility, cancel affordance를 확인합니다.
+    /// - 사전 조건: 현재 session과 lock session이 같고 session rows는 비어 있습니다.
+    /// - 기대 결과: composer submit은 비활성화되고 stop 가능한 processing 상태가 표시됩니다.
+    func testShowRequestProcessingStateKeepsMatchingSessionLockVisibleWhenRowsAreEmpty() {
+        let rows = makeCatalogRows()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555556001"))
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(
+                context: makeRequestContext(
+                    sessionID: sessionID,
+                    requestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666666001")),
+                    runID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777776001")),
+                    model: rows[0].handle,
+                    selectedRow: rows[0],
+                ),
+                messages: [],
+            ),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let state = AiChatFeature.State(
+            sessionList: .init(rows: []),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            draftText: "Queued follow-up",
+            catalogRows: rows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: rows[0].handle,
+            executionPhase: .processing(lock),
+        )
+
+        XCTAssertTrue(state.isProcessing)
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertFalse(state.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertTrue(state.chatInputDisplayModel.isStopVisible)
+        XCTAssertTrue(state.chatInputDisplayModel.canStop)
+        XCTAssertNotNil(state.streamingAssistantDisplayModel)
+    }
+
+    /// CBW-001-show_request_processing_state: completion/failure/cancel은 편집 중인 next-turn composer를 보존한다.
+    /// processing 중 준비한 다음 메시지가 현재 response의 terminal 결과에 의해 지워지거나 locked request에 섞이지 않는지 검증합니다.
+    /// - 검증 내용: 세 terminal 경로의 draft/context/attachment/model/thinking과 request lock payload를 확인합니다.
+    /// - 사전 조건: 첫 요청은 model 0으로 processing이고 live composer는 model 1과 next-turn 값을 담고 있습니다.
+    /// - 기대 결과: terminal phase만 전환되고 next-turn state와 첫 request context/request는 그대로 유지됩니다.
+    func testShowRequestProcessingStatePreservesNextTurnComposerAcrossTerminalEvents() {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("90909090-9090-9090-9090-909090909635"))
+        let requestContext = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("91919191-9191-9191-9191-919191919635")),
+            runID: AiChatRunID(rawValue: makeUUID("92929292-9292-9292-9292-929292929635")),
+            model: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+        )
+        let request = AiChatRequest(
+            context: requestContext,
+            messages: [AiChatMessage(role: .user, content: "First prompt")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let nextContext = makeContextSnapshot(summary: "Next context")
+        let nextAttachment = AiChatAttachmentDraft(
+            id: AiChatAttachmentID(rawValue: "next-attachment"),
+            source: .file,
+            displayTitle: "Next.txt",
+        )
+        let processingState = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: nextContext,
+            addedAttachments: [nextAttachment],
+            transcriptHistory: [AiChatMessage(role: .user, content: "First prompt")],
+            draftText: "Next prompt",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[1].handle,
+            selectedThinking: .effort(.minimal),
+            lockedModelHandle: catalogRows[0].handle,
+            executionPhase: .processing(lock),
+        )
+        let feature = AiChatFeature()
+
+        var completedState = processingState
+        feature.applyFinal(
+            response: AiChatResponse(
+                context: requestContext,
+                assistantMessage: AiChatMessage(role: .assistant, content: "Done"),
+                completedAtMs: 1_700_000_006_353,
+            ),
+            lock: lock,
+            state: &completedState,
+        )
+
+        var failedState = processingState
+        _ = withDependencies {
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_006_353))
+        } operation: {
+            feature.handleExecutionEvent(
+                .failed(context: requestContext, reason: .network),
+                state: &failedState,
+            )
+        }
+
+        var cancelledState = processingState
+        _ = withDependencies {
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_006_353))
+        } operation: {
+            feature.handleCancelTapped(state: &cancelledState)
+        }
+
+        for terminalState in [completedState, failedState, cancelledState] {
+            XCTAssertEqual(terminalState.currentContext, nextContext)
+            XCTAssertEqual(terminalState.addedAttachments, [nextAttachment])
+            XCTAssertEqual(terminalState.draftText, "Next prompt")
+            XCTAssertEqual(terminalState.selectedModelHandle, catalogRows[1].handle)
+            XCTAssertEqual(terminalState.selectedThinking, .effort(.minimal))
+            XCTAssertEqual(terminalState.executionPhase.lock?.context, lock.context)
+            XCTAssertEqual(terminalState.executionPhase.lock?.request, lock.request)
+        }
+    }
+
+    /// CBW-001-show_request_processing_state: session 없는 새 chat은 비소유 lock을 processing으로 채택하지 않는다.
+    /// current session identity가 아직 없는 lifecycle에서 남은 foreground phase가 composer를 잘못 잠그지 않는지 검증합니다.
+    /// - 검증 내용: nil current session과 non-nil lock session 조합의 processing projection을 확인합니다.
+    /// - 사전 조건: session rows와 current session은 비어 있고 execution phase에 이전 session lock만 남아 있습니다.
+    /// - 기대 결과: processing, stop affordance, streaming assistant projection이 모두 숨겨집니다.
+    func testShowRequestProcessingStateDoesNotAdoptLockWithoutCurrentSessionIdentity() {
+        let rows = makeCatalogRows()
+        let lockSessionID = AiChatSessionID(rawValue: makeUUID("88888888-8888-8888-8888-888888886001"))
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(
+                context: makeRequestContext(
+                    sessionID: lockSessionID,
+                    requestID: AiChatRequestID(rawValue: makeUUID("99999999-9999-9999-9999-999999996001")),
+                    runID: AiChatRunID(rawValue: makeUUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa6001")),
+                    model: rows[0].handle,
+                    selectedRow: rows[0],
+                ),
+                messages: [],
+            ),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let state = AiChatFeature.State(
+            sessionList: .init(rows: []),
+            sessionID: nil,
+            executionPhase: .processing(lock),
+        )
+
+        XCTAssertFalse(state.isProcessing)
+        XCTAssertFalse(state.chatInputDisplayModel.isStopVisible)
+        XCTAssertNil(state.streamingAssistantDisplayModel)
+    }
+
     /// CBW-001-show_request_processing_state: stream 실패 시 부분 assistant draft와 실패 상태를 함께 보여준다.
     /// processing 중 수신한 delta가 실패 terminal event 이후에도 사용자에게 partial response로 보존되는지 검증합니다.
     /// - 검증 내용: streamingAssistantDraft, failed executionPhase, requestStatusText, display model failure를 확인합니다.
@@ -621,7 +1032,11 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await fixture.store.send(.submitTapped)
         await resolvePendingRequestContext(fixture.store) { state in
-            self.applyProcessingFailureStartedState(&state, selectedHandle: fixture.selectedHandle)
+            self.applyProcessingFailureStartedState(
+                &state,
+                selectedHandle: fixture.selectedHandle,
+                submittedAtMs: fixture.fixedMs,
+            )
         }
         guard let request = fixture.stream.requests.first else {
             XCTFail("Expected execution request")
@@ -640,8 +1055,1444 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             lock: lock,
             fixedMs: fixture.fixedMs,
         )
-        assertProcessingFailureResult(fixture.store.state)
+        assertProcessingFailureResult(fixture.store.state, submittedAtMs: fixture.fixedMs)
         await fixture.store.finish()
+    }
+
+    /// CBW-001-show_request_processing_state: waiting projection과 accepted chunk revision 경계를 유지한다.
+    /// 응답 시작 전과 연속 delta 수신 중 empty/stale event가 시각 revision을 잘못 진행시키지 않는지 검증합니다.
+    /// - 검증 내용: initial waiting projection, matched non-empty delta, empty/stale/unmatched delta, content 보존을 확인합니다.
+    /// - 사전 조건: visible request lock이 processing 중이고 streaming draft와 chunk count는 비어 있습니다.
+    /// - 기대 결과: non-empty matched delta만 content와 revision을 진행시키고 나머지 event는 projection을 변경하지 않습니다.
+    func testShowRequestProcessingStateProjectsWaitingAndCountsOnlyAcceptedChunks() async throws {
+        let rows = makeCatalogRows()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114001"))
+        let requestID = AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224001"))
+        let runID = AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334001"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            model: rows[0].handle,
+            selectedRow: rows[0],
+            selectedThinking: .effort(.high),
+        )
+        let request = AiChatRequest(context: context, messages: [])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let fixedMs: Int64 = 1_700_000_004_001
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question")],
+            catalogRows: rows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: rows[0].handle,
+            executionPhase: .processing(lock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+        }
+
+        let waiting = try XCTUnwrap(store.state.streamingAssistantDisplayModel)
+        XCTAssertEqual(waiting.requestID, requestID)
+        XCTAssertNil(waiting.content)
+        XCTAssertEqual(waiting.acceptedChunkRevision, 0)
+
+        await store.send(.executionEvent(.delta(context: context, text: "")))
+        await store.send(.executionEvent(.delta(context: context, text: "  \n")))
+
+        let staleContext = makeRequestContext(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: AiChatRunID(rawValue: makeUUID("44444444-4444-4444-4444-444444444001")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let unmatchedContext = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("55555555-5555-5555-5555-555555554001")),
+            runID: runID,
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        await store.send(.executionEvent(.delta(context: staleContext, text: "stale")))
+        await store.send(.executionEvent(.delta(context: unmatchedContext, text: "unmatched")))
+
+        let firstAcceptedLock = lock.recordingDelta(at: fixedMs)
+        await store.send(.executionEvent(.delta(context: context, text: " Hel "))) { state in
+            state.streamingAssistantDraft = " Hel "
+            state.executionPhase = .processing(firstAcceptedLock)
+            state.transcriptAutoScrollVersion = 1
+        }
+        let secondAcceptedLock = firstAcceptedLock.recordingDelta(at: fixedMs)
+        await store.send(.executionEvent(.delta(context: context, text: "lo"))) { state in
+            state.streamingAssistantDraft = " Hel lo"
+            state.executionPhase = .processing(secondAcceptedLock)
+            state.transcriptAutoScrollVersion = 2
+        }
+
+        let streaming = try XCTUnwrap(store.state.streamingAssistantDisplayModel)
+        XCTAssertEqual(streaming.requestID, requestID)
+        XCTAssertEqual(streaming.content, " Hel lo")
+        XCTAssertEqual(streaming.acceptedChunkRevision, 2)
+        XCTAssertEqual(store.state.executionPhase.lock?.observabilitySummary.chunkCount, 2)
+    }
+
+    /// CBW-001-show_request_processing_state: accepted chunk는 assistant 본문만 짧게 fade-in한다.
+    /// Header와 card layout을 고정한 채 Markdown content transition만 revision에 반응하고 Reduce Motion을 우회하는지 검증합니다.
+    /// - 검증 내용: opacity content transition, 0.15초 ease-in, revision key, Reduce Motion nil animation을 확인합니다.
+    /// - 사전 조건: streaming display model은 acceptedChunkRevision을 제공하고 conversation surface가 이를 렌더링합니다.
+    /// - 기대 결과: 본문만 cross-fade하며 whole-card opacity state나 비동기 fade task는 생성되지 않습니다.
+    func testShowRequestProcessingStateFadesAcceptedChunkBodyAndRespectsReduceMotion() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let cardStart = try XCTUnwrap(source.range(of: "private struct AiChatAssistantCard: View"))
+        let waitingStart = try XCTUnwrap(source.range(of: "private struct AiChatWaitingIndicator: View"))
+        let cardSource = String(source[cardStart.lowerBound ..< waitingStart.lowerBound])
+        let bodyStart = try XCTUnwrap(cardSource.range(of: "    @ViewBuilder private var bodyContentView"))
+        let failureStart = try XCTUnwrap(cardSource.range(of: "    private func failureView"))
+        let bodySource = String(cardSource[bodyStart.lowerBound ..< failureStart.lowerBound])
+        let cardRootAndHeader = String(cardSource[..<bodyStart.lowerBound])
+        let fadeContracts = [
+            ".contentTransition(.opacity)",
+            "reduceMotion ? nil : .easeIn(duration: AiChatAssistantBodyPresentation.chunkFadeDuration)",
+            "value: acceptedChunkRevision",
+        ]
+        for contract in fadeContracts {
+            XCTAssertTrue(bodySource.contains(contract), "Missing body chunk fade contract: \(contract)")
+            XCTAssertFalse(cardRootAndHeader.contains(contract), "Unexpected card/header fade contract: \(contract)")
+        }
+        XCTAssertEqual(AiChatAssistantBodyPresentation.chunkFadeDuration, 0.15)
+        let forbiddenWholeCardContracts = [
+            "@State private var responseOpacity",
+            "@State private var fadeTask",
+            ".opacity(responseOpacity)",
+            "applyChunkFade()",
+        ]
+        for contract in forbiddenWholeCardContracts {
+            XCTAssertFalse(cardSource.contains(contract), "Unexpected whole-card fade contract: \(contract)")
+        }
+        XCTAssertTrue(source.contains("acceptedChunkRevision: streamingAssistant.acceptedChunkRevision"))
+    }
+
+    /// CBW-001-show_request_processing_state: composer context는 nonempty locked/live section만 투영한다.
+    /// 처리 중 context 표시가 request lock과 다음 turn 편집 값을 합치지 않고 compact row 가시성만 결정하는지 검증합니다.
+    /// - 검증 내용: both empty, locked only, next only, both nonempty 조합의 section kind, label, editable projection을 확인합니다.
+    /// - 사전 조건: immutable locked/current-response section과 live/next-message section display model을 사용합니다.
+    /// - 기대 결과: 빈 section은 layout owner가 없고 locked는 read-only, next는 editable 상태로만 투영됩니다.
+    func testShowRequestProcessingStateProjectsOnlyNonemptyComposerContextSections() {
+        let emptyLocked = AiChatRequestContextSectionDisplayModel(
+            source: .locked,
+            currentContext: nil,
+            addedAttachments: [],
+        )
+        let emptyNext = AiChatRequestContextSectionDisplayModel(
+            source: .draft,
+            currentContext: nil,
+            addedAttachments: [],
+        )
+        let locked = AiChatRequestContextSectionDisplayModel(
+            source: .locked,
+            currentContext: AiChatCurrentContextChipDisplayModel(title: "Locked.md", detail: nil),
+            addedAttachments: [],
+        )
+        let next = AiChatRequestContextSectionDisplayModel(
+            source: .draft,
+            currentContext: nil,
+            addedAttachments: [AiChatAddedAttachmentChipDisplayModel(
+                attachmentID: AiChatAttachmentID(rawValue: "next"),
+                title: "Next.md",
+                statusLabel: "Included",
+                statusDetail: "Included as text",
+                isRemovable: true,
+            )],
+        )
+
+        let bothEmpty = AiChatRequestContextRowPresentation(
+            currentResponse: emptyLocked,
+            nextMessage: emptyNext,
+            isNextMessageEditable: true,
+        )
+        let lockedOnly = AiChatRequestContextRowPresentation(
+            currentResponse: locked,
+            nextMessage: emptyNext,
+            isNextMessageEditable: true,
+        )
+        let nextOnly = AiChatRequestContextRowPresentation(
+            currentResponse: emptyLocked,
+            nextMessage: next,
+            isNextMessageEditable: true,
+        )
+        let bothNonempty = AiChatRequestContextRowPresentation(
+            currentResponse: locked,
+            nextMessage: next,
+            isNextMessageEditable: true,
+        )
+
+        XCTAssertTrue(bothEmpty.sections.isEmpty)
+        XCTAssertEqual(lockedOnly.sections.map(\.kind), [.currentResponse])
+        XCTAssertEqual(lockedOnly.sections.map(\.label), ["Current response context"])
+        XCTAssertEqual(lockedOnly.sections.map(\.isEditable), [false])
+        XCTAssertEqual(nextOnly.sections.map(\.kind), [.nextMessage])
+        XCTAssertEqual(nextOnly.sections.map(\.label), ["Next message context"])
+        XCTAssertEqual(nextOnly.sections.map(\.isEditable), [true])
+        XCTAssertEqual(bothNonempty.sections.map(\.kind), [.currentResponse, .nextMessage])
+        XCTAssertEqual(bothNonempty.sections.map(\.isEditable), [false, true])
+        XCTAssertEqual(lockedOnly.sections.first?.section, locked)
+        XCTAssertEqual(nextOnly.sections.first?.section, next)
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp는 calendar day와 시간 경계 우선순위로 표시한다.
+    /// 사용자가 메시지 metadata를 확인할 때 locale과 time zone이 고정된 입력에서 날짜·상대 시간 정책이 유지되는지 검증합니다.
+    /// - 검증 내용: exact/future/59초, 60초, 정확히 1시간, 자정 교차의 nonempty localized time을 확인합니다.
+    ///   같은 해, 다른 해, nil 경계도 함께 확인합니다.
+    /// - 사전 조건: en_US_POSIX locale과 GMT에서 2026-07-24의 고정 현재 시각을 사용합니다.
+    /// - 기대 결과: 같은 날만 minute-relative 표현을 사용합니다.
+    ///   다른 calendar day는 플랫폼별 날짜 단어와 무관하게 dateTime과 localized time을 표시합니다.
+    func testShowRequestProcessingStateFormatsTranscriptTimestampsByCalendarDay() throws {
+        let locale = Locale(identifier: "en_US_POSIX")
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        calendar.timeZone = timeZone
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 24,
+            hour: 12,
+        )))
+        let sameYear = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 20,
+            hour: 15,
+            minute: 4,
+        )))
+        let differentYear = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2025,
+            month: 12,
+            day: 31,
+            hour: 8,
+            minute: 30,
+        )))
+        let milliseconds: (Date) -> Int64 = { Int64($0.timeIntervalSince1970 * 1000) }
+        let presentation = AiChatTranscriptPresentation(
+            messages: [
+                AiChatMessage(role: .user, content: "Exact", createdAtMs: milliseconds(now)),
+                AiChatMessage(
+                    role: .assistant,
+                    content: "Future",
+                    createdAtMs: milliseconds(now.addingTimeInterval(1)),
+                ),
+                AiChatMessage(
+                    role: .user,
+                    content: "59 seconds",
+                    createdAtMs: milliseconds(now.addingTimeInterval(-59)),
+                ),
+                AiChatMessage(
+                    role: .assistant,
+                    content: "60 seconds",
+                    createdAtMs: milliseconds(now.addingTimeInterval(-60)),
+                ),
+                AiChatMessage(
+                    role: .user,
+                    content: "Exact hour",
+                    createdAtMs: milliseconds(now.addingTimeInterval(-3600)),
+                ),
+                AiChatMessage(role: .assistant, content: "Same year", createdAtMs: milliseconds(sameYear)),
+                AiChatMessage(role: .user, content: "Different year", createdAtMs: milliseconds(differentYear)),
+                AiChatMessage(role: .assistant, content: "Legacy"),
+            ],
+            now: now,
+            locale: locale,
+            timeZone: timeZone,
+        )
+
+        XCTAssertEqual(
+            presentation.rows.map(\.timestampLabel),
+            [
+                "Just now",
+                "Just now",
+                "Just now",
+                "1 minute ago",
+                "11:00 AM",
+                "Jul 20 at 3:04 PM",
+                "Dec 31, 2025 at 8:30 AM",
+                nil,
+            ],
+        )
+        XCTAssertEqual(
+            presentation.rows.map(\.timestampStyle),
+            [.relative, .relative, .relative, .relative, .shortTime, .dateTime, .dateTime, nil],
+        )
+        XCTAssertEqual(presentation.rows.map(\.accessibilityTimestampLabel), presentation.rows.map(\.timestampLabel))
+
+        let crossMidnightNow = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 24,
+            minute: 0,
+            second: 30,
+        )))
+        let crossMidnight = AiChatTranscriptPresentation(
+            messages: [AiChatMessage(
+                role: .user,
+                content: "Recent yesterday",
+                createdAtMs: milliseconds(crossMidnightNow.addingTimeInterval(-45)),
+            )],
+            now: crossMidnightNow,
+            locale: locale,
+            timeZone: timeZone,
+        )
+        let crossMidnightLabel = try XCTUnwrap(crossMidnight.rows[0].timestampLabel)
+        XCTAssertEqual(crossMidnight.rows[0].timestampStyle, .dateTime)
+        XCTAssertFalse(crossMidnightLabel.isEmpty)
+        XCTAssertTrue(crossMidnightLabel.contains("11:59"))
+        XCTAssertFalse(crossMidnightLabel.contains("minute ago"))
+        XCTAssertFalse(crossMidnightLabel.contains("minutes ago"))
+        XCTAssertNotEqual(crossMidnightLabel, presentation.rows[3].timestampLabel)
+    }
+
+    /// CBW-001-show_request_processing_state: 공개된 timestamp는 흐르는 현재 시각으로 다시 계산한다.
+    /// hover 또는 focus가 유지되는 동안 초기 Just now 표현이 stale 상태로 남지 않는 갱신 경계를 검증합니다.
+    /// - 검증 내용: 동일 row의 timestamp label을 초기 시각과 60초 뒤 시각으로 각각 계산합니다.
+    /// - 사전 조건: en_US_POSIX locale과 GMT에서 현재 시각에 생성된 user message를 사용합니다.
+    /// - 기대 결과: 초기 label은 Just now이고 60초 뒤 refresh label은 1 minute ago입니다.
+    func testShowRequestProcessingStateRefreshesDisclosedTranscriptTimestamp() throws {
+        let locale = Locale(identifier: "en_US_POSIX")
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let row = try XCTUnwrap(AiChatTranscriptPresentation(
+            messages: [AiChatMessage(role: .user, content: "Current", createdAtMs: 1_800_000_000_000)],
+            now: now,
+            locale: locale,
+            timeZone: timeZone,
+        ).rows.first)
+
+        XCTAssertEqual(row.timestampLabel, "Just now")
+        XCTAssertEqual(
+            AiChatTranscriptPresentation.timestampPresentation(
+                createdAtMs: row.message.createdAtMs,
+                now: now.addingTimeInterval(60),
+                locale: locale,
+                timeZone: timeZone,
+            )?.label,
+            "1 minute ago",
+        )
+    }
+
+    /// CBW-001-show_request_processing_state: message hover와 Clock 상호작용은 timestamp 노출 책임을 분리한다.
+    /// message hover는 Clock만 드러내고 Clock hover/focus만 즉시 custom tooltip을 여는 상태 행렬을 검증합니다.
+    /// - 검증 내용: rest, Clock hover, Clock focus, metadata 부재의 tooltip 결과를 확인합니다.
+    /// - 사전 조건: message hover는 tooltip 입력에서 제외하고 timestamp metadata 유무를 구분합니다.
+    /// - 기대 결과: rest와 metadata 부재는 닫히고 Clock hover/focus 중 하나가 있으면 tooltip이 열립니다.
+    func testShowRequestProcessingStateSeparatesMessageAndClockTimestampInteractions() {
+        XCTAssertFalse(AiChatTimestampAffordancePresentation.presentsTooltip(
+            hasTimestampMetadata: true, isClockHovered: false, isClockFocused: false,
+        ))
+        let clockInteractions = [
+            AiChatTimestampAffordancePresentation.presentsTooltip(
+                hasTimestampMetadata: true, isClockHovered: true, isClockFocused: false,
+            ),
+            AiChatTimestampAffordancePresentation.presentsTooltip(
+                hasTimestampMetadata: true, isClockHovered: false, isClockFocused: true,
+            ),
+        ]
+        XCTAssertEqual(clockInteractions, [true, true])
+        XCTAssertFalse(AiChatTimestampAffordancePresentation.presentsTooltip(
+            hasTimestampMetadata: false, isClockHovered: true, isClockFocused: true,
+        ))
+    }
+
+    /// CBW-001-show_request_processing_state: hover timestamp는 다른 행의 focus timestamp보다 우선한다.
+    /// transcript 순서와 관계없이 포인터 아래 Clock의 tooltip이 선택되는 우선순위를 검증합니다.
+    /// - 검증 내용: focus 다음 hover와 hover 다음 focus의 양방향 경쟁 상태를 확인합니다.
+    /// - 사전 조건: 서로 다른 행에서 focus와 hover anchor가 동시에 발행됩니다.
+    /// - 기대 결과: hover는 focus를 대체하고 focus는 hover를 대체하지 않습니다.
+    func testShowRequestProcessingStatePrefersHoveredTimestampAcrossTranscriptOrder() {
+        XCTAssertTrue(AiChatTimestampTooltipTrigger.hover.outranks(.focus))
+        XCTAssertFalse(AiChatTimestampTooltipTrigger.focus.outranks(.hover))
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp는 message-owned Clock과 in-surface tooltip으로 투영한다.
+    /// role별 안전 영역의 stable overlay가 기존 localized timestamp를 custom tooltip에 그대로 제공하는지 검증합니다.
+    /// - 검증 내용: user/assistant placement, control 크기, persistent gutter와 tooltip 최대 안전 폭을 확인합니다.
+    /// - 사전 조건: en_US_POSIX locale과 GMT에서 localized timestamp label을 생성한 user/assistant row를 사용합니다.
+    /// - 기대 결과: user는 leading gutter, assistant는 top-trailing corner를 사용하고 tooltip은 기존 label과 같습니다.
+    func testShowRequestProcessingStateUsesMessageOwnedTimestampClockAffordance() throws {
+        let locale = Locale(identifier: "en_US_POSIX")
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let localizedLabel = try XCTUnwrap(AiChatTranscriptPresentation.timestampPresentation(
+            createdAtMs: 1_799_913_600_000,
+            now: now,
+            locale: locale,
+            timeZone: timeZone,
+        )?.label)
+
+        let user = AiChatTimestampAffordancePresentation(placement: .userLeadingGutter)
+        let assistant = AiChatTimestampAffordancePresentation(placement: .assistantTopTrailing)
+
+        XCTAssertEqual(user.placement, .userLeadingGutter)
+        XCTAssertEqual(assistant.placement, .assistantTopTrailing)
+        XCTAssertFalse(localizedLabel.isEmpty)
+        XCTAssertEqual(AiChatTimestampAffordancePresentation.controlSize, 24)
+        XCTAssertGreaterThan(AiChatTimestampAffordancePresentation.tooltipMaximumWidth, 180)
+        XCTAssertGreaterThan(AiChatTimestampAffordancePresentation.tooltipHorizontalPadding, 0)
+        XCTAssertGreaterThan(AiChatTimestampAffordancePresentation.tooltipVerticalPadding, 0)
+        XCTAssertLessThanOrEqual(
+            user.placement.horizontalOffset,
+            -AiChatTimestampAffordancePresentation.controlSize,
+        )
+        XCTAssertGreaterThanOrEqual(
+            assistant.placement.horizontalOffset,
+            AiChatTimestampAffordancePresentation.controlSize,
+        )
+        XCTAssertEqual(
+            AiChatTimestampAffordancePresentation.assistantTrailingGutter,
+            AiChatTimestampAffordancePresentation.controlSize + 4,
+        )
+        XCTAssertGreaterThanOrEqual(
+            AiChatTimestampAffordancePresentation.assistantTrailingGutter,
+            assistant.placement.horizontalOffset,
+        )
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp hover panel은 label을 자르지 않고 내용에 맞춰 확장한다.
+    /// 짧은 label은 intrinsic width를 사용하고 긴 label은 viewport 안에서 여러 줄로 확장하는 sizing을 검증합니다.
+    /// - 검증 내용: roomy viewport의 compact size와 constrained viewport의 wrapped height를 비교합니다.
+    /// - 사전 조건: 짧은 localized timestamp와 의도적으로 긴 timestamp label을 사용합니다.
+    /// - 기대 결과: 긴 label은 viewport inset 폭을 사용하고 짧은 label보다 높은 panel을 생성합니다.
+    func testShowRequestProcessingStateSizesTimestampHoverPanelWithoutTruncation() {
+        let compact = AiChatTimestampTooltipSizing.resolve(
+            label: "Aug 1 at 5:28 PM",
+            availableWidth: 500,
+        )
+        let wrapped = AiChatTimestampTooltipSizing.resolve(
+            label: String(repeating: "Long localized timestamp ", count: 4),
+            availableWidth: 180,
+        )
+
+        XCTAssertLessThan(compact.width, AiChatTimestampAffordancePresentation.tooltipMaximumWidth)
+        XCTAssertEqual(wrapped.width, 172)
+        XCTAssertGreaterThan(wrapped.height, compact.height)
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp renderer는 tail truncation 대신 multiline menu panel을 사용한다.
+    /// production source가 고정 한 줄 capsule로 회귀하지 않는지 검증합니다.
+    /// - 검증 내용: renderer 범위의 multiline, rounded panel과 truncation 부재를 확인합니다.
+    /// - 사전 조건: AiChatView가 timestamp hover panel renderer를 소유합니다.
+    /// - 기대 결과: lineLimit은 nil이고 tail truncation과 Capsule renderer는 없습니다.
+    func testShowRequestProcessingStateRendersTimestampHoverPanelWithoutTailTruncation() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerFeaturesAiChat/Ui/AiChatView.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let rendererStart = try XCTUnwrap(source.range(of: "private struct AiChatTimestampTooltip: View"))
+        let viewStart = try XCTUnwrap(source.range(of: "public struct AiChatView: View"))
+        let renderer = String(source[rendererStart.lowerBound ..< viewStart.lowerBound])
+
+        XCTAssertTrue(renderer.contains(".lineLimit(nil)"))
+        XCTAssertTrue(renderer.contains("RoundedRectangle(cornerRadius: VoyagerDS.Radius.control"))
+        XCTAssertFalse(renderer.contains(".truncationMode("))
+        XCTAssertFalse(renderer.contains("Capsule("))
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp tooltip은 visible ScrollView viewport 안에서 flip한다.
+    /// scroll-converted negative/overflow 좌표에서도 위·아래 fit을 비교하는지 검증합니다.
+    /// - 검증 내용: partially visible top/bottom row와 both-fit above 우선을 확인합니다.
+    /// - 사전 조건: 실제 viewport 좌표계의 message/Clock rect와 24pt high, 180pt wide tooltip을 사용합니다.
+    /// - 기대 결과: fit 가능한 쪽은 message와 교차하지 않고 fallback을 포함한 모든 frame은 viewport 내부에 있습니다.
+    func testShowRequestProcessingStateClampsAndFlipsTimestampTooltipGeometry() {
+        let viewport = CGRect(x: 0, y: 0, width: 320, height: 240)
+        let tooltipSize = CGSize(width: 180, height: 24)
+
+        let bothFitMessage = CGRect(x: 96, y: 100, width: 220, height: 40)
+        let bothFit = AiChatTimestampTooltipGeometry.resolve(
+            viewportBounds: viewport,
+            messageBounds: bothFitMessage,
+            clockBounds: CGRect(x: 68, y: 104, width: 24, height: 24),
+            preferredSize: tooltipSize,
+        )
+        XCTAssertEqual(bothFit.verticalPlacement, .above)
+        XCTAssertEqual(bothFit.frame.minX, 4)
+        XCTAssertEqual(bothFit.frame.maxY, bothFitMessage.minY - 4)
+        XCTAssertFalse(bothFit.frame.intersects(bothFitMessage))
+
+        let partiallyVisibleTopMessage = CGRect(x: 0, y: -20, width: 288, height: 60)
+        let partiallyVisibleTop = AiChatTimestampTooltipGeometry.resolve(
+            viewportBounds: viewport,
+            messageBounds: partiallyVisibleTopMessage,
+            clockBounds: CGRect(x: 292, y: -16, width: 24, height: 24),
+            preferredSize: tooltipSize,
+        )
+        XCTAssertEqual(partiallyVisibleTop.verticalPlacement, .below)
+        XCTAssertEqual(partiallyVisibleTop.frame.maxX, viewport.maxX - 4)
+        XCTAssertEqual(partiallyVisibleTop.frame.minY, partiallyVisibleTopMessage.maxY + 4)
+        XCTAssertFalse(partiallyVisibleTop.frame.intersects(partiallyVisibleTopMessage))
+
+        let partiallyVisibleBottomMessage = CGRect(x: 96, y: 200, width: 220, height: 70)
+        let partiallyVisibleBottom = AiChatTimestampTooltipGeometry.resolve(
+            viewportBounds: viewport,
+            messageBounds: partiallyVisibleBottomMessage,
+            clockBounds: CGRect(x: 68, y: 204, width: 24, height: 24),
+            preferredSize: tooltipSize,
+        )
+        XCTAssertEqual(partiallyVisibleBottom.verticalPlacement, .above)
+        XCTAssertEqual(partiallyVisibleBottom.frame.maxY, partiallyVisibleBottomMessage.minY - 4)
+        XCTAssertFalse(partiallyVisibleBottom.frame.intersects(partiallyVisibleBottomMessage))
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp tooltip은 좁거나 제한된 viewport 안에서 clamp한다.
+    /// - 검증 내용: narrow width와 neither-fit fallback이 full frame을 viewport에 유지하는지 확인합니다.
+    /// - 사전 조건: tooltip보다 좁거나 tooltip의 위·아래 공간이 모두 부족한 viewport를 사용합니다.
+    /// - 기대 결과: tooltip frame은 viewport의 4pt inset 안에 유지됩니다.
+    func testShowRequestProcessingStateClampsTimestampTooltipInConstrainedViewport() {
+        let tooltipSize = CGSize(width: 180, height: 24)
+        let narrowViewport = CGRect(x: 0, y: 0, width: 96, height: 240)
+        let narrow = AiChatTimestampTooltipGeometry.resolve(
+            viewportBounds: narrowViewport,
+            messageBounds: CGRect(x: 20, y: 80, width: 72, height: 40),
+            clockBounds: CGRect(x: -8, y: 84, width: 24, height: 24),
+            preferredSize: tooltipSize,
+        )
+        XCTAssertEqual(narrow.frame, CGRect(x: 4, y: 52, width: 88, height: 24))
+
+        let constrainedViewport = CGRect(x: 0, y: 0, width: 120, height: 60)
+        let neitherFits = AiChatTimestampTooltipGeometry.resolve(
+            viewportBounds: constrainedViewport,
+            messageBounds: CGRect(x: 20, y: 10, width: 96, height: 25),
+            clockBounds: CGRect(x: 0, y: 12, width: 24, height: 24),
+            preferredSize: tooltipSize,
+        )
+        XCTAssertEqual(neitherFits.verticalPlacement, .below)
+        XCTAssertEqual(neitherFits.frame, CGRect(x: 4, y: 32, width: 112, height: 24))
+        XCTAssertTrue(constrainedViewport.insetBy(dx: 4, dy: 4).contains(neitherFits.frame))
+    }
+
+    /// CBW-001-show_request_processing_state: legacy timestamp popover와 transcript-owned overlay를 제거한다.
+    /// message row 전체 focus/pin 상태가 돌아오지 않고 transcript content가 viewport renderer를 소유하지 않는지 검증합니다.
+    /// - 검증 내용: legacy popover 계약과 transcript 내부 overlay/GeometryReader 부재를 확인합니다.
+    /// - 사전 조건: conversation surface가 message row와 transcript section을 함께 구성합니다.
+    /// - 기대 결과: legacy 계약은 없고 renderer symbol은 AiChatView에만 있습니다.
+    func testShowRequestProcessingStateRemovesLegacyTimestampPopoverAndTranscriptOverlay() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let transcriptStart = try XCTUnwrap(source.range(of: "private struct AiChatTranscriptSection: View"))
+        let rowStart = try XCTUnwrap(source.range(of: "private struct AiChatMessageRow: View"))
+        let assistantCardStart = try XCTUnwrap(source.range(of: "private struct AiChatAssistantCard: View"))
+        let rowSource = String(source[rowStart.lowerBound ..< assistantCardStart.lowerBound])
+        let removedContracts = [
+            ".focusable(row.hasTimestampMetadata)",
+            ".focused($isMetadataFocused)",
+            "@FocusState private var isMetadataFocused: Bool",
+            ".accessibilityHidden(!shouldRevealTimestampControl)",
+            ".popover(",
+            "@State private var isTimestampPopoverPinned",
+            "isTimestampPopoverPinned.toggle()",
+            "timestampPopoverBinding",
+            "Binding<Bool>",
+            "shouldPresentTimestampPopover",
+            "isPinned:",
+            ".overlay(alignment: .trailing)",
+            ".offset(x: -(AiChatTimestampAffordancePresentation.controlSize + 4))",
+        ]
+        for removedContract in removedContracts {
+            XCTAssertFalse(rowSource.contains(removedContract), "Unexpected timestamp contract: \(removedContract)")
+        }
+
+        let transcriptSource = String(source[transcriptStart.lowerBound ..< rowStart.lowerBound])
+        XCTAssertFalse(transcriptSource.contains(".overlayPreferenceValue("))
+        XCTAssertFalse(transcriptSource.contains("GeometryReader"))
+        XCTAssertFalse(source.contains("struct AiChatTimestampTooltipGeometry"))
+        XCTAssertFalse(source.contains("private struct AiChatTimestampTooltip: View"))
+    }
+
+    /// CBW-001-show_request_processing_state: Clock interaction은 message flow 밖에서 anchor와 접근성을 제공한다.
+    /// hover/focus disclosure가 row layout을 바꾸지 않고 single VoiceOver timestamp source를 유지하는지 검증합니다.
+    /// - 검증 내용: Clock state, anchor 발행, timeline 갱신과 accessibility 계약을 확인합니다.
+    /// - 사전 조건: message row가 timestamp metadata와 role별 placement를 가집니다.
+    /// - 기대 결과: Clock만 focus/hover를 소유하고 row accessibilityValue는 한 번만 존재합니다.
+    func testShowRequestProcessingStateKeepsTimestampClockInteractionOutOfMessageFlow() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let contracts = [
+            "Spacer(minLength: 16)",
+            "timestampControlOverlay(",
+            "@State private var isMessageHovered = false",
+            "@State private var isTimestampControlHovered = false",
+            "@FocusState private var isTimestampControlFocused: Bool",
+            "Image(systemName: \"clock\")",
+            ".focusable()",
+            ".focused($isTimestampControlFocused)",
+            ".onHover { isTimestampControlHovered = $0 }",
+            ".opacity(shouldRevealTimestampControl ? 1 : 0)",
+            ".allowsHitTesting(shouldRevealTimestampControl)",
+            ".anchorPreference(",
+            ".transformAnchorPreference(",
+            "trigger: isTimestampControlHovered ? .hover : .focus,",
+            "row.showsTimestampAffordance && (isMessageHovered || shouldPresentTimestampTooltip)",
+            "hasTimestampMetadata && (isClockHovered || isClockFocused)",
+            "TimelineView(.animation(minimumInterval: 1, paused: !shouldPresentTimestampTooltip))",
+            ".modifier(AiChatTimestampAccessibilityValue(label: timestampLabel))",
+            "content.accessibilityValue(\"Sent \\(label)\")",
+            ".offset(x: placement.horizontalOffset, y: 4)",
+            ".padding(.trailing, AiChatTimestampAffordancePresentation.assistantTrailingGutter)",
+        ]
+        for contract in contracts {
+            XCTAssertTrue(source.contains(contract), "Missing conversation contract: \(contract)")
+        }
+
+        let controlStart = try XCTUnwrap(source.range(of: "    private func timestampControlOverlay("))
+        let stateStart = try XCTUnwrap(source.range(of: "    private var shouldRevealTimestampControl"))
+        let controlSource = String(source[controlStart.lowerBound ..< stateStart.lowerBound])
+        XCTAssertFalse(controlSource.contains("Button"))
+        XCTAssertFalse(controlSource.contains("action:"))
+        XCTAssertTrue(controlSource.contains("if let timestampLabel, row.showsTimestampAffordance"))
+        XCTAssertTrue(controlSource.contains(".anchorPreference("))
+        XCTAssertTrue(controlSource.contains(".accessibilityHidden(true)"))
+        XCTAssertFalse(controlSource.contains(".accessibilityLabel("))
+        XCTAssertFalse(controlSource.contains(".accessibilityHint("))
+        let accessibilityContract = "content.accessibilityValue(\"Sent \\(label)\")"
+        XCTAssertEqual(source.components(separatedBy: accessibilityContract).count - 1, 1)
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp hover panel viewport는 visible ScrollView가 소유한다.
+    /// geometry와 sizing이 transcript content가 아닌 ScrollView modifier에서 적용되는지 검증합니다.
+    /// - 검증 내용: renderer contracts와 ScrollView modifier ordering을 확인합니다.
+    /// - 사전 조건: AiChatView가 transcript ScrollView와 hover panel renderer를 구성합니다.
+    /// - 기대 결과: viewport overlay는 ScrollView 직후, lifecycle modifier 이전에 있습니다.
+    func testShowRequestProcessingStateOwnsTimestampHoverPanelInVisibleScrollViewport() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui/AiChatView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let scrollViewportOverlayContract = "        }\n"
+            + "        .overlayPreferenceValue(AiChatTimestampTooltipAnchorPreferenceKey.self)"
+        let contracts = [
+            "struct AiChatTimestampTooltipGeometry",
+            "struct AiChatTimestampTooltipAnchor",
+            "struct AiChatTimestampTooltipAnchorPreferenceKey",
+            "guard let candidate = nextValue() else { return }",
+            "candidate.trigger.outranks(value?.trigger)",
+            "private struct AiChatTimestampTooltip: View",
+            scrollViewportOverlayContract,
+            "GeometryReader { proxy in",
+            "viewportBounds: CGRect(origin: .zero, size: proxy.size)",
+            "messageBounds: proxy[messageBounds]",
+            "clockBounds: proxy[anchor.clockBounds]",
+            "AiChatTimestampTooltipSizing.resolve(",
+            "availableWidth: proxy.size.width",
+            ".position(x: geometry.frame.midX, y: geometry.frame.midY)",
+            ".allowsHitTesting(false)",
+            ".accessibilityHidden(true)",
+        ]
+        for contract in contracts {
+            XCTAssertTrue(source.contains(contract), "Missing viewport contract: \(contract)")
+        }
+
+        let transcriptViewStart = try XCTUnwrap(source.range(of: "    private func transcriptView("))
+        let scrollViewStart = try XCTUnwrap(source.range(
+            of: "        ScrollView {",
+            range: transcriptViewStart.lowerBound ..< source.endIndex,
+        ))
+        let viewportOverlay = try XCTUnwrap(source.range(
+            of: "        .overlayPreferenceValue(AiChatTimestampTooltipAnchorPreferenceKey.self)",
+            range: scrollViewStart.lowerBound ..< source.endIndex,
+        ))
+        let scrollOnAppear = try XCTUnwrap(source.range(
+            of: "        .onAppear {",
+            range: viewportOverlay.lowerBound ..< source.endIndex,
+        ))
+        XCTAssertLessThan(scrollViewStart.lowerBound, viewportOverlay.lowerBound)
+        XCTAssertLessThan(viewportOverlay.lowerBound, scrollOnAppear.lowerBound)
+    }
+
+    /// CBW-001-show_request_processing_state: timestamp 중복 제거는 실제 인접 행과 정확한 60초 경계를 사용한다.
+    /// 같은 role의 연속 행이 숨겨진 행을 포함해 이어지더라도 persistence와 무관한 presentation 결과만 억제되는지 검증합니다.
+    /// - 검증 내용: 59,999ms, 60,000ms, role 변경, nil, 역순, adjacent chain, identity, hover/focus disclosure를 확인합니다.
+    /// - 사전 조건: timestamp 경계를 순서대로 포함한 user/assistant transcript를 사용합니다.
+    /// - 기대 결과: 같은 role의 순방향 60초 미만 인접 행만 시각 label이 억제되고 accessibility label은 유지됩니다.
+    func testShowRequestProcessingStateDeduplicatesOnlyEligibleAdjacentTranscriptRows() throws {
+        let messages = [
+            AiChatMessage(role: .assistant, content: "First", createdAtMs: 0),
+            AiChatMessage(role: .assistant, content: "Hidden one", createdAtMs: 59999),
+            AiChatMessage(role: .assistant, content: "Hidden chain", createdAtMs: 119_998),
+            AiChatMessage(role: .assistant, content: "Exact boundary", createdAtMs: 179_998),
+            AiChatMessage(role: .user, content: "Role change", createdAtMs: 180_000),
+            AiChatMessage(role: .user, content: "Legacy nil"),
+            AiChatMessage(role: .user, content: "After nil", createdAtMs: 180_001),
+            AiChatMessage(role: .user, content: "Reverse", createdAtMs: 170_000),
+        ]
+        let presentation = try AiChatTranscriptPresentation(
+            messages: messages,
+            now: Date(timeIntervalSince1970: 10000),
+            locale: Locale(identifier: "en_US_POSIX"),
+            timeZone: XCTUnwrap(TimeZone(secondsFromGMT: 0)),
+        )
+
+        XCTAssertEqual(
+            presentation.rows.map(\.isTimestampVisuallySuppressed),
+            [false, true, true, false, false, false, false, false],
+        )
+        XCTAssertEqual(
+            presentation.rows.map(\.showsTimestampAffordance),
+            [true, false, false, true, true, false, true, true],
+        )
+        let suppressedRow = presentation.rows[1]
+        XCTAssertTrue(suppressedRow.hasTimestampMetadata)
+        XCTAssertFalse(suppressedRow.showsTimestampAffordance)
+        XCTAssertNotNil(suppressedRow.accessibilityTimestampLabel)
+        XCTAssertNotNil(presentation.rows[2].accessibilityTimestampLabel)
+        XCTAssertNil(presentation.rows[5].accessibilityTimestampLabel)
+        XCTAssertFalse(presentation.rows[5].hasTimestampMetadata)
+        XCTAssertEqual(
+            presentation.rows[2].id,
+            AiChatTranscriptRowID(index: 2, role: .assistant, createdAtMs: 119_998),
+        )
+    }
+
+    /// CBW-001-show_request_processing_state: assistant 응답은 장식 icon 없이 신뢰 가능한 metadata만 표시한다.
+    /// 과거 model을 추정하지 않고 본문 접근성을 유지하면서 active model/thinking/status header 계약을 보존하는지 검증합니다.
+    /// - 검증 내용: completed historical의 header 부재, full header, 접근성 role label, icon source 부재를 확인합니다.
+    /// - 사전 조건: historical 완료 응답과 streaming/processing/partial-failure가 공유하는 두 header 표현을 사용합니다.
+    /// - 기대 결과: 양쪽 모두 장식 icon이 없고 historical은 role 접근성, full은 model metadata를 유지합니다.
+    func testShowRequestProcessingStateOmitsDecorativeAssistantIcons() throws {
+        XCTAssertFalse(AiChatAssistantHeaderPresentation.completedHistorical.showsVisualHeader)
+        XCTAssertEqual(
+            AiChatAssistantHeaderPresentation.completedHistorical.accessibilityRoleLabel,
+            "Assistant response",
+        )
+        XCTAssertTrue(AiChatAssistantHeaderPresentation.full.showsVisualHeader)
+        XCTAssertNil(AiChatAssistantHeaderPresentation.full.accessibilityRoleLabel)
+
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift",
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let cardStart = try XCTUnwrap(source.range(of: "private struct AiChatAssistantCard: View"))
+        let waitingStart = try XCTUnwrap(source.range(of: "private struct AiChatWaitingIndicator: View"))
+        let cardSource = String(source[cardStart.lowerBound ..< waitingStart.lowerBound])
+        XCTAssertTrue(cardSource.contains("if bodyPresentation.showsInlineHeader"))
+        XCTAssertTrue(cardSource.contains("Text(title)"))
+        XCTAssertTrue(cardSource.contains("thinkingLabel"))
+        XCTAssertTrue(cardSource.contains("bodyContentView"))
+        XCTAssertFalse(cardSource.contains("assistantRoleIcon"))
+        XCTAssertFalse(cardSource.contains("bubble.right"))
+    }
+
+    /// CBW-001-show_request_processing_state: user message는 전용 borderless bubble token을 사용한다.
+    /// Input·overlay token을 재해석하지 않고 더 둥근 user message semantic surface를 일관되게 적용하는지 검증합니다.
+    /// - 검증 내용: shared token 정의, userMessage 함수 범위의 background·radius 참조, border 부재를 확인합니다.
+    /// - 사전 조건: VoyagerDS가 user message bubble의 surface와 radius를 소유합니다.
+    /// - 기대 결과: user message는 20pt continuous radius와 전용 background만 사용하고 stroke를 렌더링하지 않습니다.
+    func testShowRequestProcessingStateUsesDedicatedBorderlessUserMessageBubbleToken() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let conversationURL = packageRoot.appendingPathComponent(
+            "Sources/VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift",
+        )
+        let packagesRoot = packageRoot.deletingLastPathComponent().deletingLastPathComponent()
+        let tokenURL = packagesRoot.appendingPathComponent(
+            "06_Shared/VoyagerShared/Sources/VoyagerShared/Config/VoyagerDS.swift",
+        )
+        let conversation = try String(contentsOf: conversationURL, encoding: .utf8)
+        let tokens = try String(contentsOf: tokenURL, encoding: .utf8)
+        let userStart = try XCTUnwrap(conversation.range(of: "    private func userMessage("))
+        let assistantStart = try XCTUnwrap(conversation.range(of: "    private func assistantMessage("))
+        let userSource = String(conversation[userStart.lowerBound ..< assistantStart.lowerBound])
+
+        XCTAssertTrue(tokens.contains("public static let userMessageBubble: CGFloat = 20"))
+        XCTAssertTrue(tokens.contains("public static func userMessageBubbleBackground"))
+        XCTAssertTrue(userSource.contains("VoyagerDS.Surface.userMessageBubbleBackground(for: colorScheme)"))
+        XCTAssertTrue(userSource.contains("VoyagerDS.Radius.userMessageBubble"))
+        XCTAssertFalse(userSource.contains(".strokeBorder("))
+        XCTAssertFalse(userSource.contains("VoyagerDS.Surface.inputBorder"))
+    }
+
+    /// CBW-001-show_request_processing_state: 대화 표면과 timestamp panel은 기존 VoyagerDS 토큰을 사용한다.
+    /// 상태 카드, code surface, tooltip의 surface·border·radius·shadow가 토큰화되는지 검증합니다.
+    /// - 검증 내용: ConversationSurface와 AiChatView의 토큰 참조 및 기존 하드코딩 surface/radius 제거를 확인합니다.
+    /// - 사전 조건: VoyagerDS에 overlay, input, popover, radius, shadow 토큰이 정의되어 있습니다.
+    /// - 기대 결과: 새 토큰 없이 named conversation surface가 기존 semantic token만 참조합니다.
+    func testShowRequestProcessingStateUsesVoyagerDSTokensForConversationSurfaces() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let uiRoot = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui")
+        let conversation = try String(
+            contentsOf: uiRoot.appendingPathComponent("AiChatConversationSurface.swift"),
+            encoding: .utf8,
+        )
+        let markdown = try String(
+            contentsOf: uiRoot.appendingPathComponent("AiChatAssistantMarkdownText.swift"),
+            encoding: .utf8,
+        )
+        let view = try String(contentsOf: uiRoot.appendingPathComponent("AiChatView.swift"), encoding: .utf8)
+
+        let conversationContracts = [
+            "VoyagerDS.Surface.overlayBackground(for: colorScheme)",
+            "VoyagerDS.Surface.overlayBorder",
+            "VoyagerDS.Surface.inputBackground(for: colorScheme)",
+            "VoyagerDS.Surface.inputBorder(for: colorScheme)",
+            "VoyagerDS.Radius.overlayCard",
+        ]
+        for contract in conversationContracts {
+            XCTAssertTrue(conversation.contains(contract), "Missing conversation token: \(contract)")
+        }
+        for legacy in ["Color(nsColor: .controlBackgroundColor)", "cornerRadius: 16", "cornerRadius: 18"] {
+            XCTAssertFalse(conversation.contains(legacy), "Unexpected conversation literal: \(legacy)")
+        }
+        XCTAssertTrue(markdown.contains("VoyagerDS.Surface.inputBackground(for: colorScheme)"))
+        XCTAssertTrue(markdown.contains("VoyagerDS.Radius.control"))
+        let tooltipStart = try XCTUnwrap(view.range(of: "private struct AiChatTimestampTooltip: View"))
+        let aiChatViewStart = try XCTUnwrap(view.range(of: "public struct AiChatView: View"))
+        let tooltipSource = String(view[tooltipStart.lowerBound ..< aiChatViewStart.lowerBound])
+        let tooltipContracts = [
+            "VoyagerDS.Surface.popoverBackground(for: colorScheme)",
+            "VoyagerDS.Surface.popoverBorder",
+            "VoyagerDS.Shadow.popoverColor(for: colorScheme)",
+            "VoyagerDS.Shadow.popoverRadius",
+            "VoyagerDS.Shadow.popoverYOffset",
+        ]
+        for contract in tooltipContracts {
+            XCTAssertTrue(tooltipSource.contains(contract), "Missing tooltip token: \(contract)")
+        }
+        XCTAssertFalse(tooltipSource.contains("cornerRadius: 7"))
+    }
+
+    /// CBW-001-show_request_processing_state: compact connection CTA 외곽은 VoyagerDS overlay 토큰을 사용한다.
+    /// 버튼뿐 아니라 ChatPane 대응 container의 background·border·radius가 semantic token을 따르는지 검증합니다.
+    /// - 검증 내용: compactConnectionCTA 함수 범위의 overlay token과 legacy literal 부재를 확인합니다.
+    /// - 사전 조건: provider connection CTA가 AiChatView 내부 compact surface로 렌더링됩니다.
+    /// - 기대 결과: 외곽과 버튼 모두 light/dark mode 대응 VoyagerDS surface를 사용합니다.
+    func testShowRequestProcessingStateUsesVoyagerDSTokensForCompactConnectionCTA() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui/AiChatView.swift")
+        let view = try String(contentsOf: sourceURL, encoding: .utf8)
+        let compactCTAStart = try XCTUnwrap(view.range(of: "    private func compactConnectionCTA(\n        title:"))
+        let restoreStart = try XCTUnwrap(view.range(of: "    private func requestTranscriptScrollOffsetRestore"))
+        let compactCTASource = String(view[compactCTAStart.lowerBound ..< restoreStart.lowerBound])
+        XCTAssertTrue(compactCTASource.contains("VoyagerDS.Radius.overlayCard"))
+        XCTAssertTrue(compactCTASource.contains("VoyagerDS.Surface.overlayBackground(for: colorScheme)"))
+        XCTAssertTrue(compactCTASource.contains("VoyagerDS.Surface.overlayBorder"))
+        XCTAssertFalse(compactCTASource.contains("cornerRadius: 16"))
+        XCTAssertFalse(compactCTASource.contains("Color.primary.opacity"))
+    }
+
+    /// CBW-001-show_request_processing_state: composer와 session surface는 VoyagerDS 토큰을 사용한다.
+    /// develop의 native selector menu와 VOY-635 surface에서 legacy literal이 제거되는지 검증합니다.
+    /// - 검증 내용: input/session semantic token, native model/thinking menu, 금지 literal을 확인합니다.
+    /// - 사전 조건: selector는 custom popover 대신 native Menu를 사용합니다.
+    /// - 기대 결과: composer·session surface는 VoyagerDS 토큰을, selector는 native Menu를 사용합니다.
+    func testShowRequestProcessingStateUsesVoyagerDSTokensForComposerSelectorsAndSessions() throws {
+        struct SourceContract {
+            let file: String
+            let expected: String
+            let forbidden: String
+        }
+
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let uiRoot = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui")
+        let contracts = [
+            SourceContract(
+                file: "AiChatInputBar.swift", expected: "VoyagerDS.Radius.composer", forbidden: "cornerRadius: 18",
+            ),
+            SourceContract(
+                file: "AiChatSelectors.swift",
+                expected: "Menu {",
+                forbidden: "Color.black.opacity(0.16)",
+            ),
+            SourceContract(
+                file: "AiChatSelectors.swift",
+                expected: "Menu {",
+                forbidden: "row.isSelected ? Color.primary.opacity",
+            ),
+            SourceContract(
+                file: "AiChatThinkingSelector.swift",
+                expected: "Menu {",
+                forbidden: "isSelected ? Color.primary.opacity",
+            ),
+            SourceContract(
+                file: "AiChatSessionsView.swift", expected: "VoyagerDS.Radius.control", forbidden: "cornerRadius: 10",
+            ),
+        ]
+        for contract in contracts {
+            let source = try String(
+                contentsOf: uiRoot.appendingPathComponent(contract.file), encoding: .utf8,
+            )
+            XCTAssertTrue(source.contains(contract.expected), "Missing \(contract.file) token: \(contract.expected)")
+            XCTAssertFalse(
+                source.contains(contract.forbidden),
+                "Unexpected \(contract.file) literal: \(contract.forbidden)",
+            )
+        }
+    }
+
+    /// CBW-001-show_request_processing_state: waiting은 processing의 nil 또는 trim-empty content에서만 표시한다.
+    /// 첫 유효 chunk와 terminal failure가 waiting을 즉시 제거하고 Reduce Motion이 정적 표현을 사용하는지 검증합니다.
+    /// - 검증 내용: nil/whitespace/content/terminal/partial failure와 dot cycle projection을 확인합니다.
+    /// - 사전 조건: 같은 assistant body 입력에서 processing, final, failure 조합을 각각 구성합니다.
+    /// - 기대 결과: processing empty만 waiting이고 dot은 .→..→...로 순환하며 Reduce Motion은 항상 ...입니다.
+    func testShowRequestProcessingStateWaitsOnlyForEmptyProcessingContent() {
+        let nilWaiting = AiChatAssistantBodyPresentation(content: nil, isProcessing: true, failure: nil)
+        let whitespaceWaiting = AiChatAssistantBodyPresentation(
+            content: "  \n", isProcessing: true, failure: nil,
+        )
+        let activeBody = AiChatAssistantBodyPresentation(
+            content: "First chunk", isProcessing: true, failure: nil,
+        )
+        let contentlessFailure = AiChatAssistantBodyPresentation(
+            content: nil, isProcessing: false, failure: .network,
+        )
+        let partialFailure = AiChatAssistantBodyPresentation(
+            content: "Partial response", isProcessing: false, failure: .network,
+        )
+
+        XCTAssertEqual(nilWaiting.state, .waiting)
+        XCTAssertTrue(nilWaiting.showsInlineHeader)
+        XCTAssertTrue(nilWaiting.showsWaiting)
+        XCTAssertEqual(whitespaceWaiting.state, .waiting)
+        XCTAssertTrue(whitespaceWaiting.showsWaiting)
+        XCTAssertEqual(activeBody.state, .activeProcessingBody)
+        XCTAssertFalse(activeBody.showsInlineHeader)
+        XCTAssertFalse(activeBody.showsWaiting)
+        XCTAssertEqual(contentlessFailure.state, .terminalContentlessFailure)
+        XCTAssertFalse(contentlessFailure.showsInlineHeader)
+        XCTAssertEqual(partialFailure.state, .partialFailureBody)
+        XCTAssertEqual(partialFailure.content, "Partial response")
+        XCTAssertEqual(
+            (0 ..< 6).map { AiChatAssistantBodyPresentation.waitingText(step: $0, reduceMotion: false) },
+            [".", "..", "...", ".", "..", "..."],
+        )
+        XCTAssertEqual(AiChatAssistantBodyPresentation.waitingText(step: 1, reduceMotion: true), "...")
+    }
+
+    /// CBW-001-show_request_processing_state: model metadata panel은 현재 active body에만 허용한다.
+    /// model-only와 model+thinking label을 정규화하고 failure·historical·request 불일치를 배제하는지 검증합니다.
+    /// - 검증 내용: metadata label 조합과 processing/failure/history/request identity eligibility를 확인합니다.
+    /// - 사전 조건: 두 request identity와 active, partial failure, historical 표시 입력을 구성합니다.
+    /// - 기대 결과: matching active body만 eligible이며 thinking이 없으면 model title만 남습니다.
+    func testShowRequestProcessingStateAllowsMetadataOnlyForMatchingActiveBody() {
+        let currentID = AiChatRequestID(rawValue: makeUUID("11111111-1111-1111-1111-111111114201"))
+        let staleID = AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224201"))
+        let active = AiChatAssistantBodyPresentation(
+            content: "Answer",
+            isProcessing: true,
+            failure: nil,
+            title: "Model",
+            thinkingLabel: "High",
+            requestID: currentID,
+            foregroundRequestID: currentID,
+        )
+        let stale = AiChatAssistantBodyPresentation(
+            content: "Answer",
+            isProcessing: true,
+            failure: nil,
+            title: "Model",
+            thinkingLabel: nil,
+            requestID: staleID,
+            foregroundRequestID: currentID,
+        )
+        let partialFailure = AiChatAssistantBodyPresentation(
+            content: "Partial",
+            isProcessing: false,
+            failure: .network,
+            requestID: currentID,
+            foregroundRequestID: currentID,
+        )
+        let historical = AiChatAssistantBodyPresentation(
+            content: "Done",
+            isProcessing: false,
+            failure: nil,
+            headerPresentation: .completedHistorical,
+        )
+
+        XCTAssertEqual(active.metadataPanelLabel, "Model · High")
+        XCTAssertTrue(active.isMetadataPanelEligible)
+        XCTAssertEqual(stale.metadataPanelLabel, "Model")
+        XCTAssertFalse(stale.isMetadataPanelEligible)
+        XCTAssertFalse(partialFailure.isMetadataPanelEligible)
+        XCTAssertFalse(historical.isMetadataPanelEligible)
+        XCTAssertEqual(historical.state, .historical)
+    }
+
+    /// CBW-001-show_request_processing_state: hover 또는 keyboard focus가 metadata panel을 즉시 표시한다.
+    /// 두 trigger가 독립적으로 동작하고 eligibility 제거 시 panel이 닫히는 순수 표시 결정을 검증합니다.
+    /// - 검증 내용: hover/focus OR 조건과 ineligible reset 결과를 확인합니다.
+    /// - 사전 조건: active body eligibility와 hover/focus Boolean 조합을 사용합니다.
+    /// - 기대 결과: eligible hover 또는 focus만 true이고 identity 교체로 ineligible이면 즉시 false입니다.
+    func testShowRequestProcessingStateTriggersMetadataPanelFromHoverOrFocus() {
+        let presents = AiChatAssistantBodyPresentation.presentsMetadataPanel
+        XCTAssertFalse(presents(true, false, false))
+        XCTAssertTrue(presents(true, true, false))
+        XCTAssertTrue(presents(true, false, true))
+        XCTAssertTrue(presents(true, true, true))
+        XCTAssertFalse(presents(false, true, false))
+        XCTAssertFalse(presents(false, false, true))
+    }
+
+    /// CBW-001-show_request_processing_state: metadata panel geometry는 visible viewport 안에서 flip·clamp한다.
+    /// body의 visible intersection만 기준으로 top/bottom/narrow/oversized/empty 경계를 계산하는지 검증합니다.
+    /// - 검증 내용: vertical placement, 4pt inset, width clamp, oversized intersection, empty rejection을 확인합니다.
+    /// - 사전 조건: 200x120 viewport와 220x40 preferred panel 및 다양한 body frame을 사용합니다.
+    /// - 기대 결과: panel은 viewport를 벗어나지 않고 보이지 않는 body에는 생성되지 않습니다.
+    func testShowRequestProcessingStateClampsMetadataPanelToVisibleViewport() throws {
+        let viewport = CGRect(x: 0, y: 0, width: 200, height: 120)
+        let preferred = CGSize(width: 220, height: 40)
+        let top = try XCTUnwrap(AiChatAssistantMetadataPanelGeometry.resolve(
+            viewportBounds: viewport,
+            bodyBounds: CGRect(x: 10, y: 0, width: 180, height: 20),
+            preferredSize: preferred,
+        ))
+        let bottom = try XCTUnwrap(AiChatAssistantMetadataPanelGeometry.resolve(
+            viewportBounds: viewport,
+            bodyBounds: CGRect(x: 10, y: 100, width: 180, height: 20),
+            preferredSize: preferred,
+        ))
+        let narrow = try XCTUnwrap(AiChatAssistantMetadataPanelGeometry.resolve(
+            viewportBounds: CGRect(x: 0, y: 0, width: 40, height: 120),
+            bodyBounds: CGRect(x: 0, y: 40, width: 80, height: 20),
+            preferredSize: preferred,
+        ))
+        let oversized = try XCTUnwrap(AiChatAssistantMetadataPanelGeometry.resolve(
+            viewportBounds: viewport,
+            bodyBounds: CGRect(x: -20, y: -40, width: 240, height: 220),
+            preferredSize: preferred,
+        ))
+
+        XCTAssertEqual(top.verticalPlacement, .below)
+        XCTAssertEqual(bottom.verticalPlacement, .above)
+        XCTAssertEqual(narrow.frame.minX, 4)
+        XCTAssertLessThanOrEqual(narrow.frame.maxX, 36)
+        XCTAssertEqual(oversized.visibleBodyBounds, viewport)
+        XCTAssertNil(AiChatAssistantMetadataPanelGeometry.resolve(
+            viewportBounds: viewport,
+            bodyBounds: CGRect(x: 300, y: 300, width: 20, height: 20),
+            preferredSize: preferred,
+        ))
+    }
+
+    /// CBW-001-show_request_processing_state: metadata trigger와 panel source contract는 전용 subtree에만 존재한다.
+    /// Markdown interaction을 보존하면서 request 교체 cleanup, anchor 발행, 비상호작용 panel을 정확한 범위에서 검증합니다.
+    /// - 검증 내용: card hover/focus/accessibility/anchor와 panel hit testing/accessibility/motion/native help 부재를 확인합니다.
+    /// - 사전 조건: conversation card와 AiChatView metadata panel source subtree를 분리해 읽습니다.
+    /// - 기대 결과: active card만 trigger를 소유하고 panel은 hit-test와 VoiceOver에서 제외됩니다.
+    func testShowRequestProcessingStateKeepsMetadataPanelCustomAndNoninteractive() throws {
+        let sources = try aiChatMetadataSourceSubtrees()
+        let cardContracts = [
+            ".onHover { isMetadataHovered = bodyPresentation.isMetadataPanelEligible && $0 }",
+            ".focusable(bodyPresentation.isMetadataPanelEligible)",
+            ".focused($isMetadataFocused)",
+            ".onChange(of: requestID)",
+            ".onChange(of: bodyPresentation.isMetadataPanelEligible)",
+            "key: AiChatAssistantMetadataAnchorPreferenceKey.self",
+            ".modifier(AiChatAssistantMetadataAccessibilityValue(label: bodyPresentation.accessibilityMetadataLabel))",
+        ]
+        for contract in cardContracts {
+            XCTAssertTrue(sources.card.contains(contract), "Missing card metadata contract: \(contract)")
+        }
+        XCTAssertFalse(sources.card.contains(".help("))
+        XCTAssertTrue(sources.panel.contains(".allowsHitTesting(false)"))
+        XCTAssertTrue(sources.panel.contains(".accessibilityHidden(true)"))
+        XCTAssertFalse(sources.panel.contains(".help("))
+        XCTAssertFalse(sources.panel.contains(".transition("))
+        XCTAssertFalse(sources.panel.contains(".animation("))
+    }
+
+    /// CBW-001-show_request_processing_state: ScrollView renderer는 현재 request anchor만 deterministic하게 선택한다.
+    /// 동시 stale preference가 있어도 foreground requestID lookup으로 viewport panel이 누출되지 않는지 검증합니다.
+    /// - 검증 내용: requestID-keyed preference reduction, current lookup, visible intersection renderer ownership을 확인합니다.
+    /// - 사전 조건: AiChatView의 anchor preference와 transcript ScrollView source subtree를 읽습니다.
+    /// - 기대 결과: renderer는 anchors[foregroundRequestID]만 사용하고 historical card는 anchor identity를 받지 않습니다.
+    func testShowRequestProcessingStateSelectsOnlyCurrentMetadataAnchorInViewport() throws {
+        let sources = try aiChatMetadataSourceSubtrees()
+        let viewportContracts = [
+            "static let defaultValue: [AiChatRequestID: AiChatAssistantMetadataAnchor] = [:]",
+            "value.merge(nextValue()) { _, candidate in candidate }",
+            ".overlayPreferenceValue(AiChatAssistantMetadataAnchorPreferenceKey.self)",
+            "(state.streamingAssistantDisplayModel?.requestID).flatMap { anchors[$0] }",
+            "bodyBounds: proxy[anchor.bodyBounds]",
+            "if let geometry = AiChatAssistantMetadataPanelGeometry.resolve(",
+        ]
+        for contract in viewportContracts {
+            XCTAssertTrue(sources.viewport.contains(contract), "Missing viewport metadata contract: \(contract)")
+        }
+        XCTAssertTrue(sources.card.contains("requestID: AiChatRequestID?"))
+        XCTAssertTrue(sources.card.contains("foregroundRequestID: AiChatRequestID?"))
+        XCTAssertFalse(sources.historicalCard.contains("requestID:"))
+        XCTAssertFalse(sources.historicalCard.contains("foregroundRequestID:"))
+    }
+
+    /// CBW-001-show_request_processing_state: 현재 보이는 request의 coarse lifecycle만 announcement로 투영한다.
+    /// 화면 밖 request와 delta·selector·timestamp 변화가 lifecycle announcement를 만들지 않는지 검증합니다.
+    /// - 검증 내용: visible session 일치, requestID+phase key, lifecycle message/priority, coarse projection 동등성을 확인합니다.
+    /// - 사전 조건: 현재 session과 다른 request lock으로 시작한 뒤 같은 lock을 visible session에 연결합니다.
+    /// - 기대 결과: offscreen은 nil이고 processing/final/failure/cancel만 고유 key를 가지며 비-lifecycle 변화는 동일 projection입니다.
+    func testShowRequestProcessingStateProjectsOnlyVisibleRequestLifecycleAnnouncements() throws {
+        let rows = makeCatalogRows()
+        let visibleSessionID = AiChatSessionID(
+            rawValue: makeUUID("11111111-1111-1111-1111-111111115001"),
+        )
+        let requestSessionID = AiChatSessionID(
+            rawValue: makeUUID("22222222-2222-2222-2222-222222225001"),
+        )
+        let requestID = AiChatRequestID(
+            rawValue: makeUUID("33333333-3333-3333-3333-333333335001"),
+        )
+        let context = makeRequestContext(
+            sessionID: requestSessionID,
+            requestID: requestID,
+            runID: AiChatRunID(rawValue: makeUUID("44444444-4444-4444-4444-444444445001")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let request = AiChatRequest(context: context, messages: [])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        var state = AiChatFeature.State(
+            sessionID: visibleSessionID,
+            executionPhase: .processing(lock),
+        )
+
+        XCTAssertNil(AiChatLifecycleAnnouncement(state: state))
+
+        state.sessionID = requestSessionID
+        let lifecycleCases: [(
+            phase: AiChatExecutionPhase,
+            expectedPhase: AiChatLifecycleAnnouncementPhase,
+            message: String,
+            priority: AiChatLifecycleAnnouncementPriority,
+        )] = [
+            (.processing(lock), .processing, "Assistant response started.", .medium),
+            (.completed(lock), .final, "Assistant response completed.", .medium),
+            (.failed(lock, .network), .failure, "Assistant response failed.", .high),
+            (.cancelled(lock), .cancel, "Assistant response cancelled.", .medium),
+        ]
+
+        for lifecycleCase in lifecycleCases {
+            state.executionPhase = lifecycleCase.phase
+            let announcement = try XCTUnwrap(AiChatLifecycleAnnouncement(state: state))
+            XCTAssertEqual(announcement.key.sessionID, requestSessionID)
+            XCTAssertEqual(announcement.key.requestID, requestID)
+            XCTAssertEqual(announcement.key.phase, lifecycleCase.expectedPhase)
+            XCTAssertEqual(announcement.message, lifecycleCase.message)
+            XCTAssertEqual(announcement.priority, lifecycleCase.priority)
+        }
+
+        state.executionPhase = .processing(lock)
+        let processing = try XCTUnwrap(AiChatLifecycleAnnouncement(state: state))
+        state.streamingAssistantDraft = "delta"
+        state.selectedModelHandle = rows.last?.handle
+        state.transcriptHistory = [
+            AiChatMessage(role: .user, content: "Question", createdAtMs: 1_700_000_005_001),
+        ]
+        XCTAssertEqual(AiChatLifecycleAnnouncement(state: state), processing)
+    }
+
+    /// CBW-001-show_request_processing_state: mounted stable chat root는 lifecycle announcement를 정확히 한 번씩 전달한다.
+    /// 실제 SwiftUI observer가 centered-empty 전환과 rerender에서 started를 중복하지 않고 sessions에는 발화하지 않는지 검증합니다.
+    /// - 검증 내용: initial, processing, same-processing rerender, completed, sessions 순서의 injected sink post를 확인합니다.
+    /// - 사전 조건: centered content가 있는 chat mode AiChatView를 NSHostingView에 mount하고 내부 sink를 주입합니다.
+    /// - 기대 결과: initial 0회, started 1회, rerender 추가 0회, completed 추가 1회, sessions 추가 0회입니다.
+    func testShowRequestProcessingStatePostsMountedStableRootLifecycleExactlyOnce() async {
+        let wasPerceptionCheckingEnabled = isPerceptionCheckingEnabled
+        isPerceptionCheckingEnabled = false
+        defer { isPerceptionCheckingEnabled = wasPerceptionCheckingEnabled }
+
+        let rows = makeCatalogRows()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111115002"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222225002")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333335002")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let fixture = makeMountedLifecycleAnnouncementFixture(sessionID: sessionID, lock: lock)
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(fixture.recorder.announcements, [])
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.processing))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(fixture.recorder.announcements.map(\.message), ["Assistant response started."])
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.processingRerender))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(fixture.recorder.announcements.map(\.message), ["Assistant response started."])
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.completed))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(
+            fixture.recorder.announcements.map(\.message),
+            ["Assistant response started.", "Assistant response completed."],
+        )
+
+        fixture.store.send(.draftTextChanged(CBW001LifecycleViewCommand.sessions))
+        await settleMountedLifecycleAnnouncementView(fixture.hostingView)
+        XCTAssertEqual(
+            fixture.recorder.announcements.map(\.message),
+            ["Assistant response started.", "Assistant response completed."],
+        )
+        XCTAssertEqual(fixture.recorder.announcements.map(\.key.phase), [.processing, .final])
+        XCTAssertIdentical(fixture.window.contentView, fixture.hostingView)
+    }
+
+    /// CBW-001-show_request_processing_state: provider status를 손실 없이 Feature event로 전달한다.
+    /// provider가 보낸 typed activity signal이 context와 함께 동일한 Feature event로 도착하는 경계를 검증합니다.
+    /// - 검증 내용: AiChatExecutionClient live adapter의 status context와 signal 1:1 mapping을 확인합니다.
+    /// - 사전 조건: provider stream이 하나의 searching began status를 보낸 뒤 종료합니다.
+    /// - 기대 결과: Feature stream은 동일한 context와 signal을 가진 status event 하나를 방출합니다.
+    func testShowRequestProcessingStateMapsProviderStatusOneToOne() async {
+        let rows = makeCatalogRows()
+        let context = makeRequestContext(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114101")),
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224101")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334101")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let signal = makeActivitySignal(id: "search-1", kind: .searching, phase: .began)
+        let providerClient = AiChatProviderExecutionClient { _, _ in
+            AsyncThrowingStream { continuation in
+                continuation.yield(.status(context: context, signal: signal))
+                continuation.finish()
+            }
+        }
+        var iterator = AiChatExecutionClient.live(providerExecutionClient: providerClient)
+            .execute(AiChatRequest(context: context, messages: []), nil)
+            .makeAsyncIterator()
+
+        let mappedEvent = await iterator.next()
+        let terminalEvent = await iterator.next()
+        XCTAssertEqual(mappedEvent, .status(context: context, signal: signal))
+        XCTAssertNil(terminalEvent)
+    }
+
+    /// CBW-001-show_request_processing_state: 병렬 activity는 ID와 명시적 begin 순서로 선택된다.
+    /// interleaving status가 transcript나 stream observability를 건드리지 않고 matching request lock만 갱신하는지 검증합니다.
+    /// - 검증 내용: A begin, B begin, B end, unknown end, repeated A begin과 session identity rejection을 확인합니다.
+    /// - 사전 조건: visible processing request에 고정 transcript, draft, chunk count, autoscroll version이 있습니다.
+    /// - 기대 결과: B 종료 후 A가 다시 선택되고 중복 ID는 하나만 남으며 status 외 상태는 불변입니다.
+    func testShowRequestProcessingStateTracksInterleavedActivitiesWithoutStreamSideEffects() async {
+        let rows = makeCatalogRows()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114102"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224102")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334102")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+            selectedThinking: .effort(.high),
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let transcript = [AiChatMessage(role: .user, content: "Question")]
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            transcriptHistory: transcript,
+            streamingAssistantDraft: "Partial",
+            transcriptAutoScrollVersion: 7,
+            catalogRows: rows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: rows[0].handle,
+            executionPhase: .processing(lock),
+        )) {
+            AiChatFeature()
+        }
+        let thinking = makeActivitySignal(id: "activity-a", kind: .thinking, phase: .began)
+        let tool = makeActivitySignal(id: "activity-b", kind: .toolExecution, phase: .began)
+
+        await store.send(.executionEvent(.status(context: context, signal: thinking))) {
+            $0.executionPhase = .processing(lock.recordingActivity(thinking))
+        }
+        let thinkingAndTool = lock.recordingActivity(thinking).recordingActivity(tool)
+        await store.send(.executionEvent(.status(context: context, signal: tool))) {
+            $0.executionPhase = .processing(thinkingAndTool)
+        }
+        let toolEnded = makeActivitySignal(id: "activity-b", kind: .toolExecution, phase: .ended)
+        let toolEndedLock = thinkingAndTool.recordingActivity(toolEnded)
+        await store.send(.executionEvent(.status(context: context, signal: toolEnded))) {
+            $0.executionPhase = .processing(toolEndedLock)
+        }
+        XCTAssertEqual(toolEndedLock.activityState.selectedActivity?.activityID, thinking.activityID)
+        XCTAssertEqual(store.state.streamingAssistantDisplayModel?.activityStatusLabel, "Thinking…")
+
+        let beforeNoOps = store.state
+        let unknownEnd = makeActivitySignal(id: "unknown", kind: .searching, phase: .ended)
+        await store.send(.executionEvent(.status(context: context, signal: unknownEnd)))
+        let wrongSessionContext = makeRequestContext(
+            sessionID: AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444102")),
+            requestID: context.requestID,
+            runID: context.runID,
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        await store.send(.executionEvent(.status(context: wrongSessionContext, signal: thinking)))
+        XCTAssertEqual(store.state, beforeNoOps)
+
+        await store.send(.executionEvent(.status(context: context, signal: thinking))) {
+            $0.executionPhase = .processing(toolEndedLock.recordingActivity(thinking))
+        }
+        XCTAssertEqual(store.state.executionPhase.lock?.activityState.activeActivities.count, 1)
+        XCTAssertEqual(store.state.executionPhase.lock?.activityState.beginOrder, [thinking.activityID])
+        XCTAssertEqual(store.state.transcriptHistory, transcript)
+        XCTAssertEqual(store.state.streamingAssistantDraft, "Partial")
+        XCTAssertEqual(store.state.executionPhase.lock?.observabilitySummary.chunkCount, 0)
+        XCTAssertEqual(store.state.transcriptAutoScrollVersion, 7)
+    }
+
+    /// CBW-001-show_request_processing_state: runtime activity와 waiting 상태만 truthful label로 투영한다.
+    /// 선택 thinking 구성은 header metadata로 유지하되 provider activity evidence로 오해하지 않는 표시 계약을 검증합니다.
+    /// - 검증 내용: closed activity kind labels, empty waiting fallback, content 상태, spinner-free header를 확인합니다.
+    /// - 사전 조건: processing display model에 activity 유무와 content 유무 조합을 구성합니다.
+    /// - 기대 결과: activity는 고정 label, empty/no-activity는 waiting, content/no-activity는 nil이며 spinner는 표시하지 않습니다.
+    func testShowRequestProcessingStateProjectsTruthfulActivityLabelsWithoutSpinner() {
+        XCTAssertEqual(AiChatExecutionActivityKind.thinking.aiChatStatusLabel, "Thinking…")
+        XCTAssertEqual(AiChatExecutionActivityKind.searching.aiChatStatusLabel, "Searching…")
+        XCTAssertEqual(AiChatExecutionActivityKind.toolExecution.aiChatStatusLabel, "Running a tool…")
+        XCTAssertEqual(AiChatExecutionActivityKind.retrying.aiChatStatusLabel, "Retrying…")
+        XCTAssertEqual(AiChatExecutionActivityKind.answerGeneration.aiChatStatusLabel, "Generating answer…")
+        XCTAssertFalse(AiChatAssistantHeaderPresentation.full.showsProgressIndicator)
+
+        let requestID = AiChatRequestID(rawValue: makeUUID("11111111-1111-1111-1111-111111114202"))
+        let waiting = AiChatStreamingAssistantDisplayModel(
+            requestID: requestID,
+            content: nil,
+            title: "Model",
+            thinkingLabel: "High",
+            acceptedChunkRevision: 0,
+            activityStatusLabel: "Waiting for response…",
+        )
+        let streaming = AiChatStreamingAssistantDisplayModel(
+            requestID: requestID,
+            content: "Answer",
+            title: "Model",
+            thinkingLabel: "High",
+            acceptedChunkRevision: 1,
+            activityStatusLabel: nil,
+        )
+        XCTAssertEqual(waiting.thinkingLabel, "High")
+        XCTAssertEqual(waiting.activityStatusLabel, "Waiting for response…")
+        XCTAssertNil(streaming.activityStatusLabel)
+    }
+
+    /// CBW-001-show_request_processing_state: activity announcement는 stable transition key마다 한 번만 전달된다.
+    /// delta나 view 재생성 경계에서도 같은 request/activity/kind/phase transition이 반복 발화되지 않는지 검증합니다.
+    /// - 검증 내용: activity key 구성, deduper 중복 거부, coarse final key 전달을 확인합니다.
+    /// - 사전 조건: visible processing lock에 searching began activity가 있고 동일 announcement를 두 번 평가합니다.
+    /// - 기대 결과: activity transition은 첫 평가만 허용되고 final lifecycle announcement는 별도로 허용됩니다.
+    func testShowRequestProcessingStateDeduplicatesActivityAccessibilityAnnouncements() throws {
+        let rows = makeCatalogRows()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114103"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224103")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334103")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let signal = makeActivitySignal(id: "search-accessibility", kind: .searching, phase: .began)
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        ).recordingActivity(signal)
+        var state = AiChatFeature.State(sessionID: sessionID, executionPhase: .processing(lock))
+        let activity = try XCTUnwrap(AiChatLifecycleAnnouncement(state: state))
+        XCTAssertEqual(activity.key.activityID, signal.activityID)
+        XCTAssertEqual(activity.key.activityKind, .searching)
+        XCTAssertEqual(activity.key.activityPhase, .began)
+
+        var deduper = AiChatAccessibilityAnnouncementDeduper()
+        XCTAssertTrue(deduper.shouldAnnounce(activity.key))
+        XCTAssertFalse(deduper.shouldAnnounce(activity.key))
+
+        state.executionPhase = .completed(lock.recordingTerminal(at: 10, failure: nil, wasCancelled: false))
+        let final = try XCTUnwrap(AiChatLifecycleAnnouncement(state: state))
+        XCTAssertTrue(deduper.shouldAnnounce(final.key))
+
+        let otherSessionKey = AiChatLifecycleAnnouncementKey(
+            sessionID: AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444103")),
+            requestID: activity.key.requestID,
+            phase: activity.key.phase,
+            activityID: activity.key.activityID,
+            activityKind: activity.key.activityKind,
+            activityPhase: activity.key.activityPhase,
+        )
+        XCTAssertTrue(deduper.shouldAnnounce(otherSessionKey))
     }
 
     // MARK: - CBW-001-cancel_active_chat_request
@@ -657,7 +2508,11 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await fixture.store.send(.submitTapped)
         await resolvePendingRequestContext(fixture.store) { state in
-            self.applyCancelStartedState(&state, selectedHandle: fixture.selectedHandle)
+            self.applyCancelStartedState(
+                &state,
+                selectedHandle: fixture.selectedHandle,
+                submittedAtMs: fixture.fixedMs,
+            )
         }
         let request = try XCTUnwrap(fixture.stream.requests.first)
         let lock = makeSubmitLock(
@@ -738,7 +2593,11 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await fixture.store.send(.submitTapped)
         await resolvePendingRequestContext(fixture.store) { state in
-            self.applyCancelStartedState(&state, selectedHandle: fixture.selectedHandle)
+            self.applyCancelStartedState(
+                &state,
+                selectedHandle: fixture.selectedHandle,
+                submittedAtMs: fixture.fixedMs,
+            )
         }
         guard let request = fixture.stream.requests.first else {
             XCTFail("Expected execution request")
@@ -1073,7 +2932,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.lockedModelHandle = selectedHandle
             state.streamingAssistantDraft = nil
         }
@@ -1093,8 +2951,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             completedAtMs: fixedMs,
         )))) { state in
             state.transcriptHistory = [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "First answer"),
+                AiChatMessage(role: .user, content: "Hello", createdAtMs: fixedMs),
+                AiChatMessage(role: .assistant, content: "First answer", createdAtMs: fixedMs),
             ]
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
@@ -1106,20 +2964,15 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "First answer"),
-                AiChatMessage(role: .user, content: "Second question"),
-            ]
             state.lockedModelHandle = selectedHandle
             state.streamingAssistantDraft = nil
         }
 
         XCTAssertEqual(stream.requests.count, 2)
         XCTAssertEqual(stream.requests[1].messages, [
-            AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: "First answer"),
-            AiChatMessage(role: .user, content: "Second question"),
+            AiChatMessage(role: .user, content: "Hello", createdAtMs: fixedMs),
+            AiChatMessage(role: .assistant, content: "First answer", createdAtMs: fixedMs),
+            AiChatMessage(role: .user, content: "Second question", createdAtMs: fixedMs),
         ])
 
         stream.finish()
@@ -1188,7 +3041,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(request.messages, [
             AiChatMessage(role: .user, content: latestUser),
             AiChatMessage(role: .assistant, content: latestAssistant),
-            AiChatMessage(role: .user, content: draft),
+            AiChatMessage(role: .user, content: draft, createdAtMs: fixedMs),
         ])
         XCTAssertEqual(lock.persistenceTranscriptHistory, [
             AiChatMessage(role: .user, content: olderUser),
@@ -1197,13 +3050,44 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             AiChatMessage(role: .assistant, content: oversizedRecentAssistant),
             AiChatMessage(role: .user, content: latestUser),
             AiChatMessage(role: .assistant, content: latestAssistant),
-            AiChatMessage(role: .user, content: draft),
+            AiChatMessage(role: .user, content: draft, createdAtMs: fixedMs),
         ])
         XCTAssertFalse(request.messages.contains(AiChatMessage(role: .user, content: olderUser)))
         XCTAssertFalse(request.messages.contains(AiChatMessage(role: .assistant, content: olderAssistant)))
         XCTAssertEqual(lock.historyTruncation.includedMessageCount, 3)
         XCTAssertEqual(lock.historyTruncation.excludedMessageCount, 4)
         XCTAssertEqual(lock.historyTruncation.truncationReason, .characterBudgetExceeded)
+        XCTAssertEqual(request.messages.last?.createdAtMs, fixedMs)
+        XCTAssertEqual(lock.persistenceTranscriptHistory.last?.createdAtMs, fixedMs)
+        XCTAssertEqual(store.state.transcriptHistory.last?.createdAtMs, fixedMs)
+        XCTAssertNil(request.messages.dropLast().last?.createdAtMs)
+        XCTAssertNil(lock.persistenceTranscriptHistory.dropLast().last?.createdAtMs)
+    }
+
+    /// CBW-001-submit_chat_request: 마지막 user invariant가 없으면 다른 role에 submit timestamp를 기록하지 않는다.
+    /// 잘못 준비된 request가 assistant/system message를 user turn으로 위장하지 않는 경계를 검증합니다.
+    /// - 검증 내용: execution/persistence 배열의 마지막 role과 기존 timestamp가 request lock 생성 후에도 유지되는지 확인합니다.
+    /// - 사전 조건: execution은 assistant, persistence는 system message로 끝나는 malformed prepared request입니다.
+    /// - 기대 결과: 두 non-user message는 submitted timestamp로 교체되지 않고 기존 timestamp를 보존합니다.
+    func testSubmitChatRequestDoesNotStampNonUserWhenExpectedFinalUserIsMissing() async {
+        let fixture = makeMalformedFinalUserFixture()
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.requestContextResolved(
+            fixture.resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        guard let request = fixture.stream.requests.first,
+              case let .processing(lock) = fixture.store.state.executionPhase
+        else {
+            return XCTFail("Expected malformed request to reach request lock boundary")
+        }
+        XCTAssertEqual(request.messages, fixture.executionMessages)
+        XCTAssertEqual(lock.persistenceTranscriptHistory, fixture.persistenceMessages)
+        XCTAssertTrue(fixture.store.state.transcriptHistory.isEmpty)
+        fixture.stream.finish()
+        await fixture.store.finish()
     }
 
     /// CBW-001-submit_chat_request: submit 시점의 context timing과 truncation 계산은 요청 동안 고정된다.
@@ -1255,13 +3139,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [
-                AiChatMessage(role: .user, content: largeUser1),
-                AiChatMessage(role: .assistant, content: largeAssistant1),
-                AiChatMessage(role: .user, content: largeUser2),
-                AiChatMessage(role: .assistant, content: largeAssistant2),
-                AiChatMessage(role: .user, content: draft),
-            ]
             state.lockedModelHandle = catalogRows[0].handle
             state.transcriptAutoScrollVersion = 1
         }
@@ -1278,14 +3155,14 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(request.messages, [
             AiChatMessage(role: .user, content: largeUser2),
             AiChatMessage(role: .assistant, content: largeAssistant2),
-            AiChatMessage(role: .user, content: draft),
+            AiChatMessage(role: .user, content: draft, createdAtMs: fixedMs),
         ])
         XCTAssertEqual(lock.persistenceTranscriptHistory, [
             AiChatMessage(role: .user, content: largeUser1),
             AiChatMessage(role: .assistant, content: largeAssistant1),
             AiChatMessage(role: .user, content: largeUser2),
             AiChatMessage(role: .assistant, content: largeAssistant2),
-            AiChatMessage(role: .user, content: draft),
+            AiChatMessage(role: .user, content: draft, createdAtMs: fixedMs),
         ])
         XCTAssertEqual(lock.historyTruncation.includedMessageCount, 3)
         XCTAssertEqual(lock.historyTruncation.excludedMessageCount, 2)
@@ -1334,7 +3211,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello empty context")]
             state.lockedModelHandle = catalogRows[0].handle
             state.transcriptAutoScrollVersion = 1
         }
@@ -1345,7 +3221,9 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         XCTAssertEqual(request.context.currentContext, .init())
         XCTAssertEqual(request.context.submittedAtMs, fixedMs)
-        XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello empty context")])
+        XCTAssertEqual(request.messages, [
+            AiChatMessage(role: .user, content: "Hello empty context", createdAtMs: fixedMs),
+        ])
     }
 
     // MARK: - CBW-001-show_request_processing_state
@@ -1444,8 +3322,9 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             XCTFail("Expected ready skeleton surface state")
         }
 
+        let processingSessionID = AiChatSessionID(rawValue: UUID())
         let processingState = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionID: processingSessionID,
             sessionStatus: .active,
             currentContext: summary,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
@@ -1458,7 +3337,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
                 kind: .submit,
                 request: AiChatRequest(
                     context: makeRequestContext(
-                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        sessionID: processingSessionID,
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: catalogRows[1].handle,
@@ -1516,8 +3395,9 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertTrue(refreshedProcessingState.chatInputDisplayModel.isStopVisible)
         XCTAssertTrue(refreshedProcessingState.chatInputDisplayModel.canStop)
 
+        let errorSessionID = AiChatSessionID(rawValue: UUID())
         let errorState = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionID: errorSessionID,
             sessionStatus: .failed,
             currentContext: summary,
             transcriptHistory: [],
@@ -1530,7 +3410,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
                 kind: .submit,
                 request: AiChatRequest(
                     context: makeRequestContext(
-                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        sessionID: errorSessionID,
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: selectedHandle,
@@ -1790,7 +3670,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.selectedModelHandle = selectedHandle
             state.lockedModelHandle = selectedHandle
             state.lastExecutionFailure = nil
@@ -2023,7 +3902,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.lockedModelHandle = selectedHandle
             state.transcriptAutoScrollVersion = 1
         }
@@ -2056,8 +3934,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
             transcriptHistory: [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Hi"),
+                AiChatMessage(role: .user, content: "Hello", createdAtMs: fixedMs),
+                AiChatMessage(role: .assistant, content: "Hi", createdAtMs: fixedMs),
             ],
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
@@ -2077,8 +3955,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.transcriptHistory, [
-            AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: "Hi"),
+            AiChatMessage(role: .user, content: "Hello", createdAtMs: fixedMs),
+            AiChatMessage(role: .assistant, content: "Hi", createdAtMs: fixedMs),
         ])
         XCTAssertEqual(store.state.requestStatusText, "Finalized locally; An unknown chat error occurred.")
 
@@ -2269,7 +4147,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             provider: selectedHandle.provider,
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A", createdAtMs: fixedMs)],
             updatedAtMs: fixedMs,
         )
         let stream = AiChatExecutionStreamDriver()
@@ -2319,7 +4197,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question A")]
             state.lockedModelHandle = selectedHandle
             state.sessionList.unreadCompletedSessionIDs = []
             state.transcriptAutoScrollVersion = 1
@@ -2342,7 +4219,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             provider: selectedHandle.provider,
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A", createdAtMs: fixedMs)],
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
             lastRequestContext: lock.context.requestContext,
@@ -2427,7 +4304,11 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         ))
         XCTAssertTrue(store.state.isProcessing)
 
-        let assistantMessage = AiChatMessage(role: .assistant, content: "Original request completed")
+        let assistantMessage = AiChatMessage(
+            role: .assistant,
+            content: "Original request completed",
+            createdAtMs: fixedMs,
+        )
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: assistantMessage,
@@ -2439,7 +4320,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
         await store.receive(.executionEvent(.final(response: finalResponse))) { state in
             state.transcriptHistory = [
-                AiChatMessage(role: .user, content: "Question A"),
+                AiChatMessage(role: .user, content: "Question A", createdAtMs: fixedMs),
                 assistantMessage,
             ]
             state.lockedModelHandle = nil
@@ -2457,7 +4338,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
             transcriptHistory: [
-                AiChatMessage(role: .user, content: "Question A"),
+                AiChatMessage(role: .user, content: "Question A", createdAtMs: fixedMs),
                 assistantMessage,
             ],
             lastRequestID: lock.requestID,
@@ -2486,6 +4367,63 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
         XCTAssertFalse(store.state.isProcessing)
         XCTAssertEqual(persistence.snapshots, [activeRequestStartSnapshot, expectedOriginalSnapshot])
+    }
+
+    /// CBW-001-continue_inflight_chat_request: offscreen final은 정규화된 assistant timestamp를 snapshot에 저장한다.
+    /// 다른 session을 보는 동안 완료된 응답도 visible completion과 같은 terminal clock을 소비하는지 검증합니다.
+    /// - 검증 내용: background completed lock, final snapshot, persistence snapshot의 assistant timestamp를 확인합니다.
+    /// - 사전 조건: 원 session request lock은 background processing이고 현재 화면은 다른 session을 표시합니다.
+    /// - 기대 결과: raw response timestamp와 무관하게 assistant와 terminal metadata가 하나의 deterministic timestamp를 사용합니다.
+    func testContinueInFlightChatRequestNormalizesOffscreenFinalTimestamp() async {
+        let rows = makeCatalogRows()
+        let selectedHandle = rows[0].handle
+        let originalSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111231"))
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222231"))
+        let terminalMs: Int64 = 1_700_000_001_231
+        let user = AiChatMessage(role: .user, content: "Original question", createdAtMs: terminalMs - 10)
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: originalSessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("33333333-3333-3333-3333-333333333231")),
+                runID: AiChatRunID(rawValue: makeUUID("44444444-4444-4444-4444-444444444231")),
+                model: selectedHandle,
+                selectedRow: rows[0],
+            ),
+            messages: [user],
+        )
+        let lock = makeSubmitLock(request: request, catalogRows: rows, selectedHandle: selectedHandle)
+        let persistence = AiChatSessionPersistenceSpy()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: visibleSessionID,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Visible session")],
+            backgroundExecutionPhases: [lock.requestID: .processing(lock)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(makeFixedDate(milliseconds: terminalMs))
+            $0.aiChatSessionPersistenceClient = .init(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in await persistence.save(snapshot) },
+                deleteSession: { _ in },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+        let rawAssistant = AiChatMessage(role: .assistant, content: "Offscreen answer", createdAtMs: 99)
+        let rawResponse = AiChatResponse(context: request.context, assistantMessage: rawAssistant, completedAtMs: 88)
+
+        await store.send(.executionEvent(.final(response: rawResponse)))
+        guard case let .completed(completedLock) = store.state.backgroundExecutionPhases[lock.requestID],
+              let snapshot = completedLock.finalSnapshot
+        else {
+            return XCTFail("Expected completed background lock with final snapshot")
+        }
+        XCTAssertEqual(completedLock.observabilitySummary.terminalAtMs, terminalMs)
+        XCTAssertEqual(snapshot.transcriptHistory.last?.createdAtMs, terminalMs)
+
+        await store.skipReceivedActions()
+        await store.finish()
+        XCTAssertEqual(persistence.snapshots.last?.transcriptHistory.last?.createdAtMs, terminalMs)
+        XCTAssertEqual(store.state.transcriptHistory.last?.content, "Visible session")
     }
 
     /// CBW-001-continue_inflight_chat_request: offscreen session failure는 현재 보이는 session을 오염시키지 않는다.
@@ -2528,7 +4466,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             provider: selectedHandle.provider,
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A", createdAtMs: fixedMs)],
             updatedAtMs: fixedMs,
         )
         let stream = AiChatExecutionStreamDriver()
@@ -2578,7 +4516,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question A")]
             state.lockedModelHandle = selectedHandle
             state.sessionList.unreadCompletedSessionIDs = []
             state.transcriptAutoScrollVersion = 1
@@ -2601,7 +4538,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             provider: selectedHandle.provider,
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A", createdAtMs: fixedMs)],
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
             lastRequestContext: lock.context.requestContext,
@@ -3092,6 +5029,37 @@ private actor CBW001ProviderDriver {
     }
 }
 
+private struct AiChatMetadataSourceSubtrees {
+    let card: String
+    let panel: String
+    let viewport: String
+    let historicalCard: String
+}
+
+private func aiChatMetadataSourceSubtrees() throws -> AiChatMetadataSourceSubtrees {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+    let uiRoot = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui")
+    let conversation = try String(
+        contentsOf: uiRoot.appendingPathComponent("AiChatConversationSurface.swift"), encoding: .utf8,
+    )
+    let view = try String(contentsOf: uiRoot.appendingPathComponent("AiChatView.swift"), encoding: .utf8)
+    let cardStart = try XCTUnwrap(conversation.range(of: "private struct AiChatAssistantCard: View"))
+    let waitingStart = try XCTUnwrap(conversation.range(of: "private struct AiChatWaitingIndicator: View"))
+    let historicalStart = try XCTUnwrap(conversation.range(of: "    private func assistantMessage("))
+    let regenerateStart = try XCTUnwrap(conversation.range(of: "    private var regenerateAction"))
+    let panelStart = try XCTUnwrap(view.range(of: "private struct AiChatAssistantMetadataPanel: View"))
+    let aiChatViewStart = try XCTUnwrap(view.range(of: "public struct AiChatView: View"))
+    let compactStart = try XCTUnwrap(view.range(of: "    @ViewBuilder\n    private func compactConnectionCTA"))
+    return AiChatMetadataSourceSubtrees(
+        card: String(conversation[cardStart.lowerBound ..< waitingStart.lowerBound]),
+        panel: String(view[panelStart.lowerBound ..< aiChatViewStart.lowerBound]),
+        viewport: String(view[..<compactStart.lowerBound]),
+        historicalCard: String(conversation[historicalStart.lowerBound ..< regenerateStart.lowerBound]),
+    )
+}
+
 private struct CBW001TranscriptContext: Equatable {
     let sessionID: AiChatSessionID?
     let sessionListQuery: String
@@ -3118,13 +5086,220 @@ private struct CBW001StreamFixture {
     let store: TestStore<AiChatFeature.State, AiChatFeature.Action>
 }
 
+private enum CBW001LifecycleViewCommand {
+    static let processing = "lifecycle-processing"
+    static let processingRerender = "lifecycle-processing-rerender"
+    static let completed = "lifecycle-completed"
+    static let sessions = "lifecycle-sessions"
+}
+
+@MainActor
+private final class CBW001LifecycleAnnouncementRecorder {
+    private(set) var announcements: [AiChatLifecycleAnnouncement] = []
+
+    func record(_ announcement: AiChatLifecycleAnnouncement) {
+        announcements.append(announcement)
+    }
+}
+
+private struct CBW001MountedLifecycleAnnouncementFixture {
+    let store: StoreOf<AiChatFeature>
+    let hostingView: NSHostingView<AnyView>
+    let window: NSWindow
+    let recorder: CBW001LifecycleAnnouncementRecorder
+}
+
+private final class CBW001FocusableView: NSView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+}
+
+private struct CBW001MalformedFinalUserFixture {
+    let stream: AiChatExecutionStreamDriver
+    let store: TestStore<AiChatFeature.State, AiChatFeature.Action>
+    let resolutionID: UUID
+    let executionMessages: [AiChatMessage]
+    let persistenceMessages: [AiChatMessage]
+}
+
 private extension CBW001ContextualChatRequestTests {
+    func makeMountedLifecycleAnnouncementFixture(
+        sessionID: AiChatSessionID,
+        lock: AiChatRequestLock,
+    ) -> CBW001MountedLifecycleAnnouncementFixture {
+        let recorder = CBW001LifecycleAnnouncementRecorder()
+        let store = Store<AiChatFeature.State, AiChatFeature.Action>(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+        )) {
+            Reduce<AiChatFeature.State, AiChatFeature.Action> { state, action in
+                guard case let .draftTextChanged(command) = action else { return .none }
+                switch command {
+                case CBW001LifecycleViewCommand.processing:
+                    state.executionPhase = .processing(lock)
+                case CBW001LifecycleViewCommand.processingRerender:
+                    state.draftText = command
+                case CBW001LifecycleViewCommand.completed:
+                    state.executionPhase = .completed(lock)
+                case CBW001LifecycleViewCommand.sessions:
+                    state.mode = .sessions
+                    state.executionPhase = .processing(lock)
+                default:
+                    break
+                }
+                return .none
+            }
+        }
+        let sink = AiChatAccessibilityAnnouncementSink { announcement in
+            recorder.record(announcement)
+        }
+        let rootView = AnyView(WithPerceptionTracking {
+            AiChatView(
+                store: store,
+                centeredEmptyContent: AnyView(Text("Centered content")),
+            )
+            .environment(\.aiChatAccessibilityAnnouncementSink, sink)
+        })
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        let window = NSWindow(contentRect: hostingView.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = hostingView
+        return CBW001MountedLifecycleAnnouncementFixture(
+            store: store,
+            hostingView: hostingView,
+            window: window,
+            recorder: recorder,
+        )
+    }
+
+    func settleMountedLifecycleAnnouncementView(_ hostingView: NSView) async {
+        for _ in 0 ..< 6 {
+            hostingView.layoutSubtreeIfNeeded()
+            await drainMainQueue()
+            await Task.yield()
+        }
+    }
+
+    func makeInputCoordinator(
+        focusOwner: AiChatInputFocusOwner,
+        identity: AiChatComposerIdentity,
+    ) -> AiChatInputTextView.Coordinator {
+        var text = ""
+        var measuredHeight: CGFloat = 0
+        let input = AiChatInputTextView(
+            text: Binding(get: { text }, set: { text = $0 }),
+            measuredHeight: Binding(get: { measuredHeight }, set: { measuredHeight = $0 }),
+            composerIdentity: identity,
+            focusOwner: focusOwner,
+            isDisabled: false,
+            maxVisibleHeight: 120,
+            onSubmit: {},
+            onAttachmentsDropped: { _ in },
+        )
+        return input.makeCoordinator()
+    }
+
+    func makeComposerIdentity(
+        sessionUUID: String,
+        scopeID: UUID = makeUUID("99999999-9999-9999-9999-999999999001"),
+    ) -> AiChatComposerIdentity {
+        AiChatComposerIdentity(
+            viewScopeID: scopeID,
+            displayedSessionID: AiChatSessionID(rawValue: makeUUID(sessionUUID)),
+        )
+    }
+
+    func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+    }
+
+    func makeActivitySignal(
+        id: String,
+        kind: AiChatExecutionActivityKind,
+        phase: AiChatExecutionActivityPhase,
+    ) -> AiChatExecutionActivitySignal {
+        AiChatExecutionActivitySignal(
+            activityID: AiChatExecutionActivityID(rawValue: id),
+            kind: kind,
+            phase: phase,
+            evidence: AiChatExecutionActivityEvidence(
+                origin: .providerWire,
+                providerEventType: "test.activity",
+            ),
+        )
+    }
+
+    func makeMalformedFinalUserFixture() -> CBW001MalformedFinalUserFixture {
+        let stream = AiChatExecutionStreamDriver()
+        let rows = makeCatalogRows()
+        let model = makeProviderModels()[0]
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111129"))
+        let resolutionID = makeUUID("22222222-2222-2222-2222-222222222229")
+        let executionMessages = [
+            AiChatMessage(role: .user, content: "Earlier execution user", createdAtMs: 11),
+            AiChatMessage(role: .assistant, content: "Malformed execution final", createdAtMs: 22),
+        ]
+        let persistenceMessages = [
+            AiChatMessage(role: .user, content: "Earlier persistence user", createdAtMs: 33),
+            AiChatMessage(role: .system, content: "Malformed persistence final", createdAtMs: 44),
+        ]
+        let pending = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: model,
+            selectedRow: rows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "Malformed",
+                messages: executionMessages,
+                persistenceTranscriptHistory: persistenceMessages,
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 2,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            catalogRows: rows,
+            modelListState: .loaded([model]),
+            pendingRequestStart: pending,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_001_299))
+            $0.aiChatExecutionClient = .init(execute: { request in stream.stream(for: request) })
+        }
+        return CBW001MalformedFinalUserFixture(
+            stream: stream,
+            store: store,
+            resolutionID: resolutionID,
+            executionMessages: executionMessages,
+            persistenceMessages: persistenceMessages,
+        )
+    }
+
     var regenerationTranscript: [AiChatMessage] {
-        [AiChatMessage(role: .user, content: "Hello"), AiChatMessage(role: .assistant, content: "Old answer")]
+        [
+            AiChatMessage(role: .user, content: "Hello", createdAtMs: 1_699_999_999_900),
+            AiChatMessage(role: .assistant, content: "Old answer", createdAtMs: 1_699_999_999_950),
+        ]
     }
 
     var regeneratedTranscript: [AiChatMessage] {
-        [AiChatMessage(role: .user, content: "Hello"), AiChatMessage(role: .assistant, content: "New answer")]
+        [
+            AiChatMessage(role: .user, content: "Hello", createdAtMs: 1_699_999_999_900),
+            AiChatMessage(role: .assistant, content: "New answer", createdAtMs: 1_700_000_000_300),
+        ]
     }
 
     func applyObservationFocusedExhaustivity(to store: TestStore<AiChatFeature.State, AiChatFeature.Action>) {
@@ -3322,9 +5497,10 @@ private extension CBW001ContextualChatRequestTests {
         _ state: inout AiChatFeature.State,
         selectedHandle: AiModelHandle,
         sessionID: AiChatSessionID,
+        submittedAtMs: Int64,
     ) {
         state.draftText = ""
-        state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+        state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello", createdAtMs: submittedAtMs)]
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
         state.lastExecutionFailure = nil
@@ -3358,7 +5534,10 @@ private extension CBW001ContextualChatRequestTests {
             state.transcriptAutoScrollVersion = 3
         }
         await store.receive(.executionEvent(.final(response: rawResponse))) { state in
-            state.transcriptHistory = self.submitCompletedTranscript(assistant: fixture.expectedAssistantMessage)
+            state.transcriptHistory = self.submitCompletedTranscript(
+                assistant: fixture.expectedAssistantMessage,
+                timestampMs: fixture.fixedMs,
+            )
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.executionPhase = .completed(secondDeltaLock.recordingTerminal(
@@ -3384,17 +5563,21 @@ private extension CBW001ContextualChatRequestTests {
         XCTAssertEqual(fixture.persistence.snapshots.count, 2)
         XCTAssertEqual(
             fixture.persistence.snapshots.first?.transcriptHistory,
-            [AiChatMessage(role: .user, content: "Hello")],
+            [AiChatMessage(role: .user, content: "Hello", createdAtMs: fixture.fixedMs)],
         )
         XCTAssertEqual(
             fixture.persistence.snapshots.last?.transcriptHistory,
-            submitCompletedTranscript(assistant: fixture.expectedAssistantMessage),
+            submitCompletedTranscript(assistant: fixture.expectedAssistantMessage, timestampMs: fixture.fixedMs),
         )
         XCTAssertEqual(fixture.persistence.snapshots.last?.lastRequestID, lock.request.context.requestID)
         XCTAssertEqual(fixture.persistence.snapshots.last?.lastRunID, lock.request.context.runID)
         XCTAssertEqual(store.state.executionPhase, .completed(completedLock))
         XCTAssertEqual(store.state.executionPhase.lock?.observabilitySummary.submittedAtMs, fixture.fixedMs)
         XCTAssertEqual(store.state.executionPhase.lock?.observabilitySummary.terminalAtMs, fixture.fixedMs)
+        XCTAssertEqual(store.state.transcriptHistory.first?.createdAtMs, fixture.fixedMs)
+        XCTAssertEqual(store.state.transcriptHistory.last?.createdAtMs, fixture.fixedMs)
+        XCTAssertEqual(fixture.persistence.snapshots.first?.transcriptHistory.last?.createdAtMs, fixture.fixedMs)
+        XCTAssertEqual(fixture.persistence.snapshots.last?.transcriptHistory.last?.createdAtMs, fixture.fixedMs)
         XCTAssertNil(store.state.streamingAssistantDraft)
     }
 
@@ -3507,9 +5690,15 @@ private extension CBW001ContextualChatRequestTests {
         )
     }
 
-    func applyProcessingFailureStartedState(_ state: inout AiChatFeature.State, selectedHandle: AiModelHandle) {
+    func applyProcessingFailureStartedState(
+        _ state: inout AiChatFeature.State,
+        selectedHandle: AiModelHandle,
+        submittedAtMs: Int64,
+    ) {
         state.draftText = ""
-        state.transcriptHistory = [AiChatMessage(role: .user, content: "Partial failure")]
+        state.transcriptHistory = [
+            AiChatMessage(role: .user, content: "Partial failure", createdAtMs: submittedAtMs),
+        ]
         state.lockedModelHandle = selectedHandle
         state.streamingAssistantDraft = nil
     }
@@ -3541,17 +5730,28 @@ private extension CBW001ContextualChatRequestTests {
         }
     }
 
-    func assertProcessingFailureResult(_ state: AiChatFeature.State) {
+    func assertProcessingFailureResult(_ state: AiChatFeature.State, submittedAtMs: Int64) {
         XCTAssertEqual(state.streamingAssistantDraft, "Hel")
-        XCTAssertEqual(state.transcriptHistory, [AiChatMessage(role: .user, content: "Partial failure")])
+        XCTAssertEqual(state.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Partial failure", createdAtMs: submittedAtMs),
+        ])
         XCTAssertEqual(state.requestStatusText, "The chat service response could not be read.")
         XCTAssertEqual(state.streamingAssistantDisplayModel?.content, "Hel")
+        XCTAssertEqual(state.streamingAssistantDisplayModel?.title, "GPT-4.1 Mini")
+        XCTAssertNil(state.streamingAssistantDisplayModel?.thinkingLabel)
         XCTAssertEqual(state.streamingAssistantDisplayModel?.failure, .transportError)
+        XCTAssertEqual(state.streamingAssistantDisplayModel?.acceptedChunkRevision, 1)
     }
 
-    func applyCancelStartedState(_ state: inout AiChatFeature.State, selectedHandle: AiModelHandle) {
+    func applyCancelStartedState(
+        _ state: inout AiChatFeature.State,
+        selectedHandle: AiModelHandle,
+        submittedAtMs: Int64,
+    ) {
         state.draftText = ""
-        state.transcriptHistory = [AiChatMessage(role: .user, content: "Cancel me")]
+        state.transcriptHistory = [
+            AiChatMessage(role: .user, content: "Cancel me", createdAtMs: submittedAtMs),
+        ]
         state.lockedModelHandle = selectedHandle
         state.streamingAssistantDraft = nil
     }
@@ -3600,7 +5800,8 @@ private extension CBW001ContextualChatRequestTests {
     func assertCancelResult(_ state: AiChatFeature.State, streamingLock: AiChatRequestLock, fixedMs: Int64) {
         let assistantMessages = state.transcriptHistory.filter { $0.role == .assistant }
         XCTAssertTrue(assistantMessages.isEmpty)
-        XCTAssertEqual(state.transcriptHistory, [AiChatMessage(role: .user, content: "Cancel me")])
+        XCTAssertEqual(state.transcriptHistory.first?.createdAtMs, fixedMs)
+        XCTAssertEqual(state.transcriptHistory.count, 1)
         XCTAssertNil(state.lockedModelHandle)
         XCTAssertNil(state.lastExecutionFailure)
         XCTAssertNil(state.streamingAssistantDraft)
@@ -3622,7 +5823,10 @@ private extension CBW001ContextualChatRequestTests {
         store: TestStore<AiChatFeature.State, AiChatFeature.Action>,
         lock: AiChatRequestLock,
     ) {
-        XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello")])
+        XCTAssertEqual(request.messages, [
+            AiChatMessage(role: .user, content: "Hello", createdAtMs: 1_699_999_999_900),
+        ])
+        XCTAssertEqual(lock.persistenceTranscriptHistory.first?.createdAtMs, 1_699_999_999_900)
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
     }
 
@@ -3647,8 +5851,11 @@ private extension CBW001ContextualChatRequestTests {
         }
     }
 
-    func submitCompletedTranscript(assistant: String) -> [AiChatMessage] {
-        [AiChatMessage(role: .user, content: "Hello"), AiChatMessage(role: .assistant, content: assistant)]
+    func submitCompletedTranscript(assistant: String, timestampMs: Int64? = nil) -> [AiChatMessage] {
+        [
+            AiChatMessage(role: .user, content: "Hello", createdAtMs: timestampMs),
+            AiChatMessage(role: .assistant, content: assistant, createdAtMs: timestampMs),
+        ]
     }
 
     func assertFailureRecovery(reason: AiChatExecutionFailure, sessionIDRaw: String) async {
@@ -3691,7 +5898,6 @@ private extension CBW001ContextualChatRequestTests {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: prompt)]
             state.lockedModelHandle = selectedHandle
             state.streamingAssistantDraft = nil
         }
@@ -3738,7 +5944,9 @@ private extension CBW001ContextualChatRequestTests {
             assistantReplacementIndex: nil,
         )
 
-        XCTAssertEqual(retryRequest.messages, [AiChatMessage(role: .user, content: prompt)])
+        XCTAssertEqual(retryRequest.messages, [
+            AiChatMessage(role: .user, content: prompt, createdAtMs: fixedMs),
+        ])
         XCTAssertEqual(store.state.executionPhase, .processing(retryLock))
         XCTAssertEqual(store.state.lockedModelHandle, selectedHandle)
         XCTAssertNil(store.state.lastExecutionFailure)

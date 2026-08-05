@@ -58,7 +58,6 @@ struct ContentPageView: View {
 
     @Environment(\.fileManagerKeyCommandFocusCoordinator)
     private var keyCommandFocusCoordinator
-    @FocusState var isKeyCommandFocused: Bool
 
     init(store: StoreOf<FileManagerContentFeature>) {
         self.store = store
@@ -113,7 +112,6 @@ struct ContentPageView: View {
             },
         )
         .focusable()
-        .focused($isKeyCommandFocused)
         .allowsHitTesting(false)
     }
 
@@ -186,7 +184,6 @@ struct ContentPageView: View {
     }
 
     private func restoreKeyCommandFocus() {
-        isKeyCommandFocused = true
         keyCommandFocusCoordinator?.requestFocus()
     }
 

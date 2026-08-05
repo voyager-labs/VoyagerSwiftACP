@@ -21,7 +21,7 @@ struct AiChatThinkingSelectorButton: View {
         }
         .menuIndicator(.visible)
         .menuStyle(.borderlessButton)
-        .disabled(displayModel.thinkingMenuIsDisabled)
+        .disabled(input.isComposerEditingDisabled || displayModel.thinkingMenuIsDisabled)
         .accessibilityLabel("Thinking")
         .accessibilityValue(AiChatSelectorLabels.thinkingSelectorAccessibilityValue(for: state))
     }

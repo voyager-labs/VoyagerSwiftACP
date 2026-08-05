@@ -93,6 +93,7 @@ public enum VoyagerDS {
     }
 
     public enum Radius {
+        public static let userMessageBubble: CGFloat = 20
         public static let overlayCard: CGFloat = 12
         public static let control: CGFloat = 8
         public static let chipContainer: CGFloat = 6
@@ -158,6 +159,10 @@ public enum VoyagerDS {
         public static let popoverBorder = SystemColor.separator
 
         public static let toolbarDivider = Color.black.opacity(0.15)
+
+        public static func userMessageBubbleBackground(for scheme: ColorScheme) -> Color {
+            inputBackground(for: scheme)
+        }
 
         public static func overlayBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark ? SystemColor.underPageBackground : SystemColor.windowBackground

@@ -1,5 +1,127 @@
+import AppKit
+import Foundation
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerShared
+
+struct AiChatTranscriptRowID: Hashable {
+    let index: Int
+    let role: AiChatMessageRole
+    let createdAtMs: Int64?
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(role.rawValue)
+        hasher.combine(createdAtMs)
+    }
+}
+
+enum AiChatTranscriptTimestampStyle: Equatable { case dateTime, relative, shortTime }
+struct AiChatTranscriptRowPresentation: Identifiable, Equatable {
+    let id: AiChatTranscriptRowID
+    let message: AiChatMessage
+    let timestampStyle: AiChatTranscriptTimestampStyle?
+    let timestampLabel, accessibilityTimestampLabel: String?
+    let isTimestampVisuallySuppressed: Bool
+    var hasTimestampMetadata: Bool {
+        (message.role == .user || message.role == .assistant) && message.createdAtMs != nil
+    }
+
+    var showsTimestampAffordance: Bool {
+        hasTimestampMetadata && !isTimestampVisuallySuppressed
+    }
+}
+
+struct AiChatTimestampAffordancePresentation: Equatable {
+    enum Placement: Equatable {
+        case userLeadingGutter, assistantTopTrailing
+
+        var horizontalOffset: CGFloat {
+            let offset = AiChatTimestampAffordancePresentation.controlSize + 4
+            return self == .userLeadingGutter ? -offset : offset
+        }
+    }
+
+    static let controlSize: CGFloat = 24, assistantTrailingGutter = controlSize + 4
+    static let tooltipMaximumWidth: CGFloat = 320
+    static let tooltipHorizontalPadding: CGFloat = 10, tooltipVerticalPadding: CGFloat = 6
+    let placement: Placement
+
+    static func presentsTooltip(hasTimestampMetadata: Bool, isClockHovered: Bool, isClockFocused: Bool) -> Bool {
+        hasTimestampMetadata && (isClockHovered || isClockFocused)
+    }
+}
+
+struct AiChatTranscriptPresentation: Equatable {
+    let rows: [AiChatTranscriptRowPresentation]
+    init(messages: [AiChatMessage], now: Date, locale: Locale, timeZone: TimeZone) {
+        rows = messages.enumerated().map { index, message in
+            let timestamp = Self.timestampPresentation(
+                createdAtMs: message.createdAtMs, now: now, locale: locale, timeZone: timeZone,
+            )
+            return AiChatTranscriptRowPresentation(
+                id: AiChatTranscriptRowID(index: index, role: message.role, createdAtMs: message.createdAtMs),
+                message: message,
+                timestampStyle: timestamp?.style,
+                timestampLabel: timestamp?.label,
+                accessibilityTimestampLabel: timestamp?.label,
+                isTimestampVisuallySuppressed: Self.suppressesTimestamp(
+                    message, after: index > 0 ? messages[index - 1] : nil,
+                ),
+            )
+        }
+    }
+
+    static func timestampPresentation(
+        createdAtMs: Int64?,
+        now: Date,
+        locale: Locale,
+        timeZone: TimeZone,
+    ) -> (style: AiChatTranscriptTimestampStyle, label: String)? {
+        guard let createdAtMs else { return nil }
+        let createdAt = Date(timeIntervalSince1970: TimeInterval(createdAtMs) / 1000)
+        if createdAt > now { return (.relative, "Just now") }
+        var calendar = locale.calendar
+        calendar.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        if calendar.isDate(createdAt, inSameDayAs: now) {
+            let age = now.timeIntervalSince(createdAt)
+            if age < 60 { return (.relative, "Just now") }
+            if age < 60 * 60 {
+                let relativeFormatter = RelativeDateTimeFormatter()
+                relativeFormatter.locale = locale
+                relativeFormatter.dateTimeStyle = .numeric
+                return (.relative, relativeFormatter.localizedString(for: createdAt, relativeTo: now))
+            }
+            formatter.timeStyle = .short
+            return (.shortTime, formatter.string(from: createdAt))
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(createdAt, inSameDayAs: yesterday)
+        {
+            formatter.doesRelativeDateFormatting = true
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+        } else {
+            let includesYear = calendar.component(.year, from: createdAt) != calendar.component(.year, from: now)
+            formatter.setLocalizedDateFormatFromTemplate(includesYear ? "yMMMdjm" : "MMMdjm")
+        }
+        return (.dateTime, formatter.string(from: createdAt))
+    }
+
+    private static func suppressesTimestamp(_ message: AiChatMessage, after previousMessage: AiChatMessage?) -> Bool {
+        guard let previousMessage,
+              previousMessage.role == message.role,
+              let earlier = previousMessage.createdAtMs,
+              let later = message.createdAtMs,
+              later >= earlier
+        else { return false }
+        let (delta, overflow) = later.subtractingReportingOverflow(earlier)
+        return !overflow && delta < 60000
+    }
+}
 
 struct AiChatConversationSurface: View {
     let state: AiChatState
@@ -11,16 +133,13 @@ struct AiChatConversationSurface: View {
     let onRegenerate: () -> Void
     let onRebindContext: () -> Void
     let onStartNewChatFromRebind: () -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if state.sessionStatus == .rebindRequired {
                 AiChatRebindRecoveryBanner(
-                    onRebindContext: onRebindContext,
-                    onStartNewChat: onStartNewChatFromRebind,
+                    onRebindContext: onRebindContext, onStartNewChat: onStartNewChatFromRebind,
                 )
             }
-
             switch skeleton.surface {
             case let .unconnected(connection):
                 AiChatStatusBanner(
@@ -84,9 +203,10 @@ struct AiChatConversationSurface: View {
 }
 
 private struct AiChatRebindRecoveryBanner: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
     let onRebindContext: () -> Void
     let onStartNewChat: () -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -94,22 +214,19 @@ private struct AiChatRebindRecoveryBanner: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Rebind required")
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Session needs rebind")
                         .font(.system(size: 14, weight: .semibold))
                     Text("Reconnect this chat to the current context, or start a clean chat.")
-                        .font(.system(size: 12))
+                        .font(VoyagerDS.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-
             HStack(spacing: 8) {
                 Button(action: onRebindContext) {
                     recoveryActionLabel("Rebind context")
                 }
                 .buttonStyle(.plain)
-
                 Button(action: onStartNewChat) {
                     recoveryActionLabel("Start new chat")
                 }
@@ -119,12 +236,12 @@ private struct AiChatRebindRecoveryBanner: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor)),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                .fill(VoyagerDS.Surface.overlayBackground(for: colorScheme)),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                .strokeBorder(VoyagerDS.Surface.overlayBorder, lineWidth: 1),
         )
     }
 
@@ -136,21 +253,22 @@ private struct AiChatRebindRecoveryBanner: View {
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor)),
+                    .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
+                    .strokeBorder(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
             )
     }
 }
 
 private struct AiChatStatusBanner: View {
+    @Environment(\.colorScheme)
+    private var colorScheme
     let title: String
     let detail: String
     let actionLabel: String
     let action: (() -> Void)?
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -158,16 +276,14 @@ private struct AiChatStatusBanner: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Connection status")
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.system(size: 14, weight: .semibold))
                     Text(detail)
-                        .font(.system(size: 12))
+                        .font(VoyagerDS.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-
             if let action {
                 Button(action: action) {
                     statusActionLabel
@@ -180,12 +296,12 @@ private struct AiChatStatusBanner: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor)),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                .fill(VoyagerDS.Surface.overlayBackground(for: colorScheme)),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                .strokeBorder(VoyagerDS.Surface.overlayBorder, lineWidth: 1),
         )
     }
 
@@ -197,11 +313,11 @@ private struct AiChatStatusBanner: View {
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor)),
+                    .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
+                    .strokeBorder(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
             )
     }
 }
@@ -230,6 +346,10 @@ struct AiChatTranscriptRenderPlan: Equatable {
 }
 
 private struct AiChatTranscriptSection: View {
+    @Environment(\.locale)
+    private var locale
+    @Environment(\.timeZone)
+    private var timeZone
     let messages: [AiChatMessage]
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
@@ -238,32 +358,35 @@ private struct AiChatTranscriptSection: View {
     var statusText: String?
     var streamingAssistant: AiChatStreamingAssistantDisplayModel?
     let onRegenerate: () -> Void
-
     var body: some View {
-        let renderPlan = AiChatTranscriptRenderPlan.make(messages: messages)
-        return VStack(alignment: .leading, spacing: 14) {
-            ForEach(renderPlan.messageIndices, id: \.self) { index in
-                let message = messages[index]
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(transcriptPresentation.rows) { row in
                 AiChatMessageRow(
-                    message: message,
-                    transcriptRow: .message(index: index),
+                    row: row,
+                    transcriptRow: .message(index: row.id.index),
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
-                    showsRegenerateAction: canRegenerate && index == renderPlan.latestAssistantMessageIndex,
+                    showsRegenerateAction: canRegenerate && row.id.index == latestAssistantMessageIndex,
                     onRegenerate: onRegenerate,
                 )
             }
-
             if let streamingAssistant {
                 AiChatAssistantCard(
+                    requestID: streamingAssistant.requestID,
+                    foregroundRequestID: streamingAssistant.requestID,
+                    title: streamingAssistant.title,
+                    thinkingLabel: streamingAssistant.thinkingLabel,
+                    activityStatusLabel: streamingAssistant.activityStatusLabel,
                     content: streamingAssistant.content,
                     isProcessing: isProcessing,
                     failure: streamingAssistant.failure,
+                    acceptedChunkRevision: streamingAssistant.acceptedChunkRevision,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
                 )
             } else if isProcessing {
                 AiChatAssistantCard(
+                    title: "Assistant",
                     content: nil,
                     isProcessing: true,
                     searchPresentation: searchPresentation,
@@ -276,6 +399,14 @@ private struct AiChatTranscriptSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var transcriptPresentation: AiChatTranscriptPresentation {
+        AiChatTranscriptPresentation(messages: messages, now: Date(), locale: locale, timeZone: timeZone)
+    }
+
+    private var latestAssistantMessageIndex: Int? {
+        messages.indices.last { messages[$0].role == .assistant }
+    }
+
     private func requestStatusRow(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 12, weight: .medium))
@@ -286,104 +417,200 @@ private struct AiChatTranscriptSection: View {
 }
 
 private struct AiChatMessageRow: View {
-    let message: AiChatMessage
+    let row: AiChatTranscriptRowPresentation
     let transcriptRow: AiChatTranscriptRowDiscriminator
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let showsRegenerateAction: Bool
     let onRegenerate: () -> Void
-
+    @Environment(\.colorScheme)
+    private var colorScheme
+    @Environment(\.locale)
+    private var locale
+    @Environment(\.timeZone)
+    private var timeZone
+    @State private var isMessageHovered = false
+    @State private var isTimestampControlHovered = false
     @State private var isRegenerateActionHovered = false
-
+    @FocusState private var isTimestampControlFocused: Bool
     var body: some View {
-        switch message.role {
+        TimelineView(.animation(minimumInterval: 1, paused: !shouldPresentTimestampTooltip)) { context in
+            let timestampLabel = AiChatTranscriptPresentation.timestampPresentation(
+                createdAtMs: row.message.createdAtMs, now: context.date, locale: locale, timeZone: timeZone,
+            )?.label
+            messageContent(timestampLabel: timestampLabel)
+                .contentShape(Rectangle())
+                .onHover { isMessageHovered = row.showsTimestampAffordance && $0 }
+                .accessibilityElement(children: .contain)
+                .modifier(AiChatTimestampAccessibilityValue(label: timestampLabel))
+                .transformAnchorPreference(
+                    key: AiChatTimestampTooltipAnchorPreferenceKey.self,
+                    value: .bounds,
+                ) { anchor, messageBounds in
+                    anchor?.messageBounds = messageBounds
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func messageContent(timestampLabel: String?) -> some View {
+        switch row.message.role {
         case .user:
-            userMessage
+            userMessage(timestampLabel: timestampLabel)
         case .assistant:
-            assistantMessage
+            assistantMessage(timestampLabel: timestampLabel)
         case .system, .tool:
             Text(highlightedPlainText)
-                .font(.system(size: 12))
+                .font(VoyagerDS.Typography.caption)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 4)
                 .overlay { matchAnchors(blockIndex: 0) }
         }
     }
 
-    private var userMessage: some View {
-        HStack {
+    private func userMessage(timestampLabel: String?) -> some View {
+        HStack(spacing: 8) {
             Spacer(minLength: 16)
             Text(highlightedPlainText)
-                .font(.system(size: 13))
+                .font(VoyagerDS.Typography.body)
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor)),
+                    VoyagerDS.Surface.userMessageBubbleBackground(for: colorScheme),
+                    in: RoundedRectangle(cornerRadius: VoyagerDS.Radius.userMessageBubble, style: .continuous),
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
-                )
+                .overlay(alignment: .topLeading) {
+                    timestampControlOverlay(
+                        timestampLabel: timestampLabel,
+                        placement: .userLeadingGutter,
+                    )
+                }
         }
         .overlay { matchAnchors(blockIndex: 0) }
     }
 
-    private var assistantMessage: some View {
+    private func assistantMessage(timestampLabel: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            AiChatAssistantMarkdownText(
-                content: message.content,
-                transcriptRow: transcriptRow,
+            AiChatAssistantCard(
+                title: "Assistant",
+                content: row.message.content,
+                isProcessing: false,
+                headerPresentation: .completedHistorical,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
+                transcriptRow: transcriptRow,
             )
-
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(AiChatAssistantHeaderPresentation.completedHistorical.accessibilityRoleLabel ?? "")
+            .overlay(alignment: .topTrailing) {
+                timestampControlOverlay(
+                    timestampLabel: timestampLabel,
+                    placement: .assistantTopTrailing,
+                )
+            }
+            .padding(.trailing, AiChatTimestampAffordancePresentation.assistantTrailingGutter)
             if showsRegenerateAction {
-                HStack(spacing: 6) {
-                    Button(action: onRegenerate) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.primary.opacity(isRegenerateActionHovered ? 0.08 : 0))
-                            Circle()
-                                .strokeBorder(Color.primary.opacity(isRegenerateActionHovered ? 0.10 : 0), lineWidth: 1)
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(width: 28, height: 28)
-                        .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Regenerate response")
-                    .accessibilityLabel("Regenerate response")
-
-                    if isRegenerateActionHovered {
-                        Text("Regenerate response")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color(nsColor: .controlBackgroundColor)),
-                            )
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
-                            )
-                    }
-                }
-                .onHover { isRegenerateActionHovered = $0 }
+                regenerateAction
             }
         }
-        .padding(.vertical, 4)
+    }
+
+    private var regenerateAction: some View {
+        HStack(spacing: 6) {
+            Button(action: onRegenerate) {
+                ZStack {
+                    Circle()
+                        .fill(isRegenerateActionHovered
+                            ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+                            : .clear)
+                    Circle()
+                        .strokeBorder(
+                            VoyagerDS.Surface.inputBorder(for: colorScheme)
+                                .opacity(isRegenerateActionHovered ? 1 : 0),
+                            lineWidth: 1,
+                        )
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Regenerate response")
+            .accessibilityLabel("Regenerate response")
+            if isRegenerateActionHovered {
+                Text("Regenerate response")
+                    .font(VoyagerDS.Typography.chip)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+                    )
+            }
+        }
+        .onHover { isRegenerateActionHovered = $0 }
+    }
+
+    @ViewBuilder
+    private func timestampControlOverlay(
+        timestampLabel: String?,
+        placement: AiChatTimestampAffordancePresentation.Placement,
+    ) -> some View {
+        if let timestampLabel, row.showsTimestampAffordance {
+            Image(systemName: "clock")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(
+                    width: AiChatTimestampAffordancePresentation.controlSize,
+                    height: AiChatTimestampAffordancePresentation.controlSize,
+                )
+                .contentShape(Circle())
+                .focusable()
+                .focused($isTimestampControlFocused)
+                .onHover { isTimestampControlHovered = $0 }
+                .accessibilityHidden(true)
+                .opacity(shouldRevealTimestampControl ? 1 : 0)
+                .allowsHitTesting(shouldRevealTimestampControl)
+                .offset(x: placement.horizontalOffset, y: 4)
+                .anchorPreference(
+                    key: AiChatTimestampTooltipAnchorPreferenceKey.self,
+                    value: .bounds,
+                ) { anchor in
+                    shouldPresentTimestampTooltip
+                        ? AiChatTimestampTooltipAnchor(
+                            label: timestampLabel,
+                            trigger: isTimestampControlHovered ? .hover : .focus,
+                            clockBounds: anchor,
+                        )
+                        : nil
+                }
+        }
+    }
+
+    private var shouldRevealTimestampControl: Bool {
+        row.showsTimestampAffordance && (isMessageHovered || shouldPresentTimestampTooltip)
+    }
+
+    private var shouldPresentTimestampTooltip: Bool {
+        AiChatTimestampAffordancePresentation.presentsTooltip(
+            hasTimestampMetadata: row.showsTimestampAffordance,
+            isClockHovered: isTimestampControlHovered,
+            isClockFocused: isTimestampControlFocused,
+        )
     }
 
     private var highlightedPlainText: AttributedString {
         AiChatRenderedTextHighlighter.highlight(
-            AttributedString(message.content),
+            AttributedString(row.message.content),
             matchOffsets: searchPresentation.matchOffsets(
                 transcriptRow: transcriptRow,
                 blockIndex: 0,
@@ -434,56 +661,110 @@ struct AiChatTranscriptMatchAnchors: View {
     }
 }
 
+private struct AiChatTimestampAccessibilityValue: ViewModifier {
+    let label: String?
+
+    func body(content: Content) -> some View {
+        if let label {
+            content.accessibilityValue("Sent \(label)")
+        } else {
+            content
+        }
+    }
+}
+
 private struct AiChatAssistantCard: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+    @State private var isMetadataHovered = false
+    @FocusState private var isMetadataFocused: Bool
+    var requestID: AiChatRequestID?
+    var foregroundRequestID: AiChatRequestID?
+    let title: String
+    var thinkingLabel: String?
+    var activityStatusLabel: String?
     let content: String?
     let isProcessing: Bool
+    var headerPresentation: AiChatAssistantHeaderPresentation = .full
     var failure: AiChatExecutionFailure?
+    var acceptedChunkRevision: Int?
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
-
+    var transcriptRow: AiChatTranscriptRowDiscriminator = .streamingAssistant
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            if bodyPresentation.showsInlineHeader {
+                header
+            }
             bodyContentView
-
             if let failure {
                 failureView(failure)
             }
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .focusable(bodyPresentation.isMetadataPanelEligible)
+        .focused($isMetadataFocused)
+        .onHover { isMetadataHovered = bodyPresentation.isMetadataPanelEligible && $0 }
+        .modifier(AiChatAssistantMetadataAccessibilityValue(label: bodyPresentation.accessibilityMetadataLabel))
+        .anchorPreference(
+            key: AiChatAssistantMetadataAnchorPreferenceKey.self,
+            value: .bounds,
+        ) { bodyBounds in
+            guard shouldPresentMetadataPanel, let requestID else { return [:] }
+            return [
+                requestID: AiChatAssistantMetadataAnchor(
+                    requestID: requestID,
+                    label: bodyPresentation.metadataPanelLabel,
+                    bodyBounds: bodyBounds,
+                ),
+            ]
+        }
+        .onChange(of: requestID) { _ in
+            clearMetadataInteraction()
+        }
+        .onChange(of: bodyPresentation.isMetadataPanelEligible) { isEligible in
+            if !isEligible { clearMetadataInteraction() }
+        }
+        .onDisappear {
+            clearMetadataInteraction()
+        }
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.07))
-                Image(systemName: "bubble.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .accessibilityHidden(true)
-            }
-            .frame(width: 28, height: 28)
-
-            Text(Self.assistantHeaderTitle)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
                 .font(.system(size: 13, weight: .semibold))
-
-            if isProcessing {
-                ProgressView()
-                    .controlSize(.small)
+            if let thinkingLabel {
+                Text(thinkingLabel)
+                    .font(VoyagerDS.Typography.chip)
+                    .foregroundStyle(.secondary)
+            }
+            if let activityStatusLabel {
+                Text(activityStatusLabel)
+                    .font(VoyagerDS.Typography.chip)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(activityStatusLabel)
             }
         }
     }
 
     @ViewBuilder private var bodyContentView: some View {
-        if let content = normalizedContent {
+        if let content = bodyPresentation.content {
             AiChatAssistantMarkdownText(
                 content: content,
-                transcriptRow: .streamingAssistant,
+                transcriptRow: transcriptRow,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
             )
+            .contentTransition(.opacity)
+            .animation(
+                reduceMotion ? nil : .easeIn(duration: AiChatAssistantBodyPresentation.chunkFadeDuration),
+                value: acceptedChunkRevision,
+            )
+        } else if bodyPresentation.showsWaiting {
+            AiChatWaitingIndicator()
         }
     }
 
@@ -494,149 +775,67 @@ private struct AiChatAssistantCard: View {
                 .foregroundStyle(.red)
                 .frame(width: 12)
                 .accessibilityLabel("Error")
-
             Text(failure.displayMessage)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.red)
         }
     }
 
-    private var normalizedContent: String? {
-        guard let content else {
-            return nil
-        }
-
-        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedContent.isEmpty ? nil : content
+    private var bodyPresentation: AiChatAssistantBodyPresentation {
+        AiChatAssistantBodyPresentation(
+            content: content,
+            isProcessing: isProcessing,
+            failure: failure,
+            title: title,
+            thinkingLabel: thinkingLabel,
+            headerPresentation: headerPresentation,
+            requestID: requestID,
+            foregroundRequestID: foregroundRequestID,
+        )
     }
 
-    private static let assistantHeaderTitle = "Assistant"
+    private var shouldPresentMetadataPanel: Bool {
+        AiChatAssistantBodyPresentation.presentsMetadataPanel(
+            bodyPresentation.isMetadataPanelEligible,
+            isMetadataHovered,
+            isMetadataFocused,
+        )
+    }
+
+    private func clearMetadataInteraction() {
+        isMetadataHovered = false
+        isMetadataFocused = false
+    }
 }
 
-private struct AiChatAssistantMarkdownText: View {
-    let content: String
-    let transcriptRow: AiChatTranscriptRowDiscriminator
-    let searchPresentation: AiChatTranscriptSearchPresentation
-    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+private struct AiChatAssistantMetadataAccessibilityValue: ViewModifier {
+    let label: String?
 
+    func body(content: Content) -> some View {
+        if let label {
+            content.accessibilityValue(label)
+        } else {
+            content
+        }
+    }
+}
+
+private struct AiChatWaitingIndicator: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { blockIndex, block in
-                blockView(block, blockIndex: blockIndex)
-                    .overlay {
-                        AiChatTranscriptMatchAnchors(
-                            descriptors: searchPresentation.matchDescriptors(
-                                transcriptRow: transcriptRow,
-                                blockIndex: blockIndex,
-                            ),
-                        )
-                    }
-                    .accessibilityValue(
-                        isCurrentSearchBlock(blockIndex) ? "Current search result" : "",
-                    )
+        Group {
+            if reduceMotion {
+                Text(AiChatAssistantBodyPresentation.waitingText(step: 0, reduceMotion: true))
+            } else {
+                TimelineView(.periodic(from: .now, by: 0.4)) { context in
+                    let step = Int(context.date.timeIntervalSinceReferenceDate / 0.4)
+                    Text(AiChatAssistantBodyPresentation.waitingText(step: step, reduceMotion: false))
+                }
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var blocks: [AssistantMarkdownBlock] {
-        AssistantMarkdownBlock.parse(content)
-    }
-
-    @ViewBuilder
-    private func blockView(_ block: AssistantMarkdownBlock, blockIndex: Int) -> some View {
-        switch block {
-        case let .heading(level, text):
-            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                .font(.system(size: headingSize(for: level), weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case let .paragraph(text):
-            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case let .bullet(text):
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("•")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        case let .numbered(number, text):
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("\(number).")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        case let .code(text):
-            Text(highlightedCode(text, blockIndex: blockIndex))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.primary)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-    }
-
-    private func headingSize(for level: Int) -> CGFloat {
-        switch level {
-        case 1: 17
-        case 2: 15
-        default: 14
-        }
-    }
-
-    private func highlightedInlineMarkdown(_ text: String, blockIndex: Int) -> AttributedString {
-        AiChatRenderedTextHighlighter.highlight(
-            inlineMarkdown(text),
-            matchOffsets: searchPresentation.matchOffsets(
-                transcriptRow: transcriptRow,
-                blockIndex: blockIndex,
-            ),
-            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
-        )
-    }
-
-    private func highlightedCode(_ text: String, blockIndex: Int) -> AttributedString {
-        AiChatRenderedTextHighlighter.highlight(
-            AttributedString(text),
-            matchOffsets: searchPresentation.matchOffsets(
-                transcriptRow: transcriptRow,
-                blockIndex: blockIndex,
-            ),
-            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
-        )
-    }
-
-    private func currentSearchMatchOffsets(blockIndex: Int) -> Range<Int>? {
-        guard currentSearchMatch?.transcriptRow == transcriptRow,
-              currentSearchMatch?.blockIndex == blockIndex
-        else { return nil }
-        return currentSearchMatch?.characterOffsets
-    }
-
-    private func isCurrentSearchBlock(_ blockIndex: Int) -> Bool {
-        currentSearchMatch?.transcriptRow == transcriptRow
-            && currentSearchMatch?.blockIndex == blockIndex
-    }
-
-    private func inlineMarkdown(_ text: String) -> AttributedString {
-        if let markdown = try? AttributedString(
-            markdown: text,
-            options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace,
-            ),
-        ) {
-            return markdown
-        }
-        return AttributedString(text)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Waiting for assistant response")
     }
 }

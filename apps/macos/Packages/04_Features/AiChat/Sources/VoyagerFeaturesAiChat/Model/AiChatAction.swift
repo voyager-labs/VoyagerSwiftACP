@@ -111,9 +111,9 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case currentContextChanged(AiChatCurrentContextSnapshot)
     case draftTextChanged(String)
     case attachmentPickerTapped
-    case attachmentPickerSelection([URL])
-    case attachmentDrop([AiChatAttachmentDropProvider])
-    case attachmentDropSelection([URL])
+    case attachmentPickerSelection(AiChatSessionID, [URL])
+    case attachmentDrop(AiChatSessionID, [AiChatAttachmentDropProvider])
+    case attachmentDropSelection(AiChatSessionID, [URL])
     case removeAddedAttachment(AiChatAttachmentID)
     case folderStructureModeChanged(AiChatFolderContextTarget, AiChatFolderStructureMode)
     case openSettingsTapped
@@ -143,7 +143,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     @CasePathable
     public enum Delegate: CasePathable, Equatable, Sendable {
         case openAISettings
-        case requestAttachmentPicker
+        case requestAttachmentPicker(AiChatSessionID)
         case clearCurrentContextSelection
     }
 }
