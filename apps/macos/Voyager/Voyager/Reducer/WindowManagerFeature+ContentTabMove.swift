@@ -9,84 +9,129 @@ extension WindowManagerFeature {
         _ request: ContentTabMoveRequest,
         state: inout State,
     ) -> Effect<Action> {
+        guard let sourceWindow = state.windows[id: request.sourceWindowID]?.window,
+              sourceWindow.pendingContentTabMove?.lifecycle == .inFlight,
+              sourceWindow.pendingContentTabMove?.request == request,
+              sourceWindow.sidebar.pendingContentTabMoveRequest == request
+        else { return .none }
         guard state.contentTabMoveTerminalRecords[request.requestID] == nil else { return .none }
         guard request.sourceWindowID != request.targetWindowID,
               isWindowReady(request.sourceWindowID, state: state),
               isWindowReady(request.targetWindowID, state: state),
-              let sourceWindow = state.windows[id: request.sourceWindowID]?.window,
-              let targetWindow = state.windows[id: request.targetWindowID]?.window,
-              sourceWindow.sidebar.pendingContentTabMoveRequest == request
+              let targetWindow = state.windows[id: request.targetWindowID]?.window
         else {
             return rejectContentTabMove(request, category: .unavailable, state: &state)
         }
 
-        guard !state.topNavigationPersistenceQueue.contains(where: {
-            guard case let .pinnedRecord(_, persistenceRequest, _) = $0.operation else { return false }
-            return persistenceRequest.tabID == request.tabID
-        }) else {
+        guard !contentTabMoveOverlapsActiveTransaction(request, state: state),
+              !state.topNavigationPersistenceQueue.contains(where: { queued in
+                  guard case let .pinnedRecord(_, persistenceRequest, _) = queued.operation else { return false }
+                  return request.orderedTabIDs.contains(persistenceRequest.tabID)
+              })
+        else {
             return rejectContentTabMove(request, category: .busy, state: &state)
         }
 
-        let targetUndoScopePolicy: FileOperationUndoScopeTargetPolicy =
-            targetWindow.contentTabs.tabs[id: request.tabID] == nil ? .requireVacant : .replaceEmpty
-        switch ContentTabTransfer.transfer(
+        let token: ContentTabTransfer.SuccessToken
+        switch ContentTabTransfer.preflight(
             source: sourceWindow,
             target: targetWindow,
-            tabID: request.tabID,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.initiatingTabID,
         ) {
+        case let .success(value):
+            token = value
         case let .rejected(reason):
             return rejectContentTabMove(request, category: contentTabMoveCategory(for: reason), state: &state)
+        }
 
+        let undoOutcome = fileOperationUndoManagerClient.moveScopes(
+            contentTabMoveUndoDescriptors(token, originalTarget: targetWindow),
+        )
+        guard undoOutcome == .moved else {
+            return rejectContentTabMove(
+                request,
+                category: contentTabMoveCategory(for: undoOutcome),
+                state: &state,
+            )
+        }
+
+        return applyContentTabMoveToken(request, token: token, state: &state)
+    }
+
+    private func applyContentTabMoveToken(
+        _ request: ContentTabMoveRequest,
+        token: ContentTabTransfer.SuccessToken,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch ContentTabTransfer.apply(token) {
         case let .moved(postCommit):
-            return finalizeContentTabMove(
+            commitContentTabMove(
                 request,
                 postCommit: postCommit,
-                targetUndoScopePolicy: targetUndoScopePolicy,
                 closesSourceWindow: false,
                 state: &state,
             )
-
         case let .closeSourceWindow(postCommit):
-            return finalizeContentTabMove(
+            commitContentTabMove(
                 request,
                 postCommit: postCommit,
-                targetUndoScopePolicy: targetUndoScopePolicy,
                 closesSourceWindow: true,
                 state: &state,
             )
+        case .rejected:
+            preconditionFailure("Validated ContentTabTransfer token must apply infallibly")
         }
     }
 
-    private func finalizeContentTabMove(
+    func startContentTabMoveNativeEffects(
+        _ request: ContentTabMoveRequest,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let plan = state.contentTabMoveNativeEffectsPlans[request.requestID],
+              plan.request == request,
+              state.contentTabMoveActivationAttempts[request.requestID]?.request == request,
+              state.contentTabMoveTerminalRecords[request.requestID] == .init(request: request, outcome: .succeeded)
+        else { return .none }
+        state.contentTabMoveNativeEffectsPlans[request.requestID] = nil
+
+        let activationAttempt = ContentTabMoveActivationAttempt(request: request)
+        let activationEffect: Effect<Action> = .run { [fileManagerWindowClient] send in
+            let result = await fileManagerWindowClient.activate(request.targetWindowID)
+            await send(.contentTabMoveActivationResult(attempt: activationAttempt, result: result))
+        }
+        guard plan.closesSourceWindow else { return activationEffect }
+        return .merge(
+            closeWindow(request.sourceWindowID, state: &state),
+            activationEffect,
+        )
+    }
+
+    private func commitContentTabMove(
         _ request: ContentTabMoveRequest,
         postCommit: ContentTabTransfer.PostCommit,
-        targetUndoScopePolicy: FileOperationUndoScopeTargetPolicy,
         closesSourceWindow: Bool,
         state: inout State,
     ) -> Effect<Action> {
-        if let category = contentTabMoveUndoScopeFailureCategory(
-            postCommit.rebind,
-            targetPolicy: targetUndoScopePolicy,
-        ) {
-            return rejectContentTabMove(request, category: category, state: &state)
-        }
-
-        var sourceWindow = postCommit.source
-        if !closesSourceWindow {
-            sourceWindow.sidebar.pendingContentTabMoveRequest = nil
-        }
-        state.windows[id: request.sourceWindowID]?.window = sourceWindow
+        state.windows[id: request.sourceWindowID]?.window = postCommit.source
         state.windows[id: request.targetWindowID]?.window = postCommit.target
-
-        let commitEffect = commitContentTabMove(
-            request,
-            rebind: postCommit.rebind,
-            state: &state,
+        state.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
+        state.contentTabMoveTransactions[request.requestID] = .init(request: request)
+        state.contentTabMoveNativeEffectsPlans[request.requestID] = .init(
+            request: request,
+            closesSourceWindow: closesSourceWindow,
         )
-        guard closesSourceWindow else { return commitEffect }
-        return .merge(
-            closeWindow(request.sourceWindowID, state: &state),
-            commitEffect,
+        state.contentTabMoveActivationAttempts[request.requestID] = .init(request: request)
+        state.refreshContentTabMoveTargets()
+
+        return .concatenate(
+            contentTabMoveTerminalEffect(request, outcome: .succeeded),
+            contentTabMoveLifecycleEffects(
+                teardownIntents: postCommit.teardownIntents,
+                rebindIntents: postCommit.rebinds,
+            ),
+            .send(.contentTabMoveLifecycleCompleted(request: request)),
+            .send(.contentTabMoveNativeEffectsRequested(request: request)),
         )
     }
 
@@ -95,140 +140,113 @@ extension WindowManagerFeature {
         category: ContentTabMoveFailurePresentation.Category,
         state: inout State,
     ) -> Effect<Action> {
-        if state.windows[id: request.sourceWindowID]?.window.sidebar.pendingContentTabMoveRequest == request {
-            state.windows[id: request.sourceWindowID]?.window.sidebar.pendingContentTabMoveRequest = nil
-            state.windows[id: request.sourceWindowID]?.window.contentTabMoveFailurePresentation = .init(
-                requestID: request.requestID,
-                category: category,
+        state.recordContentTabMoveTerminal(.init(request: request, outcome: .rejected(category)))
+        return contentTabMoveTerminalEffect(request, outcome: .rejected(category))
+    }
+
+    private func contentTabMoveTerminalEffect(
+        _ request: ContentTabMoveRequest,
+        outcome: ContentTabMoveTerminalRecord.Outcome,
+    ) -> Effect<Action> {
+        let windowAction: FileManagerWindowAction = switch outcome {
+        case .succeeded:
+            .contentTabMoveSucceeded(request: request)
+        case let .rejected(category):
+            .contentTabMoveRejected(request: request, category: category)
+        }
+        return .send(.windows(.element(
+            id: request.sourceWindowID,
+            action: .window(windowAction),
+        )))
+    }
+
+    private func contentTabMoveOverlapsActiveTransaction(
+        _ request: ContentTabMoveRequest,
+        state: State,
+    ) -> Bool {
+        let requestedWindowIDs: Set<State.WindowID> = [request.sourceWindowID, request.targetWindowID]
+        return state.contentTabMoveTransactions.values.contains { transaction in
+            let activeWindowIDs: Set<State.WindowID> = [
+                transaction.request.sourceWindowID,
+                transaction.request.targetWindowID,
+            ]
+            return !requestedWindowIDs.isDisjoint(with: activeWindowIDs)
+        }
+    }
+
+    private func contentTabMoveUndoDescriptors(
+        _ token: ContentTabTransfer.SuccessToken,
+        originalTarget: FileManagerWindowFeature.State,
+    ) -> [FileOperationUndoScopeMoveDescriptor] {
+        token.rebindIntents.compactMap { intent in
+            guard intent.rebindUndoScope else { return nil }
+            return FileOperationUndoScopeMoveDescriptor(
+                source: UndoManagerScope(
+                    windowID: intent.sourceWindowID,
+                    contentTabID: intent.tabID.rawValue,
+                ),
+                target: UndoManagerScope(
+                    windowID: intent.targetWindowID,
+                    contentTabID: intent.tabID.rawValue,
+                ),
+                targetPolicy: originalTarget.contentTabs.tabs[id: intent.tabID] == nil
+                    ? .requireVacant
+                    : .replaceEmpty,
             )
         }
-        state.recordContentTabMoveTerminal(.init(
-            requestID: request.requestID,
-            sourceWindowID: request.sourceWindowID,
-            tabID: request.tabID,
-            targetWindowID: request.targetWindowID,
-            outcome: .rejected(category),
-        ))
-        return .none
     }
 
-    private func commitContentTabMove(
-        _ request: ContentTabMoveRequest,
-        rebind: ContentTabTransfer.RebindIntent,
-        state: inout State,
+    private func contentTabMoveLifecycleEffects(
+        teardownIntents: [ContentTabTransfer.TeardownIntent],
+        rebindIntents: [ContentTabTransfer.RebindIntent],
     ) -> Effect<Action> {
-        state.recordContentTabMoveTerminal(.init(
-            requestID: request.requestID,
-            sourceWindowID: request.sourceWindowID,
-            tabID: request.tabID,
-            targetWindowID: request.targetWindowID,
-            outcome: .succeeded,
-        ))
-        let activationAttempt = ContentTabMoveActivationAttempt(
-            requestID: request.requestID,
-            targetWindowID: request.targetWindowID,
-        )
-        state.contentTabMoveActivationAttempts[request.requestID] = activationAttempt
-        state.refreshContentTabMoveTargets()
-        return postCommitContentTabMoveEffects(
-            request,
-            rebind: rebind,
-            activationAttempt: activationAttempt,
+        .concatenate(
+            contentTabMoveTeardownEffect(teardownIntents),
+            contentTabMoveObservationRebindEffect(rebindIntents),
         )
     }
 
-    private func postCommitContentTabMoveEffects(
-        _ request: ContentTabMoveRequest,
-        rebind: ContentTabTransfer.RebindIntent,
-        activationAttempt: ContentTabMoveActivationAttempt,
+    private func contentTabMoveTeardownEffect(
+        _ intents: [ContentTabTransfer.TeardownIntent],
     ) -> Effect<Action> {
-        var effects = contentTabMoveRebindEffects(rebind: rebind)
-        effects.append(.run { [fileManagerWindowClient] send in
-            let result = await fileManagerWindowClient.activate(request.targetWindowID)
-            await send(.contentTabMoveActivationResult(attempt: activationAttempt, result: result))
-        })
-        return .merge(effects)
-    }
-
-    private func contentTabMoveRebindEffects(
-        rebind: ContentTabTransfer.RebindIntent,
-    ) -> [Effect<Action>] {
-        [
-            .concatenate(
-                contentTabMoveOutgoingOwnerTeardown(rebind.sourceOutgoingOwner),
-                rebind.targetOutgoingOwner.map(contentTabMoveOutgoingOwnerTeardown) ?? .none,
-                contentTabMoveObservationRebindEffect(rebind),
-            ),
-        ]
-    }
-
-    private func contentTabMoveUndoScopeFailureCategory(
-        _ rebind: ContentTabTransfer.RebindIntent,
-        targetPolicy: FileOperationUndoScopeTargetPolicy,
-    ) -> ContentTabMoveFailurePresentation.Category? {
-        let outcome = fileOperationUndoManagerClient.moveScope(
-            UndoManagerScope(
-                windowID: rebind.sourceWindowID,
-                contentTabID: rebind.tabID.rawValue,
-            ),
-            UndoManagerScope(
-                windowID: rebind.targetWindowID,
-                contentTabID: rebind.tabID.rawValue,
-            ),
-            targetPolicy,
-        )
-        switch outcome {
-        case .moved:
-            return nil
-        case .sourceMissing:
-            return .unavailable
-        case .targetOccupied:
-            return .generic
-        }
-    }
-
-    private func contentTabMoveOutgoingOwnerTeardown(
-        _ owner: ContentTabTransfer.OutgoingContentOwner,
-    ) -> Effect<Action> {
+        var loadingScopes: Set<ContentTabTransfer.LoadingTeardownScope> = []
+        var composerScopes: Set<ContentTabTransfer.ComposerTeardownScope> = []
         var effects: [Effect<Action>] = []
-        if owner.canCancelLoadingExclusively {
-            effects.append(.cancel(id: EntryOperationsLoadingCancelID.loadItems(
-                windowID: owner.loadingWindowID,
-                ownerID: owner.loadingOwnerID,
-            )))
-        }
-        if owner.canCancelComposerExclusively {
-            effects.append(.cancel(id: ComposerFeature.CancelID.search(ownerID: owner.composerOwnerID)))
-            effects.append(.cancel(id: ComposerFeature.CancelID.filters(ownerID: owner.composerOwnerID)))
+        for intent in intents {
+            if let scope = intent.loadingScope, loadingScopes.insert(scope).inserted {
+                effects.append(.cancel(id: EntryOperationsLoadingCancelID.loadItems(
+                    windowID: scope.windowID,
+                    ownerID: scope.ownerID,
+                )))
+            }
+            if let scope = intent.composerScope, composerScopes.insert(scope).inserted {
+                effects.append(.cancel(id: ComposerFeature.CancelID.search(ownerID: scope.ownerID)))
+                effects.append(.cancel(id: ComposerFeature.CancelID.filters(ownerID: scope.ownerID)))
+            }
         }
         return .concatenate(effects)
     }
 
     private func contentTabMoveObservationRebindEffect(
-        _ rebind: ContentTabTransfer.RebindIntent,
+        _ intents: [ContentTabTransfer.RebindIntent],
     ) -> Effect<Action> {
-        let targetEffect = contentTabMoveObservationSequence(rebind.targetActiveNavigationObservation)
-        guard let source = rebind.sourceActiveNavigationObservation else {
-            return targetEffect
-        }
-        return .concatenate(
-            contentTabMoveObservationSequence(source),
-            targetEffect,
-        )
+        .concatenate(intents.compactMap { intent in
+            guard intent.rebindNavigationObservation else { return nil }
+            let targetEffect = contentTabMoveObservationSequence(intent.targetActiveNavigationObservation)
+            guard let source = intent.sourceActiveNavigationObservation else { return targetEffect }
+            return .concatenate(
+                contentTabMoveObservationSequence(source),
+                targetEffect,
+            )
+        })
     }
 
     private func contentTabMoveObservationSequence(
         _ rebind: ContentTabTransfer.ActiveNavigationObservationRebind,
     ) -> Effect<Action> {
         .concatenate(
-            contentTabMoveObservationEffect(
-                rebind,
-                action: .internal(.stopObservingSystemNotifications),
-            ),
-            contentTabMoveObservationEffect(
-                rebind,
-                action: .internal(.startObservingSystemNotifications),
-            ),
+            contentTabMoveObservationEffect(rebind, action: .internal(.stopObservingSystemNotifications)),
+            contentTabMoveObservationEffect(rebind, action: .internal(.startObservingSystemNotifications)),
             contentTabMoveObservationEffect(
                 rebind,
                 action: .internal(.applyNavigationState(rebind.navigationRoute)),
@@ -244,6 +262,19 @@ extension WindowManagerFeature {
             id: rebind.windowID,
             action: .window(.tabContent(tabID: rebind.tabID, action: action)),
         )))
+    }
+
+    private func contentTabMoveCategory(
+        for outcome: FileOperationUndoScopesMoveOutcome,
+    ) -> ContentTabMoveFailurePresentation.Category {
+        switch outcome {
+        case .sourceMissing:
+            .unavailable
+        case .moved:
+            preconditionFailure("Successful Undo batch has no rejection category")
+        case .emptyBatch, .duplicateSource, .duplicateTarget, .targetOccupied:
+            .generic
+        }
     }
 
     private func contentTabMoveCategory(

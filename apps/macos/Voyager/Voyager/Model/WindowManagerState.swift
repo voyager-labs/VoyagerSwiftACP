@@ -13,6 +13,11 @@ struct WindowManagerTopNavigationPersistenceRequest: Equatable {
             destination: FileManagerTopNavigationMoveDestination,
             discoveredLocationIDs: [String],
         )
+        case movePinnedGroup(
+            orderedIDs: [ContentTabID],
+            destination: FileManagerTopNavigationMoveDestination,
+            discoveredLocationIDs: [String],
+        )
         case pinnedRecord(
             source: FileManagerPinnedRecordPersistenceSource,
             request: ContentTabPinnedRecordPersistenceRequest,
@@ -44,16 +49,64 @@ struct ContentTabMoveTerminalRecord: Equatable {
         case rejected(ContentTabMoveFailurePresentation.Category)
     }
 
+    let operationID: UUID
     let requestID: UUID
     let sourceWindowID: UUID
-    let tabID: ContentTabID
+    let initiatingTabID: ContentTabID
+    let orderedTabIDs: [ContentTabID]
     let targetWindowID: UUID
     let outcome: Outcome
+
+    var tabID: ContentTabID {
+        initiatingTabID
+    }
+
+    init(request: ContentTabMoveRequest, outcome: Outcome) {
+        operationID = request.operationID
+        requestID = request.requestID
+        sourceWindowID = request.sourceWindowID
+        initiatingTabID = request.initiatingTabID
+        orderedTabIDs = request.orderedTabIDs
+        targetWindowID = request.targetWindowID
+        self.outcome = outcome
+    }
+
+    init(
+        requestID: UUID,
+        sourceWindowID: UUID,
+        tabID: ContentTabID,
+        targetWindowID: UUID,
+        outcome: Outcome,
+    ) {
+        operationID = requestID
+        self.requestID = requestID
+        self.sourceWindowID = sourceWindowID
+        initiatingTabID = tabID
+        orderedTabIDs = [tabID]
+        self.targetWindowID = targetWindowID
+        self.outcome = outcome
+    }
+}
+
+struct ContentTabMoveTransaction: Equatable {
+    let request: ContentTabMoveRequest
+}
+
+struct ContentTabMoveNativeEffectsPlan: Equatable {
+    let request: ContentTabMoveRequest
+    let closesSourceWindow: Bool
 }
 
 struct ContentTabMoveActivationAttempt: Equatable {
-    let requestID: UUID
-    let targetWindowID: UUID
+    let request: ContentTabMoveRequest
+
+    var requestID: UUID {
+        request.requestID
+    }
+
+    var targetWindowID: UUID {
+        request.targetWindowID
+    }
 }
 
 @ObservableState
@@ -82,6 +135,8 @@ struct WindowManagerState: Equatable {
     var isTopNavigationPersistenceInFlight = false
     var contentTabMoveTerminalRecords: [UUID: ContentTabMoveTerminalRecord] = [:]
     var contentTabMoveTerminalRequestIDs: [UUID] = []
+    var contentTabMoveTransactions: [UUID: ContentTabMoveTransaction] = [:]
+    var contentTabMoveNativeEffectsPlans: [UUID: ContentTabMoveNativeEffectsPlan] = [:]
     var contentTabMoveActivationAttempts: [UUID: ContentTabMoveActivationAttempt] = [:]
 
     mutating func moveWindowToMRUFront(_ id: WindowID) {
@@ -124,23 +179,26 @@ struct WindowManagerState: Equatable {
                           let title = titles[targetWindowID],
                           let targetWindow = windows[id: targetWindowID]?.window
                     else { return nil }
-                    let acceptsNewTabs = targetWindow.contentTabs.tabs.count < ContentTabConstants.maxTabs
-                    let replaceablePinnedTabIDs = acceptsNewTabs ? [] : Set(
+                    let availableSlots = max(
+                        0,
+                        ContentTabConstants.maxTabs - targetWindow.contentTabs.tabs.count,
+                    )
+                    let replaceablePinnedTabIDs = Set(
                         sourceWindow.contentTabs.tabs.ids.filter { tabID in
-                            targetWindow.canAcceptContentTabMove(
+                            targetWindow.canReplacePassivePinnedContentTab(
                                 tabID: tabID,
                                 sourcePinnedRecord: sourceWindow.contentTabs.pinnedRecords[tabID],
                             )
                         },
                     )
-                    guard acceptsNewTabs || !replaceablePinnedTabIDs.isEmpty else { return nil }
+                    guard availableSlots > 0 || !replaceablePinnedTabIDs.isEmpty else { return nil }
                     let displayTitle = duplicateTitles.contains(title)
                         ? "\(title) — Window \(index + 1)"
                         : title
                     return ContentTabMoveTarget(
                         windowID: targetWindowID,
                         displayTitle: displayTitle,
-                        acceptsNewTabs: acceptsNewTabs,
+                        availableSlots: availableSlots,
                         replaceablePinnedTabIDs: replaceablePinnedTabIDs,
                     )
                 }

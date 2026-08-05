@@ -353,6 +353,8 @@ enum WindowManagerAction: CasePathable {
         result: FileManagerWindowActivationResult,
     )
     case contentTabMoveRequest(ContentTabMoveRequest)
+    case contentTabMoveLifecycleCompleted(request: ContentTabMoveRequest)
+    case contentTabMoveNativeEffectsRequested(request: ContentTabMoveRequest)
     case contentTabMoveActivationResult(
         attempt: ContentTabMoveActivationAttempt,
         result: FileManagerWindowActivationResult,
