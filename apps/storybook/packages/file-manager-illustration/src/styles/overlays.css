@@ -1,0 +1,307 @@
+/* Overlay primitives — Dialog, Sheet, Popover */
+
+/* === Shared overlay backdrop === */
+[data-file-manager-illustration] .fm-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+  animation: fm-fade-in 160ms ease both;
+}
+
+/* === Dialog === */
+[data-file-manager-illustration] .fm-dialog {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 110;
+  min-width: 0;
+  border: 1px solid var(--fm-window-border);
+  border-radius: var(--fm-radius-lg);
+  background: var(--fm-elevated);
+  box-shadow: var(--fm-shadow-window);
+  backdrop-filter: var(--fm-backdrop-blur);
+  animation: fm-scale-in 160ms ease both;
+  outline: none;
+}
+
+[data-file-manager-illustration] .fm-dialog.small {
+  width: 360px;
+  max-height: 60vh;
+}
+
+[data-file-manager-illustration] .fm-dialog.medium {
+  width: 480px;
+  max-height: 80vh;
+}
+
+[data-file-manager-illustration] .fm-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-4);
+  padding: var(--fm-space-6) var(--fm-space-7) 0;
+  min-height: 0;
+}
+
+[data-file-manager-illustration] .fm-dialog-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-title);
+  font-weight: var(--fm-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+
+[data-file-manager-illustration] .fm-dialog-close {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  background: transparent;
+  color: var(--fm-text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: default;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+[data-file-manager-illustration] .fm-dialog-close:hover {
+  background: var(--fm-control-hover);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .fm-dialog-close:active {
+  background: var(--fm-control-pressed);
+}
+
+[data-file-manager-illustration] .fm-dialog-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .fm-dialog-body {
+  overflow-y: auto;
+  padding: var(--fm-space-6) var(--fm-space-7);
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-body);
+  min-height: 0;
+}
+
+[data-file-manager-illustration] .fm-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fm-space-4);
+  padding: var(--fm-space-5) var(--fm-space-7) var(--fm-space-7);
+  min-height: 0;
+}
+
+/* === Sheet === */
+[data-file-manager-illustration] .fm-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(2px);
+  animation: fm-fade-in 200ms ease both;
+}
+
+[data-file-manager-illustration] .fm-sheet {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  z-index: 110;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  min-width: 0;
+  border-left: 1px solid var(--fm-window-border);
+  background: var(--fm-material-sheet);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
+  backdrop-filter: var(--fm-backdrop-blur);
+  outline: none;
+  animation: fm-slide-in-right 260ms ease both;
+}
+
+[data-file-manager-illustration] .fm-sheet.small {
+  width: 320px;
+}
+
+[data-file-manager-illustration] .fm-sheet.medium {
+  width: 480px;
+}
+
+[data-file-manager-illustration] .fm-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-4);
+  flex-shrink: 0;
+  padding: var(--fm-space-7);
+  border-bottom: 1px solid var(--fm-separator);
+  min-height: 0;
+}
+
+[data-file-manager-illustration] .fm-sheet-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-title);
+  font-weight: var(--fm-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+
+[data-file-manager-illustration] .fm-sheet-close {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  background: transparent;
+  color: var(--fm-text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: default;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+[data-file-manager-illustration] .fm-sheet-close:hover {
+  background: var(--fm-control-hover);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .fm-sheet-close:active {
+  background: var(--fm-control-pressed);
+}
+
+[data-file-manager-illustration] .fm-sheet-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .fm-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--fm-space-7);
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-body);
+  min-height: 0;
+}
+
+[data-file-manager-illustration] .fm-sheet-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fm-space-4);
+  flex-shrink: 0;
+  padding: var(--fm-space-6) var(--fm-space-7);
+  border-top: 1px solid var(--fm-separator);
+  min-height: 0;
+}
+
+/* === Popover === */
+[data-file-manager-illustration] .fm-popover-wrapper {
+  display: inline-flex;
+  position: relative;
+}
+
+[data-file-manager-illustration] .fm-popover-trigger {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  padding: 0;
+}
+
+[data-file-manager-illustration] .fm-popover-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+  border-radius: var(--fm-radius-sm);
+}
+
+[data-file-manager-illustration] .fm-popover {
+  position: absolute;
+  z-index: 120;
+  min-width: 180px;
+  max-width: 320px;
+  border: 1px solid var(--fm-window-border);
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-elevated);
+  padding: var(--fm-space-2);
+  box-shadow: var(--fm-shadow-card);
+  backdrop-filter: var(--fm-backdrop-blur);
+  animation: fm-fade-in 120ms ease both;
+  outline: none;
+}
+
+[data-file-manager-illustration] .fm-popover.top {
+  bottom: calc(100% + var(--fm-space-3));
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+[data-file-manager-illustration] .fm-popover.right {
+  top: 50%;
+  left: calc(100% + var(--fm-space-3));
+  transform: translateY(-50%);
+}
+
+[data-file-manager-illustration] .fm-popover.bottom {
+  top: calc(100% + var(--fm-space-3));
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+[data-file-manager-illustration] .fm-popover.left {
+  top: 50%;
+  right: calc(100% + var(--fm-space-3));
+  transform: translateY(-50%);
+}
+
+/* === Animations === */
+@keyframes fm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fm-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fm-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
