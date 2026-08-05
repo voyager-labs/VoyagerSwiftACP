@@ -64,17 +64,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(sidebarItems[0].title, "Home")
         XCTAssertEqual(sidebarItems[0].iconName, "house")
         XCTAssertEqual(sidebarItems[0].pageType, .home)
-        XCTAssertEqual(sidebarItems[0].isPinned, false)
+        XCTAssertFalse(sidebarItems[0].isPinned)
         XCTAssertEqual(sidebarItems[1].id, directoryID)
         XCTAssertEqual(sidebarItems[1].title, "Test Folder")
         XCTAssertEqual(sidebarItems[1].iconName, "folder")
         XCTAssertEqual(sidebarItems[1].pageType, .directory)
-        XCTAssertEqual(sidebarItems[1].isPinned, true)
+        XCTAssertTrue(sidebarItems[1].isPinned)
         XCTAssertEqual(sidebarItems[2].id, collectionID)
         XCTAssertEqual(sidebarItems[2].title, "My Collection")
         XCTAssertEqual(sidebarItems[2].iconName, "list.bullet")
         XCTAssertEqual(sidebarItems[2].pageType, .collection)
-        XCTAssertEqual(sidebarItems[2].isPinned, false)
+        XCTAssertFalse(sidebarItems[2].isPinned)
     }
 
     /// CTM-004-sidebar_projection_content_tabs: Sidebar projection은 정확히 하나의 tab만 active로 표시함
@@ -800,7 +800,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
-        XCTAssertTrue(store.state.contentTabs.tabs.filter(\.isPinned).isEmpty)
+        XCTAssertFalse(store.state.contentTabs.tabs.contains { $0.isPinned })
     }
 
     /// CTM-004-home_dashboard_projection: active Home의 onAppear projection은 live/cache parity를 유지한다.
@@ -1692,6 +1692,53 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
     }
 
+    /// CTM-004-content_tab_reorder_drop_contract: 종료된 drag snapshot은 후속 singleton 이동에 재사용되지 않는다.
+    /// awaiting payload 상태의 이전 다중 선택이 키보드·접근성 이동을 group persistence로 승격하지 않는지 검증한다.
+    /// - 검증 내용: single move intent와 기존 awaiting snapshot 보존
+    /// - 사전 조건: pinned `[C, A]` snapshot이 drag terminal 이후 awaiting payload 상태임
+    /// - 기대 결과: C 하나만 이동하고 group persistence action은 발생하지 않음
+    func testPinnedTopNavigationAwaitingDragSnapshotDoesNotPromoteLaterSingletonMove() async {
+        let fixture = PinnedGroupReorderFixture()
+        let initialState = fixture.state(
+            order: fixture.initialOrder,
+            frozenIDs: [fixture.tabC, fixture.tabA],
+            lifecycle: .awaitingPayload,
+        )
+        let expectedOrder = FileManagerTopNavigationOrder(items: [
+            .location(fixture.homeID),
+            .contentTab(fixture.tabA),
+            .contentTab(fixture.tabC),
+            .location(fixture.downloadsID),
+            .contentTab(fixture.tabB),
+        ])
+        let destination = FileManagerTopNavigationMoveDestination.before(.location(fixture.downloadsID))
+        let store = TestStore(initialState: initialState) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+        }
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(fixture.tabC),
+            destination: destination,
+        )) {
+            $0.pendingTopNavigationIntents = [
+                .init(
+                    token: fixture.token,
+                    intent: .move(source: .contentTab(fixture.tabC), destination: destination),
+                ),
+            ]
+            $0.optimisticTopNavigationOrder = expectedOrder
+        }
+        await store.receive { action in
+            guard case let .delegate(.persistTopNavigationMove(token, source, receivedDestination, _)) = action
+            else { return false }
+            return token == fixture.token
+                && source == .contentTab(fixture.tabC)
+                && receivedDestination == destination
+        }
+        XCTAssertEqual(store.state.sidebar.contentTabDragSnapshot?.lifecycle, .awaitingPayload)
+        await store.finish()
+    }
+
     /// CTM-004-content_tab_reorder_drop_contract: invalid pinned 선택 그룹과 unchanged 최종 순서는 exact no-op이다.
     /// selected/stale anchor, pinned·unpinned mixed group, 이미 같은 block 위치를 persistence intent 없이 거부한다.
     /// - 검증 내용: optimistic order, pending intent count, group validation 전체 불변
@@ -1795,7 +1842,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             ]
         }
 
-        func state(order: FileManagerTopNavigationOrder, frozenIDs: [ContentTabID]) -> FileManagerFeature.State {
+        func state(
+            order: FileManagerTopNavigationOrder,
+            frozenIDs: [ContentTabID],
+            lifecycle: ContentTabDragSnapshot.Lifecycle = .inFlight,
+        ) -> FileManagerFeature.State {
             var state = FileManagerFeature.State()
             state.contentTabs = ContentTabState(
                 tabs: [
@@ -1814,6 +1865,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 sourceWindowID: sourceWindowID,
                 initiatingTabID: tabC,
                 orderedTabIDs: frozenIDs,
+                lifecycle: lifecycle,
             )
             return state
         }
@@ -1845,6 +1897,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             placement: scenario.placement,
         ))))
         await store.receive(\.topNavigationMoveRequested) {
+            $0.sidebar.contentTabDragSnapshot = nil
             $0.pendingTopNavigationIntents = [
                 .init(
                     token: fixture.token,

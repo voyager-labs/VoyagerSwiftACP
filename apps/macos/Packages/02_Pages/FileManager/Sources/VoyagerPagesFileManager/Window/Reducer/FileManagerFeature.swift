@@ -773,6 +773,7 @@ extension FileManagerFeature {
     ) -> Effect<Action> {
         if case let .contentTab(sourceTabID) = source,
            let snapshot = state.sidebar.contentTabDragSnapshot,
+           snapshot.lifecycle == .inFlight,
            snapshot.initiatingTabID == sourceTabID,
            snapshot.orderedTabIDs.contains(sourceTabID),
            snapshot.orderedTabIDs.count > 1
@@ -823,6 +824,7 @@ extension FileManagerFeature {
         )
         guard movedOrder != state.optimisticTopNavigationOrder else { return .none }
 
+        state.sidebar.contentTabDragSnapshot = nil
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
         state.pendingTopNavigationIntents.append(.init(
             token: token,

@@ -1545,6 +1545,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             sourceWindowID: fixture.sourceWindowID,
             initiatingTabID: fixture.tabC,
             orderedTabIDs: [fixture.tabC, fixture.tabA],
+            lifecycle: .inFlight,
         )
         return state
     }
@@ -1566,6 +1567,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             placement: .before,
         ))))
         await store.receive(\.topNavigationMoveRequested) {
+            $0.sidebar.contentTabDragSnapshot = nil
             $0.pendingTopNavigationIntents = [
                 .init(
                     token: fixture.token,
