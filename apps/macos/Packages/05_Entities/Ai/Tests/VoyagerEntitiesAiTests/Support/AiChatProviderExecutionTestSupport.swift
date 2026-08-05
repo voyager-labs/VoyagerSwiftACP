@@ -2,6 +2,66 @@
 @testable import VoyagerEntitiesAi
 import XCTest
 
+final class ProviderExecutionResultRecorder<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<Value, Error>?
+
+    func record(_ result: Result<Value, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard self.result == nil else { return }
+        self.result = result
+    }
+
+    func snapshot() -> Result<Value, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+}
+
+func providerExecutionCodexAppServerFinalText(_ lines: [String]) throws -> String {
+    let recorder = ProviderExecutionResultRecorder<String>()
+    let driver = providerExecutionMakeCodexAppServerDriver(onComplete: recorder.record)
+    let jsonLines = lines.map { $0.split(whereSeparator: \.isNewline).joined() }
+
+    driver.append(Data((jsonLines.joined(separator: "\n") + "\n").utf8))
+
+    return try XCTUnwrap(recorder.snapshot()).get()
+}
+
+func providerExecutionMakeCodexAppServerDriver(
+    onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void = { _ in },
+    onComplete: @escaping @Sendable (Result<String, Error>) -> Void,
+) -> CodexAppServerProtocolDriver {
+    CodexAppServerProtocolDriver(
+        input: Pipe().fileHandleForWriting,
+        model: "gpt-5-codex",
+        prompt: "Hello",
+        thinking: nil,
+        workingDirectory: nil,
+        onEvent: onEvent,
+        onComplete: onComplete,
+    )
+}
+
+func providerExecutionCodexJSONLine(
+    method: String,
+    params: [String: Any],
+) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: [
+        "method": method,
+        "params": params,
+    ])
+    return try XCTUnwrap(String(data: data, encoding: .utf8))
+}
+
+func providerExecutionCodexTurnCompletedLine() throws -> String {
+    try providerExecutionCodexJSONLine(method: "turn/completed", params: [
+        "turn": ["id": "turn-1", "status": "completed"],
+    ])
+}
+
 func assertRegistryRoute(
     provider: AiProvider,
     credential: StoredCredentialPayload,

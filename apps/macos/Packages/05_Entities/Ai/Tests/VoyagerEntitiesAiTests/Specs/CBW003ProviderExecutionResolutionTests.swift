@@ -177,6 +177,248 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
     }
 }
 
+extension CBW003ProviderExecutionResolutionTests {
+    /// CBW-003-stream_contextual_chat_response: concurrent finish는 이미 추출된 item event를 앞지를 수 없다.
+    /// readability callback에서 추출된 delta/completed 처리 중 termination callback이 진입하는 순서를 검증합니다.
+    /// - 검증 내용: delta callback이 중단된 동안 finish가 반환하지 않고 completed item 뒤 terminal snapshot을 만듭니다.
+    /// - 사전 조건: delta와 completed는 한 append에서 추출되고 turn/completed는 newline 없이 buffer에 남아 있습니다.
+    /// - 기대 결과: finish는 append 처리 후 완료되며 authoritative completed text를 반환합니다.
+    func testCodexAppServerDriver_concurrentFinishCannotOvertakeExtractedItemEvents() throws {
+        let deltaEntered = DispatchSemaphore(value: 0)
+        let releaseDelta = DispatchSemaphore(value: 0)
+        let completion = DispatchSemaphore(value: 0)
+        let appendGroup = DispatchGroup()
+        let finishGroup = DispatchGroup()
+        let recorder = ProviderExecutionResultRecorder<String>()
+        let driver = providerExecutionMakeCodexAppServerDriver(
+            onEvent: { event in
+                guard case .agentMessageDelta = event else { return }
+                deltaEntered.signal()
+                releaseDelta.wait()
+            },
+            onComplete: { result in
+                recorder.record(result)
+                completion.signal()
+            },
+        )
+        let payload = try [
+            providerExecutionCodexJSONLine(method: "item/agentMessage/delta", params: [
+                "itemId": "message-1",
+                "delta": "Hel",
+            ]),
+            providerExecutionCodexJSONLine(method: "item/completed", params: [
+                "item": ["id": "message-1", "type": "agentMessage", "text": "Hello"],
+            ]),
+            providerExecutionCodexTurnCompletedLine(),
+        ].joined(separator: "\n")
+
+        appendGroup.enter()
+        DispatchQueue.global().async {
+            driver.append(Data(payload.utf8))
+            appendGroup.leave()
+        }
+        XCTAssertEqual(deltaEntered.wait(timeout: .now() + 1), .success)
+
+        finishGroup.enter()
+        DispatchQueue.global().async {
+            driver.finish()
+            finishGroup.leave()
+        }
+        let finishBeforeRelease = finishGroup.wait(timeout: .now() + 0.05)
+        releaseDelta.signal()
+
+        XCTAssertEqual(finishBeforeRelease, .timedOut)
+        XCTAssertEqual(appendGroup.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(finishGroup.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(completion.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(try XCTUnwrap(recorder.snapshot()).get(), "Hello")
+    }
+
+    /// CBW-003-stream_contextual_chat_response: unique empty agent item 수는 protocol limit을 넘을 수 없다.
+    /// text가 없는 item도 ID/order storage를 소비하므로 item count 제한에 포함되는지 검증합니다.
+    /// - 검증 내용: 129번째 unique agentMessage item이 terminal parsing failure를 만듭니다.
+    /// - 사전 조건: 서로 다른 ID의 empty item/started notification 129개를 전달합니다.
+    /// - 기대 결과: driver는 성공 final 대신 classified protocol failure로 종료합니다.
+    func testCodexAppServerLimits_rejectUniqueEmptyItemOverflow() throws {
+        let itemLines = try (0 ... CodexAppServerProtocolLimits.maximumAgentMessageItemCount).map { index in
+            try providerExecutionCodexJSONLine(method: "item/started", params: [
+                "item": ["id": "message-\(index)", "type": "agentMessage"],
+            ])
+        }
+
+        XCTAssertThrowsError(try providerExecutionCodexAppServerFinalText(itemLines +
+                [providerExecutionCodexTurnCompletedLine()]))
+        { error in
+            XCTAssertEqual(
+                error as? CodexAppServerParsingError,
+                .resourceLimitExceeded(.agentMessageItemCount),
+            )
+        }
+    }
+
+    /// CBW-003-stream_contextual_chat_response: stored agent text는 UTF-8 byte budget을 넘을 수 없다.
+    /// 다중 byte text가 character count가 아니라 UTF-8 storage 기준으로 제한되는지 검증합니다.
+    /// - 검증 내용: 128 KiB를 초과하는 단일 delta가 terminal parsing failure를 만듭니다.
+    /// - 사전 조건: 한글 scalar로 기존 total attachment text budget보다 큰 delta를 구성합니다.
+    /// - 기대 결과: driver는 oversized text를 저장하지 않고 classified protocol failure로 종료합니다.
+    func testCodexAppServerLimits_rejectStoredTextUTF8ByteOverflow() throws {
+        let maximumBytes = CodexAppServerProtocolLimits.maximumStoredTextUTF8Bytes
+        let oversizedText = String(repeating: "한", count: maximumBytes / 3 + 1)
+        let lines = try [
+            providerExecutionCodexJSONLine(method: "item/agentMessage/delta", params: [
+                "itemId": "message-1",
+                "delta": oversizedText,
+            ]),
+            providerExecutionCodexTurnCompletedLine(),
+        ]
+
+        XCTAssertGreaterThan(oversizedText.utf8.count, maximumBytes)
+        XCTAssertThrowsError(try providerExecutionCodexAppServerFinalText(lines)) { error in
+            XCTAssertEqual(
+                error as? CodexAppServerParsingError,
+                .resourceLimitExceeded(.storedTextUTF8Bytes),
+            )
+        }
+    }
+
+    /// CBW-003-stream_contextual_chat_response: oversized agent item ID는 accumulator에 저장하지 않는다.
+    /// provider-controlled ID가 order/map storage를 무제한 점유하지 못하도록 UTF-8 길이를 검증합니다.
+    /// - 검증 내용: 1,025-byte item ID가 terminal parsing failure를 만듭니다.
+    /// - 사전 조건: ASCII 1,025자로 구성한 agentMessage item/started notification을 전달합니다.
+    /// - 기대 결과: driver는 item을 등록하지 않고 classified protocol failure로 종료합니다.
+    func testCodexAppServerLimits_rejectOversizedItemID() throws {
+        let oversizedID = String(
+            repeating: "i",
+            count: CodexAppServerProtocolLimits.maximumItemIDUTF8Bytes + 1,
+        )
+        let lines = try [
+            providerExecutionCodexJSONLine(method: "item/started", params: [
+                "item": ["id": oversizedID, "type": "agentMessage"],
+            ]),
+            providerExecutionCodexTurnCompletedLine(),
+        ]
+
+        XCTAssertEqual(
+            oversizedID.utf8.count,
+            CodexAppServerProtocolLimits.maximumItemIDUTF8Bytes + 1,
+        )
+        XCTAssertThrowsError(try providerExecutionCodexAppServerFinalText(lines)) { error in
+            XCTAssertEqual(
+                error as? CodexAppServerParsingError,
+                .resourceLimitExceeded(.itemIDUTF8Bytes),
+            )
+        }
+    }
+
+    /// CBW-003-stream_contextual_chat_response: completed text 교체는 same-item delta storage를 즉시 해제한다.
+    /// authoritative completion 이후 남은 total budget을 다른 item delta가 사용할 수 있는지 검증합니다.
+    /// - 검증 내용: full-budget delta를 짧은 completion으로 교체한 뒤 두 번째 item이 남은 budget을 사용합니다.
+    /// - 사전 조건: 첫 item delta는 128 KiB이고 completion은 1 byte, 두 번째 delta는 나머지 budget입니다.
+    /// - 기대 결과: storage 합계가 budget 이내로 유지되고 final은 두 authoritative item 순서로 반환됩니다.
+    func testCodexAppServerStorage_completedTextDiscardsReplacedDeltaBytes() throws {
+        let maximumBytes = CodexAppServerProtocolLimits.maximumStoredTextUTF8Bytes
+        let firstDelta = String(repeating: "x", count: maximumBytes)
+        let secondDelta = String(repeating: "y", count: maximumBytes - 1)
+        let finalText = try providerExecutionCodexAppServerFinalText([
+            providerExecutionCodexJSONLine(method: "item/agentMessage/delta", params: [
+                "itemId": "message-1",
+                "delta": firstDelta,
+            ]),
+            providerExecutionCodexJSONLine(method: "item/completed", params: [
+                "item": ["id": "message-1", "type": "agentMessage", "text": "A"],
+            ]),
+            providerExecutionCodexJSONLine(method: "item/agentMessage/delta", params: [
+                "itemId": "message-2",
+                "delta": secondDelta,
+            ]),
+            providerExecutionCodexTurnCompletedLine(),
+        ])
+
+        XCTAssertEqual(finalText.utf8.count, maximumBytes)
+        XCTAssertTrue(finalText.hasPrefix("A"))
+        XCTAssertTrue(finalText.hasSuffix("y"))
+    }
+
+    /// CBW-003-stream_contextual_chat_response: 최대 stored-text payload는 JSON escaping 후에도 허용된다.
+    /// 유효한 128 KiB delta가 raw-line envelope 제한에 선행 차단되지 않는지 검증합니다.
+    func testCodexAppServerLimits_acceptMaximumStoredTextAfterJSONEscaping() throws {
+        let maximumStoredBytes = CodexAppServerProtocolLimits.maximumStoredTextUTF8Bytes
+        let escapedText = String(repeating: "\"", count: maximumStoredBytes)
+        let deltaLine = try providerExecutionCodexJSONLine(method: "item/agentMessage/delta", params: [
+            "itemId": "message-1",
+            "delta": escapedText,
+        ])
+
+        XCTAssertGreaterThan(deltaLine.utf8.count, maximumStoredBytes * 2)
+        XCTAssertLessThanOrEqual(
+            deltaLine.utf8.count,
+            CodexAppServerProtocolLimits.maximumRawJSONLineBytes,
+        )
+        XCTAssertEqual(
+            try providerExecutionCodexAppServerFinalText([
+                deltaLine,
+                providerExecutionCodexTurnCompletedLine(),
+            ]),
+            escapedText,
+        )
+    }
+
+    /// CBW-003-stream_contextual_chat_response: newline 없는 raw JSON line은 byte cap을 넘을 수 없다.
+    /// JSON parsing 전 stdout buffer가 provider-controlled payload로 무제한 증가하지 않는지 검증합니다.
+    func testCodexAppServerLimits_rejectOversizedRawJSONLine() throws {
+        let completion = DispatchSemaphore(value: 0)
+        let recorder = ProviderExecutionResultRecorder<String>()
+        let driver = providerExecutionMakeCodexAppServerDriver(onComplete: { result in
+            recorder.record(result)
+            completion.signal()
+        })
+        let oversizedLine = Data(
+            repeating: 0x78,
+            count: CodexAppServerProtocolLimits.maximumRawJSONLineBytes + 1,
+        )
+
+        driver.append(oversizedLine)
+
+        XCTAssertEqual(completion.wait(timeout: .now() + 1), .success)
+        XCTAssertThrowsError(try XCTUnwrap(recorder.snapshot()).get()) { error in
+            XCTAssertEqual(
+                error as? CodexAppServerParsingError,
+                .resourceLimitExceeded(.rawJSONLineBytes),
+            )
+        }
+    }
+
+    /// CBW-003-stream_contextual_chat_response: retained stderr는 byte cap 초과 시 protocol을 종료한다.
+    /// subprocess stderr가 종료 전까지 무제한 누적되지 않고 분류된 resource failure를 만드는지 검증합니다.
+    func testCodexAppServerLimits_rejectRetainedStandardErrorOverflow() throws {
+        let completion = DispatchSemaphore(value: 0)
+        let recorder = ProviderExecutionResultRecorder<String>()
+        let driver = providerExecutionMakeCodexAppServerDriver(onComplete: { result in
+            recorder.record(result)
+            completion.signal()
+        })
+        let accumulator = CodexPipeDataAccumulator(
+            maximumBytes: CodexAppServerProtocolLimits.maximumRetainedStandardErrorBytes,
+            onLimitExceeded: {
+                driver.fail(.resourceLimitExceeded(.retainedStandardErrorBytes))
+            },
+        )
+        accumulator.append(Data(
+            repeating: 0x65,
+            count: CodexAppServerProtocolLimits.maximumRetainedStandardErrorBytes + 1,
+        ))
+
+        XCTAssertEqual(completion.wait(timeout: .now() + 1), .success)
+        XCTAssertThrowsError(try XCTUnwrap(recorder.snapshot()).get()) { error in
+            XCTAssertEqual(
+                error as? CodexAppServerParsingError,
+                .resourceLimitExceeded(.retainedStandardErrorBytes),
+            )
+        }
+        XCTAssertTrue(accumulator.stringValue().isEmpty)
+    }
+}
+
 private extension CBW003ProviderExecutionResolutionTests {
     func makeCBW003Request() -> AiChatRequest {
         let selectedModel = AiProviderModel(

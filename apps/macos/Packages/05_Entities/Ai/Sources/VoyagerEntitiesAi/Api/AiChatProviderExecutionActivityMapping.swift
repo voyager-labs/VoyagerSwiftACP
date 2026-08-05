@@ -224,14 +224,36 @@ enum CodexAppServerEvent: Equatable {
         providerEventType: String,
     )
     case itemStarted(id: String, kind: CodexAppServerItemKind, providerEventType: String)
-    case itemCompleted(id: String, kind: CodexAppServerItemKind, providerEventType: String)
+    case itemCompleted(
+        id: String,
+        kind: CodexAppServerItemKind,
+        completedText: String?,
+        providerEventType: String,
+    )
     case agentMessageDelta(itemID: String, delta: String)
     case reasoningDelta(itemID: String)
     case error(turnID: String, willRetry: Bool, providerEventType: String)
 }
 
+enum CodexAppServerResourceLimit: Equatable {
+    case agentMessageItemCount
+    case itemIDUTF8Bytes
+    case storedTextUTF8Bytes
+    case rawJSONLineBytes
+    case retainedStandardErrorBytes
+}
+
+enum CodexAppServerProtocolLimits {
+    static let maximumAgentMessageItemCount = 128
+    static let maximumItemIDUTF8Bytes = 1024
+    static let maximumStoredTextUTF8Bytes = AiChatRequestContextBudget.totalAttachmentTextUTF8ByteBudget
+    static let maximumRawJSONLineBytes = maximumStoredTextUTF8Bytes * 8
+    static let maximumRetainedStandardErrorBytes = maximumStoredTextUTF8Bytes
+}
+
 enum CodexAppServerParsingError: Error, Equatable {
     case malformedKnownEvent(String)
+    case resourceLimitExceeded(CodexAppServerResourceLimit)
 }
 
 struct CodexActivityState {
@@ -262,7 +284,7 @@ struct CodexActivityState {
         switch event {
         case let .itemStarted(id, kind, eventType):
             itemStatus(id: id, itemKind: kind, phase: .began, eventType: eventType)
-        case let .itemCompleted(id, kind, eventType):
+        case let .itemCompleted(id, kind, _, eventType):
             itemStatus(id: id, itemKind: kind, phase: .ended, eventType: eventType)
         case let .agentMessageDelta(_, delta):
             delta.isEmpty ? [] : [.delta(delta)]

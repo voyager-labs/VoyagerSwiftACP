@@ -163,7 +163,6 @@ extension AiChatProviderExecutionClient {
         let inputPipe = Pipe()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        let errorAccumulator = CodexPipeDataAccumulator()
         let protocolDriver = CodexAppServerProtocolDriver(
             input: inputPipe.fileHandleForWriting,
             model: request.model,
@@ -175,6 +174,12 @@ extension AiChatProviderExecutionClient {
                 guard request.processState.markCompleted() else { return }
                 if process.isRunning { process.terminate() }
                 continuation.resume(with: result)
+            },
+        )
+        let errorAccumulator = CodexPipeDataAccumulator(
+            maximumBytes: CodexAppServerProtocolLimits.maximumRetainedStandardErrorBytes,
+            onLimitExceeded: {
+                protocolDriver.fail(.resourceLimitExceeded(.retainedStandardErrorBytes))
             },
         )
         process.standardInput = inputPipe

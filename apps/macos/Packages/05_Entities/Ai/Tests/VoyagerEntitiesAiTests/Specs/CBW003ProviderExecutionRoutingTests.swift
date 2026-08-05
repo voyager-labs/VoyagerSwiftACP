@@ -190,7 +190,9 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         ])
         XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
+}
 
+extension CBW003ProviderExecutionRoutingTests {
     /// CBW-003-prepare_contextual_chat_request: registry executor failure event는 failure surface를 보존한다.
     /// downstream executor가 반환한 실패 사유가 provider execution event로 유지되는지 추적합니다.
     /// - 검증 내용: registry executor의 quotaExceeded failure event를 그대로 수집합니다.
@@ -206,28 +208,7 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         let client = AiChatProviderExecutionClient.live(
             now: { 30003 },
             codexExecutor: { _, _, _, _, onEvent in
-                onEvent(.itemStarted(id: "reason-1", kind: .reasoning, providerEventType: "item/started"))
-                onEvent(.reasoningDelta(itemID: "reason-1"))
-                onEvent(.itemCompleted(id: "reason-1", kind: .reasoning, providerEventType: "item/completed"))
-                onEvent(.itemStarted(id: "search-1", kind: .webSearch, providerEventType: "item/started"))
-                onEvent(.itemCompleted(id: "search-1", kind: .webSearch, providerEventType: "item/completed"))
-                onEvent(.itemStarted(id: "command-1", kind: .commandExecution, providerEventType: "item/started"))
-                onEvent(.itemCompleted(id: "command-1", kind: .commandExecution, providerEventType: "item/completed"))
-                onEvent(.itemStarted(id: "mcp-1", kind: .mcpToolCall, providerEventType: "item/started"))
-                onEvent(.itemCompleted(id: "mcp-1", kind: .mcpToolCall, providerEventType: "item/completed"))
-                onEvent(.error(turnID: "turn-1", willRetry: true, providerEventType: "error"))
-                onEvent(.error(turnID: "turn-1", willRetry: true, providerEventType: "error"))
-                onEvent(.itemStarted(
-                    id: "message-1",
-                    kind: .agentMessage(phase: nil),
-                    providerEventType: "item/started",
-                ))
-                onEvent(.agentMessageDelta(itemID: "message-1", delta: "Codex answer"))
-                onEvent(.itemCompleted(
-                    id: "message-1",
-                    kind: .agentMessage(phase: nil),
-                    providerEventType: "item/completed",
-                ))
+                Self.emitCodexTypedActivityEvents(onEvent)
                 return "Codex answer"
             },
         )
@@ -236,53 +217,148 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
             request,
             .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         ))
-        let retryID = "\(request.context.requestID.rawValue.uuidString.lowercased()):codex:retry:turn-1"
 
-        XCTAssertEqual(events, [
-            .started(context: request.context),
-            providerExecutionStatus(request.context, "reason-1", .thinking, .began, "item/started"),
-            providerExecutionStatus(request.context, "reason-1", .thinking, .ended, "item/completed"),
-            providerExecutionStatus(request.context, "search-1", .searching, .began, "item/started"),
-            providerExecutionStatus(request.context, "search-1", .searching, .ended, "item/completed"),
-            providerExecutionStatus(request.context, "command-1", .toolExecution, .began, "item/started"),
-            providerExecutionStatus(request.context, "command-1", .toolExecution, .ended, "item/completed"),
-            providerExecutionStatus(request.context, "mcp-1", .toolExecution, .began, "item/started"),
-            providerExecutionStatus(request.context, "mcp-1", .toolExecution, .ended, "item/completed"),
-            providerExecutionStatus(request.context, retryID, .retrying, .began, "error"),
-            providerExecutionStatus(
-                request.context,
-                retryID,
-                .retrying,
-                .ended,
-                "item/started",
-                origin: .voyagerClient,
-                boundaryEventTypes: ["error", "item/started"],
-            ),
-            providerExecutionStatus(request.context, "message-1", .answerGeneration, .began, "item/started"),
-            .delta(context: request.context, text: "Codex answer"),
-            providerExecutionStatus(request.context, "message-1", .answerGeneration, .ended, "item/completed"),
-            .final(response: AiChatResponse(
-                context: request.context,
-                assistantMessage: AiChatMessage(role: .assistant, content: "Codex answer"),
-                completedAtMs: 30003,
-            )),
+        XCTAssertEqual(events, codexTypedActivityExpectedEvents(context: request.context))
+    }
+
+    /// CBW-003-stream_contextual_chat_response: completed agent message만 수신해도 최종 응답을 보존한다.
+    /// Codex App Server가 delta 없이 completed item text만 전달하는 정상 경로를 검증합니다.
+    /// - 검증 내용: `item/completed.item.text`가 최종 assistant text의 authoritative source로 사용됩니다.
+    /// - 사전 조건: agentMessage completed notification과 completed turn만 수신합니다.
+    /// - 기대 결과: completed text가 비어 있지 않은 최종 응답으로 반환됩니다.
+    func testCodexAppServerFinalText_completedOnlyUsesAuthoritativeItemText() throws {
+        let finalText = try providerExecutionCodexAppServerFinalText([
+            #"""
+            {"method":"item/completed","params":{
+                "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
+            }}
+            """#,
+            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
         ])
+
+        XCTAssertEqual(finalText, "Hello")
+    }
+
+    /// CBW-003-stream_contextual_chat_response: completed text는 같은 item의 delta 누적을 대체한다.
+    /// 부분 delta와 authoritative completed text가 함께 와도 응답이 중복되지 않는지 검증합니다.
+    /// - 검증 내용: completed text가 동일 item의 accumulated delta를 교체하고 새 delta로 방출되지 않습니다.
+    /// - 사전 조건: 한 agentMessage item에 delta와 completed text를 차례로 전달합니다.
+    /// - 기대 결과: 최종 응답은 completed text 한 번만 포함합니다.
+    func testCodexAppServerFinalText_completedTextReplacesSameItemDeltasWithoutDuplication() throws {
+        let finalText = try providerExecutionCodexAppServerFinalText([
+            #"{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"Hel"}}"#,
+            #"""
+            {"method":"item/completed","params":{
+                "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
+            }}
+            """#,
+            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
+        ])
+
+        XCTAssertEqual(finalText, "Hello")
+    }
+
+    /// CBW-003-stream_contextual_chat_response: 여러 agent message item의 최종 text 순서를 보존한다.
+    /// item 완료 순서가 뒤집혀도 시작 순서 기준으로 응답을 조립하는지 검증합니다.
+    /// - 검증 내용: item ID order와 item별 authoritative completed text를 독립적으로 유지합니다.
+    /// - 사전 조건: 두 item을 순서대로 시작한 뒤 역순으로 completed notification을 전달합니다.
+    /// - 기대 결과: 최종 응답은 item 시작 순서대로 결합됩니다.
+    func testCodexAppServerFinalText_multipleAgentMessageItemsPreserveItemOrder() throws {
+        let finalText = try providerExecutionCodexAppServerFinalText([
+            #"{"method":"item/started","params":{"item":{"id":"message-1","type":"agentMessage"}}}"#,
+            #"{"method":"item/started","params":{"item":{"id":"message-2","type":"agentMessage"}}}"#,
+            #"{"method":"item/completed","params":{"item":{"id":"message-2","type":"agentMessage","text":"Second"}}}"#,
+            #"{"method":"item/completed","params":{"item":{"id":"message-1","type":"agentMessage","text":"First"}}}"#,
+            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
+        ])
+
+        XCTAssertEqual(finalText, "FirstSecond")
+    }
+
+    /// CBW-003-stream_contextual_chat_response: duplicate completed notification은 최종 응답에 한 번만 반영한다.
+    /// App Server가 동일 item completion을 재전송해도 응답이 증식하지 않는지 검증합니다.
+    /// - 검증 내용: item ID별 completed text assignment가 idempotent한지 확인합니다.
+    /// - 사전 조건: 같은 agentMessage completed notification을 두 번 전달합니다.
+    /// - 기대 결과: 최종 응답에는 completed text가 한 번만 포함됩니다.
+    func testCodexAppServerFinalText_duplicateCompletedItemIsIdempotent() throws {
+        let completed = #"""
+        {"method":"item/completed","params":{
+            "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
+        }}
+        """#
+        let finalText = try providerExecutionCodexAppServerFinalText([
+            completed,
+            completed,
+            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
+        ])
+
+        XCTAssertEqual(finalText, "Hello")
+    }
+
+    /// CBW-003-stream_contextual_chat_response: completed text가 없는 item은 accumulated delta를 사용한다.
+    /// 구버전 또는 부분 App Server payload에서도 기존 streaming 응답을 보존하는지 검증합니다.
+    /// - 검증 내용: nil completed text일 때만 동일 item의 delta fallback을 선택합니다.
+    /// - 사전 조건: agentMessage delta 뒤 text가 없는 completed notification을 전달합니다.
+    /// - 기대 결과: 최종 응답은 누적 delta와 일치합니다.
+    func testCodexAppServerFinalText_itemWithoutCompletedTextFallsBackToDeltas() throws {
+        let finalText = try providerExecutionCodexAppServerFinalText([
+            #"{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"Hel"}}"#,
+            #"{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"lo"}}"#,
+            #"{"method":"item/completed","params":{"item":{"id":"message-1","type":"agentMessage"}}}"#,
+            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
+        ])
+
+        XCTAssertEqual(finalText, "Hello")
     }
 
     /// CBW-003-prepare_contextual_chat_request: Codex App Server parser는 unknown을 무시하고 malformed known을 실패시킨다.
     /// protocol evolution과 손상된 known event를 구분해 forward compatibility와 classified failure를 함께 보장합니다.
-    /// - 검증 내용: unknown method/item은 nil, malformed item/started는 invalidRequest error인지 확인합니다.
-    /// - 사전 조건: unknown notification, unknown item, 필수 item.id가 빠진 known notification을 사용합니다.
-    /// - 기대 결과: unknown은 무시되고 malformed known event만 parsing error를 던집니다.
+    /// - 검증 내용: unknown 처리, malformed validation, agentMessage 전용 completed text parsing을 확인합니다.
+    /// - 사전 조건: unknown notification, unknown item, agent/reasoning completed item, 손상된 known notification을 사용합니다.
+    /// - 기대 결과: agentMessage만 text를 보존하고 unknown은 무시되며 malformed known event는 실패합니다.
     func testCodexAppServerParser_ignoresUnknownAndRejectsMalformedKnownEvents() throws {
         XCTAssertNil(try AiChatProviderExecutionClient.codexAppServerEvent(
             fromJSONLine: #"{"method":"future/event","params":{"secret":"must-not-log"}}"#,
         ))
         XCTAssertNil(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"{"method":"item/started","params":{"threadId":"t","turnId":"u","startedAtMs":1,"item":{"id":"future-1","type":"futureItem"}}}"#,
+            fromJSONLine: #"""
+            {"method":"item/started","params":{
+                "threadId":"t","turnId":"u","startedAtMs":1,
+                "item":{"id":"future-1","type":"futureItem"}
+            }}
+            """#,
+        ))
+        XCTAssertEqual(try AiChatProviderExecutionClient.codexAppServerEvent(
+            fromJSONLine: #"""
+            {"method":"item/completed","params":{
+                "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
+            }}
+            """#,
+        ), .itemCompleted(
+            id: "message-1",
+            kind: .agentMessage(phase: nil),
+            completedText: "Hello",
+            providerEventType: "item/completed",
+        ))
+        XCTAssertEqual(try AiChatProviderExecutionClient.codexAppServerEvent(
+            fromJSONLine: #"""
+            {"method":"item/completed","params":{
+                "item":{"id":"reason-1","type":"reasoning","text":"Ignored"}
+            }}
+            """#,
+        ), .itemCompleted(
+            id: "reason-1",
+            kind: .reasoning,
+            completedText: nil,
+            providerEventType: "item/completed",
         ))
         XCTAssertThrowsError(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"{"method":"item/started","params":{"threadId":"t","turnId":"u","startedAtMs":1,"item":{"type":"reasoning"}}}"#,
+            fromJSONLine: #"""
+            {"method":"item/started","params":{
+                "threadId":"t","turnId":"u","startedAtMs":1,
+                "item":{"type":"reasoning"}
+            }}
+            """#,
         )) { error in
             XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("item/started"))
         }
@@ -294,16 +370,21 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
     /// - 사전 조건: agent message delta의 한글 scalar 내부를 기준으로 두 chunk로 나눕니다.
     /// - 기대 결과: 첫 chunk는 line을 만들지 않고 두 번째 chunk 뒤 정확한 한 줄을 반환합니다.
     func testCodexJSONLineBuffer_preservesSplitUTF8Scalar() throws {
-        let line = #"{"method":"item/agentMessage/delta","params":{"threadId":"t","turnId":"u","itemId":"i","delta":"한글"}}"#
-        let bytes = Data((line + "\n").utf8)
+        let line = #"""
+        {"method":"item/agentMessage/delta","params":{
+            "threadId":"t","turnId":"u","itemId":"i","delta":"한글"
+        }}
+        """#
+        let normalizedLine = line.split(whereSeparator: \.isNewline).joined()
+        let bytes = Data((normalizedLine + "\n").utf8)
         let scalarStart = try XCTUnwrap(bytes.firstRange(of: Data("한".utf8)))
         let splitIndex = scalarStart.lowerBound + 1
         let buffer = CodexJSONLineBuffer()
 
-        XCTAssertTrue(buffer.append(Data(bytes[..<splitIndex])).isEmpty)
-        let lines = buffer.append(Data(bytes[splitIndex...]))
+        XCTAssertTrue(try buffer.append(Data(bytes[..<splitIndex])).isEmpty)
+        let lines = try buffer.append(Data(bytes[splitIndex...]))
 
-        XCTAssertEqual(lines, [Data(line.utf8)])
+        XCTAssertEqual(lines, [Data(normalizedLine.utf8)])
         XCTAssertNil(buffer.finish())
     }
 
@@ -314,7 +395,11 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
     /// - 기대 결과: parser가 `malformedKnownEvent("turn/completed")`를 던집니다.
     func testCodexAppServerParser_rejectsNonterminalCompletedStatus() {
         XCTAssertThrowsError(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"{"method":"turn/completed","params":{"threadId":"t","turn":{"id":"u","items":[],"status":"inProgress"}}}"#,
+            fromJSONLine: #"""
+            {"method":"turn/completed","params":{
+                "threadId":"t","turn":{"id":"u","items":[],"status":"inProgress"}
+            }}
+            """#,
         )) { error in
             XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("turn/completed"))
         }
@@ -587,5 +672,88 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         )
         XCTAssertEqual(adaptiveBudget.payload.thinking, .adaptive(defaultEffort: .low))
         XCTAssertEqual(adaptiveBudget.warnings.count, 1)
+    }
+
+    private static func emitCodexTypedActivityEvents(
+        _ onEvent: @Sendable (CodexAppServerEvent) -> Void,
+    ) {
+        onEvent(.itemStarted(id: "reason-1", kind: .reasoning, providerEventType: "item/started"))
+        onEvent(.reasoningDelta(itemID: "reason-1"))
+        onEvent(.itemCompleted(
+            id: "reason-1",
+            kind: .reasoning,
+            completedText: nil,
+            providerEventType: "item/completed",
+        ))
+        onEvent(.itemStarted(id: "search-1", kind: .webSearch, providerEventType: "item/started"))
+        onEvent(.itemCompleted(
+            id: "search-1",
+            kind: .webSearch,
+            completedText: nil,
+            providerEventType: "item/completed",
+        ))
+        onEvent(.itemStarted(id: "command-1", kind: .commandExecution, providerEventType: "item/started"))
+        onEvent(.itemCompleted(
+            id: "command-1",
+            kind: .commandExecution,
+            completedText: nil,
+            providerEventType: "item/completed",
+        ))
+        onEvent(.itemStarted(id: "mcp-1", kind: .mcpToolCall, providerEventType: "item/started"))
+        onEvent(.itemCompleted(
+            id: "mcp-1",
+            kind: .mcpToolCall,
+            completedText: nil,
+            providerEventType: "item/completed",
+        ))
+        onEvent(.error(turnID: "turn-1", willRetry: true, providerEventType: "error"))
+        onEvent(.error(turnID: "turn-1", willRetry: true, providerEventType: "error"))
+        onEvent(.itemStarted(
+            id: "message-1",
+            kind: .agentMessage(phase: nil),
+            providerEventType: "item/started",
+        ))
+        onEvent(.agentMessageDelta(itemID: "message-1", delta: "Codex answer"))
+        onEvent(.itemCompleted(
+            id: "message-1",
+            kind: .agentMessage(phase: nil),
+            completedText: "Codex answer",
+            providerEventType: "item/completed",
+        ))
+    }
+
+    private func codexTypedActivityExpectedEvents(
+        context: AiChatRequestContextSnapshot,
+    ) -> [AiChatProviderExecutionEvent] {
+        let retryID = "\(context.requestID.rawValue.uuidString.lowercased()):codex:retry:turn-1"
+        return [
+            .started(context: context),
+            providerExecutionStatus(context, "reason-1", .thinking, .began, "item/started"),
+            providerExecutionStatus(context, "reason-1", .thinking, .ended, "item/completed"),
+            providerExecutionStatus(context, "search-1", .searching, .began, "item/started"),
+            providerExecutionStatus(context, "search-1", .searching, .ended, "item/completed"),
+            providerExecutionStatus(context, "command-1", .toolExecution, .began, "item/started"),
+            providerExecutionStatus(context, "command-1", .toolExecution, .ended, "item/completed"),
+            providerExecutionStatus(context, "mcp-1", .toolExecution, .began, "item/started"),
+            providerExecutionStatus(context, "mcp-1", .toolExecution, .ended, "item/completed"),
+            providerExecutionStatus(context, retryID, .retrying, .began, "error"),
+            providerExecutionStatus(
+                context,
+                retryID,
+                .retrying,
+                .ended,
+                "item/started",
+                origin: .voyagerClient,
+                boundaryEventTypes: ["error", "item/started"],
+            ),
+            providerExecutionStatus(context, "message-1", .answerGeneration, .began, "item/started"),
+            .delta(context: context, text: "Codex answer"),
+            providerExecutionStatus(context, "message-1", .answerGeneration, .ended, "item/completed"),
+            .final(response: AiChatResponse(
+                context: context,
+                assistantMessage: AiChatMessage(role: .assistant, content: "Codex answer"),
+                completedAtMs: 30003,
+            )),
+        ]
     }
 }

@@ -74,13 +74,22 @@ final class CodexProcessState: @unchecked Sendable {
 
 final class CodexPipeDataAccumulator: @unchecked Sendable {
     private let lock = NSLock()
+    private let maximumBytes: Int
+    private let onLimitExceeded: @Sendable () -> Void
     private var data = Data()
+
+    init(maximumBytes: Int, onLimitExceeded: @escaping @Sendable () -> Void) {
+        self.maximumBytes = maximumBytes
+        self.onLimitExceeded = onLimitExceeded
+    }
 
     func append(_ chunk: Data) {
         guard !chunk.isEmpty else { return }
         lock.lock()
-        data.append(chunk)
+        let canAppend = chunk.count <= maximumBytes - data.count
+        if canAppend { data.append(chunk) }
         lock.unlock()
+        if !canAppend { onLimitExceeded() }
     }
 
     func stringValue() -> String {
@@ -91,26 +100,29 @@ final class CodexPipeDataAccumulator: @unchecked Sendable {
     }
 }
 
-final class CodexJSONLineBuffer: @unchecked Sendable {
-    private let lock = NSLock()
+final class CodexJSONLineBuffer {
     private var buffer = Data()
 
-    func append(_ data: Data) -> [Data] {
+    func append(_ data: Data) throws -> [Data] {
         guard !data.isEmpty else { return [] }
-        lock.lock()
-        defer { lock.unlock() }
         buffer.append(data)
         var lines: [Data] = []
         while let newlineIndex = buffer.firstIndex(of: 0x0A) {
+            guard newlineIndex <= CodexAppServerProtocolLimits.maximumRawJSONLineBytes else {
+                buffer.removeAll(keepingCapacity: false)
+                throw CodexAppServerParsingError.resourceLimitExceeded(.rawJSONLineBytes)
+            }
             lines.append(Data(buffer[..<newlineIndex]))
             buffer.removeSubrange(...newlineIndex)
+        }
+        guard buffer.count <= CodexAppServerProtocolLimits.maximumRawJSONLineBytes else {
+            buffer.removeAll(keepingCapacity: false)
+            throw CodexAppServerParsingError.resourceLimitExceeded(.rawJSONLineBytes)
         }
         return lines
     }
 
     func finish() -> Data? {
-        lock.lock()
-        defer { lock.unlock() }
         guard !buffer.isEmpty else { return nil }
         defer { buffer.removeAll(keepingCapacity: false) }
         return buffer
@@ -118,9 +130,32 @@ final class CodexJSONLineBuffer: @unchecked Sendable {
 }
 
 final class CodexAppServerProtocolDriver: @unchecked Sendable {
-    private let lock = NSLock()
+    private struct AgentMessageText {
+        var accumulatedDelta = ""
+        var completedText: String?
+
+        var resolved: String {
+            completedText ?? accumulatedDelta
+        }
+    }
+
+    private enum Operation {
+        case append(Data)
+        case fail(CodexAppServerParsingError)
+        case finish
+    }
+
+    private let executor = DispatchQueue(label: "com.voyager.codex-app-server-protocol")
+    private let executorKey = DispatchSpecificKey<UInt8>()
     private let lineBuffer = CodexJSONLineBuffer()
-    private var finalText = ""
+    private var pendingOperations: [Operation] = []
+    private var pendingOperationIndex = 0
+    private var isDrainingOperations = false
+    private var isTerminated = false
+    private var isInputFinished = false
+    private var agentMessageItemIDs: [String] = []
+    private var agentMessageTextsByItemID: [String: AgentMessageText] = [:]
+    private var storedTextUTF8Bytes = 0
     private let input: FileHandle
     private let model: String
     private let prompt: String
@@ -145,31 +180,87 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
         self.workingDirectory = workingDirectory
         self.onEvent = onEvent
         self.onComplete = onComplete
+        executor.setSpecific(key: executorKey, value: 1)
     }
 
     func start() throws {
-        try send([
-            "id": 1,
-            "method": "initialize",
-            "params": [
-                "clientInfo": ["name": "Voyager", "version": "1"],
-                "capabilities": ["experimentalApi": false],
-            ],
-        ])
-    }
-
-    func append(_ data: Data) {
-        for line in lineBuffer.append(data) {
-            process(line)
+        try executor.sync {
+            try send([
+                "id": 1,
+                "method": "initialize",
+                "params": [
+                    "clientInfo": ["name": "Voyager", "version": "1"],
+                    "capabilities": ["experimentalApi": false],
+                ],
+            ])
         }
     }
 
+    func append(_ data: Data) {
+        guard !data.isEmpty else { return }
+        submit(.append(data))
+    }
+
+    func fail(_ error: CodexAppServerParsingError) {
+        submit(.fail(error))
+    }
+
     func finish() {
-        if let line = lineBuffer.finish() { process(line) }
+        submit(.finish)
+    }
+
+    private func submit(_ operation: Operation) {
+        if DispatchQueue.getSpecific(key: executorKey) != nil {
+            pendingOperations.append(operation)
+            return
+        }
+        executor.sync {
+            pendingOperations.append(operation)
+            drainOperations()
+        }
+    }
+
+    private func drainOperations() {
+        guard !isDrainingOperations else { return }
+        isDrainingOperations = true
+        defer {
+            pendingOperations.removeAll(keepingCapacity: true)
+            pendingOperationIndex = 0
+            isDrainingOperations = false
+        }
+        while pendingOperationIndex < pendingOperations.count {
+            let operation = pendingOperations[pendingOperationIndex]
+            pendingOperationIndex += 1
+            execute(operation)
+        }
+    }
+
+    private func execute(_ operation: Operation) {
+        guard !isTerminated else { return }
+        switch operation {
+        case let .append(data):
+            guard !isInputFinished else { return }
+            do {
+                for line in try lineBuffer.append(data) {
+                    guard !isTerminated else { break }
+                    process(line)
+                }
+            } catch let error as CodexAppServerParsingError {
+                terminate(with: .failure(error))
+            } catch {
+                terminate(with: .failure(error))
+            }
+        case let .fail(error):
+            terminate(with: .failure(error))
+        case .finish:
+            guard !isInputFinished else { return }
+            isInputFinished = true
+            if let line = lineBuffer.finish() { process(line) }
+        }
     }
 
     private func process(_ data: Data) {
-        guard !data.isEmpty else { return }
+        guard !data.isEmpty, !isTerminated else { return }
         do {
             guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw CodexAppServerParsingError.malformedKnownEvent("json-rpc")
@@ -179,34 +270,53 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
                 return
             }
             if let event = try AiChatProviderExecutionClient.codexAppServerEvent(fromJSONObject: object) {
-                handle(event)
+                try handle(event)
             }
         } catch {
-            onComplete(.failure(error))
+            terminate(with: .failure(error))
         }
     }
 
-    private func handle(_ event: CodexAppServerEvent) {
-        if case let .agentMessageDelta(_, delta) = event { appendFinalText(delta) }
+    private func handle(_ event: CodexAppServerEvent) throws {
+        switch event {
+        case let .itemStarted(id, .agentMessage, _):
+            try registerAgentMessageItem(id)
+        case let .agentMessageDelta(itemID, delta):
+            try appendAgentMessageDelta(delta, itemID: itemID)
+        case let .itemCompleted(id, .agentMessage, completedText, _):
+            try completeAgentMessageItem(id, text: completedText)
+        case let .turnCompleted(_, status, failure, _):
+            let result = turnResult(status: status, failure: failure)
+            isTerminated = true
+            onEvent(event)
+            onComplete(result)
+            return
+        default:
+            break
+        }
         onEvent(event)
-        guard case let .turnCompleted(_, status, failure, _) = event else { return }
-        completeTurn(status: status, failure: failure)
     }
 
-    private func completeTurn(
+    private func turnResult(
         status: CodexAppServerTurnStatus,
         failure: AiChatExecutionFailure?,
-    ) {
+    ) -> Result<String, Error> {
         switch status {
         case .completed:
-            onComplete(.success(finalTextSnapshot()))
+            .success(finalTextSnapshot())
         case .failed:
-            onComplete(.failure(CodexCLIExecutionError.protocolFailure(failure ?? .invalidRequest)))
+            .failure(CodexCLIExecutionError.protocolFailure(failure ?? .invalidRequest))
         case .interrupted:
-            onComplete(.failure(CancellationError()))
+            .failure(CancellationError())
         case .inProgress:
-            onComplete(.failure(CodexAppServerParsingError.malformedKnownEvent("turn/completed")))
+            .failure(CodexAppServerParsingError.malformedKnownEvent("turn/completed"))
         }
+    }
+
+    private func terminate(with result: Result<String, Error>) {
+        guard !isTerminated else { return }
+        isTerminated = true
+        onComplete(result)
     }
 
     private func processResponse(id: Int, object: [String: Any]) throws {
@@ -255,17 +365,54 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
         try input.write(contentsOf: data)
     }
 
-    private func appendFinalText(_ delta: String) {
-        lock.lock()
-        finalText.append(delta)
-        lock.unlock()
+    private func registerAgentMessageItem(_ itemID: String) throws {
+        guard itemID.utf8.count <= CodexAppServerProtocolLimits.maximumItemIDUTF8Bytes else {
+            throw CodexAppServerParsingError.resourceLimitExceeded(.itemIDUTF8Bytes)
+        }
+        guard agentMessageTextsByItemID[itemID] == nil else { return }
+        guard agentMessageItemIDs.count < CodexAppServerProtocolLimits.maximumAgentMessageItemCount else {
+            throw CodexAppServerParsingError.resourceLimitExceeded(.agentMessageItemCount)
+        }
+        agentMessageItemIDs.append(itemID)
+        agentMessageTextsByItemID[itemID] = AgentMessageText()
+    }
+
+    private func appendAgentMessageDelta(_ delta: String, itemID: String) throws {
+        try registerAgentMessageItem(itemID)
+        guard var item = agentMessageTextsByItemID[itemID], item.completedText == nil else { return }
+        let deltaUTF8Bytes = delta.utf8.count
+        try validateStoredTextUTF8Bytes(storedTextUTF8Bytes + deltaUTF8Bytes)
+        item.accumulatedDelta.append(delta)
+        storedTextUTF8Bytes += deltaUTF8Bytes
+        agentMessageTextsByItemID[itemID] = item
+    }
+
+    private func completeAgentMessageItem(_ itemID: String, text: String?) throws {
+        try registerAgentMessageItem(itemID)
+        guard let text, var item = agentMessageTextsByItemID[itemID] else { return }
+        guard item.completedText != text else { return }
+        let replacedUTF8Bytes = item.completedText?.utf8.count ?? item.accumulatedDelta.utf8.count
+        let projectedUTF8Bytes = storedTextUTF8Bytes - replacedUTF8Bytes + text.utf8.count
+        try validateStoredTextUTF8Bytes(projectedUTF8Bytes)
+        item.accumulatedDelta.removeAll(keepingCapacity: false)
+        item.completedText = text
+        storedTextUTF8Bytes = projectedUTF8Bytes
+        agentMessageTextsByItemID[itemID] = item
+    }
+
+    private func validateStoredTextUTF8Bytes(_ projectedUTF8Bytes: Int) throws {
+        guard projectedUTF8Bytes <= CodexAppServerProtocolLimits.maximumStoredTextUTF8Bytes else {
+            throw CodexAppServerParsingError.resourceLimitExceeded(.storedTextUTF8Bytes)
+        }
     }
 
     private func finalTextSnapshot() -> String {
-        lock.lock()
-        let snapshot = finalText
-        lock.unlock()
-        return snapshot
+        var result = ""
+        result.reserveCapacity(storedTextUTF8Bytes)
+        for itemID in agentMessageItemIDs {
+            if let text = agentMessageTextsByItemID[itemID]?.resolved { result.append(text) }
+        }
+        return result
     }
 }
 
@@ -353,7 +500,17 @@ extension AiChatProviderExecutionClient {
         if method == "item/started" {
             return .itemStarted(id: id, kind: kind, providerEventType: method)
         }
-        return .itemCompleted(id: id, kind: kind, providerEventType: method)
+        let completedText: String? = if case .agentMessage = kind {
+            item["text"] as? String
+        } else {
+            nil
+        }
+        return .itemCompleted(
+            id: id,
+            kind: kind,
+            completedText: completedText,
+            providerEventType: method,
+        )
     }
 
     private static func codexAgentMessageDeltaEvent(
