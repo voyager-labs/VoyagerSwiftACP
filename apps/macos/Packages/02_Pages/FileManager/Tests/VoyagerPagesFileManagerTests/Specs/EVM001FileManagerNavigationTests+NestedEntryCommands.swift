@@ -19,9 +19,9 @@ extension EVM001FileManagerNavigationTests {
         state.entryViewLayout.entries = [root]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [root.id],
-            foldersByID: [root.id: .init(children: [child], phase: .loaded)],
+            nodesByID: [root.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([root.id])
         state.entryViewLayout.selectedIds = [child.id]
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
@@ -49,9 +49,9 @@ extension EVM001FileManagerNavigationTests {
         state.entryViewLayout.entries = [root]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [root.id],
-            foldersByID: [root.id: .init(children: [child], phase: .loaded)],
+            nodesByID: [root.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([root.id])
         state.entryViewLayout.selectedIds = [child.id]
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
@@ -78,9 +78,9 @@ extension EVM001FileManagerNavigationTests {
         state.entryViewLayout.selectedIds = [child.id]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [folder.id],
-            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
+            nodesByID: [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let command = KeyCommand(
             keyCode: 36,
             modifiers: [],
@@ -110,9 +110,9 @@ extension EVM001FileManagerNavigationTests {
         state.entryViewLayout.entries = [root]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/trash",
-            expandedFolderIDs: [root.id],
-            foldersByID: [root.id: .init(children: [child], phase: .loaded)],
+            nodesByID: [root.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([root.id])
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
         }

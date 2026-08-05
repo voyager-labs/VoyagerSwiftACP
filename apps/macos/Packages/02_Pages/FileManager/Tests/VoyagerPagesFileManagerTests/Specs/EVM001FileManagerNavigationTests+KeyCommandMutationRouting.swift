@@ -23,9 +23,9 @@ extension EVM001FileManagerNavigationTests {
         state.entryViewLayout.selectedIds = [parent.id, child.id]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [parent.id],
-            foldersByID: [parent.id: .init(children: [child], phase: .loaded, generation: 0)],
+            nodesByID: [parent.id: .init(children: [child], loadPhase: .loaded, generation: 0)],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([parent.id])
         let store = TestStore(initialState: state) {
             FileManagerContentKeyCommandReducer()
         }

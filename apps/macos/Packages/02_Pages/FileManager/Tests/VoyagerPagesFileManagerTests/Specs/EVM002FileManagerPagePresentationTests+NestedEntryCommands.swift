@@ -55,7 +55,8 @@ extension EVM002FileManagerPagePresentationTests {
         state.entryViewLayout.selectedIds = [folder.id]
         state.entryViewLayout.lastSelectedId = folder.id
         state.entryViewLayout.rangeAnchorId = folder.id
-        state.entryViewLayout.hierarchy = .init(rootPath: "/root", expandedFolderIDs: [folder.id])
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
         let store = TestStore(initialState: state) {
             FileManagerContentKeyCommandReducer()
         }
@@ -336,17 +337,17 @@ extension EVM002FileManagerPagePresentationTests {
         state.entryViewLayout.entries = [root]
         state.entryViewLayout.hierarchy = .init(
             rootPath: "/root",
-            expandedFolderIDs: [root.id],
-            foldersByID: [
+            nodesByID: [
                 root.id: .init(
                     children: [child],
-                    phase: .loaded,
+                    loadPhase: .loaded,
                     generation: 1,
                     expectedBatchIndex: 1,
                     coreFinished: true,
                 ),
             ],
         )
+        state.entryViewLayout.hierarchy.setExpandedIDs([root.id])
         state.entryViewLayout.selectedIds = [selectedID]
         return state
     }

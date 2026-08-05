@@ -313,6 +313,105 @@ extension EVM002FileManagerPagePresentationTests {
             return projection.entries == [first, second]
         }
     }
+
+    /// EVM-002-switch_entries_view: accepted root completion은 content projection 이후 root snapshot reconciliation을 발행한다.
+    /// - 검증 내용: itemsLoaded가 applyContentProjection과 rootSnapshotCompleted를 순서대로 발행한다.
+    /// - 사전 조건: root 항목이 있는 FileManager content state
+    /// - 기대 결과: applyContentProjection이 먼저, rootSnapshotCompleted가 다음에 순서대로 발행된다.
+    func testAcceptedRootCompletionAppliesContentProjectionBeforeRootSnapshotReconciliation() async {
+        let rootFolder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let rootFile = makeSharedProjectionFile()
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: "/root")
+        state.entryOperations.items = [rootFolder, rootFile]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // itemsLoaded는 accepted root completion → projection → root snapshot 순서
+        await store.send(.entryOperations(.loading(.itemsLoaded([rootFolder, rootFile]))))
+
+        // applyContentProjection이 먼저 발행된다
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
+
+        // rootSnapshotCompleted가 다음에 발행된다
+        await store.receive { action in
+            guard case let .entryViewLayout(.hierarchy(.rootSnapshotCompleted(gen, folders))) = action
+            else { return false }
+            return gen == store.state.entryViewLayout.hierarchy.rootContextGeneration
+                && folders == [rootFolder]
+        }
+
+        // root snapshot이 적용됐는지 확인
+        XCTAssertTrue(store.state.entryViewLayout.hierarchy.nodesByID.keys.contains(rootFolder.id))
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: generation이 일치하지 않는 root completion은 state를 변경하지 않는다.
+    /// - 검증 내용: rootContextGeneration 불일치 시 nodesByID가 변경되지 않는다.
+    /// - 사전 조건: hierarchy rootContextGeneration이 5이고 item이 nodesByID에 있다.
+    /// - 기대 결과: rootSnapshotCompleted가 0 generation으로 전송되어도 nodesByID가 유지된다.
+    func testStaleRootCompletionWithMismatchedGenerationIsNoOp() async {
+        let rootFolder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy = .init(rootContextGeneration: 5, rootPath: "/root")
+        state.entryViewLayout.hierarchy.nodesByID[rootFolder.id] = FolderNodeState(
+            children: [hierarchyFile(id: "/root/folder/child", name: "child")],
+            loadPhase: .loaded,
+            generation: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // mismatched generation (0 != 5) → NO-OP
+        await store.send(.entryViewLayout(.hierarchy(.rootSnapshotCompleted(
+            rootContextGeneration: 0,
+            rootFolders: [rootFolder],
+        ))))
+
+        // nodesByID가 변경되지 않아야 한다
+        XCTAssertNotNil(store.state.entryViewLayout.hierarchy.nodesByID[rootFolder.id])
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[rootFolder.id]?.folder.children.map(\.id),
+            ["/root/folder/child"],
+        )
+    }
+
+    private func hierarchyFile(id: String, name: String) -> EntryModel {
+        EntryModel(
+            name: name,
+            fullPath: id,
+            isFolder: false,
+            isHidden: false,
+            size: 0,
+            modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            fileExtension: "txt",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 1_700_000_000),
+                addedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
+    }
 }
 
 private func makeSharedProjectionFile(tags: [Tag]? = nil) -> EntryModel {
