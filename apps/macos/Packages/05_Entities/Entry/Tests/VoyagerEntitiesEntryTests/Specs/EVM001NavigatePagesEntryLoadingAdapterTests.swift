@@ -680,6 +680,29 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(metadataCalls.value, 1)
     }
 
+    /// EVM-001-progressive_entry_materialization: The default staged loader resolves its live client without recursion.
+    /// 기본 staged loader가 자기 live dependency를 캡처해도 재귀하지 않고 실제 directory payload를 완료하는지 검증한다.
+    /// - 검증 내용: live EntryLoadingClient를 dependency와 호출 주체로 함께 사용한 core event 완료
+    /// - 사전 조건: 임시 디렉터리에 표시 가능한 파일 하나가 존재하고 metadata probe는 비활성화한다.
+    /// - 기대 결과: 파일 하나의 coreBatch 뒤 coreFinished가 전달되고 호출이 정상 종료된다.
+    func testDefaultDirectoryStagedLoaderDoesNotRecurseThroughLiveDependency() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+        let fileURL = directoryURL.appendingPathComponent("visible.txt")
+        try "visible".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let events = try await withDependencies {
+            $0.entryLoadingClient = .liveValue
+        } operation: {
+            try await collect(EntryLoadingClient.liveValue.loadItems(directoryURL, false, .none))
+        }
+
+        XCTAssertEqual(events.coreBatches.flatMap(\.items).map(\.name), [fileURL.lastPathComponent])
+        XCTAssertEqual(events.coreFinishedCounts, [1])
+    }
+
     /// EVM-001-progressive_entry_materialization: Directory enumeration starts on first stream demand.
     /// staged loader 호출은 동기 파일시스템 작업 없이 즉시 stream을 반환하는 경계를 검증한다.
     /// - 검증 내용: stream 생성 전후 열거 호출 수와 첫 iterator demand 뒤 호출 수
