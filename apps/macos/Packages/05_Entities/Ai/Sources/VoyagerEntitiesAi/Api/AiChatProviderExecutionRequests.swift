@@ -78,7 +78,7 @@ extension AiChatProviderExecutionClient {
     }
 
     static func makeCodexPrompt(payload: AiChatProviderRequestPayload) -> String {
-        makeCodexPrompt(payload: payload, workingDirectory: codexWorkingDirectory())
+        makeCodexPrompt(payload: payload, workingDirectory: codexSourceScopeRoot(payload: payload))
     }
 
     static func makeCodexPrompt(payload: AiChatProviderRequestPayload, workingDirectory: URL?) -> String {
@@ -131,11 +131,27 @@ extension AiChatProviderExecutionClient {
         return sections.joined(separator: "\n\n---\n\n")
     }
 
+    static func codexReadablePaths(payload: AiChatProviderRequestPayload) -> [URL] {
+        codexReadablePaths(payload: payload, workingDirectory: codexSourceScopeRoot(payload: payload))
+    }
+
     static func codexReadablePaths(payload: AiChatProviderRequestPayload, workingDirectory: URL?) -> [URL] {
         CodexContextPromptBuilder.readablePaths(
             from: payload.context.requestContext,
             workingDirectory: workingDirectory,
         )
+    }
+
+    static func codexSourceScopeRoot(payload: AiChatProviderRequestPayload) -> URL? {
+        payload.currentContext.references.lazy.compactMap { reference in
+            guard reference.metadata["route"] == "folder",
+                  let path = reference.metadata["path"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  path.hasPrefix("/")
+            else {
+                return nil
+            }
+            return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        }.first
     }
 
     static func executeCodexCLI(
@@ -364,7 +380,10 @@ extension AiChatProviderExecutionClient {
         return CodexSessionEnvironment(homeURL: directory, workingDirectoryURL: workingDirectory)
     }
 
-    static func codexProcessEnvironment(codexHomeURL: URL) -> [String: String] {
+    static func codexProcessEnvironment(
+        codexHomeURL: URL,
+        parentEnvironment _: [String: String] = ProcessInfo.processInfo.environment,
+    ) -> [String: String] {
         let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         return [
             "CODEX_HOME": codexHomeURL.path,
@@ -374,15 +393,6 @@ extension AiChatProviderExecutionClient {
             "SHELL": "/bin/zsh",
             "TMPDIR": codexHomeURL.appendingPathComponent("session", isDirectory: true).path,
         ]
-    }
-
-    static func codexWorkingDirectory() -> URL? {
-        if let workingDirectory = ProcessInfo.processInfo.environment["VOYAGER_CODEX_WORKING_DIRECTORY"],
-           !workingDirectory.isEmpty
-        {
-            return URL(fileURLWithPath: workingDirectory)
-        }
-        return nil
     }
 
     struct CodexProcessRequest {

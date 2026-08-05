@@ -25,34 +25,34 @@ private struct FileManagerNavigationBridgeReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .content(.internal(.requestNavigation(navigationAction))):
-                .send(.navigation(navigationAction))
+            case let .tabContent(tabID, .internal(.requestNavigation(navigationAction))):
+                guard tabID == state.contentTabs.activeTabID else { return .none }
+                return .send(.navigation(navigationAction))
 
-            case let .content(.internal(.applyNavigationState(navigationState))):
-                syncActiveContentTabEffect(
+            case let .tabContent(tabID, .internal(.applyNavigationState(navigationState))):
+                guard let originContent = fileManagerContentState(for: tabID, state: state) else { return .none }
+                return syncContentTabEffect(
                     navigationState,
+                    tabID: tabID,
                     state: state,
-                    computerName: state.content.navigation.currentPath,
+                    computerName: originContent.navigation.currentPath,
                 )
 
-            case let .content(.internal(.performPendingNavigation(pending))):
-                .send(.navigation(.internal(.performNavigation(pending))))
+            case let .tabContent(tabID, .internal(.performPendingNavigation(pending))):
+                guard tabID == state.contentTabs.activeTabID else { return .none }
+                return .send(.navigation(.internal(.performNavigation(pending))))
 
-            case .content(.delegate(.composerCollectionSearchSucceeded)):
-                syncActiveContentTabEffect(
-                    state.content.navigation.navigationState,
+            case let .tabContent(tabID, .delegate(.composerCollectionSearchSucceeded)):
+                guard let originContent = fileManagerContentState(for: tabID, state: state) else { return .none }
+                return syncContentTabEffect(
+                    originContent.navigation.navigationState,
+                    tabID: tabID,
                     state: state,
-                    computerName: state.content.navigation.currentPath,
+                    computerName: originContent.navigation.currentPath,
                 )
-
-            case .content(.delegate(.collectionChangesDiscarded)):
-                .none
-
-            case .content(.delegate(.composerCollectionSearchFailed)):
-                .none
 
             default:
-                .none
+                return .none
             }
         }
     }

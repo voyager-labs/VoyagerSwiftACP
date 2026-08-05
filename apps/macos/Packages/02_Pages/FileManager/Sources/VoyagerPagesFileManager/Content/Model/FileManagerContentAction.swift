@@ -28,6 +28,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
         case newChatTapped
+        case aiChatNewChatTapped
         case showChatHistoryTapped
         case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
@@ -66,6 +67,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openPathInNewWindow(String)
         case closeWindow
         case newChatRequested
+        case durableNewChatRequested
         case showChatHistoryRequested
         case openAISettings
         case currentContextChanged(AiChatCurrentContextSnapshot)

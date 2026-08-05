@@ -3,16 +3,14 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
-export PATH="$HOME/.local/bin:$PATH"
+if ! command -v mise >/dev/null 2>&1; then
+  curl https://mise.run | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
 
-command -v mise &>/dev/null || curl https://mise.run | sh
-
-mise trust -q 2>/dev/null || true
+mise trust -y "$PWD/mise.toml"
 
 echo "📦 mise run setup 실행 중..."
 mise run setup
-
-echo "🔌 RTK OpenCode plugin 설치 중..."
-mise exec -- rtk init -g --opencode 2>/dev/null || echo "  (skip — RTK not ready)"
 
 echo "✅ setup 완료"

@@ -43,39 +43,24 @@ path_filters:
 
 # ── Phase 4: Path Instructions ──
 path_instructions:
+  - path: "apps/storybook/**"
+    instructions_file: "rules/storybook.md"
+
   # macOS Swift — extensive architecture rules in external file
   - path: "apps/macos/**/*.swift"
     instructions_file: "rules/macos-swift.md"
-
-  # Backend Python — shorter inline rules
-  - path: "apps/backend/**/*.py"
-    instructions: |
-      # Backend — FastAPI + Pydantic
-
-      When a PR touches backend routes, request/response schemas, search conversion,
-      or API clients, verify the observable contract:
-
-      - Response envelopes, status codes, and error shapes remain compatible with
-        existing clients.
-      - Internal exceptions, tracebacks, filesystem paths, and provider details are
-        not exposed as raw API responses.
-      - Search conversion endpoints preserve the documented convert-only contract;
-        do not introduce implicit indexing, filesystem mutation, or app-runtime
-        coupling through backend APIs.
-      - Schema/model changes include matching route behavior and tests for success,
-        validation failure, and provider/backend failure paths.
-
-      Tools: ruff (lint), pyright (types).
-      Flag API contract drift as P1 correctness or compatibility risk.
 
   # Global rules — apply to all files
   - path: "**"
     instructions: |
       ## Severity and noise policy
 
-      Only leave comments for P0/P1-level issues:
+      Only leave comments for P0/P1-level issues by default:
       - P0: blocker, data loss, security issue, crash, or severe architectural breakage.
       - P1: high-confidence correctness, lifecycle, ownership, boundary, or maintainability risk.
+
+      `apps/storybook/**` is the only exception. Its routed instructions may add
+      non-blocking P2 design-polish notes. Do not use P2 for any other path.
 
       Do not comment on:
       - Formatting, import ordering, naming nits, minor style preferences
@@ -109,8 +94,10 @@ path_instructions:
       ## Local-only artifacts
 
       The following paths are local agent/runtime artifacts:
+      - .omo/**
       - .omx/**
       - .sisyphus/**
+      - .codegraph/**
 
       They must not be tracked, staged, committed, or included in PRs.
       If these appear in a PR, leave a high-severity repository hygiene comment.
@@ -137,19 +124,14 @@ tools:
     languages: [swift, typescript, tsx, python]
   codegraph:
     enabled: true
-    status_command: "mise run codegraph-status"
   lsp:
     enabled: true
   swiftlint:
     enabled: true
     config_file: "apps/macos/.swiftlint.yml"
-  ruff:
-    enabled: true
-  pyright:
-    enabled: true
 
 # ── Phase 5: Output ──
 output:
-  severity_levels: [P0, P1]
+  severity_levels: [P0, P1, P2]
   evidence_required: true
   review_footer: true

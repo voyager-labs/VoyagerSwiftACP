@@ -10,7 +10,6 @@ struct EditMenuCommands: Commands {
     let store: StoreOf<MenuCommandsFeature>
 
     @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
-
     init(appRootStore: StoreOf<AppRootFeature>) {
         let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
         store = menuStore
@@ -21,10 +20,19 @@ struct EditMenuCommands: Commands {
     }
 
     var body: some Commands {
+        let textResponderIsEditing = isTextEditingResponder()
         let canUndoResponder = canUndoInTextResponder()
         let canRedoResponder = canRedoInTextResponder()
-        let canUndo = canUndoResponder || viewStore.canUndo
-        let canRedo = canRedoResponder || viewStore.canRedo
+        let canUndo = Self.canPerformUndoRedoCommand(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canUndoResponder,
+            canPerformFileOperation: viewStore.canUndo,
+        )
+        let canRedo = Self.canPerformUndoRedoCommand(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canRedoResponder,
+            canPerformFileOperation: viewStore.canRedo,
+        )
 
         let selectedCount = viewStore.selectedItemCount
         let hasSelectedItems = selectedCount > 0
@@ -51,6 +59,7 @@ struct EditMenuCommands: Commands {
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") {
                 sendUndoRedoAction(
+                    textResponderIsEditing: isTextEditingResponder(),
                     canHandleByTextResponder: canUndoInTextResponder(),
                     selector: undoSelector,
                     fallback: .requestUndo,
@@ -61,6 +70,7 @@ struct EditMenuCommands: Commands {
 
             Button("Redo") {
                 sendUndoRedoAction(
+                    textResponderIsEditing: isTextEditingResponder(),
                     canHandleByTextResponder: canRedoInTextResponder(),
                     selector: redoSelector,
                     fallback: .requestRedo,
@@ -71,18 +81,14 @@ struct EditMenuCommands: Commands {
         }
 
         CommandGroup(after: .undoRedo) {
-            let isComposerPresented = viewStore.isComposerPresented
-            let composerTitle = isComposerPresented
-                ? "Close Collection Filter Composer"
-                : "Open Collection Filter Composer"
-            Button(composerTitle) {
-                sendEditCommand(.toggleComposer)
+            Button(Self.collectionFilterComposerTitle(isPresented: viewStore.isComposerPresented)) {
+                sendEditCommand(.find)
             }
             .keyboardShortcut("f", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
 
-            Button(viewStore.newChatTitle) {
-                sendEditCommand(.newChat)
+            Button(viewStore.openChatTitle) {
+                sendEditCommand(.openChat)
             }
             .keyboardShortcut("l", modifiers: .command)
             .disabled(!viewStore.canUseAiChatInspector)
@@ -146,11 +152,39 @@ struct EditMenuCommands: Commands {
         }
     }
 
+    static func collectionFilterComposerTitle(isPresented: Bool) -> String {
+        isPresented
+            ? "Close Collection Filter Composer"
+            : "Open Collection Filter Composer"
+    }
+
     static func canPerformTextOrEntryCommand(
         canHandleByTextResponder: Bool,
         canPerformEntryCommands: Bool,
     ) -> Bool {
         canHandleByTextResponder || canPerformEntryCommands
+    }
+
+    static func canPerformUndoRedoCommand(
+        textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
+        canPerformFileOperation: Bool,
+    ) -> Bool {
+        (textResponderIsEditing && canHandleByTextResponder) || canPerformFileOperation
+    }
+
+    static func performUndoRedoAction(
+        textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
+        isComposerPresented: Bool,
+        sendResponderAction: () -> Bool,
+        sendFallback: () -> Void,
+    ) {
+        if textResponderIsEditing, canHandleByTextResponder, sendResponderAction() {
+            return
+        }
+        guard !isComposerPresented else { return }
+        sendFallback()
     }
 
     private func isTextEditingResponder() -> Bool {
@@ -186,16 +220,21 @@ struct EditMenuCommands: Commands {
     }
 
     private func sendUndoRedoAction(
+        textResponderIsEditing: Bool,
         canHandleByTextResponder: Bool,
         selector: Selector,
         fallback command: MenuCommandItem.EditCommand,
     ) {
-        if canHandleByTextResponder,
-           NSApp.sendAction(selector, to: nil, from: nil)
-        {
-            return
-        }
-
-        sendEditCommand(command)
+        Self.performUndoRedoAction(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canHandleByTextResponder,
+            isComposerPresented: viewStore.isComposerPresented,
+            sendResponderAction: {
+                NSApp.sendAction(selector, to: nil, from: nil)
+            },
+            sendFallback: {
+                sendEditCommand(command)
+            },
+        )
     }
 }

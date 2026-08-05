@@ -214,7 +214,7 @@ private extension AiChatProviderPreflight {
         case let .tokenBudget(value):
             switch capability {
             case let .tokenBudget(min, max, _):
-                guard (min ... max).contains(value) else {
+                guard min <= value, value <= max else {
                     return omittedThinking(
                         provider: provider,
                         selection: selection,
@@ -364,7 +364,7 @@ private extension AiChatProviderPreflight {
         max: Int,
         selection: AiThinkingSelection,
     ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
-        guard (min ... max).contains(value) else {
+        guard min <= value, value <= max else {
             return omittedThinking(
                 provider: .anthropic,
                 selection: selection,

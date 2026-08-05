@@ -76,6 +76,12 @@ extension AiChatFeature {
            currentPendingRequest.resolutionID == resolutionID
         {
             state.pendingRequestStart = nil
+            guard AiChatStateSelection.modelCatalogAuthority(
+                for: currentPendingRequest.selectedModel.id,
+                state: state,
+            ) != .confirmedUnavailable else {
+                return .none
+            }
             return beginRequest(
                 currentPendingRequest,
                 lockedRequestContext: lockedRequestContext,
@@ -86,6 +92,12 @@ extension AiChatFeature {
         guard let backgroundPendingRequest = state.backgroundPendingRequestStarts
             .removeValue(forKey: resolutionID)
         else { return .none }
+        guard AiChatStateSelection.modelCatalogAuthority(
+            for: backgroundPendingRequest.selectedModel.id,
+            state: state,
+        ) != .confirmedUnavailable else {
+            return .none
+        }
 
         if backgroundPendingRequest.sessionID == state.sessionID,
            canBeginForegroundRequest(state: state)

@@ -49,9 +49,7 @@ public struct FileManagerInspectorFeature {
                 return .send(.delegate(.newChatRequested))
 
             case .newChatRequested:
-                state.inspectorVisible = true
-                state.activeMode = .chat
-                return .send(.aiChat(.prepareUnpersistedNewChat))
+                return .send(.delegate(.newChatRequested))
 
             case .sessionHeaderBackTapped, .showChatHistoryRequested:
                 state.inspectorVisible = true
@@ -62,14 +60,12 @@ public struct FileManagerInspectorFeature {
                 return openChat(setup: setup, connectionsFile: connectionsFile, state: &state)
 
             case let .openNewChat(setup, connectionsFile):
+                state.inspectorVisible = false
+                state.activeMode = .chat
                 return .concatenate(
-                    openChat(
-                        setup: setup,
-                        connectionsFile: connectionsFile,
-                        state: &state,
-                        presentInspector: false,
-                    ),
-                    .send(.aiChat(.prepareUnpersistedNewChat)),
+                    .send(.aiChat(.setup(setup))),
+                    .send(.aiChat(.prepareUnpersistedNewChatWithContext(setup.currentContext))),
+                    .send(.aiChat(.providerConnectionsUpdated(connectionsFile))),
                     .send(.setInspectorVisible(true)),
                 )
 

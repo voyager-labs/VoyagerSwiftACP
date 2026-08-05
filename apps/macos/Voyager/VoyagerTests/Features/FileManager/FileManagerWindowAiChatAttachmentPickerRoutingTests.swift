@@ -71,11 +71,13 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         XCTAssertTrue(aiChat.addedAttachments.isEmpty)
     }
 
-    func testAiChatDroppedAttachmentClearSelectionDelegateClearsContentSelection() async {
+    func testAiChatDroppedAttachmentClearSelectionDelegateClearsContentSelection() async throws {
         let selectedEntry = makeEntry(name: "Dropped.md", fullPath: "/Users/test/Documents/Dropped.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.tabContentStates[activeTabID] = initialState.content
 
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
@@ -102,14 +104,31 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
 
         await store.send(.inspector(.aiChat(.delegate(.clearCurrentContextSelection))))
         await store.receive(\.inspector.delegate.clearCurrentContextSelection)
-        await store.receive(\.content.entryViewLayout.internal.applyClearSelection) {
-            $0.content.entryViewLayout.selectedIds = []
-        }
-        await store.receive(\.content.entryViewLayout.delegate.selectionChanged)
-        await store.receive(\.content.entryViewLayout.entryOperations.lifecycle.syncSelectedEntryIDs)
         await store.receive { action in
-            guard case .content(.delegate(.currentContextChanged)) = action else { return false }
-            return true
+            guard case let .tabContent(tabID, .entryViewLayout(.internal(.applyClearSelection))) = action else {
+                return false
+            }
+            return tabID == activeTabID
+        } assert: {
+            $0.content.entryViewLayout.selectedIds = []
+            $0.tabContentStates[activeTabID]?.entryViewLayout.selectedIds = []
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .entryViewLayout(.delegate(.selectionChanged))) = action else {
+                return false
+            }
+            return tabID == activeTabID
+        }
+        await store.receive { action in
+            guard case let .tabContent(
+                tabID,
+                .entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs))),
+            ) = action else { return false }
+            return tabID == activeTabID
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .delegate(.currentContextChanged)) = action else { return false }
+            return tabID == activeTabID
         }
         await store.receive(\.inspector.aiChat.currentContextChanged) {
             $0.inspector.aiChat.currentContext = expectedCurrentContext

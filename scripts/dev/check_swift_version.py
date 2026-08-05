@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -45,30 +44,6 @@ def main() -> None:
         raise SystemExit(1)
 
     print(swift.stdout, end="")
-
-    if shutil.which("swiftly") is None:
-        return
-
-    swiftly = run(["swiftly", "use"])
-    swiftly_output = "\n".join(
-        line.strip()
-        for line in (swiftly.stdout + swiftly.stderr).splitlines()
-        if line.strip()
-    )
-    swiftly_lines = swiftly_output.splitlines()
-    swiftly_selection = next(
-        (line for line in reversed(swiftly_lines) if line.startswith("xcode")),
-        swiftly_output,
-    )
-
-    if "xcode" not in swiftly_selection:
-        print("Swiftly is not using the repo Xcode toolchain.", file=sys.stderr)
-        print("Expected: xcode", file=sys.stderr)
-        print(f"Actual: {swiftly_selection or 'unavailable'}", file=sys.stderr)
-        print("Run: swiftly use xcode --global-default", file=sys.stderr)
-        raise SystemExit(1)
-
-    print(f"swiftly: {swiftly_selection}")
 
 
 if __name__ == "__main__":

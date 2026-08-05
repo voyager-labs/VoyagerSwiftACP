@@ -6,10 +6,25 @@ struct AiChatAssistantMarkdownText: View {
     @Environment(\.colorScheme)
     private var colorScheme
     let content: String
+    let transcriptRow: AiChatTranscriptRowDiscriminator
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                blockView(block)
+            ForEach(Array(blocks.enumerated()), id: \.offset) { blockIndex, block in
+                blockView(block, blockIndex: blockIndex)
+                    .overlay {
+                        AiChatTranscriptMatchAnchors(
+                            descriptors: searchPresentation.matchDescriptors(
+                                transcriptRow: transcriptRow,
+                                blockIndex: blockIndex,
+                            ),
+                        )
+                    }
+                    .accessibilityValue(
+                        isCurrentSearchBlock(blockIndex) ? "Current search result" : "",
+                    )
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -21,15 +36,15 @@ struct AiChatAssistantMarkdownText: View {
     }
 
     @ViewBuilder
-    private func blockView(_ block: AssistantMarkdownBlock) -> some View {
+    private func blockView(_ block: AssistantMarkdownBlock, blockIndex: Int) -> some View {
         switch block {
         case let .heading(level, text):
-            Text(inlineMarkdown(text))
+            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                 .font(.system(size: headingSize(for: level), weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case let .paragraph(text):
-            Text(inlineMarkdown(text))
+            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                 .font(VoyagerDS.Typography.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,7 +52,7 @@ struct AiChatAssistantMarkdownText: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text("•")
                     .font(.system(size: 13, weight: .semibold))
-                Text(inlineMarkdown(text))
+                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                     .font(VoyagerDS.Typography.body)
                     .foregroundStyle(.primary)
             }
@@ -47,13 +62,13 @@ struct AiChatAssistantMarkdownText: View {
                 Text("\(number).")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text(inlineMarkdown(text))
+                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                     .font(VoyagerDS.Typography.body)
                     .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         case let .code(text):
-            Text(text)
+            Text(highlightedCode(text, blockIndex: blockIndex))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.primary)
                 .padding(8)
@@ -71,6 +86,40 @@ struct AiChatAssistantMarkdownText: View {
         case 2: 15
         default: 14
         }
+    }
+
+    private func highlightedInlineMarkdown(_ text: String, blockIndex: Int) -> AttributedString {
+        AiChatRenderedTextHighlighter.highlight(
+            inlineMarkdown(text),
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: blockIndex,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
+        )
+    }
+
+    private func highlightedCode(_ text: String, blockIndex: Int) -> AttributedString {
+        AiChatRenderedTextHighlighter.highlight(
+            AttributedString(text),
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: blockIndex,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
+        )
+    }
+
+    private func currentSearchMatchOffsets(blockIndex: Int) -> Range<Int>? {
+        guard currentSearchMatch?.transcriptRow == transcriptRow,
+              currentSearchMatch?.blockIndex == blockIndex
+        else { return nil }
+        return currentSearchMatch?.characterOffsets
+    }
+
+    private func isCurrentSearchBlock(_ blockIndex: Int) -> Bool {
+        currentSearchMatch?.transcriptRow == transcriptRow
+            && currentSearchMatch?.blockIndex == blockIndex
     }
 
     private func inlineMarkdown(_ text: String) -> AttributedString {

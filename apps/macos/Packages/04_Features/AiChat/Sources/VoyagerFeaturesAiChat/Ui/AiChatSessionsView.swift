@@ -49,13 +49,8 @@ struct AiChatSessionsView: View {
 
                                 ForEach(section.rows) { row in
                                     sessionRow(row)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 8)
+                                        .modifier(AiChatSessionRowHoverEffect())
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
-                                                .fill(Color.primary.opacity(0.05)),
-                                        )
                                 }
                             }
                         }
@@ -122,6 +117,8 @@ struct AiChatSessionsView: View {
     private func sessionRow(_ row: AiChatSessionRowDisplayModel) -> some View {
         if state.sessionList.renamingSessionID == row.id {
             renameRow(row)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
         } else {
             displayRow(row)
         }
@@ -136,9 +133,19 @@ struct AiChatSessionsView: View {
                     store.send(.sessionRowTapped(row.id))
                 }
             } label: {
-                rowText(row)
+                HStack(spacing: 0) {
+                    rowText(row)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(rowAccessibilityLabel(row))
+            .accessibilityHint("Open chat session")
 
             rowActivityIndicator(row)
 
@@ -148,6 +155,7 @@ struct AiChatSessionsView: View {
             )
             .frame(width: 24, height: 24)
             .help("Session actions")
+            .padding(.trailing, 10)
         }
     }
 
@@ -240,8 +248,36 @@ struct AiChatSessionsView: View {
             }
         }
         .modifier(AiChatProcessingRowTextEffect(isActive: row.activityState == .processing))
-        .accessibilityLabel(row.activityState == .processing ? "\(row.title), generating response" : row.title)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func rowAccessibilityLabel(_ row: AiChatSessionRowDisplayModel) -> String {
+        switch row.activityState {
+        case .idle:
+            row.title
+        case .processing:
+            "\(row.title), generating response"
+        case .unreadCompleted:
+            "\(row.title), unread completed response"
+        }
+    }
+}
+
+private struct AiChatSessionRowHoverEffect: ViewModifier {
+    @Environment(\.colorScheme)
+    private var colorScheme
+
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                    .fill(isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
+                    .animation(.easeOut(duration: 0.14), value: isHovered),
+            )
+            .onHover { isHovered = $0 }
     }
 }
 
@@ -287,7 +323,7 @@ private struct AiChatProcessingRowTextEffect: ViewModifier {
     }
 }
 
-private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
+struct AiChatSessionActionsMenuButton: NSViewRepresentable {
     @Environment(\.colorScheme)
     private var colorScheme
     let onRename: () -> Void
@@ -309,7 +345,9 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
         button.target = context.coordinator
         button.action = #selector(Coordinator.showMenu(_:))
         button.setButtonType(.momentaryPushIn)
-        button.focusRingType = .none
+        button.setAccessibilityLabel("Session actions")
+        button.setAccessibilityRole(.button)
+        button.focusRingType = .default
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
         button.colorScheme = colorScheme
@@ -379,7 +417,7 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
     }
 }
 
-private final class HoverTrackingMenuButton: NSButton {
+final class HoverTrackingMenuButton: NSButton {
     var colorScheme: ColorScheme = .light {
         didSet { onHoverChanged?(isHovered) }
     }

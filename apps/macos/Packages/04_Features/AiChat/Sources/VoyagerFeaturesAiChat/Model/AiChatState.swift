@@ -35,6 +35,45 @@ public enum AiChatMode: Equatable, Sendable {
     case chat
 }
 
+struct AiChatTranscriptHistoryMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
+struct AiChatStreamingAssistantDraftMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
+struct AiChatNewChatPreparationMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
+struct AiChatInspectorReopenMutationBaseline: Equatable {
+    struct PendingPersistence: Equatable {
+        let sessionID: AiChatSessionID
+        let revision: UInt64
+    }
+
+    var sessionID: AiChatSessionID?
+    var revision: UInt64 = 0
+    var pendingPersistence: [AiChatRequestID: PendingPersistence] = [:]
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
 public enum AiChatSessionRowMergeResult: Equatable, Sendable {
     case rejected
     case unchanged
@@ -191,6 +230,10 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     var cancellationOwnerID = UUID()
+    var newChatPreparationMutationTracker = AiChatNewChatPreparationMutationTracker()
+    var transcriptHistoryMutationTracker = AiChatTranscriptHistoryMutationTracker()
+    var streamingAssistantDraftMutationTracker = AiChatStreamingAssistantDraftMutationTracker()
+    var inspectorReopenMutationBaseline = AiChatInspectorReopenMutationBaseline()
     public var restoreSessionID: AiChatSessionID?
     public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
@@ -206,13 +249,23 @@ public struct AiChatState: Equatable, Sendable {
     public var currentContext: AiChatCurrentContextSnapshot
     public var currentContextFolderStructureModes: AiChatCurrentContextFolderStructureModes
     public var addedAttachments: [AiChatAttachmentDraft]
-    public var transcriptHistory: [AiChatMessage]
+    public var transcriptHistory: [AiChatMessage] {
+        didSet {
+            transcriptHistoryMutationTracker.value &+= 1
+        }
+    }
+
     public var draftText: String
-    public var streamingAssistantDraft: String?
+    public var streamingAssistantDraft: String? {
+        didSet {
+            streamingAssistantDraftMutationTracker.value &+= 1
+        }
+    }
+
+    public var transcriptSearch: AiChatTranscriptSearchState
     public var transcriptAutoScrollVersion: Int
     public var catalogRows: [AiModelCatalogRow]
     public var modelListState: AiChatModelListState
-    public var isModelSelectorPresented: Bool
     public var selectedModelHandle: AiModelHandle?
     public var selectedThinking: AiThinkingSelection?
     public var unavailableSelectedModelHandle: AiModelHandle?
@@ -233,6 +286,11 @@ public struct AiChatState: Equatable, Sendable {
     public var providerConnectionSnapshot: AiChatProviderConnectionSnapshot
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
     public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
+
+    mutating func resetTranscriptSearchIfSessionChanges(to nextSessionID: AiChatSessionID?) {
+        guard sessionID != nextSessionID else { return }
+        transcriptSearch.reset()
+    }
 
     /// 기존 session runtime을 보존한 채 Chat 표시 의미 상태만 준비한다.
     @discardableResult
@@ -329,6 +387,7 @@ public struct AiChatState: Equatable, Sendable {
         restoreOutcome = nil
         restoreFailure = nil
         mode = .sessions
+        resetTranscriptSearchIfSessionChanges(to: sessionID)
         self.sessionID = sessionID
         sessionList.selectedSessionID = sessionID
         guard let restoreSessionID, restoreSessionID != sessionID else { return false }
@@ -355,10 +414,10 @@ public struct AiChatState: Equatable, Sendable {
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         streamingAssistantDraft: String? = nil,
+        transcriptSearch: AiChatTranscriptSearchState = .init(),
         transcriptAutoScrollVersion: Int = 0,
         catalogRows: [AiModelCatalogRow] = [],
         modelListState: AiChatModelListState? = nil,
-        isModelSelectorPresented: Bool = false,
         selectedModelHandle: AiModelHandle? = nil,
         selectedThinking: AiThinkingSelection? = nil,
         unavailableSelectedModelHandle: AiModelHandle? = nil,
@@ -398,11 +457,11 @@ public struct AiChatState: Equatable, Sendable {
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
         self.streamingAssistantDraft = streamingAssistantDraft
+        self.transcriptSearch = transcriptSearch
         self.transcriptAutoScrollVersion = transcriptAutoScrollVersion
         let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
         self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
         self.modelListState = resolvedModelListState
-        self.isModelSelectorPresented = isModelSelectorPresented
         self.selectedModelHandle = selectedModelHandle
         self.selectedThinking = selectedThinking
         self.unavailableSelectedModelHandle = unavailableSelectedModelHandle
@@ -423,6 +482,7 @@ public struct AiChatState: Equatable, Sendable {
         self.providerConnectionSnapshot = providerConnectionSnapshot
         self.availableModelsByProvider = availableModelsByProvider
         self.transcriptScrollOffsets = transcriptScrollOffsets
+        inspectorReopenMutationBaseline = .init(sessionID: sessionID)
     }
 
     public var availableModels: [AiProviderModel] {
@@ -650,5 +710,113 @@ public struct AiChatState: Equatable, Sendable {
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
         AiChatStateSelection.thinkingLabel(for: selection)
+    }
+}
+
+public extension AiChatState {
+    /// 동일 session에서 마지막 persisted 기준 이후 사용자 또는 navigation 변경이 발생했는지 반환한다.
+    func hasInspectorReopenUserMutation(for sessionID: AiChatSessionID) -> Bool {
+        self.sessionID == sessionID
+            && inspectorReopenMutationBaseline.sessionID == sessionID
+            && newChatPreparationMutationTracker.value != inspectorReopenMutationBaseline.revision
+    }
+
+    var newChatPreparationProvenance: AiChatNewChatPreparationProvenance {
+        AiChatNewChatPreparationProvenance(
+            ownerID: cancellationOwnerID,
+            mutationRevision: newChatPreparationMutationTracker.value,
+            restoreSessionID: restoreSessionID,
+            deferredChatSessionRestoreID: deferredChatSessionRestoreID,
+            restoreOutcome: restoreOutcome,
+            restoreFailure: restoreFailure,
+            mode: mode,
+            selectedHistorySessionID: sessionList.selectedSessionID,
+            sessionID: sessionID,
+            preparedTransientSessionID: preparedTransientSessionID,
+            emptyDraftSessionID: emptyDraftSessionID,
+            currentSessionCustomTitle: currentSessionCustomTitle,
+            sessionStatus: sessionStatus,
+            currentContext: currentContext,
+            currentContextFolderStructureModes: currentContextFolderStructureModes,
+            addedAttachments: addedAttachments,
+            transcriptHistory: transcriptHistory,
+            draftText: draftText,
+            streamingAssistantDraft: streamingAssistantDraft,
+            selectedModelHandle: selectedModelHandle,
+            selectedThinking: selectedThinking,
+            unavailableSelectedModelHandle: unavailableSelectedModelHandle,
+            pendingRequestStart: pendingRequestStart,
+            executionPhase: executionPhase,
+        )
+    }
+
+    func matchesInspectorLiveRuntimeReopenProvenance(
+        _ provenance: AiChatNewChatPreparationProvenance,
+    ) -> Bool {
+        let current = newChatPreparationProvenance
+        return current.ownerID == provenance.ownerID
+            && current.mutationRevision == provenance.mutationRevision
+            && current.restoreSessionID == provenance.restoreSessionID
+            && current.deferredChatSessionRestoreID == provenance.deferredChatSessionRestoreID
+            && current.mode == provenance.mode
+            && current.selectedHistorySessionID == provenance.selectedHistorySessionID
+            && current.sessionID == provenance.sessionID
+            && current.preparedTransientSessionID == provenance.preparedTransientSessionID
+            && current.emptyDraftSessionID == provenance.emptyDraftSessionID
+            && current.sessionStatus == provenance.sessionStatus
+    }
+
+    func matchesInspectorNewChatPreparationProvenance(
+        _ provenance: AiChatNewChatPreparationProvenance,
+    ) -> Bool {
+        let current = newChatPreparationProvenance
+        return current.ownerID == provenance.ownerID
+            && current.mutationRevision == provenance.mutationRevision
+            && current.restoreSessionID == provenance.restoreSessionID
+            && current.deferredChatSessionRestoreID == provenance.deferredChatSessionRestoreID
+            && current.restoreOutcome == provenance.restoreOutcome
+            && current.restoreFailure == provenance.restoreFailure
+            && current.mode == provenance.mode
+            && current.selectedHistorySessionID == provenance.selectedHistorySessionID
+            && current.sessionID == provenance.sessionID
+            && current.preparedTransientSessionID == provenance.preparedTransientSessionID
+            && current.emptyDraftSessionID == provenance.emptyDraftSessionID
+            && current.currentSessionCustomTitle == provenance.currentSessionCustomTitle
+            && current.sessionStatus == provenance.sessionStatus
+            && current.currentContext == provenance.currentContext
+            && current.currentContextFolderStructureModes == provenance.currentContextFolderStructureModes
+            && current.addedAttachments == provenance.addedAttachments
+            && current.transcriptHistory == provenance.transcriptHistory
+            && current.draftText == provenance.draftText
+            && current.streamingAssistantDraft == provenance.streamingAssistantDraft
+            && current.pendingRequestStart == provenance.pendingRequestStart
+            && current.executionPhase == provenance.executionPhase
+    }
+}
+
+extension AiChatState {
+    mutating func resetInspectorReopenMutationBaseline(for sessionID: AiChatSessionID) {
+        inspectorReopenMutationBaseline.sessionID = sessionID
+        inspectorReopenMutationBaseline.revision = newChatPreparationMutationTracker.value
+    }
+
+    mutating func prepareInspectorReopenPersistenceBaseline(
+        requestID: AiChatRequestID,
+        sessionID: AiChatSessionID,
+    ) {
+        inspectorReopenMutationBaseline.pendingPersistence[requestID] = .init(
+            sessionID: sessionID,
+            revision: newChatPreparationMutationTracker.value,
+        )
+    }
+
+    mutating func completeInspectorReopenPersistenceBaseline(requestID: AiChatRequestID) -> Bool {
+        guard let pending = inspectorReopenMutationBaseline.pendingPersistence.removeValue(forKey: requestID),
+              sessionID == pending.sessionID
+        else { return false }
+        let hasNewerMutation = newChatPreparationMutationTracker.value != pending.revision
+        inspectorReopenMutationBaseline.sessionID = pending.sessionID
+        inspectorReopenMutationBaseline.revision = pending.revision
+        return hasNewerMutation
     }
 }

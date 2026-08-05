@@ -1,6 +1,12 @@
 import Foundation
 import VoyagerEntitiesAi
 
+enum AiChatModelCatalogAuthority: Equatable {
+    case available(AiProviderModel)
+    case confirmedUnavailable
+    case unknown
+}
+
 enum AiChatStateSelection {
     static func normalizedSelectionHandle(
         _ preferredHandle: AiModelHandle?,
@@ -11,7 +17,60 @@ enum AiChatStateSelection {
 
     static func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]) -> AiProviderModel? {
         guard let handle else { return nil }
-        return models.first(where: { $0.id == handle })
+        return models.first(where: { $0.id == handle && $0.unavailableReason == nil })
+    }
+
+    static func modelCatalogAuthority(
+        for handle: AiModelHandle,
+        state: AiChatState,
+    ) -> AiChatModelCatalogAuthority {
+        if case let .known(providers) = state.providerConnectionSnapshot,
+           !providers.contains(handle.provider)
+        {
+            return .confirmedUnavailable
+        }
+        if state.modelListPendingProviders.contains(handle.provider) {
+            return .unknown
+        }
+        if state.modelListFailedProviders[handle.provider] != nil {
+            return .unknown
+        }
+        if let models = state.modelListLoadedModelsByProvider[handle.provider] {
+            return providerCatalogAuthority(for: handle, in: models)
+        }
+        if let models = state.availableModelsByProvider[handle.provider] {
+            return providerCatalogAuthority(for: handle, in: models)
+        }
+
+        switch state.modelListState {
+        case let .loaded(models):
+            if let model = resolvedModel(for: handle, in: models) {
+                return .available(model)
+            }
+            return models.contains(where: { $0.provider == handle.provider })
+                ? .confirmedUnavailable
+                : .unknown
+        case .empty:
+            return .confirmedUnavailable
+        case .idle, .loading, .failed:
+            return .unknown
+        }
+    }
+
+    static func revalidatedNewChatSelectionSeed(
+        _ seed: AiChatNewChatSelectionSeed?,
+        state: AiChatState,
+    ) -> AiChatNewChatSelectionSeed? {
+        guard let seed else { return nil }
+
+        switch modelCatalogAuthority(for: seed.modelHandle, state: state) {
+        case let .available(model):
+            return AiChatNewChatSelectionSeedResolver.revalidate(seed, catalog: [model])
+        case .confirmedUnavailable:
+            return nil
+        case .unknown:
+            return seed
+        }
     }
 
     static func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]) -> AiModelCatalogRow? {
@@ -31,23 +90,12 @@ enum AiChatStateSelection {
         _ selectedThinking: AiThinkingSelection?,
         for model: AiProviderModel?,
     ) -> AiThinkingSelection? {
-        guard let selectedThinking, let model else { return nil }
-
-        switch (selectedThinking, model.thinkingCapability) {
-        case (.none, .effort), (.none, .adaptive), (.none, .tokenBudget), (.none, .unknown):
-            return model.supportsThinkingNone ? selectedThinking : nil
-        case let (.effort(value), .effort(values, _)):
-            return values.contains(value) ? selectedThinking : nil
-        case let (.effort(value), .adaptive(values, _)):
-            return values.contains(value) ? selectedThinking : nil
-        case let (.tokenBudget(value), .tokenBudget(min, max, _)):
-            return (min ... max).contains(value) ? selectedThinking : nil
-        case (.effort, .unknown), (.tokenBudget, .unknown):
-            return selectedThinking
-        case (.none, .unsupported), (.effort, .tokenBudget), (.tokenBudget, .effort), (.tokenBudget, .adaptive),
-             (.effort, .unsupported), (.tokenBudget, .unsupported):
-            return nil
-        }
+        guard let model else { return nil }
+        return AiThinkingSelectionPolicy.normalize(
+            selectedThinking,
+            capability: model.thinkingCapability,
+            supportsNone: model.supportsThinkingNone,
+        )
     }
 
     static func modelListState(from catalogRows: [AiModelCatalogRow]) -> AiChatModelListState {
@@ -105,10 +153,20 @@ enum AiChatStateSelection {
     }
 
     static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
-        CollectionSearchAISelectionPolicy.defaultThinkingLabel(for: capability)
+        AiThinkingSelectionPolicy.defaultLabel(for: capability)
     }
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
-        CollectionSearchAISelectionPolicy.thinkingLabel(for: selection)
+        AiThinkingSelectionPolicy.label(for: selection)
+    }
+
+    private static func providerCatalogAuthority(
+        for handle: AiModelHandle,
+        in models: [AiProviderModel],
+    ) -> AiChatModelCatalogAuthority {
+        guard let model = resolvedModel(for: handle, in: models) else {
+            return .confirmedUnavailable
+        }
+        return .available(model)
     }
 }

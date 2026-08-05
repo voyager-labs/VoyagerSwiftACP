@@ -268,8 +268,8 @@ final class SearchQueryServiceTests: XCTestCase {
         let converter = QueryConversionInterpreter()
         let existingCondition = SearchConditionPayload(
             propertyKey: "extension",
-            operator: "eq",
-            value: .string("pdf"),
+            operator: "any",
+            value: .array([.string("pdf")]),
         )
 
         let result = try converter.decodeAndNormalize(
@@ -296,15 +296,15 @@ final class SearchQueryServiceTests: XCTestCase {
         let converter = QueryConversionInterpreter()
         let existingCondition = SearchConditionPayload(
             propertyKey: "extension",
-            operator: "eq",
-            value: .string("pdf"),
+            operator: "any",
+            value: .array([.string("pdf")]),
         )
 
         let result = try converter.decodeAndNormalize(
             content: #"""
             {
               "outcome":"unchanged_result",
-              "conditions":[{"propertyKey":"extension","operator":"eq","value":"pdf"}],
+              "conditions":[{"propertyKey":"extension","operator":"any","value":["pdf"]}],
               "scopes":["/tmp/root"],
               "error":null
             }

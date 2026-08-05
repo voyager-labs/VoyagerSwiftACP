@@ -62,6 +62,11 @@ final class AiChatInputFocusOwner: ObservableObject {
     }
 }
 
+enum AiChatInputNewlineCommand: Equatable {
+    case insertNewline
+    case submit
+}
+
 struct AiChatInputTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var measuredHeight: CGFloat
@@ -385,15 +390,35 @@ struct AiChatInputTextView: NSViewRepresentable {
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
                 return false
             }
-
-            let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
-            if modifierFlags.contains(.shift) || modifierFlags.contains(.option) {
-                textView.insertNewline(nil)
+            guard !textView.hasMarkedText() else {
+                textView.unmarkText()
                 return true
             }
 
-            parent.onSubmit()
+            return handleNewlineCommand(
+                in: textView,
+                modifierFlags: NSApp.currentEvent?.modifierFlags ?? [],
+            )
+        }
+
+        func handleNewlineCommand(
+            in textView: NSTextView,
+            modifierFlags: NSEvent.ModifierFlags,
+        ) -> Bool {
+            switch Self.newlineCommand(for: modifierFlags) {
+            case .insertNewline:
+                textView.insertNewline(nil)
+            case .submit:
+                parent.onSubmit()
+            }
             return true
+        }
+
+        static func newlineCommand(for modifierFlags: NSEvent.ModifierFlags) -> AiChatInputNewlineCommand {
+            if modifierFlags.contains(.shift) || modifierFlags.contains(.option) {
+                return .insertNewline
+            }
+            return .submit
         }
 
         static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {

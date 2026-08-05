@@ -175,6 +175,37 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
         RedactionTestHelper().assertNoRawSecrets(in: prompt)
         XCTAssertFalse(prompt.contains("/Users/me/secret"), prompt)
     }
+
+    func testCodexProcessEnvironmentExcludesUnrelatedParentSecrets() {
+        let environment = AiChatProviderExecutionClient.codexProcessEnvironment(
+            codexHomeURL: URL(fileURLWithPath: "/tmp/voyager-codex-home"),
+            parentEnvironment: [
+                "HOME": "/Users/test",
+                "HTTPS_PROXY": "https://proxy.example.com",
+                "LANG": "en_US.UTF-8",
+                "OPENAI_API_KEY": "secret",
+                "PATH": "/custom/bin",
+                "UNRELATED_SECRET": "secret",
+            ],
+        )
+
+        XCTAssertEqual(
+            Set(environment.keys),
+            Set(["CODEX_HOME", "HOME", "LANG", "PATH", "SHELL", "TMPDIR"]),
+        )
+        XCTAssertEqual(environment["CODEX_HOME"], "/tmp/voyager-codex-home")
+        XCTAssertEqual(environment["HOME"], "/tmp/voyager-codex-home")
+        XCTAssertEqual(environment["LANG"], "en_US.UTF-8")
+        XCTAssertEqual(
+            environment["PATH"],
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        )
+        XCTAssertEqual(environment["SHELL"], "/bin/zsh")
+        XCTAssertEqual(environment["TMPDIR"], "/tmp/voyager-codex-home/session")
+        XCTAssertNil(environment["HTTPS_PROXY"])
+        XCTAssertNil(environment["OPENAI_API_KEY"])
+        XCTAssertNil(environment["UNRELATED_SECRET"])
+    }
 }
 
 extension CBW003ProviderExecutionResolutionTests {
@@ -462,6 +493,70 @@ extension CBW003ProviderExecutionResolutionTests {
         )
 
         XCTAssertEqual(readablePaths.map(\.path), [selectedPath])
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex source scope는 잠긴 요청의 folder context에서 결정된다.
+    /// 프로세스 환경 없이도 선택 경로만 읽기 허용되고 scope 밖 경로는 제외되는지 검증합니다.
+    func testCodexRequestScope_usesLockedFolderContextForSelectedPaths() {
+        let sourceScopeRoot = "/tmp/project"
+        let selectedPath = "/tmp/project/Selected.swift"
+        let outsidePath = "/tmp/outside/Secret.swift"
+        let requestContext = AiChatLockedRequestContextSnapshot(
+            currentContext: AiChatCurrentContextSnapshot(references: [
+                AiChatContextReference(
+                    kind: .reference,
+                    identifier: sourceScopeRoot,
+                    metadata: ["route": "folder", "path": sourceScopeRoot],
+                ),
+            ]),
+            parts: [selectedPath, outsidePath].map { path in
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .providerNativeFile(
+                        kind: .codexPathScope,
+                        mimeType: "text/plain",
+                        metadata: ["path": path],
+                    ),
+                    fileKind: .file,
+                    canonicalPath: path,
+                    displayPath: path,
+                )
+            },
+        )
+        let payload = makeCodexPayload(requestContext: requestContext)
+
+        XCTAssertEqual(AiChatProviderExecutionClient.codexSourceScopeRoot(payload: payload)?.path, sourceScopeRoot)
+        XCTAssertEqual(AiChatProviderExecutionClient.codexReadablePaths(payload: payload).map(\.path), [selectedPath])
+        let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: payload)
+        XCTAssertTrue(prompt.contains("source_scope_root: \(sourceScopeRoot)"))
+        XCTAssertTrue(prompt.contains("path: \(selectedPath)"))
+        XCTAssertTrue(prompt.contains("path: \(outsidePath)"))
+        XCTAssertTrue(prompt.contains("access: referenced path (Codex filesystem access)"))
+        XCTAssertTrue(prompt.contains("status: out_of_scope"))
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: folder context가 없으면 Codex 파일 접근은 fail-closed 한다.
+    func testCodexRequestScope_withoutLockedFolderContextIsReferenceOnly() {
+        let selectedPath = "/tmp/project/Selected.swift"
+        let requestContext = AiChatLockedRequestContextSnapshot(parts: [
+            AiChatLockedContextPartSnapshot(
+                source: .attachment,
+                resolution: .providerNativeFile(
+                    kind: .codexPathScope,
+                    mimeType: "text/plain",
+                    metadata: ["path": selectedPath],
+                ),
+                fileKind: .file,
+                canonicalPath: selectedPath,
+                displayPath: selectedPath,
+            ),
+        ])
+        let payload = makeCodexPayload(requestContext: requestContext)
+
+        XCTAssertNil(AiChatProviderExecutionClient.codexSourceScopeRoot(payload: payload))
+        XCTAssertTrue(AiChatProviderExecutionClient.codexReadablePaths(payload: payload).isEmpty)
+        XCTAssertTrue(AiChatProviderExecutionClient.makeCodexPrompt(payload: payload)
+            .contains("source_scope_root: unavailable"))
     }
 
     /// CBW-003-prepare_contextual_chat_request: Codex permission profile은 root deny 후 선택 경로만 재허용한다.

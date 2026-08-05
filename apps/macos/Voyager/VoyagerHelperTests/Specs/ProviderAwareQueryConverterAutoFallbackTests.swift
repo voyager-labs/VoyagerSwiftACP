@@ -18,7 +18,7 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         let result = await converter.convert(request: Self.makeAutoFallbackRequest())
 
         XCTAssertNil(result.error)
-        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.generatedChangeSet)
+        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.fallbackReuse)
         XCTAssertEqual(result.providerId, AiProvider.anthropic.rawValue)
         XCTAssertEqual(modelLoader.loadCount(for: .openai), 1)
         XCTAssertEqual(modelLoader.loadCount(for: .anthropic), 1)
@@ -277,7 +277,11 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
                 excludedScopes: ["/tmp/root/excluded"],
                 includeSubfolders: false,
                 conditions: [
-                    SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt")),
+                    SearchConditionPayload(
+                        propertyKey: "extension",
+                        operator: "any",
+                        value: .array([.string("txt")]),
+                    ),
                 ],
             ),
             collectionSearchAISettings: CollectionSearchAISettingsPayload(

@@ -126,6 +126,8 @@ struct AiChatTranscriptPresentation: Equatable {
 struct AiChatConversationSurface: View {
     let state: AiChatState
     let skeleton: AiChatSkeletonDisplayModel
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let onOpenSettings: () -> Void
     let onErrorRecovery: () -> Void
     let onRegenerate: () -> Void
@@ -160,6 +162,8 @@ struct AiChatConversationSurface: View {
             case .ready:
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                     isProcessing: false,
                     canRegenerate: state.canRegenerate,
                     statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -169,6 +173,8 @@ struct AiChatConversationSurface: View {
             case .processing:
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                     isProcessing: true,
                     canRegenerate: false,
                     streamingAssistant: state.streamingAssistantDisplayModel,
@@ -184,6 +190,8 @@ struct AiChatConversationSurface: View {
         if !state.transcriptHistory.isEmpty {
             AiChatTranscriptSection(
                 messages: state.transcriptHistory,
+                searchPresentation: searchPresentation,
+                currentSearchMatch: currentSearchMatch,
                 isProcessing: isProcessing,
                 canRegenerate: canRegenerate,
                 statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -314,12 +322,37 @@ private struct AiChatStatusBanner: View {
     }
 }
 
+struct AiChatTranscriptRenderPlan: Equatable {
+    let messageIndices: Range<Int>
+    let latestAssistantMessageIndex: Int?
+    let latestAssistantInspectionCount: Int
+
+    static func make(messages: [AiChatMessage]) -> Self {
+        var latestAssistantMessageIndex: Int?
+        var inspectionCount = 0
+        for index in messages.indices.reversed() {
+            inspectionCount += 1
+            if messages[index].role == .assistant {
+                latestAssistantMessageIndex = index
+                break
+            }
+        }
+        return Self(
+            messageIndices: messages.indices,
+            latestAssistantMessageIndex: latestAssistantMessageIndex,
+            latestAssistantInspectionCount: inspectionCount,
+        )
+    }
+}
+
 private struct AiChatTranscriptSection: View {
     @Environment(\.locale)
     private var locale
     @Environment(\.timeZone)
     private var timeZone
     let messages: [AiChatMessage]
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let isProcessing: Bool
     let canRegenerate: Bool
     var statusText: String?
@@ -330,6 +363,9 @@ private struct AiChatTranscriptSection: View {
             ForEach(transcriptPresentation.rows) { row in
                 AiChatMessageRow(
                     row: row,
+                    transcriptRow: .message(index: row.id.index),
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                     showsRegenerateAction: canRegenerate && row.id.index == latestAssistantMessageIndex,
                     onRegenerate: onRegenerate,
                 )
@@ -345,12 +381,16 @@ private struct AiChatTranscriptSection: View {
                     isProcessing: isProcessing,
                     failure: streamingAssistant.failure,
                     acceptedChunkRevision: streamingAssistant.acceptedChunkRevision,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                 )
             } else if isProcessing {
                 AiChatAssistantCard(
                     title: "Assistant",
                     content: nil,
                     isProcessing: true,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                 )
             } else if let statusText {
                 requestStatusRow(statusText)
@@ -378,6 +418,9 @@ private struct AiChatTranscriptSection: View {
 
 private struct AiChatMessageRow: View {
     let row: AiChatTranscriptRowPresentation
+    let transcriptRow: AiChatTranscriptRowDiscriminator
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let showsRegenerateAction: Bool
     let onRegenerate: () -> Void
     @Environment(\.colorScheme)
@@ -417,17 +460,18 @@ private struct AiChatMessageRow: View {
         case .assistant:
             assistantMessage(timestampLabel: timestampLabel)
         case .system, .tool:
-            Text(row.message.content)
+            Text(highlightedPlainText)
                 .font(VoyagerDS.Typography.caption)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 4)
+                .overlay { matchAnchors(blockIndex: 0) }
         }
     }
 
     private func userMessage(timestampLabel: String?) -> some View {
         HStack(spacing: 8) {
             Spacer(minLength: 16)
-            Text(row.message.content)
+            Text(highlightedPlainText)
                 .font(VoyagerDS.Typography.body)
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 14)
@@ -443,6 +487,7 @@ private struct AiChatMessageRow: View {
                     )
                 }
         }
+        .overlay { matchAnchors(blockIndex: 0) }
     }
 
     private func assistantMessage(timestampLabel: String?) -> some View {
@@ -452,6 +497,9 @@ private struct AiChatMessageRow: View {
                 content: row.message.content,
                 isProcessing: false,
                 headerPresentation: .completedHistorical,
+                searchPresentation: searchPresentation,
+                currentSearchMatch: currentSearchMatch,
+                transcriptRow: transcriptRow,
             )
             .accessibilityElement(children: .contain)
             .accessibilityLabel(AiChatAssistantHeaderPresentation.completedHistorical.accessibilityRoleLabel ?? "")
@@ -559,10 +607,63 @@ private struct AiChatMessageRow: View {
             isClockFocused: isTimestampControlFocused,
         )
     }
+
+    private var highlightedPlainText: AttributedString {
+        AiChatRenderedTextHighlighter.highlight(
+            AttributedString(row.message.content),
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: 0,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: 0),
+        )
+    }
+
+    private func matchAnchors(blockIndex: Int) -> some View {
+        AiChatTranscriptMatchAnchors(
+            descriptors: searchPresentation.matchDescriptors(
+                transcriptRow: transcriptRow,
+                blockIndex: blockIndex,
+            ),
+        )
+    }
+
+    private func currentSearchMatchOffsets(blockIndex: Int) -> Range<Int>? {
+        guard currentSearchMatch?.transcriptRow == transcriptRow,
+              currentSearchMatch?.blockIndex == blockIndex
+        else { return nil }
+        return currentSearchMatch?.characterOffsets
+    }
+}
+
+struct AiChatTranscriptMatchAnchors: View {
+    let descriptors: [AiChatRenderedTextMatchDescriptor]
+
+    var targetIDs: [AiChatTranscriptBlockAnchor] {
+        guard let descriptor = descriptors.first else { return [] }
+        let targetID = AiChatTranscriptBlockAnchor(
+            transcriptRow: descriptor.transcriptRow,
+            blockIndex: descriptor.blockIndex,
+        )
+        return [targetID]
+    }
+
+    var body: some View {
+        ZStack {
+            ForEach(targetIDs, id: \.self) { targetID in
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(targetID)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 private struct AiChatTimestampAccessibilityValue: ViewModifier {
     let label: String?
+
     func body(content: Content) -> some View {
         if let label {
             content.accessibilityValue("Sent \(label)")
@@ -587,6 +688,9 @@ private struct AiChatAssistantCard: View {
     var headerPresentation: AiChatAssistantHeaderPresentation = .full
     var failure: AiChatExecutionFailure?
     var acceptedChunkRevision: Int?
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    var transcriptRow: AiChatTranscriptRowDiscriminator = .streamingAssistant
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if bodyPresentation.showsInlineHeader {
@@ -648,12 +752,17 @@ private struct AiChatAssistantCard: View {
 
     @ViewBuilder private var bodyContentView: some View {
         if let content = bodyPresentation.content {
-            AiChatAssistantMarkdownText(content: content)
-                .contentTransition(.opacity)
-                .animation(
-                    reduceMotion ? nil : .easeIn(duration: AiChatAssistantBodyPresentation.chunkFadeDuration),
-                    value: acceptedChunkRevision,
-                )
+            AiChatAssistantMarkdownText(
+                content: content,
+                transcriptRow: transcriptRow,
+                searchPresentation: searchPresentation,
+                currentSearchMatch: currentSearchMatch,
+            )
+            .contentTransition(.opacity)
+            .animation(
+                reduceMotion ? nil : .easeIn(duration: AiChatAssistantBodyPresentation.chunkFadeDuration),
+                value: acceptedChunkRevision,
+            )
         } else if bodyPresentation.showsWaiting {
             AiChatWaitingIndicator()
         }

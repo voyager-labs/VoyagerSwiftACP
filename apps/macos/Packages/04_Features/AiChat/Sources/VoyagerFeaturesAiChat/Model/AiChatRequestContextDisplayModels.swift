@@ -54,6 +54,44 @@ public struct AiChatCurrentContextChipDisplayModel: Equatable, Sendable {
     }
 }
 
+struct AiChatFolderStructureMenuItemDisplayModel: Identifiable, Equatable {
+    var id: AiChatFolderStructureMode {
+        mode
+    }
+
+    var mode: AiChatFolderStructureMode
+    var title: String
+    var isSelected: Bool
+    var isEnabled: Bool
+    var accessibilityLabel: String
+    var accessibilityValue: String
+
+    static func items(
+        selectedMode: AiChatFolderStructureMode,
+    ) -> [AiChatFolderStructureMenuItemDisplayModel] {
+        [
+            item(title: "Current folder only", mode: .currentFolderOnly, selectedMode: selectedMode),
+            item(title: "Include subfolders", mode: .includeSubfolders, selectedMode: selectedMode),
+        ]
+    }
+
+    private static func item(
+        title: String,
+        mode: AiChatFolderStructureMode,
+        selectedMode: AiChatFolderStructureMode,
+    ) -> AiChatFolderStructureMenuItemDisplayModel {
+        let isSelected = mode == selectedMode
+        return AiChatFolderStructureMenuItemDisplayModel(
+            mode: mode,
+            title: title,
+            isSelected: isSelected,
+            isEnabled: true,
+            accessibilityLabel: title,
+            accessibilityValue: isSelected ? "Selected" : "Not selected",
+        )
+    }
+}
+
 public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Sendable {
     public var id: AiChatAttachmentID {
         attachmentID

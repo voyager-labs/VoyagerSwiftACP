@@ -15,8 +15,6 @@ struct AiChatInputBar: View {
     @ObservedObject var focusOwner: AiChatInputFocusOwner
 
     @Binding var chatInputTextHeight: CGFloat
-    @Binding var isModelSelectorPopoverPresented: Bool
-    @Binding var isThinkingSelectorPresented: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -30,7 +28,6 @@ struct AiChatInputBar: View {
                 } label: {
                     AiChatHoverTextAffordance(
                         title: input.contextAffordanceLabel,
-                        systemName: nil,
                         titleFontSize: 14,
                         titleWeight: .semibold,
                         hoverColor: .primary,
@@ -45,13 +42,11 @@ struct AiChatInputBar: View {
                         store: store,
                         state: state,
                         isEditingDisabled: input.isComposerEditingDisabled,
-                        isPresented: $isModelSelectorPopoverPresented,
                     )
                     AiChatThinkingSelectorButton(
                         store: store,
                         state: state,
                         input: input,
-                        isPresented: $isThinkingSelectorPresented,
                     )
                 }
                 .layoutPriority(1)
@@ -96,6 +91,8 @@ struct AiChatInputBar: View {
                 },
             )
             .frame(height: boundedChatInputTextHeight)
+            .accessibilityLabel(input.inputAccessibilityLabel)
+            .accessibilityHint(input.inputAccessibilityHint)
 
             if state.draftText.isEmpty {
                 Text(input.placeholder)
@@ -138,7 +135,9 @@ struct AiChatInputBar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!input.canStop)
+                .help(input.actionHelp)
                 .accessibilityLabel(input.stopAccessibilityLabel)
+                .accessibilityHint(input.actionHelp)
             } else {
                 Button {
                     submitAndRestoreInputFocus()
@@ -147,7 +146,9 @@ struct AiChatInputBar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!input.canSubmit)
+                .help(input.actionHelp)
                 .accessibilityLabel(input.submitAccessibilityLabel)
+                .accessibilityHint(input.actionHelp)
             }
         }
     }
@@ -402,6 +403,7 @@ private struct AiChatRequestContextRow: View {
                 .folderStructureMode == .includeSubfolders ? "square.stack.3d.down.right" : nil,
             folderStructureMode: chip.folderStructureMode,
             isFolderStructureMenuEnabled: isEditable && chip.supportsFolderStructureMode,
+            folderStructureMenuAccessibilityLabel: "Folder structure mode for current context",
             selectFolderStructureMode: { mode in
                 store.send(.folderStructureModeChanged(.currentContext, mode))
             },
@@ -438,6 +440,7 @@ private struct AiChatRequestContextRow: View {
                 .folderStructureMode == .includeSubfolders ? "square.stack.3d.down.right" : nil,
             folderStructureMode: chip.folderStructureMode,
             isFolderStructureMenuEnabled: isEditable && chip.source == .folder,
+            folderStructureMenuAccessibilityLabel: "Folder structure mode for \(chip.title)",
             selectFolderStructureMode: { mode in
                 store.send(.folderStructureModeChanged(.attachment(chip.attachmentID), mode))
             },
@@ -469,6 +472,7 @@ private struct AiChatRequestContextRow: View {
         trailingAccessorySystemName: String? = nil,
         folderStructureMode: AiChatFolderStructureMode? = nil,
         isFolderStructureMenuEnabled: Bool = false,
+        folderStructureMenuAccessibilityLabel: String = "Folder structure mode",
         selectFolderStructureMode: @escaping (AiChatFolderStructureMode) -> Void = { _ in },
     ) -> some View {
         AiChatRemovableRequestContextChip(
@@ -480,6 +484,7 @@ private struct AiChatRequestContextRow: View {
             trailingAccessorySystemName: trailingAccessorySystemName,
             folderStructureMode: folderStructureMode,
             isFolderStructureMenuEnabled: isFolderStructureMenuEnabled,
+            folderStructureMenuAccessibilityLabel: folderStructureMenuAccessibilityLabel,
             selectFolderStructureMode: selectFolderStructureMode,
             isRemovable: isRemovable,
             accessibilityLabel: content.accessibilityLabel,
@@ -501,6 +506,7 @@ private struct AiChatRemovableRequestContextChip: View {
     let trailingAccessorySystemName: String?
     let folderStructureMode: AiChatFolderStructureMode?
     let isFolderStructureMenuEnabled: Bool
+    let folderStructureMenuAccessibilityLabel: String
     let selectFolderStructureMode: (AiChatFolderStructureMode) -> Void
     let isRemovable: Bool
     let accessibilityLabel: String
@@ -509,7 +515,6 @@ private struct AiChatRemovableRequestContextChip: View {
     @Environment(\.colorScheme)
     private var colorScheme
     @State private var isHovering = false
-    @State private var isFolderMenuPresented = false
     @State private var isFolderMenuHovering = false
     @Dependency(\.workspaceClient)
     private var workspaceClient
@@ -553,11 +558,6 @@ private struct AiChatRemovableRequestContextChip: View {
                 isRemoveHovering = false
             }
         }
-        .onChange(of: isFolderStructureMenuEnabled) { isEnabled in
-            if !isEnabled {
-                isFolderMenuPresented = false
-            }
-        }
         .task(id: iconFilePath) {
             await resolveFileIcon(for: iconFilePath)
         }
@@ -573,7 +573,7 @@ private struct AiChatRemovableRequestContextChip: View {
     private var chipActions: some View {
         HStack(spacing: 2) {
             if isFolderStructureMenuEnabled {
-                folderStructureModeMenuButton
+                folderStructureModeMenu
             }
 
             if isRemovable {
@@ -582,23 +582,49 @@ private struct AiChatRemovableRequestContextChip: View {
         }
     }
 
-    private var folderStructureModeMenuButton: some View {
-        Button {
-            isFolderMenuPresented.toggle()
+    private var folderStructureModeMenu: some View {
+        let items = AiChatFolderStructureMenuItemDisplayModel.items(
+            selectedMode: folderStructureMode ?? .currentFolderOnly,
+        )
+        let selectedItem = items.first(where: \.isSelected)
+
+        return Menu {
+            ForEach(items) { item in
+                Button {
+                    selectFolderStructureMode(item.mode)
+                } label: {
+                    folderStructureModeMenuItemLabel(item)
+                }
+                .disabled(!item.isEnabled)
+                .accessibilityLabel(item.accessibilityLabel)
+                .accessibilityValue(item.accessibilityValue)
+                .accessibilityAddTraits(item.isSelected ? .isSelected : [])
+            }
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 6.5, weight: .bold))
-                .foregroundStyle(isFolderMenuHovering || isFolderMenuPresented ? .primary : .secondary)
+                .accessibilityHidden(true)
+                .foregroundStyle(isFolderMenuHovering ? .primary : .secondary)
                 .frame(width: 12, height: 12)
                 .contentShape(Rectangle())
-                .background(actionButtonBackground(isHighlighted: isFolderMenuHovering || isFolderMenuPresented))
+                .background(actionButtonBackground(isHighlighted: isFolderMenuHovering))
         }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isFolderMenuPresented, arrowEdge: .bottom) {
-            folderStructureModeMenuContent
-        }
+        .menuIndicator(.hidden)
+        .menuStyle(.borderlessButton)
         .onHover { isFolderMenuHovering = $0 }
-        .accessibilityLabel("Folder structure mode")
+        .accessibilityLabel(folderStructureMenuAccessibilityLabel)
+        .accessibilityValue(selectedItem?.title ?? "Current folder only")
+    }
+
+    @ViewBuilder
+    private func folderStructureModeMenuItemLabel(
+        _ item: AiChatFolderStructureMenuItemDisplayModel,
+    ) -> some View {
+        if item.isSelected {
+            Label(item.title, systemImage: "checkmark")
+        } else {
+            Text(item.title)
+        }
     }
 
     private var removeButton: some View {
@@ -618,52 +644,6 @@ private struct AiChatRemovableRequestContextChip: View {
     private func actionButtonBackground(isHighlighted: Bool) -> some View {
         Circle()
             .fill(isHighlighted ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
-    }
-
-    private var folderStructureModeMenuContent: some View {
-        let selectedMode = folderStructureMode ?? .currentFolderOnly
-
-        return VStack(alignment: .leading, spacing: 2) {
-            folderStructureModeButton(
-                title: "Current folder only",
-                mode: .currentFolderOnly,
-                selectedMode: selectedMode,
-            )
-            folderStructureModeButton(
-                title: "Include subfolders",
-                mode: .includeSubfolders,
-                selectedMode: selectedMode,
-            )
-        }
-        .padding(6)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func folderStructureModeButton(
-        title: String,
-        mode: AiChatFolderStructureMode,
-        selectedMode: AiChatFolderStructureMode,
-    ) -> some View {
-        Button {
-            selectFolderStructureMode(mode)
-            isFolderMenuPresented = false
-        } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(VoyagerDS.Typography.caption)
-                if selectedMode == mode {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .accessibilityLabel("Selected")
-                }
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var chipIcon: some View {

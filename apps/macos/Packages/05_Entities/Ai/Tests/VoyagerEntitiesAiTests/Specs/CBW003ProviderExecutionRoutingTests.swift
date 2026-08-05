@@ -654,6 +654,11 @@ extension CBW003ProviderExecutionRoutingTests {
         )
         XCTAssertNil(tokenBudget.payload.thinking)
         XCTAssertEqual(tokenBudget.warnings.count, 1)
+
+        try providerExecutionAssertMalformedTokenBudgetIsOmitted(
+            provider: .chatgptCodex,
+            credential: .oauth(OAuthCredentialFile(accessToken: "codex-token")),
+        )
     }
 
     /// CBW-003-prepare_contextual_chat_request: Anthropic thinking lowering은 capability kind를 존중한다.
@@ -684,6 +689,11 @@ extension CBW003ProviderExecutionRoutingTests {
             credential: .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         )
         XCTAssertEqual(budget.payload.thinking, .tokenBudget(1024))
+
+        try providerExecutionAssertMalformedTokenBudgetIsOmitted(
+            provider: .anthropic,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
+        )
 
         let adaptiveCapability = AiModelThinkingCapability.adaptive(effortValues: [.low, .high], defaultValue: .low)
         let adaptiveEffort = try AiChatProviderPreflight.prepare(

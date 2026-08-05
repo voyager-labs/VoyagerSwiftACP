@@ -214,11 +214,14 @@ struct WindowManagerFeature {
             case .edit(.requestRedo):
                 return sendCommandToFocusedWindow(state, .requestRedo)
 
+            case .edit(.find):
+                return routeFindCommand(state)
+
             case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
-            case .edit(.newChat):
-                return sendCommandToFocusedWindow(state, .newChat)
+            case .edit(.openChat):
+                return sendCommandToFocusedWindow(state, .reopenChat)
 
             case .edit(.showChatHistory):
                 return sendCommandToFocusedWindow(state, .showChatHistory)
@@ -484,12 +487,7 @@ extension WindowManagerFeature {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
 
-        var effects: [Effect<Action>] = application.existingWindowActivations.map { activation in
-            Effect.send(.windows(.element(
-                id: activation.windowID,
-                action: .window(.contentTabs(.setCurrent(activation.tabID))),
-            )))
-        }
+        var effects = externalOpenActivationEffects(application.existingWindowActivations)
         effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
             [
                 appPreferencesEffect(for: windowID, preferences: state.appPreferences),
@@ -513,6 +511,30 @@ extension WindowManagerFeature {
             result: .success(plan),
         )))))
         return .concatenate(effects)
+    }
+
+    private func externalOpenActivationEffects(
+        _ activations: [ExternalOpenPlacementApplication.ExistingWindowActivation],
+    ) -> [Effect<Action>] {
+        activations.flatMap { activation in
+            [
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.activateExternalContentTabUndoScopes(activation.tabIDs)),
+                ))),
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.contentTabs(.setCurrent(activation.activeTabID))),
+                ))),
+            ]
+        }
+    }
+
+    private func routeFindCommand(_ state: State) -> Effect<Action> {
+        guard let id = state.focusedWindowID, state.windows[id: id] != nil else {
+            return .none
+        }
+        return .send(.windows(.element(id: id, action: .window(.request(.find)))))
     }
 
     func sendCommandToFocusedWindow(

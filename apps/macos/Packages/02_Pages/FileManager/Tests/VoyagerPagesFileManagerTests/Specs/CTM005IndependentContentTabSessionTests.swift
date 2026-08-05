@@ -49,6 +49,60 @@ private actor DirectoryLoadSuspensionGate {
     }
 }
 
+private func makeCloseTestDirectoryTab(
+    id: ContentTabID,
+    path: String,
+    title: String,
+) -> ContentTabItem {
+    ContentTabItem(
+        id: id,
+        page: .directory,
+        anchor: .directory(path: path),
+        isPinned: false,
+        title: title,
+        iconName: "folder",
+    )
+}
+
+private func makeCloseTestHomeTab(id: ContentTabID) -> ContentTabItem {
+    ContentTabItem(
+        id: id,
+        page: .home,
+        anchor: .homeDefault,
+        isPinned: false,
+        title: "Home",
+        iconName: "house",
+    )
+}
+
+private func makeCloseTestDirectoryContent(path: String) -> FileManagerContentFeature.State {
+    var content = FileManagerContentFeature.State()
+    content.navigation.seedInitialFolderPath(path)
+    return content
+}
+
+private func makeCloseTestState(
+    tabs: [ContentTabItem],
+    activeTabID: ContentTabID,
+    previousActiveTabID: ContentTabID? = nil,
+    contentStates: [ContentTabID: FileManagerContentFeature.State],
+) -> FileManagerFeature.State {
+    guard let activeContent = contentStates[activeTabID] else {
+        preconditionFailure("Close test requires active content state")
+    }
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(
+        tabs: .init(uniqueElements: tabs),
+        activeTabID: activeTabID,
+        previousActiveTabID: previousActiveTabID,
+        recentlyClosed: nil,
+    )
+    state.content = activeContent
+    state.tabContentStates = contentStates
+    state.syncContentTabSidebarItems()
+    return state
+}
+
 private struct DirectoryLoadFailureRetryFixture {
     let homeID: ContentTabID
     let directoryID: ContentTabID
@@ -382,24 +436,24 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let store = fixture.store
 
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
-        await receiveDirectoryReload(path: fixture.directoryPath, store: store)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await receiveDirectoryReload(tabID: fixture.directoryID, path: fixture.directoryPath, store: store)
+        await receiveItemsLoaded(tabID: fixture.directoryID, store: store)
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
         XCTAssertEqual(fixture.watchedRoots.value, [[fixture.directoryPath]])
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
-        await receiveHomeReload(store: store)
+        await receiveHomeReload(tabID: fixture.homeID, store: store)
         XCTAssertEqual(fixture.removedInterestIDs.value.count, 1)
 
         fixture.backingEntries.setValue([fixture.freshEntry])
         let loadCountBeforeRestore = fixture.loadPaths.value.count
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
-        await receiveDirectoryReload(path: fixture.directoryPath, store: store)
+        await receiveDirectoryReload(tabID: fixture.directoryID, path: fixture.directoryPath, store: store)
         await fixture.restoreGate.waitUntilWaiting()
         assertRestoredDirectoryPresentation(fixture, store: store)
 
         await fixture.restoreGate.resume(with: .entries(fixture.backingEntries.value))
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await receiveItemsLoaded(tabID: fixture.directoryID, store: store)
         assertFreshDirectoryReload(fixture, loadCountBeforeRestore: loadCountBeforeRestore, store: store)
 
         fixture.eventContinuation.value?.finish()
@@ -443,10 +497,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
         await store.finish()
@@ -480,10 +534,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
         await store.finish()
@@ -506,19 +560,19 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         }
         let store = fixture.store
 
-        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
             .loadItems(path: fixture.firstPath, showHidden: false),
-        )))))
+        ))))
         await fixture.firstGate.waitUntilWaiting()
         await store.send(.contentTabs(.setCurrent(fixture.secondID)))
-        await receiveDirectoryReload(path: fixture.secondPath, store: store)
+        await receiveDirectoryReload(tabID: fixture.secondID, path: fixture.secondPath, store: store)
         await fixture.secondGate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.mode, .grid)
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.preservedEntry])
 
         await fixture.firstGate.resume(with: .entries([fixture.staleEntry]))
         await fixture.secondGate.resume(with: .entries([fixture.freshEntry]))
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await receiveItemsLoaded(tabID: fixture.secondID, store: store)
         await store.finish()
         assertFreshSupersededDirectoryLoad(fixture, store: store)
     }
@@ -548,9 +602,9 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.navigation(.view(.navigateToPath(secondPath))))
-        await store.receive(\.content.internal.applyNavigationState, .folder(secondPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.contentTabs.tabs[id: directoryID]?.anchor, .directory(path: secondPath))
         XCTAssertEqual(store.state.content.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
@@ -567,20 +621,20 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         )
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(secondPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(loadPaths.value, [secondPath, secondPath])
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
 
         await store.send(.contentTabs(.setCurrent(homeID)))
         await store.skipReceivedActions()
         await store.send(.contentTabs(.setCurrent(directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(secondPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(loadPaths.value, [secondPath, secondPath, secondPath])
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
         await store.finish()
@@ -620,14 +674,14 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [staleEntry])
 
         await gate.resume(with: .entries([loadedEntry]))
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         await store.finish()
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
@@ -665,22 +719,22 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(firstID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(firstPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(firstPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         await store.send(.contentTabs(.setCurrent(secondID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(secondPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [firstPath, secondPath])
         XCTAssertEqual(store.state.contentTabs.activeTabID, secondID)
         XCTAssertEqual(store.state.content.navigation.currentPath, secondPath)
         XCTAssertEqual(Array(watcherEvents.value.prefix(3)), ["start:\(firstPath)", "stop", "start:\(secondPath)"])
-        await store.send(.content(.internal(.stopObservingSystemNotifications)))
+        await store.sendTabContent(.internal(.stopObservingSystemNotifications))
         XCTAssertEqual(watcherEvents.value, ["start:\(firstPath)", "stop", "start:\(secondPath)", "stop"])
         await store.finish()
     }
@@ -869,7 +923,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(tagID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .tags(tagName))
         XCTAssertNotEqual(store.state.content.navigation.navigationState, .recents)
@@ -1050,6 +1104,175 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-005-independent_content_tab_session: active tab close 시 닫힌 session의 load 취소
+    /// 탭 state 제거 전에 닫힌 active tab의 loading cancellation owner를 사용해 effect를 종료하는지 검증한다.
+    /// - 검증 내용: active tab load cancellation 1회와 fallback tab session 보존
+    /// - 사전 조건: active Directory load가 대기 중이고 fallback Home tab이 존재함
+    /// - 기대 결과: 닫힌 tab load만 취소되고 fallback tab이 active로 복원됨
+    func testActiveCloseCancelsClosedTabLoad() async {
+        let fallbackID = ContentTabID(rawValue: "fallback")
+        let activeID = ContentTabID(rawValue: "active")
+        let activePath = "/Users/test/Active"
+        let loadStarted = expectation(description: "active tab load started")
+        let loadCancelled = expectation(description: "active tab load cancelled")
+        let loadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestHomeTab(id: fallbackID),
+                makeCloseTestDirectoryTab(id: activeID, path: activePath, title: "Active"),
+            ],
+            activeTabID: activeID,
+            previousActiveTabID: fallbackID,
+            contentStates: [
+                fallbackID: FileManagerContentFeature.State(),
+                activeID: makeCloseTestDirectoryContent(path: activePath),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                    loadCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: close 부수 action보다 닫힌 tab loading cancellation을 검증한다.
+        store.exhaustivity = .off
+
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: activePath, showHidden: false),
+        ))))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(activeID)))
+        await fulfillment(of: [loadCancelled], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
+        XCTAssertNil(store.state.tabContentStates[activeID])
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 닫힌 load 취소
+    /// 비활성 session 제거 전에 해당 loading owner의 effect를 종료하는지 검증한다.
+    /// - 검증 내용: inactive tab load cancellation 1회와 active session 보존
+    /// - 사전 조건: inactive Directory load가 대기 중이고 다른 Directory tab이 active임
+    /// - 기대 결과: 닫힌 inactive tab의 load와 state만 제거됨
+    func testInactiveCloseCancelsClosedTabLoad() async {
+        let activeID = ContentTabID(rawValue: "active")
+        let inactiveID = ContentTabID(rawValue: "inactive")
+        let inactivePath = "/Users/test/Inactive"
+        let loadStarted = expectation(description: "inactive tab load started")
+        let loadCancelled = expectation(description: "inactive tab load cancelled")
+        let loadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: activeID, path: "/Users/test/Active", title: "Active"),
+                makeCloseTestDirectoryTab(id: inactiveID, path: inactivePath, title: "Inactive"),
+            ],
+            activeTabID: activeID,
+            contentStates: [
+                activeID: makeCloseTestDirectoryContent(path: "/Users/test/Active"),
+                inactiveID: makeCloseTestDirectoryContent(path: inactivePath),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                    loadCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: inactive close 부수 action보다 닫힌 tab loading cancellation을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tabContent(
+            tabID: inactiveID,
+            action: .entryViewLayout(.entryOperations(.loading(
+                .loadItems(path: inactivePath, showHidden: false),
+            ))),
+        ))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(inactiveID)))
+        await fulfillment(of: [loadCancelled], timeout: 1)
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 active load 보존
+    /// 닫힌 tab owner의 cancel effect가 같은 window의 active loading owner에 전파되지 않는지 검증한다.
+    /// - 검증 내용: inactive close 후 active cancellation 0회와 active load 정상 완료
+    /// - 사전 조건: active Directory load가 대기 중이고 별도 inactive tab이 존재함
+    /// - 기대 결과: active load와 session이 유지되고 inactive state만 제거됨
+    func testInactiveClosePreservesActiveTabLoad() async {
+        let activeID = ContentTabID(rawValue: "active")
+        let inactiveID = ContentTabID(rawValue: "inactive")
+        let activePath = "/Users/test/Active"
+        let loadStarted = expectation(description: "active tab load started")
+        let loadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: activeID, path: activePath, title: "Active"),
+                makeCloseTestDirectoryTab(
+                    id: inactiveID, path: "/Users/test/Inactive", title: "Inactive",
+                ),
+            ],
+            activeTabID: activeID,
+            contentStates: [
+                activeID: makeCloseTestDirectoryContent(path: activePath),
+                inactiveID: makeCloseTestDirectoryContent(path: "/Users/test/Inactive"),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                }
+            }
+        }
+        // store.exhaustivity = .off: inactive close 후 active loading effect 생존을 검증한다.
+        store.exhaustivity = .off
+
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: activePath, showHidden: false),
+        ))))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(inactiveID)))
+        XCTAssertEqual(cancellationCount.value, 0)
+
+        loadGate.continuation.finish()
+        await store.skipReceivedActions()
+        await store.finish()
+        XCTAssertEqual(cancellationCount.value, 0)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+    }
+
     /// CTM-005-independent_content_tab_session (VOY-578): active Directory close fallback은 snapshot 복원 후 reload함
     /// 활성 탭 닫기 handoff도 저장 presentation을 먼저 보이고 기존 Directory load 경로로 backing을 재검증한다.
     /// - 검증 내용: fallback entries/layout 즉시 복원, loadItems 정확히 1회, fresh entries commit, watcher 시작
@@ -1120,9 +1343,9 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(activeID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(fallbackPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(fallbackPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
         await gate.waitUntilWaiting()
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
@@ -1133,7 +1356,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertNil(store.state.tabContentStates[activeID])
 
         await gate.resume(with: .entries([freshEntry]))
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [fallbackPath])
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [freshEntry])
@@ -1350,12 +1573,12 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
-    /// CTM-005-independent_content_tab_session: 마지막 content tab close 시 window close 요청을 발생시킴
-    /// 단일 active tab을 닫으면 tab reducer는 Home reset을 유지하고, window routing은 실제 window close를 요청한다.
-    /// - 검증 내용: close 후 `.closeWindow` action 수신
+    /// CTM-005-independent_content_tab_session: 마지막 content tab close 시 fresh Home으로 window를 유지함
+    /// 단일 active tab을 닫으면 새 Home tab session으로 교체하고 window close 요청을 발생시키지 않는다.
+    /// - 검증 내용: 새 Home ID/anchor와 `.closeWindow` action 미방출
     /// - 사전 조건: 단일 Directory tab이 active 상태
-    /// - 기대 결과: window close effect가 발생함
-    func testLastTabCloseRequestsWindowClose() async {
+    /// - 기대 결과: 새 Home tab이 active이고 window session이 계속 유지됨
+    func testLastTabCloseKeepsWindowOpenWithFreshHome() async throws {
         let directoryID = ContentTabID()
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
@@ -1371,18 +1594,31 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             recentlyClosed: nil,
         )
         state.syncContentTabSidebarItems()
+        let closeWindowActionCount = LockIsolated(0)
 
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CombineReducers {
+                Reduce<FileManagerWindowState, FileManagerWindowAction> { _, action in
+                    if case .closeWindow = action {
+                        closeWindowActionCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+                FileManagerFeature()
+            }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
-        // KCF: closeWindow action 이후 NSApp close side effect는 여기서 검증하지 않음
+        // store.exhaustivity = .off: tab handoff 내부 action보다 continuing window session 결과를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(directoryID)))
-        await store.receive(\.closeWindow)
         await store.finish()
+
+        let homeID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertNotEqual(homeID, directoryID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: homeID]?.anchor, .homeDefault)
+        XCTAssertEqual(closeWindowActionCount.value, 0)
     }
 
     func testRestoringCollectionTabReappliesClosedNavigationRoute() async {
@@ -1444,9 +1680,9 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.content.navigation.navigationState, .home)
 
         await store.send(.contentTabs(.restore))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.receive(\.navigation.internal.navigateToCollection)
-        await store.receive(\.content.collection.navigationStateApplied)
+        await store.receiveTabContent(\.collection.navigationStateApplied)
 
         guard let restoredID = store.state.contentTabs.activeTabID else {
             XCTFail("restore should activate the restored collection tab")
@@ -1515,7 +1751,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.navigation(.internal(.setNavigationState(navigationState)))) {
             $0.content.navigation.navigationState = navigationState
         }
-        await store.send(.content(.internal(.applyNavigationState(navigationState))))
+        await store.sendTabContent(.internal(.applyNavigationState(navigationState)))
         await store.receive(\.contentTabs) {
             $0.contentTabs.tabs[id: tabID]?.anchor = .collectionFile(url: collectionURL)
             $0.contentTabs.tabs[id: tabID]?.page = .collection
@@ -1609,7 +1845,13 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.closeContentTabRequested(tabID))
         XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
-        await store.receive(\.content.entryViewLayout.internal.setCollectionContentLoading)
+        await store.receive { action in
+            guard case let .tabContent(
+                receivedTabID,
+                .entryViewLayout(.internal(.setCollectionContentLoading(isLoading))),
+            ) = action else { return false }
+            return receivedTabID == tabID && !isLoading
+        }
         XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
         await store.receive(\.contentTabCloseAlertResponse)
         XCTAssertNil(store.state.pendingContentTabClose)
@@ -1677,7 +1919,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             savedContext: nil,
         )
 
-        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.sendTabContent(.collection(.saveCompleted(.success(completion))))
         await store.receive(\.contentTabs)
 
         XCTAssertNil(store.state.pendingContentTabClose)
@@ -1716,7 +1958,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let store = makeTestStore(state: state)
 
         let error = NSError(domain: "test", code: 0, userInfo: nil)
-        await store.send(.content(.collection(.saveCompleted(.failure(error)))))
+        await store.sendTabContent(.collection(.saveCompleted(.failure(error))))
 
         XCTAssertNotNil(store.state.pendingContentTabClose)
 
@@ -1727,7 +1969,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             message: "Unable to save collection.",
             isRetryable: true,
         )
-        await store.send(.content(.collection(.delegate(.saveFeedback(feedback)))))
+        await store.sendTabContent(.collection(.delegate(.saveFeedback(feedback))))
 
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
@@ -2009,7 +2251,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
                     iconName: "rectangle.stack",
                 ),
             ],
-            activeTabID: activeID,
+            activeTabID: inactiveID,
             recentlyClosed: nil,
         )
         state.content = dirtyContent
@@ -2025,7 +2267,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let store = makeTestStore(state: state, alertChoice: .save)
 
         let completion = makeSaveCompletion()
-        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.sendTabContent(.collection(.saveCompleted(.success(completion))))
         await store.receive(\.contentTabs)
 
         XCTAssertNil(store.state.pendingContentTabClose)
@@ -2091,7 +2333,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.tabContentStates[activeID]?.navigation.currentPath, homePath)
 
         let completion = makeSaveCompletion()
-        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.sendTabContent(.collection(.saveCompleted(.success(completion))))
         await store.receive(\.contentTabs)
 
         XCTAssertNil(store.state.pendingContentTabClose)
@@ -2211,7 +2453,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = makeTestStore(state: state)
 
-        await store.send(.content(.collection(.savePanelResponse(nil))))
+        await store.sendTabContent(.collection(.savePanelResponse(nil)))
 
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
@@ -2249,7 +2491,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
                     iconName: "rectangle.stack",
                 ),
             ],
-            activeTabID: activeID,
+            activeTabID: inactiveID,
             recentlyClosed: nil,
         )
         state.content = dirtyContent
@@ -2264,7 +2506,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = makeTestStore(state: state)
 
-        await store.send(.content(.collection(.savePanelResponse(nil))))
+        await store.sendTabContent(.collection(.savePanelResponse(nil)))
 
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
@@ -2314,7 +2556,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         await store.send(.closeContentTabRequested(inactiveID))
         await store.receive(\.contentTabCloseAlertResponse)
-        await store.send(.content(.collection(.saveCompleted(.failure(NSError(domain: "test", code: 0))))))
+        await store.sendTabContent(.collection(.saveCompleted(.failure(NSError(domain: "test", code: 0)))))
 
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
@@ -2481,6 +2723,59 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         // tab은 그대로 유지
         XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
         await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session: pending A는 unrelated B writeback completion을 무시함
+    /// staged close completion은 pending target tab identity와 일치할 때만 close readiness를 변경한다.
+    /// - 검증 내용: pending A 상태에서 B composer sync action 후 writeback flag를 확인한다.
+    /// - 사전 조건: A가 pending close target이고 B가 active이다.
+    /// - 기대 결과: A의 composer sync flag는 false로 유지되고 close finalize effect가 없다.
+    func testPendingCloseIgnoresUnrelatedTabWriteBackCompletion() async {
+        let pendingTabID = ContentTabID()
+        let activeTabID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pendingTabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/pending.voycoll")),
+                    isPinned: false,
+                    title: "Pending",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: activeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: activeTabID,
+        )
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: pendingTabID,
+            didReceiveWriteBackNavigationState: true,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.tabContent(
+            tabID: activeTabID,
+            action: .composer(.internal(.syncCollectionState(
+                context: nil,
+                url: nil,
+                compatibility: nil,
+                isCollectionMode: false,
+            ))),
+        ))
+
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, pendingTabID)
+        XCTAssertEqual(store.state.pendingContentTabClose?.didReceiveWriteBackComposerSync, false)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
     }
 
     /// CTM-444-collection_dirty_close: pending close 중 직접 navigation 요청은 무시됨
@@ -2820,7 +3115,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         // ContentPane AI Chat으로 providerConnectionsUpdated가 전달됨
         await store.receive { action in
-            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
         }
 
@@ -2974,20 +3269,20 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
 
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
             else {
                 return false
             }
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.aiChat(.showSessionsForChat(receivedSessionID))) = action else {
+            guard case let .tabContent(_, .aiChat(.showSessionsForChat(receivedSessionID))) = action else {
                 return false
             }
             return receivedSessionID == aiSessionID
         }
         await store.receive { action in
-            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
         }
 
@@ -3446,25 +3741,67 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// CTM-005-ai_chat_provider_forwarding: Inspector가 보이지 않고 active tab이 .aiChat이 아닌 경우 전송 없음
-    /// ContentPane과 Inspector 모두 forwarding 조건을 만족하지 않을 때 효과가 발생하지 않는지 검증한다.
-    func testNoForwardingWhenInspectorNotOpenAndActiveTabNotAiChat() async {
-        let connectionsFile = AIConnectionsFile.empty()
+    /// CTM-005-ai_chat_provider_forwarding: pending dormant owner만 최신 provider authority를 수신한다.
+    /// 비활성 owner의 lifecycle 안전성을 보존하면서 unrelated dormant owner의 catalog를 시작하지 않는지 검증한다.
+    /// - 검증 내용: 네 owner collection의 pending snapshot 갱신과 pending 없는 snapshot의 보존
+    /// - 사전 조건: active tab은 Home이고 Inspector는 닫혀 있으며 각 dormant collection에 pending owner가 있음
+    /// - 기대 결과: pending owner는 provider 제거를 반영하고 unrelated dormant owner는 기존 snapshot을 유지함
+    func testPendingDormantOwnersRefreshProviderAuthorityWithoutFullForwarding() async throws {
+        let pendingTabID = ContentTabID()
+        let dormantContentTabID = ContentTabID()
+        let dormantInspectorTabID = ContentTabID()
+        let dormantContentSessionID = AiChatSessionID(rawValue: UUID())
+        let dormantInspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let fixture = try makePendingProviderAuthorityFixture()
+        var dormantContent = FileManagerContentFeature.State()
+        dormantContent.aiChat.providerConnectionSnapshot = .known([.openai])
+        var dormantInspector = FileManagerInspectorFeature.State()
+        dormantInspector.aiChat.providerConnectionSnapshot = .known([.openai])
+
         var state = FileManagerFeature.State()
         state.inspector.inspectorVisible = false
-        state.syncContentTabSidebarItems()
+        state.tabContentStates[pendingTabID] = fixture.content
+        state.tabContentStates[dormantContentTabID] = dormantContent
+        state.tabInspectorStates[pendingTabID] = fixture.inspector
+        state.tabInspectorStates[dormantInspectorTabID] = dormantInspector
+        state.backgroundAiChatStates[fixture.sessionID] = fixture.content
+        state.backgroundAiChatStates[dormantContentSessionID] = dormantContent
+        state.backgroundInspectorAiChatStates[fixture.sessionID] = fixture.inspector
+        state.backgroundInspectorAiChatStates[dormantInspectorSessionID] = dormantInspector
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Window warm-up fire-and-forget effect는 dormant owner authority 계약의 검증 대상이 아니다.
         store.exhaustivity = .off
 
-        await store.send(.aiConnectionsFileUpdated(connectionsFile))
+        await store.send(.aiConnectionsFileUpdated(.empty()))
 
-        // ContentPane AI Chat forwarding이 발생하지 않음
-        // Inspector forwarding도 발생하지 않음 (inspectorVisible == false)
+        XCTAssertEqual(
+            store.state.tabContentStates[pendingTabID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        XCTAssertEqual(
+            store.state.tabInspectorStates[pendingTabID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        XCTAssertEqual(
+            store.state.backgroundInspectorAiChatStates[fixture.sessionID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        assertDormantProviderAuthorityUnchanged(
+            state: store.state,
+            contentTabID: dormantContentTabID,
+            inspectorTabID: dormantInspectorTabID,
+            contentSessionID: dormantContentSessionID,
+            inspectorSessionID: dormantInspectorSessionID,
+        )
         await store.finish()
     }
 
@@ -3505,7 +3842,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         // ContentPane AI Chat으로 전달
         await store.receive { action in
-            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
         }
 
@@ -3546,6 +3883,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -3560,7 +3898,7 @@ extension CTM005IndependentContentTabSessionTests {
         let inspectorModeBefore = state.inspector.aiChat.mode
 
         // When: ContentPane AI Chat에 backToSessionsTapped 전송
-        await store.send(.content(.aiChat(.backToSessionsTapped)))
+        await store.sendTabContent(.aiChat(.backToSessionsTapped))
 
         // Then: ContentPane AI Chat mode가 .sessions로 변경됨
         XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
@@ -3592,6 +3930,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
         let listCallCount = LockIsolated(0)
 
@@ -3608,7 +3947,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         let inspectorModeBefore = state.inspector.aiChat.mode
 
-        await store.send(.content(.aiChat(.sessionsAppeared)))
+        await store.sendTabContent(.aiChat(.sessionsAppeared))
 
         XCTAssertEqual(store.state.content.aiChat.mode, .chat)
         XCTAssertEqual(store.state.inspector.aiChat.mode, inspectorModeBefore)
@@ -3644,6 +3983,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -3654,7 +3994,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.backToSessionsTapped)))
+        await store.sendTabContent(.aiChat(.backToSessionsTapped))
 
         XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
         await store.finish()
@@ -3686,6 +4026,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -3695,7 +4036,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.returnToChatTapped)))
+        await store.sendTabContent(.aiChat(.returnToChatTapped))
 
         XCTAssertEqual(store.state.content.aiChat.mode, .chat)
         XCTAssertEqual(store.state.content.aiChat.sessionID, sessionID)
@@ -3758,13 +4099,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
             else {
                 return false
             }
             return receivedSessionID == sessionID
         }
-        await store.receive(\.content.aiChat.showSessionsForChat)
+        await store.receiveTabContent(\.aiChat.showSessionsForChat)
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(sessionID))
         XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home, .aiChat(sessionID)])
@@ -3780,13 +4121,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else {
+            guard case let .tabContent(_, .aiChat(.routeToChatSession(receivedSessionID))) = action else {
                 return false
             }
             return receivedSessionID == aiSessionID
@@ -3808,13 +4149,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
             else {
                 return false
             }
             return receivedSessionID == sessionID
         }
-        await store.receive(\.content.aiChat.showSessionsForChat)
+        await store.receiveTabContent(\.aiChat.showSessionsForChat)
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(sessionID))
         XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home, .aiChat(sessionID)])
@@ -3874,18 +4215,18 @@ extension CTM005IndependentContentTabSessionTests {
         // store.exhaustivity = .off: FileManagerFeature는 navigation/content delegate 효과를 함께 방출하므로 AiChat 상태 불변식만 검증함
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.showSessionsTapped))) { state in
+        await store.sendTabContent(.aiChat(.showSessionsTapped)) { state in
             state.content.aiChat.mode = .sessions
             state.content.aiChat.restoreSessionID = nil
             state.content.aiChat.restoreOutcome = nil
             state.content.aiChat.restoreFailure = nil
         }
 
-        await store.send(.content(.aiChat(.restoreOutcome(
+        await store.sendTabContent(.aiChat(.restoreOutcome(
             requestedSessionID: selectedSessionID,
             .restored(snapshot: selectedSnapshot),
             restoreFailure: nil,
-        ))))
+        )))
 
         XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
         XCTAssertEqual(store.state.content.aiChat.sessionID, currentSessionID)
@@ -3922,8 +4263,8 @@ extension CTM005IndependentContentTabSessionTests {
         // anchor만 검증함
         store.exhaustivity = .off
 
-        await store.send(.content(.internal(.applyNavigationState(.aiChatSessions(currentSessionID)))))
-        await store.receive(\.content.aiChat.showSessionsForChat) { state in
+        await store.sendTabContent(.internal(.applyNavigationState(.aiChatSessions(currentSessionID))))
+        await store.receiveTabContent(\.aiChat.showSessionsForChat) { state in
             state.content.aiChat.mode = .sessions
             state.content.aiChat.sessionID = currentAiSessionID
             state.content.aiChat.restoreSessionID = nil
@@ -3949,12 +4290,12 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == currentSessionID
         }
-        await store.receive(\.content.aiChat.routeToChatSession) { state in
+        await store.receiveTabContent(\.aiChat.routeToChatSession) { state in
             state.content.aiChat.mode = .chat
         }
 
@@ -4015,7 +4356,7 @@ extension CTM005IndependentContentTabSessionTests {
         // 검증함
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.newChatCreated(snapshot)))) { state in
+        await store.sendTabContent(.aiChat(.newChatCreated(snapshot))) { state in
             state.content.aiChat.mode = .chat
             state.content.aiChat.sessionID = newAiSessionID
             state.content.aiChat.emptyDraftSessionID = newAiSessionID
@@ -4023,7 +4364,8 @@ extension CTM005IndependentContentTabSessionTests {
             state.content.aiChat.sessionList.selectedSessionID = newAiSessionID
         }
         await store.receive { action in
-            guard case let .content(.delegate(.aiChatSessionCreated(receivedSessionID))) = action else { return false }
+            guard case let .tabContent(_, .delegate(.aiChatSessionCreated(receivedSessionID))) = action
+            else { return false }
             return receivedSessionID == newAiSessionID
         }
         await store.receive { action in
@@ -4050,13 +4392,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == newSessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == newSessionID
         }
         await store.receive { action in
-            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else {
+            guard case let .tabContent(_, .aiChat(.routeToChatSession(receivedSessionID))) = action else {
                 return false
             }
             return receivedSessionID == newAiSessionID
@@ -4110,11 +4452,11 @@ extension CTM005IndependentContentTabSessionTests {
         // store.exhaustivity = .off: 실패 restore는 parent navigation delegate를 방출하지 않는 불변식만 검증함
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.restoreOutcome(
+        await store.sendTabContent(.aiChat(.restoreOutcome(
             requestedSessionID: selectedAiSessionID,
             .failed(reason: .missingRecord),
             restoreFailure: .missingRecord,
-        )))) { state in
+        ))) { state in
             state.content.aiChat.sessionList.selectedSessionID = nil
             state.content.aiChat.sessionList.errorMessage = "That chat is no longer available."
         }
@@ -4182,13 +4524,13 @@ extension CTM005IndependentContentTabSessionTests {
         let store = makeTestStore(state: state)
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.restoreOutcome(
+        await store.sendTabContent(.aiChat(.restoreOutcome(
             requestedSessionID: sessionID,
             .restored(snapshot: staleSnapshot),
             restoreFailure: nil,
-        ))))
+        )))
         await store.receive { action in
-            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
+            guard case let .tabContent(_, .delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
                 return false
             }
             return receivedSessionID == sessionID && title == promotedSummary.title
@@ -4266,7 +4608,7 @@ extension CTM005IndependentContentTabSessionTests {
         // route 순서만 검증함
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionRowTapped(selectedAiSessionID)))) { state in
+        await store.sendTabContent(.aiChat(.sessionRowTapped(selectedAiSessionID))) { state in
             state.content.aiChat.mode = .sessions
             state.content.aiChat.restoreSessionID = selectedAiSessionID
             state.content.aiChat.sessionList.selectedSessionID = selectedAiSessionID
@@ -4274,7 +4616,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(currentSessionID))
 
-        await store.receive(\.content.aiChat.restoreOutcome)
+        await store.receiveTabContent(\.aiChat.restoreOutcome)
         XCTAssertEqual(store.state.content.aiChat.mode, .chat)
         XCTAssertEqual(store.state.content.aiChat.sessionID, selectedAiSessionID)
         XCTAssertEqual(store.state.content.aiChat.sessionStatus, .active)
@@ -4285,7 +4627,7 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNil(store.state.content.aiChat.emptyDraftSessionID)
         XCTAssertNil(store.state.content.aiChat.sessionList.errorMessage)
         await store.receive { action in
-            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
+            guard case let .tabContent(_, .delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
                 return false
             }
             return receivedSessionID == selectedAiSessionID && title == "Selected session"
@@ -4314,13 +4656,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == selectedSessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == selectedSessionID
         }
         await store.receive { action in
-            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else {
+            guard case let .tabContent(_, .aiChat(.routeToChatSession(receivedSessionID))) = action else {
                 return false
             }
             return receivedSessionID == selectedAiSessionID
@@ -4344,13 +4686,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChatSessions(receivedSessionID)))) = action
             else {
                 return false
             }
             return receivedSessionID == currentSessionID
         }
-        await store.receive(\.content.aiChat.showSessionsForChat)
+        await store.receiveTabContent(\.aiChat.showSessionsForChat)
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(currentSessionID))
         XCTAssertEqual(
@@ -4373,13 +4715,13 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else {
+            guard case let .tabContent(_, .aiChat(.routeToChatSession(receivedSessionID))) = action else {
                 return false
             }
             return receivedSessionID == currentAiSessionID
@@ -4492,11 +4834,11 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionRowTapped(currentAiSessionID)))) { state in
+        await store.sendTabContent(.aiChat(.sessionRowTapped(currentAiSessionID))) { state in
             state.content.aiChat.mode = .chat
         }
         await store.receive { action in
-            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
+            guard case let .tabContent(_, .delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
                 return false
             }
             return receivedSessionID == currentAiSessionID && title == "Current session"
@@ -4521,16 +4863,17 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == currentSessionID
         }
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.internal.applyClearSelection)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.internal.applyClearSelection)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         await store.receive { action in
-            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else { return false }
+            guard case let .tabContent(_, .aiChat(.routeToChatSession(receivedSessionID))) = action
+            else { return false }
             return receivedSessionID == currentAiSessionID
         }
 
@@ -4563,6 +4906,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -4570,9 +4914,9 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.openSettingsTapped)))
+        await store.sendTabContent(.aiChat(.openSettingsTapped))
         await store.receive { action in
-            guard case .content(.delegate(.openAISettings)) = action else { return false }
+            guard case .tabContent(_, .delegate(.openAISettings)) = action else { return false }
             return true
         }
         await store.receive { action in
@@ -4757,7 +5101,7 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == homeID && receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
             else { return false }
             return receivedSessionID == sessionID
         }
@@ -4951,7 +5295,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.contentTabs(.close(aiChatTabID)))
 
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
 
         await store.skipReceivedActions()
         await store.finish()
@@ -5055,7 +5399,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.cancelTapped)))
+        await store.sendTabContent(.aiChat(.cancelTapped))
 
         guard case .cancelled = store.state.content.aiChat.executionPhase else {
             XCTFail(
@@ -5111,7 +5455,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.cancelInFlightWork)))
+        await store.sendTabContent(.aiChat(.cancelInFlightWork))
 
         XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
         XCTAssertEqual(
@@ -5184,7 +5528,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(aiChatTabID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.skipReceivedActions()
 
         XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
@@ -5196,7 +5540,7 @@ extension CTM005IndependentContentTabSessionTests {
             completedAtMs: 1_234_567_891_000,
         )
 
-        await store.send(.content(.aiChat(.executionEvent(.final(response: response)))))
+        await store.sendTabContent(.aiChat(.executionEvent(.final(response: response))))
 
         await store.receive { action in
             guard case let .backgroundAiChatSnapshotPersisted(snapshot) = action else { return false }
@@ -5280,7 +5624,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(aiChatTabID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.skipReceivedActions()
 
         let backgroundState = store.state.backgroundAiChatStates[aiSessionID]
@@ -5297,7 +5641,7 @@ extension CTM005IndependentContentTabSessionTests {
             completedAtMs: 1_234_567_891_000,
         )
 
-        await store.send(.content(.aiChat(.executionEvent(.final(response: response)))))
+        await store.sendTabContent(.aiChat(.executionEvent(.final(response: response))))
 
         await store.receive { action in
             guard case let .backgroundAiChatSnapshotPersisted(snapshot) = action else { return false }
@@ -5859,12 +6203,12 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionSnapshotSaved(
+        await store.sendTabContent(.aiChat(.sessionSnapshotSaved(
             staleSummary,
             snapshot: staleSnapshot,
             requestID: staleLock.requestID,
             runID: staleLock.runID,
-        ))))
+        )))
         await store.finish()
 
         XCTAssertEqual(store.state.content.aiChat.transcriptHistory, currentTranscript)
@@ -5936,12 +6280,12 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionSnapshotSaved(
+        await store.sendTabContent(.aiChat(.sessionSnapshotSaved(
             staleSummary,
             snapshot: nil,
             requestID: staleLock.requestID,
             runID: staleLock.runID,
-        ))))
+        )))
         await store.finish()
 
         XCTAssertEqual(store.state.content.aiChat.currentSessionCustomTitle, renamedSummary.title)
@@ -6477,7 +6821,7 @@ extension CTM005IndependentContentTabSessionTests {
             addedAttachments: [],
             parts: [],
         )
-        await store.send(.content(.aiChat(.requestContextResolved(oldResolutionID, resolvedContext)))) { state in
+        await store.sendTabContent(.aiChat(.requestContextResolved(oldResolutionID, resolvedContext))) { state in
             if case .processing = state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase {
             } else {
                 XCTFail("background pending resolver should start the matching request")
@@ -6573,6 +6917,167 @@ extension CTM005IndependentContentTabSessionTests {
             resolutionID,
         )
         XCTAssertNil(store.state.backgroundAiChatStates[visibleSessionID]?.aiChat.pendingRequestStart)
+        await store.finish()
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: active content authority는 forwarding effect보다 먼저 갱신된다.
+    /// Parent reducer가 full forwarding effect를 실행하지 않아도 late completion을 안전하게 거부하는지 검증한다.
+    /// - 검증 내용: canonical content와 active-tab snapshot의 동기 authority 및 lock 미생성
+    /// - 사전 조건: active AI Chat content에 stale listing marker와 OpenAI pending request가 있음
+    /// - 기대 결과: provider 제거 직후 두 snapshot이 갱신되고 late completion은 request를 시작하지 않음
+    func testActiveContentRejectsLateCompletionBeforeProviderForwardingEffectRuns() throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let fixture = try makePendingProviderAuthorityFixture()
+        var state = makePendingAiChatTabState(
+            aiChatTabID: aiChatTabID,
+            homeTabID: homeTabID,
+            fixture: fixture,
+        )
+        state.syncActiveTabContentState()
+
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        withDependencies {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+        } operation: {
+            _ = FileManagerFeature().reduce(into: &state, action: .aiConnectionsFileUpdated(.empty()))
+
+            XCTAssertEqual(state.content.aiChat.providerConnectionSnapshot, .known([]))
+            XCTAssertEqual(state.tabContentStates[aiChatTabID]?.aiChat.providerConnectionSnapshot, .known([]))
+
+            _ = FileManagerFeature().reduce(
+                into: &state,
+                action: .tabContent(
+                    tabID: aiChatTabID,
+                    action: .aiChat(.requestContextResolved(fixture.resolutionID, resolvedContext)),
+                ),
+            )
+        }
+
+        XCTAssertNil(state.content.aiChat.executionPhase.lock)
+        XCTAssertNil(state.tabContentStates[aiChatTabID]?.aiChat.executionPhase.lock)
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: active Inspector authority는 visibility와 무관하게 동기 갱신된다.
+    /// Visible forwarding effect를 실행하지 않은 경우와 hidden forwarding이 없는 경우를 함께 검증한다.
+    /// - 검증 내용: visible/hidden canonical Inspector와 active-tab snapshot의 authority 및 lock 미생성
+    /// - 사전 조건: active directory Inspector에 stale listing failure와 OpenAI pending request가 있음
+    /// - 기대 결과: 두 visibility 조건 모두 provider 제거 직후 late completion을 거부함
+    func testActiveInspectorRejectsLateCompletionBeforeOrWithoutProviderForwarding() throws {
+        for inspectorVisible in [true, false] {
+            let tabID = ContentTabID()
+            let fixture = try makePendingProviderAuthorityFixture()
+            var state = makePendingCanonicalInspectorState(
+                tabID: tabID,
+                fixture: fixture,
+                inspectorVisible: inspectorVisible,
+            )
+
+            let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+            withDependencies {
+                $0.uuid = .incrementing
+                $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+                $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+            } operation: {
+                _ = FileManagerFeature().reduce(into: &state, action: .aiConnectionsFileUpdated(.empty()))
+
+                XCTAssertEqual(state.inspector.aiChat.providerConnectionSnapshot, .known([]))
+                XCTAssertEqual(state.tabInspectorStates[tabID]?.aiChat.providerConnectionSnapshot, .known([]))
+
+                _ = FileManagerFeature().reduce(
+                    into: &state,
+                    action: .inspector(.aiChat(.requestContextResolved(fixture.resolutionID, resolvedContext))),
+                )
+            }
+
+            XCTAssertNil(state.inspector.aiChat.executionPhase.lock)
+        }
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: inactive pending owner는 최신 provider authority를 사용한다.
+    /// 탭 전환 뒤 provider가 제거된 경우 late context completion이 stale request를 시작하지 않는지 검증한다.
+    /// - 검증 내용: inactive tab 및 background owner의 pending completion이 request lock을 생성하지 않음
+    /// - 사전 조건: Tab A에 OpenAI pending request가 있고 Tab B로 전환한 뒤 OpenAI 연결이 제거됨
+    /// - 기대 결과: late completion 후 foreground/background processing lock이 모두 존재하지 않음
+    func testInactivePendingAiChatRejectsLateCompletionAfterProviderRemoval() async throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let fixture = try makePendingProviderAuthorityFixture()
+        let state = makePendingAiChatTabState(
+            aiChatTabID: aiChatTabID,
+            homeTabID: homeTabID,
+            fixture: fixture,
+        )
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // Window 통합 reducer의 탭 전환 및 warm-up 후속 action은 이 authority 시나리오의 검증 대상이 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeTabID)))
+        await store.skipReceivedActions()
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.pendingRequestStart?.resolutionID,
+            fixture.resolutionID,
+        )
+
+        await store.send(.aiConnectionsFileUpdated(.empty()))
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        await store.send(.tabContent(
+            tabID: aiChatTabID,
+            action: .aiChat(.requestContextResolved(fixture.resolutionID, resolvedContext)),
+        ))
+
+        XCTAssertNil(store.state.tabContentStates[aiChatTabID]?.aiChat.executionPhase.lock)
+        XCTAssertNil(store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.executionPhase.lock)
+        XCTAssertNil(store.state.backgroundAiChatStates[fixture.sessionID])
+        await store.finish()
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: inactive/background Inspector도 최신 provider authority를 사용한다.
+    /// Inspector 전용 routing 경로의 late completion이 제거된 provider로 request를 시작하지 않는지 검증한다.
+    /// - 검증 내용: inactive Inspector와 background Inspector completion의 request lock 미생성
+    /// - 사전 조건: 두 Inspector owner에 OpenAI pending request가 있고 completion 전에 연결이 제거됨
+    /// - 기대 결과: 두 owner 모두 processing lock 없이 pending lifecycle을 종료함
+    func testPendingInspectorOwnersRejectLateCompletionAfterProviderRemoval() async throws {
+        let homeTabID = ContentTabID()
+        let directoryTabID = ContentTabID()
+        let inactiveFixture = try makePendingProviderAuthorityFixture()
+        let backgroundFixture = try makePendingProviderAuthorityFixture()
+        var state = makeInspectorProviderAuthorityState(
+            homeTabID: homeTabID,
+            directoryTabID: directoryTabID,
+            inactiveFixture: inactiveFixture,
+            backgroundFixture: backgroundFixture,
+        )
+        state.inspector.inspectorVisible = false
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // Window warm-up effect는 Inspector pending authority 계약의 검증 대상이 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.aiConnectionsFileUpdated(.empty()))
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        await store.send(.inspector(.aiChat(.requestContextResolved(inactiveFixture.resolutionID, resolvedContext))))
+        await store.send(.inspector(.aiChat(.requestContextResolved(backgroundFixture.resolutionID, resolvedContext))))
+
+        XCTAssertNil(store.state.tabInspectorStates[directoryTabID]?.aiChat.executionPhase.lock)
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[backgroundFixture.sessionID]?.aiChat.executionPhase
+            .lock)
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[backgroundFixture.sessionID])
         await store.finish()
     }
 
@@ -6696,7 +7201,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.deleteSessionTapped(deletedSessionID))))
+        await store.sendTabContent(.aiChat(.deleteSessionTapped(deletedSessionID)))
         await store.skipReceivedActions()
 
         XCTAssertNil(store.state.backgroundAiChatStates[preservedSessionID])
@@ -6851,7 +7356,7 @@ extension CTM005IndependentContentTabSessionTests {
             addedAttachments: [],
             parts: [],
         )
-        await store.send(.content(.aiChat(.requestContextResolved(resolutionID, resolvedContext)))) { state in
+        await store.sendTabContent(.aiChat(.requestContextResolved(resolutionID, resolvedContext))) { state in
             state.backgroundAiChatStates[aiSessionID]?.aiChat.pendingRequestStart = nil
             if case .processing = state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase {
             } else {
@@ -6898,7 +7403,7 @@ extension CTM005IndependentContentTabSessionTests {
         inactiveContent.aiChat.modelListState = .loaded([selectedModel])
         inactiveContent.aiChat.selectedModelHandle = selectedModel.id
 
-        var backgroundContent = inactiveContent
+        let backgroundContent = inactiveContent
 
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
@@ -6946,7 +7451,7 @@ extension CTM005IndependentContentTabSessionTests {
             addedAttachments: [],
             parts: [],
         )
-        await store.send(.content(.aiChat(.requestContextResolved(resolutionID, resolvedContext)))) { state in
+        await store.sendTabContent(.aiChat(.requestContextResolved(resolutionID, resolvedContext))) { state in
             state.tabContentStates[aiChatTabID]?.aiChat.pendingRequestStart = nil
             state.backgroundAiChatStates[aiSessionID]?.aiChat.pendingRequestStart = nil
             if case .processing = state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase {
@@ -7080,7 +7585,11 @@ extension CTM005IndependentContentTabSessionTests {
         )
         var backgroundContent = FileManagerContentFeature.State()
         backgroundContent.aiChat.sessionID = aliasSessionID
+        backgroundContent.aiChat.sessionStatus = .active
         backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID] = pendingRequest
+        backgroundContent.aiChat.modelListState = .loaded([selectedModel])
+        backgroundContent.aiChat.selectedModelHandle = selectedModel.id
+        backgroundContent.aiChat.providerConnectionSnapshot = .known([.openai])
 
         var state = FileManagerFeature.State()
         state.backgroundAiChatStates[aliasSessionID] = backgroundContent
@@ -7099,7 +7608,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
-        await store.send(.content(.aiChat(.requestContextResolved(resolutionID, resolvedContext))))
+        await store.sendTabContent(.aiChat(.requestContextResolved(resolutionID, resolvedContext)))
         await store.skipReceivedActions()
 
         let aiChat = try XCTUnwrap(store.state.backgroundAiChatStates[aliasSessionID]?.aiChat)
@@ -7169,7 +7678,7 @@ extension CTM005IndependentContentTabSessionTests {
             addedAttachments: [],
             parts: [],
         )
-        await store.send(.content(.aiChat(.requestContextResolved(resolutionID, resolvedContext)))) { state in
+        await store.sendTabContent(.aiChat(.requestContextResolved(resolutionID, resolvedContext))) { state in
             state.backgroundAiChatStates[aiSessionID]?.aiChat.pendingRequestStart = nil
             if case .processing = state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase {
             } else {
@@ -7267,7 +7776,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase, .completed(requestLock))
 
-        await store.send(.content(.aiChat(.persistenceFailed(requestLock, .unknown)))) { state in
+        await store.sendTabContent(.aiChat(.persistenceFailed(requestLock, .unknown))) { state in
             state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase = .persistenceRecovery(
                 requestLock,
                 .unknown,
@@ -7565,10 +8074,10 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.executionEvent(.failed(
+        await store.sendTabContent(.aiChat(.executionEvent(.failed(
             context: requestLock.context,
             reason: .network,
-        )))))
+        ))))
 
         let expectedFailedLock = requestLock.recordingTerminal(
             at: 1_234_567_890_000,
@@ -7974,7 +8483,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.deleteSessionTapped(aiSessionID)))) { state in
+        await store.sendTabContent(.aiChat(.deleteSessionTapped(aiSessionID))) { state in
             state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
         }
         await store.finish()
@@ -8388,7 +8897,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(directoryTabID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.skipReceivedActions()
 
         let backgroundInspector = store.state.backgroundInspectorAiChatStates[inspectorSessionID]
@@ -8472,7 +8981,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(directoryTabID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.skipReceivedActions()
 
         XCTAssertNotNil(store.state.backgroundInspectorAiChatStates[inspectorSessionID])
@@ -8954,7 +9463,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(aiChatTabID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.skipReceivedActions()
         await store.finish()
 
@@ -9040,7 +9549,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(aiChatTabID)))
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.skipReceivedActions()
         await store.finish()
 
@@ -9164,7 +9673,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionDeleteSucceeded(aiSessionID)))) { state in
+        await store.sendTabContent(.aiChat(.sessionDeleteSucceeded(aiSessionID))) { state in
             state.content.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
             state.tabContentStates[activeTabID]?.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
             state.tabContentStates[inactiveTabID]?.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
@@ -9301,10 +9810,10 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionRenameSucceeded(
+        await store.sendTabContent(.aiChat(.sessionRenameSucceeded(
             renamedSummary,
             customTitle: "Renamed everywhere",
-        ))))
+        )))
 
         XCTAssertEqual(store.state.content.aiChat.currentSessionCustomTitle, "Renamed everywhere")
         XCTAssertEqual(store.state.content.aiChat.executionPhase, .processing(renamedLock))
@@ -9380,13 +9889,91 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionListLoaded([activeSummary]))))
+        await store.sendTabContent(.aiChat(.sessionListLoaded([activeSummary])))
 
         XCTAssertEqual(store.state.contentTabs.tabs[id: inactiveTabID]?.title, "AI Chat")
         XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.title, activeSummary.title)
         XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.map(\.title), [
             "AI Chat",
             activeSummary.title,
+        ])
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive A AI action은 active B title을 refresh하지 않음
+    /// parent AI bridge가 origin snapshot을 읽고 unrelated active content를 wildcard로 refresh하지 않는지 검증한다.
+    /// - 검증 내용: A sessionListLoaded 후 A/B tab title과 sidebar projection을 비교한다.
+    /// - 사전 조건: A는 inactive, B는 active이며 서로 다른 session summary를 가진다.
+    /// - 기대 결과: A title만 A summary로 갱신되고 B title은 기존 값으로 유지된다.
+    func testInactiveAiActionDoesNotRefreshActiveTabTitle() async {
+        let inactiveSessionID = AiChatSessionID(rawValue: UUID())
+        let activeSessionID = AiChatSessionID(rawValue: UUID())
+        let inactiveTabID = ContentTabID()
+        let activeTabID = ContentTabID()
+        let inactiveSummary = AiChatSessionSummary(
+            sessionID: inactiveSessionID,
+            title: "Inactive A title",
+            messageCount: 1,
+            provider: nil,
+            model: nil,
+            createdAtMs: 1,
+            updatedAtMs: 1,
+            status: .active,
+        )
+        let activeSummary = AiChatSessionSummary(
+            sessionID: activeSessionID,
+            title: "Must not apply to B",
+            messageCount: 1,
+            provider: nil,
+            model: nil,
+            createdAtMs: 1,
+            updatedAtMs: 1,
+            status: .active,
+        )
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.aiChat.sessionList = AiChatSessionListState(allRows: [inactiveSummary])
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionList = AiChatSessionListState(allRows: [activeSummary])
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: inactiveTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: inactiveSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "bubble.right",
+                ),
+                ContentTabItem(
+                    id: activeTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: activeSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Active B stable",
+                    iconName: "bubble.right",
+                ),
+            ],
+            activeTabID: activeTabID,
+        )
+        state.content = activeContent
+        state.tabContentStates = [inactiveTabID: inactiveContent, activeTabID: activeContent]
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.tabContent(
+            tabID: inactiveTabID,
+            action: .aiChat(.sessionListLoaded([inactiveSummary])),
+        )) { state in
+            state.updateAiChatTabTitle(sessionID: inactiveSessionID, title: inactiveSummary.title)
+        }
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: inactiveTabID]?.title, inactiveSummary.title)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.title, "Active B stable")
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.map(\.title), [
+            inactiveSummary.title,
+            "Active B stable",
         ])
     }
 
@@ -9422,7 +10009,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionListLoaded([staleSummary]))))
+        await store.sendTabContent(.aiChat(.sessionListLoaded([staleSummary])))
 
         XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.title, "Current session title")
         XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.first?.title, "Current session title")
@@ -9510,10 +10097,10 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.sessionRenameSucceeded(
+        await store.sendTabContent(.aiChat(.sessionRenameSucceeded(
             renamedSummary,
             customTitle: "Renamed while closed",
-        ))))
+        )))
 
         XCTAssertEqual(
             store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
@@ -9645,7 +10232,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.deleteSessionTapped(deletedSessionID)))) { state in
+        await store.sendTabContent(.aiChat(.deleteSessionTapped(deletedSessionID))) { state in
             state.backgroundAiChatStates.removeValue(forKey: deletedSessionID)
         }
         XCTAssertEqual(
@@ -9864,7 +10451,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.persistenceRecoverySucceeded(requestLock))))
+        await store.sendTabContent(.aiChat(.persistenceRecoverySucceeded(requestLock)))
 
         XCTAssertEqual(
             store.state.content.aiChat.backgroundExecutionPhases[requestLock.requestID],
@@ -10027,6 +10614,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -10038,13 +10626,13 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.setup(setup))))
+        await store.sendTabContent(.aiChat(.setup(setup)))
 
         // setup에서 restoreSessionID가 있으므로 sessionStatus가 .restoring이 됨
         XCTAssertEqual(store.state.content.aiChat.restoreSessionID, originalSessionID)
 
         // restoreOutcome이 도착할 때까지 기다림
-        await store.receive(\.content.aiChat.restoreOutcome)
+        await store.receiveTabContent(\.aiChat.restoreOutcome)
         await store.finish()
 
         // restore failure가 설정되어야 함 (missing record)
@@ -10098,6 +10686,7 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: ContentTabID(),
             recentlyClosed: nil,
         )
+        state.contentTabs.activeTabID = state.contentTabs.tabs.first?.id
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -10111,7 +10700,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.setup(setup))))
+        await store.sendTabContent(.aiChat(.setup(setup)))
 
         XCTAssertEqual(store.state.content.aiChat.sessionID, sessionID)
         XCTAssertNil(store.state.content.aiChat.restoreSessionID)
@@ -10299,19 +10888,64 @@ extension CTM005IndependentContentTabSessionTests {
 
 private extension CTM005IndependentContentTabSessionTests {
     func receiveDirectoryReload(
+        tabID: ContentTabID,
         path: String,
         store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
     ) async {
-        await store.receive(\.content.internal.applyNavigationState, .folder(path))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case let .tabContent(receivedTabID, .internal(.applyNavigationState(.folder(receivedPath)))) = action
+            else { return false }
+            return receivedTabID == tabID && receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .tabContent(receivedTabID,
+                                       .entryViewLayout(.internal(.clearCollectionPresentation))) = action
+            else { return false }
+            return receivedTabID == tabID
+        }
+        await store.receive { action in
+            guard case let .tabContent(
+                receivedTabID,
+                .entryViewLayout(.entryOperations(.loading(.loadItems(path: receivedPath, showHidden: false)))),
+            ) = action else { return false }
+            return receivedTabID == tabID && receivedPath == path
+        }
     }
 
-    func receiveHomeReload(store: TestStore<FileManagerFeature.State, FileManagerWindowAction>) async {
-        await store.receive(\.content.internal.applyNavigationState, .home)
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.internal.applyClearSelection)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+    func receiveHomeReload(
+        tabID: ContentTabID,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+    ) async {
+        await store.receive { action in
+            guard case let .tabContent(receivedTabID, .internal(.applyNavigationState(.home))) = action
+            else { return false }
+            return receivedTabID == tabID
+        }
+        await store.receive { action in
+            guard case let .tabContent(receivedTabID,
+                                       .entryViewLayout(.internal(.clearCollectionPresentation))) = action
+            else { return false }
+            return receivedTabID == tabID
+        }
+        await store.receive { action in
+            guard case let .tabContent(receivedTabID, .entryViewLayout(.internal(.applyClearSelection))) = action
+            else { return false }
+            return receivedTabID == tabID
+        }
+        await receiveItemsLoaded(tabID: tabID, store: store)
+    }
+
+    func receiveItemsLoaded(
+        tabID: ContentTabID,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+    ) async {
+        await store.receive { action in
+            guard case let .tabContent(
+                receivedTabID,
+                .entryViewLayout(.entryOperations(.loading(.itemsLoaded))),
+            ) = action else { return false }
+            return receivedTabID == tabID
+        }
     }
 
     func assertRestoredDirectoryPresentation(
@@ -10349,37 +10983,37 @@ private extension CTM005IndependentContentTabSessionTests {
         let store = fixture.store
 
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(fixture.directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
         await fixture.gate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
 
         await fixture.gate.resume(with: .failure)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoadFailed)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoadFailed)
         await store.skipReceivedActions()
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
         await store.skipReceivedActions()
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(fixture.directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
         await fixture.gate.waitUntilWaiting()
         await fixture.gate.resume(with: .entries([]))
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         await store.skipReceivedActions()
         assertSuccessfulEmptyDirectorySnapshot(fixture, store: store)
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
         await store.skipReceivedActions()
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
-        await store.receive(\.content.internal.applyNavigationState, .folder(fixture.directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
         await fixture.gate.waitUntilWaiting()
         await fixture.gate.resume(with: .entries([]))
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(fixture.loadPaths.value, [
             fixture.directoryPath,
             fixture.directoryPath,
@@ -10629,6 +11263,176 @@ private extension CTM005IndependentContentTabSessionTests {
             selectedModelRow: catalogRow,
             assistantReplacementIndex: nil,
         )
+    }
+
+    struct PendingProviderAuthorityFixture {
+        let sessionID: AiChatSessionID
+        let resolutionID: UUID
+        let content: FileManagerContentFeature.State
+        let inspector: FileManagerInspectorFeature.State
+    }
+
+    func makePendingProviderAuthorityFixture() throws -> PendingProviderAuthorityFixture {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: sessionID)
+        let selectedModel = try XCTUnwrap(requestLock.context.selectedModel)
+        let resolutionID = UUID()
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: selectedModel,
+            selectedRow: requestLock.selectedModelRow,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "test",
+                messages: requestLock.request.messages,
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: requestLock.request.messages.count,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var content = FileManagerContentFeature.State()
+        content.aiChat.sessionID = sessionID
+        content.aiChat.sessionStatus = .active
+        content.aiChat.pendingRequestStart = pendingRequest
+        content.aiChat.modelListState = .loaded([selectedModel])
+        content.aiChat.modelListPendingProviders = [.openai]
+        content.aiChat.selectedModelHandle = selectedModel.id
+        content.aiChat.providerConnectionSnapshot = .known([.openai])
+        var inspector = FileManagerInspectorFeature.State()
+        inspector.aiChat.pendingRequestStart = pendingRequest
+        inspector.aiChat.modelListFailedProviders = [.openai: .init(message: "Stale OpenAI listing failure")]
+        inspector.aiChat.providerConnectionSnapshot = .known([.openai])
+        return PendingProviderAuthorityFixture(
+            sessionID: sessionID,
+            resolutionID: resolutionID,
+            content: content,
+            inspector: inspector,
+        )
+    }
+
+    func makePendingAiChatTabState(
+        aiChatTabID: ContentTabID,
+        homeTabID: ContentTabID,
+        fixture: PendingProviderAuthorityFixture,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: fixture.sessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = fixture.content
+        state.tabContentStates = [homeTabID: FileManagerContentFeature.State()]
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makePendingCanonicalInspectorState(
+        tabID: ContentTabID,
+        fixture: PendingProviderAuthorityFixture,
+        inspectorVisible: Bool,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.inspector = fixture.inspector
+        state.inspector.inspectorVisible = inspectorVisible
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.syncActiveTabInspectorState()
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeInspectorProviderAuthorityState(
+        homeTabID: ContentTabID,
+        directoryTabID: ContentTabID,
+        inactiveFixture: PendingProviderAuthorityFixture,
+        backgroundFixture: PendingProviderAuthorityFixture,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.tabInspectorStates[directoryTabID] = inactiveFixture.inspector
+        state.backgroundInspectorAiChatStates[backgroundFixture.sessionID] = backgroundFixture.inspector
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func assertDormantProviderAuthorityUnchanged(
+        state: FileManagerFeature.State,
+        contentTabID: ContentTabID,
+        inspectorTabID: ContentTabID,
+        contentSessionID: AiChatSessionID,
+        inspectorSessionID: AiChatSessionID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let expectedSnapshot = AiChatProviderConnectionSnapshot.known([.openai])
+        let dormantStates = [
+            state.tabContentStates[contentTabID]?.aiChat,
+            state.tabInspectorStates[inspectorTabID]?.aiChat,
+            state.backgroundAiChatStates[contentSessionID]?.aiChat,
+            state.backgroundInspectorAiChatStates[inspectorSessionID]?.aiChat,
+        ]
+        for dormantState in dormantStates {
+            XCTAssertEqual(dormantState?.providerConnectionSnapshot, expectedSnapshot, file: file, line: line)
+            XCTAssertNil(dormantState?.modelListRequestID, file: file, line: line)
+        }
     }
 
     func makeTestStore(

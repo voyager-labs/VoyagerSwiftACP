@@ -44,7 +44,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
             (.cut, .edit(.cut)),
             (.copy, .edit(.copy)),
-            (.newChat, .edit(.newChat)),
+            (.find, .edit(.find)),
+            (.openChat, .edit(.openChat)),
             (.showChatHistory, .edit(.showChatHistory)),
             (.paste, .edit(.paste)),
             (.duplicate, .edit(.duplicate)),
@@ -123,6 +124,123 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ))
     }
 
+    /// VOY-637-collection_filter_composer_title: Collection Filter Composer 상태별 Edit 메뉴 제목
+    /// Composer 표시 상태가 제품 SSOT의 Open/Close 제목으로 투영되는지 검증한다.
+    /// - 검증 내용: 닫힘/열림 상태의 순수 제목 정책
+    /// - 사전 조건: Composer 표시 여부 false/true
+    /// - 기대 결과: Open Collection Filter Composer / Close Collection Filter Composer
+    func testCollectionFilterComposerTitleReflectsPresentationState() {
+        XCTAssertEqual(
+            EditMenuCommands.collectionFilterComposerTitle(isPresented: false),
+            "Open Collection Filter Composer",
+        )
+        XCTAssertEqual(
+            EditMenuCommands.collectionFilterComposerTitle(isPresented: true),
+            "Close Collection Filter Composer",
+        )
+    }
+
+    /// VOY-165-undo_fallback: 빈 text responder에서도 FileManager Undo capability 유지
+    /// responder가 편집 중이지만 자체 history가 없을 때 file operation fallback이 메뉴를 활성화하는지 검증한다.
+    /// - 검증 내용: responder capability false와 file operation capability true의 결합
+    /// - 사전 조건: text responder 편집 중, responder Undo 불가, FileManager Undo 가능
+    /// - 기대 결과: Undo/Redo command capability 활성화
+    func testUndoCapabilityIncludesFileFallbackWhenTextResponderHistoryIsEmpty() {
+        XCTAssertTrue(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            canPerformFileOperation: true,
+        ))
+        XCTAssertTrue(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            canPerformFileOperation: false,
+        ))
+        XCTAssertFalse(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            canPerformFileOperation: false,
+        ))
+    }
+
+    /// VOY-165-undo_fallback: history 없는 responder는 AppKit dispatch 전에 FileManager fallback
+    /// selector 수신 가능 여부와 실제 Undo capability를 구분해 no-op responder가 fallback을 가로채지 않는지 검증한다.
+    /// - 검증 내용: responder capability false일 때 dispatch 생략과 fallback 호출 횟수
+    /// - 사전 조건: text responder 편집 중, responder Undo 불가, FileManager Undo 가능, selector dispatch 가능
+    /// - 기대 결과: responder dispatch 0회와 FileManager fallback 1회
+    func testUndoRedoSkipsDispatchForResponderWithoutHistory() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            isComposerPresented: false,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return true
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 0)
+        XCTAssertEqual(fallbackCount, 1)
+    }
+
+    /// VOY-165-undo_fallback: text responder가 Undo를 처리하지 못하면 FileManager fallback 실행
+    /// responder 후보 존재와 실제 AppKit dispatch 성공을 구분하는지 검증한다.
+    /// - 검증 내용: responder dispatch 실패 후 fallback 호출 횟수
+    /// - 사전 조건: text responder 편집 중, Composer 닫힘, AppKit dispatch false
+    /// - 기대 결과: responder 시도 1회와 FileManager fallback 1회
+    func testUndoRedoFallsBackWhenTextResponderDoesNotHandleAction() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            isComposerPresented: false,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return false
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 1)
+        XCTAssertEqual(fallbackCount, 1)
+    }
+
+    /// VOY-165-undo_fallback: Composer 표시 중 FileManager fallback 차단
+    /// responder dispatch 실패 후에도 Composer가 file operation Undo를 차단하는지 검증한다.
+    /// - 검증 내용: responder dispatch 시도와 fallback 미호출
+    /// - 사전 조건: text responder 편집 중, Composer 열림, AppKit dispatch false
+    /// - 기대 결과: responder 시도 1회와 FileManager fallback 0회
+    func testUndoRedoDoesNotFallBackWhileComposerIsPresented() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            isComposerPresented: true,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return false
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 1)
+        XCTAssertEqual(fallbackCount, 0)
+    }
+
     func testMenuCommandStateReflectsFocusedWindowAiChatAvailabilityAndTitles() {
         let focusedID = makeUUID("00000000-0000-0000-0000-000000000041")
         let unfocusedID = makeUUID("00000000-0000-0000-0000-000000000042")
@@ -150,25 +268,25 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         var menuState = MenuCommandsState(state: appState)
         XCTAssertTrue(menuState.isContextualAiChatPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatPresented)
         XCTAssertTrue(menuState.isChatHistoryPresented)
         XCTAssertTrue(menuState.canUseAiChatInspector)
-        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Open Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Hide Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.aiChat.mode = .chat
         menuState = MenuCommandsState(state: appState)
-        XCTAssertTrue(menuState.isNewChatPresented)
+        XCTAssertTrue(menuState.isChatPresented)
         XCTAssertFalse(menuState.isChatHistoryPresented)
-        XCTAssertEqual(menuState.newChatTitle, "Close Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Close Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
         menuState = MenuCommandsState(state: appState)
         XCTAssertFalse(menuState.isContextualAiChatPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatPresented)
         XCTAssertFalse(menuState.isChatHistoryPresented)
-        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Open Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
@@ -187,7 +305,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         appState.windowManager.focusedWindowID = nil
         menuState = MenuCommandsState(state: appState)
         XCTAssertFalse(menuState.canUseAiChatInspector)
-        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Open Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
     }
 
@@ -304,7 +422,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
             switch (action, expected) {
             case (.edit(.cut), .edit(.cut)),
                  (.edit(.copy), .edit(.copy)),
-                 (.edit(.newChat), .edit(.newChat)),
+                 (.edit(.find), .edit(.find)),
+                 (.edit(.openChat), .edit(.openChat)),
                  (.edit(.showChatHistory), .edit(.showChatHistory)),
                  (.edit(.paste), .edit(.paste)),
                  (.edit(.duplicate), .edit(.duplicate)),

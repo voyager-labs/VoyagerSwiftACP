@@ -15,7 +15,13 @@ struct AiChatModelListLoadBatch: Equatable {
 
 extension AiChatFeature {
     func handleSelectedModelChanged(_ handle: AiModelHandle?, state: inout State) -> Effect<Action> {
-        let resolvedHandle = state.normalizedSelectionHandle(handle)
+        let resolvedHandle: AiModelHandle?
+        if let handle {
+            guard let normalizedHandle = state.normalizedSelectionHandle(handle) else { return .none }
+            resolvedHandle = normalizedHandle
+        } else {
+            resolvedHandle = nil
+        }
         guard state.selectedModelHandle != resolvedHandle else { return .none }
         state.markPreparedTransientSessionAsTouched()
         state.selectedModelHandle = resolvedHandle
@@ -29,6 +35,15 @@ extension AiChatFeature {
         _ selectedThinking: AiThinkingSelection?,
         state: inout State,
     ) -> Effect<Action> {
+        if let selectedThinking {
+            guard let selectedModel = state.resolvedModel(for: state.selectedModelHandle),
+                  AiThinkingSelectionPolicy.normalize(
+                      selectedThinking,
+                      capability: selectedModel.thinkingCapability,
+                      supportsNone: selectedModel.supportsThinkingNone,
+                  ) == selectedThinking
+            else { return .none }
+        }
         guard state.selectedThinking != selectedThinking else { return .none }
         state.markPreparedTransientSessionAsTouched()
         state.selectedThinking = selectedThinking

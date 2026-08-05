@@ -87,13 +87,14 @@ mise run macos-test-flow -- --list
 mise run macos-test-flow -- --check
 ```
 
-**Agent verification rule**: Agents MUST use XcodeBuildMCP for Swift test execution, NOT the mise/shell commands above. Use the Python runner only to resolve selectors and check structure:
+**Agent verification rule**: Agents use the same canonical `mise` tasks as humans and CI. Use the flow task for mapped suites and the Python runner only to inspect the resolved selector or structural mapping:
 
 ```bash
-# Resolve the selector for an agent XcodeBuildMCP run
+# Inspect the selector without executing the test
 python3 scripts/dev/macos_test_flow.py --flow onb.access_unlock --dry-run
 # Output: scripts/dev/macos-test.sh -only-testing:VoyagerTests/AccessUnlockFlowTests
-# Agent uses: -only-testing:VoyagerTests/AccessUnlockFlowTests in XcodeBuildMCP test_sim or equivalent
+# Execute through the canonical repository task
+mise run macos-test-flow -- --flow onb.access_unlock
 ```
 
 **v1 migration scope**: The checker reports unmigrated canonical flow documents without failing. Existing mapped suites are strict: structural mismatches (orphan suite, class/file mismatch, missing FLOW-ID marker) cause checker exit 1. Do not treat unmigrated docs as covered or blocked in v1.
