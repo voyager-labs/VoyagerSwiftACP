@@ -35,16 +35,29 @@ struct FileManagerTopNavigationReorderDragSourceConfiguration {
     let payload: FileManagerTopNavigationReorderDragPayload
     let movePayload: ContentTabDragPayload?
     let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
+    let prepareMovePayload: (@MainActor () -> ContentTabDragPayload?)?
+    let onMovePayloadDidBegin: (@MainActor (ContentTabDragPayload) -> Void)?
+    let onMovePayloadDidEnd: (@MainActor (UUID) -> Void)?
 
     init(
         payload: FileManagerTopNavigationReorderDragPayload,
         sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
         movePayload: ContentTabDragPayload? = nil,
+        prepareMovePayload: (@MainActor () -> ContentTabDragPayload?)? = nil,
+        onMovePayloadDidBegin: (@MainActor (ContentTabDragPayload) -> Void)? = nil,
+        onMovePayloadDidEnd: (@MainActor (UUID) -> Void)? = nil,
     ) {
         self.payload = payload
         self.movePayload = movePayload
         self.sessionStore = sessionStore
+        self.prepareMovePayload = prepareMovePayload
+        self.onMovePayloadDidBegin = onMovePayloadDidBegin
+        self.onMovePayloadDidEnd = onMovePayloadDidEnd
     }
+}
+
+enum FileManagerTopNavigationReorderDragSourceError: Error {
+    case movePayloadPreparationRejected
 }
 
 extension UTType {
@@ -155,6 +168,9 @@ final class FileManagerTopNavigationReorderPasteboardWriter: NSObject, NSPastebo
     private let reorderPayloadData: Data
     private let movePayloadData: Data?
     private let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
+    private let moveOperationID: UUID?
+    private let onMovePayloadDidEnd: (@MainActor (UUID) -> Void)?
+    private var didEndMovePayload = false
 
     @MainActor
     convenience init(
@@ -176,11 +192,21 @@ final class FileManagerTopNavigationReorderPasteboardWriter: NSObject, NSPastebo
         configuration: FileManagerTopNavigationReorderDragSourceConfiguration,
         token: FileManagerTopNavigationReorderLocalToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID()),
     ) throws {
+        let resolvedMovePayload = configuration.prepareMovePayload?() ?? configuration.movePayload
+        if configuration.prepareMovePayload != nil, resolvedMovePayload == nil {
+            throw FileManagerTopNavigationReorderDragSourceError.movePayloadPreparationRejected
+        }
+
         reorderPayloadData = try JSONEncoder().encode(configuration.payload)
-        movePayloadData = try configuration.movePayload.map(JSONEncoder().encode)
+        movePayloadData = try resolvedMovePayload.map(JSONEncoder().encode)
         sessionStore = configuration.sessionStore
+        moveOperationID = resolvedMovePayload?.operationID
+        onMovePayloadDidEnd = configuration.onMovePayloadDidEnd
         self.token = sessionStore.begin(payload: configuration.payload, token: token)
         super.init()
+        if let resolvedMovePayload {
+            configuration.onMovePayloadDidBegin?(resolvedMovePayload)
+        }
     }
 
     func writableTypes(for _: NSPasteboard) -> [NSPasteboard.PasteboardType] {
@@ -217,6 +243,9 @@ final class FileManagerTopNavigationReorderPasteboardWriter: NSObject, NSPastebo
     @MainActor
     func cleanupOwnedToken() {
         sessionStore.clear(token: token)
+        guard !didEndMovePayload, let moveOperationID else { return }
+        didEndMovePayload = true
+        onMovePayloadDidEnd?(moveOperationID)
     }
 }
 

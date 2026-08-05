@@ -28,6 +28,16 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
             placement: FileManagerTopNavigationReorderPlacement,
         )
         case moveContentTab(tabID: ContentTabID, targetWindowID: UUID)
+        case moveSelectedContentTabs(
+            initiatingTabID: ContentTabID,
+            orderedTabIDs: [ContentTabID],
+            targetWindowID: UUID,
+        )
+        case moveContentTabs(payload: ContentTabDragPayload, targetWindowID: UUID)
+        case prepareContentTabDrag(initiatingTabID: ContentTabID, selectedTabIDs: Set<ContentTabID>)
+        case beginContentTabDrag(ContentTabDragPayload)
+        case contentTabDragTerminal(operationID: UUID)
+        case teardownContentTabDragSource
         case receiveContentTabDrag(ContentTabDragPayload)
     }
 
