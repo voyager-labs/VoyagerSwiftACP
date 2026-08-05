@@ -4462,16 +4462,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// CTM-001-move_content_tab_to_another_window: target package busy는 Undo와 app commit 전에 거절한다.
-    /// exact in-flight source request를 허용하면서 target close/Undo lifecycle을 package preflight에서 차단하는지 검증한다.
+    /// exact source request를 허용하면서 target close/Undo/outgoing move lifecycle을 package preflight에서 차단하는지 검증한다.
     /// - 검증 내용: busy terminal, semantic snapshot, moveScopes/transaction/lifecycle/native/activate/close 0회
-    /// - 사전 조건: exact in-flight source와 isClosing 또는 Undo invoking target이 존재한다.
-    /// - 기대 결과: 두 요청 모두 busy로 끝나고 terminal presentation 외 source/target 및 모든 effect registry가 불변이다.
+    /// - 사전 조건: exact in-flight source와 isClosing, Undo invoking, 또는 pending move target이 존재한다.
+    /// - 기대 결과: 세 요청 모두 busy로 끝나고 terminal presentation 외 source/target 및 모든 effect registry가 불변이다.
     func testContentTabMoveRejectsTargetWindowBusyBeforeUndoAndAppCommit() async throws {
         try await Self.assertContentTabMoveTargetBusyRejection(variant: 1) { target in
             target.isClosing = true
         }
         try await Self.assertContentTabMoveTargetBusyRejection(variant: 2) { target in
             target.undoRedoPhase = .invoking(requestID: UUID(45832), direction: .undo)
+        }
+        try await Self.assertContentTabMoveTargetBusyRejection(variant: 3) { target in
+            let targetWindowID = target.windowID ?? UUID(45863)
+            let targetTabID = target.contentTabs.activeTabID ?? ContentTabID(rawValue: "target-busy-pending")
+            let pendingRequest = ContentTabMoveRequest(
+                requestID: UUID(45864),
+                sourceWindowID: targetWindowID,
+                tabID: targetTabID,
+                targetWindowID: UUID(45865),
+            )
+            target.sidebar.pendingContentTabMoveRequest = pendingRequest
+            target.pendingContentTabMove = .init(request: pendingRequest, lifecycle: .inFlight)
         }
     }
 

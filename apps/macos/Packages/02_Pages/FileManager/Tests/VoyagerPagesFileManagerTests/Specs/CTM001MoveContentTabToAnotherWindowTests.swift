@@ -460,9 +460,9 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
 
     /// CTM-001-move_content_tab_to_another_file_manager_window: destination window-level busy는 preflight에서 거절한다.
     /// target work-unit projection 전에 close와 Undo lifecycle gate를 동일하게 적용하는지 검증한다.
-    /// - 검증 내용: target isClosing/active undoRedoPhase rejection과 source/target snapshot equality
-    /// - 사전 조건: valid source/target에서 target만 closing 또는 Undo invoking 상태다.
-    /// - 기대 결과: 두 preflight 모두 success token을 만들지 않고 양 window state가 변경되지 않는다.
+    /// - 검증 내용: target isClosing/active undoRedoPhase/pending move rejection과 source/target snapshot equality
+    /// - 사전 조건: valid source/target에서 target만 closing, Undo invoking, 또는 outgoing move 상태다.
+    /// - 기대 결과: 세 preflight 모두 success token을 만들지 않고 양 window state가 변경되지 않는다.
     func testPreflightRejectsTargetWindowBusyBeforeProjectionWithoutMutation() {
         let movedID = ContentTabID(rawValue: "window-busy-source")
         let source = Fixture.window(
@@ -481,8 +481,17 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         closingTarget.isClosing = true
         var undoBusyTarget = target
         undoBusyTarget.undoRedoPhase = .invoking(requestID: requestID, direction: .undo)
+        let pendingRequest = ContentTabMoveRequest(
+            requestID: UUID(uuid: (45, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)),
+            sourceWindowID: Fixture.targetWindowID,
+            tabID: targetID,
+            targetWindowID: UUID(uuid: (45, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)),
+        )
+        var pendingMoveTarget = target
+        pendingMoveTarget.pendingContentTabMove = .init(request: pendingRequest, lifecycle: .inFlight)
+        pendingMoveTarget.sidebar.pendingContentTabMoveRequest = pendingRequest
 
-        for busyTarget in [closingTarget, undoBusyTarget] {
+        for busyTarget in [closingTarget, undoBusyTarget, pendingMoveTarget] {
             let sourceBefore = source
             let targetBefore = busyTarget
             let result = ContentTabTransfer.preflight(source: source, target: busyTarget, tabID: movedID)

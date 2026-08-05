@@ -290,7 +290,7 @@ private extension ContentTabTransfer {
             }
             return .ineligible(.windowBusy)
         }
-        guard target.isContentTabMoveBusy else { return nil }
+        guard target.isContentTabMoveDestinationBusy else { return nil }
         switch target.destinationTransferEligibility() {
         case .eligible:
             return .ineligible(.windowBusy)

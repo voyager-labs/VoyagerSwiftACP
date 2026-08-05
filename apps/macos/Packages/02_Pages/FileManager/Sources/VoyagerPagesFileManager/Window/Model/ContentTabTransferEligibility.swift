@@ -47,6 +47,12 @@ extension FileManagerWindowState {
         }
     }
 
+    var isContentTabMoveDestinationBusy: Bool {
+        isContentTabMoveBusy
+            || pendingContentTabMove != nil
+            || sidebar.pendingContentTabMoveRequest != nil
+    }
+
     func transferEligibility(tabID: ContentTabID) -> ContentTabTransferEligibility {
         if let rejection = ownershipRejection(tabID: tabID) {
             return .rejected(rejection)
