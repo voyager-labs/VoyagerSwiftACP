@@ -177,7 +177,7 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
         self.model = model
         self.prompt = prompt
         self.thinking = thinking
-        self.workingDirectory = workingDirectory
+        self.workingDirectory = workingDirectory.map(CodexPathCanonicalizer.url)
         self.onEvent = onEvent
         self.onComplete = onComplete
         executor.setSpecific(key: executorKey, value: 1)

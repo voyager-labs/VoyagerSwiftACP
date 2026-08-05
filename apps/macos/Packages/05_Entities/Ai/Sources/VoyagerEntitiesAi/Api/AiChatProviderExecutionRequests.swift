@@ -1,12 +1,26 @@
 import Foundation
 
+enum CodexPathCanonicalizer {
+    static func url(_ url: URL) -> URL {
+        let resolvedPath = url.standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path(percentEncoded: false)
+        let canonicalPath = resolvedPath.count > 1 && resolvedPath.hasSuffix("/")
+            ? String(resolvedPath.dropLast())
+            : resolvedPath
+        return URL(fileURLWithPath: canonicalPath, isDirectory: false)
+    }
+
+    static func path(_ url: URL) -> String {
+        self.url(url).path(percentEncoded: false)
+    }
+}
+
 enum CodexReferencePermissionProfile {
     static let identifier = "voyager-reference"
 
     static func configuration(readablePaths: [URL], sessionDirectory: URL) throws -> String {
-        let normalizedPaths = Set(([sessionDirectory] + readablePaths).map { url in
-            url.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-        })
+        let normalizedPaths = Set(([sessionDirectory] + readablePaths).map(CodexPathCanonicalizer.path))
         var lines = try [
             "default_permissions = \(tomlString(identifier))",
             "",
@@ -346,18 +360,21 @@ extension AiChatProviderExecutionClient {
     static func makeCodexSessionEnvironment(
         credential: OAuthCredentialFile,
         readablePaths: [URL],
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
     ) throws -> CodexSessionEnvironment {
-        let directory = FileManager.default.temporaryDirectory
+        let createdDirectory = temporaryDirectory
             .appendingPathComponent("voyager-codex-home-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: createdDirectory, withIntermediateDirectories: false)
+        let directory = CodexPathCanonicalizer.url(createdDirectory)
         var completed = false
         defer {
             if !completed { try? FileManager.default.removeItem(at: directory) }
         }
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
 
-        let workingDirectory = directory.appendingPathComponent("session", isDirectory: true)
-        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: false)
+        let createdWorkingDirectory = directory.appendingPathComponent("session", isDirectory: true)
+        try FileManager.default.createDirectory(at: createdWorkingDirectory, withIntermediateDirectories: false)
+        let workingDirectory = CodexPathCanonicalizer.url(createdWorkingDirectory)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workingDirectory.path)
 
         let auth = CodexCLIAuthFile(credential: credential)

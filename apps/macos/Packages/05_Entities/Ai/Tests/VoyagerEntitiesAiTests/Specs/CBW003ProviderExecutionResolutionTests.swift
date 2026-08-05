@@ -579,6 +579,38 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertFalse(lines.contains("\"/tmp/project\" = \"read\""))
     }
 
+    /// CBW-003-prepare_contextual_chat_request: Codex session home과 cwd는 생성 직후 실경로로 확정한다.
+    /// process 환경과 cwd가 symlink alias가 아닌 permission profile의 canonical path를 공유하는지 검증합니다.
+    func testCodexSessionEnvironment_canonicalizesHomeAndWorkingDirectory() throws {
+        let fileManager = FileManager.default
+        let fixtureRoot = fileManager.temporaryDirectory
+            .appendingPathComponent("voyager-codex-environment-\(UUID().uuidString)", isDirectory: true)
+        let realTemporaryDirectory = fixtureRoot.appendingPathComponent("real", isDirectory: true)
+        let symlinkTemporaryDirectory = fixtureRoot.appendingPathComponent("alias", isDirectory: true)
+        try fileManager.createDirectory(at: realTemporaryDirectory, withIntermediateDirectories: true)
+        try fileManager.createSymbolicLink(
+            at: symlinkTemporaryDirectory,
+            withDestinationURL: realTemporaryDirectory,
+        )
+        defer { try? fileManager.removeItem(at: fixtureRoot) }
+
+        let session = try AiChatProviderExecutionClient.makeCodexSessionEnvironment(
+            credential: OAuthCredentialFile(accessToken: "codex-token"),
+            readablePaths: [],
+            temporaryDirectory: symlinkTemporaryDirectory,
+        )
+        let canonicalTemporaryPath = CodexPathCanonicalizer.path(realTemporaryDirectory)
+
+        XCTAssertTrue(session.homeURL.path.hasPrefix(canonicalTemporaryPath + "/voyager-codex-home-"))
+        XCTAssertEqual(session.homeURL, CodexPathCanonicalizer.url(session.homeURL))
+        XCTAssertEqual(session.workingDirectoryURL, CodexPathCanonicalizer.url(session.workingDirectoryURL))
+        XCTAssertEqual(
+            session.workingDirectoryURL.path,
+            session.homeURL.appendingPathComponent("session").path,
+        )
+        XCTAssertFalse(session.homeURL.path.contains("/alias/"))
+    }
+
     /// CBW-003-prepare_contextual_chat_request: Codex child 환경은 host secret을 상속하지 않는다.
     /// process에는 고정된 실행 경로와 격리 home/session 경로만 전달되는지 검증합니다.
     func testCodexProcessEnvironment_usesSecurityAllowlist() {
@@ -604,6 +636,50 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertThrowsError(try XCTUnwrap(recorder.snapshot()).get()) { error in
             XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("thread/start"))
         }
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: symlink session 경로는 App Server 계약 전체에서 실경로로 정규화한다.
+    /// permission profile, thread cwd, 응답 검증이 동일한 canonical path를 사용하는지 검증합니다.
+    func testCodexAppServerDriver_canonicalizesSymlinkedSessionPath() throws {
+        let fixture = try makeCBW003SymlinkSessionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let inputPipe = Pipe()
+        let recorder = ProviderExecutionResultRecorder<String>()
+        let driver = CodexAppServerProtocolDriver(
+            input: inputPipe.fileHandleForWriting,
+            model: "gpt-5-codex",
+            prompt: "Summarize the selected file",
+            thinking: nil,
+            workingDirectory: fixture.aliasURL,
+            onEvent: { _ in },
+            onComplete: recorder.record,
+        )
+
+        try driver.start()
+        _ = try providerExecutionReadJSONRequests(
+            from: inputPipe.fileHandleForReading,
+            expectedCount: 1,
+        )
+        driver.append(Data("{\"id\":1,\"result\":{}}\n".utf8))
+        let initializationRequests = try providerExecutionReadJSONRequests(
+            from: inputPipe.fileHandleForReading,
+            expectedCount: 2,
+        )
+        let threadStart = try XCTUnwrap(initializationRequests.first { $0["method"] as? String == "thread/start" })
+        let threadStartParams = try XCTUnwrap(threadStart["params"] as? [String: Any])
+        XCTAssertEqual(threadStartParams["cwd"] as? String, fixture.canonicalPath)
+
+        try driver.append(makeCBW003VerifiedThreadStartResponse(canonicalPath: fixture.canonicalPath))
+
+        if recorder.snapshot() == nil {
+            let turnRequests = try providerExecutionReadJSONRequests(
+                from: inputPipe.fileHandleForReading,
+                expectedCount: 1,
+            )
+            XCTAssertEqual(turnRequests.first?["method"] as? String, "turn/start")
+        }
+        XCTAssertNil(recorder.snapshot())
     }
 
     /// CBW-003-prepare_contextual_chat_request: 검증된 제한 profile만 Codex turn을 시작한다.
@@ -709,6 +785,44 @@ private extension CBW003ProviderExecutionResolutionTests {
             events.append(event)
         }
         return events
+    }
+
+    func makeCBW003SymlinkSessionFixture() throws -> CBW003SymlinkSessionFixture {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory
+            .appendingPathComponent("voyager-codex-symlink-\(UUID().uuidString)", isDirectory: true)
+        let realSessionURL = rootURL.appendingPathComponent("real-session", isDirectory: true)
+        let aliasURL = rootURL.appendingPathComponent("session-alias", isDirectory: true)
+        try fileManager.createDirectory(at: realSessionURL, withIntermediateDirectories: true)
+        try fileManager.createSymbolicLink(at: aliasURL, withDestinationURL: realSessionURL)
+        let resolvedPath = aliasURL.standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path(percentEncoded: false)
+        let canonicalPath = resolvedPath.hasSuffix("/")
+            ? String(resolvedPath.dropLast())
+            : resolvedPath
+        return CBW003SymlinkSessionFixture(
+            rootURL: rootURL,
+            aliasURL: aliasURL,
+            canonicalPath: canonicalPath,
+        )
+    }
+
+    func makeCBW003VerifiedThreadStartResponse(canonicalPath: String) throws -> Data {
+        let response: [String: Any] = [
+            "id": 2,
+            "result": [
+                "thread": ["id": "thread-1"],
+                "activePermissionProfile": ["id": CodexReferencePermissionProfile.identifier],
+                "sandbox": ["type": "readOnly", "networkAccess": false],
+                "approvalPolicy": "never",
+                "cwd": canonicalPath,
+                "runtimeWorkspaceRoots": [canonicalPath],
+            ],
+        ]
+        var data = try JSONSerialization.data(withJSONObject: response)
+        data.append(0x0A)
+        return data
     }
 
     func makeCodexPayload(requestContext: AiChatLockedRequestContextSnapshot) -> AiChatProviderRequestPayload {
@@ -826,6 +940,12 @@ private extension CBW003ProviderExecutionResolutionTests {
         }
         return uuid
     }
+}
+
+private struct CBW003SymlinkSessionFixture {
+    let rootURL: URL
+    let aliasURL: URL
+    let canonicalPath: String
 }
 
 private struct CBW003OpenAIRequestBody: Decodable {
