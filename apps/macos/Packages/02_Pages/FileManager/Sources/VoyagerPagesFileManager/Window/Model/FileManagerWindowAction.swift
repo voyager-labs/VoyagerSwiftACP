@@ -223,9 +223,9 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case onAppear
     case onDisappear
 
-    case contentTabMoveSucceeded(requestID: UUID)
+    case contentTabMoveSucceeded(request: ContentTabMoveRequest)
     case contentTabMoveRejected(
-        requestID: UUID,
+        request: ContentTabMoveRequest,
         category: ContentTabMoveFailurePresentation.Category,
     )
 
@@ -349,6 +349,12 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case persistTopNavigationMove(
             token: FileManagerTopNavigationOperationToken,
             source: FileManagerTopNavigationItemID,
+            destination: FileManagerTopNavigationMoveDestination,
+            discoveredLocationIDs: [String],
+        )
+        case persistTopNavigationPinnedGroupMove(
+            token: FileManagerTopNavigationOperationToken,
+            orderedIDs: [ContentTabID],
             destination: FileManagerTopNavigationMoveDestination,
             discoveredLocationIDs: [String],
         )
