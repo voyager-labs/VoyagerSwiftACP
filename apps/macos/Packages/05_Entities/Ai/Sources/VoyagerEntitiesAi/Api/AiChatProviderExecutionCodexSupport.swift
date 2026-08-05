@@ -190,7 +190,7 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
                 "method": "initialize",
                 "params": [
                     "clientInfo": ["name": "Voyager", "version": "1"],
-                    "capabilities": ["experimentalApi": false],
+                    "capabilities": ["experimentalApi": true],
                 ],
             ])
         }
@@ -328,35 +328,65 @@ final class CodexAppServerProtocolDriver: @unchecked Sendable {
         }
         switch id {
         case 1:
-            try send(["method": "initialized"])
-            var params: [String: Any] = [
-                "model": model,
-                "ephemeral": true,
-                "approvalPolicy": "never",
-                "sandbox": "read-only",
-            ]
-            if let path = workingDirectory?.path { params["cwd"] = path }
-            try send(["id": 2, "method": "thread/start", "params": params])
+            try sendThreadStartRequest()
         case 2:
-            guard let thread = result["thread"] as? [String: Any], let threadID = thread["id"] as? String else {
-                throw CodexAppServerParsingError.malformedKnownEvent("thread/start")
-            }
-            var params: [String: Any] = [
-                "threadId": threadID,
-                "input": [["type": "text", "text": prompt]],
-                "model": model,
-            ]
-            if let effort = AiChatProviderExecutionClient.codexReasoningEffort(from: thinking) {
-                params["effort"] = effort
-            }
-            try send(["id": 3, "method": "turn/start", "params": params])
+            try sendTurnStartRequest(result: result)
         case 3:
-            guard result["turn"] is [String: Any] else {
-                throw CodexAppServerParsingError.malformedKnownEvent("turn/start")
-            }
+            try validateTurnStartResponse(result)
         default:
             break
         }
+    }
+
+    private func sendThreadStartRequest() throws {
+        try send(["method": "initialized"])
+        var params: [String: Any] = [
+            "model": model,
+            "ephemeral": true,
+            "approvalPolicy": "never",
+            "permissions": CodexReferencePermissionProfile.identifier,
+        ]
+        if let path = workingDirectory?.path { params["cwd"] = path }
+        try send(["id": 2, "method": "thread/start", "params": params])
+    }
+
+    private func sendTurnStartRequest(result: [String: Any]) throws {
+        guard let thread = result["thread"] as? [String: Any], let threadID = thread["id"] as? String,
+              validatesReferencePermissionProfile(result)
+        else {
+            throw CodexAppServerParsingError.malformedKnownEvent("thread/start")
+        }
+        var params: [String: Any] = [
+            "threadId": threadID,
+            "input": [["type": "text", "text": prompt]],
+            "model": model,
+        ]
+        if let effort = AiChatProviderExecutionClient.codexReasoningEffort(from: thinking) {
+            params["effort"] = effort
+        }
+        try send(["id": 3, "method": "turn/start", "params": params])
+    }
+
+    private func validateTurnStartResponse(_ result: [String: Any]) throws {
+        guard result["turn"] is [String: Any] else {
+            throw CodexAppServerParsingError.malformedKnownEvent("turn/start")
+        }
+    }
+
+    private func validatesReferencePermissionProfile(_ result: [String: Any]) -> Bool {
+        guard let expectedPath = workingDirectory?.standardizedFileURL.path,
+              let profile = result["activePermissionProfile"] as? [String: Any],
+              profile["id"] as? String == CodexReferencePermissionProfile.identifier,
+              let sandbox = result["sandbox"] as? [String: Any],
+              sandbox["type"] as? String == "readOnly",
+              sandbox["networkAccess"] as? Bool == false,
+              result["approvalPolicy"] as? String == "never",
+              result["cwd"] as? String == expectedPath,
+              result["runtimeWorkspaceRoots"] as? [String] == [expectedPath]
+        else {
+            return false
+        }
+        return true
     }
 
     private func send(_ object: [String: Any]) throws {

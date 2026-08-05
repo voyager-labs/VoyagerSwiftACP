@@ -88,7 +88,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     func testExecute_chatgptCodexMalformedKnownEvent_emitsInvalidRequestFailure() throws {
         let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
         let client = AiChatProviderExecutionClient.live(
-            codexExecutor: { _, _, _, _, _ in
+            codexExecutor: { _, _ in
                 throw CodexAppServerParsingError.malformedKnownEvent("item/started")
             },
         )

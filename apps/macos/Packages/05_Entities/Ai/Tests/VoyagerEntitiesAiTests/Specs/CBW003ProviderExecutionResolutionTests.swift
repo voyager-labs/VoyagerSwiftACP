@@ -417,6 +417,136 @@ extension CBW003ProviderExecutionResolutionTests {
         }
         XCTAssertTrue(accumulator.stringValue().isEmpty)
     }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex 읽기 권한은 선택된 workspace 실제 경로로 제한된다.
+    /// 같은 workspace의 비선택 파일과 외부·reference-only 경로가 permission profile에 포함되지 않는지 검증합니다.
+    func testCodexReadablePaths_onlyIncludesSelectedInScopeRealPaths() {
+        let workingDirectory = URL(fileURLWithPath: "/tmp/project")
+        let selectedPath = "/tmp/project/Selected.swift"
+        let requestContext = AiChatLockedRequestContextSnapshot(parts: [
+            AiChatLockedContextPartSnapshot(
+                source: .attachment,
+                resolution: .providerNativeFile(
+                    kind: .codexPathScope,
+                    mimeType: "text/plain",
+                    metadata: ["path": selectedPath],
+                ),
+                fileKind: .file,
+                canonicalPath: selectedPath,
+                displayPath: selectedPath,
+            ),
+            AiChatLockedContextPartSnapshot(
+                source: .attachment,
+                resolution: .providerNativeFile(
+                    kind: .codexPathScope,
+                    mimeType: "text/plain",
+                    metadata: ["path": "/tmp/outside/Secret.swift"],
+                ),
+                fileKind: .file,
+                canonicalPath: "/tmp/outside/Secret.swift",
+                displayPath: "/tmp/outside/Secret.swift",
+            ),
+            AiChatLockedContextPartSnapshot(
+                source: .attachment,
+                resolution: .referenceOnly(metadata: ["path": "/tmp/project/Reference.swift"]),
+                fileKind: .file,
+                canonicalPath: "/tmp/project/Reference.swift",
+                displayPath: "/tmp/project/Reference.swift",
+            ),
+        ])
+        let payload = makeCodexPayload(requestContext: requestContext)
+
+        let readablePaths = AiChatProviderExecutionClient.codexReadablePaths(
+            payload: payload,
+            workingDirectory: workingDirectory,
+        )
+
+        XCTAssertEqual(readablePaths.map(\.path), [selectedPath])
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex permission profile은 root deny 후 선택 경로만 재허용한다.
+    /// project root 전체가 아니라 isolated session cwd와 선택 파일만 read entry가 되는지 검증합니다.
+    func testCodexReferencePermissionProfile_deniesRootAndAllowsSelectedPaths() throws {
+        let selectedURL = URL(fileURLWithPath: "/tmp/project/Selected.swift")
+        let sessionURL = URL(fileURLWithPath: "/tmp/voyager-session")
+        let configuration = try CodexReferencePermissionProfile.configuration(
+            readablePaths: [selectedURL],
+            sessionDirectory: sessionURL,
+        )
+        let lines = Set(configuration.split(separator: "\n").map(String.init))
+        let selectedPath = selectedURL.resolvingSymlinksInPath().path
+        let sessionPath = sessionURL.resolvingSymlinksInPath().path
+
+        XCTAssertTrue(lines.contains("\":root\" = \"deny\""))
+        XCTAssertTrue(lines.contains("\":minimal\" = \"read\""))
+        XCTAssertTrue(lines.contains("\"\(selectedPath)\" = \"read\""))
+        XCTAssertTrue(lines.contains("\"\(sessionPath)\" = \"read\""))
+        XCTAssertFalse(lines.contains("\"/tmp/project\" = \"read\""))
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: Codex child 환경은 host secret을 상속하지 않는다.
+    /// process에는 고정된 실행 경로와 격리 home/session 경로만 전달되는지 검증합니다.
+    func testCodexProcessEnvironment_usesSecurityAllowlist() {
+        let homeURL = URL(fileURLWithPath: "/tmp/voyager-codex-home")
+        let environment = AiChatProviderExecutionClient.codexProcessEnvironment(codexHomeURL: homeURL)
+
+        XCTAssertEqual(Set(environment.keys), ["CODEX_HOME", "HOME", "LANG", "PATH", "SHELL", "TMPDIR"])
+        XCTAssertEqual(environment["CODEX_HOME"], homeURL.path)
+        XCTAssertEqual(environment["HOME"], homeURL.path)
+        XCTAssertEqual(environment["TMPDIR"], homeURL.appendingPathComponent("session").path)
+        XCTAssertNil(environment["VOYAGER_CODEX_WORKING_DIRECTORY"])
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: App Server는 선택 permission profile 적용을 증명해야 한다.
+    /// legacy 또는 profile fallback 응답이 turn 실행으로 이어지지 않고 fail-closed 되는지 검증합니다.
+    func testCodexAppServerDriver_rejectsUnverifiedPermissionProfile() {
+        let recorder = ProviderExecutionResultRecorder<String>()
+        let driver = providerExecutionMakeCodexAppServerDriver(onComplete: recorder.record)
+
+        let response = #"{"id":2,"result":{"thread":{"id":"thread-1"},"sandbox":{"type":"readOnly"}}}"#
+        driver.append(Data((response + "\n").utf8))
+
+        XCTAssertThrowsError(try XCTUnwrap(recorder.snapshot()).get()) { error in
+            XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("thread/start"))
+        }
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: 검증된 제한 profile만 Codex turn을 시작한다.
+    /// profile·sandbox·approval·cwd·runtime root가 모두 일치할 때 turn/start가 전송되는지 검증합니다.
+    func testCodexAppServerDriver_acceptsVerifiedPermissionProfile() throws {
+        let inputPipe = Pipe()
+        let sessionPath = "/tmp/VoyagerCodexSession"
+        let driver = CodexAppServerProtocolDriver(
+            input: inputPipe.fileHandleForWriting,
+            model: "gpt-5-codex",
+            prompt: "Summarize the selected file",
+            thinking: nil,
+            workingDirectory: URL(fileURLWithPath: sessionPath),
+            onEvent: { _ in },
+            onComplete: { _ in },
+        )
+        let response: [String: Any] = [
+            "id": 2,
+            "result": [
+                "thread": ["id": "thread-1"],
+                "activePermissionProfile": ["id": CodexReferencePermissionProfile.identifier],
+                "sandbox": ["type": "readOnly", "networkAccess": false],
+                "approvalPolicy": "never",
+                "cwd": sessionPath,
+                "runtimeWorkspaceRoots": [sessionPath],
+            ],
+        ]
+        var responseData = try JSONSerialization.data(withJSONObject: response)
+        responseData.append(0x0A)
+
+        driver.append(responseData)
+        let requests = try providerExecutionReadJSONRequests(
+            from: inputPipe.fileHandleForReading,
+            expectedCount: 1,
+        )
+
+        XCTAssertEqual(requests.first?["method"] as? String, "turn/start")
+    }
 }
 
 private extension CBW003ProviderExecutionResolutionTests {
@@ -484,6 +614,23 @@ private extension CBW003ProviderExecutionResolutionTests {
             events.append(event)
         }
         return events
+    }
+
+    func makeCodexPayload(requestContext: AiChatLockedRequestContextSnapshot) -> AiChatProviderRequestPayload {
+        AiChatProviderRequestPayload(
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5-codex",
+            messages: [],
+            context: AiChatProviderContextBundle(
+                sessionID: nil,
+                requestID: AiChatRequestID(rawValue: makeCBW003UUID("00000000-0000-0000-0000-000000000201")),
+                runID: AiChatRunID(rawValue: makeCBW003UUID("00000000-0000-0000-0000-000000000202")),
+                requestContext: requestContext,
+                promptSummary: nil,
+                submittedAtMs: nil,
+            ),
+            thinking: nil,
+        )
     }
 
     func makeCBW003LockedContext() -> AiChatLockedRequestContextSnapshot {

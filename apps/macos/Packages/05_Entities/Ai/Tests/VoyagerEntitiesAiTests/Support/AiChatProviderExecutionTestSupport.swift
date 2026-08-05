@@ -80,7 +80,7 @@ func assertRegistryRoute(
     let expectedNow: Int64 = 42424
     nonisolated(unsafe) var executedProviders: [AiProvider] = []
     nonisolated(unsafe) var observedInput: AiChatProviderExecutionInput?
-    let codexExecutor: AiChatProviderCodexExecutor = { _, _, _, _, _ in
+    let codexExecutor: AiChatProviderCodexExecutor = { _, _ in
         "registry-stub"
     }
     let executor = AiChatProviderExecutor { input in
@@ -123,17 +123,34 @@ func assertCodexProbe(
     XCTAssertTrue(prompt.contains("current_context:"))
 }
 
+func providerExecutionReadJSONRequests(
+    from handle: FileHandle,
+    expectedCount: Int,
+) throws -> [[String: Any]] {
+    var data = Data()
+    var lines: [Data.SubSequence] = []
+    while lines.count < expectedCount {
+        let chunk = handle.availableData
+        guard !chunk.isEmpty else { break }
+        data.append(chunk)
+        lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+    }
+    return try lines.map { line in
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line)) as? [String: Any])
+    }
+}
+
 func makeCancellableCodexClient(
     executorEntered: XCTestExpectation,
     executorCancelled: XCTestExpectation,
 ) -> AiChatProviderExecutionClient {
     AiChatProviderExecutionClient.live(
         now: { 30002 },
-        codexExecutor: { model, prompt, thinking, credential, _ in
-            XCTAssertEqual(model, "gpt-5-codex")
-            XCTAssertEqual(thinking, .effort(.high))
-            XCTAssertEqual(credential.accessToken, "codex-token")
-            XCTAssertTrue(prompt.contains("current_context:"))
+        codexExecutor: { request, _ in
+            XCTAssertEqual(request.model, "gpt-5-codex")
+            XCTAssertEqual(request.thinking, .effort(.high))
+            XCTAssertEqual(request.credential.accessToken, "codex-token")
+            XCTAssertTrue(request.prompt.contains("current_context:"))
             executorEntered.fulfill()
             return try await providerExecutionWaitForCancellation(onCancel: executorCancelled.fulfill)
         },

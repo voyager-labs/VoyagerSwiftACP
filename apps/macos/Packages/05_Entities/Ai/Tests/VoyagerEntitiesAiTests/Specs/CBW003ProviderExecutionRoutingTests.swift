@@ -63,7 +63,7 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         nonisolated(unsafe) var codexInvocationCount = 0
         let client = AiChatProviderExecutionClient.live(
             session: session,
-            codexExecutor: { _, _, _, _, _ in
+            codexExecutor: { _, _ in
                 codexInvocationCount += 1
                 return "unreachable"
             },
@@ -157,16 +157,16 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         )
         let client = AiChatProviderExecutionClient.live(
             now: { 30001 },
-            codexExecutor: { model, prompt, thinking, credential, onDelta in
-                XCTAssertEqual(model, "gpt-5-codex")
-                XCTAssertEqual(thinking, .effort(.high))
-                XCTAssertEqual(credential.accessToken, "codex-token")
-                XCTAssertTrue(prompt.contains("current_context:"))
-                XCTAssertTrue(prompt.contains("summary: locked workspace context"))
-                XCTAssertTrue(prompt.contains("added_attachments:"))
-                XCTAssertTrue(prompt.contains("Notes.txt [resolvedText]"))
-                XCTAssertTrue(prompt.contains("Attachment body from locked snapshot"))
-                XCTAssertTrue(prompt.contains("User:\nPing"))
+            codexExecutor: { request, onDelta in
+                XCTAssertEqual(request.model, "gpt-5-codex")
+                XCTAssertEqual(request.thinking, .effort(.high))
+                XCTAssertEqual(request.credential.accessToken, "codex-token")
+                XCTAssertTrue(request.prompt.contains("current_context:"))
+                XCTAssertTrue(request.prompt.contains("summary: locked workspace context"))
+                XCTAssertTrue(request.prompt.contains("added_attachments:"))
+                XCTAssertTrue(request.prompt.contains("Notes.txt [resolvedText]"))
+                XCTAssertTrue(request.prompt.contains("Attachment body from locked snapshot"))
+                XCTAssertTrue(request.prompt.contains("User:\nPing"))
                 onDelta(.agentMessageDelta(itemID: "message-legacy", delta: "Codex "))
                 onDelta(.agentMessageDelta(itemID: "message-legacy", delta: "answer"))
                 return "Codex answer\n"
@@ -207,7 +207,7 @@ extension CBW003ProviderExecutionRoutingTests {
         let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
         let client = AiChatProviderExecutionClient.live(
             now: { 30003 },
-            codexExecutor: { _, _, _, _, onEvent in
+            codexExecutor: { _, onEvent in
                 Self.emitCodexTypedActivityEvents(onEvent)
                 return "Codex answer"
             },
@@ -419,45 +419,39 @@ extension CBW003ProviderExecutionRoutingTests {
         XCTAssertFalse(arguments.contains("--output-last-message"))
     }
 
-    /// CBW-003-prepare_contextual_chat_request: reference-only Codex chat은 workspace write를 허용하지 않는다.
-    /// approval prompt가 없는 실행에서도 활성 workspace 파일을 수정할 수 없도록 thread sandbox를 검증합니다.
-    func testCodexAppServerDriver_startsReferenceChatWithReadOnlySandbox() throws {
-        func readRequests(from handle: FileHandle, expectedCount: Int) throws -> [[String: Any]] {
-            var data = Data()
-            var lines: [Data.SubSequence] = []
-            while lines.count < expectedCount {
-                let chunk = handle.availableData
-                guard !chunk.isEmpty else { break }
-                data.append(chunk)
-                lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
-            }
-            return try lines.map { line in
-                try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line)) as? [String: Any])
-            }
-        }
-
+    /// CBW-003-prepare_contextual_chat_request: reference-only Codex chat은 선택 경로 profile만 사용한다.
+    /// approval prompt가 없는 실행에서도 비선택 workspace 파일을 읽지 못하도록 thread 권한을 검증합니다.
+    func testCodexAppServerDriver_startsReferenceChatWithSelectedPermissionProfile() throws {
         let inputPipe = Pipe()
         let driver = CodexAppServerProtocolDriver(
             input: inputPipe.fileHandleForWriting,
             model: "gpt-5-codex",
             prompt: "Summarize this project",
             thinking: nil,
-            workingDirectory: URL(fileURLWithPath: "/tmp/ReferenceProject"),
+            workingDirectory: URL(fileURLWithPath: "/tmp/VoyagerCodexSession"),
             onEvent: { _ in },
             onComplete: { _ in },
         )
 
         try driver.start()
-        _ = try readRequests(from: inputPipe.fileHandleForReading, expectedCount: 1)
+        let initialization = try providerExecutionReadJSONRequests(
+            from: inputPipe.fileHandleForReading,
+            expectedCount: 1,
+        )
         driver.append(Data("{\"id\":1,\"result\":{}}\n".utf8))
-        let requests = try readRequests(from: inputPipe.fileHandleForReading, expectedCount: 2)
+        let requests = try providerExecutionReadJSONRequests(
+            from: inputPipe.fileHandleForReading,
+            expectedCount: 2,
+        )
         let threadStart = try XCTUnwrap(requests.first { $0["method"] as? String == "thread/start" })
         let params = try XCTUnwrap(threadStart["params"] as? [String: Any])
-
+        let initializeParams = try XCTUnwrap(initialization.first?["params"] as? [String: Any])
+        let capabilities = try XCTUnwrap(initializeParams["capabilities"] as? [String: Any])
+        XCTAssertEqual(capabilities["experimentalApi"] as? Bool, true)
         XCTAssertEqual(params["approvalPolicy"] as? String, "never")
-        XCTAssertEqual(params["sandbox"] as? String, "read-only")
-        XCTAssertEqual(params["cwd"] as? String, "/tmp/ReferenceProject")
-        XCTAssertNotEqual(params["sandbox"] as? String, "workspace-write")
+        XCTAssertEqual(params["permissions"] as? String, "voyager-reference")
+        XCTAssertEqual(params["cwd"] as? String, "/tmp/VoyagerCodexSession")
+        XCTAssertNil(params["sandbox"])
     }
 
     func testExecute_registryExecutorFailureEvent_preservesFailureSurface() throws {

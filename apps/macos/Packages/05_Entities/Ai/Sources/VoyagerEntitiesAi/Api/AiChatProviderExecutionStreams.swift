@@ -292,14 +292,20 @@ extension AiChatProviderExecutionClient {
                 let activityState = CodexActivityStateBox(context: context)
 
                 do {
-                    let prompt = makeCodexPrompt(payload: preflight.payload)
+                    let workingDirectory = codexWorkingDirectory()
+                    let prompt = makeCodexPrompt(payload: preflight.payload, workingDirectory: workingDirectory)
+                    let readablePaths = codexReadablePaths(
+                        payload: preflight.payload,
+                        workingDirectory: workingDirectory,
+                    )
                     let credential = try codexCredential(from: preflight.credential)
-                    let finalText = try await executor(
-                        preflight.payload.rawModelID,
-                        prompt,
-                        preflight.payload.thinking,
-                        credential,
-                    ) { event in
+                    let finalText = try await executor(CodexExecutionRequest(
+                        model: preflight.payload.rawModelID,
+                        prompt: prompt,
+                        thinking: preflight.payload.thinking,
+                        readablePaths: readablePaths,
+                        credential: credential,
+                    )) { event in
                         for emission in activityState.consume(event) {
                             emitProviderPayload(emission, context: context, continuation: continuation)
                         }
