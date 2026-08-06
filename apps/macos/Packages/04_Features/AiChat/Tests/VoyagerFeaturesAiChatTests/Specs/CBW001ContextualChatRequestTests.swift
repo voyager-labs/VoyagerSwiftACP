@@ -1632,6 +1632,58 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertNotNil(latestResult)
     }
 
+    /// CBW-001-render_assistant_markdown: 세션 전환 전 highlight 완료는 현재 세션 요청을 무효화하지 않는다.
+    /// 같은 row와 code를 가진 이전 세션 작업이 늦게 정리되어도 현재 세션 결과의 소유권을 유지하는지 검증합니다.
+    /// - 검증 내용: 세션 A 요청 후 세션 B 동일 요청을 시작하고 A를 먼저 완료한 뒤 B 결과의 display eligibility를 확인합니다.
+    /// - 사전 조건: 하나의 render session, 서로 다른 session ID, 동일 stored row와 Swift fence가 있습니다.
+    /// - 기대 결과: 세션 A 결과는 폐기되고 세션 B 결과만 표시 가능한 상태로 반환됩니다.
+    func testRenderAssistantMarkdownScopesHighlightRequestsToSessionLifecycle() async throws {
+        let recorder = IndexedSyntaxHighlightingRecorder()
+        let client = AiChatSyntaxHighlightingClient.testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { ["swift"] },
+            highlight: { code, _, _ in await recorder.highlight(code: code) },
+        )
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: client)
+        let source = "```swift\nlet shared = true\n```\n"
+        let row = AiChatTranscriptRowDiscriminator.message(index: 0)
+
+        session.prepareForSession(AiChatSessionID(rawValue: UUID()))
+        let firstBlock = try XCTUnwrap(session.render(content: source, transcriptRow: row).blocks.first)
+        let firstTask = Task {
+            await session.highlight(
+                firstBlock,
+                transcriptRow: row,
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 1,
+            )
+        }
+        await waitForIndexedSyntaxHighlightingCalls(1, recorder: recorder)
+
+        session.prepareForSession(AiChatSessionID(rawValue: UUID()))
+        let secondBlock = try XCTUnwrap(session.render(content: source, transcriptRow: row).blocks.first)
+        let secondTask = Task {
+            await session.highlight(
+                secondBlock,
+                transcriptRow: row,
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 1,
+            )
+        }
+        await waitForIndexedSyntaxHighlightingCalls(2, recorder: recorder)
+
+        await recorder.resume(invocation: 0, source: "let shared = true\n")
+        let firstResult = await firstTask.value
+        await recorder.resume(invocation: 1, source: "let shared = true\n")
+        let secondResult = await secondTask.value
+
+        XCTAssertFalse(firstResult?.isEligibleForDisplay ?? false)
+        XCTAssertNotNil(secondResult)
+        XCTAssertTrue(secondResult?.isEligibleForDisplay == true)
+    }
+
     /// CBW-001-render_assistant_markdown: cancellation과 LRU bounds는 결과 적용과 memory growth를 제한한다.
     /// pending coalescing 취소와 많은 고유 source가 실패 cache나 무제한 cache로 이어지지 않는지 검증합니다.
     /// - 검증 내용: cancelled result eligibility와 128-entry/8MiB LRU eviction 및 재호출을 확인합니다.
@@ -2153,6 +2205,76 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertTrue(renderSession.hasCapturedViewState)
 
         renderSession.prepareForSession(sessionID, hasTranscriptContent: false)
+
+        XCTAssertEqual(renderSession.diagnostics.retainedDocumentCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, 0)
+        XCTAssertFalse(renderSession.hasCapturedViewState)
+    }
+
+    /// CBW-001-render_assistant_markdown: 같은 세션의 saved snapshot 교체는 이전 Markdown view state를 해제한다.
+    /// 비어 있지 않은 transcript가 같은 session ID의 다른 snapshot으로 교체되어도 이전 row cache와 selection을 폐기하는지 검증합니다.
+    /// - 검증 내용: stable·streaming source 교체 전후의 retained document, projection entry·bytes와 captured view state를 확인합니다.
+    /// - 사전 조건: 기존 대용량 stored 또는 streaming row와 선택 snapshot이 있고 같은 session ID에 새 snapshot이 적용됩니다.
+    /// - 기대 결과: 새 snapshot render 전 호환되지 않는 document·projection cache와 선택 snapshot이 모두 해제됩니다.
+    func testRenderAssistantMarkdownReleasesViewStateAcrossSameSessionTranscriptReplacement() throws {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let content = String(repeating: "same-session-replacement-payload ", count: 4096)
+
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptSources: [.message(index: 3): content],
+        )
+        let rendered = renderSession.render(content: content, transcriptRow: .message(index: 3))
+        let block = try XCTUnwrap(rendered.blocks.first)
+        renderSession.capture(.init(
+            presentationID: block.presentationID,
+            selection: .init(utf16Location: 0, utf16Length: 12),
+            isFirstResponder: true,
+            outerScrollOffset: 42,
+            currentSearchDescriptor: nil,
+            transcriptRow: .message(index: 3),
+        ))
+
+        XCTAssertEqual(renderSession.diagnostics.retainedDocumentCount, 1)
+        XCTAssertGreaterThan(renderSession.retainedSelectionProjectionBytes, 64 * 1024)
+        XCTAssertTrue(renderSession.hasCapturedViewState)
+
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptSources: [.message(index: 0): "replacement"],
+        )
+
+        XCTAssertEqual(renderSession.diagnostics.retainedDocumentCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, 0)
+        XCTAssertFalse(renderSession.hasCapturedViewState)
+
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptSources: [:],
+            streamingTranscriptSource: content,
+        )
+        let streaming = renderSession.render(content: content, transcriptRow: .streamingAssistant)
+        let streamingBlock = try XCTUnwrap(streaming.blocks.first)
+        renderSession.capture(.init(
+            presentationID: streamingBlock.presentationID,
+            selection: .init(utf16Location: 0, utf16Length: 12),
+            isFirstResponder: true,
+            outerScrollOffset: 42,
+            currentSearchDescriptor: nil,
+            transcriptRow: .streamingAssistant,
+        ))
+
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptSources: [.message(index: 0): "unrelated replacement"],
+        )
 
         XCTAssertEqual(renderSession.diagnostics.retainedDocumentCount, 0)
         XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)

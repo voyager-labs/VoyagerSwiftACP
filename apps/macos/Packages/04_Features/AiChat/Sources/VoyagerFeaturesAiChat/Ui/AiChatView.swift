@@ -89,8 +89,7 @@ public struct AiChatView: View {
     private func makeTranscriptSearchRenderValues(
         state: AiChatState,
     ) -> (request: AiChatTranscriptSearchProjectionRequest, context: AiChatTranscriptSearchRenderContext) {
-        let isTranscriptEmpty = state.transcriptHistory.isEmpty && state.streamingAssistantDraft == nil
-        assistantMarkdownRenderSession.prepareForSession(state.sessionID, hasTranscriptContent: !isTranscriptEmpty)
+        assistantMarkdownRenderSession.prepareForTranscript(in: state)
         let request = transcriptSearchProjection.request(
             for: state,
             renderSession: assistantMarkdownRenderSession,

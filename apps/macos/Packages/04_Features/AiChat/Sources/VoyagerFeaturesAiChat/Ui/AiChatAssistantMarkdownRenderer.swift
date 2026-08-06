@@ -12,32 +12,11 @@ struct AiChatAssistantMarkdownRenderedBlock: Equatable, Identifiable {
     }
 }
 
-struct AiChatAssistantMarkdownHighlightIdentity: Hashable {
-    let transcriptRow: AiChatTranscriptRowDiscriminator
-    let presentationID: AiChatMarkdownDocument.BlockID
-
-    var syntaxHighlightingIdentity: AiChatSyntaxHighlightingClient.RequestIdentity {
-        let rowIdentity = switch transcriptRow {
-        case let .message(index): "message:\(index)"
-        case .streamingAssistant: "streaming-assistant"
-        }
-        return .init(rawValue: "\(rowIdentity):\(presentationID.rawValue)")
-    }
-}
-
 struct AiChatAssistantMarkdownRenderedDocument: Equatable {
     let transcriptRow: AiChatTranscriptRowDiscriminator
     let document: AiChatMarkdownDocument
     let blocks: [AiChatAssistantMarkdownRenderedBlock]
     let ownsChildVerticalScroll = false
-}
-
-struct AiChatAssistantMarkdownRenderDiagnostics: Equatable {
-    var documentParseCount = 0
-    var retainedDocumentCount = 0
-    var blockPreparationCount: [AiChatMarkdownDocument.BlockID: Int] = [:]
-    var highlightGeneration: [AiChatAssistantMarkdownHighlightIdentity: UInt64] = [:]
-    let streamingCoalescingLifecycleCount = 1
 }
 
 struct AiChatAssistantMarkdownViewSnapshot: Equatable {
@@ -68,16 +47,19 @@ struct AiChatAssistantMarkdownViewSnapshot: Equatable {
 @MainActor
 final class AiChatAssistantMarkdownRenderSession: ObservableObject {
     private let highlightingClient: AiChatSyntaxHighlightingClient
-    private var renderedByRow: [AiChatTranscriptRowDiscriminator: AiChatAssistantMarkdownRenderedDocument] = [:]
-    private var preparedPresentationIDs: Set<AiChatMarkdownDocument.BlockID> = []
-    private var selectionProjections: [SelectionProjectionKey: SelectionProjection] = [:]
-    private var activeHighlightRequests: [AiChatAssistantMarkdownHighlightIdentity: HighlightRequest] = [:]
-    private var hasPreparedSession = false
-    private var preparedSessionID: AiChatSessionID?
-    private var capturedSnapshot: AiChatAssistantMarkdownViewSnapshot?
+    var renderedByRow: [AiChatTranscriptRowDiscriminator: AiChatAssistantMarkdownRenderedDocument] = [:]
+    var preparedPresentationIDs: Set<AiChatMarkdownDocument.BlockID> = []
+    var selectionProjections: [SelectionProjectionKey: SelectionProjection] = [:]
+    var activeHighlightRequests: [AiChatAssistantMarkdownHighlightIdentity: HighlightRequest] = [:]
+    var hasPreparedSession = false
+    var preparedSessionID: AiChatSessionID?
+    var preparedHasTranscriptContent = false
+    var renderLifecycleRevision: UInt64 = 0
+    private var nextHighlightRequestID: UInt64 = 0
+    var capturedSnapshot: AiChatAssistantMarkdownViewSnapshot?
     private var capturedSelectionText: String?
     private var capturedSearchText: String?
-    private(set) var diagnostics = AiChatAssistantMarkdownRenderDiagnostics()
+    var diagnostics = AiChatAssistantMarkdownRenderDiagnostics()
     private(set) var handoffRevision: UInt64 = 0
 
     var hasCapturedViewState: Bool {
@@ -132,9 +114,7 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
             handoffCapturedViewState(to: transcriptRow)
         }
         renderedByRow[transcriptRow] = rendered
-        diagnostics.retainedDocumentCount = Set(
-            renderedByRow.values.map(\.document.rawSource),
-        ).count
+        updateRetainedDocumentCount()
         for (index, block) in blocks.enumerated() {
             registerSelectionProjection(
                 presentationID: block.presentationID,
@@ -270,11 +250,17 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
         let requestKey = AiChatAssistantMarkdownHighlightIdentity(
             transcriptRow: transcriptRow,
             presentationID: renderedBlock.presentationID,
+            renderLifecycleRevision: renderLifecycleRevision,
         )
         let previousGeneration = diagnostics.highlightGeneration[requestKey] ?? 0
         let nextGeneration = max(previousGeneration &+ 1, generation)
         diagnostics.highlightGeneration[requestKey] = nextGeneration
-        let request = HighlightRequest(generation: nextGeneration, source: code.payload)
+        nextHighlightRequestID &+= 1
+        let request = HighlightRequest(
+            requestID: nextHighlightRequestID,
+            generation: nextGeneration,
+            source: code.payload,
+        )
         activeHighlightRequests[requestKey] = request
         defer {
             if activeHighlightRequests[requestKey] == request {
@@ -438,19 +424,20 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
         )
     }
 
-    private struct SelectionProjectionKey: Hashable {
+    struct SelectionProjectionKey: Hashable {
         let transcriptRow: AiChatTranscriptRowDiscriminator
         let presentationID: AiChatMarkdownDocument.BlockID
     }
 
-    private struct SelectionProjection {
+    struct SelectionProjection {
         let plainText: String
         let searchText: String
         let transcriptRow: AiChatTranscriptRowDiscriminator
         let blockIndex: Int
     }
 
-    private struct HighlightRequest: Equatable {
+    struct HighlightRequest: Equatable {
+        let requestID: UInt64
         let generation: UInt64
         let source: String
     }
@@ -483,43 +470,6 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
               fallback.upperBound <= projection.count
         else { return nil }
         return fallback
-    }
-}
-
-extension AiChatAssistantMarkdownRenderSession {
-    var retainedSelectionProjectionCount: Int {
-        selectionProjections.count
-    }
-
-    var retainedSelectionProjectionBytes: Int {
-        selectionProjections.values.reduce(into: 0) { byteCount, projection in
-            byteCount += projection.plainText.utf8.count
-            byteCount += projection.searchText.utf8.count
-        }
-    }
-
-    func prepareForSession(
-        _ sessionID: AiChatSessionID?,
-        hasTranscriptContent: Bool = true,
-    ) {
-        let didChangeSession = !hasPreparedSession || preparedSessionID != sessionID
-        guard didChangeSession || !hasTranscriptContent else { return }
-        if didChangeSession {
-            hasPreparedSession = true
-            preparedSessionID = sessionID
-        }
-        resetRetainedTranscriptState()
-    }
-
-    private func resetRetainedTranscriptState() {
-        renderedByRow.removeAll(keepingCapacity: false)
-        preparedPresentationIDs.removeAll(keepingCapacity: false)
-        selectionProjections.removeAll(keepingCapacity: false)
-        activeHighlightRequests.removeAll(keepingCapacity: false)
-        clearViewState()
-        diagnostics.retainedDocumentCount = 0
-        diagnostics.blockPreparationCount.removeAll(keepingCapacity: false)
-        diagnostics.highlightGeneration.removeAll(keepingCapacity: false)
     }
 }
 
