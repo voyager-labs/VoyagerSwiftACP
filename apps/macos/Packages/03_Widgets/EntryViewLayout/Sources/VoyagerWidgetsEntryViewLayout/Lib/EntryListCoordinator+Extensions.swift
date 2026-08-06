@@ -435,8 +435,12 @@ extension EntryListCoordinator {
             let newChildren = newParent.children
             let oldIDs = oldChildren.map(\.id)
             let newIDs = newChildren.map(\.id)
-            guard Set(oldIDs).intersection(Set(newIDs)).count >= min(oldIDs.count, newIDs.count) - 1
+            let retained = Set(oldIDs).intersection(newIDs)
+            guard retained.count >= min(oldIDs.count, newIDs.count) - 1
             else { return false }
+            let retainedOrderPreserved = oldIDs.filter { retained.contains($0) }
+                == newIDs.filter { retained.contains($0) }
+            guard retainedOrderPreserved else { return false }
             let removed = IndexSet(oldIDs.enumerated().compactMap { newIDs.contains($0.element) ? nil : $0.offset })
             let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDs.contains($0.element) ? nil : $0.offset })
             guard max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count) else { return false }

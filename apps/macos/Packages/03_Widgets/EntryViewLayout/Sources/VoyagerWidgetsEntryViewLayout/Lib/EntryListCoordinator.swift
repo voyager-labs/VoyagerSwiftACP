@@ -303,6 +303,7 @@ public final class EntryListCoordinator: NSObject {
             tableView.reloadData()
             applyGroupExpansionState()
             syncListSelectionFromStore()
+            restoreScrollPositionIfNeeded()
             requestThumbnailsForVisibleRows()
         } else {
             projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
@@ -313,6 +314,7 @@ public final class EntryListCoordinator: NSObject {
                 tableView.reloadData()
                 applyGroupExpansionState()
                 syncListSelectionFromStore()
+                restoreScrollPositionIfNeeded()
                 requestThumbnailsForVisibleRows()
             }
         }
