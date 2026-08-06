@@ -281,14 +281,40 @@ public final class EntryListCoordinator: NSObject {
         }
 
         let flatItems = makeOutlineItems(state: state)
-        projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
-            guard let self else { return }
-            outlineItems = items
+        let presentationStructureChanged = flatItems.count != outlineItems.count
+            || zip(flatItems, outlineItems).contains { incoming, current in
+                guard incoming.id == current.id else { return true }
+                switch (incoming.kind, current.kind) {
+                case let (.group(incomingName, incomingColor, incomingCollapsed),
+                          .group(currentName, currentColor, currentCollapsed)):
+                    return incomingName != currentName
+                        || incomingColor != currentColor
+                        || incomingCollapsed != currentCollapsed
+                default:
+                    return false
+                }
+            }
+        if presentationStructureChanged,
+           snapshot.outlineProjection.revision == projectionSession.renderedProjectionRevision
+        {
+            outlineItems = flatItems
             rebuildItemIndexes()
             lastAppliedVisibleRows = []
             tableView.reloadData()
             applyGroupExpansionState()
+            syncListSelectionFromStore()
             requestThumbnailsForVisibleRows()
+        } else {
+            projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
+                guard let self else { return }
+                outlineItems = items
+                rebuildItemIndexes()
+                lastAppliedVisibleRows = []
+                tableView.reloadData()
+                applyGroupExpansionState()
+                syncListSelectionFromStore()
+                requestThumbnailsForVisibleRows()
+            }
         }
         restoreScrollAnchor(scrollAnchor)
     }
@@ -421,6 +447,7 @@ public final class EntryListCoordinator: NSObject {
             rebuildItemIndexes()
             tableView.reloadData()
             applyFolderExpansionState(for: projection)
+            syncListSelectionFromStore()
             requestThumbnailsForVisibleRows()
             lastAppliedVisibleRows = newVisibleRows
             restoreScrollAnchor(scrollAnchor)

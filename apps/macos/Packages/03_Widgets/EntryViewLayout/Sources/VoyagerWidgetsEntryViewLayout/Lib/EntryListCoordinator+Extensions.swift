@@ -452,6 +452,8 @@ extension EntryListCoordinator {
             childUpdates.append((oldParent, removed, inserted))
         }
 
+        guard childUpdates.contains(where: { !$0.removed.isEmpty || !$0.inserted.isEmpty }) else { return false }
+
         rebuildItemIndexes()
         tableView.beginUpdates()
         for update in childUpdates {
