@@ -118,12 +118,11 @@ extension AiChatAssistantMarkdownRenderSession {
             })
         }
         guard !staleRows.isEmpty else { return }
+        renderLifecycleRevision &+= 1
         renderedByRow = renderedByRow.filter { !staleRows.contains($0.key) }
         selectionProjections = selectionProjections.filter { !staleRows.contains($0.key.transcriptRow) }
         activeHighlightRequests = activeHighlightRequests.filter { !staleRows.contains($0.key.transcriptRow) }
-        diagnostics.highlightGeneration = diagnostics.highlightGeneration.filter {
-            !staleRows.contains($0.key.transcriptRow)
-        }
+        diagnostics.highlightGeneration.removeAll(keepingCapacity: false)
         if let capturedRow = capturedSnapshot?.transcriptRow, staleRows.contains(capturedRow) {
             clearViewState()
         }

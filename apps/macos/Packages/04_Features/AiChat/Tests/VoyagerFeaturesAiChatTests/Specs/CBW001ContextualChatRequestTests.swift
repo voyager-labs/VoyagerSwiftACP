@@ -1848,6 +1848,60 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertTrue(secondResult?.isEligibleForDisplay == true)
     }
 
+    /// CBW-001-render_assistant_markdown: 같은 세션에서 code row가 교체 후 복원되면 highlight freshness를 갱신한다.
+    /// 이전 row의 높은 generation이 coordinator에 남아도 복원된 동일 block 요청을 stale로 오판하지 않는지 검증합니다.
+    /// - 검증 내용: 원본 row의 높은 generation 적용, 다른 source 교체, 원본 source 복원 후 낮은 generation 표시를 확인합니다.
+    /// - 사전 조건: 하나의 render session과 session ID에서 같은 transcript row의 code source가 교체 후 복원됩니다.
+    /// - 기대 결과: 복원된 code block의 새 highlight 결과가 표시 가능하고 engine 결과를 정상 적용합니다.
+    func testRenderAssistantMarkdownRefreshesHighlightLifecycleAfterRowReplacement() async throws {
+        let recorder = SyntaxHighlightingRecorder()
+        let session = AiChatAssistantMarkdownRenderSession(
+            highlightingClient: makeSyntaxHighlightingClient(recorder: recorder),
+        )
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let row = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let originalSource = "```swift\nlet restored = true\n```\n"
+        let replacementSource = "```swift\nlet replacement = true\n```\n"
+
+        session.prepareForSession(
+            sessionID,
+            stableTranscriptSources: [row: originalSource],
+        )
+        let originalBlock = try XCTUnwrap(session.render(content: originalSource, transcriptRow: row).blocks.first)
+        let originalResult = await session.highlight(
+            originalBlock,
+            transcriptRow: row,
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 100,
+        )
+        XCTAssertEqual(originalResult?.isEligibleForDisplay, true)
+
+        session.prepareForSession(
+            sessionID,
+            stableTranscriptSources: [row: replacementSource],
+        )
+        _ = session.render(content: replacementSource, transcriptRow: row)
+        session.prepareForSession(
+            sessionID,
+            stableTranscriptSources: [row: originalSource],
+        )
+        let restoredBlock = try XCTUnwrap(session.render(content: originalSource, transcriptRow: row).blocks.first)
+        XCTAssertEqual(restoredBlock.presentationID, originalBlock.presentationID)
+
+        let restoredResult = await session.highlight(
+            restoredBlock,
+            transcriptRow: row,
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        )
+
+        XCTAssertNotNil(restoredResult)
+        XCTAssertEqual(restoredResult?.isEligibleForDisplay, true)
+        XCTAssertEqual(restoredResult?.disposition, .highlighted)
+    }
+
     /// CBW-001-render_assistant_markdown: cancellation과 LRU bounds는 결과 적용과 memory growth를 제한한다.
     /// pending coalescing 취소와 많은 고유 source가 실패 cache나 무제한 cache로 이어지지 않는지 검증합니다.
     /// - 검증 내용: cancelled result eligibility와 128-entry/8MiB LRU eviction 및 재호출을 확인합니다.
@@ -3908,6 +3962,13 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
     }
 
+    private struct LifecycleAnnouncementCase {
+        let phase: AiChatExecutionPhase
+        let expectedPhase: AiChatLifecycleAnnouncementPhase
+        let message: String
+        let priority: AiChatLifecycleAnnouncementPriority
+    }
+
     private actor SyntaxHighlightingRecorder {
         private let failure: AiChatSyntaxHighlightingClient.EngineFailure?
         private let suspends: Bool
@@ -5584,16 +5645,31 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertNil(AiChatLifecycleAnnouncement(state: state))
 
         state.sessionID = requestSessionID
-        let lifecycleCases: [(
-            phase: AiChatExecutionPhase,
-            expectedPhase: AiChatLifecycleAnnouncementPhase,
-            message: String,
-            priority: AiChatLifecycleAnnouncementPriority,
-        )] = [
-            (.processing(lock), .processing, "Assistant response started.", .medium),
-            (.completed(lock), .final, "Assistant response completed.", .medium),
-            (.failed(lock, .network), .failure, "Assistant response failed.", .high),
-            (.cancelled(lock), .cancel, "Assistant response cancelled.", .medium),
+        let lifecycleCases: [LifecycleAnnouncementCase] = [
+            .init(
+                phase: .processing(lock),
+                expectedPhase: .processing,
+                message: "Assistant response started.",
+                priority: .medium,
+            ),
+            .init(
+                phase: .completed(lock),
+                expectedPhase: .final,
+                message: "Assistant response completed.",
+                priority: .medium,
+            ),
+            .init(
+                phase: .failed(lock, .network),
+                expectedPhase: .failure,
+                message: "Assistant response failed.",
+                priority: .high,
+            ),
+            .init(
+                phase: .cancelled(lock),
+                expectedPhase: .cancel,
+                message: "Assistant response cancelled.",
+                priority: .medium,
+            ),
         ]
 
         for lifecycleCase in lifecycleCases {
