@@ -4,9 +4,7 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  background: var(--fm-sidebar);
   padding: 0;
-  backdrop-filter: var(--fm-backdrop-blur);
 }
 
 [data-file-manager-illustration] .sidebar-titlebar {
@@ -53,18 +51,6 @@
   box-sizing: border-box;
 }
 
-[data-file-manager-illustration] .red {
-  background: var(--fm-red);
-}
-
-[data-file-manager-illustration] .yellow {
-  background: var(--fm-yellow);
-}
-
-[data-file-manager-illustration] .green {
-  background: var(--fm-green);
-}
-
 [data-file-manager-illustration] .location-shortcuts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--fm-sidebar-location-cell-size), 1fr));
@@ -75,11 +61,12 @@
 
 [data-file-manager-illustration] .location-shortcuts button {
   display: grid;
+  width: 100%;
   min-width: var(--fm-sidebar-location-cell-size);
   height: var(--fm-sidebar-location-cell-size);
   place-items: center;
-  border: 1px solid var(--fm-separator);
-  border-radius: var(--fm-radius-sm);
+  border: 1px solid var(--fm-sidebar-location-border);
+  border-radius: var(--fm-sidebar-location-radius);
   background: var(--fm-sidebar-location);
   color: var(--fm-icon-primary);
   box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
@@ -89,6 +76,7 @@
 
 [data-file-manager-illustration] .location-shortcuts button:hover {
   background: var(--fm-sidebar-location-hover);
+  border-color: var(--fm-sidebar-location-hover-border);
 }
 
 [data-file-manager-illustration] .location-shortcuts button:active {
@@ -162,22 +150,23 @@
 
 [data-file-manager-illustration] .nav-item {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  gap: var(--fm-space-3);
+  gap: var(--fm-space-4);
   width: 100%;
-  height: 28px;
+  height: 24px;
   border: 0;
-  border-radius: var(--fm-radius-md);
+  border-radius: var(--fm-sidebar-row-radius);
   background: transparent;
   padding: 0 calc(var(--fm-space-4) + var(--fm-sidebar-tab-action-size)) 0 var(--fm-space-4);
+  color: var(--fm-text-secondary);
   text-align: left;
   transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
     color var(--fm-motion-fast) ease, transform var(--fm-motion-fast) ease;
 }
 
 [data-file-manager-illustration] .nav-item:hover {
-  background: var(--fm-control-hover);
+  background: var(--fm-sidebar-hover);
 }
 
 [data-file-manager-illustration] .nav-item:active {
@@ -193,17 +182,17 @@
 [data-file-manager-illustration] .nav-item strong {
   overflow: hidden;
   font-size: var(--fm-font-size-body);
-  font-weight: var(--fm-weight-semibold);
+  font-weight: var(--fm-weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 [data-file-manager-illustration] .nav-item.active {
-  background: var(--fm-selection);
+  background: var(--fm-sidebar-selection);
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .nav-item.active .nav-icon {
+[data-file-manager-illustration] .nav-icon.active {
   color: var(--fm-selection-label);
 }
 
@@ -247,9 +236,9 @@
 [data-file-manager-illustration] .nav-icon {
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  color: var(--fm-icon-secondary);
+  width: 16px;
+  height: 16px;
+  color: var(--fm-text-tertiary);
 }
 
 [data-file-manager-illustration] .folder-glyph::before {
@@ -263,24 +252,12 @@
   background: inherit;
 }
 
-[data-file-manager-illustration] .nav-icon svg {
+[data-file-manager-illustration] .nav-icon svg,
+[data-file-manager-illustration] .nav-icon .sf-symbol {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   overflow: visible;
-}
-
-[data-file-manager-illustration] .nav-icon.folder-blue {
-  color: var(--fm-folder-deep);
-}
-
-[data-file-manager-illustration] .nav-icon.home,
-[data-file-manager-illustration] .nav-icon.chat {
-  color: var(--fm-blue);
-}
-
-[data-file-manager-illustration] .nav-icon.collection {
-  color: var(--fm-amber);
 }
 
 [data-file-manager-illustration] .sidebar-divider {
@@ -294,9 +271,9 @@
   align-items: center;
   gap: var(--fm-space-4);
   width: 100%;
-  height: 28px;
+  height: 24px;
   border: 0;
-  border-radius: var(--fm-radius-md);
+  border-radius: var(--fm-sidebar-row-radius);
   background: transparent;
   padding: 0 var(--fm-space-4);
   color: var(--fm-text-primary);
@@ -308,7 +285,7 @@
 }
 
 [data-file-manager-illustration] .sidebar-new-tab:hover {
-  background: var(--fm-control-hover);
+  background: var(--fm-sidebar-hover);
 }
 
 [data-file-manager-illustration] .sidebar-new-tab span:first-child {

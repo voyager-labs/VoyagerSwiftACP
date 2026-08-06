@@ -7,16 +7,16 @@ export type FileEntry = {
   readonly kind: EntryKind
   readonly extension: string | null
   readonly secondaryLabel: string | null
-}
-
-export type ChatRole = "user" | "assistant"
-
-export type ChatMessage = {
-  readonly role: ChatRole
-  readonly paragraph: string
+  readonly thumbnailSrc?: string
 }
 
 export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
+
+/** Internal breadcrumb segment with SF Symbol name for icon rendering. */
+export type BreadcrumbSegment = {
+  readonly label: string
+  readonly symbolName: string
+}
 
 export type SidebarTabItem = {
   readonly id: string
@@ -26,7 +26,7 @@ export type SidebarTabItem = {
   readonly isPinned?: boolean
   readonly secondary?: string
   readonly pageAnchor?: string
-  readonly chatSessionId?: string
+  readonly breadcrumb?: readonly BreadcrumbSegment[]
 }
 
 export type SidebarTabAction = (item: SidebarTabItem) => void
@@ -60,7 +60,8 @@ export type SearchFieldProps = {
 export type LocationShortcut = {
   readonly id: string
   readonly label: string
-  readonly glyph: string
+  readonly symbolName: string
+  readonly iconSrc?: string
 }
 
 export type LocationShortcutsProps = {
@@ -76,6 +77,7 @@ export type SidebarSectionProps = {
 
 export type SidebarIconProps = {
   readonly icon: SidebarIconKind
+  readonly isActive?: boolean
 }
 
 export type SidebarNavItemProps = {
@@ -102,10 +104,10 @@ export type Entry = {
   readonly kind: EntryKind
   readonly meta?: string
   readonly count?: string
+  readonly thumbnailSrc?: string
 }
 
 export type FileManagerIllustrationProps = {
   readonly files: readonly FileEntry[]
-  readonly chatMessages: readonly ChatMessage[]
   readonly contentContext: ContentContext
 }

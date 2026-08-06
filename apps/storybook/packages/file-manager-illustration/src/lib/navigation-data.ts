@@ -1,9 +1,33 @@
-import type { LocationShortcut, SidebarTabItem } from "../model/types"
+import { locationIconFixtures } from "../data/location-icon-fixtures"
+import type { BreadcrumbSegment, LocationShortcut, SidebarTabItem } from "../model/types"
 
 export const locationShortcuts: readonly LocationShortcut[] = [
-  { id: "local-entries", label: "Local Entries", glyph: "▣" },
-  { id: "cloud-entries", label: "Cloud Entries", glyph: "☁" },
-  { id: "trash", label: "Trash", glyph: "⌫" },
+  { id: "home", label: "Home", symbolName: "house", iconSrc: locationIconFixtures.home },
+  {
+    id: "icloud-drive",
+    label: "iCloud Drive",
+    symbolName: "icloud",
+    iconSrc: locationIconFixtures.iCloudDrive,
+  },
+  {
+    id: "google-drive",
+    label: "Google Drive",
+    symbolName: "folder",
+    iconSrc: locationIconFixtures.googleDrive,
+  },
+  {
+    id: "macintosh-hd",
+    label: "Macintosh HD",
+    symbolName: "internaldrive",
+    iconSrc: locationIconFixtures.macintoshHD,
+  },
+  {
+    id: "external-drive",
+    label: "External Drive",
+    symbolName: "externaldrive",
+    iconSrc: locationIconFixtures.externalDrive,
+  },
+  { id: "trash", label: "Trash", symbolName: "trash", iconSrc: locationIconFixtures.trash },
 ]
 
 export const pinnedTabs: readonly SidebarTabItem[] = [
@@ -14,9 +38,21 @@ export const pinnedTabs: readonly SidebarTabItem[] = [
   { id: "projects", label: "Projects", icon: "folder", isPinned: true },
 ]
 
+export const directoryBreadcrumb: readonly BreadcrumbSegment[] = [
+  { label: "Macintosh HD", symbolName: "internaldrive" },
+  { label: "Users", symbolName: "folder" },
+  { label: "voyager", symbolName: "folder" },
+  { label: "Directory", symbolName: "folder" },
+]
+
 export const contentTabs: readonly SidebarTabItem[] = [
   { id: "home", label: "Home Page", icon: "home" },
-  { id: "directory", label: "Directory", icon: "folder-blue", active: true },
+  {
+    id: "directory",
+    label: "Directory",
+    icon: "folder-blue",
+    active: true,
+    breadcrumb: directoryBreadcrumb,
+  },
   { id: "collection", label: "Research Collection", icon: "collection" },
-  { id: "ai-chat", label: "AI Chat", icon: "chat" },
 ]

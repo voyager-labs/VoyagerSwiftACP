@@ -1,13 +1,12 @@
 import { contentTabs } from "../lib/navigation-data"
 import type { ContentRoute } from "./content-route"
 import { deriveContentRoute } from "./content-route"
-import type { ChatMessage, Entry, SidebarTabItem } from "./types"
+import type { Entry, SidebarTabItem } from "./types"
 
 export interface State {
   readonly tabs: readonly SidebarTabItem[]
   readonly activeTabId: string | null
   readonly files: readonly Entry[]
-  readonly chatMessages: readonly ChatMessage[]
   readonly selectedEntryIds: readonly string[]
   readonly viewMode: "grid" | "list"
   readonly sidebarOpen: boolean
@@ -31,15 +30,13 @@ export type Action =
   | { readonly type: "NEW_TAB" }
   | {
       readonly type: "RESTORE_CONTENT_TAB"
-      readonly destinationTabId: "directory" | "collection" | "ai-chat"
+      readonly destinationTabId: "directory" | "collection"
       readonly secondary?: string
       readonly pageAnchor?: string
-      readonly chatSessionId?: string
     }
   | {
       readonly type: "RESET_DATA"
       readonly files: readonly Entry[]
-      readonly chatMessages: readonly ChatMessage[]
       readonly tabs: readonly SidebarTabItem[]
       readonly activeTabId: string | null
     }
@@ -50,7 +47,6 @@ export type Action =
 
 export interface InitialStateParams {
   readonly files: readonly Entry[]
-  readonly chatMessages: readonly ChatMessage[]
   readonly tabs: readonly SidebarTabItem[]
   readonly activeTabId: string | null
 }
@@ -60,7 +56,6 @@ export function createInitialState(params: InitialStateParams): State {
     tabs: params.tabs.map((t) => ({ ...t })),
     activeTabId: params.activeTabId,
     files: params.files,
-    chatMessages: params.chatMessages,
     selectedEntryIds: [],
     viewMode: "grid",
     sidebarOpen: true,
@@ -85,16 +80,6 @@ function activateTab(
   previousActiveTabId: string | null,
   extras: Partial<State> = {},
 ): State {
-  /* AI Chat as primary content: close inspector (no contextual inspector). */
-  if (tab.id === "ai-chat" || tab.icon === "chat") {
-    return {
-      ...state,
-      ...extras,
-      previousActiveTabId,
-      activeTabId: tab.id,
-      inspectorOpen: false,
-    }
-  }
   if (tab.id === "home" || tab.icon === "home") {
     return {
       ...state,
@@ -193,21 +178,20 @@ export function reducer(state: State, action: Action): State {
       }
     }
     case "RESTORE_CONTENT_TAB": {
-      const { destinationTabId, secondary, pageAnchor, chatSessionId } = action
+      const { destinationTabId, secondary, pageAnchor } = action
       const existingTab = state.tabs.find((t) => t.id === destinationTabId)
       if (existingTab) {
         const updatedTab = {
           ...existingTab,
           secondary: secondary ?? existingTab.secondary,
           pageAnchor: pageAnchor ?? existingTab.pageAnchor,
-          chatSessionId: chatSessionId ?? existingTab.chatSessionId,
         }
         const tabs = state.tabs.map((t) => (t.id === destinationTabId ? updatedTab : t))
         return activateTab(state, updatedTab, state.activeTabId, { tabs })
       }
       const templateTab = contentTabs.find((t) => t.id === destinationTabId)
       if (!templateTab) return state
-      const restoredTab = { ...templateTab, active: false, secondary, pageAnchor, chatSessionId }
+      const restoredTab = { ...templateTab, active: false, secondary, pageAnchor }
       return activateTab(state, restoredTab, state.activeTabId, {
         tabs: [...state.tabs, restoredTab],
       })
@@ -216,7 +200,6 @@ export function reducer(state: State, action: Action): State {
       return {
         ...state,
         files: action.files,
-        chatMessages: action.chatMessages,
         tabs: action.tabs.map((t) => ({ ...t })),
         activeTabId: action.activeTabId,
         inspectorOpen: false,

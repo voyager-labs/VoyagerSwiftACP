@@ -1,57 +1,53 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react"
 import type { FC } from "react"
-import { TrafficLights } from "./atoms/TrafficLights"
+import { FileBrowser } from "./Entries/FileBrowser"
+import { FileManagerPrimaryContent } from "./Layouts/FileManagerPrimaryContent"
+import { FileManagerWindowLayout } from "./Layouts/FileManagerWindowLayout"
+import { InspectorPane } from "./Layouts/InspectorPane"
+import { Sidebar } from "./Layouts/Sidebar"
+import type { FileToolbarContent } from "./Patterns/FileToolbar"
+import { FileToolbar } from "./Patterns/FileToolbar"
+import { StatusBar } from "./Patterns/StatusBar"
+import { TrafficLights } from "./UI/Display/TrafficLights"
 import {
-  buildAiChatState,
-  deriveBreadcrumb,
+  deriveBreadcrumbSegments,
   deriveSelectionLabel,
   propsToInitialParams,
 } from "./lib/file-manager-adapter"
 import { locationShortcuts } from "./lib/navigation-data"
-import type { HomeFavorite, HomeLocation, HomeRecentChat } from "./model/home"
+import type { HomeFavorite, HomeLocation } from "./model/home"
 import { createInitialState, getContentRoute, reducer } from "./model/reducer"
 import type { Entry, FileManagerIllustrationProps, SidebarTabItem } from "./model/types"
-import type { FileToolbarContent } from "./molecules/FileToolbar"
-import { FileToolbar } from "./molecules/FileToolbar"
-import { StatusBar } from "./molecules/StatusBar"
-import { FileBrowser } from "./organisms/FileBrowser"
-import { FileManagerPrimaryContent } from "./organisms/FileManagerPrimaryContent"
-import { FileManagerWindowLayout } from "./organisms/FileManagerWindowLayout"
-import { InspectorPane } from "./organisms/InspectorPane"
-import { Sidebar } from "./organisms/Sidebar"
 import "./styles/macos-tokens.css"
 import "./styles/file-manager.css"
 import "./styles/atoms.css"
+import "./styles/form-controls.css"
+import "./styles/menu-controls.css"
+import "./styles/feedback.css"
+import "./styles/overlays.css"
 import "./styles/inspector.css"
 import "./styles/sidebar.css"
 import "./styles/window-shell.css"
-import "./styles/workflows.css"
 
 export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props) => {
-  const { files, chatMessages, contentContext } = props
+  const { files, contentContext } = props
   const initial = propsToInitialParams(props)
   const [state, dispatch] = useReducer(reducer, initial, createInitialState)
 
   const prevFilesRef = useRef(files)
-  const prevChatRef = useRef(chatMessages)
   const prevCtxRef = useRef(contentContext)
 
   useEffect(() => {
-    if (
-      prevFilesRef.current !== files ||
-      prevChatRef.current !== chatMessages ||
-      prevCtxRef.current !== contentContext
-    ) {
-      const resetData = propsToInitialParams({ files, chatMessages, contentContext })
+    if (prevFilesRef.current !== files || prevCtxRef.current !== contentContext) {
+      const resetData = propsToInitialParams({ files, contentContext })
       dispatch({
         type: "RESET_DATA",
         ...resetData,
       })
       prevFilesRef.current = files
-      prevChatRef.current = chatMessages
       prevCtxRef.current = contentContext
     }
-  }, [files, chatMessages, contentContext])
+  }, [files, contentContext])
 
   const selectedEntries = useMemo(
     () => state.files.filter((e) => state.selectedEntryIds.includes(e.id)),
@@ -131,30 +127,14 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
       }),
     [],
   )
-  const handleHomeRecentChatSelect = useCallback(
-    (chat: HomeRecentChat) =>
-      dispatch({
-        type: "RESTORE_CONTENT_TAB",
-        destinationTabId: chat.destinationTabId,
-        chatSessionId: chat.sessionId,
-        secondary: chat.title,
-      }),
-    [],
-  )
-  const handleStartPrimaryChat = useCallback(
-    () => dispatch({ type: "RESTORE_CONTENT_TAB", destinationTabId: "ai-chat" }),
-    [],
-  )
   const handleOpenContextualChat = useCallback(() => dispatch({ type: "OPEN_NEW_CHAT" }), [])
   const handleOpenChatHistory = useCallback(() => dispatch({ type: "OPEN_CHAT_HISTORY" }), [])
   const handleOpenNewChat = useCallback(() => dispatch({ type: "OPEN_NEW_CHAT" }), [])
   const handleCloseChat = useCallback(() => dispatch({ type: "CLOSE_CHAT" }), [])
 
-  const toolbarContent: FileToolbarContent =
-    route.kind === "home" ? "home" : route.kind === "ai-chat" ? "ai-chat" : "directory"
+  const toolbarContent: FileToolbarContent = route.kind === "home" ? "home" : "directory"
   const inspectorChatTitle = state.inspectorChatHeader === "sessions" ? "Chat History" : windowTitle
-  const breadcrumbText = deriveBreadcrumb(route, activeTab)
-  const aiChatState = useMemo(() => buildAiChatState(state.chatMessages), [state.chatMessages])
+  const breadcrumbSegments = deriveBreadcrumbSegments(activeTab, selectedEntries)
 
   return (
     <div data-file-manager-illustration>
@@ -182,7 +162,6 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onTabUnpin={handleTabUnpin}
                 onTabClose={handleTabClose}
                 onNewTab={handleNewTab}
-                onToggleSidebar={handleToggleSidebar}
               />
             }
             toolbar={
@@ -196,19 +175,16 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onNewChat={handleOpenContextualChat}
               />
             }
-            breadcrumb={<StatusBar selectedLabel={selectedLabel} breadcrumb={breadcrumbText} />}
+            breadcrumb={<StatusBar selectedLabel={selectedLabel} breadcrumb={breadcrumbSegments} />}
             content={
               <FileManagerPrimaryContent
                 route={route}
                 entries={state.files}
                 selectedEntryIds={state.selectedEntryIds}
                 viewMode={state.viewMode}
-                aiChatState={aiChatState}
                 onToggleEntry={handleToggleEntry}
                 onFavoriteSelect={handleHomeFavoriteSelect}
                 onLocationSelect={handleHomeLocationSelect}
-                onRecentChatSelect={handleHomeRecentChatSelect}
-                onStartPrimaryChat={handleStartPrimaryChat}
               />
             }
             inspector={
