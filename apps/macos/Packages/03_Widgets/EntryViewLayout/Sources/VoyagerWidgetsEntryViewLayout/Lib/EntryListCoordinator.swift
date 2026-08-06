@@ -321,7 +321,8 @@ public final class EntryListCoordinator: NSObject {
                 requestThumbnailsForVisibleRows()
             }
         }
-        let pathChanged = RenderSnapshot(state: state).currentPath != snapshot.currentPath
+        let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
+        let pathChanged = previousPath != snapshot.currentPath
         if !pathChanged {
             restoreScrollAnchor(scrollAnchor)
         }
