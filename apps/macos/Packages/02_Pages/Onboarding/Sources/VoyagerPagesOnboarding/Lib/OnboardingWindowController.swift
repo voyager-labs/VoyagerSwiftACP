@@ -1,31 +1,19 @@
 import AppKit
 import ComposableArchitecture
 import QuartzCore
-import SwiftNavigation
 import SwiftUI
 import VoyagerEntitiesAppPreferences
-import VoyagerFeaturesAccountAccess
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let onboardingStore: StoreOf<OnboardingFeature>
-    let accountAccessStore: StoreOf<AccountAccessFeature>
-    private let handlesAuthCallback: Bool
     private var shouldTerminateOnClose = true
 
     init(
         onboardingStore: StoreOf<OnboardingFeature>,
-        accountAccessStore: StoreOf<AccountAccessFeature>,
-        handlesAuthCallback: Bool,
     ) {
         self.onboardingStore = onboardingStore
-        self.accountAccessStore = accountAccessStore
-        self.handlesAuthCallback = handlesAuthCallback
 
-        let accessStore: Store<OnboardingAccessProjection, OnboardingAccessIntent> = accountAccessStore.scope(
-            state: OnboardingAccessProjection.init(accountAccess:),
-            action: { (intent: OnboardingAccessIntent) in intent.accountAccessAction },
-        )
-        let rootView = OnboardingView(store: onboardingStore, accessStore: accessStore)
+        let rootView = OnboardingView(store: onboardingStore)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
         window.styleMask = [.titled, .closable, .fullSizeContentView]
@@ -50,14 +38,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-
-        observe { [weak self] in
-            guard let self else { return }
-            self.onboardingStore.send(.accessProjectionUpdated(
-                OnboardingAccessProjection(accountAccess: self.accountAccessStore.state),
-            ))
-        }
-        accountAccessStore.send(.onAppear)
 
         window.setFrameAutosaveName("VoyagerOnboardingWindow")
 
@@ -89,10 +69,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window?.close()
     }
 
-    func routeAuthCallback(_ url: URL) -> Bool {
-        guard handlesAuthCallback else { return false }
-        accountAccessStore.send(.loginCallbackReceived(url))
-        return true
+    func routeAuthCallback(_: URL) -> Bool {
+        false
     }
 
     func windowShouldClose(_: NSWindow) -> Bool {

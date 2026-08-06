@@ -2,7 +2,6 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
-import VoyagerFeaturesAccountAccess
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
 
@@ -39,8 +38,6 @@ private enum OnboardingOpenMainWindowAuthorization {
 @MainActor
 private struct OnboardingWindowComposition {
     let onboardingStore: StoreOf<OnboardingFeature>
-    let accountAccessStore: StoreOf<AccountAccessFeature>
-    let handlesAuthCallback: Bool
 }
 
 public struct OnboardingWindowClient: Sendable {
@@ -77,7 +74,6 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated public static func makeMainApp(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        resolveAccountAccessStore: @escaping @MainActor @Sendable () -> StoreOf<AccountAccessFeature>,
         forceOnboardingEnvironmentValue: @escaping @Sendable () -> String? = {
             ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_ONBOARDING"]
         },
@@ -98,7 +94,6 @@ extension OnboardingWindowClient: DependencyKey {
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
             makeComposition: { onboardingWindowClient in
-                let accountAccessStore = resolveAccountAccessStore()
                 let onboardingStore = makeOnboardingStore(
                     progressClient: OnboardingProgressClient.liveValue,
                     onboardingWindowClient: onboardingWindowClient,
@@ -107,8 +102,6 @@ extension OnboardingWindowClient: DependencyKey {
                 )
                 return OnboardingWindowComposition(
                     onboardingStore: onboardingStore,
-                    accountAccessStore: accountAccessStore,
-                    handlesAuthCallback: false,
                 )
             },
             isForceOnboardingEnabled: isForceOnboardingEnabled,
@@ -117,9 +110,6 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated public static func makeStandaloneHost(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        accountSessionClient: AccountSessionClient? = nil,
-        authNetworkClient: AuthNetworkClient? = nil,
-        signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         forceOnboardingEnvironmentValue: @escaping @Sendable () -> String? = {
             ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_ONBOARDING"]
@@ -142,19 +132,6 @@ extension OnboardingWindowClient: DependencyKey {
             progressClient: progressClient,
             openMainWindow: openMainWindow,
             makeComposition: { onboardingWindowClient in
-                let accountAccessStore = Store(initialState: AccountAccessFeature.State()) {
-                    AccountAccessFeature()
-                } withDependencies: {
-                    if let accountSessionClient {
-                        $0.accountSessionClient = accountSessionClient
-                    }
-                    if let authNetworkClient {
-                        $0.authNetworkClient = authNetworkClient
-                    }
-                    if let signInHandoffClient {
-                        $0.signInHandoffClient = signInHandoffClient
-                    }
-                }
                 let onboardingStore = makeOnboardingStore(
                     progressClient: progressClient,
                     onboardingWindowClient: onboardingWindowClient,
@@ -163,8 +140,6 @@ extension OnboardingWindowClient: DependencyKey {
                 )
                 return OnboardingWindowComposition(
                     onboardingStore: onboardingStore,
-                    accountAccessStore: accountAccessStore,
-                    handlesAuthCallback: true,
                 )
             },
             isForceOnboardingEnabled: isForceOnboardingEnabled,
@@ -233,8 +208,6 @@ extension OnboardingWindowClient: DependencyKey {
                     let composition = makeComposition(onboardingWindowClient)
                     onboardingWindowController = OnboardingWindowController(
                         onboardingStore: composition.onboardingStore,
-                        accountAccessStore: composition.accountAccessStore,
-                        handlesAuthCallback: composition.handlesAuthCallback,
                     )
                 }
 

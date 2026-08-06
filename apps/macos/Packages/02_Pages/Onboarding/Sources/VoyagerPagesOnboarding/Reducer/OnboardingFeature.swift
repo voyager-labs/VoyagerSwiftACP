@@ -46,9 +46,6 @@ struct OnboardingFeature {
         case .nextTapped:
             return handleNextTapped(state: &state, progressClient: progressClient)
 
-        case let .accessProjectionUpdated(projection):
-            return handleAccessProjectionUpdated(projection, state: &state, progressClient: progressClient)
-
         case .complete(.startUsingTapped), .complete(.retryTapped):
             return handleCompleteStart(state: &state, progressClient: progressClient)
 
@@ -78,16 +75,12 @@ struct OnboardingFeature {
 
         switch progressClient.load() {
         case .empty:
-            let access = state.access
             state = State()
-            state.access = access
             state.didBootstrapProgress = true
             return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
 
         case .resetRequired:
-            let access = state.access
             state = State()
-            state.access = access
             state.didBootstrapProgress = true
             let snapshot = state.progressSnapshot
             return .run { _ in
@@ -155,22 +148,6 @@ struct OnboardingFeature {
             state.aiProviderSetup.refreshStatus()
         }
         return .none
-    }
-
-    private func handleAccessProjectionUpdated(
-        _ projection: OnboardingAccessProjection,
-        state: inout State,
-        progressClient: OnboardingProgressClient,
-    ) -> Effect<Action> {
-        guard state.access != projection else { return .none }
-        state.access = projection
-        if !state.isStepComplete(.accessUnlock),
-           state.currentStep.index > OnboardingStep.accessUnlock.index
-        {
-            state.currentStep = .accessUnlock
-        }
-        guard state.didBootstrapProgress else { return .none }
-        return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
     }
 
     private func handleBackTapped(
