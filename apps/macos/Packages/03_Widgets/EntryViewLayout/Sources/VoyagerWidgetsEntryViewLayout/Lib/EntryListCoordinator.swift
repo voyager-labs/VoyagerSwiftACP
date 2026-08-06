@@ -290,6 +290,7 @@ public final class EntryListCoordinator: NSObject {
                     return incomingName != currentName
                         || incomingColor != currentColor
                         || incomingCollapsed != currentCollapsed
+                        || incoming.children.map(\.id) != current.children.map(\.id)
                 default:
                     return false
                 }
@@ -314,6 +315,7 @@ public final class EntryListCoordinator: NSObject {
                 tableView.reloadData()
                 applyGroupExpansionState()
                 syncListSelectionFromStore()
+                syncListRenamingFromStore()
                 restoreScrollPositionIfNeeded()
                 requestThumbnailsForVisibleRows()
             }
