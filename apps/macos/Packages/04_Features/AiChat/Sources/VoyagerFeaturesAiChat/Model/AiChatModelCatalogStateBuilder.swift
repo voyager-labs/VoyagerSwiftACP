@@ -82,7 +82,12 @@ struct AiChatModelCatalogStateBuilder {
     }
 
     var modelSelectorIsDisabled: Bool {
-        !modelSelectorContentState.hasPresentableContent
+        switch modelSelectorContentState {
+        case .loading, .empty, .failed, .unsupported:
+            true
+        case let .loaded(sections):
+            !sections.contains { section in section.rows.contains(where: \.isEnabled) }
+        }
     }
 
     var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {

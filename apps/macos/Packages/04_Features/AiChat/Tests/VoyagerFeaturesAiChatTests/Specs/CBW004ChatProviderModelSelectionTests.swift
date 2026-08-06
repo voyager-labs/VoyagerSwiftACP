@@ -337,10 +337,10 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
     /// CBW-004-show_unavailable_chat_model_state: model list 비가용 상태를 selector contract로 표시한다.
-    /// loading/empty/failed/unsupported provider 상태를 selector 메뉴에서 확인할 수 있는지 검증합니다.
-    /// - 검증 내용: content state, 메뉴 표시 가능 여부, unsupported provider copy
+    /// loading/empty/failed/unsupported provider 상태가 사용자에게 구분되고 트리거가 비활성화되는지 검증합니다.
+    /// - 검증 내용: content state, disabled 여부, unsupported provider copy
     /// - 사전 조건: modelListState가 loading, empty, failed, unsupported failure인 상태
-    /// - 기대 결과: selector가 각 상태를 명시적 display contract로 노출하고 상태 확인을 위해 트리거는 활성화된다.
+    /// - 기대 결과: selector가 각 상태를 명시적 display contract로 노출하고 활성화된 선택지가 없으므로 트리거가 비활성화된다.
     func testShowUnavailableChatModelStateProvidesExplicitSelectorStates() {
         let loadingState = AiChatFeature.State(modelListState: .loading)
         let emptyState = AiChatFeature.State(modelListState: .empty)
@@ -368,19 +368,19 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             title: "Provider unsupported",
             detail: "ChatGPT Codex model listing is unavailable.",
         )))
-        // 선택 가능한 row가 없어도 상태 설명을 확인할 수 있도록 메뉴 트리거는 활성화한다.
-        XCTAssertFalse(loadingState.modelSelectorIsDisabled)
-        XCTAssertFalse(emptyState.modelSelectorIsDisabled)
-        XCTAssertFalse(failedState.modelSelectorIsDisabled)
-        XCTAssertFalse(unsupportedState.modelSelectorIsDisabled)
+        // 활성화된 선택지가 없는 상태는 트리거를 비활성화한다.
+        XCTAssertTrue(loadingState.modelSelectorIsDisabled)
+        XCTAssertTrue(emptyState.modelSelectorIsDisabled)
+        XCTAssertTrue(failedState.modelSelectorIsDisabled)
+        XCTAssertTrue(unsupportedState.modelSelectorIsDisabled)
     }
 
-    /// CBW-004-show_unavailable_chat_model_state: loaded catalog의 비가용 사유를 메뉴에서 확인한다.
-    /// 모든 모델이 unavailable한 loaded catalog에서도 selector 메뉴가 비가용 사유를 노출하는지 검증합니다.
-    /// - 검증 내용: loaded content state, presentable content, 전체 row 비활성화일 때 메뉴 트리거 활성화
+    /// CBW-004-show_unavailable_chat_model_state: loaded catalog라도 활성화된 row가 없으면 트리거를 비활성화한다.
+    /// 모든 모델이 unavailable한 loaded catalog에서 selector가 활성화된 선택지 부재로 disabled 상태가 되는지 검증합니다.
+    /// - 검증 내용: loaded content state, presentable content, 전체 row 비활성화일 때 modelSelectorIsDisabled true
     /// - 사전 조건: 단일 모델이 loaded 상태이지만 unavailableReason로 인해 row가 모두 비활성화된다.
-    /// - 기대 결과: 개별 row action은 비활성화되고 selector 메뉴 트리거는 비가용 사유 확인을 위해 활성화된다.
-    func testShowUnavailableChatModelStateKeepsMenuAvailableWhenLoadedCatalogHasNoEnabledRows() {
+    /// - 기대 결과: selector는 loaded content를 노출하지만 활성화된 선택지가 없으므로 트리거가 비활성화된다.
+    func testShowUnavailableChatModelStateDisablesWhenLoadedCatalogHasNoEnabledRows() {
         let handle = AiModelHandle(provider: .openai, rawValue: "unavailable-model")
         let row = AiModelCatalogRow(
             handle: handle,
@@ -414,7 +414,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         }
         XCTAssertEqual(sections.first?.rows.map(\.isEnabled), [false])
         XCTAssertTrue(state.modelSelectorHasPresentableContent)
-        XCTAssertFalse(state.modelSelectorIsDisabled)
+        XCTAssertTrue(state.modelSelectorIsDisabled)
     }
 
     /// CBW-004-show_unavailable_chat_model_state: 현재 선택 모델이 catalog에서 사라지면 제출을 막는다.
@@ -2323,7 +2323,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
 
     /// CBW-004-select_chat_model_thinking: native menu Thinking projection은 policy option과 associated value identity를
     /// 그대로 보존한다.
-    /// provider default와 none을 구분하고 unsupported model의 설명 메뉴와 no-model 비활성 trigger를 검증합니다.
+    /// provider default와 none을 구분하고 unsupported model 및 no-model 상태가 서로 다른 disabled projection인지 검증합니다.
     /// - 검증 내용: policy option/order, selection identity, single selection, unsupported item metadata, no-model trigger
     /// state
     /// - 사전 조건: none을 지원하는 effort model, unsupported model, 선택 model이 없는 loaded state가 있습니다.
@@ -2415,8 +2415,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             XCTAssertEqual(unavailableItem.disabledReason, unavailableReason)
             XCTAssertEqual(unavailableItem.accessibilityLabel, "Thinking unavailable")
             XCTAssertEqual(unavailableItem.accessibilityValue, "Unavailable: \(unavailableReason)")
-            // unsupported/unknown capability도 비가용 사유를 확인할 수 있도록 메뉴 트리거는 활성화한다.
-            XCTAssertFalse(unavailableProjection.thinkingMenuIsDisabled)
+            // unsupported/unknown capability는 활성화된 thinking 선택지가 없으므로 트리거를 비활성화한다.
+            XCTAssertTrue(unavailableProjection.thinkingMenuIsDisabled)
         }
 
         let noModelState = AiChatFeature.State(modelListState: .loaded([]))
@@ -2524,8 +2524,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         )
         let projection = AiChatStateDisplayModelBuilder(state: initialState)
 
-        // malformed token budget policy도 unavailable 사유를 확인할 수 있도록 메뉴 트리거는 활성화한다.
-        XCTAssertFalse(projection.thinkingMenuIsDisabled)
+        // malformed token budget policy는 unavailable 항목만 노출하므로 활성화된 선택지가 없고 트리거가 비활성화된다.
+        XCTAssertTrue(projection.thinkingMenuIsDisabled)
         XCTAssertEqual(projection.thinkingMenuItems.count, 1)
         let item = try XCTUnwrap(projection.thinkingMenuItems.first)
         XCTAssertNil(item.selection)
