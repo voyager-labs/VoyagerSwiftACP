@@ -4,6 +4,64 @@ import VoyagerShared
 import XCTest
 
 extension EVM002ManageEntriesViewPresentationTests {
+    // MARK: - EVM-002-update_entry_selection
+
+    /// EVM-002-update_entry_selection: data synchronization preserves collapsed child selection and scroll intent.
+    /// authoritative entries에 남아 있는 child가 visible projection에서 일시적으로 숨겨져도 선택 상태를 보존하는지 검증한다.
+    /// - 검증 내용: synchronizeEntries가 entries membership으로 selection을 정리하고 scroll intent를 유지한다.
+    /// - 사전 조건: collapsed folder의 child가 entries에 존재하고 child가 선택되어 있으며 scroll intent가 true다.
+    /// - 기대 결과: reconcile 후 selectedIds와 shouldScrollToSelection이 모두 유지된다.
+    func testSynchronizeEntriesPreservesCollapsedChildSelectionAndScrollIntent() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = EntryModel.temporaryFolder(id: "/root/a/child", name: "child")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID[folder.id] = FolderNodeState(
+            children: [child],
+            loadPhase: .loaded,
+            generation: 0,
+        )
+        state.selectedIds = [child.id]
+        state.lastSelectedId = child.id
+        state.rangeAnchorId = child.id
+        state.shouldScrollToSelection = true
+
+        state.synchronizeEntries([folder, child])
+
+        XCTAssertEqual(state.selectedIds, [child.id])
+        XCTAssertEqual(state.lastSelectedId, child.id)
+        XCTAssertEqual(state.rangeAnchorId, child.id)
+        XCTAssertTrue(state.shouldScrollToSelection)
+    }
+
+    /// EVM-002-update_entry_selection: data synchronization deselects entries removed from authoritative data.
+    /// authoritative entries에서 실제로 제거된 항목만 selection에서 제거되는지 검증한다.
+    /// - 검증 내용: synchronizePresentation이 제거된 entry의 selection과 focus/anchor를 정리한다.
+    /// - 사전 조건: a와 b가 entries에 있고 b가 선택되어 있으며 scroll intent가 true다.
+    /// - 기대 결과: b 제거 후 selection, focus, anchor가 비고 scroll intent는 data sync가 지우지 않는다.
+    func testSynchronizePresentationDeselectsRemovedEntriesWithoutClearingScrollIntent() {
+        let first = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let removed = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        var state = EntryViewLayoutState()
+        state.entries = [first, removed]
+        state.selectedIds = [removed.id]
+        state.lastSelectedId = removed.id
+        state.rangeAnchorId = removed.id
+        state.shouldScrollToSelection = true
+
+        state.synchronizePresentation(
+            entries: [first],
+            sections: [],
+            openWithApplications: [],
+        )
+
+        XCTAssertTrue(state.selectedIds.isEmpty)
+        XCTAssertNil(state.lastSelectedId)
+        XCTAssertNil(state.rangeAnchorId)
+        XCTAssertTrue(state.shouldScrollToSelection)
+    }
+
     /// EVM-002-sort_entries_by_property: hierarchy 정렬 순서 변경은 outline revision을 갱신한다.
     /// - 검증 내용: 같은 visible ID 집합의 ascending→descending 순서 변화가 revision을 증가시키는지 확인한다.
     /// - 사전 조건: hierarchy가 활성화되고 a, b root entry의 첫 projection이 reconcile돼 있다.

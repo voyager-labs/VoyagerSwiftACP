@@ -126,7 +126,7 @@ public struct EntryViewLayoutState: Equatable {
     mutating func synchronizeEntries(_ entries: [EntryModel]) {
         self.entries = entries
         presentationSections = [.ungrouped(items: entries)]
-        reconcileSelectionWithVisibleEntries()
+        reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
     }
 
     mutating func synchronizePresentation(
@@ -137,7 +137,7 @@ public struct EntryViewLayoutState: Equatable {
         self.entries = entries
         presentationSections = sections.isEmpty ? [.ungrouped(items: entries)] : sections
         self.openWithApplications = openWithApplications
-        reconcileSelectionWithVisibleEntries()
+        reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
     }
 
     public var hierarchyProjectionIsActive: Bool {
@@ -180,19 +180,24 @@ public struct EntryViewLayoutState: Equatable {
         outlineProjectionRevision &+= 1
     }
 
-    mutating func reconcileSelectionWithVisibleEntries() {
+    mutating func reconcileSelectionWithVisibleEntries(preservesScrollIntent: Bool = false) {
+        let previousShouldScrollToSelection = shouldScrollToSelection
         let previousSelectedIds = selectedIds
         let currentProjection = outlineProjection(isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled)
-        let remainingIds = Set(currentProjection.visibleSelectableEntryIDs)
+        let visibleEntryIDs = Set(currentProjection.visibleSelectableEntryIDs)
+        let hierarchyEntryIDs = preservesScrollIntent
+            ? hierarchy.nodesByID.values.flatMap(\.folder.children).map(\.id)
+            : []
+        let remainingIds = Set(entries.map(\.id)).union(hierarchyEntryIDs)
         selectedIds = selectedIds.intersection(remainingIds)
 
         let projectionChanged = lastReconciledOutlineProjection.map {
             !$0.hasSameStructure(as: currentProjection)
-        } ?? (remainingIds != lastVisibleSelectableEntryIDs)
+        } ?? (visibleEntryIDs != lastVisibleSelectableEntryIDs)
         if projectionChanged {
             advanceOutlineProjectionRevision()
         }
-        lastVisibleSelectableEntryIDs = remainingIds
+        lastVisibleSelectableEntryIDs = visibleEntryIDs
         // revision bump 이후 projection을 재생성해 캐시와 카운터가 일치하도록 보존한다.
         // 구조가 동일하므로 hasSameStructure 비교에는 영향을 주지 않는다.
         lastReconciledOutlineProjection =
@@ -202,6 +207,9 @@ public struct EntryViewLayoutState: Equatable {
             lastSelectedId = nil
             rangeAnchorId = nil
             shouldScrollToSelection = false
+            if preservesScrollIntent {
+                shouldScrollToSelection = previousShouldScrollToSelection
+            }
             return
         }
 
@@ -216,6 +224,9 @@ public struct EntryViewLayoutState: Equatable {
         }
         if selectedIds != previousSelectedIds {
             shouldScrollToSelection = false
+        }
+        if preservesScrollIntent {
+            shouldScrollToSelection = previousShouldScrollToSelection
         }
     }
 
