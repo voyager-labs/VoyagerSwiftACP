@@ -59,9 +59,6 @@ struct VoyagerApp: App {
                     await Task.yield()
                     return true
                 },
-                resolveAccountAccessStore: {
-                    appRootStoreReference.accountAccessStore()
-                },
             )
             $0.fileManagerWindowClient = fileManagerWindowClient
             $0.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
@@ -173,17 +170,6 @@ struct VoyagerApp: App {
                 },
                 onClosed: { [appRootStore] id in
                     appRootStore.send(.windowManager(.event(.windowClosed(id))))
-                },
-            ),
-            sessionLapseGuardProvider: FileManagerSessionLapseGuardProvider(
-                resolveStore: { [appRootStore] in
-                    appRootStore.scope(
-                        state: \.lifecycle.presentedAccountAccess,
-                        action: \.lifecycle.accountAccess,
-                    )
-                },
-                resolveState: { [appRootStore] in
-                    appRootStore.state.lifecycle.presentedAccountAccess
                 },
             ),
         )

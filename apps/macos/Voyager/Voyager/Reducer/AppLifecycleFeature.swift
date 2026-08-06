@@ -80,101 +80,19 @@ struct AppLifecycleFeature {
 
             case .launch(.didFinishLaunching):
                 state.didFinishLaunching = true
-                if onboardingWindowClient.showIfNeeded() {
-                    return .none
-                }
-                state.accessGatePhase = .checking
-                return .send(.accountAccess(.onAppear))
+                let shouldPresentOnboarding = onboardingWindowClient.showIfNeeded()
+                return .merge(
+                    startShellRuntime(into: &state),
+                    shouldPresentOnboarding ? .none : .send(.accountAccess(.onAppear)),
+                )
 
             case let .launch(.appReopen(hasVisibleWindows: flag)):
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                if state.accessGatePhase == .recoveryRequired || state.accessGatePhase == .granted {
+                if state.isShellRuntimeReady {
                     return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
                 }
-                return .none
-
-            // MARK: - AccountAccess delegate routing
-
-            case .accountAccess(.delegate(.unlocked)):
-                guard state.accessGatePhase != .terminating else { return .none }
-                guard state.accessGatePhase != .granted else { return .none }
-                state.accessGatePhase = .granted
-                state.sessionEndReason = nil
-                var effects: [Effect<Action>] = [.send(.delegate(.openInitialWindowIfNeeded))]
-                if !state.didStartHelper {
-                    state.didStartHelper = true
-                    effects.append(helperMonitorEffect(
-                        helperClient: helperAppClient,
-                        stateClient: helperStateClient,
-                    ))
-                }
-                if !state.didStartEntryCoreHealthProbe {
-                    state.didStartEntryCoreHealthProbe = true
-                    let endpointClient = entryCoreEndpointClient
-                    let entryCoreClient = entryCoreClient
-                    let date = date
-                    effects.append(
-                        .run { send in
-                            let startedAt = date.now
-                            let endpoint: EntryCoreEndpoint
-                            do {
-                                endpoint = try endpointClient.resolve()
-                            } catch {
-                                await send(.entryCoreHealthProbeCompleted(.init(
-                                    outcome: .unavailable,
-                                    phase: .endpointResolution,
-                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                                )))
-                                return
-                            }
-
-                            do {
-                                _ = try await entryCoreClient.health(endpoint)
-                                await send(.entryCoreHealthProbeCompleted(.init(
-                                    outcome: .healthy,
-                                    phase: .response,
-                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                                )))
-                            } catch is CancellationError {
-                                return
-                            } catch let error as EntryCoreClientError {
-                                guard error != .cancelled else { return }
-                                await send(.entryCoreHealthProbeCompleted(
-                                    entryCoreHealthProbeResult(
-                                        for: error,
-                                        duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                                    ),
-                                ))
-                            } catch {
-                                await send(.entryCoreHealthProbeCompleted(.init(
-                                    outcome: .failed,
-                                    phase: .response,
-                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                                )))
-                            }
-                        }
-                        .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true),
-                    )
-                }
-                return .merge(effects)
-
-            case .accountAccess(.delegate(.recoveryRequired)):
-                guard state.accessGatePhase != .terminating else { return .none }
-                // explicit sign-out은 delegate를 signedOut 라우팅으로 변환
-                if state.sessionEndReason == .explicitSignOut {
-                    state.accessGatePhase = .signedOut
-                    return .none
-                }
-                guard state.accessGatePhase != .recoveryRequired else { return .none }
-                state.accessGatePhase = .recoveryRequired
-                guard !onboardingWindowClient.isRequired() else { return .none }
-                return .send(.delegate(.openInitialWindowIfNeeded))
-
-            case .accountAccess(.delegate(.signedOut)):
-                guard state.accessGatePhase != .terminating else { return .none }
-                state.accessGatePhase = .signedOut
                 return .none
 
             case .accountAccess:
@@ -269,7 +187,6 @@ struct AppLifecycleFeature {
                 )
 
             case .termination(.willTerminate):
-                state.accessGatePhase = .terminating
                 return .merge(
                     .cancel(id: CancelID.helperMonitor),
                     .cancel(id: CancelID.entryCoreHealthProbe),
@@ -278,6 +195,7 @@ struct AppLifecycleFeature {
                 )
 
             case let .entryCoreHealthProbeCompleted(result):
+                state.didCompleteEntryCoreHealthProbe = true
                 appLifecycleLogger.info(
                     "Entry Core health probe completed",
                     metadata: [
@@ -286,7 +204,8 @@ struct AppLifecycleFeature {
                         "duration": .string(String(describing: result.duration)),
                     ],
                 )
-                return .none
+                guard state.isShellRuntimeReady, !onboardingWindowClient.isRequired() else { return .none }
+                return .send(.delegate(.openInitialWindowIfNeeded))
 
             case .delegate(.openInitialWindowIfNeeded):
                 return .none
@@ -298,6 +217,65 @@ struct AppLifecycleFeature {
                 return .none
             }
         }
+    }
+
+    private func startShellRuntime(into state: inout State) -> Effect<Action> {
+        var effects: [Effect<Action>] = []
+        if !state.didStartHelper {
+            state.didStartHelper = true
+            effects.append(helperMonitorEffect(
+                helperClient: helperAppClient,
+                stateClient: helperStateClient,
+            ))
+        }
+        if !state.didStartEntryCoreHealthProbe {
+            state.didStartEntryCoreHealthProbe = true
+            let endpointClient = entryCoreEndpointClient
+            let entryCoreClient = entryCoreClient
+            let date = date
+            effects.append(
+                .run { send in
+                    let startedAt = date.now
+                    let endpoint: EntryCoreEndpoint
+                    do {
+                        endpoint = try endpointClient.resolve()
+                    } catch {
+                        await send(.entryCoreHealthProbeCompleted(.init(
+                            outcome: .unavailable,
+                            phase: .endpointResolution,
+                            duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                        )))
+                        return
+                    }
+                    do {
+                        _ = try await entryCoreClient.health(endpoint)
+                        await send(.entryCoreHealthProbeCompleted(.init(
+                            outcome: .healthy,
+                            phase: .response,
+                            duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                        )))
+                    } catch is CancellationError {
+                        return
+                    } catch let error as EntryCoreClientError {
+                        guard error != .cancelled else { return }
+                        await send(.entryCoreHealthProbeCompleted(
+                            entryCoreHealthProbeResult(
+                                for: error,
+                                duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                            ),
+                        ))
+                    } catch {
+                        await send(.entryCoreHealthProbeCompleted(.init(
+                            outcome: .failed,
+                            phase: .response,
+                            duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                        )))
+                    }
+                }
+                .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true),
+            )
+        }
+        return .merge(effects)
     }
 }
 
