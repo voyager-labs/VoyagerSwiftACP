@@ -262,6 +262,7 @@ private struct AiChatAssistantCodeBlockView: View {
             let expectedSource = renderedBlock.block.code?.payload
             guard let result = await renderSession.highlight(
                 renderedBlock,
+                transcriptRow: transcriptRow,
                 appearance: colorScheme == .dark ? .dark : .light,
                 typographyVersion: 1,
                 generation: UInt64(renderedBlock.block.projections.rendered.utf8.count),

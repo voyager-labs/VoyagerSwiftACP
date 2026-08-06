@@ -12,6 +12,19 @@ struct AiChatAssistantMarkdownRenderedBlock: Equatable, Identifiable {
     }
 }
 
+struct AiChatAssistantMarkdownHighlightIdentity: Hashable {
+    let transcriptRow: AiChatTranscriptRowDiscriminator
+    let presentationID: AiChatMarkdownDocument.BlockID
+
+    var syntaxHighlightingIdentity: AiChatSyntaxHighlightingClient.RequestIdentity {
+        let rowIdentity = switch transcriptRow {
+        case let .message(index): "message:\(index)"
+        case .streamingAssistant: "streaming-assistant"
+        }
+        return .init(rawValue: "\(rowIdentity):\(presentationID.rawValue)")
+    }
+}
+
 struct AiChatAssistantMarkdownRenderedDocument: Equatable {
     let transcriptRow: AiChatTranscriptRowDiscriminator
     let document: AiChatMarkdownDocument
@@ -23,7 +36,7 @@ struct AiChatAssistantMarkdownRenderDiagnostics: Equatable {
     var documentParseCount = 0
     var retainedDocumentCount = 0
     var blockPreparationCount: [AiChatMarkdownDocument.BlockID: Int] = [:]
-    var highlightGeneration: [AiChatMarkdownDocument.BlockID: UInt64] = [:]
+    var highlightGeneration: [AiChatAssistantMarkdownHighlightIdentity: UInt64] = [:]
     let streamingCoalescingLifecycleCount = 1
 }
 
@@ -58,7 +71,7 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
     private var renderedByRow: [AiChatTranscriptRowDiscriminator: AiChatAssistantMarkdownRenderedDocument] = [:]
     private var preparedPresentationIDs: Set<AiChatMarkdownDocument.BlockID> = []
     private var selectionProjections: [SelectionProjectionKey: SelectionProjection] = [:]
-    private var activeHighlightRequests: [AiChatMarkdownDocument.BlockID: HighlightRequest] = [:]
+    private var activeHighlightRequests: [AiChatAssistantMarkdownHighlightIdentity: HighlightRequest] = [:]
     private var hasPreparedSession = false
     private var preparedSessionID: AiChatSessionID?
     private var capturedSnapshot: AiChatAssistantMarkdownViewSnapshot?
@@ -248,30 +261,35 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
 
     func highlight(
         _ renderedBlock: AiChatAssistantMarkdownRenderedBlock,
+        transcriptRow: AiChatTranscriptRowDiscriminator,
         appearance: AiChatSyntaxHighlightingClient.Appearance,
         typographyVersion: Int,
         generation: UInt64,
     ) async -> AiChatSyntaxHighlightingClient.Result? {
         guard let code = renderedBlock.block.code else { return nil }
-        let previousGeneration = diagnostics.highlightGeneration[renderedBlock.presentationID] ?? 0
+        let requestKey = AiChatAssistantMarkdownHighlightIdentity(
+            transcriptRow: transcriptRow,
+            presentationID: renderedBlock.presentationID,
+        )
+        let previousGeneration = diagnostics.highlightGeneration[requestKey] ?? 0
         let nextGeneration = max(previousGeneration &+ 1, generation)
-        diagnostics.highlightGeneration[renderedBlock.presentationID] = nextGeneration
+        diagnostics.highlightGeneration[requestKey] = nextGeneration
         let request = HighlightRequest(generation: nextGeneration, source: code.payload)
-        activeHighlightRequests[renderedBlock.presentationID] = request
+        activeHighlightRequests[requestKey] = request
         defer {
-            if activeHighlightRequests[renderedBlock.presentationID] == request {
-                activeHighlightRequests[renderedBlock.presentationID] = nil
+            if activeHighlightRequests[requestKey] == request {
+                activeHighlightRequests[requestKey] = nil
             }
         }
         let result = await highlightingClient.highlight(.init(
-            identity: .init(rawValue: renderedBlock.presentationID.rawValue),
+            identity: requestKey.syntaxHighlightingIdentity,
             code: code.payload,
             languageLabel: code.originalLanguage,
             appearance: appearance,
             typographyVersion: typographyVersion,
             generation: nextGeneration,
         ))
-        guard activeHighlightRequests[renderedBlock.presentationID] == request,
+        guard activeHighlightRequests[requestKey] == request,
               result.generation == nextGeneration,
               result.source == code.payload
         else { return nil }

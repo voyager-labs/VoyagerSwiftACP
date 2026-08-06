@@ -1553,6 +1553,85 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await assertSyntaxHighlightingStaleGenerationDiscard()
     }
 
+    /// CBW-001-render_assistant_markdown: 동일 code block의 highlight 요청은 transcript row별로 격리한다.
+    /// 서로 다른 assistant message가 같은 presentation ID를 가져도 완료 순서와 무관하게 각 결과를 적용하는지 검증합니다.
+    /// - 검증 내용: 두 stored row의 역순 완료와 같은 row의 최신 generation 우선 적용을 확인합니다.
+    /// - 사전 조건: 같은 Swift fence를 가진 두 message row와 완료 순서를 제어하는 highlight recorder가 있습니다.
+    /// - 기대 결과: 서로 다른 row 결과는 모두 표시 가능하고 같은 row의 이전 generation만 폐기됩니다.
+    func testRenderAssistantMarkdownScopesHighlightRequestsToTranscriptRows() async throws {
+        let recorder = IndexedSyntaxHighlightingRecorder()
+        let client = AiChatSyntaxHighlightingClient.testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { ["swift"] },
+            highlight: { code, _, _ in await recorder.highlight(code: code) },
+        )
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: client)
+        let source = "```swift\nlet shared = true\n```\n"
+        let firstRow = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let secondRow = AiChatTranscriptRowDiscriminator.message(index: 1)
+        let firstBlock = try XCTUnwrap(session.render(content: source, transcriptRow: firstRow).blocks.first)
+        let secondBlock = try XCTUnwrap(session.render(content: source, transcriptRow: secondRow).blocks.first)
+        XCTAssertEqual(firstBlock.presentationID, secondBlock.presentationID)
+
+        let firstTask = Task {
+            await session.highlight(
+                firstBlock,
+                transcriptRow: firstRow,
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 1,
+            )
+        }
+        await waitForIndexedSyntaxHighlightingCalls(1, recorder: recorder)
+        let secondTask = Task {
+            await session.highlight(
+                secondBlock,
+                transcriptRow: secondRow,
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 1,
+            )
+        }
+        await waitForIndexedSyntaxHighlightingCalls(2, recorder: recorder)
+
+        await recorder.resume(invocation: 1, source: "let shared = true\n")
+        let secondResult = await secondTask.value
+        await recorder.resume(invocation: 0, source: "let shared = true\n")
+        let firstResult = await firstTask.value
+
+        XCTAssertNotNil(firstResult)
+        XCTAssertNotNil(secondResult)
+
+        let olderTask = Task {
+            await session.highlight(
+                firstBlock,
+                transcriptRow: firstRow,
+                appearance: .light,
+                typographyVersion: 2,
+                generation: 2,
+            )
+        }
+        await waitForIndexedSyntaxHighlightingCalls(3, recorder: recorder)
+        let latestTask = Task {
+            await session.highlight(
+                firstBlock,
+                transcriptRow: firstRow,
+                appearance: .light,
+                typographyVersion: 3,
+                generation: 3,
+            )
+        }
+        await waitForIndexedSyntaxHighlightingCalls(4, recorder: recorder)
+
+        await recorder.resume(invocation: 3, source: "let shared = true\n")
+        let latestResult = await latestTask.value
+        await recorder.resume(invocation: 2, source: "let shared = true\n")
+        let olderResult = await olderTask.value
+
+        XCTAssertNil(olderResult)
+        XCTAssertNotNil(latestResult)
+    }
+
     /// CBW-001-render_assistant_markdown: cancellation과 LRU bounds는 결과 적용과 memory growth를 제한한다.
     /// pending coalescing 취소와 많은 고유 source가 실패 cache나 무제한 cache로 이어지지 않는지 검증합니다.
     /// - 검증 내용: cancelled result eligibility와 128-entry/8MiB LRU eviction 및 재호출을 확인합니다.
@@ -1974,6 +2053,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         _ = await session.highlight(
             code,
+            transcriptRow: .streamingAssistant,
             appearance: .light,
             typographyVersion: 1,
             generation: 100,
@@ -1988,6 +2068,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let latest = session.render(content: latestContent, transcriptRow: .message(index: 4))
         _ = try await session.highlight(
             XCTUnwrap(latest.blocks.first),
+            transcriptRow: .message(index: 4),
             appearance: .light,
             typographyVersion: 1,
             generation: 1,
@@ -2000,7 +2081,20 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(diagnostics.retainedDocumentCount, 1)
         XCTAssertEqual(diagnostics.blockPreparationCount[code.presentationID], 1)
         XCTAssertEqual(diagnostics.streamingCoalescingLifecycleCount, 1)
-        XCTAssertEqual(diagnostics.highlightGeneration[code.presentationID], 101)
+        XCTAssertEqual(
+            diagnostics.highlightGeneration[.init(
+                transcriptRow: .streamingAssistant,
+                presentationID: code.presentationID,
+            )],
+            100,
+        )
+        XCTAssertEqual(
+            diagnostics.highlightGeneration[.init(
+                transcriptRow: .message(index: 4),
+                presentationID: code.presentationID,
+            )],
+            1,
+        )
         XCTAssertEqual(highlightInvocationCount, 1)
     }
 
@@ -2048,6 +2142,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             let block = try XCTUnwrap(rendered.blocks.first)
             let result = await session.highlight(
                 block,
+                transcriptRow: .message(index: index),
                 appearance: .light,
                 typographyVersion: 1,
                 generation: 1,
@@ -3465,6 +3560,45 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
                 ),
             ])
         }
+    }
+
+    private actor IndexedSyntaxHighlightingRecorder {
+        private typealias Continuation = CheckedContinuation<[AiChatSyntaxHighlightingClient.Run], Never>
+
+        private var invocationTotal = 0
+        private var continuations: [Int: Continuation] = [:]
+
+        func invocationCount() -> Int {
+            invocationTotal
+        }
+
+        func highlight(code _: String) async -> [AiChatSyntaxHighlightingClient.Run] {
+            let invocation = invocationTotal
+            invocationTotal += 1
+            return await withCheckedContinuation { continuation in
+                continuations[invocation] = continuation
+            }
+        }
+
+        func resume(invocation: Int, source: String) {
+            continuations.removeValue(forKey: invocation)?.resume(returning: [
+                .init(
+                    sourceRange: .init(utf16Offsets: 0 ..< source.utf16.count),
+                    attributes: .init(isBold: true),
+                ),
+            ])
+        }
+    }
+
+    private func waitForIndexedSyntaxHighlightingCalls(
+        _ expectedCount: Int,
+        recorder: IndexedSyntaxHighlightingRecorder,
+    ) async {
+        for _ in 0 ..< 1000 {
+            if await recorder.invocationCount() >= expectedCount { return }
+            await Task.yield()
+        }
+        XCTFail("Timed out waiting for \(expectedCount) indexed syntax highlighting calls")
     }
 
     private final class InputTextViewHarnessState {
