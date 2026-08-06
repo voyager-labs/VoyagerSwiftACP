@@ -5,6 +5,59 @@ import VoyagerEntitiesEntry
 import XCTest
 
 extension EVM002ManageEntriesViewPresentationTests {
+    // MARK: - EVM-002-single_render_transaction_multi_field_projection
+
+    /// EVM-002-single_render_transaction_multi_field_projection: structural projection과 selection, clipboard, rename,
+    /// scroll
+    /// intent가 실제 render entry point의 한 render에서 최종 상태를 유지한다.
+    /// - 검증 내용: processRender의 CATransaction 경로에서 구조 변경 reload 뒤 selection, cut presentation, rename target이 적용되고
+    /// scroll intent가 소비된다.
+    /// - 사전 조건: 이전 snapshot에는 old entry가 있고 현재 store에는 selected/renaming target과 scroll intent가 있는 새 entry가 있다.
+    /// - 기대 결과: table selection은 새 target row를 가리키고 rename target은 유지되며 scroll intent는 reset된다.
+    func testSingleRenderProjectionPreservesSelectionRenameAndScrollIntent() throws {
+        let oldEntry = EntryModel.temporaryFolder(id: "/root/old", name: "old")
+        let targetEntry = EntryModel.temporaryFolder(id: "/root/target", name: "target")
+        var previousState = EntryViewLayoutState()
+        previousState.entries = [oldEntry]
+
+        var currentState = EntryViewLayoutState()
+        currentState.entries = [targetEntry]
+        currentState.selectedIds = [targetEntry.id]
+        currentState.lastSelectedId = targetEntry.id
+        currentState.clipboardCutPaths = [targetEntry.fullPath]
+        currentState.renamingItemId = targetEntry.id
+        currentState.shouldScrollToSelection = true
+
+        let store = Store(initialState: currentState) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.tableView.deselectAll(nil)
+        coordinator.lastRenamingItemId = nil
+        coordinator.lastRenderSnapshot = EntryListCoordinatorRenderSnapshot(state: previousState)
+
+        coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: currentState))
+
+        let targetItem = try XCTUnwrap(coordinator.entryItemById[targetEntry.id])
+        XCTAssertEqual(coordinator.tableView.row(forItem: targetItem), coordinator.tableView.selectedRow)
+        XCTAssertEqual(coordinator.lastRenamingItemId, targetEntry.id)
+        XCTAssertFalse(store.state.shouldScrollToSelection)
+        XCTAssertTrue(coordinator.makeEntryCellConfiguration(
+            entry: targetEntry,
+            columnId: EntryListColumn.name.rawValue,
+            columnWidth: 200,
+            thumbnail: nil,
+            isLoadingChildren: false,
+        ).context.isCut)
+        XCTAssertTrue(coordinator.makeEntryCellConfiguration(
+            entry: targetEntry,
+            columnId: EntryListColumn.name.rawValue,
+            columnWidth: 200,
+            thumbnail: nil,
+            isLoadingChildren: false,
+        ).context.isRenaming)
+        XCTAssertEqual(coordinator.lastRenderSnapshot, EntryListCoordinatorRenderSnapshot(state: currentState))
+    }
+
     // MARK: - EVM-002-toggle_directory_expansion_in_list
 
     /// EVM-002-toggle_directory_expansion_in_list: stale revision callback은 현재 hierarchy나 selection으로 전달되지 않는다.
@@ -219,6 +272,79 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(session.pendingProjection)
     }
 
+    // MARK: - EVM-002-flat_projection_session_coalescing
+
+    /// EVM-002-flat_projection_session_coalescing: flat rebuild는 projection session revision을 유지한다.
+    /// flat 구조 reload가 session reset을 우회하지 않고 동일한 revision gate를 사용하는지 검증한다.
+    /// - 검증 내용: flat coordinator bind가 flat projection을 session에 적용하고 반복 rebuild가 동일 구조를 dedup한다.
+    /// - 사전 조건: hierarchy가 비활성화된 list state에 두 root entry가 있다.
+    /// - 기대 결과: bind와 반복 rebuild 뒤 rendered revision은 유지되고 두 번째 rebuild는 projection을 교체하지 않는다.
+    func testFlatRebuildUsesProjectionSessionRevisionGate() {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var state = EntryViewLayoutState()
+        state.entries = [first, second]
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+
+        coordinator.bind(to: EntryListView(frame: .zero))
+        XCTAssertEqual(coordinator.renderedProjectionRevision, 0)
+        let firstRenderedItem = coordinator.outlineItems.first
+
+        coordinator.rebuildRowsAndReload()
+
+        XCTAssertEqual(coordinator.renderedProjectionRevision, 0)
+        XCTAssertIdentical(coordinator.outlineItems.first, firstRenderedItem)
+    }
+
+    /// EVM-002-flat_projection_session_coalescing: flat apply는 newest pending projection의 item payload를 함께 유지한다.
+    /// - 검증 내용: flatItems overload의 reentrant apply가 revision 2와 concrete item identity를 보존하고 stale revision callback을
+    /// 배제한다.
+    /// - 사전 조건: revision 1 callback 중 revision 2 flat projection과 stale revision 1 flat projection이 순서대로 도착한다.
+    /// - 기대 결과: callback revision은 [1, 2]이고 revision 2 item만 적용되며 rendered/pending 상태가 정리된다.
+    func testFlatApplyKeepsNewestPendingItemsAndIgnoresStaleRevision() {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        let stale = EntryModel.temporaryFolder(id: "/root/stale", name: "stale")
+        let session = EntryListCoordinatorProjectionSession()
+        let firstItem = EntryListOutlineItem(kind: .entry(first))
+        let secondItem = EntryListOutlineItem(kind: .entry(second))
+        let staleItem = EntryListOutlineItem(kind: .entry(stale))
+        var appliedRevisions: [Int] = []
+        var appliedItemIDs: [[String]] = []
+
+        session.apply(
+            outlineProjection(revision: 1, roots: [first]),
+            flatItems: [firstItem],
+        ) { projection, items in
+            appliedRevisions.append(projection.revision)
+            appliedItemIDs.append(items.map(\.id))
+            XCTAssertTrue(session.isApplyingStoreProjection)
+
+            session.apply(
+                outlineProjection(revision: 2, roots: [second]),
+                flatItems: [secondItem],
+            ) { pendingProjection, pendingItems in
+                appliedRevisions.append(pendingProjection.revision)
+                appliedItemIDs.append(pendingItems.map(\.id))
+                XCTAssertIdentical(pendingItems.first, secondItem)
+                XCTAssertEqual(pendingProjection.rootItemIDs, [.entry(second.id)])
+            }
+            session.apply(
+                outlineProjection(revision: 1, roots: [stale]),
+                flatItems: [staleItem],
+            ) { _, _ in
+                XCTFail("stale flat projection must not invoke its callback")
+            }
+        }
+
+        XCTAssertEqual(appliedRevisions, [1, 2])
+        XCTAssertEqual(appliedItemIDs, [[firstItem.id], [secondItem.id]])
+        XCTAssertEqual(session.renderedProjectionRevision, 2)
+        XCTAssertFalse(session.isApplyingStoreProjection)
+        XCTAssertNil(session.pendingProjection)
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: hierarchy render는 저장된 scroll 위치를 복원한다.
     /// flat render와 동일하게 outline projection 적용 뒤 saved offset restore가 실행되는지 검증한다.
     /// - 검증 내용: hierarchy-enabled initial bind의 scroll restore completion flag
@@ -237,7 +363,128 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         coordinator.bind(to: view)
 
-        XCTAssertTrue(coordinator.hasRestoredScrollPosition)
+        XCTAssertEqual(view.scrollView.contentView.bounds.origin, CGPoint(x: 0, y: 20))
+    }
+
+    // MARK: - EVM-002-entry_id_row_anchor_structural_reload
+
+    /// EVM-002-entry_id_row_anchor_structural_reload: 구조 reload 뒤 동일 entry의 화면상 pixel offset을 보존한다.
+    /// - 검증 내용: 새 row가 anchor 위에 삽입되어 기존 row index가 변해도 top visible entry ID와 pixel offset을 복원한다.
+    /// - 사전 조건: 세 entry를 렌더한 뒤 중간 entry를 top visible anchor로 두고 앞에 새 entry를 삽입한다.
+    /// - 기대 결과: 구조 변경 후에도 동일 entry가 같은 pixel offset에 남는다.
+    func testStructuralReloadPreservesTopVisibleEntryAnchor() throws {
+        let anchor = EntryModel.temporaryFolder(id: "/root/anchor", name: "anchor")
+        let last = EntryModel.temporaryFolder(id: "/root/last", name: "last")
+        let inserted = EntryModel.temporaryFolder(id: "/root/inserted", name: "inserted")
+        var state = EntryViewLayoutState()
+        state.entries = [anchor, last]
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 20))
+
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+        let anchorItem = try XCTUnwrap(coordinator.entryItemById[anchor.id])
+        let anchorRow = coordinator.tableView.row(forItem: anchorItem)
+        let anchorRect = coordinator.tableView.rect(ofRow: anchorRow)
+        coordinator.scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: anchorRect.origin.y - 7))
+        coordinator.tableView.layoutSubtreeIfNeeded()
+        coordinator.tableView.scrollRowToVisible(anchorRow)
+        coordinator.scrollView.contentView.setBoundsOrigin(NSPoint(
+            x: 0,
+            y: coordinator.tableView.rect(ofRow: anchorRow).origin.y - 7,
+        ))
+        let beforeRows = coordinator.tableView.rows(in: coordinator.scrollView.contentView.bounds)
+        let beforeTopItem = try XCTUnwrap(coordinator.tableView
+            .item(atRow: beforeRows.location) as? EntryListOutlineItem)
+        guard case let .entry(beforeTopEntry) = beforeTopItem.kind else {
+            return XCTFail("Top visible item must be an entry")
+        }
+        let beforeOffset = coordinator.tableView.rect(ofRow: beforeRows.location).origin.y
+            - coordinator.scrollView.contentView.bounds.origin.y
+
+        store.send(.internal(.setCollectionItems([anchor, inserted, last])))
+        coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: store.state))
+
+        let afterRows = coordinator.tableView.rows(in: coordinator.scrollView.contentView.bounds)
+        let afterTopItem = try XCTUnwrap(coordinator.tableView.item(atRow: afterRows.location) as? EntryListOutlineItem)
+        guard case let .entry(afterTopEntry) = afterTopItem.kind else {
+            return XCTFail("Top visible item must be an entry")
+        }
+        let afterOffset = coordinator.tableView.rect(ofRow: afterRows.location).origin.y
+            - coordinator.scrollView.contentView.bounds.origin.y
+
+        XCTAssertEqual(beforeTopEntry.id, anchor.id)
+        XCTAssertEqual(afterTopEntry.id, anchor.id)
+        XCTAssertEqual(afterOffset, beforeOffset, accuracy: 1)
+
+        let beforeColumnReload = try XCTUnwrap(topVisibleEntryAndOffset(for: coordinator))
+        var previousColumnState = state
+        previousColumnState.listVisibleColumns = [.name, .size]
+        coordinator.handleVisibleColumnsChange(
+            previous: EntryListCoordinatorRenderSnapshot(state: previousColumnState),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: state),
+        )
+        let afterColumnReload = try XCTUnwrap(topVisibleEntryAndOffset(for: coordinator))
+        XCTAssertEqual(afterColumnReload.id, beforeColumnReload.id)
+        XCTAssertEqual(afterColumnReload.offset, beforeColumnReload.offset, accuracy: 1)
+
+        var metricState = state
+        metricState.listIconSize = 40
+        metricState.listTextSize = 18
+        let beforeMetricReload = try XCTUnwrap(topVisibleEntryAndOffset(for: coordinator))
+        coordinator.updateListMetricsIfNeeded(
+            previous: EntryListCoordinatorRenderSnapshot(state: state),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: metricState),
+        )
+        let afterMetricReload = try XCTUnwrap(topVisibleEntryAndOffset(for: coordinator))
+        XCTAssertEqual(afterMetricReload.id, beforeMetricReload.id)
+        XCTAssertEqual(afterMetricReload.offset, beforeMetricReload.offset, accuracy: 1)
+    }
+
+    /// EVM-002-entry_id_row_anchor_structural_reload: 제거된 anchor는 남은 첫 row로 안전하게 대체된다.
+    /// - 검증 내용: 구조 변경으로 anchor entry가 없어질 때 stale row/item 접근 없이 남은 visible row를 사용한다.
+    /// - 사전 조건: anchor가 top visible row이고 structural projection에서 anchor가 제거된다.
+    /// - 기대 결과: 남은 entry가 table의 top visible row가 된다.
+    func testStructuralReloadFallsBackWhenTopVisibleEntryIsRemoved() throws {
+        let anchor = EntryModel.temporaryFolder(id: "/root/anchor", name: "anchor")
+        let retained = EntryModel.temporaryFolder(id: "/root/retained", name: "retained")
+        var state = EntryViewLayoutState()
+        state.entries = [anchor, retained]
+        state.hierarchy = .init(rootPath: "/root")
+        state.outlineProjectionRevision = 1
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 20))
+
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+        let anchorItem = try XCTUnwrap(coordinator.entryItemById[anchor.id])
+        coordinator.tableView.scrollRowToVisible(coordinator.tableView.row(forItem: anchorItem))
+        coordinator.applyStoreProjection(outlineProjection(revision: 2, roots: [retained]))
+
+        let rows = coordinator.tableView.rows(in: coordinator.scrollView.contentView.bounds)
+        let topItem = try XCTUnwrap(coordinator.tableView.item(atRow: rows.location) as? EntryListOutlineItem)
+        guard case let .entry(topEntry) = topItem.kind else {
+            return XCTFail("Fallback row must be an entry")
+        }
+        XCTAssertEqual(topEntry.id, retained.id)
+    }
+
+    private func topVisibleEntryAndOffset(
+        for coordinator: EntryListCoordinator,
+    ) -> (id: EntryModel.ID, offset: CGFloat)? {
+        let rows = coordinator.tableView.rows(in: coordinator.scrollView.contentView.bounds)
+        guard rows.location != NSNotFound,
+              rows.length > 0,
+              let item = coordinator.tableView.item(atRow: rows.location) as? EntryListOutlineItem,
+              case let .entry(entry) = item.kind
+        else {
+            return nil
+        }
+        let offset = coordinator.tableView.rect(ofRow: rows.location).origin.y
+            - coordinator.scrollView.contentView.bounds.origin.y
+        return (entry.id, offset)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: root 삭제는 남은 outline item identity를 보존한다.
