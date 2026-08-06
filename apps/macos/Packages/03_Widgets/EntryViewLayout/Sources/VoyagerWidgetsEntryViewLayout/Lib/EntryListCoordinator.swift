@@ -304,6 +304,7 @@ public final class EntryListCoordinator: NSObject {
             tableView.reloadData()
             applyGroupExpansionState()
             syncListSelectionFromStore()
+            syncListRenamingFromStore()
             restoreScrollPositionIfNeeded()
             requestThumbnailsForVisibleRows()
         } else {
@@ -320,7 +321,10 @@ public final class EntryListCoordinator: NSObject {
                 requestThumbnailsForVisibleRows()
             }
         }
-        restoreScrollAnchor(scrollAnchor)
+        let pathChanged = RenderSnapshot(state: state).currentPath != snapshot.currentPath
+        if !pathChanged {
+            restoreScrollAnchor(scrollAnchor)
+        }
     }
 
     func requestThumbnailsForVisibleRows() {
