@@ -204,7 +204,7 @@ struct AppLifecycleFeature {
                         "duration": .string(String(describing: result.duration)),
                     ],
                 )
-                guard state.isShellRuntimeReady, !onboardingWindowClient.isRequired() else { return .none }
+                guard state.isShellRuntimeReady else { return .none }
                 return .send(.delegate(.openInitialWindowIfNeeded))
 
             case .delegate(.openInitialWindowIfNeeded):

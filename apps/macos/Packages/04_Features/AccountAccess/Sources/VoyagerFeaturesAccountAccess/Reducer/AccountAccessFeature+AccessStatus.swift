@@ -95,7 +95,6 @@ extension AccountAccessFeature {
                 binding: binding,
                 intent: intent,
                 reason: reason,
-                mutationGeneration: Int(requestGeneration),
             )))
         }
         .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
@@ -113,7 +112,7 @@ extension AccountAccessFeature {
             return .none
         }
 
-        state.syncGeneration = max(state.syncGeneration, UInt64(clamping: completion.mutationGeneration))
+        state.syncGeneration = max(state.syncGeneration, completion.requestGeneration)
         return sessionSyncEffect(
             intent: completion.intent,
             reason: completion.reason,

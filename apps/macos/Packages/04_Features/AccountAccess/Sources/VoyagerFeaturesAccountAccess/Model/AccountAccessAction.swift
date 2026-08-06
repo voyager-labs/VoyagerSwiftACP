@@ -46,20 +46,17 @@ public struct AccountAccessSessionSyncActivationCompletion: Equatable, Sendable 
     public let binding: UUID?
     public let intent: SessionSyncIntent
     public let reason: SyncReason
-    public let mutationGeneration: Int
 
     public init(
         requestGeneration: UInt64,
         binding: UUID?,
         intent: SessionSyncIntent,
         reason: SyncReason,
-        mutationGeneration: Int,
     ) {
         self.requestGeneration = requestGeneration
         self.binding = binding
         self.intent = intent
         self.reason = reason
-        self.mutationGeneration = mutationGeneration
     }
 }
 
