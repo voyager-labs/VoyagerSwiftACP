@@ -2323,7 +2323,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
 
     /// CBW-004-select_chat_model_thinking: native menu Thinking projection은 policy option과 associated value identity를
     /// 그대로 보존한다.
-    /// provider default와 none을 구분하고 unsupported model 및 no-model 상태가 서로 다른 disabled projection인지 검증합니다.
+    /// provider default와 none을 구분하고 unsupported model의 설명 메뉴와 no-model 비활성 trigger를 검증합니다.
     /// - 검증 내용: policy option/order, selection identity, single selection, unsupported item metadata, no-model trigger
     /// state
     /// - 사전 조건: none을 지원하는 effort model, unsupported model, 선택 model이 없는 loaded state가 있습니다.
@@ -2415,8 +2415,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             XCTAssertEqual(unavailableItem.disabledReason, unavailableReason)
             XCTAssertEqual(unavailableItem.accessibilityLabel, "Thinking unavailable")
             XCTAssertEqual(unavailableItem.accessibilityValue, "Unavailable: \(unavailableReason)")
-            // unsupported/unknown capability는 활성화된 thinking 선택지가 없으므로 트리거를 비활성화한다.
-            XCTAssertTrue(unavailableProjection.thinkingMenuIsDisabled)
+            // unsupported/unknown capability도 비가용 사유를 확인할 수 있도록 메뉴 트리거는 활성화한다.
+            XCTAssertFalse(unavailableProjection.thinkingMenuIsDisabled)
         }
 
         let noModelState = AiChatFeature.State(modelListState: .loaded([]))
@@ -2524,8 +2524,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         )
         let projection = AiChatStateDisplayModelBuilder(state: initialState)
 
-        // malformed token budget policy는 unavailable 항목만 노출하므로 활성화된 선택지가 없고 트리거가 비활성화된다.
-        XCTAssertTrue(projection.thinkingMenuIsDisabled)
+        // malformed token budget policy도 unavailable 사유를 확인할 수 있도록 메뉴 트리거는 활성화한다.
+        XCTAssertFalse(projection.thinkingMenuIsDisabled)
         XCTAssertEqual(projection.thinkingMenuItems.count, 1)
         let item = try XCTUnwrap(projection.thinkingMenuItems.first)
         XCTAssertNil(item.selection)
