@@ -317,7 +317,7 @@ public struct EntryViewLayoutFeature {
                 state.trashDirectoryPath = projection.trashDirectoryPath
                 state.collectionWindowID = projection.collectionWindowID
                 state.collectionLoadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
-                state.reconcileSelectionWithVisibleEntries()
+                state.reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
                 return .none
 
             case let .internal(.setCollectionMode(isCollectionMode)):

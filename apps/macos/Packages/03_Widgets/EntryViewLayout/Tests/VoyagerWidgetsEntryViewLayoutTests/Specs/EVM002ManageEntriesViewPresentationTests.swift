@@ -371,7 +371,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(state.selectedIds, [])
         XCTAssertNil(state.lastSelectedId)
         XCTAssertNil(state.rangeAnchorId)
-        XCTAssertFalse(state.shouldScrollToSelection)
+        XCTAssertTrue(state.shouldScrollToSelection)
     }
 
     /// EVM-002-show_selected_entry_counts: 새 항목 목록에 남아 있는 selection만 유지하는지 검증
@@ -395,7 +395,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(state.selectedIds, [keptEntry.id])
         XCTAssertEqual(state.lastSelectedId, keptEntry.id)
         XCTAssertEqual(state.rangeAnchorId, keptEntry.id)
-        XCTAssertFalse(state.shouldScrollToSelection)
+        XCTAssertTrue(state.shouldScrollToSelection)
     }
 
     // MARK: - EVM-002-view_entry_counts_in_current_page
@@ -1107,7 +1107,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.selectedIds = [keptItem.id]
             $0.lastSelectedId = keptItem.id
             $0.rangeAnchorId = keptItem.id
-            $0.shouldScrollToSelection = false
+            $0.shouldScrollToSelection = true
             $0.entries = [keptItem]
         }
     }
