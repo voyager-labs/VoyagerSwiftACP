@@ -171,7 +171,6 @@ public final class EntryListCoordinator: NSObject {
     var sortSyncGate = EntryListCoordinatorSortSyncGate()
     var isApplyingColumnsFromStore = false
     var isUpdatingSelectionFromStore = false
-    var hasRestoredScrollPosition = false
     var isUpdatingGroupExpansion = false
     var isApplyingHierarchyExpansion = false
     var lastRenamingItemId: EntryModel.ID?
@@ -215,7 +214,14 @@ public final class EntryListCoordinator: NSObject {
         lastRenderSnapshot = RenderSnapshot(state: state)
         observeListStore()
         observeTableView()
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0)
         rebuildRowsAndReload()
+        syncListSelectionFromStore()
+        scrollToSelectionIfNeeded()
+        restoreScrollPositionIfNeeded()
+        syncListRenamingFromStore()
+        CATransaction.commit()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
 
@@ -266,26 +272,25 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func rebuildRowsAndReload() {
+        let scrollAnchor = captureScrollAnchor()
         let snapshot = RenderSnapshot(state: state)
         if snapshot.isHierarchyOutlineEnabled {
             applyStoreProjection(snapshot.outlineProjection)
+            restoreScrollAnchor(scrollAnchor)
             return
         }
 
-        projectionSession.reset()
-        outlineItems = makeOutlineItems(state: state)
-        rebuildItemIndexes()
-        lastAppliedVisibleRows = []
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0)
-        tableView.reloadData()
-        syncListSelectionFromStore()
-        applyGroupExpansionState()
-        scrollToSelectionIfNeeded()
-        restoreScrollPositionIfNeeded()
-        syncListRenamingFromStore()
-        CATransaction.commit()
-        requestThumbnailsForVisibleRows()
+        let flatItems = makeOutlineItems(state: state)
+        projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
+            guard let self else { return }
+            outlineItems = items
+            rebuildItemIndexes()
+            lastAppliedVisibleRows = []
+            tableView.reloadData()
+            applyGroupExpansionState()
+            requestThumbnailsForVisibleRows()
+        }
+        restoreScrollAnchor(scrollAnchor)
     }
 
     func requestThumbnailsForVisibleRows() {
@@ -377,7 +382,11 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func makeOutlineItems(state: EntryViewLayoutState) -> [OutlineItem] {
-        state.presentation.sections.flatMap { section -> [OutlineItem] in
+        makeOutlineItems(presentation: state.presentation)
+    }
+
+    func makeOutlineItems(presentation: EntryViewLayoutPresentation) -> [OutlineItem] {
+        presentation.sections.flatMap { section -> [OutlineItem] in
             let entries = section.items.map { OutlineItem(kind: .entry($0), identityScope: section.id) }
             guard let title = section.title else { return entries }
             return [
@@ -394,6 +403,7 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func applyStoreProjection(_ projection: EntryListOutlineProjection) {
+        let scrollAnchor = captureScrollAnchor()
         let oldVisibleRows = lastAppliedVisibleRows
 
         projectionSession.apply(projection) { [weak self] projection, items in
@@ -403,22 +413,17 @@ public final class EntryListCoordinator: NSObject {
 
             if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items) {
                 lastAppliedVisibleRows = newVisibleRows
+                restoreScrollAnchor(scrollAnchor)
                 return
             }
 
             outlineItems = items
             rebuildItemIndexes()
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(0)
             tableView.reloadData()
             applyFolderExpansionState(for: projection)
-            syncListSelectionFromStore()
-            scrollToSelectionIfNeeded()
-            restoreScrollPositionIfNeeded()
-            syncListRenamingFromStore()
-            CATransaction.commit()
             requestThumbnailsForVisibleRows()
             lastAppliedVisibleRows = newVisibleRows
+            restoreScrollAnchor(scrollAnchor)
         }
     }
 
@@ -427,58 +432,110 @@ public final class EntryListCoordinator: NSObject {
         new: [EntryListOutlineProjection.ItemID],
         items: [OutlineItem],
     ) -> Bool {
-        guard !old.isEmpty, !new.isEmpty else { return false }
+        guard let plan = makeIncrementalRowUpdatePlan(old: old, new: new, items: items) else { return false }
 
-        let oldSet = Set(old)
-        let newSet = Set(new)
-        let removed = oldSet.subtracting(newSet)
-        let added = newSet.subtracting(oldSet)
-
-        guard added.isEmpty, !removed.isEmpty, removed.count <= 20 else { return false }
-
-        var oldIdx = 0
-        for newItem in new {
-            while oldIdx < old.count, removed.contains(old[oldIdx]) {
-                oldIdx += 1
-            }
-            guard oldIdx < old.count, old[oldIdx] == newItem else { return false }
-            oldIdx += 1
-        }
-
-        guard let removedRootChildIndices = rootRemovalIndexes(for: removed) else { return false }
-
-        let incomingItemsByID = Dictionary(uniqueKeysWithValues: items.flatMap { $0.flattenItems() })
-        for item in outlineItems.flatMap({ $0.flattenItems().map(\.1) }) {
-            guard let incoming = incomingItemsByID[item.id] else { continue }
-            item.kind = incoming.kind
-            item.isLoadingChildren = incoming.isLoadingChildren
-        }
-        for index in removedRootChildIndices.reversed() {
-            outlineItems.remove(at: index)
-        }
+        outlineItems = plan.items
         rebuildItemIndexes()
 
         tableView.beginUpdates()
-        tableView.removeItems(at: removedRootChildIndices, inParent: nil, withAnimation: .slideLeft)
+        if !plan.removedIndexes.isEmpty {
+            tableView.removeItems(at: plan.removedIndexes, inParent: nil, withAnimation: .slideLeft)
+        }
+        if !plan.insertedIndexes.isEmpty {
+            tableView.insertItems(at: plan.insertedIndexes, inParent: nil, withAnimation: .slideDown)
+        }
+        for operation in plan.moves {
+            tableView.moveItem(at: operation.from, inParent: nil, to: operation.to, inParent: nil)
+        }
         tableView.endUpdates()
-
         syncListSelectionFromStore()
         requestThumbnailsForVisibleRows()
-
         return true
     }
 
-    private func rootRemovalIndexes(
-        for removed: Set<EntryListOutlineProjection.ItemID>,
-    ) -> IndexSet? {
-        var indexes = IndexSet()
-        for (index, item) in outlineItems.enumerated() {
+    private struct IncrementalRowUpdatePlan {
+        let items: [OutlineItem]
+        let removedIndexes: IndexSet
+        let insertedIndexes: IndexSet
+        let moves: [(from: Int, to: Int)]
+    }
+
+    private func makeIncrementalRowUpdatePlan(
+        old: [EntryListOutlineProjection.ItemID],
+        new: [EntryListOutlineProjection.ItemID],
+        items: [OutlineItem],
+    ) -> IncrementalRowUpdatePlan? {
+        guard !old.isEmpty, !new.isEmpty,
+              old.allSatisfy({ if case .entry = $0 { true } else { false } }),
+              new.allSatisfy({ if case .entry = $0 { true } else { false } })
+        else { return nil }
+
+        let oldSet = Set(old)
+        let newSet = Set(new)
+        let changedCount = oldSet.subtracting(newSet).count + newSet.subtracting(oldSet).count
+        guard changedCount * 2 <= max(old.count, new.count) else { return nil }
+        guard Set(old).count == old.count, Set(new).count == new.count else { return nil }
+
+        let oldItemsByID = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item -> (
+            EntryListOutlineProjection.ItemID,
+            OutlineItem
+        )? in
             guard case let .entry(entry) = item.kind else { return nil }
-            if removed.contains(.entry(entry.id)) {
-                indexes.insert(index)
+            return (.entry(entry.id), item)
+        })
+        let incomingItemsByID = Dictionary(uniqueKeysWithValues: items.flatMap { $0.flattenItems() }
+            .compactMap { _, item -> (
+                EntryListOutlineProjection.ItemID,
+                OutlineItem
+            )? in
+                guard case let .entry(entry) = item.kind else { return nil }
+                return (.entry(entry.id), item)
+            })
+        guard oldItemsByID.count == old.count,
+              incomingItemsByID.count == new.count
+        else { return nil }
+
+        var current = old
+        let removed = oldSet.subtracting(newSet)
+        let removedIndexes = IndexSet(current.enumerated()
+            .compactMap { removed.contains($0.element) ? $0.offset : nil })
+        for index in removedIndexes.reversed() {
+            current.remove(at: index)
+        }
+        let inserted = newSet.subtracting(oldSet)
+        var insertIndexes = IndexSet()
+        for (index, itemID) in new.enumerated() where inserted.contains(itemID) {
+            current.insert(itemID, at: index)
+            insertIndexes.insert(index)
+        }
+
+        var moveOperations: [(from: Int, to: Int)] = []
+        for (targetIndex, itemID) in new.enumerated() {
+            guard let currentIndex = current.firstIndex(of: itemID) else { return nil }
+            if currentIndex != targetIndex {
+                current.remove(at: currentIndex)
+                current.insert(itemID, at: targetIndex)
+                moveOperations.append((currentIndex, targetIndex))
             }
         }
-        return indexes.count == removed.count ? indexes : nil
+        guard current == new else { return nil }
+
+        outlineItems = new.compactMap { itemID in
+            guard let existing = oldItemsByID[itemID] else { return incomingItemsByID[itemID] }
+            if let incoming = incomingItemsByID[itemID] {
+                existing.kind = incoming.kind
+                existing.isLoadingChildren = incoming.isLoadingChildren
+            }
+            return existing
+        }
+        return .init(items: new.compactMap { itemID in
+            guard let existing = oldItemsByID[itemID] else { return incomingItemsByID[itemID] }
+            if let incoming = incomingItemsByID[itemID] {
+                existing.kind = incoming.kind
+                existing.isLoadingChildren = incoming.isLoadingChildren
+            }
+            return existing
+        }, removedIndexes: removedIndexes, insertedIndexes: insertIndexes, moves: moveOperations)
     }
 
     func rebuildItemIndexes() {
@@ -540,15 +597,49 @@ public final class EntryListCoordinator: NSObject {
         isUpdatingGroupExpansion = false
     }
 
+    struct ScrollAnchor {
+        let entryId: EntryModel.ID
+        let pixelOffset: CGFloat
+    }
+
+    func captureScrollAnchor() -> ScrollAnchor? {
+        let rows = tableView.rows(in: scrollView.contentView.bounds)
+        guard rows.location != NSNotFound,
+              rows.length > 0,
+              let item = tableView.item(atRow: rows.location) as? OutlineItem,
+              case let .entry(entry) = item.kind
+        else {
+            return nil
+        }
+        let rowOrigin = tableView.rect(ofRow: rows.location).origin.y
+        return ScrollAnchor(
+            entryId: entry.id,
+            pixelOffset: rowOrigin - scrollView.contentView.bounds.origin.y,
+        )
+    }
+
+    func restoreScrollAnchor(_ anchor: ScrollAnchor?) {
+        guard let anchor else { return }
+        guard let row = entryItemsByID[anchor.entryId]?
+            .lazy
+            .map({ self.tableView.row(forItem: $0) })
+            .first(where: { $0 >= 0 })
+        else {
+            scrollToSelectionIfNeeded()
+            return
+        }
+        let rowOrigin = tableView.rect(ofRow: row).origin.y
+        let targetOrigin = CGPoint(
+            x: scrollView.contentView.bounds.origin.x,
+            y: rowOrigin - anchor.pixelOffset,
+        )
+        scrollView.contentView.scroll(to: targetOrigin)
+    }
+
     func restoreScrollPositionIfNeeded() {
         let itemCount = state.entries.count
         guard itemCount != 0 else { return }
-        guard !hasRestoredScrollPosition,
-              let savedOffset = state.savedScrollOffset
-        else {
-            return
-        }
+        guard let savedOffset = state.savedScrollOffset else { return }
         scrollView.contentView.scroll(to: savedOffset)
-        hasRestoredScrollPosition = true
     }
 }
