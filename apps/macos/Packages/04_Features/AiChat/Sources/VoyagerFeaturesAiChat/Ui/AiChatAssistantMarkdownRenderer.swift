@@ -498,10 +498,20 @@ extension AiChatAssistantMarkdownRenderSession {
         }
     }
 
-    func prepareForSession(_ sessionID: AiChatSessionID?) {
-        guard !hasPreparedSession || preparedSessionID != sessionID else { return }
-        hasPreparedSession = true
-        preparedSessionID = sessionID
+    func prepareForSession(
+        _ sessionID: AiChatSessionID?,
+        hasTranscriptContent: Bool = true,
+    ) {
+        let didChangeSession = !hasPreparedSession || preparedSessionID != sessionID
+        guard didChangeSession || !hasTranscriptContent else { return }
+        if didChangeSession {
+            hasPreparedSession = true
+            preparedSessionID = sessionID
+        }
+        resetRetainedTranscriptState()
+    }
+
+    private func resetRetainedTranscriptState() {
         renderedByRow.removeAll(keepingCapacity: false)
         preparedPresentationIDs.removeAll(keepingCapacity: false)
         selectionProjections.removeAll(keepingCapacity: false)

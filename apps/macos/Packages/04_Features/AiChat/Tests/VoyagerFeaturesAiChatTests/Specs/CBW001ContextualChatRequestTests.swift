@@ -2125,6 +2125,41 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
     }
 
+    /// CBW-001-render_assistant_markdown: 같은 세션의 transcript reset은 이전 Markdown view state를 해제한다.
+    /// sessionID가 유지되는 reset 뒤에도 이전 대용량 projection과 선택 snapshot이 남지 않는지 검증합니다.
+    /// - 검증 내용: reset 직전·직후의 retained document, projection entry·bytes와 captured view state를 확인합니다.
+    /// - 사전 조건: 하나의 stored row에 대용량 assistant content와 선택 snapshot을 보존한 뒤 같은 sessionID로 transcript를 비웁니다.
+    /// - 기대 결과: reset 직후 document·projection cache와 선택 snapshot이 모두 해제됩니다.
+    func testRenderAssistantMarkdownReleasesViewStateAcrossSameSessionTranscriptReset() throws {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let content = String(repeating: "same-session-reset-payload ", count: 4096)
+
+        renderSession.prepareForSession(sessionID, hasTranscriptContent: true)
+        let rendered = renderSession.render(content: content, transcriptRow: .message(index: 0))
+        let block = try XCTUnwrap(rendered.blocks.first)
+        renderSession.capture(.init(
+            presentationID: block.presentationID,
+            selection: .init(utf16Location: 0, utf16Length: 12),
+            isFirstResponder: true,
+            outerScrollOffset: 42,
+            currentSearchDescriptor: nil,
+            transcriptRow: .message(index: 0),
+        ))
+
+        XCTAssertEqual(renderSession.diagnostics.retainedDocumentCount, 1)
+        XCTAssertGreaterThan(renderSession.retainedSelectionProjectionCount, 0)
+        XCTAssertGreaterThan(renderSession.retainedSelectionProjectionBytes, 64 * 1024)
+        XCTAssertTrue(renderSession.hasCapturedViewState)
+
+        renderSession.prepareForSession(sessionID, hasTranscriptContent: false)
+
+        XCTAssertEqual(renderSession.diagnostics.retainedDocumentCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, 0)
+        XCTAssertFalse(renderSession.hasCapturedViewState)
+    }
+
     /// CBW-001-render_assistant_markdown: 완료된 highlight request는 code source를 session lifetime 동안 보관하지 않는다.
     /// 많은 고유 code block을 순차 완료한 뒤에도 active request map과 retained source bytes가 0으로 돌아오는지 검증합니다.
     /// - 검증 내용: unique block별 highlight 성공, engine invocation, active request count와 retained UTF-8 bytes를 확인합니다.

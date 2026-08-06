@@ -12,7 +12,6 @@ public struct AiChatView: View {
 
     @Environment(\.colorScheme)
     var colorScheme
-
     @State private var isChatInputFocused = false
     @State private var chatInputTextHeight = Self.chatInputMinTextHeight
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
@@ -90,7 +89,8 @@ public struct AiChatView: View {
     private func makeTranscriptSearchRenderValues(
         state: AiChatState,
     ) -> (request: AiChatTranscriptSearchProjectionRequest, context: AiChatTranscriptSearchRenderContext) {
-        assistantMarkdownRenderSession.prepareForSession(state.sessionID)
+        let isTranscriptEmpty = state.transcriptHistory.isEmpty && state.streamingAssistantDraft == nil
+        assistantMarkdownRenderSession.prepareForSession(state.sessionID, hasTranscriptContent: !isTranscriptEmpty)
         let request = transcriptSearchProjection.request(
             for: state,
             renderSession: assistantMarkdownRenderSession,
