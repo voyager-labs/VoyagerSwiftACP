@@ -39,14 +39,6 @@ let kPackage = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
             ],
-            exclude: [
-                "Specs/ACC002CheckEntitlementStatusTests.swift",
-                "Specs/ACC002CheckEntitlementStatusTests+TrustedSnapshotProof.swift",
-                "Specs/ACC002CheckEntitlementStatusTests+TrustedFallbackSnapshotPolicy.swift",
-                "Specs/ACC002HandleEntitlementChangeTests.swift",
-                "Specs/ACC002UpdateEligibilityTests.swift",
-                "Specs/ACC003GuardSessionLapseTests.swift",
-            ],
         ),
     ],
 )
