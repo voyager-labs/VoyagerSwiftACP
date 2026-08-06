@@ -40,12 +40,6 @@ let kPackage = Package(
                 .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
             ],
             exclude: [
-                "Specs/ACC001CompleteAuthHandoffCallbackTests.swift",
-                "Specs/ACC001DetectSessionExpiryTests.swift",
-                "Specs/ACC001RestoreAccountSessionForegroundObserverTests.swift",
-                "Specs/ACC001RestoreAccountSessionTests.swift",
-                "Specs/ACC001SignOutAccountTests.swift",
-                "Specs/ACC001ValidateAccountSessionTests.swift",
                 "Specs/ACC002CheckEntitlementStatusTests.swift",
                 "Specs/ACC002CheckEntitlementStatusTests+TrustedSnapshotProof.swift",
                 "Specs/ACC002CheckEntitlementStatusTests+TrustedFallbackSnapshotPolicy.swift",

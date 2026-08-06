@@ -67,6 +67,7 @@ extension OnboardingProgressClient: DependencyKey {
                         version: version,
                         currentStep: step,
                         stepState: stepState,
+                        rawStepValue: currentStepRaw,
                     ) else { return .resetRequired }
                     guard Self.persist(snapshot, userDefaultsClient: userDefaultsClient) == .success else {
                         return .resetRequired
@@ -101,6 +102,7 @@ extension OnboardingProgressClient: DependencyKey {
         version: Double,
         currentStep: OnboardingStep,
         stepState: OnboardingStepState,
+        rawStepValue: String? = nil,
     ) -> OnboardingProgressSnapshot? {
         var migratedStepState = stepState
         switch version {
@@ -112,7 +114,11 @@ extension OnboardingProgressClient: DependencyKey {
                 migratedStepState.aiProviderSetupStatus = .skipped
             }
         case 1.2:
-            if currentStep == .permissions, !migratedStepState.permissionsComplete {
+            // v1.2에서 accessUnlock/betaAccess 레거시 rawValue가 permissions로
+            // 디코딩된 경우에만 permissionsComplete 보정. 실제 permissions 단계에
+            // 머물던 사용자의 진행 상태는 변경하지 않는다.
+            let isLegacyAccessRaw = rawStepValue == "accessUnlock" || rawStepValue == "betaAccess"
+            if isLegacyAccessRaw, !migratedStepState.permissionsComplete {
                 migratedStepState.permissionsComplete = true
             }
         default:
