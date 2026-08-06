@@ -448,6 +448,7 @@ public final class EntryListCoordinator: NSObject {
             tableView.reloadData()
             applyFolderExpansionState(for: projection)
             syncListSelectionFromStore()
+            restoreScrollPositionIfNeeded()
             requestThumbnailsForVisibleRows()
             lastAppliedVisibleRows = newVisibleRows
             restoreScrollAnchor(scrollAnchor)
