@@ -35,16 +35,18 @@ struct AiChatAssistantMarkdownRenderDiagnostics: Equatable {
 
 extension AiChatAssistantMarkdownRenderSession {
     func prepareForTranscript(in state: AiChatState) {
-        let stableSources = Dictionary(uniqueKeysWithValues: state.transcriptHistory.enumerated()
-            .compactMap { index, message in
-                message.role == .assistant
-                    ? (AiChatTranscriptRowDiscriminator.message(index: index), message.content)
-                    : nil
+        let stableMessages = Dictionary(uniqueKeysWithValues: state.transcriptHistory.enumerated()
+            .map { index, message in
+                (AiChatTranscriptRowDiscriminator.message(index: index), message)
             })
+        let stableAssistantSources = stableMessages.compactMapValues { message in
+            message.role == .assistant ? message.content : nil
+        }
         prepareForSession(
             state.sessionID,
             hasTranscriptContent: !state.transcriptHistory.isEmpty || state.streamingAssistantDraft != nil,
-            stableTranscriptSources: stableSources,
+            stableTranscriptSources: stableAssistantSources,
+            stableTranscriptMessages: stableMessages,
             streamingTranscriptSource: state.streamingAssistantDraft,
         )
     }
@@ -66,6 +68,7 @@ extension AiChatAssistantMarkdownRenderSession {
         _ sessionID: AiChatSessionID?,
         hasTranscriptContent: Bool = true,
         stableTranscriptSources: [AiChatTranscriptRowDiscriminator: String]? = nil,
+        stableTranscriptMessages: [AiChatTranscriptRowDiscriminator: AiChatMessage]? = nil,
         streamingTranscriptSource: String? = nil,
     ) {
         let didChangeSession = !hasPreparedSession || preparedSessionID != sessionID
@@ -78,29 +81,42 @@ extension AiChatAssistantMarkdownRenderSession {
         preparedHasTranscriptContent = hasTranscriptContent
         if didChangeSession || didBecomeEmpty {
             resetRetainedTranscriptState()
-        } else if let stableTranscriptSources {
+        } else if stableTranscriptSources != nil || stableTranscriptMessages != nil {
             pruneRetainedTranscriptState(
                 to: stableTranscriptSources,
+                stableTranscriptMessages: stableTranscriptMessages,
                 streamingTranscriptSource: streamingTranscriptSource,
             )
+        }
+        if let stableTranscriptMessages {
+            preparedTranscriptMessages = stableTranscriptMessages
         }
     }
 
     private func pruneRetainedTranscriptState(
-        to stableTranscriptSources: [AiChatTranscriptRowDiscriminator: String],
+        to stableTranscriptSources: [AiChatTranscriptRowDiscriminator: String]?,
+        stableTranscriptMessages: [AiChatTranscriptRowDiscriminator: AiChatMessage]?,
         streamingTranscriptSource: String?,
     ) {
-        let staleRows: Set<AiChatTranscriptRowDiscriminator> = Set(renderedByRow.compactMap { row, rendered in
-            switch row {
-            case .message:
-                stableTranscriptSources[row] != rendered.document.rawSource ? row : nil
-            case .streamingAssistant:
-                streamingTranscriptSource == nil
-                    && !stableTranscriptSources.values.contains(rendered.document.rawSource)
-                    ? row
-                    : nil
-            }
-        })
+        var staleRows = Set<AiChatTranscriptRowDiscriminator>()
+        if let stableTranscriptSources {
+            staleRows.formUnion(renderedByRow.compactMap { row, rendered in
+                switch row {
+                case .message:
+                    stableTranscriptSources[row] != rendered.document.rawSource ? row : nil
+                case .streamingAssistant:
+                    streamingTranscriptSource == nil
+                        && !stableTranscriptSources.values.contains(rendered.document.rawSource)
+                        ? row
+                        : nil
+                }
+            })
+        }
+        if let stableTranscriptMessages {
+            staleRows.formUnion(preparedTranscriptMessages.compactMap { row, message in
+                stableTranscriptMessages[row] != message ? row : nil
+            })
+        }
         guard !staleRows.isEmpty else { return }
         renderedByRow = renderedByRow.filter { !staleRows.contains($0.key) }
         selectionProjections = selectionProjections.filter { !staleRows.contains($0.key.transcriptRow) }
@@ -128,6 +144,7 @@ extension AiChatAssistantMarkdownRenderSession {
         preparedPresentationIDs.removeAll(keepingCapacity: false)
         selectionProjections.removeAll(keepingCapacity: false)
         activeHighlightRequests.removeAll(keepingCapacity: false)
+        preparedTranscriptMessages.removeAll(keepingCapacity: false)
         clearViewState()
         diagnostics.retainedDocumentCount = 0
         diagnostics.blockPreparationCount.removeAll(keepingCapacity: false)

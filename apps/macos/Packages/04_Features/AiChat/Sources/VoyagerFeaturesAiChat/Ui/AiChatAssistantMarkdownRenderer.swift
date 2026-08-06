@@ -54,6 +54,7 @@ final class AiChatAssistantMarkdownRenderSession: ObservableObject {
     var hasPreparedSession = false
     var preparedSessionID: AiChatSessionID?
     var preparedHasTranscriptContent = false
+    var preparedTranscriptMessages: [AiChatTranscriptRowDiscriminator: AiChatMessage] = [:]
     var renderLifecycleRevision: UInt64 = 0
     private var nextHighlightRequestID: UInt64 = 0
     var capturedSnapshot: AiChatAssistantMarkdownViewSnapshot?

@@ -2282,6 +2282,85 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertFalse(renderSession.hasCapturedViewState)
     }
 
+    /// CBW-001-render_assistant_markdown: user row 교체·삭제는 이전 selection projection과 view state를 해제한다.
+    /// assistant document cache가 없는 user message도 현재 transcript row source와 대조해 stale selection을 폐기하는지 검증합니다.
+    /// - 검증 내용: 동일 index user message의 내용 교체·삭제 전후 projection entry·bytes와 captured view state를 확인합니다.
+    /// - 사전 조건: 같은 session ID의 user row에 대용량 plain/search projection과 선택 snapshot이 등록되어 있습니다.
+    /// - 기대 결과: user row 내용이 바뀌거나 사라지면 이전 projection과 선택 snapshot이 즉시 해제됩니다.
+    func testRenderAssistantMarkdownReleasesUserViewStateAcrossTranscriptReplacement() {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let stableRow = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let transcriptRow = AiChatTranscriptRowDiscriminator.message(index: 1)
+        let stableMessage = AiChatMessage(role: .user, content: "stable")
+        let original = AiChatMessage(
+            role: .user,
+            content: String(repeating: "user-selection-payload ", count: 4096),
+        )
+        let replacement = AiChatMessage(role: .user, content: "replacement")
+        let blockID = AiChatMarkdownDocument.BlockID(rawValue: "user-message-1")
+
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptMessages: [stableRow: stableMessage, transcriptRow: original],
+        )
+        renderSession.registerSelectionProjection(
+            presentationID: blockID,
+            plainText: original.content,
+            searchText: original.content,
+            transcriptRow: transcriptRow,
+            blockIndex: 0,
+        )
+        renderSession.capture(.init(
+            presentationID: blockID,
+            selection: .init(utf16Location: 0, utf16Length: 12),
+            isFirstResponder: true,
+            outerScrollOffset: 42,
+            currentSearchDescriptor: nil,
+            transcriptRow: transcriptRow,
+        ))
+
+        XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 1)
+        XCTAssertGreaterThan(renderSession.retainedSelectionProjectionBytes, 64 * 1024)
+        XCTAssertTrue(renderSession.hasCapturedViewState)
+
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptMessages: [stableRow: stableMessage, transcriptRow: replacement],
+        )
+
+        XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, 0)
+        XCTAssertFalse(renderSession.hasCapturedViewState)
+
+        renderSession.registerSelectionProjection(
+            presentationID: blockID,
+            plainText: replacement.content,
+            searchText: replacement.content,
+            transcriptRow: transcriptRow,
+            blockIndex: 0,
+        )
+        renderSession.capture(.init(
+            presentationID: blockID,
+            selection: .init(utf16Location: 0, utf16Length: 4),
+            isFirstResponder: true,
+            outerScrollOffset: 21,
+            currentSearchDescriptor: nil,
+            transcriptRow: transcriptRow,
+        ))
+        renderSession.prepareForSession(
+            sessionID,
+            hasTranscriptContent: true,
+            stableTranscriptMessages: [stableRow: stableMessage],
+        )
+
+        XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)
+        XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, 0)
+        XCTAssertFalse(renderSession.hasCapturedViewState)
+    }
+
     /// CBW-001-render_assistant_markdown: 완료된 highlight request는 code source를 session lifetime 동안 보관하지 않는다.
     /// 많은 고유 code block을 순차 완료한 뒤에도 active request map과 retained source bytes가 0으로 돌아오는지 검증합니다.
     /// - 검증 내용: unique block별 highlight 성공, engine invocation, active request count와 retained UTF-8 bytes를 확인합니다.
