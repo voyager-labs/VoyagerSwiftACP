@@ -437,7 +437,7 @@ public final class EntryListCoordinator: NSObject {
 
             let newVisibleRows = projection.visibleRows
 
-            if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items) {
+            if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items, projection: projection) {
                 lastAppliedVisibleRows = newVisibleRows
                 restoreScrollAnchor(scrollAnchor)
                 return
@@ -448,6 +448,7 @@ public final class EntryListCoordinator: NSObject {
             tableView.reloadData()
             applyFolderExpansionState(for: projection)
             syncListSelectionFromStore()
+            syncListRenamingFromStore()
             restoreScrollPositionIfNeeded()
             requestThumbnailsForVisibleRows()
             lastAppliedVisibleRows = newVisibleRows
@@ -459,8 +460,10 @@ public final class EntryListCoordinator: NSObject {
         old: [EntryListOutlineProjection.ItemID],
         new: [EntryListOutlineProjection.ItemID],
         items: [OutlineItem],
+        projection: EntryListOutlineProjection,
     ) -> Bool {
-        guard let plan = makeIncrementalRowUpdatePlan(old: old, new: new, items: items) else { return false }
+        guard let plan = makeIncrementalRowUpdatePlan(old: old, new: new, items: items, projection: projection)
+        else { return false }
 
         outlineItems = plan.items
         rebuildItemIndexes()
@@ -492,10 +495,12 @@ public final class EntryListCoordinator: NSObject {
         old: [EntryListOutlineProjection.ItemID],
         new: [EntryListOutlineProjection.ItemID],
         items: [OutlineItem],
+        projection: EntryListOutlineProjection,
     ) -> IncrementalRowUpdatePlan? {
         guard !old.isEmpty, !new.isEmpty,
               old.allSatisfy({ if case .entry = $0 { true } else { false } }),
-              new.allSatisfy({ if case .entry = $0 { true } else { false } })
+              new.allSatisfy({ if case .entry = $0 { true } else { false } }),
+              !projection.childrenByParent.contains(where: { !$0.value.isEmpty })
         else { return nil }
 
         let oldSet = Set(old)
