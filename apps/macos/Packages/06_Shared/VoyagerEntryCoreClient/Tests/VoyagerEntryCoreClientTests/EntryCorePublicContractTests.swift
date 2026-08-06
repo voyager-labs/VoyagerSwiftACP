@@ -2,12 +2,11 @@ import VoyagerEntryCoreClient
 import XCTest
 
 final class EntryCorePublicContractTests: XCTestCase {
-    func testProtocolVersionAndMethodsExactlyMirrorProtocolV1() {
-        XCTAssertEqual(EntryCoreProtocolVersion.v1.rawValue, 1)
+    func testMethodsMatchCanonicalContract() {
         XCTAssertEqual(EntryCoreMethod.allCases.map(\.rawValue), ["ping", "health", "version"])
     }
 
-    func testCanonicalResultsExactlyMirrorProtocolV1() throws {
+    func testCanonicalResultsMatchContract() throws {
         let ping = EntryCorePingResult()
         let health = EntryCoreHealthResult()
         let version = try EntryCoreVersionResult(appVersion: "0.1.0-dev")
@@ -16,7 +15,6 @@ final class EntryCorePublicContractTests: XCTestCase {
         XCTAssertEqual(health.status, "healthy")
         XCTAssertEqual(health.state, "running")
         XCTAssertEqual(version.appVersion, "0.1.0-dev")
-        XCTAssertEqual(version.protocolVersion, .v1)
     }
 
     func testVersionResultRejectsEmptyAppVersion() {
@@ -25,13 +23,12 @@ final class EntryCorePublicContractTests: XCTestCase {
         }
     }
 
-    func testKnownServerCodesExactlyMirrorProtocolV1() {
+    func testKnownServerCodesMatchCanonicalContract() {
         XCTAssertEqual(
             EntryCoreServerErrorCode.allCases.map(\.rawValue),
             [
                 "request_too_large",
                 "invalid_request",
-                "unsupported_protocol_version",
                 "unknown_method",
                 "internal_error",
             ],

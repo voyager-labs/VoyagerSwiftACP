@@ -34,7 +34,7 @@ func TestCLICommands(t *testing.T) {
 	}{
 		{command: "ping", result: schema.PingResult{Message: "pong"}, stdout: "{\"message\":\"pong\"}\n"},
 		{command: "health", result: schema.HealthResult{Status: "healthy", State: "running"}, stdout: "{\"status\":\"healthy\",\"state\":\"running\"}\n"},
-		{command: "version", result: schema.VersionResult{AppVersion: "0.1.0-dev", ProtocolVersion: schema.ProtocolVersion}, stdout: "{\"app_version\":\"0.1.0-dev\",\"protocol_version\":1}\n"},
+		{command: "version", result: schema.VersionResult{AppVersion: "0.1.0-dev"}, stdout: "{\"app_version\":\"0.1.0-dev\"}\n"},
 	}
 
 	for _, test := range tests {
@@ -47,7 +47,7 @@ func TestCLICommands(t *testing.T) {
 				if request.RequestID != "000102030405060708090a0b0c0d0e0f" {
 					t.Fatalf("request ID = %q", request.RequestID)
 				}
-				if request.ProtocolVersion != schema.ProtocolVersion || request.Method != schema.Method(test.command) || request.Params != (schema.EmptyParams{}) {
+				if request.Method != schema.Method(test.command) || request.Params != (schema.EmptyParams{}) {
 					t.Fatalf("request = %#v", request)
 				}
 				return schema.NewSuccessResponse(request.RequestID, test.result), nil

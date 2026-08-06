@@ -4,7 +4,7 @@ import XCTest
 final class EntryCoreProtocolTests: XCTestCase {
     private let requestID = "request-1"
 
-    func testDecodesExactProtocolV1SuccessResponses() throws {
+    func testDecodesExactCanonicalSuccessResponses() throws {
         let ping = try decode(success(result: #"{"message":"pong"}"#), method: .ping)
         XCTAssertEqual(ping, .ping(EntryCorePingResult()))
 
@@ -14,16 +14,23 @@ final class EntryCoreProtocolTests: XCTestCase {
         )
         XCTAssertEqual(health, .health(EntryCoreHealthResult()))
 
-        let versionResult = #"{"app_version":"2026.7.31-custom","protocol_version":1}"#
+        let versionResult = #"{"app_version":"2026.7.31-custom"}"#
         let version = try decode(success(result: versionResult), method: .version)
         let expectedVersion = try EntryCoreVersionResult(appVersion: "2026.7.31-custom")
         XCTAssertEqual(version, .version(expectedVersion))
     }
 
-    func testMapsEveryKnownServerErrorWithoutExposingMessageAsEqualityContract() {
+    func testMapsEveryCanonicalServerError() {
+        for code in EntryCoreServerErrorCode.allCases {
+            let error = #"{"code":"\#(code.rawValue)","message":"\#(code.canonicalMessage)"}"#
+            assertError(.server(code), wire: failure(error: error), method: .ping)
+        }
+    }
+
+    func testRejectsNoncanonicalServerErrorMessages() {
         for code in EntryCoreServerErrorCode.allCases {
             let error = #"{"code":"\#(code.rawValue)","message":"server-selected detail"}"#
-            assertError(.server(code), wire: failure(error: error), method: .ping)
+            assertError(.protocolMismatch, wire: failure(error: error), method: .ping)
         }
     }
 
@@ -38,7 +45,7 @@ final class EntryCoreProtocolTests: XCTestCase {
 
     func testRejectsMalformedRawBytesAndAlternateEncodings() {
         var invalidUTF8 = Array(
-            #"{"request_id":"request-1","protocol_version":1,"ok":true,"result":{"message":""#.utf8,
+            #"{"request_id":"request-1","ok":true,"result":{"message":""#.utf8,
         )
         invalidUTF8.append(0xFF)
         invalidUTF8.append(contentsOf: Array(#""}}"#.utf8))
@@ -62,7 +69,7 @@ final class EntryCoreProtocolTests: XCTestCase {
     }
 
     func testRejectsInvalidStringsEscapesControlsAndSurrogates() throws {
-        let pairedResult = #"{"app_version":"rocket-\uD83D\uDE80","protocol_version":1}"#
+        let pairedResult = #"{"app_version":"rocket-\uD83D\uDE80"}"#
         let paired = try decode(success(result: pairedResult), method: .version)
         let expected = try EntryCoreVersionResult(appVersion: "rocket-🚀")
         XCTAssertEqual(paired, .version(expected))
@@ -80,7 +87,7 @@ final class EntryCoreProtocolTests: XCTestCase {
         }
 
         var unescapedControl = Array(
-            #"{"request_id":"request-1","protocol_version":1,"ok":true,"result":{"message":"po"#.utf8,
+            #"{"request_id":"request-1","ok":true,"result":{"message":"po"#.utf8,
         )
         unescapedControl.append(0x0A)
         unescapedControl.append(contentsOf: Array(#"ng"}}"#.utf8))
@@ -90,7 +97,7 @@ final class EntryCoreProtocolTests: XCTestCase {
     func testRejectsDuplicateDecodedKeysAtEveryObjectScope() {
         let duplicateTopLevel = json(
             #"{"request_id":"request-1","request_id":"request-1","#,
-            #""protocol_version":1,"ok":true,"result":{"message":"pong"}}"#,
+            #""ok":true,"result":{"message":"pong"}}"#,
         )
         let duplicateResult = success(result: #"{"message":"pong","message":"pong"}"#)
         let duplicateDecodedErrorKey = failure(
@@ -109,62 +116,62 @@ final class EntryCoreProtocolTests: XCTestCase {
         let malformed = [
             success(result: #"{"message":"pong",}"#),
             json(
-                #"{"request_id":"request-1","protocol_version":1,"ok":true,"#,
+                #"{"request_id":"request-1","ok":true,"#,
                 #""result":{"message":"pong"},}"#,
             ),
             pingSuccess + " // comment",
             #"{/* comment */"request_id":"request-1"}"#,
             #"{'request_id':'request-1'}"#,
-            pingSuccess(protocolVersion: "+1"),
+            legacyProtocolResponse(value: "+2"),
         ]
         for wire in malformed {
             assertError(.malformedResponse, wire: wire, method: .ping)
         }
     }
 
-    func testEnforcesRFCNumberGrammarAndProtocolLexicalIntegers() {
-        for number in ["01", "-01", "1.", "1e", "1e+", "--1"] {
-            assertError(.malformedResponse, wire: pingSuccess(protocolVersion: number), method: .ping)
+    func testEnforcesRFCNumberGrammarBeforeUnknownFieldValidation() {
+        for number in ["02", "-02", "2.", "2e", "2e+", "--2"] {
+            assertError(.malformedResponse, wire: legacyProtocolResponse(value: number), method: .ping)
         }
 
-        for number in ["1.0", "1e0", "1E+0", "-1", "9223372036854775808"] {
-            assertError(.protocolMismatch, wire: pingSuccess(protocolVersion: number), method: .ping)
+        for number in ["2.0", "2e0", "2E+0", "-2", "9223372036854775808"] {
+            assertError(.protocolMismatch, wire: legacyProtocolResponse(value: number), method: .ping)
         }
         assertError(
             .protocolMismatch,
-            wire: versionSuccess(resultProtocolVersion: "1.0"),
+            wire: legacyVersionResult(value: "2.0"),
             method: .version,
         )
         assertError(
             .protocolMismatch,
-            wire: versionSuccess(resultProtocolVersion: "1e0"),
+            wire: legacyVersionResult(value: "2e0"),
             method: .version,
         )
         assertError(
             .protocolMismatch,
-            wire: versionSuccess(resultProtocolVersion: "9223372036854775808"),
+            wire: legacyVersionResult(value: "9223372036854775808"),
             method: .version,
         )
     }
 
     func testMapsValidJSONEnvelopeMismatchesToProtocolMismatch() {
-        let missingResult = #"{"request_id":"request-1","protocol_version":1,"ok":true}"#
+        let missingResult = #"{"request_id":"request-1","ok":true}"#
         let unknownField = json(
-            #"{"request_id":"request-1","protocol_version":1,"ok":true,"#,
+            #"{"request_id":"request-1","ok":true,"#,
             #""result":{"message":"pong"},"extra":true}"#,
         )
         let successWithError = json(
-            #"{"request_id":"request-1","protocol_version":1,"ok":true,"#,
+            #"{"request_id":"request-1","ok":true,"#,
             #""result":{"message":"pong"},"#,
             #""error":{"code":"internal_error","message":"detail"}}"#,
         )
         let failureWithResult = json(
-            #"{"request_id":"request-1","protocol_version":1,"ok":false,"#,
+            #"{"request_id":"request-1","ok":false,"#,
             #""result":{"message":"pong"},"#,
             #""error":{"code":"internal_error","message":"detail"}}"#,
         )
         let wrongOKType = json(
-            #"{"request_id":"request-1","protocol_version":1,"ok":1,"#,
+            #"{"request_id":"request-1","ok":1,"#,
             #""result":{"message":"pong"}}"#,
         )
         let mismatches = [
@@ -173,8 +180,8 @@ final class EntryCoreProtocolTests: XCTestCase {
             unknownField,
             successWithError,
             failureWithResult,
-            pingSuccess(protocolVersion: "2"),
-            pingSuccess(protocolVersion: #""1""#),
+            legacyProtocolResponse(value: "1"),
+            legacyProtocolResponse(value: #""2""#),
             wrongOKType,
         ]
         for wire in mismatches {
@@ -189,9 +196,8 @@ final class EntryCoreProtocolTests: XCTestCase {
             (success(result: #"{"status":"degraded","state":"running"}"#), .health),
             (success(result: #"{"status":"healthy","state":"stopped"}"#), .health),
             (success(result: #"{"state":"running"}"#), .health),
-            (success(result: #"{"app_version":"","protocol_version":1}"#), .version),
-            (success(result: #"{"app_version":"dev","protocol_version":2}"#), .version),
-            (success(result: #"{"app_version":"dev","protocol_version":1,"extra":true}"#), .version),
+            (success(result: #"{"app_version":""}"#), .version),
+            (success(result: #"{"app_version":"dev","extra":true}"#), .version),
             (pingSuccess, .health),
         ]
         for (wire, method) in cases {
@@ -199,9 +205,9 @@ final class EntryCoreProtocolTests: XCTestCase {
         }
     }
 
-    func testValidatesExactErrorShapeKnownCodeAndNonemptyMessage() {
+    func testValidatesExactErrorShapeCodeAndCanonicalMessage() {
         let mismatches = [
-            #"{"request_id":"request-1","protocol_version":1,"ok":false}"#,
+            #"{"request_id":"request-1","ok":false}"#,
             failure(error: #"{"code":"future_error","message":"detail"}"#),
             failure(error: #"{"code":"internal_error","message":""}"#),
             failure(error: #"{"code":"internal_error"}"#),
@@ -214,15 +220,15 @@ final class EntryCoreProtocolTests: XCTestCase {
     }
 
     func testActiveRequestIDMismatchPrecedesResultOrKnownServerError() {
-        assertError(.requestIDMismatch, wire: success(id: "", result: pingResult), method: .ping)
-        assertError(.requestIDMismatch, wire: success(id: "other", result: pingResult), method: .ping)
+        assertError(.requestIDMismatch, wire: success(result: pingResult, id: ""), method: .ping)
+        assertError(.requestIDMismatch, wire: success(result: pingResult, id: "other"), method: .ping)
 
         let error = #"{"code":"internal_error","message":"detail"}"#
-        assertError(.requestIDMismatch, wire: failure(id: "", error: error), method: .ping)
-        assertError(.requestIDMismatch, wire: failure(id: "other", error: error), method: .ping)
+        assertError(.requestIDMismatch, wire: failure(error: error, id: ""), method: .ping)
+        assertError(.requestIDMismatch, wire: failure(error: error, id: "other"), method: .ping)
         assertError(
             .protocolMismatch,
-            wire: success(id: String(repeating: "x", count: 129), result: pingResult),
+            wire: success(result: pingResult, id: String(repeating: "x", count: 129)),
             method: .ping,
         )
     }
@@ -237,7 +243,7 @@ final class EntryCoreProtocolTests: XCTestCase {
 
     func testUsesByteExactDecodedKeysAndRequestIDsLikeGo() throws {
         let canonicallyEquivalentKeys = json(
-            #"{"request_id":"request-1","protocol_version":1,"ok":true,"#,
+            #"{"request_id":"request-1","ok":true,"#,
             #""result":{"message":"pong"},"\u00E9":1,"e\u0301":2}"#,
         )
         XCTAssertNoThrow(try StrictJSONParser.parse(Array(canonicallyEquivalentKeys.utf8)))
@@ -248,7 +254,7 @@ final class EntryCoreProtocolTests: XCTestCase {
         XCTAssertEqual(composed, decomposed)
         assertError(
             .requestIDMismatch,
-            wire: success(id: composed, result: pingResult),
+            wire: success(result: pingResult, id: composed),
             method: .ping,
             expectedRequestID: decomposed,
         )
@@ -259,11 +265,11 @@ final class EntryCoreProtocolTests: XCTestCase {
         let unicode128 = String(repeating: "🚀", count: 32)
 
         XCTAssertEqual(
-            try decode(success(id: ascii128, result: pingResult), method: .ping, expectedRequestID: ascii128),
+            try decode(success(result: pingResult, id: ascii128), method: .ping, expectedRequestID: ascii128),
             .ping(EntryCorePingResult()),
         )
         XCTAssertEqual(
-            try decode(success(id: unicode128, result: pingResult), method: .ping, expectedRequestID: unicode128),
+            try decode(success(result: pingResult, id: unicode128), method: .ping, expectedRequestID: unicode128),
             .ping(EntryCorePingResult()),
         )
     }
@@ -288,31 +294,29 @@ final class EntryCoreProtocolTests: XCTestCase {
         success(result: pingResult)
     }
 
-    private func pingSuccess(protocolVersion: String) -> String {
-        success(protocolVersion: protocolVersion, result: pingResult)
-    }
-
-    private func success(
-        id: String = "request-1",
-        protocolVersion: String = "1",
-        result: String,
-    ) -> String {
+    private func legacyProtocolResponse(value: String) -> String {
         json(
-            #"{"request_id":"\#(id)","protocol_version":\#(protocolVersion),"#,
-            #""ok":true,"result":\#(result)}"#,
+            #"{"request_id":"request-1","protocol_version":\#(value),"#,
+            #""ok":true,"result":\#(pingResult)}"#,
         )
     }
 
-    private func failure(id: String = "request-1", error: String) -> String {
+    private func success(result: String, id: String = "request-1") -> String {
         json(
-            #"{"request_id":"\#(id)","protocol_version":1,"ok":false,"#,
+            #"{"request_id":"\#(id)","ok":true,"#,
+            #""result":\#(result)}"#,
+        )
+    }
+
+    private func failure(error: String, id: String = "request-1") -> String {
+        json(
+            #"{"request_id":"\#(id)","ok":false,"#,
             #""error":\#(error)}"#,
         )
     }
 
-    private func versionSuccess(resultProtocolVersion: String) -> String {
-        let result = #"{"app_version":"dev","protocol_version":\#(resultProtocolVersion)}"#
-        return success(result: result)
+    private func legacyVersionResult(value: String) -> String {
+        success(result: #"{"app_version":"dev","protocol_version":\#(value)}"#)
     }
 
     private func nestedArray(depth: Int) -> [UInt8] {

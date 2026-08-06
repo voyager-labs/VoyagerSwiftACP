@@ -107,7 +107,6 @@ private extension EntryCoreClient {
         do {
             return try encoder.encode(EntryCoreRequestWire(
                 requestID: id,
-                protocolVersion: EntryCoreProtocolVersion.v1.rawValue,
                 method: method.rawValue,
                 params: EntryCoreEmptyParams(),
             ))
@@ -119,13 +118,11 @@ private extension EntryCoreClient {
 
 private struct EntryCoreRequestWire: Encodable {
     let requestID: String
-    let protocolVersion: Int
     let method: String
     let params: EntryCoreEmptyParams
 
     enum CodingKeys: String, CodingKey {
         case requestID = "request_id"
-        case protocolVersion = "protocol_version"
         case method
         case params
     }
