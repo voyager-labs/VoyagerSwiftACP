@@ -26,7 +26,6 @@ public struct SettingsHostState: Equatable {
         accountAccess.hasAccountSession = presentation.hasAccountSession
         accountAccess.isSignInInProgress = presentation.isSignInInProgress
         accountAccess.didSignInFail = presentation.didSignInFail
-        accountAccess.status = presentation.accessStatus
         return accountAccess
     }
 }

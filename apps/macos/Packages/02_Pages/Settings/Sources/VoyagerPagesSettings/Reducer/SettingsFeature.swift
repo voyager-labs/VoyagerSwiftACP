@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccountAccess
 
 @Reducer
 public struct SettingsFeature {
@@ -25,21 +24,11 @@ public struct SettingsFeature {
         }
 
         Reduce { state, action in
-            // ponytail: launch 해당만 수행. AppRoot가
-            //   .bootstrapLocalPreferences (General/Appearance load)
-            //   .appLifecycleAccessSnapshotReady (accessStatus/Account snapshot)
-            // 로 1회씩 전달한다. onAppear는 UI lifecycle 전용.
             if case .bootstrapLocalPreferences = action {
                 return .merge(
                     .send(.general(.loadSettings)),
                     .send(.appearance(.loadSettings)),
                 )
-            }
-
-            if case let .appLifecycleAccessSnapshotReady(snapshot) = action {
-                state.accessStatus = snapshot.status
-                state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
-                return .none
             }
 
             if case let .accountAccessPresentationUpdated(presentation) = action {

@@ -1,5 +1,4 @@
 import ComposableArchitecture
-import VoyagerFeaturesAccountAccess
 
 public enum SetAuthState: Equatable, Sendable {
     case signedOut
@@ -22,10 +21,6 @@ public struct AccountAccessPresentation: Equatable, Sendable {
         self.hasAccountSession = hasAccountSession
         self.isSignInInProgress = isSignInInProgress
         self.didSignInFail = didSignInFail
-    }
-
-    public init(snapshot: AccessStatusSnapshot) {
-        self.init(hasAccountSession: snapshot.sessionExpiresAt != nil)
     }
 }
 

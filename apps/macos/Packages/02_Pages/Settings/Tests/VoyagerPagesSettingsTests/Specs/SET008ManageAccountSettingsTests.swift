@@ -1,5 +1,4 @@
 import ComposableArchitecture
-import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -20,23 +19,18 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
 
     // MARK: - SET-008-show_account_status
 
-    /// SET-008-show_account_status: canonical snapshot은 signed-in active 표시 projection으로 갱신된다.
-    /// - 검증 내용: snapshot session과 access status의 Settings display mapping
+    /// SET-008-show_account_status: canonical account presentation은 signed-in 표시로 갱신된다.
+    /// - 검증 내용: account session fact의 Settings display mapping
     /// - 사전 조건: 기본 Settings 상태
-    /// - 기대 결과: signed-in 및 entitlement active 표시와 accessStatus가 함께 갱신됨
-    func testCanonicalSnapshotUpdatesAccountPresentation() async {
+    /// - 기대 결과: signed-in 표시가 갱신됨
+    func testCanonicalPresentationUpdatesSignedInState() async {
         let store = TestStore(initialState: SettingsState()) {
             SettingsFeature()
         }
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
-        )
+        let presentation = AccountAccessPresentation(hasAccountSession: true)
 
-        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = snapshot.status
-            state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
+        await store.send(.accountAccessPresentationUpdated(presentation)) { state in
+            state.accountSettings.presentation = presentation
         }
 
         XCTAssertEqual(store.state.accountSettings.setAuthState, .signedIn)

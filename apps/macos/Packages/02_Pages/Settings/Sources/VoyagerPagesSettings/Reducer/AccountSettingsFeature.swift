@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccountAccess
 
 @Reducer
 public struct AccountSettingsFeature {

@@ -1,5 +1,4 @@
 import ComposableArchitecture
-import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -159,96 +158,5 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             state.appearanceSettings.theme = .system
         }
         await store.finish()
-    }
-
-    // MARK: - Settings Access Status Hydration (no whole-window lock)
-
-    // 정책: access_status != full이어도 Settings 창 자체는 닫히거나 잠기지 않는다.
-    // entitlement-dependent action gating은 Account/개별 feature가 소유한다.
-    // SettingsState.accessStatus는 Account tab 표시와 AppRoot hydration 흐름을 지원하기만 한다.
-
-    /// access_status != full인 상태에서도 Settings content는 그대로 렌더링된다.
-    /// - 사전 조건: 기본 상태(accessStatus = .none)에서 launch snapshot이 trialExpired로 도착.
-    /// - 기대: state.accessStatus가 snapshot.status로 갱신되고 Settings 창은 잠기지 않는다.
-    ///   SettingsView는 더 이상 isContentLocked 분기를 가지지 않는다.
-    func testSettingsContentStaysRenderedWhenAccessStatusNotFull() async {
-        let store = TestStore(initialState: SettingsFeature.State()) {
-            SettingsFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.launchAtLoginClient = .testValue
-            $0.directorySelectionClient = .testValue
-            $0.appearanceSettingsClient = .testValue
-        }
-        let snapshot = AccessStatusSnapshot(
-            status: .trialExpired,
-            currentPeriodEnd: nil,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-        )
-        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = snapshot.status
-            state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
-        }
-    }
-
-    /// T2c GREEN: launch snapshot hydration이 access status와 Settings projection을 채운다.
-    /// - 검증 내용: `.appLifecycleAccessSnapshotReady(snapshot)` 수신 시
-    ///   state.accessStatus가 snapshot.status로 갱신되고,
-    ///   AccountSettings presentation이 snapshot-derived fact로 갱신된다.
-    /// - 사전 조건: Settings root 상태는 기본 상태.
-    /// - 기대 결과: accessStatus와 Account presentation 동시 갱신.
-    func testAppLifecycleAccessSnapshotReadyHydratesSettingsAndAccount() async {
-        let store = TestStore(initialState: SettingsFeature.State()) {
-            SettingsFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.launchAtLoginClient = .testValue
-            $0.directorySelectionClient = .testValue
-            $0.appearanceSettingsClient = .testValue
-        }
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: nil,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-        )
-        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = snapshot.status
-            state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
-        }
-    }
-
-    /// Task 13: launch snapshot hydration이 session 축까지 end-to-end 전달되는지 검증.
-    /// 기존 `testAppLifecycleAccessSnapshotReadyHydratesSettingsAndAccount`는
-    /// sessionExpiresAt 없는 snapshot을 써서 access status 축만 검증하고 `finish()`로
-    /// clean termination까지 증명한다. 본 테스트는 session 축이 있는 snapshot에서
-    /// SettingsFeature가 snapshot-derived projection을 갱신하고
-    /// 최종 `accountSettings.presentation.hasAccountSession == true`로 파생되는지 확인한다.
-    /// - 검증 내용: `.appLifecycleAccessSnapshotReady(snapshot with sessionExpiresAt)` 수신 시
-    ///   state.accessStatus가 snapshot.status로 갱신되고,
-    ///   AccountSettings presentation이 snapshot-derived fact로 갱신된다.
-    /// - 사전 조건: Settings root 상태는 기본 상태 (session 없음).
-    /// - 기대 결과: hydration 후 `hasAccountSession == true`, timer effect는 없음.
-    func testAppLifecycleAccessSnapshotReadyWithSessionUpdatesAccountPresentation() async {
-        let store = TestStore(initialState: SettingsFeature.State()) {
-            SettingsFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.launchAtLoginClient = .testValue
-            $0.directorySelectionClient = .testValue
-            $0.appearanceSettingsClient = .testValue
-        }
-        let sessionExpiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: nil,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            sessionExpiresAt: sessionExpiry,
-        )
-        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = snapshot.status
-            state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
-        }
-
-        XCTAssertTrue(store.state.accountSettings.presentation.hasAccountSession)
     }
 }
