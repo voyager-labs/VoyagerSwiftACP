@@ -1,11 +1,13 @@
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerShared
 
 struct AiChatConversationSurface: View {
     let state: AiChatState
     let skeleton: AiChatSkeletonDisplayModel
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
     let onOpenSettings: () -> Void
     let onErrorRecovery: () -> Void
     let onRegenerate: () -> Void
@@ -42,9 +44,11 @@ struct AiChatConversationSurface: View {
                 EmptyView()
             case .ready:
                 AiChatTranscriptSection(
+                    sessionID: state.sessionID,
                     messages: state.transcriptHistory,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                     isProcessing: false,
                     canRegenerate: state.canRegenerate,
                     statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -53,9 +57,11 @@ struct AiChatConversationSurface: View {
                 )
             case .processing:
                 AiChatTranscriptSection(
+                    sessionID: state.sessionID,
                     messages: state.transcriptHistory,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                     isProcessing: true,
                     canRegenerate: false,
                     streamingAssistant: state.streamingAssistantDisplayModel,
@@ -70,9 +76,11 @@ struct AiChatConversationSurface: View {
     private func transcriptSectionIfNeeded(isProcessing: Bool, canRegenerate: Bool) -> some View {
         if !state.transcriptHistory.isEmpty {
             AiChatTranscriptSection(
+                sessionID: state.sessionID,
                 messages: state.transcriptHistory,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
+                renderSession: renderSession,
                 isProcessing: isProcessing,
                 canRegenerate: canRegenerate,
                 statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -229,10 +237,26 @@ struct AiChatTranscriptRenderPlan: Equatable {
     }
 }
 
+struct AiChatStoredMessageViewIdentity: Hashable {
+    let sessionID: AiChatSessionID?
+    let index: Int
+    let role: String
+    let content: String
+
+    init(sessionID: AiChatSessionID?, index: Int, message: AiChatMessage) {
+        self.sessionID = sessionID
+        self.index = index
+        role = message.role.rawValue
+        content = message.content
+    }
+}
+
 private struct AiChatTranscriptSection: View {
+    let sessionID: AiChatSessionID?
     let messages: [AiChatMessage]
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
     let isProcessing: Bool
     let canRegenerate: Bool
     var statusText: String?
@@ -249,9 +273,11 @@ private struct AiChatTranscriptSection: View {
                     transcriptRow: .message(index: index),
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                     showsRegenerateAction: canRegenerate && index == renderPlan.latestAssistantMessageIndex,
                     onRegenerate: onRegenerate,
                 )
+                .id(AiChatStoredMessageViewIdentity(sessionID: sessionID, index: index, message: message))
             }
 
             if let streamingAssistant {
@@ -261,6 +287,7 @@ private struct AiChatTranscriptSection: View {
                     failure: streamingAssistant.failure,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                 )
             } else if isProcessing {
                 AiChatAssistantCard(
@@ -268,6 +295,7 @@ private struct AiChatTranscriptSection: View {
                     isProcessing: true,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                 )
             } else if let statusText {
                 requestStatusRow(statusText)
@@ -285,11 +313,93 @@ private struct AiChatTranscriptSection: View {
     }
 }
 
+struct AiChatUserMessageBubble: View {
+    let blockID: AiChatMarkdownDocument.BlockID
+    let attributedText: NSAttributedString
+    let rawMessageContent: String
+    let renderSession: AiChatAssistantMarkdownRenderSession
+    let transcriptRow: AiChatTranscriptRowDiscriminator
+
+    @StateObject private var copyInteraction = AiChatCopyInteractionModel()
+
+    private var contextMenuActions: [AiChatOutputContextMenuAction] {
+        [
+            AiChatOutputContextMenuAction(
+                title: "Copy Entire Message",
+                isEnabled: !rawMessageContent.isEmpty,
+                perform: {
+                    copyInteraction.copyRow(
+                        format: .plainText,
+                        rawMarkdown: rawMessageContent,
+                        plainText: rawMessageContent,
+                    )
+                },
+            ),
+        ]
+    }
+
+    private func measureNaturalTextWidth() -> CGFloat {
+        guard !attributedText.string.isEmpty else { return 0 }
+        let textStorage = NSTextStorage(attributedString: attributedText)
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 1_000_000, height: CGFloat.greatestFiniteMagnitude),
+        )
+        textContainer.widthTracksTextView = false
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+        return ceil(layoutManager.usedRect(for: textContainer).width)
+    }
+
+    var body: some View {
+        AiChatSelectableOutputText(
+            blockID: blockID,
+            attributedText: attributedText,
+            renderSession: renderSession,
+            transcriptRow: transcriptRow,
+            sizingMode: .fitsContent,
+            contextMenuActions: contextMenuActions,
+        )
+        .frame(maxWidth: max(measureNaturalTextWidth(), 0))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
+        )
+        .overlay(alignment: .topTrailing) {
+            if let feedback = copyInteraction.feedback {
+                Text(feedback.visibleLabel)
+                    .font(VoyagerDS.Typography.caption)
+                    .foregroundStyle(
+                        feedback == .copied
+                            ? VoyagerDS.SystemColor.secondaryLabel
+                            : Color.red,
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        VoyagerDS.SystemColor.controlBackground,
+                        in: Capsule(style: .continuous),
+                    )
+                    .accessibilityLabel(feedback.accessibilityLabel)
+            }
+        }
+    }
+}
+
 private struct AiChatMessageRow: View {
     let message: AiChatMessage
     let transcriptRow: AiChatTranscriptRowDiscriminator
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
     let showsRegenerateAction: Bool
     let onRegenerate: () -> Void
 
@@ -311,23 +421,47 @@ private struct AiChatMessageRow: View {
     }
 
     private var userMessage: some View {
-        HStack {
+        let blockID = userMessageBlockID
+        renderSession.registerSelectionProjection(
+            presentationID: blockID,
+            plainText: message.content,
+            searchText: message.content,
+            transcriptRow: transcriptRow,
+            blockIndex: 0,
+        )
+        return HStack {
             Spacer(minLength: 16)
-            Text(highlightedPlainText)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor)),
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
-                )
+            AiChatUserMessageBubble(
+                blockID: blockID,
+                attributedText: highlightedPlainNSAttributedText,
+                rawMessageContent: message.content,
+                renderSession: renderSession,
+                transcriptRow: transcriptRow,
+            )
         }
         .overlay { matchAnchors(blockIndex: 0) }
+    }
+
+    private var highlightedPlainNSAttributedText: NSAttributedString {
+        AiChatAssistantMarkdownAttributedText.make(
+            text: message.content,
+            inlineIntents: [],
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: 0,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: 0),
+            appliesHangulWordPriorityLineBreak: true,
+        )
+    }
+
+    private var userMessageBlockID: AiChatMarkdownDocument.BlockID {
+        switch transcriptRow {
+        case let .message(index):
+            AiChatMarkdownDocument.BlockID(rawValue: "user-message-\(index)")
+        case .streamingAssistant:
+            AiChatMarkdownDocument.BlockID(rawValue: "user-message-streaming")
+        }
     }
 
     private var assistantMessage: some View {
@@ -337,6 +471,7 @@ private struct AiChatMessageRow: View {
                 transcriptRow: transcriptRow,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
+                renderSession: renderSession,
             )
 
             if showsRegenerateAction {
@@ -440,6 +575,7 @@ private struct AiChatAssistantCard: View {
     var failure: AiChatExecutionFailure?
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -483,6 +619,7 @@ private struct AiChatAssistantCard: View {
                 transcriptRow: .streamingAssistant,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
+                renderSession: renderSession,
             )
         }
     }
@@ -513,130 +650,74 @@ private struct AiChatAssistantCard: View {
     private static let assistantHeaderTitle = "Assistant"
 }
 
-private struct AiChatAssistantMarkdownText: View {
+struct AiChatAssistantMarkdownText: View {
     let content: String
     let transcriptRow: AiChatTranscriptRowDiscriminator
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
+
+    @StateObject private var copyInteraction = AiChatCopyInteractionModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { blockIndex, block in
-                blockView(block, blockIndex: blockIndex)
-                    .overlay {
-                        AiChatTranscriptMatchAnchors(
-                            descriptors: searchPresentation.matchDescriptors(
-                                transcriptRow: transcriptRow,
-                                blockIndex: blockIndex,
-                            ),
-                        )
-                    }
-                    .accessibilityValue(
-                        isCurrentSearchBlock(blockIndex) ? "Current search result" : "",
+        let rendered = renderSession.render(content: content, transcriptRow: transcriptRow)
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(rendered.blocks.enumerated()), id: \.element.presentationID) { blockIndex, block in
+                AiChatAssistantMarkdownBlockView(
+                    renderedBlock: block,
+                    transcriptRow: transcriptRow,
+                    blockIndex: blockIndex,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
+                    copyInteraction: copyInteraction,
+                    rawMarkdown: content,
+                    plainText: rendered.document.plainText,
+                )
+                .overlay {
+                    AiChatTranscriptMatchAnchors(
+                        descriptors: searchPresentation.matchDescriptors(
+                            transcriptRow: transcriptRow,
+                            blockIndex: blockIndex,
+                        ),
                     )
+                }
+                .accessibilityValue(
+                    isCurrentSearchBlock(blockIndex) ? "Current search result" : "",
+                )
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var blocks: [AssistantMarkdownBlock] {
-        AssistantMarkdownBlock.parse(content)
-    }
-
-    @ViewBuilder
-    private func blockView(_ block: AssistantMarkdownBlock, blockIndex: Int) -> some View {
-        switch block {
-        case let .heading(level, text):
-            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                .font(.system(size: headingSize(for: level), weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case let .paragraph(text):
-            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case let .bullet(text):
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("•")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
+        .padding(4)
+        .background {
+            if copyInteraction.isRowSelected {
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
+                    .fill(VoyagerDS.SystemColor.controlBackground.opacity(0.7))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        case let .numbered(number, text):
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("\(number).")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
+        }
+        .overlay(alignment: .topTrailing) {
+            if let feedback = copyInteraction.feedback {
+                Text(feedback.visibleLabel)
+                    .font(VoyagerDS.Typography.caption)
+                    .foregroundStyle(
+                        feedback == .copied
+                            ? VoyagerDS.SystemColor.secondaryLabel
+                            : Color.red,
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        VoyagerDS.SystemColor.controlBackground,
+                        in: Capsule(style: .continuous),
+                    )
+                    .accessibilityLabel(feedback.accessibilityLabel)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        case let .code(text):
-            Text(highlightedCode(text, blockIndex: blockIndex))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.primary)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-    }
-
-    private func headingSize(for level: Int) -> CGFloat {
-        switch level {
-        case 1: 17
-        case 2: 15
-        default: 14
-        }
-    }
-
-    private func highlightedInlineMarkdown(_ text: String, blockIndex: Int) -> AttributedString {
-        AiChatRenderedTextHighlighter.highlight(
-            inlineMarkdown(text),
-            matchOffsets: searchPresentation.matchOffsets(
-                transcriptRow: transcriptRow,
-                blockIndex: blockIndex,
-            ),
-            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
-        )
-    }
-
-    private func highlightedCode(_ text: String, blockIndex: Int) -> AttributedString {
-        AiChatRenderedTextHighlighter.highlight(
-            AttributedString(text),
-            matchOffsets: searchPresentation.matchOffsets(
-                transcriptRow: transcriptRow,
-                blockIndex: blockIndex,
-            ),
-            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
-        )
-    }
-
-    private func currentSearchMatchOffsets(blockIndex: Int) -> Range<Int>? {
-        guard currentSearchMatch?.transcriptRow == transcriptRow,
-              currentSearchMatch?.blockIndex == blockIndex
-        else { return nil }
-        return currentSearchMatch?.characterOffsets
     }
 
     private func isCurrentSearchBlock(_ blockIndex: Int) -> Bool {
         currentSearchMatch?.transcriptRow == transcriptRow
             && currentSearchMatch?.blockIndex == blockIndex
-    }
-
-    private func inlineMarkdown(_ text: String) -> AttributedString {
-        if let markdown = try? AttributedString(
-            markdown: text,
-            options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace,
-            ),
-        ) {
-            return markdown
-        }
-        return AttributedString(text)
     }
 }

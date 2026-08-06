@@ -135,7 +135,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let value = 1
         ```
         """
-        let renderedBlocks = AssistantMarkdownBlock.parse(markdown).map(\.renderedText)
+        let renderedBlocks = AiChatMarkdownParser.parse(markdown).renderedBlocks
         let row = AiChatTranscriptRowDiscriminator.streamingAssistant
 
         XCTAssertEqual(renderedBlocks, [
@@ -143,7 +143,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             "Use bold text",
             "First bullet",
             "Numbered item",
-            "let value = 1",
+            "let value = 1\n",
         ])
         XCTAssertEqual(
             AiChatRenderedTextMatcher.matches(query: "Heading", transcriptRow: row, renderedBlocks: renderedBlocks),
@@ -233,6 +233,2228 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
                 renderedBlocks: renderedBlocks,
             ).isEmpty,
         )
+    }
+
+    // MARK: - CBW-001-render_assistant_markdown
+
+    /// CBW-001-render_assistant_markdown: output block은 편집 불가 selectable intrinsic AppKit text surface를 구성한다.
+    /// assistant block 하나가 child scroll이나 중복 accessibility owner 없이 폭에 맞춰 읽기 전용 텍스트를 노출하는지 검증합니다.
+    /// - 검증 내용: editable/selectable/background/scroller/width tracking/intrinsic height와 accessibility owner를 확인합니다.
+    /// - 사전 조건: 여러 줄 attributed plain output을 240pt 폭의 hosted NSWindow에 설치합니다.
+    /// - 기대 결과: text view만 static-text accessibility element이고 scroll view는 intrinsic document height를 반환합니다.
+    func testRenderAssistantMarkdownConfiguresReadOnlySelectableIntrinsicOutput() {
+        let harness = makeSelectableOutputHarness(text: "첫 줄\n두 번째 줄 👩‍💻")
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let scrollView = harness.coordinator.scrollView
+
+        XCTAssertFalse(textView.isEditable)
+        XCTAssertTrue(textView.isSelectable)
+        XCTAssertFalse(textView.drawsBackground)
+        XCTAssertFalse(scrollView.drawsBackground)
+        XCTAssertFalse(scrollView.hasVerticalScroller)
+        XCTAssertFalse(scrollView.hasHorizontalScroller)
+        XCTAssertEqual(textView.textContainer?.widthTracksTextView, false)
+        XCTAssertEqual(textView.frame.width, scrollView.contentSize.width, accuracy: 0.5)
+        let wideHeight = scrollView.intrinsicContentSize.height
+        XCTAssertGreaterThan(wideHeight, 0)
+        scrollView.frame.size.width = 100
+        harness.coordinator.update(
+            blockID: .init(rawValue: "hosted-block"),
+            attributedText: NSAttributedString(string: textView.string),
+        )
+        XCTAssertEqual(textView.frame.width, scrollView.contentSize.width, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(scrollView.intrinsicContentSize.height, wideHeight)
+        XCTAssertFalse(scrollView.isAccessibilityElement())
+        XCTAssertTrue(textView.isAccessibilityElement())
+        XCTAssertEqual(textView.accessibilityRole(), NSAccessibility.Role.staticText)
+        XCTAssertEqual(textView.accessibilityValue(), textView.string)
+    }
+
+    /// CBW-001-render_assistant_markdown: mouse와 keyboard selection은 같은 typed UTF-16 substring을 복사한다.
+    /// NFD와 emoji를 포함한 plain projection에서 포인터 범위와 keyboard 확장 범위가 동일한 사용자 문자를 가리키는지 검증합니다.
+    /// - 검증 내용: Task 1 Character→UTF-16 변환, keyboard selection, native copy:, block-local selectAll:을 확인합니다.
+    /// - 사전 조건: hosted output block이 first responder이고 `café 👩‍💻`의 typed SearchRange가 준비되어 있습니다.
+    /// - 기대 결과: 두 selection substring이 같고 copy pasteboard에는 exact substring, selectAll에는 현재 block만 들어갑니다.
+    func testRenderAssistantMarkdownUsesIdenticalMouseAndKeyboardSelectionForNativeCopy() throws {
+        let text = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selectedText = "cafe\u{301} 👩‍💻"
+        let harness = makeSelectableOutputHarness(text: text)
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let stringRange = try XCTUnwrap(text.range(of: selectedText))
+        let searchRange = AiChatMarkdownDocument.SearchRange(stringRange, in: text)
+        let selection = try XCTUnwrap(searchRange.plainSelectionRange(in: text))
+
+        textView.setSelectedRange(selection.nsRange)
+        let mouseSubstring = try selectedSubstring(in: textView)
+        textView.setSelectedRange(NSRange(location: selection.utf16Location, length: 0))
+        for _ in searchRange.characterOffsets {
+            textView.moveRightAndModifySelection(nil as Any?)
+        }
+        let keyboardSubstring = try selectedSubstring(in: textView)
+
+        XCTAssertEqual(mouseSubstring, selectedText)
+        XCTAssertEqual(keyboardSubstring, mouseSubstring)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        textView.copy(nil as Any?)
+        XCTAssertEqual(pasteboard.string(forType: .string), selectedText)
+        textView.selectAll(nil as Any?)
+        XCTAssertEqual(try selectedSubstring(in: textView), text)
+    }
+
+    /// CBW-001-render_assistant_markdown: output responder는 Copy/Select All만 소유하고 편집·history action은 fallback한다.
+    /// read-only assistant block이 FileManager 명령이나 Undo/Redo를 text editing action으로 가로채지 않는지 검증합니다.
+    /// - 검증 내용: selector routing, Cut/Paste no-op, empty-state fallback과 default Services requestor를 확인합니다.
+    /// - 사전 조건: 선택된 output text 뒤에 Copy/Select All/Undo selector를 처리하는 probe responder가 연결되어 있습니다.
+    /// - 기대 결과: 유효한 Copy/Select All만 output target이고 empty/편집/history action은 fallback responder가 받습니다.
+    func testRenderAssistantMarkdownRoutesOnlyReadOnlyTextResponderCommands() {
+        let harness = makeSelectableOutputHarness(text: "선택 가능한 output")
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let original = textView.string
+        let fallback = SelectableOutputFallbackResponder()
+        let originalNextResponder = textView.nextResponder
+        defer { textView.nextResponder = originalNextResponder }
+        textView.nextResponder = fallback
+        textView.selectAll(nil as Any?)
+
+        XCTAssertTrue(textView.responds(to: #selector(NSText.copy(_:))))
+        XCTAssertTrue(textView.responds(to: #selector(NSText.selectAll(_:))))
+        for selector in [
+            #selector(NSText.cut(_:)), #selector(NSText.paste(_:)), NSSelectorFromString("undo:"),
+            NSSelectorFromString("redo:"),
+        ] {
+            XCTAssertFalse(textView.responds(to: selector))
+        }
+        textView.cut(nil as Any?)
+        textView.paste(nil as Any?)
+        XCTAssertEqual(textView.string, original)
+        let defaultMenu = textView.menu
+        XCTAssertEqual(defaultMenu?.items.contains { $0.action == #selector(NSText.copy(_:)) }, true)
+        XCTAssertEqual(defaultMenu?.items.contains { $0.submenu != nil }, true)
+        let servicesRequestor = textView.validRequestor(
+            forSendType: NSPasteboard.PasteboardType.string,
+            returnType: nil,
+        ) as AnyObject?
+        XCTAssertNotNil(servicesRequestor)
+        XCTAssertTrue(textView.tryToPerform(NSSelectorFromString("undo:"), with: nil as Any?))
+        XCTAssertTrue(fallback.didReceiveUndo)
+
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertFalse(textView.responds(to: #selector(NSText.copy(_:))))
+        XCTAssertTrue(textView.tryToPerform(#selector(NSText.copy(_:)), with: nil as Any?))
+        XCTAssertTrue(fallback.didReceiveCopy)
+        XCTAssertTrue(textView.responds(to: #selector(NSText.selectAll(_:))))
+
+        harness.coordinator.update(
+            blockID: .init(rawValue: "hosted-block"),
+            attributedText: NSAttributedString(string: ""),
+        )
+        XCTAssertFalse(textView.responds(to: #selector(NSText.selectAll(_:))))
+        XCTAssertTrue(textView.tryToPerform(#selector(NSText.selectAll(_:)), with: nil as Any?))
+        XCTAssertTrue(fallback.didReceiveSelectAll)
+    }
+
+    /// CBW-001-render_assistant_markdown: stable block update는 selection과 first responder를 보존한다.
+    /// streaming attributed update가 같은 logical block의 선택 문맥을 잃거나 responder를 다른 surface로 이동시키지 않는지 검증합니다.
+    /// - 검증 내용: stable BlockID snapshot, typed selection 복원과 first-responder 상태를 확인합니다.
+    /// - 사전 조건: NFD+emoji substring이 선택된 block에 같은 identity의 suffix attributed update가 도착합니다.
+    /// - 기대 결과: update 뒤에도 exact selected plain substring과 first responder가 유지됩니다.
+    func testRenderAssistantMarkdownPreservesSelectionAndFirstResponderForStableBlockUpdate() throws {
+        let initial = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selected = "cafe\u{301} 👩‍💻"
+        let blockID = AiChatMarkdownDocument.BlockID(rawValue: "stable-block")
+        let harness = makeSelectableOutputHarness(text: initial, blockID: blockID)
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let range = try XCTUnwrap(initial.range(of: selected))
+        let typedRange = try XCTUnwrap(
+            AiChatMarkdownDocument.SearchRange(range, in: initial).plainSelectionRange(in: initial),
+        )
+        textView.setSelectedRange(typedRange.nsRange)
+        XCTAssertTrue(harness.window.makeFirstResponder(textView))
+
+        harness.coordinator.update(
+            blockID: blockID,
+            attributedText: NSAttributedString(string: initial + " 추가"),
+        )
+
+        XCTAssertEqual(try selectedSubstring(in: textView), selected)
+        XCTAssertIdentical(harness.window.firstResponder, textView)
+    }
+
+    /// CBW-001-render_assistant_markdown: shortened content는 stale selection을 grapheme boundary로 clamp한다.
+    /// streaming 교체가 이전 UTF-16 range를 emoji 내부에 놓아도 crash하거나 잘못된 scalar 일부를 선택하지 않는지 검증합니다.
+    /// - 검증 내용: Task 1 clamp conversion, valid restored NSRange와 identity-change discard를 확인합니다.
+    /// - 사전 조건: ASCII `2345` selection의 UTF-16 위치에 짧아진 `A👩‍💻B` block과 새 identity update가 순서대로 도착합니다.
+    /// - 기대 결과: stable identity는 emoji 전체로 clamp하고 새 identity는 빈 selection으로 deterministic discard합니다.
+    func testRenderAssistantMarkdownClampsShortenedSelectionAndDiscardsChangedIdentity() throws {
+        let blockID = AiChatMarkdownDocument.BlockID(rawValue: "shortened-block")
+        let harness = makeSelectableOutputHarness(text: "A123456789", blockID: blockID)
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let oldRange = try XCTUnwrap(textView.string.range(of: "2345"))
+        let oldSelection = try XCTUnwrap(
+            AiChatMarkdownDocument.SearchRange(oldRange, in: textView.string)
+                .plainSelectionRange(in: textView.string),
+        )
+        textView.setSelectedRange(oldSelection.nsRange)
+
+        harness.coordinator.update(blockID: blockID, attributedText: NSAttributedString(string: "A👩‍💻B"))
+
+        XCTAssertEqual(try selectedSubstring(in: textView), "👩‍💻")
+        XCTAssertNotNil(
+            AiChatMarkdownDocument.PlainSelectionRange(textView.selectedRange())?
+                .searchRange(in: textView.string, invalidRangePolicy: .discard),
+        )
+        harness.coordinator.update(
+            blockID: AiChatMarkdownDocument.BlockID(rawValue: "replacement-block"),
+            attributedText: NSAttributedString(string: "교체"),
+        )
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 0))
+    }
+
+    /// CBW-001-render_assistant_markdown: Markdown 원문 UTF-8과 source range를 lossless하게 보존한다.
+    /// assistant 응답의 CRLF와 Unicode bytes가 block raw slice 재조합 과정에서 바뀌지 않는지 검증합니다.
+    /// - 검증 내용: document raw UTF-8, block raw slice/source range와 raw reconstruction을 확인합니다.
+    /// - 사전 조건: blockquote, Unicode table, explicit Swift fence가 CRLF로 연결된 mixed Markdown 원문이 있습니다.
+    /// - 기대 결과: 원문 bytes와 block 재조합 및 각 source range slice가 입력과 정확히 같습니다.
+    func testRenderAssistantMarkdownPreservesRawSourceAndTypedSourceRanges() throws {
+        let rawSlices = [
+            "> 인용 `code`\r\n\r\n",
+            "| 이름 | 값 |\r\n| --- | --- |\r\n| 검색 | 👩‍💻 |\r\n\r\n",
+            "```Swift\r\nlet café = \"e\u{301}\"\r\n```\r\n",
+        ]
+        let source = rawSlices.joined()
+        var utf8Cursor = 0
+        let blocks = try rawSlices.enumerated().map { index, rawSlice in
+            defer { utf8Cursor += rawSlice.utf8.count }
+            return try XCTUnwrap(AiChatMarkdownDocument.Block(
+                id: .init(rawValue: "raw-\(index)"),
+                kind: .paragraph,
+                sourceRange: .init(utf8Offsets: utf8Cursor ..< utf8Cursor + rawSlice.utf8.count),
+                rawSlice: rawSlice,
+                projections: .init(rendered: rawSlice, search: rawSlice, plain: rawSlice),
+            ))
+        }
+        let document = AiChatMarkdownDocument(rawSource: source, blocks: blocks)
+
+        XCTAssertEqual(document.rawUTF8, Array(source.utf8))
+        XCTAssertEqual(document.reconstructedRawSource, source)
+        XCTAssertEqual(document.blocks.map(\.rawSlice), rawSlices)
+        XCTAssertEqual(document.blocks.compactMap { $0.sourceRange.rawSlice(in: source) }, rawSlices)
+    }
+
+    /// CBW-001-render_assistant_markdown: block intent와 목적별 projection을 서로 독립적으로 보존한다.
+    /// blockquote marker, table delimiter, inline-code marker가 표시·검색·plain-copy 문자열로 섞이지 않는지 검증합니다.
+    /// - 검증 내용: block kind, inline-code intent, rendered/search/plain projection을 확인합니다.
+    /// - 사전 조건: inline code가 있는 blockquote와 2행 Unicode table block 값이 준비되어 있습니다.
+    /// - 기대 결과: table plain은 tab/newline이고 blockquote plain은 `>` marker 없이 유지됩니다.
+    func testRenderAssistantMarkdownKeepsBlockIntentsAndIndependentProjections() throws {
+        let blockquoteRaw = "> 인용 `code`"
+        let tableRaw = "| 이름 | 값 |\n| --- | --- |\n| 검색 | 👩‍💻 |"
+        let blockquote = try XCTUnwrap(AiChatMarkdownDocument.Block(
+            id: .init(rawValue: "blockquote"),
+            kind: .blockquote,
+            sourceRange: .init(utf8Offsets: 0 ..< blockquoteRaw.utf8.count),
+            rawSlice: blockquoteRaw,
+            projections: .init(rendered: "인용 code", search: "인용 code", plain: "인용 code"),
+            inlineIntents: [.code(.init(characterOffsets: 3 ..< 7))],
+        ))
+        let table = try XCTUnwrap(AiChatMarkdownDocument.Block(
+            id: .init(rawValue: "table"),
+            kind: .table,
+            sourceRange: .init(utf8Offsets: 0 ..< tableRaw.utf8.count),
+            rawSlice: tableRaw,
+            projections: .init(
+                rendered: "이름 값 검색 👩‍💻",
+                search: "이름 값 검색 👩‍💻",
+                plain: "이름\t값\n검색\t👩‍💻",
+            ),
+        ))
+        let document = AiChatMarkdownDocument(rawSource: blockquoteRaw + tableRaw, blocks: [blockquote, table])
+
+        XCTAssertEqual(blockquote.kind, .blockquote)
+        XCTAssertEqual(table.kind, .table)
+        XCTAssertEqual(blockquote.inlineIntents, [.code(.init(characterOffsets: 3 ..< 7))])
+        XCTAssertEqual(document.renderedBlocks, ["인용 code", "이름 값 검색 👩‍💻"])
+        XCTAssertEqual(document.searchBlocks, ["인용 code", "이름 값 검색 👩‍💻"])
+        XCTAssertEqual(document.plainText, "인용 code\n이름\t값\n검색\t👩‍💻")
+    }
+
+    /// CBW-001-render_assistant_markdown: code payload와 언어 metadata를 fence 표시 문자열에서 분리한다.
+    /// code-only copy와 향후 highlighting이 원본 label이나 fence를 payload로 오인하지 않는지 검증합니다.
+    /// - 검증 내용: code payload, original language, normalized language, search/plain projection의 label 제외를 확인합니다.
+    /// - 사전 조건: 대소문자가 보존된 `Swift` label과 CRLF code body를 가진 code block이 있습니다.
+    /// - 기대 결과: payload에는 fence와 label이 없고 원본·정규화 언어는 별도 필드에 유지됩니다.
+    func testRenderAssistantMarkdownSeparatesCodePayloadAndLanguageMetadata() throws {
+        let raw = "```Swift\r\nprint(\"한글 👩‍💻\")\r\n```"
+        let payload = "print(\"한글 👩‍💻\")\r\n"
+        let block = try XCTUnwrap(AiChatMarkdownDocument.Block(
+            id: .init(rawValue: "code-language"),
+            kind: .code,
+            sourceRange: .init(utf8Offsets: 0 ..< raw.utf8.count),
+            rawSlice: raw,
+            projections: .init(rendered: payload, search: payload, plain: payload),
+            code: .init(payload: payload, originalLanguage: "Swift", normalizedLanguage: "swift"),
+        ))
+
+        XCTAssertEqual(block.code?.payload, payload)
+        XCTAssertEqual(block.code?.originalLanguage, "Swift")
+        XCTAssertEqual(block.code?.normalizedLanguage, "swift")
+        XCTAssertFalse(block.projections.search.contains("Swift"))
+        XCTAssertFalse(block.projections.plain.contains("```"))
+    }
+
+    /// CBW-001-render_assistant_markdown: Character 검색 범위를 UTF-16 selection 범위로 lossless 변환한다.
+    /// AppKit과 Swift 문자열이 NFC, NFD, 한글, emoji/ZWJ에서 같은 사용자 문자를 가리키는지 검증합니다.
+    /// - 검증 내용: String.Index 기반 생성, Character→UTF-16→Character round trip과 exact substring을 확인합니다.
+    /// - 사전 조건: NFC `é`, NFD `e\u{301}`, 한글, `👩‍💻` ZWJ가 각각 포함된 문자열이 있습니다.
+    /// - 기대 결과: 모든 유효 범위가 원래 substring과 동일한 typed range로 돌아옵니다.
+    func testRenderAssistantMarkdownRoundTripsUnicodeSearchAndSelectionRanges() throws {
+        let samples = ["é", "e\u{301}", "한글", "👩‍💻", "앞👩‍💻한글e\u{301}뒤"]
+
+        for text in samples {
+            let stringRange = text.startIndex ..< text.endIndex
+            let searchRange = AiChatMarkdownDocument.SearchRange(stringRange, in: text)
+            let selectionRange = try XCTUnwrap(searchRange.plainSelectionRange(in: text))
+            let roundTrip = try XCTUnwrap(selectionRange.searchRange(in: text, invalidRangePolicy: .discard))
+
+            XCTAssertEqual(searchRange.substring(in: text), text)
+            XCTAssertEqual(roundTrip, searchRange)
+            XCTAssertEqual(roundTrip.substring(in: text), text)
+            XCTAssertEqual(selectionRange.utf16Length, text.utf16.count)
+        }
+    }
+
+    /// CBW-001-render_assistant_markdown: stale UTF-16 selection은 grapheme boundary로 clamp하거나 폐기한다.
+    /// streaming update로 selection이 surrogate/ZWJ 중간 또는 새 문자열 밖을 가리켜도 crash하지 않는지 검증합니다.
+    /// - 검증 내용: midpoint discard, nearest-boundary clamp, out-of-bounds clamp/discard 결과를 확인합니다.
+    /// - 사전 조건: `A👩‍💻B`의 emoji UTF-16 내부와 문자열 끝을 넘는 stale range가 있습니다.
+    /// - 기대 결과: discard는 nil이고 clamp는 emoji 전체 또는 빈 end selection을 deterministic하게 반환합니다.
+    func testRenderAssistantMarkdownClampsOrDiscardsStaleUTF16SelectionRanges() throws {
+        let text = "A👩‍💻B"
+        let midpoint = AiChatMarkdownDocument.PlainSelectionRange(utf16Location: 2, utf16Length: 1)
+        let beyondEnd = AiChatMarkdownDocument.PlainSelectionRange(utf16Location: 99, utf16Length: 10)
+
+        XCTAssertNil(midpoint.searchRange(in: text, invalidRangePolicy: .discard))
+        let clampedEmoji = try XCTUnwrap(midpoint.searchRange(in: text, invalidRangePolicy: .clamp))
+        XCTAssertEqual(clampedEmoji.substring(in: text), "👩‍💻")
+
+        XCTAssertNil(beyondEnd.searchRange(in: text, invalidRangePolicy: .discard))
+        let clampedEnd = try XCTUnwrap(beyondEnd.searchRange(in: text, invalidRangePolicy: .clamp))
+        XCTAssertEqual(clampedEnd.characterOffsets, text.count ..< text.count)
+        XCTAssertEqual(clampedEnd.substring(in: text), "")
+    }
+
+    /// CBW-001-render_assistant_markdown: content-width sizing은 짧은 메시지를 자연 폭으로 줄이고 긴 메시지를 제안 폭으로 제한한다.
+    /// user/request bubble이 `.fitsContent`에서 짧은 텍스트는 자연 폭을, 긴 텍스트는 transcript 제안 폭에서 줄바꿈하는지 검증합니다.
+    /// - 검증 내용: 짧은 텍스트 intrinsic width < 최대, 긴 텍스트 intrinsic width == 최대(상한), 긴 텍스트 높이 > 짧은 텍스트 높이
+    /// - 사전 조건: 240pt 폭의 hosted output을 `.fitsContent`로 구성하고 짧은/긴 텍스트를 각각 렌더한다.
+    /// - 기대 결과: 짧은 bubble은 240pt 미만으로 수축하고 긴 bubble은 240pt에서 줄바꿈되어 더 높이가 커진다.
+    func testRenderUserMessageContentWidthSizesShortTextToNaturalWidthAndCapsLongText() {
+        let maxWidth: CGFloat = 240
+        let shortHarness = makeSelectableOutputHarness(
+            text: "Hello",
+            width: maxWidth,
+            sizingMode: .fitsContent,
+        )
+        defer { shortHarness.window.close() }
+        let shortIntrinsic = shortHarness.coordinator.scrollView.intrinsicContentSize
+
+        let longText = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 6)
+        let longHarness = makeSelectableOutputHarness(
+            text: longText,
+            width: maxWidth,
+            sizingMode: .fitsContent,
+        )
+        defer { longHarness.window.close() }
+        let longIntrinsic = longHarness.coordinator.scrollView.intrinsicContentSize
+
+        XCTAssertGreaterThan(shortIntrinsic.width, 0)
+        XCTAssertLessThan(shortIntrinsic.width, maxWidth)
+        XCTAssertEqual(longIntrinsic.width, maxWidth, accuracy: 0.5)
+        XCTAssertGreaterThan(longIntrinsic.height, shortIntrinsic.height)
+    }
+
+    /// CBW-001-render_assistant_markdown: content-width sizing은 기본 expandsToFillWidth 동작을 변경하지 않는다.
+    /// assistant 블록이 기본 모드에서 여전히 제안 폭을 채우는 noIntrinsicMetric 가로 치수를 보고하는지 검증합니다.
+    /// - 검증 내용: 기본 모드 intrinsic width == noIntrinsicMetric, `.fitsContent`는 실수 width 보고
+    /// - 사전 조건: 같은 텍스트를 expandsToFillWidth와 fitsContent로 각각 렌더한다.
+    /// - 기대 결과: 기본 모드는 무한 폭 제안을 유지하고 fitsContent만 자연 폭으로 수축한다.
+    func testRenderUserMessageContentWidthDoesNotAffectAssistantExpandsToFillWidth() {
+        let text = "Hello"
+        let assistantHarness = makeSelectableOutputHarness(
+            text: text,
+            width: 240,
+            sizingMode: .expandsToFillWidth,
+        )
+        defer { assistantHarness.window.close() }
+        let userHarness = makeSelectableOutputHarness(
+            text: text,
+            width: 240,
+            sizingMode: .fitsContent,
+        )
+        defer { userHarness.window.close() }
+
+        XCTAssertEqual(assistantHarness.coordinator.scrollView.intrinsicContentSize.width, NSView.noIntrinsicMetric)
+        XCTAssertNotEqual(userHarness.coordinator.scrollView.intrinsicContentSize.width, NSView.noIntrinsicMetric)
+        XCTAssertGreaterThan(userHarness.coordinator.scrollView.intrinsicContentSize.width, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: content-width bubble에서도 native block-local selection과 copy가 유지된다.
+    /// `.fitsContent`로 sizing된 user bubble에서 마우스/컨텍스트 메뉴 copy가 여전히 정확한 substring을 내보내는지 검증합니다.
+    /// - 검증 내용: selectAll은 block-local, copy pasteboard는 선택 substring, select-all copy는 전체 텍스트
+    /// - 사전 조건: NFD+emoji 텍스트를 포함한 `.fitsContent` output이 first responder이다.
+    /// - 기대 결과: copy는 선택된 substring을, selectAll 후 copy는 전체 텍스트를 pasteboard에 기록한다.
+    func testRenderUserMessageContentWidthRetainsNativeSelectionAndCopy() throws {
+        let text = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selectedText = "cafe\u{301} 👩‍💻"
+        let harness = makeSelectableOutputHarness(
+            text: text,
+            width: 240,
+            sizingMode: .fitsContent,
+        )
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+
+        let stringRange = try XCTUnwrap(text.range(of: selectedText))
+        let searchRange = AiChatMarkdownDocument.SearchRange(stringRange, in: text)
+        let selection = try XCTUnwrap(searchRange.plainSelectionRange(in: text))
+
+        textView.setSelectedRange(selection.nsRange)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        textView.copy(nil as Any?)
+        XCTAssertEqual(pasteboard.string(forType: .string), selectedText)
+
+        textView.selectAll(nil as Any?)
+        XCTAssertEqual(try selectedSubstring(in: textView), text)
+        pasteboard.clearContents()
+        textView.copy(nil as Any?)
+        XCTAssertEqual(pasteboard.string(forType: .string), text)
+    }
+
+    /// CBW-001-render_assistant_markdown: fitsContent 한국어 짧은 문장은 한 줄로 표시된다.
+    /// 자연 폭 측정-제안 container 경계의 sub-pixel mismatch로 마지막 음절이 줄바꿈되는 회귀를 검증합니다.
+    /// - 검증 내용: line fragment 개수, 자연 폭 < viewport, NFD+emoji copy 정확성을 확인합니다.
+    /// - 사전 조건: 사용자가 입력한 한국어 완결문이 240pt viewport의 `.fitsContent` bubble에 렌더됩니다.
+    /// - 기대 결과: 문장이 정확히 한 줄에 표시되고 copy는 선택 substring을 정확히 내보냅니다.
+    func testRenderUserMessageContentWidthFitsKoreanSentenceOnOneLineAtSufficientViewport() throws {
+        let text = "오늘 날씨 자세하게 알려줘."
+        let harness = makeSelectableOutputHarness(
+            text: text,
+            width: 240,
+            sizingMode: .fitsContent,
+        )
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let scrollView = harness.coordinator.scrollView
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+        let textContainer = try XCTUnwrap(textView.textContainer)
+
+        XCTAssertLessThan(scrollView.intrinsicContentSize.width, 240)
+
+        let glyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
+        var lineCount = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, _, _ in
+            lineCount += 1
+        }
+        XCTAssertEqual(lineCount, 1, "한국어 짧은 문장은 한 줄로 표시되어야 한다")
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        textView.selectAll(nil as Any?)
+        textView.copy(nil as Any?)
+        XCTAssertEqual(pasteboard.string(forType: .string), text)
+    }
+
+    /// CBW-001-render_assistant_markdown: fitsContent 긴 한국어 문장은 viewport 상한에서 정상 줄바꿈된다.
+    /// 자연 폭이 viewport를 초과할 때 tolerance가 줄바꿈을 숨기지 않고 정상적으로 wrap하는지 검증합니다.
+    /// - 검증 내용: 자연 폭 > viewport, intrinsic width == viewport 상한, line fragment 개수 > 1을 확인합니다.
+    /// - 사전 조건: 한국어 완결문을 5회 반복한 긴 텍스트가 240pt viewport의 `.fitsContent` bubble에 렌더됩니다.
+    /// - 기대 결과: bubble 폭은 viewport에 상한되고 텍스트가 여러 줄로 줄바꿈됩니다.
+    func testRenderUserMessageContentWidthWrapsLongKoreanSentenceAtViewportCap() throws {
+        let text = String(repeating: "오늘 날씨 자세하게 알려줘. ", count: 5)
+        let harness = makeSelectableOutputHarness(
+            text: text,
+            width: 240,
+            sizingMode: .fitsContent,
+        )
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let scrollView = harness.coordinator.scrollView
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+
+        XCTAssertGreaterThan(
+            scrollView.intrinsicContentSize.width, 0,
+        )
+        XCTAssertEqual(scrollView.intrinsicContentSize.width, 240, accuracy: 0.5)
+
+        let glyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
+        var lineCount = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, _, _ in
+            lineCount += 1
+        }
+        XCTAssertGreaterThan(lineCount, 1, "긴 문장은 viewport 상한에서 줄바꿈되어야 한다")
+    }
+
+    /// CBW-001-render_assistant_markdown: capped 폭 한국어 prompt의 마지막 단어가 고아로 줄바꿈되지 않는다.
+    /// Hangul word-priority 줄바꿈 전략이 user/request bubble에서 `응답해` / `줘.` 분리를 방지하는지 검증합니다.
+    /// - 검증 내용: line fragment에 `줘.` 단독 줄 부재, `응답해줘.` 전체가 한 줄에 포함, copy 정확성을 확인합니다.
+    /// - 사전 조건: 스크린샷 정확한 prompt가 hangulWordPriority 적용 상태로 480pt capped 폭에 렌더됩니다.
+    /// - 기대 결과: 어떤 줄도 `줘.`만 단독이 아니며 `응답해줘.` 전체가 한 줄에 있고 copy는 원문을 정확히 반환합니다.
+    func testRenderUserMessageContentWidthHangulWordPriorityKeepsFinalWordOnCappedWidth() throws {
+        let text = "swift 코드 블록으로 hello world 한 줄만 보여줘. 설명 없이 fenced code block만 응답해줘."
+        let attributed = AiChatAssistantMarkdownAttributedText.make(
+            text: text,
+            inlineIntents: [],
+            matchOffsets: [],
+            currentMatchOffsets: nil,
+            appliesHangulWordPriorityLineBreak: true,
+        )
+        let harness = makeSelectableOutputHarness(
+            text: text,
+            width: 480,
+            sizingMode: .fitsContent,
+            attributedText: attributed,
+        )
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+
+        let glyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
+        var lineTexts: [String] = []
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, glyphLineRange, _ in
+            let charRange = layoutManager.characterRange(forGlyphRange: glyphLineRange, actualGlyphRange: nil)
+            lineTexts.append((textView.string as NSString).substring(with: charRange))
+        }
+
+        XCTAssertGreaterThan(lineTexts.count, 1, "capped 폭에서 텍스트는 줄바꿈되어야 한다")
+        for lineText in lineTexts {
+            XCTAssertNotEqual(
+                lineText.trimmingCharacters(in: .whitespacesAndNewlines), "줘.",
+                "어떤 줄도 `줘.`만 단독으로 가지면 안 된다",
+            )
+        }
+        XCTAssertTrue(
+            lineTexts.contains { $0.contains("응답해줘.") },
+            "전체 `응답해줘.` 단어가 한 줄에 포함되어야 한다",
+        )
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        textView.selectAll(nil as Any?)
+        textView.copy(nil as Any?)
+        XCTAssertEqual(pasteboard.string(forType: .string), text)
+    }
+
+    /// CBW-001-render_assistant_markdown: 짧은 user/request bubble은 실제 SwiftUI HStack에서 자연 폭을 hug한다.
+    /// production HStack { Spacer; AiChatUserMessageBubble } 레이아웃을 600pt에 호스팅하고
+    /// 단문 메시지의 selectable text surface가 가용 폭의 절반 미만으로 좁아지는지 검증합니다.
+    /// - 검증 내용: hosted IntrinsicTextScrollView frame width < 300pt를 확인합니다.
+    /// - 사전 조건: "오늘 날씨 자세하게 알려줘."를 600pt HStack의 AiChatUserMessageBubble에 렌더합니다.
+    /// - 기대 결과: selectable surface 폭이 300pt 미만으로 자연 텍스트 폭을 hug합니다.
+    func testRenderUserMessageBubbleHugsNaturalWidthForShortText() throws {
+        let hostWidth: CGFloat = 600
+        let text = "오늘 날씨 자세하게 알려줘."
+        let harness = makeUserMessageBubbleHarness(text: text, hostWidth: hostWidth)
+        defer { harness.window.close() }
+
+        let scrollView = try XCTUnwrap(
+            descendantScrollViews(in: harness.hostingView)
+                .compactMap({ $0 as? AiChatSelectableOutputText.IntrinsicTextScrollView })
+                .first,
+            "hosted user bubble must produce an IntrinsicTextScrollView",
+        )
+
+        XCTAssertGreaterThan(scrollView.frame.width, 0, "selectable surface must have positive width")
+        XCTAssertLessThan(
+            scrollView.frame.width, 300,
+            "short user bubble must hug natural width (expect ~200pt), not fill 600pt transcript",
+        )
+    }
+
+    /// CBW-001-render_assistant_markdown: 긴 user/request bubble은 가용 폭에 cap하고 wrap한다.
+    /// production 레이아웃에서 장문 메시지가 가용 폭을 넘지 않고 multi-line으로 줄바꿈되는지 검증합니다.
+    /// - 검증 내용: selectable surface 폭 ≤ 가용 폭(spacer + padding 제외)이고 line fragment가 2개 이상인지 확인합니다.
+    /// - 사전 조건: screenshot의 정확한 긴 문장을 좁은 transcript(400pt) HStack에 렌더합니다.
+    /// - 기대 결과: 폭이 가용 한계 이하이고 텍스트가 여러 줄로 wrap됩니다.
+    func testRenderUserMessageBubbleCapsLongTextToAvailableWidthAndWraps() throws {
+        let hostWidth: CGFloat = 400
+        let text = "swift 코드 블록으로 hello world 한 줄만 보여줘. 설명 없이 fenced code block만 응답해줘."
+        let harness = makeUserMessageBubbleHarness(text: text, hostWidth: hostWidth)
+        defer { harness.window.close() }
+
+        let scrollView = try XCTUnwrap(
+            descendantScrollViews(in: harness.hostingView)
+                .compactMap({ $0 as? AiChatSelectableOutputText.IntrinsicTextScrollView })
+                .first,
+            "hosted user bubble must produce an IntrinsicTextScrollView",
+        )
+
+        let availableTextWidth = hostWidth - 16 - 28 // Spacer minLength + horizontal padding
+        XCTAssertLessThanOrEqual(
+            scrollView.frame.width, availableTextWidth + 1,
+            "long user bubble must not escape available width",
+        )
+
+        let textView = try XCTUnwrap(scrollView.documentView as? NSTextView)
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+        let glyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
+        var lineCount = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, _, _ in
+            lineCount += 1
+        }
+        XCTAssertGreaterThan(lineCount, 1, "long text must wrap to multiple lines within capped width")
+    }
+
+    /// CBW-001-render_assistant_markdown: zero-frame update 후 late nonzero layout가 geometry를 repair한다.
+    /// - 검증 내용: zero-frame provisional height가 1줄 범위(0 < h < 100), late layout 후 container/frame width=240, height <
+    /// 100, x=0를 확인합니다.
+    /// - 사전 조건: coordinator가 0폭에서 한 줄 텍스트 "Hello"로 update된 후 240pt로 resize됩니다.
+    /// - 기대 결과: zero-frame height > 0 && < 100, late layout 후 container/frame 240, height < 100, x origin=0.
+    func testRenderAssistantMarkdownZeroFrameUpdateThenLateNonzeroLayoutRepairsGeometry() {
+        let text = "Hello"
+        let coordinator = AiChatSelectableOutputText.Coordinator()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 0, height: 0),
+            styleMask: [.titled], backing: .buffered, defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.scrollView
+        defer { window.close() }
+
+        coordinator.update(blockID: .init(rawValue: "zero-frame"), attributedText: NSAttributedString(string: text))
+
+        let zeroFrameHeight = coordinator.scrollView.intrinsicContentSize.height
+        XCTAssertGreaterThan(zeroFrameHeight, 0, "provisional height must be positive")
+        XCTAssertLessThan(zeroFrameHeight, 100, "provisional height must be in one-line range, not pathological")
+
+        coordinator.scrollView.frame.size = NSSize(width: 240, height: 120)
+        coordinator.scrollView.needsLayout = true
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        let textView = coordinator.textView
+        let containerWidth = textView.textContainer?.containerSize.width ?? -1
+        XCTAssertEqual(containerWidth, 240, accuracy: 1, "container width must match viewport after late layout")
+        XCTAssertEqual(textView.frame.width, 240, accuracy: 1, "frame width must match viewport")
+        let repairedHeight = coordinator.scrollView.intrinsicContentSize.height
+        XCTAssertGreaterThan(repairedHeight, 0)
+        XCTAssertLessThan(repairedHeight, 100, "repaired height must be in one-line range")
+        XCTAssertEqual(coordinator.scrollView.contentView.bounds.origin.x, 0, "x origin must be zero")
+    }
+
+    /// CBW-001-render_assistant_markdown: zero-frame fitsContent도 late layout 후 finite height를 보장한다.
+    /// - 검증 내용: zero-frame height < 100, late layout 후 height < 100, x=0을 확인합니다.
+    /// - 사전 조건: coordinator가 0폭에서 `.fitsContent` "Hi"로 update된 후 240pt로 resize됩니다.
+    /// - 기대 결과: zero-frame과 late layout 모두 height < 100, x origin=0.
+    func testRenderUserMessageContentWidthZeroFrameThenLateLayoutStaysFiniteForFitsContent() {
+        let text = "Hi"
+        let coordinator = AiChatSelectableOutputText.Coordinator()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 0, height: 0),
+            styleMask: [.titled], backing: .buffered, defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.scrollView
+        defer { window.close() }
+
+        coordinator.update(
+            blockID: .init(rawValue: "zero-fits"), attributedText: NSAttributedString(string: text),
+            sizingMode: .fitsContent,
+        )
+
+        let zeroHeight = coordinator.scrollView.intrinsicContentSize.height
+        XCTAssertGreaterThan(zeroHeight, 0)
+        XCTAssertLessThan(zeroHeight, 100)
+
+        coordinator.scrollView.frame.size = NSSize(width: 240, height: 120)
+        coordinator.scrollView.needsLayout = true
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        let repairedHeight = coordinator.scrollView.intrinsicContentSize.height
+        XCTAssertGreaterThan(repairedHeight, 0)
+        XCTAssertLessThan(repairedHeight, 100)
+        XCTAssertEqual(coordinator.scrollView.contentView.bounds.origin.x, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: short code card(label+padding+border 포함)가 자연 폭을 hug한다.
+    /// - 검증 내용: hosted code card의 NSScrollView frame width < 480을 확인합니다.
+    /// - 사전 조건: 짧은 Swift code가 480pt hosted Markdown에 렌더됩니다.
+    /// - 기대 결과: code NSScrollView frame width가 480pt 미만입니다.
+    func testRenderAssistantMarkdownShortCodeCardHugsNaturalWidthViaHosting() {
+        let source = "```swift\nprint(\"Hello\")\n```"
+        let harness = makeAssistantMarkdownHarness(source: source, width: 480)
+        defer { harness.window.close() }
+
+        let codeScrollViews = descendantScrollViews(in: harness.hostingView).filter(\.hasHorizontalScroller)
+        XCTAssertFalse(codeScrollViews.isEmpty, "code block must produce a horizontal-overflow NSScrollView")
+        let codeScrollView = codeScrollViews[0]
+        XCTAssertLessThan(codeScrollView.frame.width, 480, "short code card must hug natural width, not fill viewport")
+    }
+
+    /// CBW-001-render_assistant_markdown: long code card가 viewport에 cap한다.
+    /// - 검증 내용: hosted code card의 NSScrollView frame width ≈ 240을 확인합니다.
+    /// - 사전 조건: 긴 code가 240pt hosted Markdown에 렌더됩니다.
+    /// - 기대 결과: code NSScrollView frame width가 240pt에 cap됩니다.
+    func testRenderAssistantMarkdownLongCodeCardCapsAtViewportViaHosting() {
+        let longLine = String(repeating: "x", count: 200)
+        let source = "```swift\n\(longLine)\n```"
+        let harness = makeAssistantMarkdownHarness(source: source, width: 240)
+        defer { harness.window.close() }
+
+        let codeScrollViews = descendantScrollViews(in: harness.hostingView).filter(\.hasHorizontalScroller)
+        XCTAssertFalse(codeScrollViews.isEmpty, "long code must produce a horizontal-overflow NSScrollView")
+        let codeScrollView = codeScrollViews[0]
+        XCTAssertLessThanOrEqual(codeScrollView.frame.width, 240, "long code card must not escape viewport (<=240)")
+        XCTAssertGreaterThan(codeScrollView.frame.width, 200, "long code card must fill most of viewport")
+
+        let allFramesInBounds = descendantScrollViews(in: harness.hostingView).allSatisfy { $0.frame.minX >= -1 }
+        XCTAssertTrue(allFramesInBounds, "no descendant must have negative left clipping")
+    }
+
+    /// CBW-001-render_assistant_markdown: narrow table이 자연 폭을 hug한다.
+    /// - 검증 내용: narrow 2-column table hosting에서 horizontal overflow NSScrollView가 없거나 card 폭 < 480을 확인합니다.
+    /// - 사전 조건: 2-column narrow table이 480pt hosted Markdown에 렌더됩니다.
+    /// - 기대 결과: table이 자연 폭을 hug해 480pt 미만으로 표시됩니다.
+    func testRenderAssistantMarkdownNarrowTableHugsNaturalWidthViaHosting() {
+        let source = "| a | b |\n| --- | --- |\n| 1 | 2 |"
+        let harness = makeAssistantMarkdownHarness(source: source, width: 480)
+        defer { harness.window.close() }
+
+        let allScrollViews = descendantScrollViews(in: harness.hostingView)
+        XCTAssertFalse(allScrollViews.isEmpty, "narrow table must render cell NSScrollViews")
+
+        let cellScrollViews = allScrollViews.filter { !$0.hasHorizontalScroller }
+        XCTAssertFalse(cellScrollViews.isEmpty, "table cell content must be present")
+        XCTAssertTrue(cellScrollViews.allSatisfy { $0.frame.width > 0 }, "cell content must be visible")
+
+        let overflowing = allScrollViews.filter(\.hasHorizontalScroller)
+        XCTAssertTrue(
+            overflowing.allSatisfy { $0.frame.width < 480 },
+            "no table element must fill the full 480pt viewport",
+        )
+    }
+
+    /// CBW-001-render_assistant_markdown: wide 12-column table이 horizontal scroll fallback를 사용한다.
+    /// - 검증 내용: 12-column table이 narrow viewport에서 horizontal overflow를 trigger하는지 확인합니다.
+    /// - 사전 조건: 12-column wide table이 240pt hosted Markdown에 렌더됩니다.
+    /// - 기대 결과: ViewThatFits가 ScrollView fallback를 선택해 horizontal scroll이 활성화됩니다.
+    func testRenderAssistantMarkdownWideTableProducesHorizontalScrollAtNarrowViewport() {
+        let source = makeTwelveColumnTableSource()
+        let harness = makeAssistantMarkdownHarness(source: source, width: 240)
+        defer { harness.window.close() }
+
+        let horizontalScrollViews = descendantScrollViews(in: harness.hostingView).filter(\.hasHorizontalScroller)
+        XCTAssertFalse(horizontalScrollViews.isEmpty, "wide table must produce horizontal scroll at narrow viewport")
+        let widestScrollView = horizontalScrollViews.max(by: { $0.frame.width < $1.frame.width })
+        XCTAssertNotNil(widestScrollView)
+        XCTAssertEqual(
+            widestScrollView?.frame.width ?? 0,
+            240,
+            accuracy: 10,
+            "wide table scroll must cap near viewport",
+        )
+    }
+
+    /// CBW-001-render_assistant_markdown: short code inner text surface도 자연 폭을 hug한다.
+    /// - 검증 내용: intrinsic width < viewport, width > 0, hasHorizontalScroller를 확인합니다.
+    /// - 사전 조건: 짧은 Swift code가 480pt의 `.fitsContent` + overflow surface에 렌더됩니다.
+    /// - 기대 결과: intrinsic width가 480pt 미만이고 horizontal scroller가 활성화됩니다.
+    func testRenderAssistantMarkdownShortCodeHugsNaturalWidthWithFitsContentOverflow() {
+        let code = #"print("Hello, world!")"#
+        let harness = makeSelectableOutputHarness(
+            text: code, width: 480, allowsHorizontalOverflow: true, sizingMode: .fitsContent,
+        )
+        defer { harness.window.close() }
+        let scrollView = harness.coordinator.scrollView
+
+        XCTAssertGreaterThan(scrollView.intrinsicContentSize.width, 0)
+        XCTAssertLessThan(scrollView.intrinsicContentSize.width, 480, "short code must hug natural width")
+        XCTAssertTrue(scrollView.hasHorizontalScroller)
+    }
+
+    /// CBW-001-render_assistant_markdown: long code inner text surface도 viewport에 cap한다.
+    /// - 검증 내용: intrinsic width ≈ viewport, hasHorizontalScroller, finite height를 확인합니다.
+    /// - 사전 조건: 긴 code가 240pt의 `.fitsContent` + overflow surface에 렌더됩니다.
+    /// - 기대 결과: intrinsic width가 viewport에 cap되고 scroller가 활성화되며 height는 finite입니다.
+    func testRenderAssistantMarkdownLongCodeCapsAtViewportWithFitsContentOverflow() {
+        let longCode = String(repeating: "let value = someFunction(withArgument); ", count: 20)
+        let harness = makeSelectableOutputHarness(
+            text: longCode, width: 240, allowsHorizontalOverflow: true, sizingMode: .fitsContent,
+        )
+        defer { harness.window.close() }
+        let scrollView = harness.coordinator.scrollView
+
+        XCTAssertEqual(scrollView.intrinsicContentSize.width, 240, accuracy: 1, "long code must cap at viewport")
+        XCTAssertTrue(scrollView.hasHorizontalScroller)
+        XCTAssertGreaterThan(scrollView.intrinsicContentSize.height, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: document와 모든 nested value가 Swift 6 Sendable을 만족한다.
+    /// parser와 highlighting actor 사이를 통과할 pure model이 compiler-checked value semantics인지 검증합니다.
+    /// - 검증 내용: document, block, ID, kinds, projections, payload와 typed ranges의 Sendable constraint를 확인합니다.
+    /// - 사전 조건: production model 타입이 test target에 internal visibility로 노출되어 있습니다.
+    /// - 기대 결과: 모든 타입이 suppression이나 unchecked conformance 없이 generic constraint를 통과합니다.
+    func testRenderAssistantMarkdownDocumentValuesAreSendable() {
+        func requireSendable(_: (some Sendable).Type) {}
+
+        requireSendable(AiChatMarkdownDocument.self)
+        requireSendable(AiChatMarkdownDocument.Block.self)
+        requireSendable(AiChatMarkdownDocument.BlockID.self)
+        requireSendable(AiChatMarkdownDocument.BlockKind.self)
+        requireSendable(AiChatMarkdownDocument.InlineIntent.self)
+        requireSendable(AiChatMarkdownDocument.Projections.self)
+        requireSendable(AiChatMarkdownDocument.CodePayload.self)
+        requireSendable(AiChatMarkdownDocument.TableCell.self)
+        requireSendable(AiChatMarkdownDocument.TableMetadata.self)
+        requireSendable(AiChatMarkdownDocument.TableAlignment.self)
+        requireSendable(AiChatMarkdownDocument.SourceRange.self)
+        requireSendable(AiChatMarkdownDocument.SearchRange.self)
+        requireSendable(AiChatMarkdownDocument.PlainSelectionRange.self)
+    }
+
+    /// CBW-001-render_assistant_markdown: 요청 grammar를 한 번의 lossless parse로 목적별 projection에 투영한다.
+    /// CRLF와 Unicode를 포함한 assistant Markdown이 block intent와 raw source를 동시에 보존하는지 검증합니다.
+    /// - 검증 내용: heading, paragraph, list, blockquote, table, inline code, image, link, fenced code와 metadata를 확인합니다.
+    /// - 사전 조건: alignment table과 들여쓴 Swift fence를 포함한 mixed CRLF Markdown 원문이 있습니다.
+    /// - 기대 결과: raw bytes/ranges는 입력과 같고 rendered/search/plain/code/language projection은 marker와 목적에 맞게 분리됩니다.
+    func testRenderAssistantMarkdownParsesRequestedGrammarLosslessly() {
+        let source = "# 제목\r\n\r\n"
+            + "Use **bold** [문서](https://example.com) and ![대체](https://example.com/image.png)\r\n\r\n"
+            + "- 항목\r\n"
+            + "1. 순서\r\n\r\n"
+            + "> 인용 `code`\r\n\r\n"
+            + "| 이름 | 값 |\r\n| :--- | ---: |\r\n| 검색 | 👩‍💻 |\r\n\r\n"
+            + "  ```Swift linenos\r\nlet café = \"e\u{301}\"\r\n  ```\r\n"
+
+        let document = AiChatMarkdownParser.parse(source)
+
+        XCTAssertEqual(document.rawUTF8, Array(source.utf8))
+        XCTAssertEqual(document.reconstructedRawSource, source)
+        XCTAssertEqual(
+            document.blocks.compactMap { $0.sourceRange.rawSlice(in: source) },
+            document.blocks.map(\.rawSlice),
+        )
+        XCTAssertEqual(document.blocks.map(\.kind), [
+            .heading(level: 1), .paragraph, .bullet, .numbered(number: 1), .blockquote, .table, .code,
+        ])
+        XCTAssertEqual(document.renderedBlocks, [
+            "제목", "Use bold 문서 and 대체", "항목", "순서", "인용 code", "이름 값 검색 👩‍💻", "let café = \"e\u{301}\"\r\n",
+        ])
+        XCTAssertEqual(document.searchBlocks, document.renderedBlocks)
+        XCTAssertEqual(document.blocks[4].projections.plain, "인용 code")
+        XCTAssertEqual(document.blocks[4].inlineIntents, [.code(.init(characterOffsets: 3 ..< 7))])
+        XCTAssertEqual(document.blocks[5].projections.plain, "이름\t값\n검색\t👩‍💻")
+        XCTAssertEqual(document.blocks[5].table?.alignments, [.left, .right])
+        XCTAssertEqual(document.blocks[6].code?.payload, "let café = \"e\u{301}\"\r\n")
+        XCTAssertEqual(document.blocks[6].code?.openingIndentation, "  ")
+        XCTAssertEqual(document.blocks[6].code?.fenceDelimiter, "```")
+        XCTAssertEqual(document.blocks[6].code?.originalInfoString, "Swift linenos")
+        XCTAssertEqual(document.blocks[6].code?.originalLanguage, "Swift")
+        XCTAssertEqual(document.blocks[6].code?.trailingMetadata, "linenos")
+        XCTAssertEqual(document.blocks[6].code?.normalizedLanguage, "swift")
+        XCTAssertTrue(document.rawSource.contains("https://example.com"))
+        XCTAssertFalse(document.blocks[1].projections.plain.contains("https://"))
+    }
+
+    /// CBW-001-render_assistant_markdown: block projection은 nested display intent와 link destination을 한 번에 보존한다.
+    /// marker가 제거된 rendered Character offsets가 heading/list/blockquote의 실제 표시 문자열과 일치하는지 검증합니다.
+    /// - 검증 내용: single/strong emphasis, link destination, inline code의 typed range와 malformed literal을 확인합니다.
+    /// - 사전 조건: nested strong-link와 Unicode inline code를 포함한 block grammar 및 닫히지 않은 delimiter가 있습니다.
+    /// - 기대 결과: 유효 intent는 rendered offsets를 가리키고 malformed delimiter는 literal이며 false intent가 없습니다.
+    func testRenderAssistantMarkdownPreservesNestedDisplayIntentsAtRenderedCharacterOffsets() {
+        let source = "# *head* [docs](https://heading)\n\n"
+            + "- **bold** `code`\n"
+            + "1. [num](https://numbered) _em_\n\n"
+            + "> **quote [link](https://quote)** and `코드`\n\n"
+            + "`open *unmatched [label](missing"
+
+        let document = AiChatMarkdownParser.parse(source)
+
+        XCTAssertEqual(document.blocks.map(\.projections.rendered), [
+            "head docs", "bold code", "num em", "quote link and 코드", "`open *unmatched [label](missing",
+        ])
+        XCTAssertEqual(document.blocks[0].inlineIntents, [
+            .emphasis(.init(characterOffsets: 0 ..< 4)),
+            .link(range: .init(characterOffsets: 5 ..< 9), destination: "https://heading"),
+        ])
+        XCTAssertEqual(document.blocks[1].inlineIntents, [
+            .strong(.init(characterOffsets: 0 ..< 4)),
+            .code(.init(characterOffsets: 5 ..< 9)),
+        ])
+        XCTAssertEqual(document.blocks[2].inlineIntents, [
+            .link(range: .init(characterOffsets: 0 ..< 3), destination: "https://numbered"),
+            .emphasis(.init(characterOffsets: 4 ..< 6)),
+        ])
+        XCTAssertEqual(document.blocks[3].inlineIntents, [
+            .strong(.init(characterOffsets: 0 ..< 10)),
+            .link(range: .init(characterOffsets: 6 ..< 10), destination: "https://quote"),
+            .code(.init(characterOffsets: 15 ..< 17)),
+        ])
+        XCTAssertTrue(document.blocks[4].inlineIntents.isEmpty)
+        XCTAssertEqual(document.blocks[4].projections.plain, "`open *unmatched [label](missing")
+
+        let nested = AiChatMarkdownParser.parse("*outer **strong** end*").blocks[0]
+        XCTAssertEqual(nested.projections.rendered, "outer strong end")
+        XCTAssertEqual(nested.inlineIntents, [
+            .emphasis(.init(characterOffsets: 0 ..< 16)),
+            .strong(.init(characterOffsets: 6 ..< 12)),
+        ])
+
+        let unmatched = AiChatMarkdownParser.parse("**unclosed *rest*").blocks[0]
+        XCTAssertEqual(unmatched.projections.rendered, "**unclosed *rest*")
+        XCTAssertTrue(unmatched.inlineIntents.isEmpty)
+    }
+
+    /// CBW-001-render_assistant_markdown: table cell은 intent를 소유하고 fenced code는 literal payload만 소유한다.
+    /// Task 5가 cell을 재parse하지 않고 표시 의미를 소비하며 code backtick을 inline Markdown으로 오인하지 않는지 검증합니다.
+    /// - 검증 내용: cell-local strong/link/code ranges와 fenced-code empty inline intents를 확인합니다.
+    /// - 사전 조건: inline grammar가 있는 2열 table과 Markdown-like token을 포함한 Swift fence가 있습니다.
+    /// - 기대 결과: table cell metadata에 intent가 남고 code payload/projection은 그대로이며 block intent는 비어 있습니다.
+    func testRenderAssistantMarkdownKeepsTableCellIntentsAndTreatsFencedCodeAsLiteral() throws {
+        let source = "| **강조** | [링크](https://table) `코드` |\n"
+            + "| --- | --- |\n\n"
+            + "```swift\nlet raw = `tick` *literal* [link](destination)\n```\n"
+
+        let document = AiChatMarkdownParser.parse(source)
+        let table = try XCTUnwrap(document.blocks[0].table)
+
+        XCTAssertEqual(table.rows, [["강조", "링크 코드"]])
+        XCTAssertEqual(table.cells[0][0].inlineIntents, [
+            .strong(.init(characterOffsets: 0 ..< 2)),
+        ])
+        XCTAssertEqual(table.cells[0][1].inlineIntents, [
+            .link(range: .init(characterOffsets: 0 ..< 2), destination: "https://table"),
+            .code(.init(characterOffsets: 3 ..< 5)),
+        ])
+        XCTAssertEqual(document.blocks[0].projections.plain, "강조\t링크 코드")
+        XCTAssertEqual(document.blocks[1].code?.payload, "let raw = `tick` *literal* [link](destination)\n")
+        XCTAssertEqual(document.blocks[1].projections.search, "let raw = `tick` *literal* [link](destination)\n")
+        XCTAssertTrue(document.blocks[1].inlineIntents.isEmpty)
+    }
+
+    /// CBW-001-render_assistant_markdown: 미완성 fence는 plain fallback을 유지하다 closing fence에서 code로 전환한다.
+    /// streaming chunk가 fence를 완성하기 전후에도 앞선 block identity와 exact source가 손상되지 않는지 검증합니다.
+    /// - 검증 내용: incomplete plain fallback, complete code payload/metadata와 unchanged prefix identity를 확인합니다.
+    /// - 사전 조건: 안정된 paragraph 뒤에 들여쓴 Swift fence opening과 CRLF body가 순차 append됩니다.
+    /// - 기대 결과: closing 전에는 code가 아니며 closing 후 exact code가 되고 앞선 paragraph ID는 동일합니다.
+    func testRenderAssistantMarkdownTransitionsIncompleteFenceWithoutLosingStreamingPrefix() {
+        let prefix = "안정된 문단\r\n\r\n"
+        let incomplete = prefix + "  ```Swift linenos\r\nlet value = 1\r\n"
+        let complete = incomplete + "  ```\r\n"
+
+        let incompleteDocument = AiChatMarkdownParser.parse(incomplete)
+        let completeDocument = AiChatMarkdownParser.parse(complete)
+
+        XCTAssertEqual(incompleteDocument.reconstructedRawSource, incomplete)
+        XCTAssertEqual(incompleteDocument.blocks.last?.kind, .paragraph)
+        XCTAssertNil(incompleteDocument.blocks.last?.code)
+        XCTAssertEqual(incompleteDocument.blocks.last?.projections.plain, "  ```Swift linenos\r\nlet value = 1\r\n")
+        XCTAssertEqual(completeDocument.reconstructedRawSource, complete)
+        XCTAssertEqual(completeDocument.blocks.last?.kind, .code)
+        XCTAssertEqual(completeDocument.blocks.last?.code?.payload, "let value = 1\r\n")
+        XCTAssertEqual(completeDocument.blocks.last?.code?.originalLanguage, "Swift")
+        XCTAssertEqual(incompleteDocument.blocks.first?.id, completeDocument.blocks.first?.id)
+        XCTAssertNotEqual(incompleteDocument.blocks.last?.id, completeDocument.blocks.last?.id)
+    }
+
+    /// CBW-001-render_assistant_markdown: unsupported·malformed construct는 문자와 순서를 보존한 plain fallback이다.
+    /// 제한된 grammar 밖의 task list, raw HTML, malformed table이 해석되거나 삭제되지 않는지 검증합니다.
+    /// - 검증 내용: fallback raw/plain source와 별도 image/link의 alt/label projection을 확인합니다.
+    /// - 사전 조건: task list, raw HTML, delimiter 없는 table 다음에 image와 link가 있는 paragraph가 있습니다.
+    /// - 기대 결과: unsupported source는 exact plain이고 image는 alt, link는 label만 projection에 남습니다.
+    func testRenderAssistantMarkdownPreservesUnsupportedSyntaxAndProjectsImageAltOnly() {
+        let unsupported = "- [ ] task\n<div>raw</div>\n| broken |\nnot delimiter\n\n"
+        let supported = "![대체 텍스트](https://example.com/image.png) [링크](https://example.com)"
+        let document = AiChatMarkdownParser.parse(unsupported + supported)
+
+        XCTAssertEqual(document.reconstructedRawSource, unsupported + supported)
+        XCTAssertEqual(document.blocks.first?.kind, .paragraph)
+        XCTAssertEqual(document.blocks.first?.rawSlice, unsupported)
+        XCTAssertEqual(document.blocks.first?.projections.plain, unsupported)
+        XCTAssertEqual(document.blocks.last?.projections.rendered, "대체 텍스트 링크")
+        XCTAssertEqual(document.blocks.last?.projections.search, "대체 텍스트 링크")
+        XCTAssertEqual(document.blocks.last?.projections.plain, "대체 텍스트 링크")
+    }
+
+    /// CBW-001-render_assistant_markdown: block identity는 source 위치가 아닌 stable content fingerprint를 사용한다.
+    /// streaming append가 앞선 block을 재식별하지 않고 duplicate content도 서로 구분하는지 검증합니다.
+    /// - 검증 내용: append 전후 prefix ID 안정성, 위치 이동 안정성과 duplicate occurrence ID 구분을 확인합니다.
+    /// - 사전 조건: 동일한 paragraph가 두 번 있고 뒤에 새 heading을 append한 두 source가 있습니다.
+    /// - 기대 결과: 기존 두 ID는 append 후 그대로이고 서로 다르며 같은 block이 앞에 삽입되어 이동해도 content ID가 유지됩니다.
+    func testRenderAssistantMarkdownKeepsStableDistinctBlockIdentityAcrossStreamingAppend() {
+        let initial = AiChatMarkdownParser.parse("same\n\nsame\n\n")
+        let appended = AiChatMarkdownParser.parse("same\n\nsame\n\n# next\n")
+        let shifted = AiChatMarkdownParser.parse("# before\n\nsame\n\nsame\n\n")
+
+        XCTAssertEqual(Array(appended.blocks.prefix(2).map(\.id)), initial.blocks.map(\.id))
+        XCTAssertNotEqual(initial.blocks[0].id, initial.blocks[1].id)
+        XCTAssertEqual(Array(shifted.blocks.suffix(2).map(\.id)), initial.blocks.map(\.id))
+        XCTAssertFalse(initial.blocks[0].id.rawValue.contains("0-"))
+    }
+
+    /// CBW-001-render_assistant_markdown: known language와 alias를 원본 label과 분리해 highlight한다.
+    /// Swift와 JavaScript alias가 semantic run을 만들면서 사용자가 입력한 fence label은 그대로 유지되는지 검증합니다.
+    /// - 검증 내용: live Highlighter engine의 source 보존, language normalization, theme, semantic attribute run을 확인합니다.
+    /// - 사전 조건: bundled default themes를 사용하는 light Swift와 dark `js` 요청이 있습니다.
+    /// - 기대 결과: 두 요청 모두 display 가능한 highlighted result이며 original label과 normalized language가 분리됩니다.
+    func testRenderAssistantMarkdownHighlightsKnownLanguagesAndPreservesOriginalLabels() async {
+        let client = AiChatSyntaxHighlightingClient.live()
+        let swiftCode = "let value = 42"
+        let javascriptCode = "const value = 42;"
+
+        let swiftResult = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: swiftCode,
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        ))
+        let javascriptResult = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: javascriptCode,
+            languageLabel: "js",
+            appearance: .dark,
+            typographyVersion: 1,
+            generation: 2,
+        ))
+
+        XCTAssertEqual(swiftResult.source, swiftCode)
+        XCTAssertEqual(swiftResult.originalLanguage, "swift")
+        XCTAssertEqual(swiftResult.normalizedLanguage, "swift")
+        XCTAssertEqual(swiftResult.theme, "default-light")
+        XCTAssertEqual(swiftResult.disposition, .highlighted)
+        XCTAssertTrue(swiftResult.isEligibleForDisplay)
+        XCTAssertTrue(swiftResult.runs.contains { !$0.attributes.isPlain })
+
+        XCTAssertEqual(javascriptResult.source, javascriptCode)
+        XCTAssertEqual(javascriptResult.originalLanguage, "js")
+        XCTAssertEqual(javascriptResult.normalizedLanguage, "javascript")
+        XCTAssertEqual(javascriptResult.theme, "default-dark")
+        XCTAssertEqual(javascriptResult.disposition, .highlighted)
+        XCTAssertTrue(javascriptResult.isEligibleForDisplay)
+        XCTAssertTrue(javascriptResult.runs.contains { !$0.attributes.isPlain })
+    }
+
+    /// CBW-001-render_assistant_markdown: highlighting boundary의 모든 값은 Swift 6 Sendable을 만족한다.
+    /// actor와 UI 사이에 third-party mutable object 없이 compiler-checked feature value만 전달되는지 검증합니다.
+    /// - 검증 내용: client, request/result, source range, run attributes와 disposition의 Sendable constraint를 확인합니다.
+    /// - 사전 조건: production adapter 타입이 test target에 internal visibility로 노출되어 있습니다.
+    /// - 기대 결과: suppression이나 unchecked conformance 없이 모든 boundary value가 generic constraint를 통과합니다.
+    func testRenderAssistantMarkdownHighlightingBoundaryValuesAreSendable() {
+        func requireSendable(_: (some Sendable).Type) {}
+
+        requireSendable(AiChatSyntaxHighlightingClient.self)
+        requireSendable(AiChatSyntaxHighlightingClient.RequestIdentity.self)
+        requireSendable(AiChatSyntaxHighlightingClient.Request.self)
+        requireSendable(AiChatSyntaxHighlightingClient.Result.self)
+        requireSendable(AiChatSyntaxHighlightingClient.Run.self)
+        requireSendable(AiChatSyntaxHighlightingClient.SourceRange.self)
+        requireSendable(AiChatSyntaxHighlightingClient.HighlightAttributes.self)
+        requireSendable(AiChatSyntaxHighlightingClient.ColorComponents.self)
+        requireSendable(AiChatSyntaxHighlightingClient.CacheMetrics.self)
+        requireSendable(AiChatSyntaxHighlightingClient.Appearance.self)
+        requireSendable(AiChatSyntaxHighlightingClient.Disposition.self)
+        requireSendable(AiChatSyntaxHighlightingClient.FallbackReason.self)
+    }
+
+    /// CBW-001-render_assistant_markdown: unknown과 language-less fence는 auto-detection 없이 plain fallback한다.
+    /// 명시하지 않았거나 지원하지 않는 언어가 JavaScriptCore auto-detection으로 전달되지 않는지 검증합니다.
+    /// - 검증 내용: exact source plain run, fallback disposition, engine invocation 0회를 확인합니다.
+    /// - 사전 조건: 지원 언어가 swift/javascript인 fake engine에 `madeuplang`과 nil label을 전달합니다.
+    /// - 기대 결과: 두 결과 모두 exact plain source이고 highlight engine은 호출되지 않습니다.
+    func testRenderAssistantMarkdownFallsBackWithoutAutoDetectionForUnknownOrMissingLanguage() async {
+        let recorder = SyntaxHighlightingRecorder()
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let source = "print(\"그대로\")"
+
+        let unknown = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: source,
+            languageLabel: "madeuplang",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        ))
+        let missing = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: source,
+            languageLabel: nil,
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 2,
+        ))
+
+        XCTAssertEqual(unknown.disposition, .plain(.unsupportedLanguage))
+        XCTAssertEqual(missing.disposition, .plain(.missingLanguage))
+        assertExactPlainSyntaxResult(unknown, source: source)
+        assertExactPlainSyntaxResult(missing, source: source)
+        let fallbackInvocationCount = await recorder.invocationCount()
+        XCTAssertEqual(fallbackInvocationCount, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: appearance와 typography config는 독립 cache key를 만든다.
+    /// 같은 source/config는 재사용하되 light/dark 또는 typography version 변경은 stale style을 재사용하지 않는지 검증합니다.
+    /// - 검증 내용: cache hit/miss별 engine invocation과 theme key를 확인합니다.
+    /// - 사전 조건: 동일 Swift code를 light v1 두 번, dark v1, dark v2 순서로 요청합니다.
+    /// - 기대 결과: light의 두 번째 요청만 cache hit이고 engine 호출은 총 3회입니다.
+    func testRenderAssistantMarkdownKeysCacheByAppearanceThemeAndTypographyVersion() async {
+        let recorder = SyntaxHighlightingRecorder()
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let code = "let cached = true"
+
+        _ = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: code,
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        ))
+        _ = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: code,
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 2,
+        ))
+        _ = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: code,
+            languageLabel: "swift",
+            appearance: .dark,
+            typographyVersion: 1,
+            generation: 3,
+        ))
+        _ = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: code,
+            languageLabel: "swift",
+            appearance: .dark,
+            typographyVersion: 2,
+            generation: 4,
+        ))
+
+        let cacheInvocationCount = await recorder.invocationCount()
+        XCTAssertEqual(cacheInvocationCount, 3)
+        let metrics = await client.cacheMetrics()
+        XCTAssertEqual(metrics.entryCount, 3)
+        XCTAssertLessThanOrEqual(metrics.estimatedBytes, AiChatSyntaxHighlightingClient.maximumCacheBytes)
+    }
+
+    /// CBW-001-render_assistant_markdown: 독립 block은 역순 완료되어도 서로 stale 처리하지 않는다.
+    /// shared client와 engine을 사용하는 두 code block의 freshness lane이 identity별로 분리되는지 검증합니다.
+    /// - 검증 내용: reverse completion의 eligibility, 두 cache admission, 이후 content cache hit를 확인합니다.
+    /// - 사전 조건: 서로 다른 identity의 Swift 요청 두 개가 engine에서 동시에 suspend되어 있습니다.
+    /// - 기대 결과: B 다음 A 순서로 완료해도 둘 다 highlighted·eligible이고 engine 호출은 재요청에서 늘지 않습니다.
+    func testRenderAssistantMarkdownKeepsIndependentReverseCompletionsEligibleAndCached() async {
+        await assertIndependentSyntaxHighlightingReverseCompletion()
+    }
+
+    /// CBW-001-render_assistant_markdown: 다른 block의 missing/preflight fallback은 in-flight highlight를 무효화하지 않는다.
+    /// 즉시 축퇴하는 한 block이 별도 block의 이미 시작된 JavaScript 결과 freshness에 영향을 주지 않는지 검증합니다.
+    /// - 검증 내용: missing-language와 64KiB preflight 이후 in-flight success eligibility/cache hit를 확인합니다.
+    /// - 사전 조건: identity A는 engine에서 suspend되고 identity B는 missing generation 1과 oversized generation 2를 요청합니다.
+    /// - 기대 결과: B의 두 fallback은 exact plain이고 A는 이후 highlighted·eligible로 완료되어 cache hit됩니다.
+    func testRenderAssistantMarkdownFallbackIdentityDoesNotInvalidateInFlightHighlight() async {
+        await assertSyntaxHighlightingFallbackIdentityIsolation()
+    }
+
+    /// CBW-001-render_assistant_markdown: superseded engine failure는 current failure fallback으로 노출하지 않는다.
+    /// 이전 generation이 늦게 throw해도 최신 성공 결과와 cache를 덮어쓰지 않는지 검증합니다.
+    /// - 검증 내용: latest success 후 older failure의 stale disposition, eligibility, cache admission을 확인합니다.
+    /// - 사전 조건: 같은 identity의 generation 1/2가 engine에서 suspend되고 generation 2가 먼저 성공합니다.
+    /// - 기대 결과: generation 1 late throw는 stale·display-ineligible이고 generation 2 cache만 유지됩니다.
+    func testRenderAssistantMarkdownTreatsLateSupersededEngineFailureAsStale() async {
+        await assertSyntaxHighlightingLateFailureIsStale()
+    }
+
+    /// CBW-001-render_assistant_markdown: high-watermark보다 낮은 generation은 current가 될 수 없다.
+    /// 늦게 도착한 낮은 revision이 cache hit를 통해 최신 결과처럼 적용되지 않는지 검증합니다.
+    /// - 검증 내용: generation 2 success 후 generation 1 stale, generation 3 cache hit와 invocation count를 확인합니다.
+    /// - 사전 조건: 같은 identity와 source의 generation 2가 먼저 성공해 semantic cache에 있습니다.
+    /// - 기대 결과: generation 1은 engine/cache lookup 전에 stale이고 generation 3만 highlighted·eligible입니다.
+    func testRenderAssistantMarkdownRejectsLateLowerGenerationForSameIdentity() async {
+        await assertSyntaxHighlightingRejectsLateLowerGeneration()
+    }
+
+    /// CBW-001-render_assistant_markdown: current initialization/theme/highlight 실패는 표시 가능한 plain fallback이다.
+    /// 최신 요청의 third-party runtime 실패가 source를 숨기지 않으면서 실패 결과를 재사용하지 않는지 검증합니다.
+    /// - 검증 내용: failure별 disposition, display eligibility, exact plain run, cache admission과 반복 invocation을 확인합니다.
+    /// - 사전 조건: supported-language 조회 실패와 theme/highlight 단계에서 각각 typed failure를 던지는 current request가 있습니다.
+    /// - 기대 결과: 모든 current 실패는 exact plain·display-eligible이고 cache entry는 0개입니다.
+    func testRenderAssistantMarkdownKeepsCurrentEngineFailuresEligibleButUncached() async {
+        let initializationClient = AiChatSyntaxHighlightingClient.testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { throw AiChatSyntaxHighlightingClient.EngineFailure.initialization },
+            highlight: { _, _, _ in XCTFail("Initialization failure must not highlight")
+                return []
+            },
+        )
+        let themeRecorder = SyntaxHighlightingRecorder(failure: .theme)
+        let themeClient = makeSyntaxHighlightingClient(recorder: themeRecorder)
+        let highlightRecorder = SyntaxHighlightingRecorder(failure: .highlight)
+        let highlightClient = makeSyntaxHighlightingClient(recorder: highlightRecorder)
+        let request = AiChatSyntaxHighlightingClient.Request(
+            identity: .init(rawValue: "failure-block"),
+            code: "let failure = true",
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        )
+
+        let initialization = await initializationClient.highlight(request)
+        let theme = await themeClient.highlight(request)
+        let firstHighlight = await highlightClient.highlight(request)
+        let secondHighlight = await highlightClient.highlight(.init(
+            identity: request.identity,
+            code: request.code,
+            languageLabel: request.languageLabel,
+            appearance: request.appearance,
+            typographyVersion: request.typographyVersion,
+            generation: 2,
+        ))
+
+        XCTAssertEqual(initialization.disposition, .plain(.initializationFailure))
+        XCTAssertEqual(theme.disposition, .plain(.themeFailure))
+        XCTAssertEqual(firstHighlight.disposition, .plain(.highlightFailure))
+        XCTAssertEqual(secondHighlight.disposition, .plain(.highlightFailure))
+        for result in [initialization, theme, firstHighlight, secondHighlight] {
+            assertExactPlainSyntaxResult(result, source: request.code)
+            XCTAssertTrue(result.isEligibleForDisplay)
+        }
+        let initializationMetrics = await initializationClient.cacheMetrics()
+        let themeMetrics = await themeClient.cacheMetrics()
+        let highlightMetrics = await highlightClient.cacheMetrics()
+        let highlightInvocationCount = await highlightRecorder.invocationCount()
+        XCTAssertEqual(initializationMetrics.entryCount, 0)
+        XCTAssertEqual(themeMetrics.entryCount, 0)
+        XCTAssertEqual(highlightMetrics.entryCount, 0)
+        XCTAssertEqual(highlightInvocationCount, 2)
+    }
+
+    /// CBW-001-render_assistant_markdown: supported-language 조회 중 취소는 후발 initialization 오류보다 우선한다.
+    /// 취소를 협조하지 않는 dependency가 나중에 일반 오류를 던져도 취소된 결과가 표시되지 않는지 검증합니다.
+    /// - 검증 내용: exact plain source, cancelled disposition, display eligibility와 cache admission을 확인합니다.
+    /// - 사전 조건: supported-language loader가 시작을 알리고 suspend된 뒤 task를 취소하고 initialization 오류로 재개합니다.
+    /// - 기대 결과: 결과는 display-ineligible cancelled exact plain이고 cache entry는 0개입니다.
+    func testRenderAssistantMarkdownTreatsCancelledLanguageLoadFailureAsCancellation() async {
+        let loader = SuspendedSupportedLanguagesLoader()
+        let client = AiChatSyntaxHighlightingClient.testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { try await loader.load() },
+            highlight: { _, _, _ in
+                XCTFail("Cancelled language loading must not highlight")
+                return []
+            },
+        )
+        let request = syntaxHighlightingRequest(
+            identity: "cancelled-language-load",
+            code: "let cancelled = true",
+            generation: 1,
+        )
+        let task = Task { await client.highlight(request) }
+        await loader.waitUntilStarted()
+
+        task.cancel()
+        await loader.fail(with: .initialization)
+        let result = await task.value
+        let metrics = await client.cacheMetrics()
+
+        XCTAssertEqual(result.disposition, .plain(.cancelled))
+        XCTAssertFalse(result.isEligibleForDisplay)
+        assertExactPlainSyntaxResult(result, source: request.code)
+        XCTAssertEqual(metrics.entryCount, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: engine highlight 중 취소는 후발 highlight 오류보다 우선한다.
+    /// 취소를 협조하지 않는 engine이 나중에 일반 오류를 던져도 취소된 결과가 표시되지 않는지 검증합니다.
+    /// - 검증 내용: exact plain source, cancelled disposition, display eligibility와 cache admission을 확인합니다.
+    /// - 사전 조건: highlight operation이 시작을 알리고 suspend된 뒤 task를 취소하고 highlight 오류로 재개합니다.
+    /// - 기대 결과: 결과는 display-ineligible cancelled exact plain이고 cache entry는 0개입니다.
+    func testRenderAssistantMarkdownTreatsCancelledHighlightFailureAsCancellation() async {
+        let operation = SuspendedHighlightOperation()
+        let client = AiChatSyntaxHighlightingClient.testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { ["swift"] },
+            highlight: { _, _, _ in try await operation.highlight() },
+        )
+        let request = syntaxHighlightingRequest(
+            identity: "cancelled-highlight",
+            code: "let cancelled = true",
+            generation: 1,
+        )
+        let task = Task { await client.highlight(request) }
+        await operation.waitUntilStarted()
+
+        task.cancel()
+        await operation.fail(with: .highlight)
+        let result = await task.value
+        let metrics = await client.cacheMetrics()
+
+        XCTAssertEqual(result.disposition, .plain(.cancelled))
+        XCTAssertFalse(result.isEligibleForDisplay)
+        assertExactPlainSyntaxResult(result, source: request.code)
+        XCTAssertEqual(metrics.entryCount, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: 64KiB와 2,000-line preflight limit을 넘는 source는 engine 전에 축퇴한다.
+    /// 과도한 JavaScriptCore 작업이 시작되기 전에 byte/line limit이 각각 독립적으로 적용되는지 검증합니다.
+    /// - 검증 내용: 65,537-byte와 2,001-line source의 invocation 0회와 exact plain fallback을 확인합니다.
+    /// - 사전 조건: byte limit 초과 단일 행과 line limit 초과 소형 행 fixture가 있습니다.
+    /// - 기대 결과: 두 요청 모두 display 가능한 preflight fallback이고 source가 변하지 않습니다.
+    func testRenderAssistantMarkdownPreflightsOversizedByteAndLineInputs() async {
+        let recorder = SyntaxHighlightingRecorder()
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let oversizedBytes = String(repeating: "x", count: 65537)
+        let oversizedLines = String(repeating: "x\n", count: 2000) + "x"
+
+        let byteResult = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: oversizedBytes,
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        ))
+        let lineResult = await client.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: oversizedLines,
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 2,
+        ))
+
+        XCTAssertEqual(byteResult.disposition, .plain(.preflightLimit))
+        XCTAssertEqual(lineResult.disposition, .plain(.preflightLimit))
+        assertExactPlainSyntaxResult(byteResult, source: oversizedBytes)
+        assertExactPlainSyntaxResult(lineResult, source: oversizedLines)
+        XCTAssertTrue(byteResult.isEligibleForDisplay)
+        XCTAssertTrue(lineResult.isEligibleForDisplay)
+        let preflightInvocationCount = await recorder.invocationCount()
+        XCTAssertEqual(preflightInvocationCount, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: trailing-edge coalescing과 generation 검사가 stale completion을 적용하지 않는다.
+    /// 빠른 streaming update와 이미 시작된 느린 JavaScript 작업이 최신 render 결과를 덮어쓰지 않는지 검증합니다.
+    /// - 검증 내용: 80ms window invocation 1회, older generation stale disposition, 최신 결과만 cache admission을 확인합니다.
+    /// - 사전 조건: 연속 요청용 immediate recorder와 완료 순서를 제어하는 suspending recorder가 있습니다.
+    /// - 기대 결과: coalesced 이전 요청과 늦게 끝난 이전 generation은 UI 적용 불가이고 최신 generation만 적용 가능합니다.
+    func testRenderAssistantMarkdownCoalescesAndDiscardsStaleGenerations() async throws {
+        try await assertSyntaxHighlightingTrailingEdgeCoalescing()
+        await assertSyntaxHighlightingStaleGenerationDiscard()
+    }
+
+    /// CBW-001-render_assistant_markdown: cancellation과 LRU bounds는 결과 적용과 memory growth를 제한한다.
+    /// pending coalescing 취소와 많은 고유 source가 실패 cache나 무제한 cache로 이어지지 않는지 검증합니다.
+    /// - 검증 내용: cancelled result eligibility와 128-entry/8MiB LRU eviction 및 재호출을 확인합니다.
+    /// - 사전 조건: 80ms pending request와 130개의 약 65KB 고유 Swift source를 순차 요청합니다.
+    /// - 기대 결과: 취소는 engine/cache 0회이고 LRU는 두 상한 이하이며 첫 eviction key 재요청은 cache miss입니다.
+    func testRenderAssistantMarkdownDoesNotCacheCancellationAndBoundsLRU() async {
+        let cancellationRecorder = SyntaxHighlightingRecorder()
+        let cancellationClient = makeSyntaxHighlightingClient(
+            recorder: cancellationRecorder,
+            coalescingDelay: .milliseconds(80),
+        )
+        let cancelledTask = Task {
+            await cancellationClient.highlight(syntaxHighlightingRequest(
+                identity: "test-block", code: "let cancelled = true", generation: 1,
+            ))
+        }
+        cancelledTask.cancel()
+        let cancelled = await cancelledTask.value
+
+        XCTAssertEqual(cancelled.disposition, .plain(.cancelled))
+        XCTAssertFalse(cancelled.isEligibleForDisplay)
+        let cancellationInvocationCount = await cancellationRecorder.invocationCount()
+        let cancellationMetrics = await cancellationClient.cacheMetrics()
+        XCTAssertEqual(cancellationInvocationCount, 0)
+        XCTAssertEqual(cancellationMetrics.entryCount, 0)
+
+        let lruRecorder = SyntaxHighlightingRecorder()
+        let lruClient = makeSyntaxHighlightingClient(recorder: lruRecorder)
+        let cachePrefixes = Array("abcdefghijklmnopqrstuvwxyz")
+        let firstCode = String(repeating: cachePrefixes[0], count: 65000) + "0"
+        for index in 0 ..< 130 {
+            let code = String(repeating: cachePrefixes[index % cachePrefixes.count], count: 65000) + "\(index)"
+            _ = await lruClient.highlight(.init(
+                identity: .init(rawValue: "test-block"),
+                code: code,
+                languageLabel: "swift",
+                appearance: .light,
+                typographyVersion: 1,
+                generation: UInt64(index + 1),
+            ))
+        }
+        let beforeRevisitCount = await lruRecorder.invocationCount()
+        _ = await lruClient.highlight(.init(
+            identity: .init(rawValue: "test-block"),
+            code: firstCode,
+            languageLabel: "swift",
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 131,
+        ))
+        let metrics = await lruClient.cacheMetrics()
+
+        XCTAssertLessThanOrEqual(metrics.entryCount, AiChatSyntaxHighlightingClient.maximumCacheEntries)
+        XCTAssertLessThanOrEqual(metrics.estimatedBytes, AiChatSyntaxHighlightingClient.maximumCacheBytes)
+        let afterRevisitCount = await lruRecorder.invocationCount()
+        XCTAssertEqual(afterRevisitCount, beforeRevisitCount + 1)
+    }
+
+    /// CBW-001-render_assistant_markdown: semantic·syntax 속성 위에 search decoration만 합성하며 최종 NSTextView
+    /// NSAttributedString 경계까지 AppKit attribute로 보존한다.
+    /// code, link, emphasis의 표시 의미가 검색 결과 배경과 현재 결과 underline을 적용한 뒤에도 유지되는지, 그리고
+    /// SwiftUI → NSAttributedString 변환에서 foreground/font/background가 누락되지 않는지 검증합니다.
+    /// - 검증 내용: paragraph/code의 모든 run이 `.foregroundColor`, `.font`, 의미 속성(link/strong/code bg/syntax fg),
+    ///   search background/underline을 AppKit attribute로 보존하는지, 그리고 label foreground가 dark Aqua에서 밝게
+    ///   해상화되어 가독성을 유지하는지 확인합니다.
+    /// - 사전 조건: strong link와 inline code paragraph, semantic Swift run에 normal/current match가 있습니다.
+    /// - 기대 결과: final NSAttributedString의 모든 run이 foreground+font를 가지며, link/strong trait, inline-code
+    ///   controlBackground, syntax foreground/monospaced, search yellow/accent background + current underline이 AppKit
+    ///   attribute로 존재하고, dark appearance에서 label foreground의 밝기가 0.5를 초과합니다.
+    func testRenderAssistantMarkdownComposesSearchWithoutReplacingSemanticOrSyntaxAttributes() throws {
+        let paragraph = try XCTUnwrap(
+            AiChatMarkdownParser.parse("**[link](https://example.com)** and `inline`").blocks.first,
+        )
+        let paragraphFinal = AiChatAssistantMarkdownAttributedText.make(
+            block: paragraph,
+            syntaxRuns: [],
+            matchOffsets: [0 ..< 4, 9 ..< 15],
+            currentMatchOffsets: 9 ..< 15,
+        )
+        let code = try XCTUnwrap(AiChatMarkdownParser.parse("```swift\nlet value = 1\n```\n").blocks.first)
+        let syntaxColor = AiChatSyntaxHighlightingClient.ColorComponents(
+            red: 0.2,
+            green: 0.4,
+            blue: 0.6,
+            alpha: 1,
+        )
+        let codeFinal = AiChatAssistantMarkdownAttributedText.make(
+            block: code,
+            syntaxRuns: [
+                .init(
+                    sourceRange: .init(utf16Offsets: 0 ..< 3),
+                    attributes: .init(foreground: syntaxColor, isBold: true),
+                ),
+            ],
+            matchOffsets: [0 ..< 3],
+            currentMatchOffsets: nil,
+        )
+
+        let paragraphSummary = summarizeParagraphAppKitRuns(paragraphFinal)
+        XCTAssertEqual(paragraphFinal.string, "link and inline")
+        XCTAssertTrue(
+            paragraphSummary.allRunsHaveForegroundAndFont,
+            "paragraph final NSAttributedString must retain foreground+font on every run",
+        )
+        XCTAssertTrue(paragraphSummary.foundLink, "paragraph final must retain semantic .link attribute")
+        XCTAssertTrue(
+            paragraphSummary.foundBoldTrait,
+            "paragraph final must retain strong bold font trait",
+        )
+        XCTAssertTrue(
+            paragraphSummary.foundBackground,
+            "paragraph final must retain inline-code/search background",
+        )
+        XCTAssertTrue(
+            paragraphSummary.foundCurrentUnderline,
+            "paragraph final must carry current match underline",
+        )
+
+        let codeSummary = summarizeCodeAppKitRuns(codeFinal, syntaxColor: syntaxColor)
+        XCTAssertEqual(codeFinal.string, "let value = 1\n")
+        XCTAssertTrue(
+            codeSummary.allRunsHaveForegroundAndFont,
+            "code final NSAttributedString must retain foreground+font on every run",
+        )
+        XCTAssertTrue(codeSummary.foundSyntaxForeground, "code final must retain syntax foreground color")
+        XCTAssertTrue(
+            codeSummary.foundMonospacedFont,
+            "code final must use monospaced font for syntax/code runs",
+        )
+        XCTAssertTrue(codeSummary.foundBackground, "code final must carry search result background")
+
+        // dark Aqua에서 label foreground는 밝게 해상화되어 dark-mode 가독성을 보장한다.
+        let darkBrightness = resolvedDarkAquaBrightness(paragraphSummary.sampleForeground)
+        XCTAssertGreaterThan(
+            darkBrightness,
+            0.5,
+            "label foreground must resolve to a light color in dark Aqua for readability",
+        )
+    }
+
+    private struct AppKitRunSummary {
+        var allRunsHaveForegroundAndFont = true
+        var foundBoldTrait = false
+        var foundMonospacedFont = false
+        var foundSyntaxForeground = false
+        var foundBackground = false
+        var foundLink = false
+        var foundCurrentUnderline = false
+        var sampleForeground: NSColor?
+    }
+
+    private func summarizeParagraphAppKitRuns(
+        _ attributed: NSAttributedString,
+    ) -> AppKitRunSummary {
+        var summary = AppKitRunSummary()
+        let linkURL = URL(string: "https://example.com")
+        attributed.enumerateAttributes(
+            in: NSRange(location: 0, length: attributed.length),
+            options: [],
+        ) { attributes, _, _ in
+            if attributes[.foregroundColor] == nil || attributes[.font] == nil {
+                summary.allRunsHaveForegroundAndFont = false
+            }
+            if summary.sampleForeground == nil {
+                summary.sampleForeground = attributes[.foregroundColor] as? NSColor
+            }
+            if let link = attributes[.link] as? URL, link == linkURL {
+                summary.foundLink = true
+            }
+            if let font = attributes[.font] as? NSFont,
+               font.fontDescriptor.symbolicTraits.contains(.bold)
+            {
+                summary.foundBoldTrait = true
+            }
+            if attributes[.backgroundColor] != nil {
+                summary.foundBackground = true
+            }
+            if attributes[.underlineStyle] != nil {
+                summary.foundCurrentUnderline = true
+            }
+        }
+        return summary
+    }
+
+    private func summarizeCodeAppKitRuns(
+        _ attributed: NSAttributedString,
+        syntaxColor: AiChatSyntaxHighlightingClient.ColorComponents,
+    ) -> AppKitRunSummary {
+        var summary = AppKitRunSummary()
+        attributed.enumerateAttributes(
+            in: NSRange(location: 0, length: attributed.length),
+            options: [],
+        ) { attributes, _, _ in
+            if attributes[.foregroundColor] == nil || attributes[.font] == nil {
+                summary.allRunsHaveForegroundAndFont = false
+            }
+            if let font = attributes[.font] as? NSFont,
+               font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+            {
+                summary.foundMonospacedFont = true
+            }
+            if let color = attributes[.foregroundColor] as? NSColor,
+               let resolved = color.usingColorSpace(.sRGB),
+               abs(resolved.redComponent - CGFloat(syntaxColor.red)) < 0.01,
+               abs(resolved.greenComponent - CGFloat(syntaxColor.green)) < 0.01,
+               abs(resolved.blueComponent - CGFloat(syntaxColor.blue)) < 0.01
+            {
+                summary.foundSyntaxForeground = true
+            }
+            if attributes[.backgroundColor] != nil {
+                summary.foundBackground = true
+            }
+        }
+        return summary
+    }
+
+    private func resolvedDarkAquaBrightness(_ color: NSColor?) -> CGFloat {
+        guard let darkAppearance = NSAppearance(named: .darkAqua) else { return 0 }
+        var brightness: CGFloat = 0
+        darkAppearance.performAsCurrentDrawingAppearance {
+            guard let resolved = color?.usingColorSpace(.sRGB) else { return }
+            brightness = resolved.brightnessComponent
+        }
+        return brightness
+    }
+
+    /// CBW-001-render_assistant_markdown: rich block presentation은 parser metadata를 재해석 없이 소비한다.
+    /// heading/list/paragraph/blockquote/code/table UI가 wrapping, language, alignment 계약에 필요한 typed metadata를 받는지
+    /// 검증합니다.
+    /// - 검증 내용: block kind, original language, table cell/alignment, vertical scroll ownership과 design token policy를
+    /// 확인합니다.
+    /// - 사전 조건: 모든 rich block 종류와 aligned table을 포함한 하나의 assistant document가 있습니다.
+    /// - 기대 결과: 한 renderer document가 stable identity와 구조 metadata를 보존하며 child vertical scroll을 요구하지 않습니다.
+    func testRenderAssistantMarkdownBuildsRichPresentationsFromOneDocumentPath() {
+        let source = "# Heading\n\nParagraph `code`\n\n- Bullet\n1. Numbered\n\n> Quote\n\n"
+            + "| Left | Right |\n| :--- | ---: |\n| A | B |\n\n```Swift\nlet value = 1\n```\n"
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: .testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { ["swift"] },
+            highlight: { _, _, _ in [] },
+        ))
+
+        let rendered = session.render(content: source, transcriptRow: .message(index: 2))
+
+        XCTAssertEqual(rendered.document.blocks.map(\.kind), [
+            .heading(level: 1), .paragraph, .bullet, .numbered(number: 1), .blockquote, .table, .code,
+        ])
+        XCTAssertEqual(rendered.blocks.map(\.presentationID).count, rendered.document.blocks.count)
+        XCTAssertEqual(rendered.document.blocks.last?.code?.originalLanguage, "Swift")
+        XCTAssertEqual(rendered.document.blocks[5].table?.alignments, [.left, .right])
+        XCTAssertEqual(rendered.document.blocks[5].table?.rows, [["Left", "Right"], ["A", "B"]])
+        XCTAssertFalse(rendered.ownsChildVerticalScroll)
+    }
+
+    /// CBW-001-render_assistant_markdown: incomplete fence와 persisted finalization은 view-local handoff state를 보존한다.
+    /// streaming block 종류와 transcript row가 바뀌어도 호환 가능한 사용자 선택·responder·scroll·검색 문맥이 이어지는지 검증합니다.
+    /// - 검증 내용: presentation identity, typed selection, first responder, outer offset와 current descriptor remap을 확인합니다.
+    /// - 사전 조건: 안정된 prefix 뒤 incomplete Swift fence의 body가 선택된 상태에서 closing chunk와 stored row가 순서대로 도착합니다.
+    /// - 기대 결과: 두 전환 뒤 같은 표시 block identity와 exact 선택·scroll·current search descriptor가 복원됩니다.
+    func testRenderAssistantMarkdownRestoresCompatibleViewStateAcrossFenceClosureAndFinalization() throws {
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let incomplete = "stable\n\n```Swift\nlet needle = 1\n"
+        let complete = incomplete + "```\n"
+        let streaming = session.render(content: incomplete, transcriptRow: .streamingAssistant)
+        let selectedText = "needle"
+        let streamingPlain = try XCTUnwrap(streaming.blocks.last?.block.projections.plain)
+        let selectedStringRange = try XCTUnwrap(streamingPlain.range(of: selectedText))
+        let selectedSearchRange = AiChatMarkdownDocument.SearchRange(selectedStringRange, in: streamingPlain)
+        let selectedRange = try XCTUnwrap(selectedSearchRange.plainSelectionRange(in: streamingPlain))
+        let current = AiChatRenderedTextMatchDescriptor(
+            transcriptRow: .streamingAssistant,
+            blockIndex: 1,
+            characterOffsets: 13 ..< 19,
+        )
+        try session.capture(.init(
+            presentationID: XCTUnwrap(streaming.blocks.last?.presentationID),
+            selection: selectedRange,
+            isFirstResponder: true,
+            outerScrollOffset: 42,
+            currentSearchDescriptor: current,
+            transcriptRow: .streamingAssistant,
+        ))
+
+        let closed = session.render(content: complete, transcriptRow: .streamingAssistant)
+        let stored = session.render(content: complete, transcriptRow: .message(index: 3))
+        let restored = try XCTUnwrap(session.restoration(for: stored))
+
+        XCTAssertEqual(closed.blocks.last?.presentationID, streaming.blocks.last?.presentationID)
+        XCTAssertEqual(stored.blocks.last?.presentationID, closed.blocks.last?.presentationID)
+        let storedPlain = try XCTUnwrap(stored.blocks.last?.block.projections.plain)
+        let restoredSelection = try XCTUnwrap(restored.selection)
+        let restoredSearchRange = try XCTUnwrap(
+            restoredSelection.searchRange(in: storedPlain, invalidRangePolicy: .discard),
+        )
+        XCTAssertEqual(restoredSearchRange.substring(in: storedPlain), selectedText)
+        XCTAssertTrue(restored.isFirstResponder)
+        XCTAssertEqual(restored.outerScrollOffset, 42)
+        XCTAssertEqual(restored.currentSearchDescriptor?.transcriptRow, .message(index: 3))
+        XCTAssertEqual(
+            restored.currentSearchDescriptor.flatMap { descriptor in
+                AiChatMarkdownDocument.SearchRange(characterOffsets: descriptor.characterOffsets)
+                    .substring(in: storedPlain)
+            },
+            selectedText,
+        )
+    }
+
+    /// CBW-001-render_assistant_markdown: 프로그램 update는 snapshot을 만들지 않고 table cell selection만 handoff한다.
+    /// sibling block의 empty selection이 실제 table cell selection과 first responder를 덮어쓰지 않는지 검증합니다.
+    /// - 검증 내용: update callback 억제, cell projection 등록, stored row restoration을 확인합니다.
+    /// - 사전 조건: streaming table cell을 hosted output의 first responder로 선택한 뒤 같은 content를 stored row로 전환합니다.
+    /// - 기대 결과: 초기 update는 snapshot이 없고 선택 뒤에는 exact cell substring과 responder가 stored row에 복원됩니다.
+    func testRenderAssistantMarkdownPreservesOnlyUserTableCellSelectionAcrossFinalization() throws {
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let content = "| Name | Value |\n| --- | --- |\n| key | needle |\n"
+        let streaming = session.render(content: content, transcriptRow: .streamingAssistant)
+        let tableID = try XCTUnwrap(streaming.blocks.first?.presentationID)
+        let cellID = AiChatMarkdownDocument.BlockID(rawValue: "\(tableID.rawValue)-cell-1-1")
+        session.registerSelectionProjection(
+            presentationID: cellID,
+            plainText: "needle",
+            searchText: "needle",
+            transcriptRow: .streamingAssistant,
+            blockIndex: 0,
+        )
+        let harness = makeSelectableOutputHarness(text: "needle", blockID: cellID)
+        defer { harness.window.close() }
+        harness.coordinator.update(
+            blockID: cellID,
+            attributedText: NSAttributedString(string: "needle"),
+            renderSession: session,
+            transcriptRow: .streamingAssistant,
+        )
+        XCTAssertFalse(session.hasCapturedViewState)
+        XCTAssertTrue(harness.window.makeFirstResponder(harness.coordinator.textView))
+        harness.coordinator.textView.selectAll(nil as Any?)
+
+        _ = session.render(content: content, transcriptRow: .message(index: 5))
+        session.registerSelectionProjection(
+            presentationID: cellID,
+            plainText: "needle",
+            searchText: "needle",
+            transcriptRow: .message(index: 5),
+            blockIndex: 0,
+        )
+        let restored = try XCTUnwrap(session.restoration(
+            presentationID: cellID,
+            transcriptRow: .message(index: 5),
+        ))
+
+        XCTAssertEqual(restored.selection?.nsRange, NSRange(location: 0, length: 6))
+        XCTAssertTrue(restored.isFirstResponder)
+    }
+
+    /// CBW-001-render_assistant_markdown: 호환되지 않는 block 제거는 stale view snapshot을 만료시킨다.
+    /// 선택 owner가 사라진 뒤에도 snapshot이 남아 transcript auto-scroll을 영구 차단하지 않는지 검증합니다.
+    /// - 검증 내용: 같은 streaming row에서 selected block 제거 후 snapshot과 restoration이 폐기되는지 확인합니다.
+    /// - 사전 조건: 두 번째 paragraph에 사용자 선택·responder snapshot이 있고 다음 render에서 해당 block이 제거됩니다.
+    /// - 기대 결과: 새 document가 owner identity를 claim하지 못하면 view state가 즉시 clear됩니다.
+    func testRenderAssistantMarkdownExpiresSnapshotWhenSelectedBlockDisappears() throws {
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let initial = session.render(
+            content: "stable\n\nselected",
+            transcriptRow: .streamingAssistant,
+        )
+        let selectedBlock = try XCTUnwrap(initial.blocks.last)
+        session.capture(.init(
+            presentationID: selectedBlock.presentationID,
+            selection: .init(utf16Location: 0, utf16Length: 8),
+            isFirstResponder: true,
+            outerScrollOffset: 21,
+            currentSearchDescriptor: nil,
+            transcriptRow: .streamingAssistant,
+        ))
+
+        let replacement = session.render(content: "stable", transcriptRow: .streamingAssistant)
+
+        XCTAssertFalse(session.hasCapturedViewState)
+        XCTAssertNil(session.restoration(for: replacement))
+    }
+
+    /// CBW-001-render_assistant_markdown: 같은 source offset의 unrelated replacement는 selection identity를 승계하지 않는다.
+    /// source start만 같은 새 block이 이전 snapshot을 claim해 unrelated text로 selection을 clamp하지 않는지 검증합니다.
+    /// - 검증 내용: projection continuity 없는 same-row replacement의 새 identity와 snapshot 만료를 확인합니다.
+    /// - 사전 조건: 첫 block 전체에 사용자 선택 snapshot이 있고 같은 위치에 전혀 다른 paragraph가 도착합니다.
+    /// - 기대 결과: replacement는 이전 presentation ID를 재사용하지 않고 view state와 restoration이 폐기됩니다.
+    func testRenderAssistantMarkdownExpiresSnapshotForUnrelatedSameOffsetReplacement() throws {
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let initial = session.render(content: "selected", transcriptRow: .streamingAssistant)
+        let selectedBlock = try XCTUnwrap(initial.blocks.first)
+        session.capture(.init(
+            presentationID: selectedBlock.presentationID,
+            selection: .init(utf16Location: 0, utf16Length: 8),
+            isFirstResponder: true,
+            outerScrollOffset: 21,
+            currentSearchDescriptor: nil,
+            transcriptRow: .streamingAssistant,
+        ))
+
+        let replacement = session.render(content: "unrelated", transcriptRow: .streamingAssistant)
+
+        XCTAssertNotEqual(replacement.blocks.first?.presentationID, selectedBlock.presentationID)
+        XCTAssertFalse(session.hasCapturedViewState)
+        XCTAssertNil(session.restoration(for: replacement))
+    }
+
+    /// CBW-001-render_assistant_markdown: unchanged prior block은 append와 finalization에서 재준비·재강조하지 않는다.
+    /// stored/streaming 공통 renderer가 stable fingerprint cache와 하나의 80ms lifecycle을 공유하는지 검증합니다.
+    /// - 검증 내용: parser document build, block preparation, highlighting invocation과 coalescing timer diagnostics를 확인합니다.
+    /// - 사전 조건: stable Swift code 뒤 streaming paragraph가 두 번 append되고 마지막 content가 stored row로 확정됩니다.
+    /// - 기대 결과: prior code block 준비·강조는 각각 한 번이며 finalization은 parse하지 않고 80ms lifecycle도 하나뿐입니다.
+    func testRenderAssistantMarkdownReusesUnchangedBlocksAndOneStreamingCoalescingLifecycle() async throws {
+        let recorder = SyntaxHighlightingRecorder()
+        let client = makeSyntaxHighlightingClient(recorder: recorder, coalescingDelay: .zero)
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: client)
+        let firstContent = "```swift\nlet stable = true\n```\n\nstream"
+        let first = session.render(content: firstContent, transcriptRow: .streamingAssistant)
+        let code = try XCTUnwrap(first.blocks.first)
+
+        _ = await session.highlight(
+            code,
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 100,
+        )
+        var latestContent = firstContent
+        for _ in 0 ..< 64 {
+            latestContent.append("x")
+            _ = session.render(content: latestContent, transcriptRow: .streamingAssistant)
+        }
+        let parseCountBeforeRerender = session.diagnostics.documentParseCount
+        _ = session.render(content: latestContent, transcriptRow: .streamingAssistant)
+        let latest = session.render(content: latestContent, transcriptRow: .message(index: 4))
+        _ = try await session.highlight(
+            XCTUnwrap(latest.blocks.first),
+            appearance: .light,
+            typographyVersion: 1,
+            generation: 1,
+        )
+        let diagnostics = session.diagnostics
+        let highlightInvocationCount = await recorder.invocationCount()
+
+        XCTAssertEqual(parseCountBeforeRerender, 65)
+        XCTAssertEqual(diagnostics.documentParseCount, parseCountBeforeRerender)
+        XCTAssertEqual(diagnostics.retainedDocumentCount, 1)
+        XCTAssertEqual(diagnostics.blockPreparationCount[code.presentationID], 1)
+        XCTAssertEqual(diagnostics.streamingCoalescingLifecycleCount, 1)
+        XCTAssertEqual(diagnostics.highlightGeneration[code.presentationID], 101)
+        XCTAssertEqual(highlightInvocationCount, 1)
+    }
+
+    /// CBW-001-render_assistant_markdown: 세션 전환은 이전 transcript의 Markdown projection cache를 해제한다.
+    /// 하나의 AiChatView가 대용량 응답이 있는 여러 세션을 순회해도 현재 transcript 범위만 보존하는지 검증합니다.
+    /// - 검증 내용: 전환 직후와 현재 row render 뒤의 projection entry 수와 retained UTF-8 bytes를 확인합니다.
+    /// - 사전 조건: 같은 render session으로 서로 다른 세션의 64KiB 이상 assistant paragraph를 순서대로 표시합니다.
+    /// - 기대 결과: 전환 직후 cache는 비고 render 뒤 retained entry와 bytes는 현재 document projection과 정확히 같습니다.
+    func testRenderAssistantMarkdownReleasesProjectionCacheAcrossSessionTransitions() {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+
+        for index in 0 ..< 4 {
+            let sessionID = AiChatSessionID(rawValue: UUID())
+            let content = String(repeating: "session-\(index)-payload ", count: 4096)
+
+            renderSession.prepareForSession(sessionID)
+            XCTAssertEqual(renderSession.retainedSelectionProjectionCount, 0)
+            XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, 0)
+
+            let rendered = renderSession.render(content: content, transcriptRow: .message(index: 0))
+            let expectedBytes = rendered.blocks.reduce(into: 0) { byteCount, block in
+                byteCount += block.block.projections.plain.utf8.count
+                byteCount += block.block.projections.search.utf8.count
+            }
+
+            XCTAssertEqual(renderSession.retainedSelectionProjectionCount, rendered.blocks.count)
+            XCTAssertEqual(renderSession.retainedSelectionProjectionBytes, expectedBytes)
+        }
+    }
+
+    /// CBW-001-render_assistant_markdown: 완료된 highlight request는 code source를 session lifetime 동안 보관하지 않는다.
+    /// 많은 고유 code block을 순차 완료한 뒤에도 active request map과 retained source bytes가 0으로 돌아오는지 검증합니다.
+    /// - 검증 내용: unique block별 highlight 성공, engine invocation, active request count와 retained UTF-8 bytes를 확인합니다.
+    /// - 사전 조건: 64개의 서로 다른 stored row가 각각 고유 Swift code block을 한 번씩 highlight합니다.
+    /// - 기대 결과: 64개 결과는 모두 표시 가능하지만 완료 후 active request와 source retention은 남지 않습니다.
+    func testRenderAssistantMarkdownReleasesCompletedHighlightRequestSources() async throws {
+        let recorder = SyntaxHighlightingRecorder()
+        let session = AiChatAssistantMarkdownRenderSession(
+            highlightingClient: makeSyntaxHighlightingClient(recorder: recorder),
+        )
+
+        for index in 0 ..< 64 {
+            let source = "```swift\nlet unique_\(index) = \(index)\n```\n"
+            let rendered = session.render(content: source, transcriptRow: .message(index: index))
+            let block = try XCTUnwrap(rendered.blocks.first)
+            let result = await session.highlight(
+                block,
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 1,
+            )
+            XCTAssertNotNil(result)
+        }
+
+        let invocationCount = await recorder.invocationCount()
+        XCTAssertEqual(invocationCount, 64)
+        XCTAssertEqual(session.activeHighlightRequestCount, 0)
+        XCTAssertEqual(session.activeHighlightSourceBytes, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: explicit row와 code copy는 각 projection의 exact 문자열을 기록한다.
+    /// 사용자가 Markdown/plain/code 형식을 선택할 때 source marker와 line ending이 변형되지 않는지 검증합니다.
+    /// - 검증 내용: repository PasteboardClient clear/setString 경계와 logical row selection의 format 유지를 확인합니다.
+    /// - 사전 조건: CRLF Markdown, parsed whole plain projection, Swift code payload와 injected pasteboard recorder가 있습니다.
+    /// - 기대 결과: Markdown은 raw source, plain은 document plainText, code는 fence 없는 payload와 정확히 같습니다.
+    func testRenderAssistantMarkdownCopiesExactRowAndCodeProjections() {
+        let writes = LockIsolated<[String]>([])
+        let clearCount = LockIsolated(0)
+        let setStringFallbackCount = LockIsolated(0)
+        let pasteboard = PasteboardClient(
+            changeCount: { 0 },
+            clearContents: { clearCount.withValue { $0 += 1 } },
+            writeObjects: { objects in
+                guard let value = objects.first as? NSString else { return false }
+                let string = value as String
+                writes.withValue { $0.append(string) }
+                return true
+            },
+            readObjects: { _, _ in nil },
+            setString: { _, type in
+                guard type == .string else { return false }
+                setStringFallbackCount.withValue { $0 += 1 }
+                return false
+            },
+            string: { _ in writes.value.last },
+        )
+        let raw = "> 인용 `code`\r\n\r\n"
+            + "| 이름 | 값 |\r\n| --- | --- |\r\n| 검색 | 👩‍💻 |\r\n\r\n"
+            + "```Swift\r\nprint(\"한글\")\r\n```\r\n"
+        let document = AiChatMarkdownParser.parse(raw)
+        let code = document.blocks.last?.code?.payload ?? ""
+        let model = withDependencies {
+            $0.pasteboardClient = pasteboard
+        } operation: {
+            AiChatCopyInteractionModel(announce: { _ in })
+        }
+
+        model.copyRow(format: .markdown, rawMarkdown: raw, plainText: document.plainText)
+        model.selectAll()
+        model.copySelectedRow(rawMarkdown: raw, plainText: document.plainText)
+        model.copyRow(format: .plainText, rawMarkdown: raw, plainText: document.plainText)
+        model.copyCode(code)
+
+        XCTAssertTrue(model.isRowSelected)
+        XCTAssertEqual(model.rowCopyFormat, .plainText)
+        XCTAssertEqual(writes.value, [raw, raw, document.plainText, code])
+        XCTAssertEqual(clearCount.value, 4)
+        XCTAssertEqual(setStringFallbackCount.value, 0)
+        XCTAssertFalse(code.contains("```"))
+        XCTAssertFalse(code.contains("Swift"))
+        assertStoredMessageViewIdentity(raw: raw)
+    }
+
+    /// CBW-001-render_assistant_markdown: explicit copy feedback는 2초를 유지하고 반복 action에서 timer를 재시작한다.
+    /// 성공·실패마다 접근성 announcement가 한 번만 발생하며 native copy는 이 local state를 통과하지 않는지 검증합니다.
+    /// - 검증 내용: immediate success, 1.9초 유지, repeat cancellation, 2초 clear와 actionable failure label을 확인합니다.
+    /// - 사전 조건: TestClock, 성공/실패 pasteboard와 announcement recorder가 주입되어 있습니다.
+    /// - 기대 결과: explicit action당 announcement 하나, repeat 기준 2초 후 success만 해제되고 failure는 retry 안내를 유지합니다.
+    func testRenderAssistantMarkdownRestartsExplicitCopyFeedbackAndAnnouncesOnce() async {
+        let clock = TestClock()
+        let announcements = LockIsolated<[String]>([])
+        let succeeds = LockIsolated(true)
+        let pasteboard = PasteboardClient(
+            changeCount: { 0 },
+            clearContents: {},
+            writeObjects: { _ in false },
+            readObjects: { _, _ in nil },
+            setString: { _, _ in succeeds.value },
+            string: { _ in nil },
+        )
+        let model = withDependencies {
+            $0.pasteboardClient = pasteboard
+        } operation: {
+            AiChatCopyInteractionModel(
+                announce: { message in announcements.withValue { $0.append(message) } },
+                sleep: { try await clock.sleep(for: $0) },
+            )
+        }
+
+        let native = makeSelectableOutputHarness(text: "native partial")
+        defer { native.window.close() }
+        native.coordinator.textView.selectAll(nil as Any?)
+        native.coordinator.textView.copy(nil as Any?)
+        XCTAssertNil(model.feedback)
+        XCTAssertTrue(announcements.value.isEmpty)
+
+        model.copyCode("first")
+        await Task.yield()
+        XCTAssertEqual(model.feedback, .copied)
+        XCTAssertEqual(announcements.value, [AiChatCopyInteractionModel.Feedback.copied.accessibilityLabel])
+        await clock.advance(by: .milliseconds(1900))
+        XCTAssertEqual(model.feedback, .copied)
+
+        model.copyCode("repeat")
+        await Task.yield()
+        await clock.advance(by: .milliseconds(100))
+        XCTAssertEqual(model.feedback, .copied)
+        await clock.advance(by: .milliseconds(1900))
+        XCTAssertNil(model.feedback)
+        XCTAssertEqual(announcements.value.count, 2)
+
+        succeeds.setValue(false)
+        model.copyCode("retry")
+        XCTAssertEqual(model.feedback, .failed)
+        XCTAssertEqual(model.feedback?.visibleLabel.contains("다시"), true)
+        XCTAssertEqual(announcements.value.count, 3)
+    }
+
+    /// CBW-001-render_assistant_markdown: selected native Copy와 custom Copy Code는 서로 다른 payload를 복사한다.
+    /// code-only action을 추가해도 부분 선택 Copy, Select All, Lookup/Services와 selector enablement가 유지되고,
+    /// 반복 menu augmentation 뒤에도 실제 AppKit target/action dispatch가 살아 있는지 검증합니다.
+    /// - 검증 내용: menu augmentation, selected substring native copy, repeated augmentation 뒤의 NSApplication.sendAction,
+    /// action enablement, Cut/Paste 부재와 exact code callback을 확인합니다.
+    /// - 사전 조건: 선택 영역, native Copy/Select All/Lookup base menu와 enabled code action이 있는 hosted output입니다.
+    /// - 기대 결과: native Copy는 선택 문자열만, Copy Code는 code payload만 기록하며 native items/submenu는 보존됩니다.
+    func testRenderAssistantMarkdownAugmentsNativeContextMenuWithoutEditingActions() throws {
+        let copiedCode = LockIsolated<[String]>([])
+        let text = "prefix selected suffix"
+        let harness = makeSelectableOutputHarness(
+            text: text,
+            contextMenuActions: [
+                .init(title: "Copy Code", isEnabled: true) {
+                    copiedCode.withValue { $0.append("let value = 1") }
+                },
+            ],
+        )
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let selectedRange = try XCTUnwrap(text.range(of: "selected"))
+        textView.setSelectedRange(NSRange(selectedRange, in: text))
+        let base = NSMenu()
+        base.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "")
+        base.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "")
+        let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        services.submenu = NSMenu(title: "Services")
+        base.addItem(services)
+        textView.menu = base
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+        let textContainer = try XCTUnwrap(textView.textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+        let selection = NSRange(selectedRange, in: text)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: selection,
+            actualCharacterRange: nil,
+        )
+        let selectedRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        let selectedPoint = NSPoint(
+            x: textView.textContainerOrigin.x + selectedRect.midX,
+            y: textView.textContainerOrigin.y + selectedRect.midY,
+        )
+        let windowPoint = textView.convert(selectedPoint, to: nil)
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: harness.window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1,
+        ))
+
+        let menu = try XCTUnwrap(textView.menu(for: event))
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        let copyItem = try XCTUnwrap(menu.items.first { $0.action == #selector(NSText.copy(_:)) })
+        XCTAssertTrue(
+            NSApp.sendAction(#selector(NSText.copy(_:)), to: textView, from: copyItem),
+            "Native Copy must dispatch through AppKit",
+        )
+        let copyCode = menu.items.first { $0.title == "Copy Code" }
+        _ = textView.augmentedContextMenu(from: base)
+        XCTAssertTrue(
+            try NSApp.sendAction(
+                XCTUnwrap(copyCode?.action),
+                to: copyCode?.target,
+                from: copyCode,
+            ),
+            "Copy Code must remain dispatchable through AppKit after menu rebuild",
+        )
+
+        XCTAssertEqual(pasteboard.string(forType: .string), "selected")
+        XCTAssertNotNil(menu.items.first { $0.action == #selector(NSText.copy(_:)) })
+        XCTAssertEqual(menu.items.count(where: { $0.action == #selector(NSText.selectAll(_:)) }), 1)
+        let preservedBase = NSMenu()
+        let preservedServices = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        preservedServices.submenu = NSMenu(title: "Services")
+        preservedBase.addItem(preservedServices)
+        let preservedMenu = harness.coordinator.textView.augmentedContextMenu(from: preservedBase)
+
+        XCTAssertNotNil(preservedMenu.items.first { $0.submenu != nil })
+        XCTAssertNil(menu.items.first { $0.action == #selector(NSText.cut(_:)) })
+        XCTAssertNil(menu.items.first { $0.action == #selector(NSText.paste(_:)) })
+        XCTAssertEqual(copyCode?.isEnabled, true)
+        XCTAssertEqual(copiedCode.value, ["let value = 1"])
+    }
+
+    /// CBW-001-render_assistant_markdown: code block menu는 실제 AppKit dispatch로 code/Markdown/plain payload를 정확히 복사한다.
+    /// production menu closure가 주입된 PasteboardClient와 copy feedback state를 직접 갱신하며 native selection copy 계약과 섞이지 않는지
+    /// 검증합니다.
+    /// - 검증 내용: Copy Code, Copy Entire Message as Markdown, Copy Entire Message as Plain Text의 exact payload와 copied
+    /// feedback를 확인합니다.
+    /// - 사전 조건: paragraph + Swift fenced code가 있는 production code block view와 injected pasteboard recorder가 있습니다.
+    /// - 기대 결과: 세 custom action 모두 NSApplication.sendAction으로 dispatch되고 pasteboard recorder에는 code/raw/plain payload가
+    /// 정확히 기록됩니다.
+    func testRenderAssistantMarkdownDispatchesExactExplicitCopyPayloadsThroughAppKitMenuActions() throws {
+        let raw = """
+        설명 문단
+
+        ```swift
+        print(\"한글\")
+        ```
+        """
+        let document = AiChatMarkdownParser.parse(raw)
+        let code = try XCTUnwrap(document.blocks.last?.code?.payload)
+        let plain = document.plainText
+        let writes = LockIsolated<[String]>([])
+        let clearCount = LockIsolated(0)
+        let pasteboard = PasteboardClient(
+            changeCount: { 0 },
+            clearContents: { clearCount.withValue { $0 += 1 } },
+            writeObjects: { objects in
+                guard let value = objects.first as? NSString else { return false }
+                let string = value as String
+                writes.withValue { $0.append(string) }
+                return true
+            },
+            readObjects: { _, _ in nil },
+            setString: { _, _ in false },
+            string: { _ in writes.value.last },
+        )
+        let model = withDependencies {
+            $0.pasteboardClient = pasteboard
+        } operation: {
+            AiChatCopyInteractionModel(announce: { _ in })
+        }
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { [] },
+            highlight: { _, _, _ in [] },
+        ))
+        let rendered = renderSession.render(content: raw, transcriptRow: .message(index: 0))
+        let codeBlock = try XCTUnwrap(rendered.blocks.last)
+        let blockView = AiChatAssistantMarkdownBlockView(
+            renderedBlock: codeBlock,
+            transcriptRow: .message(index: 0),
+            blockIndex: rendered.blocks.count - 1,
+            searchPresentation: .init(query: "", renderedRows: []),
+            currentSearchMatch: nil,
+            renderSession: renderSession,
+            copyInteraction: model,
+            rawMarkdown: raw,
+            plainText: plain,
+        )
+        let hostingView = NSHostingView(rootView: blockView.frame(width: 480))
+        hostingView.frame = NSRect(x: 0, y: 0, width: 480, height: 240)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        let harness = (window: window, hostingView: hostingView)
+        defer { harness.window.close() }
+        flushMainRunLoop()
+
+        let codeTextView = try XCTUnwrap(
+            descendantTextViews(in: harness.hostingView).first(where: { $0.string == code }),
+        )
+        let menu = try XCTUnwrap(codeTextView.menu(for: makeContextMenuEvent(for: codeTextView)))
+        let copyCode = try XCTUnwrap(menu.items.first { $0.title == "Copy Code" })
+        let copyMarkdown = try XCTUnwrap(menu.items.first { $0.title == "Copy Entire Message as Markdown" })
+        let copyPlain = try XCTUnwrap(menu.items.first { $0.title == "Copy Entire Message as Plain Text" })
+
+        XCTAssertTrue(
+            try NSApp.sendAction(XCTUnwrap(copyCode.action), to: copyCode.target, from: copyCode),
+            "Copy Code must dispatch through AppKit",
+        )
+        XCTAssertEqual(model.feedback, .copied)
+
+        XCTAssertTrue(
+            try NSApp.sendAction(XCTUnwrap(copyMarkdown.action), to: copyMarkdown.target, from: copyMarkdown),
+            "Copy Entire Message as Markdown must dispatch through AppKit",
+        )
+        XCTAssertEqual(model.feedback, .copied)
+
+        XCTAssertTrue(
+            try NSApp.sendAction(XCTUnwrap(copyPlain.action), to: copyPlain.target, from: copyPlain),
+            "Copy Entire Message as Plain Text must dispatch through AppKit",
+        )
+
+        XCTAssertEqual(model.feedback, .copied)
+        XCTAssertEqual(writes.value, [code, raw, plain])
+        XCTAssertEqual(clearCount.value, 3)
+    }
+
+    /// CBW-001-render_assistant_markdown: code와 table만 child viewport에서 수평 overflow한다.
+    /// 긴 code/table이 transcript 폭을 넓히지 않고 paragraph는 wrap하며 모든 child vertical scroll이 꺼져 있는지 검증합니다.
+    /// - 검증 내용: 300자 code geometry, wrapped paragraph geometry, 12열 table policy와 scroller axis를 확인합니다.
+    /// - 사전 조건: 120pt hosted viewport, 300자 unbroken code, 같은 paragraph와 12열 table metadata가 있습니다.
+    /// - 기대 결과: code/table content width만 viewport보다 크고 paragraph는 viewport 폭에 맞으며 vertical scroller는 없습니다.
+    func testRenderAssistantMarkdownConstrainsHorizontalOverflowToCodeAndTable() throws {
+        let longText = String(repeating: "x", count: 300)
+        let code = makeSelectableOutputHarness(text: longText, width: 120, allowsHorizontalOverflow: true)
+        defer { code.window.close() }
+        let paragraph = makeSelectableOutputHarness(text: longText, width: 120)
+        defer { paragraph.window.close() }
+
+        XCTAssertTrue(code.coordinator.scrollView.hasHorizontalScroller)
+        XCTAssertFalse(code.coordinator.scrollView.hasVerticalScroller)
+        XCTAssertGreaterThan(code.coordinator.textView.frame.width, code.coordinator.scrollView.contentSize.width)
+        XCTAssertFalse(paragraph.coordinator.scrollView.hasHorizontalScroller)
+        XCTAssertFalse(paragraph.coordinator.scrollView.hasVerticalScroller)
+        XCTAssertEqual(
+            paragraph.coordinator.textView.frame.width,
+            paragraph.coordinator.scrollView.contentSize.width,
+            accuracy: 0.5,
+        )
+        XCTAssertTrue(AiChatMarkdownBlockLayout.allowsHorizontalOverflow(for: .table))
+        XCTAssertTrue(AiChatMarkdownBlockLayout.allowsHorizontalOverflow(for: .code))
+        XCTAssertFalse(AiChatMarkdownBlockLayout.allowsHorizontalOverflow(for: .paragraph))
+        XCTAssertFalse(AiChatMarkdownBlockLayout.ownsChildVerticalScroll)
+        XCTAssertEqual(AiChatMarkdownAccessibility.tableValue(rowCount: 2, columnCount: 12), "표, 2행 12열")
+
+        let tableSource = makeTwelveColumnTableSource()
+            + "\n\n> " + String(repeating: "긴 인용문 ", count: 40)
+        let renderer = makeAssistantMarkdownHarness(source: tableSource, width: 180)
+        defer { renderer.window.close() }
+        let scrollViews = descendantScrollViews(in: renderer.hostingView)
+        let selectableScrollViews = scrollViews.compactMap {
+            $0 as? AiChatSelectableOutputText.IntrinsicTextScrollView
+        }
+
+        XCTAssertEqual(renderer.hostingView.frame.width, 180, accuracy: 0.5)
+        XCTAssertTrue(scrollViews.contains {
+            !($0 is AiChatSelectableOutputText.IntrinsicTextScrollView) && $0.hasHorizontalScroller
+        })
+        XCTAssertFalse(scrollViews.contains(where: \.hasVerticalScroller))
+        let quote = try XCTUnwrap(selectableScrollViews.first {
+            ($0.documentView as? NSTextView)?.string.hasPrefix("긴 인용문") == true
+        })
+        XCTAssertFalse(quote.hasHorizontalScroller)
+        XCTAssertLessThanOrEqual(
+            try XCTUnwrap(quote.documentView as? NSTextView).frame.width,
+            quote.contentSize.width + 0.5,
+        )
+    }
+
+    /// CBW-001-render_assistant_markdown: code/table 접근성은 의미 정보와 단일 AppKit text owner를 제공한다.
+    /// 원본 언어와 table 차원을 전달하면서 SwiftUI wrapper가 동일 text를 중복 소유하지 않는지 검증합니다.
+    /// - 검증 내용: code accessibility label/value, table row/column value와 scroll/text owner 분리를 확인합니다.
+    /// - 사전 조건: 원본 언어가 `Swift`인 code output과 2행 12열 table semantics가 있습니다.
+    /// - 기대 결과: code label은 canonical 문자열이고 value는 payload이며 text view만 static-text element입니다.
+    func testRenderAssistantMarkdownExposesCodeAndTableAccessibilityWithoutDuplicateTextOwner() throws {
+        let code = makeAssistantMarkdownHarness(source: "```Swift\nlet value = 1\n```", width: 180)
+        defer { code.window.close() }
+        let codeScrollViews = descendantScrollViews(in: code.hostingView)
+        let codeTextViews = codeScrollViews.compactMap {
+            $0.documentView as? AiChatSelectableOutputText.OutputTextView
+        }
+        let codeTextView = try XCTUnwrap(
+            codeTextViews.first { $0.string.hasPrefix("let value = 1") },
+        )
+        let codeScrollView = try XCTUnwrap(
+            codeScrollViews.first { $0.documentView === codeTextView },
+        )
+
+        XCTAssertEqual(codeTextView.accessibilityLabel(), "코드 블록, Swift")
+        XCTAssertEqual(codeTextView.accessibilityValue(), "let value = 1\n")
+        XCTAssertTrue(codeTextView.isAccessibilityElement())
+        XCTAssertEqual(codeTextView.accessibilityRole(), NSAccessibility.Role.staticText)
+        XCTAssertFalse(codeScrollView.isAccessibilityElement())
+        XCTAssertEqual(AiChatMarkdownAccessibility.tableValue(rowCount: 2, columnCount: 12), "표, 2행 12열")
+
+        let table = makeAssistantMarkdownHarness(source: makeTwelveColumnTableSource(), width: 180)
+        defer { table.window.close() }
+        let tableScrollViews = descendantScrollViews(in: table.hostingView)
+        let tableTextViews = tableScrollViews.compactMap {
+            $0.documentView as? AiChatSelectableOutputText.OutputTextView
+        }
+        let intrinsicTableScrollViews = tableScrollViews.compactMap {
+            $0 as? AiChatSelectableOutputText.IntrinsicTextScrollView
+        }
+        XCTAssertFalse(intrinsicTableScrollViews.contains { $0.isAccessibilityElement() })
+        XCTAssertEqual(tableTextViews.count, 24)
+        for cell in (1 ... 12).flatMap({ ["H\($0)", "V\($0)"] }) {
+            let owners = tableTextViews.filter { $0.string == cell }
+            XCTAssertEqual(owners.count, 1)
+            XCTAssertTrue(owners.allSatisfy { $0.isAccessibilityElement() })
+            XCTAssertTrue(owners.allSatisfy { $0.accessibilityRole() == .staticText })
+        }
     }
 
     /// CBW-001-open_contextual_chat: transcript 검색 상태는 session-list 검색과 분리해 빈 query와 zero-result를 구분한다.
@@ -355,6 +2577,419 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
         await store.send(.transcriptSearchNextTapped)
         await store.send(.transcriptSearchPreviousTapped)
+    }
+
+    /// CBW-001-render_assistant_markdown: output이 first responder를 잃으면 보이는 selection이 fold된다.
+    /// 사용자가 output 바깥을 클릭해 포커스를 옮길 때 읽기 전용 selection highlight가 사라지는지 검증합니다.
+    /// - 검증 내용: first responder 전환 후 selectedRange 길이가 0이 되는 것을 확인합니다.
+    /// - 사전 조건: hosted output block이 first responder이고 NFD+emoji substring이 선택되어 있습니다.
+    /// - 기대 결과: 다른 responder로 포커스를 옮기면 output의 visible selection이 즉시 빈 range로 collapse합니다.
+    func testRenderAssistantMarkdownCollapsesVisibleSelectionWhenOutputResignsFirstResponder() throws {
+        let text = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selected = "cafe\u{301}"
+        let harness = makeSelectableOutputHarness(text: text)
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let range = try XCTUnwrap(text.range(of: selected))
+        let selection = try XCTUnwrap(
+            AiChatMarkdownDocument.SearchRange(range, in: text).plainSelectionRange(in: text),
+        )
+
+        textView.setSelectedRange(selection.nsRange)
+        XCTAssertTrue(harness.window.makeFirstResponder(textView))
+        XCTAssertGreaterThan(textView.selectedRange().length, 0)
+
+        let otherResponder = SelectableOutputFirstResponderAcceptingView()
+        harness.window.contentView?.addSubview(otherResponder)
+        XCTAssertTrue(harness.window.makeFirstResponder(otherResponder))
+
+        XCTAssertEqual(textView.selectedRange().length, 0)
+    }
+
+    /// CBW-001-render_assistant_markdown: selection collapse는 Copy 동작이나 streaming update를 방해하지 않는다.
+    /// 포커스 상태에서 native copy가 동작하고, stable streaming update는 selection을 그대로 보존하는지 검증합니다.
+    /// - 검증 내용: first responder copy 동작, stable identity update 후 selection 유지, first responder 복귀를 확인합니다.
+    /// - 사전 조건: 선택된 output block이 first responder이고 같은 identity의 suffix update가 준비되어 있습니다.
+    /// - 기대 결과: copy는 선택 substring을 내보내고 stable update 뒤에도 exact selection과 first responder가 유지됩니다.
+    func testRenderAssistantMarkdownSelectionCollapseKeepsNativeCopyAndStableUpdateIntact() throws {
+        let initial = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selected = "cafe\u{301} 👩‍💻"
+        let blockID = AiChatMarkdownDocument.BlockID(rawValue: "stable-collapse-block")
+        let harness = makeSelectableOutputHarness(text: initial, blockID: blockID)
+        defer { harness.window.close() }
+        let textView = harness.coordinator.textView
+        let range = try XCTUnwrap(initial.range(of: selected))
+        let selection = try XCTUnwrap(
+            AiChatMarkdownDocument.SearchRange(range, in: initial).plainSelectionRange(in: initial),
+        )
+
+        textView.setSelectedRange(selection.nsRange)
+        XCTAssertTrue(harness.window.makeFirstResponder(textView))
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        textView.copy(nil as Any?)
+        XCTAssertEqual(pasteboard.string(forType: .string), selected)
+
+        harness.coordinator.update(
+            blockID: blockID,
+            attributedText: NSAttributedString(string: initial + " 추가"),
+        )
+        XCTAssertEqual(try selectedSubstring(in: textView), selected)
+        XCTAssertIdentical(harness.window.firstResponder, textView)
+    }
+
+    /// CBW-001-render_assistant_markdown: dismantle은 포커스를 잃기 전 selection snapshot을 보존한다.
+    /// view detach 중에 resignFirstResponder가 먼저 불려도 capture-then-suppress 계약이 유지되는지 검증합니다.
+    /// - 검증 내용: prepareForDismantle 후 render session restoration이 캡처한 selection을 반환하는지 확인합니다.
+    /// - 사전 조건: render session과 transcript row가 연결된 hosted block이 first responder이고 selection이 있습니다.
+    /// - 기대 결과: dismantle 직후 snapshot에서 복원된 selection이 dismantle 전 사용자 selection과 같습니다.
+    func testRenderAssistantMarkdownPreservesSelectionSnapshotAcrossDismantleCapture() throws {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { [] },
+            highlight: { _, _, _ in [] },
+        ))
+        let transcriptRow = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let text = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selected = "cafe\u{301}"
+
+        let rendered = renderSession.render(content: text, transcriptRow: transcriptRow)
+        let blockID = try XCTUnwrap(rendered.blocks.first).presentationID
+
+        let coordinator = AiChatSelectableOutputText.Coordinator()
+        coordinator.scrollView.frame = NSRect(x: 0, y: 0, width: 240, height: 120)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.scrollView
+        coordinator.update(
+            blockID: blockID,
+            attributedText: NSAttributedString(string: text),
+            renderSession: renderSession,
+            transcriptRow: transcriptRow,
+        )
+        coordinator.scrollView.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        let textView = coordinator.textView
+        let range = try XCTUnwrap(text.range(of: selected))
+        let selection = try XCTUnwrap(
+            AiChatMarkdownDocument.SearchRange(range, in: text).plainSelectionRange(in: text),
+        )
+        textView.setSelectedRange(selection.nsRange)
+        XCTAssertTrue(window.makeFirstResponder(textView))
+
+        coordinator.prepareForDismantle()
+
+        let restoration = renderSession.restoration(presentationID: blockID, transcriptRow: transcriptRow)
+        XCTAssertEqual(restoration?.selection, selection)
+    }
+
+    /// CBW-001-render_assistant_markdown: user/request selectable surface 선택은 render session에 view state를 캡처한다.
+    /// assistant block과 동일하게 hosted user-message selectable surface의 selection이 정확한 Unicode substring과
+    /// outer scroll 문맥을 보존하며, selection 해제 시 캡처된 state가 clear되는지 검증합니다.
+    /// - 검증 내용: hasCapturedViewState 전환, exact NFD/emoji selected substring, outer scroll offset 보존,
+    ///   resign 후 captured state clear를 확인합니다.
+    /// - 사전 조건: message.content를 plain/search projection으로 등록한 user-message block이 hosted output에 연결되어 있습니다.
+    /// - 기대 결과: Coordinator capture path를 통해 selection이 캡처되고 exact substring과 outer offset이 복원되며,
+    ///   selection 해제 시 hasCapturedViewState가 false로 돌아갑니다.
+    func testRenderUserMessageSelectionCapturesViewStateAndPreservesExactSubstring() throws {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { [] },
+            highlight: { _, _, _ in [] },
+        ))
+        let transcriptRow = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let text = "앞 cafe\u{301} 👩‍💻 뒤"
+        let selected = "cafe\u{301} 👩‍💻"
+        let blockID = AiChatMarkdownDocument.BlockID(rawValue: "user-message-0")
+
+        // production userMessage 표면과 동일하게 message.content를 plain/search projection으로 등록한다.
+        renderSession.registerSelectionProjection(
+            presentationID: blockID,
+            plainText: text,
+            searchText: text,
+            transcriptRow: transcriptRow,
+            blockIndex: 0,
+        )
+
+        let coordinator = AiChatSelectableOutputText.Coordinator()
+        coordinator.scrollView.frame = NSRect(x: 0, y: 0, width: 240, height: 120)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.scrollView
+        coordinator.update(
+            blockID: blockID,
+            attributedText: NSAttributedString(string: text),
+            renderSession: renderSession,
+            transcriptRow: transcriptRow,
+            sizingMode: .fitsContent,
+        )
+        coordinator.scrollView.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        XCTAssertFalse(renderSession.hasCapturedViewState, "선택 전에는 캡처된 view state가 없어야 한다")
+
+        let textView = coordinator.textView
+        let range = try XCTUnwrap(text.range(of: selected))
+        let selection = try XCTUnwrap(
+            AiChatMarkdownDocument.SearchRange(range, in: text).plainSelectionRange(in: text),
+        )
+        textView.setSelectedRange(selection.nsRange)
+        XCTAssertTrue(window.makeFirstResponder(textView))
+
+        XCTAssertTrue(renderSession.hasCapturedViewState, "Coordinator capture path 후에는 view state가 캡처되어야 한다")
+
+        // outer scroll 문맥이 보존되는지 검증하기 위해 transcript scroll observer가 호출하는 API로 offset을 기록한다.
+        let outerOffset: CGFloat = 64
+        renderSession.captureContext(outerScrollOffset: outerOffset, currentSearchDescriptor: nil)
+
+        let restoration = try XCTUnwrap(
+            renderSession.restoration(presentationID: blockID, transcriptRow: transcriptRow),
+        )
+        let restoredSearchRange = try XCTUnwrap(
+            restoration.selection?.searchRange(in: text, invalidRangePolicy: .discard),
+        )
+        XCTAssertEqual(
+            restoredSearchRange.substring(in: text),
+            selected,
+            "exact NFD/emoji selected substring가 보존되어야 한다",
+        )
+        XCTAssertEqual(restoration.outerScrollOffset, outerOffset, "outer scroll offset이 보존되어야 한다")
+        XCTAssertTrue(restoration.isFirstResponder, "first responder 상태가 보존되어야 한다")
+
+        // selection 해제(포커스 이탈) 시 캡처된 state가 clear되는지 검증한다.
+        // resignFirstResponder 직후에는 window.firstResponder가 아직 변경 전이므로 isFirstResponder가
+        // true로 평가된다. production에서는 이후 updateNSView 주기의 captureSelection()이 empty selection과
+        // 함께 clearViewState를 호출한다. 동일한 Coordinator capture path로 이 주기를 재현한다.
+        let otherResponder = SelectableOutputFirstResponderAcceptingView()
+        window.contentView?.addSubview(otherResponder)
+        XCTAssertTrue(window.makeFirstResponder(otherResponder))
+        coordinator.captureSelection()
+
+        XCTAssertFalse(renderSession.hasCapturedViewState, "selection 해제 후에는 캡처된 view state가 clear되어야 한다")
+    }
+
+    /// CBW-001-render_assistant_markdown: transcript scroll observer는 저장 offset을 첫 게시로 적용한다.
+    /// 대기 중인 restore가 있을 때 초기 top=0이 reducer로 게시되는 race를 방지하는지 검증합니다.
+    /// - 검증 내용: attach 직후 offset 게시가 비어있고 restore 적용 후 첫 게시가 저장된 nonzero offset인지 확인합니다.
+    /// - 사전 조건: 1000pt document, 200pt viewport에 session A의 120pt restore 요청이 대기 중입니다.
+    /// - 기대 결과: attach는 아무것도 게시하지 않고 restore 이후 첫 게시가 정확히 120pt가 됩니다.
+    func testRenderAssistantMarkdownTranscriptObserverAppliesSavedOffsetBeforePublishingInitialZero() throws {
+        let sessionA = AiChatSessionID(rawValue: UUID())
+        var published: [(offset: CGFloat, session: AiChatSessionID?)] = []
+        let coordinator = AiChatTranscriptScrollObserver.Coordinator()
+        coordinator.sessionID = sessionA
+        coordinator.onScrollOffsetChanged = { offset, session in
+            published.append((offset, session))
+        }
+
+        let scrollView = makeTranscriptScrollHarnessScrollView(
+            documentHeight: 1000,
+            viewportHeight: 200,
+        )
+        let host = NSView(frame: .zero)
+        scrollView.documentView?.addSubview(host)
+
+        let request = AiChatTranscriptScrollRestoreRequest(
+            sessionID: sessionA,
+            offsetY: 120,
+            sequence: 1,
+        )
+        coordinator.restoreRequest = request
+
+        coordinator.attachScrollView(from: host)
+        XCTAssertTrue(published.isEmpty, "pending restore가 있을 때 초기 offset을 게시하면 안 된다")
+
+        coordinator.applyPendingRestoreIfNeeded()
+        flushMainRunLoop()
+
+        let firstPublished = try XCTUnwrap(published.first)
+        XCTAssertEqual(firstPublished.session, sessionA)
+        XCTAssertEqual(firstPublished.offset, 120, accuracy: 0.5)
+    }
+
+    /// CBW-001-render_assistant_markdown: session 전환은 각 session의 저장 offset을 복원하고 이후 사용자 scroll을 게시한다.
+    /// session switch restore와 정상 사용자 scroll publish가 함께 보존되는지 검증합니다.
+    /// - 검증 내용: session B restore offset 적용, 이후 사용자 scroll의 현재 session offset 게시를 확인합니다.
+    /// - 사전 조건: 두 session A/B에 서로 다른 restore offset이 있고 scroll observer가 A를 이미 복원한 상태입니다.
+    /// - 기대 결과: B 전환 시 B의 offset으로 복원하고 사용자 scroll은 B의 현재 offset을 게시합니다.
+    func testRenderAssistantMarkdownTranscriptObserverRestoresPerSessionOffsetAndPublishesUserScroll() throws {
+        let sessionA = AiChatSessionID(rawValue: UUID())
+        let sessionB = AiChatSessionID(rawValue: UUID())
+        var published: [(offset: CGFloat, session: AiChatSessionID?)] = []
+        let coordinator = AiChatTranscriptScrollObserver.Coordinator()
+        coordinator.onScrollOffsetChanged = { offset, session in
+            published.append((offset, session))
+        }
+
+        let scrollView = makeTranscriptScrollHarnessScrollView(
+            documentHeight: 1000,
+            viewportHeight: 200,
+        )
+        let host = NSView(frame: .zero)
+        scrollView.documentView?.addSubview(host)
+
+        coordinator.sessionID = sessionA
+        coordinator.restoreRequest = .init(sessionID: sessionA, offsetY: 100, sequence: 1)
+        coordinator.attachScrollView(from: host)
+        coordinator.applyPendingRestoreIfNeeded()
+        flushMainRunLoop()
+        published.removeAll()
+
+        coordinator.sessionID = sessionB
+        coordinator.restoreRequest = .init(sessionID: sessionB, offsetY: 200, sequence: 2)
+        coordinator.applyPendingRestoreIfNeeded()
+        flushMainRunLoop()
+
+        XCTAssertEqual(scrollView.contentView.bounds.origin.y, 200, accuracy: 0.5)
+        let restoredBOffset = try XCTUnwrap(
+            published.last(where: { $0.session == sessionB }),
+            "session B restore offset이 게시되어야 한다",
+        )
+        XCTAssertEqual(restoredBOffset.offset, 200, accuracy: 0.5)
+
+        published.removeAll()
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 50))
+        flushMainRunLoop()
+
+        let userScrollOffset = try XCTUnwrap(published.first)
+        XCTAssertEqual(userScrollOffset.offset, 50, accuracy: 0.5)
+        XCTAssertEqual(userScrollOffset.session, sessionB)
+    }
+
+    /// CBW-001-render_assistant_markdown: 빠른 session 전환 중 이전 session의 offset이 새 session으로 게시되지 않는다.
+    /// restore generation 추적이 rapid switch race에서 stale offset cross-contamination을 방지하는지 검증합니다.
+    /// - 검증 내용: A offset이 B session으로 게시 부재, 최종 게시가 B offset, 이후 사용자 scroll이 B로 게시를 확인합니다.
+    /// - 사전 조건: session A restore를 예약하고 runloop flush 전 session B로 전환한 뒤 B restore도 예약합니다.
+    /// - 기대 결과: flush 후 A의 offset이 B session으로 게시되지 않고 최종 viewport와 게시가 B의 offset입니다.
+    func testRenderAssistantMarkdownTranscriptObserverRapidSessionSwitchDoesNotPublishStaleOffset() throws {
+        let sessionA = AiChatSessionID(rawValue: UUID())
+        let sessionB = AiChatSessionID(rawValue: UUID())
+        var published: [(offset: CGFloat, session: AiChatSessionID?)] = []
+        let coordinator = AiChatTranscriptScrollObserver.Coordinator()
+        coordinator.onScrollOffsetChanged = { offset, session in
+            published.append((offset, session))
+        }
+
+        let scrollView = makeTranscriptScrollHarnessScrollView(
+            documentHeight: 1000,
+            viewportHeight: 200,
+        )
+        let host = NSView(frame: .zero)
+        scrollView.documentView?.addSubview(host)
+
+        coordinator.sessionID = sessionA
+        coordinator.restoreRequest = .init(sessionID: sessionA, offsetY: 100, sequence: 1)
+        coordinator.attachScrollView(from: host)
+        coordinator.applyPendingRestoreIfNeeded()
+
+        // runloop flush 전 session B로 전환하고 B restore도 예약한다.
+        coordinator.sessionID = sessionB
+        coordinator.restoreRequest = .init(sessionID: sessionB, offsetY: 200, sequence: 2)
+        coordinator.applyPendingRestoreIfNeeded()
+
+        flushMainRunLoop()
+
+        let aOffsetPublishedAsB = published.filter {
+            $0.session == sessionB && abs($0.offset - 100) < 1
+        }
+        XCTAssertTrue(
+            aOffsetPublishedAsB.isEmpty,
+            "A의 offset(100)이 B session으로 게시되면 안 된다",
+        )
+
+        let bOffsets = published.filter { $0.session == sessionB }
+        let finalBOffset = try XCTUnwrap(bOffsets.last, "B의 restore offset이 게시되어야 한다")
+        XCTAssertEqual(finalBOffset.offset, 200, accuracy: 0.5)
+        XCTAssertEqual(scrollView.contentView.bounds.origin.y, 200, accuracy: 0.5)
+
+        published.removeAll()
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 50))
+        flushMainRunLoop()
+
+        let userScrollOffset = try XCTUnwrap(published.first)
+        XCTAssertEqual(userScrollOffset.offset, 50, accuracy: 0.5)
+        XCTAssertEqual(userScrollOffset.session, sessionB)
+    }
+
+    /// CBW-001-render_assistant_markdown: probe가 늦게 scroll 계층에 편입되어도 저장 offset을 첫 게시로 복원한다.
+    /// lifecycle-driven probe가 fixed timing 가정을 제거해 임의 시점 부착도 restore를 놓치지 않는지 검증합니다.
+    /// - 검증 내용: 부착 전 빈 게시, 늦은 부착 후 첫 게시가 저장 nonzero offset, 초기 0 부재를 확인합니다.
+    /// - 사전 조건: probe가 계층에 없는 상태에서 session A의 120pt restore가 대기합니다.
+    /// - 기대 결과: probe가 scroll 계층에 편입된 직후 첫 게시가 정확히 120pt이고 초기 0은 없습니다.
+    func testRenderAssistantMarkdownTranscriptObserverLateAttachmentRestoresSavedOffsetWithoutInitialZero() throws {
+        let sessionA = AiChatSessionID(rawValue: UUID())
+        var published: [(offset: CGFloat, session: AiChatSessionID?)] = []
+        let coordinator = AiChatTranscriptScrollObserver.Coordinator()
+        coordinator.sessionID = sessionA
+        coordinator.onScrollOffsetChanged = { offset, session in
+            published.append((offset, session))
+        }
+        coordinator.restoreRequest = .init(sessionID: sessionA, offsetY: 120, sequence: 1)
+
+        let probe = AiChatTranscriptScrollProbeView()
+        coordinator.configureProbe(probe)
+        flushMainRunLoop()
+
+        XCTAssertTrue(published.isEmpty, "probe가 계층에 없을 때 게시하면 안 된다")
+
+        let scrollView = makeTranscriptScrollHarnessScrollView(documentHeight: 1000, viewportHeight: 200)
+        scrollView.documentView?.addSubview(probe)
+        flushMainRunLoop()
+
+        let firstPublished = try XCTUnwrap(published.first)
+        XCTAssertEqual(firstPublished.session, sessionA)
+        XCTAssertEqual(firstPublished.offset, 120, accuracy: 0.5)
+    }
+
+    /// CBW-001-render_assistant_markdown: 부착 전 A→B supersedes 시 늦은 부착에서 B만 복원한다.
+    /// 미부착 상태의 session 전환이 late attach 시 generation 추적으로 올바르게 처리되는지 검증합니다.
+    /// - 검증 내용: A offset이 게시 부재, B 최종 offset/session 게시, 이후 user scroll이 B로 게시를 확인합니다.
+    /// - 사전 조건: probe 미부착 상태에서 A restore 후 B로 전환한 뒤 probe를 계층에 편입합니다.
+    /// - 기대 결과: A offset은 게시되지 않고 B의 offset만 B session으로 게시됩니다.
+    func testRenderAssistantMarkdownTranscriptObserverLateAttachAfterSupersedeRestoresOnlyLatestSession() throws {
+        let sessionA = AiChatSessionID(rawValue: UUID())
+        let sessionB = AiChatSessionID(rawValue: UUID())
+        var published: [(offset: CGFloat, session: AiChatSessionID?)] = []
+        let coordinator = AiChatTranscriptScrollObserver.Coordinator()
+        coordinator.onScrollOffsetChanged = { offset, session in
+            published.append((offset, session))
+        }
+
+        let probe = AiChatTranscriptScrollProbeView()
+        coordinator.sessionID = sessionA
+        coordinator.restoreRequest = .init(sessionID: sessionA, offsetY: 100, sequence: 1)
+        coordinator.configureProbe(probe)
+        flushMainRunLoop()
+
+        coordinator.sessionID = sessionB
+        coordinator.restoreRequest = .init(sessionID: sessionB, offsetY: 200, sequence: 2)
+        coordinator.configureProbe(probe)
+        flushMainRunLoop()
+
+        XCTAssertTrue(published.isEmpty, "probe 미부착 시 게시하면 안 된다")
+
+        let scrollView = makeTranscriptScrollHarnessScrollView(documentHeight: 1000, viewportHeight: 200)
+        scrollView.documentView?.addSubview(probe)
+        flushMainRunLoop()
+
+        let aOffsets = published.filter { $0.session == sessionA }
+        XCTAssertTrue(aOffsets.isEmpty, "A의 offset은 게시되면 안 된다")
+        let bOffsets = published.filter { $0.session == sessionB }
+        let finalBOffset = try XCTUnwrap(bOffsets.last, "B의 restore offset이 게시되어야 한다")
+        XCTAssertEqual(finalBOffset.offset, 200, accuracy: 0.5)
+        XCTAssertEqual(scrollView.contentView.bounds.origin.y, 200, accuracy: 0.5)
     }
 
     // MARK: - CBW-001-submit_chat_request
@@ -481,6 +3116,355 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(AiChatInputTextView.Coordinator.newlineCommand(for: .option), .insertNewline)
         XCTAssertEqual(harness.state.submitCount, 0)
         XCTAssertEqual(harness.textView.string, "\n")
+    }
+
+    private func syntaxHighlightingRequest(
+        identity: String,
+        code: String,
+        generation: UInt64,
+        languageLabel: String? = "swift",
+    ) -> AiChatSyntaxHighlightingClient.Request {
+        .init(
+            identity: .init(rawValue: identity),
+            code: code,
+            languageLabel: languageLabel,
+            appearance: .light,
+            typographyVersion: 1,
+            generation: generation,
+        )
+    }
+
+    private func assertIndependentSyntaxHighlightingReverseCompletion() async {
+        let recorder = SyntaxHighlightingRecorder(suspends: true)
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let firstRequest = syntaxHighlightingRequest(identity: "block-a", code: "let a = 1", generation: 1)
+        let secondRequest = syntaxHighlightingRequest(identity: "block-b", code: "let b = 2", generation: 1)
+        let firstTask = Task { await client.highlight(firstRequest) }
+        await waitForSyntaxHighlightingCalls(1, recorder: recorder)
+        let secondTask = Task { await client.highlight(secondRequest) }
+        await waitForSyntaxHighlightingCalls(2, recorder: recorder)
+
+        await recorder.resume(code: secondRequest.code)
+        let second = await secondTask.value
+        await recorder.resume(code: firstRequest.code)
+        let first = await firstTask.value
+        _ = await client.highlight(syntaxHighlightingRequest(
+            identity: "block-a", code: firstRequest.code, generation: 2,
+        ))
+        _ = await client.highlight(syntaxHighlightingRequest(
+            identity: "block-b", code: secondRequest.code, generation: 2,
+        ))
+        let metrics = await client.cacheMetrics()
+        let invocationCount = await recorder.invocationCount()
+
+        XCTAssertEqual(first.disposition, .highlighted)
+        XCTAssertTrue(first.isEligibleForDisplay)
+        XCTAssertEqual(second.disposition, .highlighted)
+        XCTAssertTrue(second.isEligibleForDisplay)
+        XCTAssertEqual(metrics.entryCount, 2)
+        XCTAssertEqual(invocationCount, 2)
+    }
+
+    private func assertSyntaxHighlightingFallbackIdentityIsolation() async {
+        let recorder = SyntaxHighlightingRecorder(suspends: true)
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let activeRequest = syntaxHighlightingRequest(identity: "active", code: "let active = true", generation: 1)
+        let activeTask = Task { await client.highlight(activeRequest) }
+        await waitForSyntaxHighlightingCalls(1, recorder: recorder)
+        let missingSource = "plain source"
+        let missing = await client.highlight(syntaxHighlightingRequest(
+            identity: "fallback", code: missingSource, generation: 1, languageLabel: nil,
+        ))
+        let oversizedSource = String(repeating: "x", count: 65537)
+        let oversized = await client.highlight(syntaxHighlightingRequest(
+            identity: "fallback", code: oversizedSource, generation: 2,
+        ))
+
+        await recorder.resume(code: activeRequest.code)
+        let active = await activeTask.value
+        _ = await client.highlight(syntaxHighlightingRequest(
+            identity: "active", code: activeRequest.code, generation: 2,
+        ))
+        let invocationCount = await recorder.invocationCount()
+
+        XCTAssertEqual(missing.disposition, .plain(.missingLanguage))
+        assertExactPlainSyntaxResult(missing, source: missingSource)
+        XCTAssertEqual(oversized.disposition, .plain(.preflightLimit))
+        assertExactPlainSyntaxResult(oversized, source: oversizedSource)
+        XCTAssertEqual(active.disposition, .highlighted)
+        XCTAssertTrue(active.isEligibleForDisplay)
+        XCTAssertEqual(invocationCount, 1)
+    }
+
+    private func assertSyntaxHighlightingLateFailureIsStale() async {
+        let recorder = SyntaxHighlightingRecorder(suspends: true)
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let olderRequest = syntaxHighlightingRequest(identity: "shared", code: "let old = 1", generation: 1)
+        let latestRequest = syntaxHighlightingRequest(identity: "shared", code: "let new = 2", generation: 2)
+        let olderTask = Task { await client.highlight(olderRequest) }
+        await waitForSyntaxHighlightingCalls(1, recorder: recorder)
+        let latestTask = Task { await client.highlight(latestRequest) }
+        await waitForSyntaxHighlightingCalls(2, recorder: recorder)
+
+        await recorder.resume(code: latestRequest.code)
+        let latest = await latestTask.value
+        olderTask.cancel()
+        await recorder.fail(code: olderRequest.code, with: .highlight)
+        let older = await olderTask.value
+        _ = await client.highlight(syntaxHighlightingRequest(
+            identity: "shared", code: latestRequest.code, generation: 3,
+        ))
+        let metrics = await client.cacheMetrics()
+        let invocationCount = await recorder.invocationCount()
+
+        XCTAssertEqual(latest.disposition, .highlighted)
+        XCTAssertTrue(latest.isEligibleForDisplay)
+        XCTAssertEqual(older.disposition, .stale)
+        XCTAssertFalse(older.isEligibleForDisplay)
+        XCTAssertEqual(metrics.entryCount, 1)
+        XCTAssertEqual(invocationCount, 2)
+    }
+
+    private func assertSyntaxHighlightingRejectsLateLowerGeneration() async {
+        let recorder = SyntaxHighlightingRecorder()
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let source = "let monotonic = true"
+        let high = await client.highlight(syntaxHighlightingRequest(
+            identity: "monotonic", code: source, generation: 2,
+        ))
+        let lower = await client.highlight(syntaxHighlightingRequest(
+            identity: "monotonic", code: source, generation: 1,
+        ))
+        let latest = await client.highlight(syntaxHighlightingRequest(
+            identity: "monotonic", code: source, generation: 3,
+        ))
+        let invocationCount = await recorder.invocationCount()
+
+        XCTAssertEqual(high.disposition, .highlighted)
+        XCTAssertEqual(lower.disposition, .stale)
+        XCTAssertFalse(lower.isEligibleForDisplay)
+        XCTAssertEqual(latest.disposition, .highlighted)
+        XCTAssertTrue(latest.isEligibleForDisplay)
+        XCTAssertEqual(invocationCount, 1)
+    }
+
+    private func assertSyntaxHighlightingTrailingEdgeCoalescing() async throws {
+        let recorder = SyntaxHighlightingRecorder()
+        let client = makeSyntaxHighlightingClient(
+            recorder: recorder,
+            coalescingDelay: .milliseconds(80),
+        )
+        let firstTask = Task {
+            await client.highlight(.init(
+                identity: .init(rawValue: "test-block"),
+                code: "let first = 1",
+                languageLabel: "swift",
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 1,
+            ))
+        }
+        try await ContinuousClock().sleep(for: .milliseconds(10))
+        let secondTask = Task {
+            await client.highlight(.init(
+                identity: .init(rawValue: "test-block"),
+                code: "let second = 2",
+                languageLabel: "swift",
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 2,
+            ))
+        }
+        let first = await firstTask.value
+        let second = await secondTask.value
+        let invocationCount = await recorder.invocationCount()
+
+        XCTAssertEqual(first.disposition, .stale)
+        XCTAssertFalse(first.isEligibleForDisplay)
+        XCTAssertEqual(second.disposition, .highlighted)
+        XCTAssertEqual(invocationCount, 1)
+    }
+
+    private func assertSyntaxHighlightingStaleGenerationDiscard() async {
+        let recorder = SyntaxHighlightingRecorder(suspends: true)
+        let client = makeSyntaxHighlightingClient(recorder: recorder)
+        let olderTask = Task {
+            await client.highlight(.init(
+                identity: .init(rawValue: "test-block"),
+                code: "let older = 1",
+                languageLabel: "swift",
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 10,
+            ))
+        }
+        await waitForSyntaxHighlightingCalls(1, recorder: recorder)
+        let latestTask = Task {
+            await client.highlight(.init(
+                identity: .init(rawValue: "test-block"),
+                code: "let latest = 2",
+                languageLabel: "swift",
+                appearance: .light,
+                typographyVersion: 1,
+                generation: 11,
+            ))
+        }
+        await waitForSyntaxHighlightingCalls(2, recorder: recorder)
+        await recorder.resume(code: "let older = 1")
+        let older = await olderTask.value
+        await recorder.resume(code: "let latest = 2")
+        let latest = await latestTask.value
+        let metrics = await client.cacheMetrics()
+
+        XCTAssertEqual(older.disposition, .stale)
+        XCTAssertFalse(older.isEligibleForDisplay)
+        XCTAssertEqual(latest.disposition, .highlighted)
+        XCTAssertTrue(latest.isEligibleForDisplay)
+        XCTAssertEqual(metrics.entryCount, 1)
+    }
+
+    private func makeSyntaxHighlightingClient(
+        recorder: SyntaxHighlightingRecorder,
+        coalescingDelay: Duration = .zero,
+    ) -> AiChatSyntaxHighlightingClient {
+        AiChatSyntaxHighlightingClient.testing(
+            coalescingDelay: coalescingDelay,
+            supportedLanguages: { ["swift", "javascript"] },
+            highlight: { code, language, theme in
+                try await recorder.highlight(code: code, language: language, theme: theme)
+            },
+        )
+    }
+
+    private func assertExactPlainSyntaxResult(
+        _ result: AiChatSyntaxHighlightingClient.Result,
+        source: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(result.source, source, file: file, line: line)
+        XCTAssertEqual(result.runs, [.plain(source)], file: file, line: line)
+    }
+
+    private func waitForSyntaxHighlightingCalls(
+        _ count: Int,
+        recorder: SyntaxHighlightingRecorder,
+    ) async {
+        while await recorder.invocationCount() < count {
+            await Task.yield()
+        }
+    }
+
+    private actor SuspendedSupportedLanguagesLoader {
+        private var didStart = false
+        private var startContinuation: CheckedContinuation<Void, Never>?
+        private var operationContinuation: CheckedContinuation<Set<String>, any Error>?
+
+        func load() async throws -> Set<String> {
+            didStart = true
+            startContinuation?.resume()
+            startContinuation = nil
+            return try await withCheckedThrowingContinuation { continuation in
+                operationContinuation = continuation
+            }
+        }
+
+        func waitUntilStarted() async {
+            if didStart {
+                return
+            }
+            await withCheckedContinuation { continuation in
+                startContinuation = continuation
+            }
+        }
+
+        func fail(with failure: AiChatSyntaxHighlightingClient.EngineFailure) {
+            operationContinuation?.resume(throwing: failure)
+            operationContinuation = nil
+        }
+    }
+
+    private actor SuspendedHighlightOperation {
+        private var didStart = false
+        private var startContinuation: CheckedContinuation<Void, Never>?
+        private var operationContinuation: CheckedContinuation<[AiChatSyntaxHighlightingClient.Run], any Error>?
+
+        func highlight() async throws -> [AiChatSyntaxHighlightingClient.Run] {
+            didStart = true
+            startContinuation?.resume()
+            startContinuation = nil
+            return try await withCheckedThrowingContinuation { continuation in
+                operationContinuation = continuation
+            }
+        }
+
+        func waitUntilStarted() async {
+            if didStart {
+                return
+            }
+            await withCheckedContinuation { continuation in
+                startContinuation = continuation
+            }
+        }
+
+        func fail(with failure: AiChatSyntaxHighlightingClient.EngineFailure) {
+            operationContinuation?.resume(throwing: failure)
+            operationContinuation = nil
+        }
+    }
+
+    private actor SyntaxHighlightingRecorder {
+        private let failure: AiChatSyntaxHighlightingClient.EngineFailure?
+        private let suspends: Bool
+        private var calls: [String] = []
+        private var continuations: [String: CheckedContinuation<[AiChatSyntaxHighlightingClient.Run], any Error>] = [:]
+
+        init(
+            failure: AiChatSyntaxHighlightingClient.EngineFailure? = nil,
+            suspends: Bool = false,
+        ) {
+            self.failure = failure
+            self.suspends = suspends
+        }
+
+        func invocationCount() -> Int {
+            calls.count
+        }
+
+        func highlight(
+            code: String,
+            language: String,
+            theme: String,
+        ) async throws -> [AiChatSyntaxHighlightingClient.Run] {
+            calls.append("\(language):\(theme):\(code)")
+            if let failure {
+                throw failure
+            }
+            if suspends {
+                return try await withCheckedThrowingContinuation { continuation in
+                    continuations[code] = continuation
+                }
+            }
+            return [
+                .init(
+                    sourceRange: .init(utf16Offsets: 0 ..< code.utf16.count),
+                    attributes: .init(isBold: true),
+                ),
+            ]
+        }
+
+        func fail(code: String, with failure: AiChatSyntaxHighlightingClient.EngineFailure) {
+            continuations.removeValue(forKey: code)?.resume(throwing: failure)
+        }
+
+        func resume(code: String) {
+            continuations.removeValue(forKey: code)?.resume(returning: [
+                .init(
+                    sourceRange: .init(utf16Offsets: 0 ..< code.utf16.count),
+                    attributes: .init(isBold: true),
+                ),
+            ])
+        }
     }
 
     private final class InputTextViewHarnessState {
@@ -3745,5 +6729,254 @@ private extension CBW001ContextualChatRequestTests {
 
         stream.finish(at: 1)
         await store.finish()
+    }
+
+    private func makeSelectableOutputHarness(
+        text: String,
+        blockID: AiChatMarkdownDocument.BlockID = .init(rawValue: "hosted-block"),
+        width: CGFloat = 240,
+        allowsHorizontalOverflow: Bool = false,
+        sizingMode: AiChatSelectableOutputText.SizingMode = .expandsToFillWidth,
+        accessibilityLabel: String? = nil,
+        accessibilityValue: String? = nil,
+        contextMenuActions: [AiChatOutputContextMenuAction] = [],
+        attributedText: NSAttributedString? = nil,
+    ) -> (window: NSWindow, coordinator: AiChatSelectableOutputText.Coordinator) {
+        let coordinator = AiChatSelectableOutputText.Coordinator()
+        coordinator.scrollView.frame = NSRect(x: 0, y: 0, width: width, height: 120)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.scrollView
+        coordinator.update(
+            blockID: blockID,
+            attributedText: attributedText ?? NSAttributedString(string: text),
+            allowsHorizontalOverflow: allowsHorizontalOverflow,
+            sizingMode: sizingMode,
+            accessibilityLabel: accessibilityLabel,
+            accessibilityValue: accessibilityValue,
+            contextMenuActions: contextMenuActions,
+        )
+        coordinator.scrollView.layoutSubtreeIfNeeded()
+        return (window, coordinator)
+    }
+
+    private func assertStoredMessageViewIdentity(raw: String) {
+        let firstSession = UUID(uuidString: "11111111-1111-1111-1111-111111111111") ?? UUID()
+        let secondSession = UUID(uuidString: "22222222-2222-2222-2222-222222222222") ?? UUID()
+        let originalIdentity = AiChatStoredMessageViewIdentity(
+            sessionID: nil,
+            index: 0,
+            message: .init(role: .assistant, content: raw),
+        )
+        XCTAssertEqual(
+            originalIdentity,
+            AiChatStoredMessageViewIdentity(
+                sessionID: nil,
+                index: 0,
+                message: .init(role: .assistant, content: raw),
+            ),
+        )
+        XCTAssertNotEqual(
+            originalIdentity,
+            AiChatStoredMessageViewIdentity(
+                sessionID: nil,
+                index: 0,
+                message: .init(role: .assistant, content: "replacement"),
+            ),
+        )
+        XCTAssertNotEqual(
+            AiChatStoredMessageViewIdentity(
+                sessionID: .init(rawValue: firstSession),
+                index: 0,
+                message: .init(role: .assistant, content: raw),
+            ),
+            AiChatStoredMessageViewIdentity(
+                sessionID: .init(rawValue: secondSession),
+                index: 0,
+                message: .init(role: .assistant, content: raw),
+            ),
+        )
+    }
+
+    private func makeAssistantMarkdownHarness(
+        source: String,
+        width: CGFloat,
+    ) -> (window: NSWindow, hostingView: NSView) {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { [] },
+            highlight: { _, _, _ in [] },
+        ))
+        let presentation = AiChatTranscriptSearchPresentation(query: "", renderedRows: [])
+        let view = AiChatAssistantMarkdownText(
+            content: source,
+            transcriptRow: .message(index: 0),
+            searchPresentation: presentation,
+            currentSearchMatch: nil,
+            renderSession: renderSession,
+        )
+        .frame(width: width)
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSRect(x: 0, y: 0, width: width, height: 600)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+        return (window, hostingView)
+    }
+
+    /// production `AiChatMessageRow.userMessage` HStack { Spacer; AiChatUserMessageBubble } 레이아웃을
+    /// NSHostingView에 호스팅한다. Canonical bubble 레이아웃 seam을 통해 실제 SwiftUI proposal 폭에서
+    /// 자연 폭 hug와 cap/wrap 동작을 검증한다.
+    private func makeUserMessageBubbleHarness(
+        text: String,
+        hostWidth: CGFloat,
+    ) -> (window: NSWindow, hostingView: NSView) {
+        let renderSession = AiChatAssistantMarkdownRenderSession(highlightingClient: .testing(
+            coalescingDelay: .zero,
+            supportedLanguages: { [] },
+            highlight: { _, _, _ in [] },
+        ))
+        let transcriptRow = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let blockID = AiChatMarkdownDocument.BlockID(rawValue: "user-message-0")
+        renderSession.registerSelectionProjection(
+            presentationID: blockID,
+            plainText: text,
+            searchText: text,
+            transcriptRow: transcriptRow,
+            blockIndex: 0,
+        )
+        let attributedText = AiChatAssistantMarkdownAttributedText.make(
+            text: text,
+            inlineIntents: [],
+            matchOffsets: [],
+            currentMatchOffsets: nil,
+            appliesHangulWordPriorityLineBreak: true,
+        )
+        let view = HStack {
+            Spacer(minLength: 16)
+            AiChatUserMessageBubble(
+                blockID: blockID,
+                attributedText: attributedText,
+                rawMessageContent: text,
+                renderSession: renderSession,
+                transcriptRow: transcriptRow,
+            )
+        }
+        .frame(width: hostWidth)
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSRect(x: 0, y: 0, width: hostWidth, height: 600)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+        return (window, hostingView)
+    }
+
+    private func makeTwelveColumnTableSource() -> String {
+        let headers = (1 ... 12).map { "H\($0)" }.joined(separator: " | ")
+        let delimiter = Array(repeating: "---", count: 12).joined(separator: " | ")
+        let values = (1 ... 12).map { "V\($0)" }.joined(separator: " | ")
+        return "| \(headers) |\n| \(delimiter) |\n| \(values) |"
+    }
+
+    private func descendantScrollViews(in view: NSView) -> [NSScrollView] {
+        let descendants = view.subviews.flatMap(descendantScrollViews(in:))
+        return (view as? NSScrollView).map { [$0] + descendants } ?? descendants
+    }
+
+    private func descendantTextViews(in view: NSView) -> [NSTextView] {
+        let descendants = view.subviews.flatMap(descendantTextViews(in:))
+        return (view as? NSTextView).map { [$0] + descendants } ?? descendants
+    }
+
+    private func selectedSubstring(in textView: NSTextView) throws -> String {
+        let selection = try XCTUnwrap(AiChatMarkdownDocument.PlainSelectionRange(textView.selectedRange()))
+        let range = try XCTUnwrap(
+            selection.searchRange(in: textView.string, invalidRangePolicy: .discard),
+        )
+        return try XCTUnwrap(range.substring(in: textView.string))
+    }
+
+    /// 대기 중인 DispatchQueue.main.async 블록을 deterministic하게 비운다.
+    /// arbitrary sleep 없이 nested async restore 흐름을 끝까지 실행한다.
+    private func flushMainRunLoop(_ iterations: Int = 8) {
+        for _ in 0 ..< iterations {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.005))
+        }
+    }
+
+    private func makeContextMenuEvent(for textView: NSTextView) throws -> NSEvent {
+        let point = NSPoint(x: textView.bounds.midX, y: textView.bounds.midY)
+        let windowPoint = textView.convert(point, to: nil)
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: textView.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1,
+        ))
+    }
+
+    private func makeTranscriptScrollHarnessScrollView(
+        documentHeight: CGFloat,
+        viewportHeight: CGFloat,
+    ) -> NSScrollView {
+        let scrollView = NSScrollView(
+            frame: NSRect(x: 0, y: 0, width: 240, height: viewportHeight),
+        )
+        let documentView = NSView(
+            frame: NSRect(x: 0, y: 0, width: 240, height: documentHeight),
+        )
+        scrollView.documentView = documentView
+        scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: 0))
+        return scrollView
+    }
+}
+
+@MainActor
+private final class SelectableOutputFirstResponderAcceptingView: NSView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+}
+
+@MainActor
+private final class SelectableOutputFallbackResponder: NSResponder {
+    private(set) var didReceiveCopy = false
+    private(set) var didReceiveSelectAll = false
+    private(set) var didReceiveUndo = false
+
+    @objc
+    func copy(_: Any?) {
+        didReceiveCopy = true
+    }
+
+    override func selectAll(_: Any?) {
+        didReceiveSelectAll = true
+    }
+
+    @objc
+    func undo(_: Any?) {
+        didReceiveUndo = true
     }
 }

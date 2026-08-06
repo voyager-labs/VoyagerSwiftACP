@@ -19,6 +19,7 @@ public struct AiChatView: View {
     @State private var transcriptScrollRestoreSequence = 0
     @State private var shouldRestoreChatInputFocusAfterSearch = false
     @StateObject private var transcriptSearchProjection = AiChatTranscriptSearchProjectionModel()
+    @StateObject private var assistantMarkdownRenderSession = AiChatAssistantMarkdownRenderSession()
 
     public init(
         store: StoreOf<AiChatFeature>,
@@ -40,11 +41,9 @@ public struct AiChatView: View {
     private func aiChatContent(state: AiChatState) -> some View {
         let skeleton = state.skeletonDisplayModel
         let requestContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
-        let searchRequest = transcriptSearchProjection.request(for: state)
-        let searchContext = transcriptSearchProjection.renderContext(
-            for: searchRequest,
-            currentMatchOrdinal: state.transcriptSearch.currentMatchOrdinal,
-        )
+        let search = makeTranscriptSearchRenderValues(state: state)
+        let searchRequest = search.request
+        let searchContext = search.context
         let sessions = Self.sessionsDisplayModel(for: state)
 
         Group {
@@ -88,6 +87,35 @@ public struct AiChatView: View {
         }
     }
 
+    private func makeTranscriptSearchRenderValues(
+        state: AiChatState,
+    ) -> (request: AiChatTranscriptSearchProjectionRequest, context: AiChatTranscriptSearchRenderContext) {
+        assistantMarkdownRenderSession.prepareForSession(state.sessionID)
+        let request = transcriptSearchProjection.request(
+            for: state,
+            renderSession: assistantMarkdownRenderSession,
+        )
+        let context = transcriptSearchProjection.renderContext(
+            for: request,
+            currentMatchOrdinal: state.transcriptSearch.currentMatchOrdinal,
+        )
+        captureAssistantRenderContext(state: state, currentSearchMatch: context.currentMatch)
+        return (request, context)
+    }
+
+    private func captureAssistantRenderContext(
+        state: AiChatState,
+        currentSearchMatch: AiChatRenderedTextMatchDescriptor?,
+    ) {
+        guard let sessionID = state.sessionID,
+              let offset = state.transcriptScrollOffsets[sessionID]
+        else { return }
+        assistantMarkdownRenderSession.captureContext(
+            outerScrollOffset: offset,
+            currentSearchDescriptor: currentSearchMatch,
+        )
+    }
+
     private func conversationView(
         state: AiChatState,
         skeleton: AiChatSkeletonDisplayModel,
@@ -117,8 +145,14 @@ public struct AiChatView: View {
                     requestTranscriptScrollOffsetRestore(for: state)
                 }
                 .onChange(of: state.transcriptAutoScrollVersion) { _ in
-                    guard Self.shouldAutoScrollToBottom(transcriptSearch: state.transcriptSearch) else { return }
+                    guard Self.shouldAutoScrollToBottom(transcriptSearch: state.transcriptSearch),
+                          !assistantMarkdownRenderSession.hasCapturedViewState
+                    else { return }
                     scrollTranscriptToBottom(scrollProxy)
+                }
+                .onChange(of: state.transcriptHistoryMutationTracker.value) { _ in
+                    guard assistantMarkdownRenderSession.hasCapturedViewState else { return }
+                    requestTranscriptScrollOffsetRestore(for: state)
                 }
                 .onChange(of: state.transcriptSearch.navigationRevision) { _ in
                     navigateToCurrentSearchMatch(
@@ -153,6 +187,7 @@ public struct AiChatView: View {
                     skeleton: skeleton,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: assistantMarkdownRenderSession,
                     onOpenSettings: { store.send(.openSettingsTapped) },
                     onErrorRecovery: { store.send(.errorRecoveryTapped) },
                     onRegenerate: { store.send(.regenerateTapped) },
@@ -565,7 +600,10 @@ private final class AiChatTranscriptSearchProjectionModel: ObservableObject {
     private var requestCache = AiChatTranscriptSearchRequestCache()
     private var generation: UInt64 = 0
 
-    func request(for state: AiChatState) -> AiChatTranscriptSearchProjectionRequest {
+    func request(
+        for state: AiChatState,
+        renderSession: AiChatAssistantMarkdownRenderSession,
+    ) -> AiChatTranscriptSearchProjectionRequest {
         requestCache.request(
             isPresented: state.transcriptSearch.isPresented,
             query: state.transcriptSearch.query,
@@ -576,6 +614,7 @@ private final class AiChatTranscriptSearchProjectionModel: ObservableObject {
                 transcriptRevision: state.transcriptHistoryMutationTracker.value,
                 streamingRevision: state.streamingAssistantDraftMutationTracker.value,
             ),
+            assistantRenderer: renderSession,
         )
     }
 
@@ -620,37 +659,34 @@ private final class AiChatTranscriptSearchProjectionModel: ObservableObject {
     }
 }
 
-private struct AiChatTranscriptScrollRestoreRequest: Equatable {
+struct AiChatTranscriptScrollRestoreRequest: Equatable {
     let sessionID: AiChatSessionID
     let offsetY: CGFloat
     let sequence: Int
 }
 
-private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
+struct AiChatTranscriptScrollObserver: NSViewRepresentable {
     let sessionID: AiChatSessionID?
     let restoreRequest: AiChatTranscriptScrollRestoreRequest?
     let onScrollOffsetChanged: (CGFloat, AiChatSessionID?) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            context.coordinator.attachScrollView(from: view)
-        }
-        return view
+        context.coordinator.restoreRequest = restoreRequest
+        let probe = AiChatTranscriptScrollProbeView()
+        context.coordinator.configureProbe(probe)
+        return probe
     }
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.sessionID = sessionID
         context.coordinator.onScrollOffsetChanged = onScrollOffsetChanged
+        context.coordinator.restoreRequest = restoreRequest
+        context.coordinator.attachScrollView(from: view)
+        context.coordinator.applyPendingRestoreIfNeeded()
+    }
 
-        DispatchQueue.main.async {
-            context.coordinator.attachScrollView(from: view)
-            context.coordinator.applyRestoreRequestIfNeeded(restoreRequest)
-            DispatchQueue.main.async {
-                context.coordinator.attachScrollView(from: view)
-                context.coordinator.applyRestoreRequestIfNeeded(restoreRequest)
-            }
-        }
+    static func dismantleNSView(_ nsView: NSView, coordinator _: Coordinator) {
+        (nsView as? AiChatTranscriptScrollProbeView)?.onHierarchyChanged = nil
     }
 
     func makeCoordinator() -> Coordinator {
@@ -661,20 +697,36 @@ private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
     final class Coordinator: NSObject {
         var sessionID: AiChatSessionID?
         var onScrollOffsetChanged: ((CGFloat, AiChatSessionID?) -> Void)?
+        var restoreRequest: AiChatTranscriptScrollRestoreRequest?
 
         private weak var scrollView: NSScrollView?
         private weak var observedClipView: NSClipView?
+        private var appliedRestoreSessionID: AiChatSessionID?
         private var appliedRestoreSequence: Int?
         private var isApplyingRestore = false
 
         deinit {
-            if let observedClipView {
-                NotificationCenter.default.removeObserver(
-                    self,
-                    name: NSView.boundsDidChangeNotification,
-                    object: observedClipView,
-                )
+            guard let observedClipView else { return }
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSView.boundsDidChangeNotification,
+                object: observedClipView,
+            )
+        }
+
+        func configureProbe(_ probe: AiChatTranscriptScrollProbeView) {
+            probe.onHierarchyChanged = { [weak self, weak probe] in
+                guard let self, let probe else { return }
+                attachScrollView(from: probe)
+                applyPendingRestoreIfNeeded()
             }
+            attachScrollView(from: probe)
+            applyPendingRestoreIfNeeded()
+        }
+
+        private func isRestorePending(for currentSession: AiChatSessionID?) -> Bool {
+            guard let request = restoreRequest, request.sessionID == currentSession else { return false }
+            return !(appliedRestoreSessionID == request.sessionID && appliedRestoreSequence == request.sequence)
         }
 
         func attachScrollView(from view: NSView) {
@@ -693,45 +745,45 @@ private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
                 object: clipView,
             )
 
+            guard !isRestorePending(for: sessionID) else { return }
             onScrollOffsetChanged?(clipView.bounds.origin.y, sessionID)
         }
 
-        func applyRestoreRequestIfNeeded(_ request: AiChatTranscriptScrollRestoreRequest?) {
-            guard let request, appliedRestoreSequence != request.sequence else { return }
+        func applyPendingRestoreIfNeeded() {
+            guard let request = restoreRequest, request.sessionID == sessionID,
+                  isRestorePending(for: sessionID), scrollView != nil else { return }
+            appliedRestoreSessionID = request.sessionID
             appliedRestoreSequence = request.sequence
-
+            isApplyingRestore = true
             DispatchQueue.main.async { [weak self] in
-                self?.restore(to: request.offsetY)
+                self?.restore(request: request)
                 DispatchQueue.main.async { [weak self] in
-                    self?.restore(to: request.offsetY)
+                    self?.restore(request: request)
+                    DispatchQueue.main.async { [weak self] in
+                        if self?.appliedRestoreSessionID == request.sessionID,
+                           self?.appliedRestoreSequence == request.sequence
+                        { self?.isApplyingRestore = false }
+                    }
                 }
             }
         }
 
-        private func restore(to requestedOffsetY: CGFloat) {
-            guard let scrollView else { return }
-
+        private func restore(request: AiChatTranscriptScrollRestoreRequest) {
+            guard appliedRestoreSessionID == request.sessionID,
+                  appliedRestoreSequence == request.sequence, let scrollView else { return }
             let clipView = scrollView.contentView
-            let documentHeight = scrollView.documentView?.bounds.height ?? 0
-            let maxOffsetY = max(0, documentHeight - clipView.bounds.height)
-            let offsetY = min(max(0, requestedOffsetY), maxOffsetY)
-
-            isApplyingRestore = true
+            let offsetY = min(
+                max(0, request.offsetY),
+                max(0, (scrollView.documentView?.bounds.height ?? 0) - clipView.bounds.height),
+            )
             clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: offsetY))
             scrollView.reflectScrolledClipView(clipView)
-            onScrollOffsetChanged?(offsetY, sessionID)
-
-            DispatchQueue.main.async { [weak self] in
-                self?.isApplyingRestore = false
-            }
+            onScrollOffsetChanged?(offsetY, request.sessionID)
         }
 
         @objc
         private func boundsDidChange(_ notification: Notification) {
-            guard !isApplyingRestore,
-                  let clipView = notification.object as? NSClipView
-            else { return }
-
+            guard !isApplyingRestore, let clipView = notification.object as? NSClipView else { return }
             onScrollOffsetChanged?(clipView.bounds.origin.y, sessionID)
         }
     }
@@ -739,13 +791,10 @@ private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
 
 private extension NSView {
     func firstEnclosingScrollViewInSuperviewChain() -> NSScrollView? {
-        var current = superview
-        while let view = current {
-            if let scrollView = view as? NSScrollView {
-                return scrollView
-            }
-            current = view.superview
+        var view = superview
+        while view != nil, !(view is NSScrollView) {
+            view = view?.superview
         }
-        return nil
+        return view as? NSScrollView
     }
 }
