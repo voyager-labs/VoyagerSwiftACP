@@ -13,19 +13,8 @@ struct AccountSettingsView: View {
         Form {
             Section {
                 accountStatusView
-                if store.setAuthState == .signedIn {
-                    entitlementStatusView
-                }
             } header: {
                 Text("Account")
-            }
-
-            if store.isManageAccountAvailable {
-                Section {
-                    Button("Manage Account") {
-                        store.send(.manageAccountTapped)
-                    }
-                }
             }
         }
         .formStyle(.grouped)
@@ -96,52 +85,6 @@ struct AccountSettingsView: View {
                 Button(Self.signInButtonTitle) {
                     store.send(Self.signInButtonAction)
                 }
-            }
-        }
-    }
-
-    // MARK: - Entitlement status (signed-in 상태에서만 표시)
-
-    @ViewBuilder private var entitlementStatusView: some View {
-        switch store.setEntitlementState {
-        case .entitlementActive:
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .accessibilityHidden(true)
-                Text("License Active")
-                    .foregroundStyle(.green)
-            }
-
-        case .entitlementUnavailable:
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-                Text("License status unavailable")
-                    .foregroundStyle(.orange)
-                Spacer()
-                Button("Retry") {
-                    store.send(.retryTapped)
-                }
-            }
-
-        case .entitlementNone, .entitlementExpired, .entitlementRevoked, .entitlementRefunded:
-            HStack(spacing: 8) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-                    .accessibilityHidden(true)
-                Text("License Inactive")
-                    .foregroundStyle(.red)
-            }
-
-        case .entitlementUnknown:
-            HStack(spacing: 8) {
-                Image(systemName: "questionmark.circle.fill")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text("License status unavailable")
-                    .foregroundStyle(.secondary)
             }
         }
     }

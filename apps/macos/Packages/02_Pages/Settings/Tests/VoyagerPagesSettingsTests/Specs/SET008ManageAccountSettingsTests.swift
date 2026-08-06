@@ -13,6 +13,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
     /// - 기대 결과: account가 AI 다음에 있고 기존 제목과 아이콘을 유지함
     func testAccountSectionIsRegisteredAfterAI() {
         XCTAssertEqual(SettingsSection.allCases, [.general, .appearance, .ai, .account])
+        XCTAssertEqual(SettingsSection.visibleCases, [.general, .appearance, .ai])
         XCTAssertEqual(SettingsSection.account.title, "Account")
         XCTAssertEqual(SettingsSection.account.iconName, "person.crop.circle")
     }
@@ -34,13 +35,11 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         )
 
         await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = .coreLicenseActive
+            state.accessStatus = snapshot.status
             state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
         }
 
         XCTAssertEqual(store.state.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.accountSettings.setEntitlementState, .entitlementActive)
-        XCTAssertTrue(store.state.accountSettings.isManageAccountAvailable)
     }
 
     /// SET-008-show_account_status: canonical presentation update는 progress, failure, unavailable 표시를 구분한다.
@@ -62,49 +61,6 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
             state.accountSettings.presentation = failed
         }
         XCTAssertEqual(store.state.accountSettings.setAuthState, .signInFailed)
-
-        let unavailable = AccountAccessPresentation(
-            hasAccountSession: true,
-            accessStatus: .networkFailure,
-        )
-        await store.send(.accountAccessPresentationUpdated(unavailable)) { state in
-            state.accessStatus = .networkFailure
-            state.accountSettings.presentation = unavailable
-        }
-        XCTAssertEqual(store.state.accountSettings.setEntitlementState, .entitlementUnavailable)
-    }
-
-    /// SET-008-show_account_status: Settings는 모든 canonical access status의 의미와 account recovery 가용성을 보존한다.
-    /// - 검증 내용: nil, network failure, none, expired, revoked, refunded, active의 개별 상태와 Manage Account 가용성
-    /// - 사전 조건: current account session이 있고 각 canonical access status가 설정됨
-    /// - 기대 결과: unknown/unavailable은 잠금 유지, authoritative status는 상태별로 구분되고 Manage Account를 허용함
-    func testEntitlementProjectionPreservesSemanticStatusesAndRecoveryAvailability() {
-        struct EntitlementCase {
-            let status: AccessStatus?
-            let expectedState: SetEntitlementState
-            let isManageAccountAvailable: Bool
-        }
-
-        let cases: [EntitlementCase] = [
-            .init(status: nil, expectedState: .entitlementUnknown, isManageAccountAvailable: false),
-            .init(status: .networkFailure, expectedState: .entitlementUnavailable, isManageAccountAvailable: false),
-            .init(status: AccessStatus.none, expectedState: .entitlementNone, isManageAccountAvailable: true),
-            .init(status: .trialExpired, expectedState: .entitlementExpired, isManageAccountAvailable: true),
-            .init(status: .revoked, expectedState: .entitlementRevoked, isManageAccountAvailable: true),
-            .init(status: .refunded, expectedState: .entitlementRefunded, isManageAccountAvailable: true),
-            .init(status: .coreLicenseActive, expectedState: .entitlementActive, isManageAccountAvailable: true),
-        ]
-
-        for testCase in cases {
-            var state = AccountSettingsState()
-            state.presentation = AccountAccessPresentation(
-                hasAccountSession: true,
-                accessStatus: testCase.status,
-            )
-
-            XCTAssertEqual(state.setEntitlementState, testCase.expectedState)
-            XCTAssertEqual(state.isManageAccountAvailable, testCase.isManageAccountAvailable)
-        }
     }
 
     // MARK: - SET-008-start_account_sign_in
@@ -200,48 +156,5 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         await store.send(.signOutCancelled) { state in
             state.isShowingSignOutConfirmation = false
         }
-    }
-
-    // MARK: - SET-008-retry_account_access
-
-    /// SET-008-retry_account_access: Retry는 canonical owner로 한 번 전달된다.
-    /// - 검증 내용: retryTapped의 단일 narrow delegate
-    /// - 사전 조건: signed-in network failure projection
-    /// - 기대 결과: local fetch 없이 retryRequested delegate를 한 번 수신함
-    func testRetryForwardsOnce() async {
-        var initialState = AccountSettingsState()
-        initialState.presentation = AccountAccessPresentation(
-            hasAccountSession: true,
-            accessStatus: .networkFailure,
-        )
-        let store = TestStore(initialState: initialState) {
-            AccountSettingsFeature()
-        }
-
-        await store.send(.retryTapped)
-        await store.receive(\.delegate.retryRequested)
-    }
-
-    // MARK: - SET-008-open_entitlement_management
-
-    /// SET-008-open_entitlement_management: Manage Account는 Settings-local 외부 URL effect로 유지된다.
-    /// - 검증 내용: configured account URL의 단일 open 호출
-    /// - 사전 조건: 유효한 checkout URL client
-    /// - 기대 결과: URL이 정확히 한 번 열리고 auth runtime intent는 생성되지 않음
-    func testManageAccountTappedOpensURL() async throws {
-        let expectedURL = try XCTUnwrap(URL(string: "https://voyager.test/account"))
-        let capture = LockIsolated<[URL]>([])
-        let store = TestStore(initialState: AccountSettingsState()) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.checkoutURLClient.accountURL = { expectedURL }
-            $0.checkoutURLClient.openURL = { url in
-                capture.withValue { $0.append(url) }
-            }
-        }
-
-        await store.send(.manageAccountTapped)
-
-        XCTAssertEqual(capture.value, [expectedURL])
     }
 }

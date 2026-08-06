@@ -43,17 +43,17 @@ public struct SettingsFeature {
             }
 
             if case let .accountAccessPresentationUpdated(presentation) = action {
-                state.accessStatus = presentation.accessStatus ?? .none
                 state.accountSettings.presentation = presentation
                 return .none
             }
 
             if case .onAppear = action {
+                state.selectedSection = state.selectedSection == .account ? .general : state.selectedSection
                 return .none
             }
 
             if case let .selectSection(section) = action {
-                state.selectedSection = section
+                state.selectedSection = section == .account ? .general : section
                 return .none
             }
 
@@ -68,11 +68,6 @@ public struct SettingsFeature {
 
             if case .resetSectionForFreshOpen = action {
                 state.selectedSection = .general
-                return .none
-            }
-
-            if case let .accessStatusLoaded(status) = action {
-                state.accessStatus = status
                 return .none
             }
 

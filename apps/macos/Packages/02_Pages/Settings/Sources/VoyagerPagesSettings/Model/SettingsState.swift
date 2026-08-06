@@ -11,19 +11,13 @@ public struct SettingsState: Equatable {
     public var accountSettings = AccountSettingsState()
     public var accessStatus: AccessStatus = .none
 
-    /// SettingsView 호환용 shim.
-    /// Settings 창은 accessStatus에 따라 잠기지 않으므로 항상 false를 유지한다.
-    public var isContentLocked: Bool {
-        false
-    }
-
     public init(
-        accessStatus: AccessStatus = .none,
         accountPresentation: AccountAccessPresentation = .init(),
+        accessStatus: AccessStatus = .none,
         appearanceTheme: AppTheme? = nil,
     ) {
-        self.accessStatus = accessStatus
         accountSettings.presentation = accountPresentation
+        self.accessStatus = accessStatus
 
         if let appearanceTheme {
             appearanceSettings.theme = appearanceTheme

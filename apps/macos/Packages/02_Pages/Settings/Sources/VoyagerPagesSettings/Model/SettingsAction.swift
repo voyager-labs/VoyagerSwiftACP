@@ -11,7 +11,6 @@ public enum SettingsAction: CasePathable, Sendable {
     case selectSection(SettingsSection)
     case closeWindow
     case resetSectionForFreshOpen
-    case accessStatusLoaded(AccessStatus)
     case appLifecycleAccessSnapshotReady(AccessStatusSnapshot)
     case accountAccessPresentationUpdated(AccountAccessPresentation)
 

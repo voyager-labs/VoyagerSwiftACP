@@ -4,6 +4,7 @@ import VoyagerPagesSettings
 
 extension SettingsState {
     static func hostPreset(for scenario: SettingsHostScenario) -> SettingsState {
+        let hasAccountSession = scenario.sessionExpiresAt != nil
         let accessStatus: AccessStatus = switch scenario.accountAuth {
         case .signedIn:
             .coreLicenseActive
@@ -16,8 +17,7 @@ extension SettingsState {
         return SettingsState(
             accessStatus: accessStatus,
             accountPresentation: AccountAccessPresentation(
-                hasAccountSession: scenario.sessionExpiresAt != nil,
-                accessStatus: scenario.sessionExpiresAt == nil ? nil : accessStatus,
+                hasAccountSession: hasAccountSession,
             ),
             appearanceTheme: scenario.persistence == .populated ? .dark : nil,
         )

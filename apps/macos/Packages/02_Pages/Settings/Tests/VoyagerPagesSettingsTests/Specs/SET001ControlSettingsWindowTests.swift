@@ -61,6 +61,23 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
         await store.finish()
     }
 
+    /// SET-001-open_settings_window: stale Account 선택은 Settings 표시 가능한 General로 정규화된다.
+    /// 숨겨진 Account section이 persisted state로 남아도 fresh Settings surface가 blank로 열리지 않는지 검증한다.
+    /// - 검증 내용: `.onAppear`의 stale section normalization
+    /// - 사전 조건: Settings root의 selectedSection이 dormant `.account`이다.
+    /// - 기대 결과: onAppear 후 selectedSection이 `.general`이다.
+    func testOnAppearNormalizesStaleAccountSelectionToGeneral() async {
+        var initialState = SettingsFeature.State()
+        initialState.selectedSection = .account
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        await store.send(.onAppear) { state in
+            state.selectedSection = .general
+        }
+    }
+
     /// SET-001-switch_setting_tabs: General/Appearance section 전환은 현재 선택 section만 바꾸고 child state를 보존한다.
     /// 사용자가 tab을 바꿔도 이미 로드되거나 수정된 General 설정값이 손실되지 않는지 검증한다.
     /// - 검증 내용: `.selectSection(.appearance)`와 `.selectSection(.general)`이 root 선택 상태만 변경한다.
@@ -169,11 +186,9 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             fetchedAt: Date(timeIntervalSince1970: 0),
         )
         await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = .trialExpired
+            state.accessStatus = snapshot.status
             state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
         }
-
-        XCTAssertEqual(store.state.accessStatus, .trialExpired)
     }
 
     /// T2c GREEN: launch snapshot hydration이 access status와 Settings projection을 채운다.
@@ -197,10 +212,9 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             fetchedAt: Date(timeIntervalSince1970: 0),
         )
         await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = .coreLicenseActive
+            state.accessStatus = snapshot.status
             state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
         }
-        XCTAssertEqual(store.state.accountSettings.presentation.accessStatus, .coreLicenseActive)
     }
 
     /// Task 13: launch snapshot hydration이 session 축까지 end-to-end 전달되는지 검증.
@@ -231,59 +245,10 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             sessionExpiresAt: sessionExpiry,
         )
         await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = .coreLicenseActive
+            state.accessStatus = snapshot.status
             state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
         }
 
         XCTAssertTrue(store.state.accountSettings.presentation.hasAccountSession)
-    }
-
-    // MARK: - Settings Already-Open / Access Status Updates
-
-    // Settings 창이 열려 있는 동안 access_status가 바뀌어도 창 자체는 닫히지 않는다.
-    // 상위(AppRoot 등)가 `.accessStatusLoaded`로 push하는 상태 갱신만 Settings가 수용한다.
-
-    /// Settings 창이 열려 있는 동안 access_status가 full → non-full로 바뀌어도
-    /// state.accessStatus만 갱신될 뿐 창이 잠기지 않는다.
-    /// - 시나리오: 초기 full access → 런타임 중 상위가 `.accessStatusLoaded(.trialExpired)` push.
-    /// - 계약: SettingsFeature는 런타임 lapse 전파를 `.accessStatusLoaded` 액션으로만 수용한다.
-    func testSettingsAccessStatusLapseUpdatesStateWhileOpen() async {
-        var initialState = SettingsFeature.State()
-        initialState.accessStatus = .coreLicenseActive
-        let store = TestStore(initialState: initialState) {
-            SettingsFeature()
-        }
-
-        await store.send(.accessStatusLoaded(.trialExpired)) { state in
-            state.accessStatus = .trialExpired
-        }
-
-        XCTAssertEqual(store.state.accessStatus, .trialExpired)
-    }
-
-    /// Canonical projection update가 Settings 표시 상태를 갱신한다.
-    func testSettingsAccessStatusUpdatesFromCanonicalProjectionWhileOpen() async {
-        var initialState = SettingsFeature.State()
-        initialState.accessStatus = .coreLicenseActive
-        let store = TestStore(initialState: initialState) {
-            SettingsFeature()
-        }
-
-        let signedOut = AccountAccessPresentation()
-        await store.send(.accountAccessPresentationUpdated(signedOut)) { state in
-            state.accessStatus = .none
-            state.accountSettings.presentation = signedOut
-        }
-        XCTAssertEqual(store.state.accessStatus, .none)
-
-        let unlocked = AccountAccessPresentation(
-            hasAccountSession: true,
-            accessStatus: .coreLicenseActive,
-        )
-        await store.send(.accountAccessPresentationUpdated(unlocked)) { state in
-            state.accessStatus = .coreLicenseActive
-            state.accountSettings.presentation = unlocked
-        }
-        XCTAssertEqual(store.state.accessStatus, .coreLicenseActive)
     }
 }

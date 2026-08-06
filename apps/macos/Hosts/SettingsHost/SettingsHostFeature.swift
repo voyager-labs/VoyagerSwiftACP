@@ -60,9 +60,6 @@ public struct SettingsHostFeature {
             case .settings(.delegate(.account(.signOutRequested))):
                 return .send(.accountAccess(.signOut))
 
-            case .settings(.delegate(.account(.retryRequested))):
-                return .send(.accountAccess(.retryTapped))
-
             case .settings(.onAppear):
                 guard state.isAccountAccessBootstrapPending else { return .none }
                 state.isAccountAccessBootstrapPending = false
@@ -86,7 +83,6 @@ public struct SettingsHostFeature {
             hasAccountSession: accountAccess.hasAccountSession,
             isSignInInProgress: accountAccess.isSignInInProgress,
             didSignInFail: accountAccess.didSignInFail,
-            accessStatus: accountAccess.status,
         )
     }
 }

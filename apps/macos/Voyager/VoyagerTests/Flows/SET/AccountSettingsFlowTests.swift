@@ -11,61 +11,6 @@ import XCTest
 
 @MainActor
 final class AccountSettingsFlowTests: XCTestCase {
-    // FLOW-PATH: happy_path
-
-    /// set.account_settings happy_path: canonical lifecycle projection이 Settings를 갱신하고 Sign Out을 한 번 처리한다.
-    /// - 검증 내용: lifecycle session projection, signed-in Sign In no-op, canonical Sign Out handoff와 signed-out
-    /// projection
-    /// - 사전 조건: lifecycle AccountAccess에 활성 세션과 active entitlement snapshot이 있음
-    /// - 기대 결과: Settings는 별도 AccountAccess runtime 없이 projection을 표시하고 Sign Out 결과만 반영함
-    func testAccountSettingsProjectsCanonicalSessionAndDelegatesSignInAndSignOut() async {
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
-        )
-        var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
-        initialState.lifecycle.accountAccess.hasAccountSession = true
-        initialState.lifecycle.accountAccess.status = snapshot.status
-        initialState.lifecycle.accountAccess.snapshot = snapshot
-        let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
-        // store.exhaustivity = .off: lifecycle sign-out cleanup과 Settings projection의 reducer 경계를 함께 검증한다.
-        store.exhaustivity = .off
-
-        await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
-        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
-            state.settings.accessStatus = .coreLicenseActive
-            state.settings.accountSettings.presentation = AccountAccessPresentation(
-                hasAccountSession: true,
-                accessStatus: .coreLicenseActive,
-            )
-        }
-
-        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementActive)
-
-        await store.send(.settings(.account(.signInTapped)))
-
-        await store.send(.settings(.delegate(.account(.signOutRequested))))
-        await store.receive(\.lifecycle.accountAccess.signOut) { state in
-            state.lifecycle.accountAccess.revalidationGeneration = 1
-            state.lifecycle.accountAccess.hasAccountSession = false
-            state.lifecycle.accountAccess.isSessionExpired = true
-            state.lifecycle.accountAccess.fetchGeneration = 1
-            state.lifecycle.accountAccess.syncGeneration = 1
-            state.lifecycle.accountAccess.refreshDeadlineGeneration = 1
-        }
-        await store.receive(\.settings.accountAccessPresentationUpdated)
-        await store.receive(\.lifecycle.accountAccess.delegate) { state in
-            state.lifecycle.accessGatePhase = .signedOut
-        }
-        await store.receive(\.settings.accountAccessPresentationUpdated)
-
-        XCTAssertFalse(store.state.lifecycle.accountAccess.hasAccountSession)
-        XCTAssertEqual(store.state.settings.accountSettings.presentation, AccountAccessPresentation())
-        await store.finish()
-    }
-
     // FLOW-PATH: sign_in_failure
 
     /// set.account_settings sign_in_failure: Settings Sign In 실패는 canonical lifecycle에서 retryable projection으로 돌아온다.
@@ -103,9 +48,6 @@ final class AccountSettingsFlowTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signInFailed)
-
-        await store.send(.settings(.delegate(.account(.retryRequested))))
-        await store.receive(\.lifecycle.accountAccess.retryTapped)
         await store.finish()
 
         var cancellationState = AppRootFeature.State()
@@ -162,7 +104,7 @@ final class AccountSettingsFlowTests: XCTestCase {
         await timeoutStore.finish()
 
         var expiryState = AppRootFeature.State()
-        expiryState.lifecycle.accessGatePhase = .recoveryRequired
+        expiryState.lifecycle.didFinishLaunching = true
         expiryState.lifecycle.accountAccess.hasAccountSession = true
         expiryState.lifecycle.accountAccess.status = .coreLicenseActive
         let expiryStore = makeSignInFailureStore(initialState: expiryState)
@@ -201,9 +143,6 @@ final class AccountSettingsFlowTests: XCTestCase {
         let store = makeSignInFailureStore()
         // store.exhaustivity = .off: signed-out Settings delegate가 canonical lifecycle handoff로 이어지는 경계를 검증한다.
         store.exhaustivity = .off
-
-        XCTAssertFalse(store.state.settings.accountSettings.isManageAccountAvailable)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
 
         await store.send(.settings(.account(.signInTapped)))
         await store.receive(\.settings.delegate.account.signInRequested)
@@ -246,7 +185,6 @@ final class AccountSettingsFlowTests: XCTestCase {
         initialState.settings.accessStatus = .coreLicenseActive
         initialState.settings.accountSettings.presentation = AccountAccessPresentation(
             hasAccountSession: true,
-            accessStatus: .coreLicenseActive,
         )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
 
@@ -259,7 +197,6 @@ final class AccountSettingsFlowTests: XCTestCase {
 
         XCTAssertTrue(store.state.lifecycle.accountAccess.hasAccountSession)
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementActive)
         await store.finish()
     }
 

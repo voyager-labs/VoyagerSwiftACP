@@ -67,7 +67,6 @@ final class SettingsHostFeatureTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedOut)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
         await store.receive(\.accountAccess.delegate)
         await store.receive(\.settings.accountAccessPresentationUpdated)
         await store.finish()
@@ -99,14 +98,11 @@ final class SettingsHostFeatureTests: XCTestCase {
             },
         )
         store.exhaustivity = .off
-
-        await store.send(.settings(.delegate(.account(.retryRequested))))
         await store.finish()
 
         XCTAssertEqual(syncCallCount.value, 1)
         XCTAssertFalse(store.state.accountAccess.isSubmitting)
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnavailable)
     }
 
     @MainActor
