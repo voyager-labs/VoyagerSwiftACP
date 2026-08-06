@@ -1,6 +1,28 @@
 import SwiftUI
 import VoyagerShared
 
+struct AiChatAssistantMarkdownHighlightTaskIdentity: Equatable {
+    let presentationID: AiChatMarkdownDocument.BlockID
+    let appearance: AiChatSyntaxHighlightingClient.Appearance
+    let renderedSource: String
+    let originalInfoString: String?
+    let originalLanguage: String?
+    let normalizedLanguage: String?
+
+    init(
+        renderedBlock: AiChatAssistantMarkdownRenderedBlock,
+        appearance: AiChatSyntaxHighlightingClient.Appearance,
+    ) {
+        let code = renderedBlock.block.code
+        presentationID = renderedBlock.presentationID
+        self.appearance = appearance
+        renderedSource = renderedBlock.block.projections.rendered
+        originalInfoString = code?.originalInfoString
+        originalLanguage = code?.originalLanguage
+        normalizedLanguage = code?.normalizedLanguage
+    }
+}
+
 struct AiChatAssistantMarkdownBlockView: View {
     let renderedBlock: AiChatAssistantMarkdownRenderedBlock
     let transcriptRow: AiChatTranscriptRowDiscriminator
@@ -263,7 +285,7 @@ private struct AiChatAssistantCodeBlockView: View {
             guard let result = await renderSession.highlight(
                 renderedBlock,
                 transcriptRow: transcriptRow,
-                appearance: colorScheme == .dark ? .dark : .light,
+                appearance: highlightAppearance,
                 typographyVersion: 1,
                 generation: UInt64(renderedBlock.block.projections.rendered.utf8.count),
             ), result.isEligibleForDisplay, result.source == expectedSource
@@ -307,8 +329,15 @@ private struct AiChatAssistantCodeBlockView: View {
         return currentSearchMatch?.characterOffsets
     }
 
-    private var highlightTaskID: String {
-        "\(renderedBlock.presentationID.rawValue)-\(colorScheme)-\(renderedBlock.block.projections.rendered)"
+    private var highlightTaskID: AiChatAssistantMarkdownHighlightTaskIdentity {
+        AiChatAssistantMarkdownHighlightTaskIdentity(
+            renderedBlock: renderedBlock,
+            appearance: highlightAppearance,
+        )
+    }
+
+    private var highlightAppearance: AiChatSyntaxHighlightingClient.Appearance {
+        colorScheme == .dark ? .dark : .light
     }
 }
 

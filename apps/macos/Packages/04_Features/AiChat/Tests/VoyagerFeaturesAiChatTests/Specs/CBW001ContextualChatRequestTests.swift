@@ -1717,6 +1717,37 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await assertSyntaxHighlightingStaleGenerationDiscard()
     }
 
+    /// CBW-001-render_assistant_markdown: code fence 언어 변경은 동일 presentation에서도 highlight task를 갱신한다.
+    /// payload와 표시 위치가 같아도 language info가 바뀌면 이전 언어의 syntax run을 재사용하지 않는지 검증합니다.
+    /// - 검증 내용: Swift와 JavaScript fence의 presentation ID 일치와 highlight task identity 차이를 확인합니다.
+    /// - 사전 조건: 같은 payload를 가진 동일 row의 두 완성 code fence가 언어 label만 다릅니다.
+    /// - 기대 결과: selection identity는 유지되지만 highlight task identity는 달라집니다.
+    func testRenderAssistantMarkdownRefreshesHighlightTaskWhenFenceLanguageChanges() throws {
+        let session = AiChatAssistantMarkdownRenderSession(highlightingClient: .live())
+        let transcriptRow = AiChatTranscriptRowDiscriminator.streamingAssistant
+        let swiftBlock = try XCTUnwrap(session.render(
+            content: "```swift\nlet value = 1\n```\n",
+            transcriptRow: transcriptRow,
+        ).blocks.first)
+        let javascriptBlock = try XCTUnwrap(session.render(
+            content: "```javascript\nlet value = 1\n```\n",
+            transcriptRow: transcriptRow,
+        ).blocks.first)
+
+        XCTAssertEqual(swiftBlock.presentationID, javascriptBlock.presentationID)
+        XCTAssertEqual(swiftBlock.block.code?.payload, javascriptBlock.block.code?.payload)
+        XCTAssertNotEqual(
+            AiChatAssistantMarkdownHighlightTaskIdentity(
+                renderedBlock: swiftBlock,
+                appearance: .light,
+            ),
+            AiChatAssistantMarkdownHighlightTaskIdentity(
+                renderedBlock: javascriptBlock,
+                appearance: .light,
+            ),
+        )
+    }
+
     /// CBW-001-render_assistant_markdown: 동일 code block의 highlight 요청은 transcript row별로 격리한다.
     /// 서로 다른 assistant message가 같은 presentation ID를 가져도 완료 순서와 무관하게 각 결과를 적용하는지 검증합니다.
     /// - 검증 내용: 두 stored row의 역순 완료와 같은 row의 최신 generation 우선 적용을 확인합니다.
