@@ -7,6 +7,13 @@ struct AiChatHoverTextAffordance: View {
     var hoverColor: Color = .primary
 
     @State private var isHovered = false
+    @Environment(\.isEnabled)
+    private var isEnabled
+
+    private var foregroundColor: Color {
+        if !isEnabled { return Color(nsColor: .disabledControlTextColor) }
+        return isHovered ? hoverColor : .secondary
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -15,10 +22,16 @@ struct AiChatHoverTextAffordance: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .foregroundStyle(isHovered ? hoverColor : .secondary)
+        .foregroundStyle(foregroundColor)
         .contentShape(Rectangle())
         .onHover { hovering in
+            guard isEnabled else {
+                isHovered = false
+                return
+            }
             isHovered = hovering
         }
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+        .animation(.easeInOut(duration: 0.12), value: isEnabled)
     }
 }

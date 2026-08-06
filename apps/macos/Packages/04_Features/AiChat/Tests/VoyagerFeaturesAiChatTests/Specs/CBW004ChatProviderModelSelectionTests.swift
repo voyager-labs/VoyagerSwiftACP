@@ -199,10 +199,10 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
     /// CBW-004-show_unavailable_chat_model_state: model list 비가용 상태를 selector contract로 표시한다.
-    /// loading/empty/failed/unsupported provider 상태가 사용자에게 구분되는지 검증합니다.
+    /// loading/empty/failed/unsupported provider 상태가 사용자에게 구분되고 트리거가 비활성화되는지 검증합니다.
     /// - 검증 내용: content state, disabled 여부, unsupported provider copy
     /// - 사전 조건: modelListState가 loading, empty, failed, unsupported failure인 상태
-    /// - 기대 결과: selector가 각 상태를 명시적 display contract로 노출한다.
+    /// - 기대 결과: selector가 각 상태를 명시적 display contract로 노출하고 활성화된 선택지가 없으므로 트리거가 비활성화된다.
     func testShowUnavailableChatModelStateProvidesExplicitSelectorStates() {
         let loadingState = AiChatFeature.State(modelListState: .loading)
         let emptyState = AiChatFeature.State(modelListState: .empty)
@@ -230,8 +230,53 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             title: "Provider unsupported",
             detail: "ChatGPT Codex model listing is unavailable.",
         )))
-        XCTAssertFalse(emptyState.modelSelectorIsDisabled)
-        XCTAssertFalse(unsupportedState.modelSelectorIsDisabled)
+        // 활성화된 선택지가 없는 상태는 트리거를 비활성화한다.
+        XCTAssertTrue(loadingState.modelSelectorIsDisabled)
+        XCTAssertTrue(emptyState.modelSelectorIsDisabled)
+        XCTAssertTrue(failedState.modelSelectorIsDisabled)
+        XCTAssertTrue(unsupportedState.modelSelectorIsDisabled)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: loaded catalog라도 활성화된 row가 없으면 트리거를 비활성화한다.
+    /// 모든 모델이 unavailable한 loaded catalog에서 selector가 활성화된 선택지 부재로 disabled 상태가 되는지 검증합니다.
+    /// - 검증 내용: loaded content state, presentable content, 전체 row 비활성화일 때 modelSelectorIsDisabled true
+    /// - 사전 조건: 단일 모델이 loaded 상태이지만 unavailableReason로 인해 row가 모두 비활성화된다.
+    /// - 기대 결과: selector는 loaded content를 노출하지만 활성화된 선택지가 없으므로 트리거가 비활성화된다.
+    func testShowUnavailableChatModelStateDisablesWhenLoadedCatalogHasNoEnabledRows() {
+        let handle = AiModelHandle(provider: .openai, rawValue: "unavailable-model")
+        let row = AiModelCatalogRow(
+            handle: handle,
+            displayName: "Unavailable model",
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: false,
+            isRecommended: false,
+        )
+        let unavailableModel = AiProviderModel(
+            id: handle,
+            provider: .openai,
+            rawModelID: handle.rawValue,
+            displayName: "Unavailable model",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .effort(values: [.medium], defaultValue: .medium),
+            unavailableReason: AiModelUnavailableReason(
+                message: "Quota exhausted for this model.",
+            ),
+        )
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            catalogRows: [row],
+            modelListState: .loaded([unavailableModel]),
+        )
+
+        guard case let .loaded(sections) = state.modelSelectorContentState else {
+            return XCTFail("Expected loaded model selector content")
+        }
+        XCTAssertEqual(sections.first?.rows.map(\.isEnabled), [false])
+        XCTAssertTrue(state.modelSelectorHasPresentableContent)
+        XCTAssertTrue(state.modelSelectorIsDisabled)
     }
 
     /// CBW-004-show_unavailable_chat_model_state: 현재 선택 모델이 catalog에서 사라지면 제출을 막는다.
@@ -2232,7 +2277,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             XCTAssertEqual(unavailableItem.disabledReason, unavailableReason)
             XCTAssertEqual(unavailableItem.accessibilityLabel, "Thinking unavailable")
             XCTAssertEqual(unavailableItem.accessibilityValue, "Unavailable: \(unavailableReason)")
-            XCTAssertFalse(unavailableProjection.thinkingMenuIsDisabled)
+            // unsupported/unknown capability는 활성화된 thinking 선택지가 없으므로 트리거를 비활성화한다.
+            XCTAssertTrue(unavailableProjection.thinkingMenuIsDisabled)
         }
 
         let noModelState = AiChatFeature.State(modelListState: .loaded([]))
@@ -2340,7 +2386,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         )
         let projection = AiChatStateDisplayModelBuilder(state: initialState)
 
-        XCTAssertFalse(projection.thinkingMenuIsDisabled)
+        // malformed token budget policy는 unavailable 항목만 노출하므로 활성화된 선택지가 없고 트리거가 비활성화된다.
+        XCTAssertTrue(projection.thinkingMenuIsDisabled)
         XCTAssertEqual(projection.thinkingMenuItems.count, 1)
         let item = try XCTUnwrap(projection.thinkingMenuItems.first)
         XCTAssertNil(item.selection)
