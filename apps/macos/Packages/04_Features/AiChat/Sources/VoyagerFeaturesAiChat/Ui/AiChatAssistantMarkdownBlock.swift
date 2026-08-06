@@ -250,12 +250,12 @@ private struct AiChatAssistantCodeBlockView: View {
         }
         .padding(8)
         .background(
-            VoyagerDS.SystemColor.controlBackground,
+            VoyagerDS.Surface.inputBackground(for: colorScheme),
             in: RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous),
         )
         .overlay {
             RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
-                .stroke(VoyagerDS.SystemColor.separator, lineWidth: 1)
+                .strokeBorder(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1)
         }
         .task(id: highlightTaskID) {
             syntaxRuns = []

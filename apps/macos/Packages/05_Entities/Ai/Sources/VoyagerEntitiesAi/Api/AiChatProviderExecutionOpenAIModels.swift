@@ -366,6 +366,9 @@ struct OpenAIResponsesStreamEvent: Decodable {
     let output: [OpenAIResponsesOutputItem]?
     let response: OpenAIResponsesFinalResponse?
     let error: OpenAIResponsesStreamError?
+    let itemID: String?
+    let outputIndex: Int?
+    let item: OpenAIResponsesStreamItem?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -375,6 +378,9 @@ struct OpenAIResponsesStreamEvent: Decodable {
         case output
         case response
         case error
+        case itemID = "item_id"
+        case outputIndex = "output_index"
+        case item
     }
 
     var resolvedText: String? {
@@ -392,6 +398,11 @@ struct OpenAIResponsesStreamEvent: Decodable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text?.isEmpty == false ? text : nil
     }
+}
+
+struct OpenAIResponsesStreamItem: Decodable {
+    let id: String?
+    let type: String?
 }
 
 struct OpenAIResponsesStreamError: Decodable {

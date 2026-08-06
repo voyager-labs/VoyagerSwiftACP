@@ -21,7 +21,7 @@ public struct AiChatFeature {
         case sessionRename
         case newChat(ownerID: UUID)
         case transcriptScrollOffsetPersistence
-        case attachmentDrop
+        case attachmentDrop(AiChatSessionID)
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -326,21 +326,32 @@ public struct AiChatFeature {
                 return .none
 
             case let .setup(setup):
+                let previousSessionID = state.sessionID
                 state.emptyDraftSessionID = nil
                 state.currentSessionCustomTitle = nil
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
-                guard let restoreSessionID = state.restoreSessionID else { return .none }
+                let attachmentDropCancellation: Effect<Action> = if let previousSessionID,
+                                                                    previousSessionID != state.sessionID
+                {
+                    .cancel(id: CancelID.attachmentDrop(previousSessionID))
+                } else {
+                    .none
+                }
+                guard let restoreSessionID = state.restoreSessionID else { return attachmentDropCancellation }
                 if restoreSessionID == state.sessionID,
                    state.transcriptHistory.isEmpty,
                    state.sessionStatus == .idle
                 {
                     // 새 ContentPane 채팅은 아직 저장된 세션이 없으므로 restore를 타지 않는다.
                     state.restoreSessionID = nil
-                    return .none
+                    return attachmentDropCancellation
                 }
                 state.sessionStatus = .restoring
-                return restoreSession(sessionID: restoreSessionID, state: state)
+                return .merge(
+                    attachmentDropCancellation,
+                    restoreSession(sessionID: restoreSessionID, state: state),
+                )
 
             case let .providerConnectionsUpdated(file):
                 return handleProviderConnectionsUpdated(file: file, state: &state)
@@ -405,16 +416,20 @@ public struct AiChatFeature {
                 return .none
 
             case .attachmentPickerTapped:
-                return .send(.delegate(.requestAttachmentPicker))
+                guard let sessionID = state.sessionID else { return .none }
+                return .send(.delegate(.requestAttachmentPicker(sessionID)))
 
-            case let .attachmentPickerSelection(urls):
+            case let .attachmentPickerSelection(originSessionID, urls):
+                guard state.sessionID == originSessionID else { return .none }
                 _ = addAttachmentDrafts(from: urls, skippingCurrentContextDuplicates: true, state: &state)
                 return .none
 
-            case let .attachmentDrop(providers):
-                return loadDroppedAttachmentURLs(from: providers)
+            case let .attachmentDrop(originSessionID, providers):
+                guard state.sessionID == originSessionID else { return .none }
+                return loadDroppedAttachmentURLs(from: providers, originSessionID: originSessionID)
 
-            case let .attachmentDropSelection(urls):
+            case let .attachmentDropSelection(originSessionID, urls):
+                guard state.sessionID == originSessionID else { return .none }
                 let didAddAttachments = addAttachmentDrafts(
                     from: urls,
                     skippingCurrentContextDuplicates: false,
@@ -534,12 +549,13 @@ private extension AiChatAction {
         case .selectedThinkingChanged,
              .currentContextChanged,
              .draftTextChanged,
-             .attachmentPickerSelection,
-             .attachmentDrop,
-             .attachmentDropSelection,
              .removeAddedAttachment,
              .folderStructureModeChanged:
             return true
+        case let .attachmentPickerSelection(originSessionID, _),
+             let .attachmentDrop(originSessionID, _),
+             let .attachmentDropSelection(originSessionID, _):
+            return state.sessionID == originSessionID
         default:
             return false
         }

@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import Perception
 import SwiftUI
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
@@ -9,6 +10,152 @@ import XCTest
 @MainActor
 final class CBW005ChatSessionContinuityTests: XCTestCase {
     // MARK: - CBW-005-restore_chat_conversation_session
+
+    /// CBW-005-restore_chat_conversation_session: centered와 full transcript 전환에서 mounted draft 입력을 유지한다.
+    /// 실제 SwiftUI host가 layout presentation을 교체해도 non-empty draft의 NSTextView identity와 first responder가 보존되는지 검증합니다.
+    /// - 검증 내용: centered→transcript→centered 전환마다 AttachmentDroppingTextView instance와 responder를 확인합니다.
+    /// - 사전 조건: centered content가 있고 같은 chat session에서 non-empty draft를 편집 중입니다.
+    /// - 기대 결과: transcript 유무만 바뀌며 동일 mounted input과 focus가 모든 전환에서 유지됩니다.
+    func testRestoreChatConversationSessionKeepsMountedInputAcrossCenteredTranscriptTransitions() async throws {
+        let wasPerceptionCheckingEnabled = isPerceptionCheckingEnabled
+        isPerceptionCheckingEnabled = false
+        defer { isPerceptionCheckingEnabled = wasPerceptionCheckingEnabled }
+
+        let sessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555701")
+        let store = Store<AiChatFeature.State, AiChatFeature.Action>(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+            draftText: "Centered draft",
+        )) {
+            Reduce<AiChatFeature.State, AiChatFeature.Action> { state, action in
+                guard case let .draftTextChanged(text) = action else { return .none }
+                state.draftText = text
+                state.transcriptHistory = text == "Transcript draft"
+                    ? [AiChatMessage(role: .assistant, content: "Restored answer")]
+                    : []
+                return .none
+            }
+        }
+        let hostingView = NSHostingView(rootView: WithPerceptionTracking {
+            AiChatView(
+                store: store,
+                centeredEmptyContent: AnyView(Text("Centered content")),
+            )
+        })
+        hostingView.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        let window = NSWindow(contentRect: hostingView.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+        await drainCBW005MainQueue()
+
+        let centeredInput = try XCTUnwrap(hostingView.cbw005Descendant(
+            ofType: AiChatInputTextView.AttachmentDroppingTextView.self,
+        ))
+        XCTAssertTrue(window.makeFirstResponder(centeredInput))
+
+        store.send(.draftTextChanged("Transcript draft"))
+        await drainCBW005MainQueue()
+        hostingView.layoutSubtreeIfNeeded()
+        await drainCBW005MainQueue()
+        let transcriptInput = try XCTUnwrap(hostingView.cbw005Descendant(
+            ofType: AiChatInputTextView.AttachmentDroppingTextView.self,
+        ))
+
+        XCTAssertTrue(transcriptInput === centeredInput)
+        XCTAssertTrue(window.firstResponder === centeredInput)
+        XCTAssertEqual(store.withState { $0.draftText }, "Transcript draft")
+
+        store.send(.draftTextChanged("Centered draft restored"))
+        await drainCBW005MainQueue()
+        hostingView.layoutSubtreeIfNeeded()
+        await drainCBW005MainQueue()
+        let restoredCenteredInput = try XCTUnwrap(hostingView.cbw005Descendant(
+            ofType: AiChatInputTextView.AttachmentDroppingTextView.self,
+        ))
+
+        XCTAssertTrue(restoredCenteredInput === centeredInput)
+        XCTAssertTrue(window.firstResponder === centeredInput)
+        XCTAssertEqual(store.withState { $0.draftText }, "Centered draft restored")
+    }
+
+    /// CBW-005-restore_chat_conversation_session: legacy message timestamp 누락과 explicit null을 nil로 복원한다.
+    /// timestamp 필드 도입 전 저장 데이터와 null 데이터가 기존 transcript 의미를 유지하는지 검증합니다.
+    /// - 검증 내용: source-compatible 기본값, missing key, explicit null, nil encoding key 정책을 확인합니다.
+    /// - 사전 조건: role/content만 있는 legacy JSON과 createdAtMs가 null인 message JSON을 사용합니다.
+    /// - 기대 결과: 모든 timestamp가 nil이고 nil encoding은 createdAtMs key를 생략합니다.
+    func testRestoreChatConversationSessionDecodesMissingAndNullMessageTimestampsAsNil() throws {
+        let sourceCompatibleMessage = AiChatMessage(role: .user, content: "Source compatible")
+        let missingKeyData = Data(#"{"role":"assistant","content":"Legacy answer"}"#.utf8)
+        let explicitNullData = Data(#"{"role":"user","content":"Null timestamp","createdAtMs":null}"#.utf8)
+
+        let missingKeyMessage = try JSONDecoder().decode(AiChatMessage.self, from: missingKeyData)
+        let explicitNullMessage = try JSONDecoder().decode(AiChatMessage.self, from: explicitNullData)
+        let encodedNil = try JSONEncoder().encode(sourceCompatibleMessage)
+        let encodedNilObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encodedNil) as? [String: Any],
+        )
+
+        XCTAssertNil(sourceCompatibleMessage.createdAtMs)
+        XCTAssertNil(missingKeyMessage.createdAtMs)
+        XCTAssertNil(explicitNullMessage.createdAtMs)
+        XCTAssertEqual(Set(encodedNilObject.keys), Set(["role", "content"]))
+        XCTAssertNil(encodedNilObject["createdAtMs"])
+    }
+
+    /// CBW-005-restore_chat_conversation_session: message timestamp 정수 경계는 Codable round-trip에서 보존된다.
+    /// timestamp를 보정하거나 정규화하지 않고 저장된 millisecond 값을 그대로 복원하는지 검증합니다.
+    /// - 검증 내용: nil, 일반 양수, 음수, Int64.max의 encode/decode 결과를 확인합니다.
+    /// - 사전 조건: 각 timestamp 경계값을 가진 assistant message를 생성합니다.
+    /// - 기대 결과: decoded message가 원본과 같고 createdAtMs 값이 손실되지 않습니다.
+    func testRestoreChatConversationSessionRoundTripsMessageTimestampEdges() throws {
+        let timestamps: [Int64?] = [nil, 1_700_000_000_000, -1, Int64.max]
+
+        for timestamp in timestamps {
+            let message = AiChatMessage(
+                role: .assistant,
+                content: "Timestamp edge",
+                createdAtMs: timestamp,
+            )
+            let decoded = try JSONDecoder().decode(
+                AiChatMessage.self,
+                from: JSONEncoder().encode(message),
+            )
+
+            XCTAssertEqual(decoded, message)
+            XCTAssertEqual(decoded.createdAtMs, timestamp)
+        }
+    }
+
+    /// CBW-005-restore_chat_conversation_session: timestamp 필드 이전 snapshot은 transcript를 보존해 복원한다.
+    /// 기존 session JSON이 새 message Codable 계약에서도 호환되는지 검증합니다.
+    /// - 검증 내용: legacy snapshot decode 결과의 session identity와 전체 transcript를 확인합니다.
+    /// - 사전 조건: transcript message에 createdAtMs key가 없는 기존 snapshot JSON을 사용합니다.
+    /// - 기대 결과: 두 message의 role/content가 보존되고 timestamp는 모두 nil입니다.
+    func testRestoreChatConversationSessionDecodesLegacySnapshotWithoutMessageTimestamps() throws {
+        let legacySnapshotData = Data(
+            #"""
+            {
+              "sessionID": {"rawValue": "55555555-5555-5555-5555-555555555555"},
+              "status": "active",
+              "transcriptHistory": [
+                {"role": "user", "content": "Legacy question"},
+                {"role": "assistant", "content": "Legacy answer"}
+              ],
+              "updatedAtMs": 1700000000000
+            }
+            """#.utf8,
+        )
+
+        let snapshot = try JSONDecoder().decode(AiChatSessionSnapshot.self, from: legacySnapshotData)
+
+        XCTAssertEqual(snapshot.sessionID, makeCBW005SessionID("55555555-5555-5555-5555-555555555555"))
+        XCTAssertEqual(snapshot.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Legacy question"),
+            AiChatMessage(role: .assistant, content: "Legacy answer"),
+        ])
+        XCTAssertEqual(snapshot.transcriptHistory.map(\.createdAtMs), [nil, nil])
+    }
 
     /// CBW-005-restore_chat_conversation_session: 저장된 chat session을 transcript와 선택 상태로 복원한다.
     /// setup restore 경로가 이전 runtime lock을 지우고 durable snapshot을 active chat으로 승격하는지 검증합니다.
@@ -48,6 +195,84 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptHistory, restoredSnapshot.transcriptHistory)
         XCTAssertEqual(store.state.selectedThinking, .effort(.minimal))
         XCTAssertEqual(store.state.sessionStatusText, "Restored session")
+    }
+
+    /// CBW-005-restore_chat_conversation_session: background activity는 matching owner에만 transient하게 남는다.
+    /// 화면 밖 request status가 foreground transcript와 stream observability를 오염시키거나 snapshot JSON에 저장되지 않는지 검증합니다.
+    /// - 검증 내용: background request/run/session identity, activity lock 갱신, foreground 불변, Codable snapshot 비변경을 확인합니다.
+    /// - 사전 조건: foreground는 다른 session이고 backgroundExecutionPhases에 processing request owner가 있습니다.
+    /// - 기대 결과: matching status만 background lock에 반영되고 session snapshot JSON에는 activity 정보가 없습니다.
+    func testRestoreChatConversationSessionKeepsBackgroundActivityTransientAndIdentityScoped() async throws {
+        let rows = makeCatalogRows()
+        let backgroundSessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555601")
+        let visibleSessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555602")
+        let context = makeRequestContext(
+            sessionID: backgroundSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666666601")),
+            runID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777777601")),
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: rows[0].handle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let snapshot = makeCBW005Snapshot(
+            sessionID: backgroundSessionID,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Persisted")],
+            model: rows[0],
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let encodedBefore = try encoder.encode(snapshot)
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: visibleSessionID,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "Visible")],
+            streamingAssistantDraft: "Visible draft",
+            transcriptAutoScrollVersion: 9,
+            executionPhase: .idle,
+            backgroundExecutionPhases: [lock.requestID: .processing(lock)],
+        )) {
+            AiChatFeature()
+        }
+        let signal = AiChatExecutionActivitySignal(
+            activityID: AiChatExecutionActivityID(rawValue: "background-search"),
+            kind: .searching,
+            phase: .began,
+            evidence: .init(origin: .providerWire, providerEventType: "test.background.status"),
+        )
+
+        await store.send(.executionEvent(.status(context: context, signal: signal))) {
+            $0.backgroundExecutionPhases[lock.requestID] = .processing(lock.recordingActivity(signal))
+        }
+        XCTAssertEqual(
+            store.state.backgroundExecutionPhases[lock.requestID]?.lock?.activityState.selectedActivity,
+            signal,
+        )
+        XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .assistant, content: "Visible")])
+        XCTAssertEqual(store.state.streamingAssistantDraft, "Visible draft")
+        XCTAssertEqual(store.state.transcriptAutoScrollVersion, 9)
+        XCTAssertEqual(store.state.backgroundExecutionPhases[lock.requestID]?.lock?.observabilitySummary.chunkCount, 0)
+
+        let wrongSessionContext = makeRequestContext(
+            sessionID: visibleSessionID,
+            requestID: context.requestID,
+            runID: context.runID,
+            model: rows[0].handle,
+            selectedRow: rows[0],
+        )
+        let afterMatchingStatus = store.state
+        await store.send(.executionEvent(.status(context: wrongSessionContext, signal: signal)))
+        XCTAssertEqual(store.state, afterMatchingStatus)
+
+        let encodedAfter = try encoder.encode(snapshot)
+        XCTAssertEqual(encodedAfter, encodedBefore)
+        let json = try XCTUnwrap(String(data: encodedAfter, encoding: .utf8))
+        XCTAssertFalse(json.contains("background-search"))
+        XCTAssertFalse(json.contains("searching"))
     }
 
     /// CBW-005-restore_chat_conversation_session: 사용자가 다른 session을 선택하면 stale transcript 검색 상태를 초기화한다.
@@ -1263,7 +1488,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         let provenance = store.state.newChatPreparationProvenance
-        await store.send(.attachmentPickerSelection([URL(fileURLWithPath: "/tmp/queued-home.txt")]))
+        await store.send(.attachmentPickerSelection(sessionID, [URL(fileURLWithPath: "/tmp/queued-home.txt")]))
         XCTAssertEqual(store.state.addedAttachments.count, 1)
 
         await store.send(.prepareTransientNewChatIfCurrent(
@@ -1708,7 +1933,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             return
         }
         XCTAssertEqual(lock.context.sessionID, currentSessionID)
-        XCTAssertEqual(lock.request.messages, [userMessage])
+        XCTAssertEqual(lock.request.messages, [
+            AiChatMessage(role: .user, content: userMessage.content, createdAtMs: fixedTimestampMs),
+        ])
     }
 
     /// CBW-005-start_chat_conversation_session: model 선택은 prepared transient provenance를 영구 무효화한다.
@@ -1760,7 +1987,8 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.send(.prepareUnpersistedNewChat)
         XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
 
-        await store.send(.attachmentPickerSelection([attachmentURL]))
+        let attachmentSessionID = try XCTUnwrap(store.state.sessionID)
+        await store.send(.attachmentPickerSelection(attachmentSessionID, [attachmentURL]))
         let attachmentID = try XCTUnwrap(store.state.addedAttachments.first?.id)
         XCTAssertNil(store.state.preparedTransientSessionID)
 
@@ -2869,6 +3097,77 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
     }
 
+    /// CBW-005-continue_chat_conversation_session: offscreen completion은 foreground next-turn draft/context/selection을
+    /// 보존한다.
+    /// 다른 session의 background 응답이 도착해도 현재 composer의 다음 메시지 준비 상태를 덮어쓰지 않는지 검증합니다.
+    /// - 검증 내용: foreground draft/current context/attachment/model/thinking과 background owner terminal 전환을 확인합니다.
+    /// - 사전 조건: session A request는 background processing이고 foreground session B에는 편집 중인 next-turn state가 있습니다.
+    /// - 기대 결과: A만 completed owner로 전환되고 B의 composer state는 byte-for-byte 동일하게 유지됩니다.
+    func testOffscreenCompletionPreservesForegroundNextTurnComposerState() {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let backgroundSessionID = makeCBW005SessionID("50505050-5050-5050-5050-505050505635")
+        let foregroundSessionID = makeCBW005SessionID("60606060-6060-6060-6060-606060606635")
+        let nextContext = makeContextSnapshot(summary: "Foreground next context")
+        let nextAttachment = makeCBW005Attachment(path: "/tmp/NextTurn.txt")
+        let requestContext = makeRequestContext(
+            sessionID: backgroundSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("70707070-7070-7070-7070-707070707635")),
+            runID: AiChatRunID(rawValue: makeUUID("80808080-8080-8080-8080-808080808635")),
+            model: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+        )
+        let request = AiChatRequest(
+            context: requestContext,
+            messages: [AiChatMessage(role: .user, content: "Background prompt")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        var state = AiChatFeature.State(
+            sessionID: foregroundSessionID,
+            sessionStatus: .active,
+            currentContext: nextContext,
+            addedAttachments: [nextAttachment],
+            draftText: "Foreground next draft",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[1].handle,
+            selectedThinking: .effort(.minimal),
+            backgroundExecutionPhases: [lock.requestID: .processing(lock)],
+        )
+        let feature = AiChatFeature()
+
+        _ = withDependencies {
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_006_352))
+        } operation: {
+            feature.handleExecutionEvent(
+                .final(response: AiChatResponse(
+                    context: requestContext,
+                    assistantMessage: AiChatMessage(role: .assistant, content: "Background answer"),
+                    completedAtMs: 1_700_000_006_352,
+                )),
+                state: &state,
+            )
+        }
+
+        XCTAssertEqual(state.sessionID, foregroundSessionID)
+        XCTAssertEqual(state.currentContext, nextContext)
+        XCTAssertEqual(state.addedAttachments, [nextAttachment])
+        XCTAssertEqual(state.draftText, "Foreground next draft")
+        XCTAssertEqual(state.selectedModelHandle, catalogRows[1].handle)
+        XCTAssertEqual(state.selectedThinking, .effort(.minimal))
+        guard case let .completed(completedLock) = state.backgroundExecutionPhases[lock.requestID] else {
+            return XCTFail("Expected background completion owner")
+        }
+        XCTAssertEqual(completedLock.context, lock.context)
+        XCTAssertEqual(completedLock.request, lock.request)
+    }
+
     /// CBW-005-start_chat_conversation_session: 새 chat을 열어도 기존 in-flight request completion snapshot은 원래 session에 저장한다.
     /// 새 chat을 열어도 기존 in-flight request completion snapshot은 원래 session에 저장한다. 경로의 회귀 contract를 유지하는지 검증합니다.
     /// - 검증 내용: new chat creation during processing, original completion persistence, unread session marking
@@ -2922,7 +3221,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question before new chat")]
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Question before new chat", createdAtMs: fixedMs),
+            ]
             state.lockedModelHandle = selectedHandle
             state.sessionList.unreadCompletedSessionIDs = []
             state.transcriptAutoScrollVersion = 1
@@ -2966,7 +3267,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(store.state.chatInputDisplayModel.canSubmit)
         XCTAssertEqual(store.state.backgroundExecutionPhases[lock.requestID], .processing(lock))
 
-        let assistantMessage = AiChatMessage(role: .assistant, content: "Original request completed")
+        let assistantMessage = AiChatMessage(
+            role: .assistant, content: "Original request completed", createdAtMs: fixedMs,
+        )
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: assistantMessage,
@@ -2984,7 +3287,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
             transcriptHistory: [
-                AiChatMessage(role: .user, content: "Question before new chat"),
+                AiChatMessage(role: .user, content: "Question before new chat", createdAtMs: fixedMs),
                 assistantMessage,
             ],
             lastRequestID: lock.requestID,
@@ -3029,7 +3332,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let olderUser = AiChatMessage(role: .user, content: "Older user kept for persistence")
         let olderAssistant = AiChatMessage(role: .assistant, content: "Older assistant kept for persistence")
         let latestUser = AiChatMessage(role: .user, content: "Latest user sent to provider")
-        let assistantMessage = AiChatMessage(role: .assistant, content: "Background final answer")
+        let assistantMessage = AiChatMessage(
+            role: .assistant, content: "Background final answer", createdAtMs: fixedMs,
+        )
         let request = AiChatRequest(
             context: makeRequestContext(
                 sessionID: sessionID,
@@ -3130,7 +3435,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let sessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131313")
         let fixedMs: Int64 = 1_700_000_001_313
         let userMessage = AiChatMessage(role: .user, content: "Question before visible final")
-        let assistantMessage = AiChatMessage(role: .assistant, content: "Visible final answer")
+        let assistantMessage = AiChatMessage(
+            role: .assistant, content: "Visible final answer", createdAtMs: fixedMs,
+        )
         let request = AiChatRequest(
             context: makeRequestContext(
                 sessionID: sessionID,
@@ -3231,6 +3538,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let fixedMs: Int64 = 1_700_000_001_323
         let userMessage = AiChatMessage(role: .user, content: "Question before delayed save")
         let assistantMessage = AiChatMessage(role: .assistant, content: "Delayed final answer")
+        let normalizedAssistantMessage = AiChatMessage(
+            role: .assistant, content: "Delayed final answer", createdAtMs: fixedMs,
+        )
         let request = AiChatRequest(
             context: makeRequestContext(
                 sessionID: sessionID,
@@ -3257,7 +3567,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             provider: persistedHandle.provider,
             model: persistedHandle,
             selectedModelRow: catalogRows[0],
-            transcriptHistory: [userMessage, assistantMessage],
+            transcriptHistory: [userMessage, normalizedAssistantMessage],
             lastRequestID: finalizedLock.requestID,
             lastRunID: finalizedLock.runID,
             lastRequestContext: finalizedLock.context.requestContext,
@@ -3315,7 +3625,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         XCTAssertEqual(store.state.selectedModelHandle, newerHandle)
         XCTAssertEqual(store.state.selectedThinking, .effort(.low))
-        XCTAssertEqual(store.state.transcriptHistory, [userMessage, assistantMessage])
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage, normalizedAssistantMessage])
     }
 
     /// CBW-005: background final 저장 중 원래 session으로 돌아와 변경한 selection을 유지한다.
@@ -3331,6 +3641,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let fixedMs: Int64 = 1_700_000_001_333
         let userMessage = AiChatMessage(role: .user, content: "Background question")
         let assistantMessage = AiChatMessage(role: .assistant, content: "Background final answer")
+        let normalizedAssistantMessage = AiChatMessage(
+            role: .assistant, content: "Background final answer", createdAtMs: fixedMs,
+        )
         let request = AiChatRequest(
             context: makeRequestContext(
                 sessionID: sessionID,
@@ -3409,7 +3722,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.send(.routeToChatSession(sessionID))
         await store.skipReceivedActions()
         XCTAssertEqual(store.state.sessionID, sessionID)
-        XCTAssertEqual(store.state.transcriptHistory, [userMessage, assistantMessage])
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage, normalizedAssistantMessage])
 
         await store.send(.selectedModelChanged(newerHandle))
         await store.send(.selectedThinkingChanged(.effort(.low)))
@@ -3419,7 +3732,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         XCTAssertEqual(store.state.selectedModelHandle, newerHandle)
         XCTAssertEqual(store.state.selectedThinking, .effort(.low))
-        XCTAssertEqual(store.state.transcriptHistory, [userMessage, assistantMessage])
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage, normalizedAssistantMessage])
     }
 
     func testRequestStartPreservesPreviousCompletedOwnerForCancellation() async {
@@ -5350,7 +5663,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.backgroundExecutionPhases.count, 1)
         if case let .processing(lock) = store.state.backgroundExecutionPhases.values.first {
             XCTAssertEqual(lock.context.sessionID, currentSessionID)
-            XCTAssertEqual(lock.request.messages, [userMessage])
+            XCTAssertEqual(lock.request.messages, [
+                AiChatMessage(role: .user, content: userMessage.content, createdAtMs: 1_700_000_002_800),
+            ])
             XCTAssertEqual(lock.context.selectedThinking, frozenThinking)
             XCTAssertEqual(lock.customTitle, frozenTitle)
         } else {
@@ -5450,7 +5765,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.backgroundExecutionPhases.count, 1)
         if case let .processing(lock) = store.state.backgroundExecutionPhases.values.first {
             XCTAssertEqual(lock.context.sessionID, sessionID)
-            XCTAssertEqual(lock.request.messages, [parkedMessage])
+            XCTAssertEqual(lock.request.messages, [
+                AiChatMessage(role: .user, content: parkedMessage.content, createdAtMs: 1_700_000_003_000),
+            ])
             XCTAssertEqual(lock.context.selectedThinking, AiThinkingSelection.effort(.minimal))
             XCTAssertEqual(lock.customTitle, "Parked title")
         } else {
@@ -5498,7 +5815,155 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
     }
 
-    func testForegroundProcessingDifferentSessionBlocksSubmit() {
+    /// CBW-005-continue_chat_conversation_session: A→B→A 복귀 시 parked pending을 다시 잠금·Stop owner로 표시한다.
+    /// resolver 완료 전에 원 session으로 돌아오면 background slot의 pending도 현재 composer lifecycle로 취급되는지 검증합니다.
+    /// - 검증 내용: pending park, 복귀 후 composer 잠금/Stop, cancel ownership, 원 prompt 보존을 확인합니다.
+    /// - 사전 조건: session A submit이 pending인 동안 B로 이동한 뒤 같은 A setup으로 복귀합니다.
+    /// - 기대 결과: A composer는 잠기고 Stop이 활성화되며 cancel은 parked resolution만 제거하고 draft를 보존합니다.
+    func testReturningToSessionWithParkedPendingRestoresStopAndCancelOwnership() async {
+        let catalogRows = makeCatalogRows()
+        let models = makeProviderModels()
+        let sessionA = AiChatSessionID(rawValue: makeUUID("12121212-7777-8888-9999-000000000635"))
+        let sessionB = AiChatSessionID(rawValue: makeUUID("13131313-7777-8888-9999-000000000635"))
+        let resolutionID = makeUUID("14141414-7777-8888-9999-000000000635")
+        let originalPrompt = "Original parked prompt"
+        let pending = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionA,
+            selectedModel: models[0],
+            selectedRow: catalogRows[0],
+            selectedThinking: .effort(.medium),
+            preparedRequest: AiChatPreparedRequest(
+                prompt: originalPrompt,
+                messages: [AiChatMessage(role: .user, content: originalPrompt)],
+                persistenceTranscriptHistory: [AiChatMessage(role: .user, content: originalPrompt)],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let setupB = AiChatSetupState(
+            restoreSessionID: nil,
+            sessionID: sessionB,
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+        let setupA = AiChatSetupState(
+            restoreSessionID: nil,
+            sessionID: sessionA,
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: originalPrompt,
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionA,
+            sessionStatus: .active,
+            draftText: originalPrompt,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            pendingRequestStart: pending,
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: session 전환 뒤 parked pending presentation과 cancel 결과만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.setup(setupB))
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pending)
+
+        await store.send(.setup(setupA))
+        XCTAssertEqual(store.state.sessionID, sessionA)
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pending)
+        XCTAssertEqual(store.state.draftText, originalPrompt)
+        XCTAssertTrue(store.state.chatInputDisplayModel.isComposerEditingDisabled)
+        XCTAssertFalse(store.state.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertTrue(store.state.chatInputDisplayModel.isStopVisible)
+        XCTAssertTrue(store.state.chatInputDisplayModel.canStop)
+
+        await store.send(.cancelTapped)
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertEqual(store.state.draftText, originalPrompt)
+        XCTAssertFalse(store.state.chatInputDisplayModel.isStopVisible)
+    }
+
+    /// CBW-005-continue_chat_conversation_session: A attachment completion은 전환된 B resolver 입력에 포함되지 않는다.
+    /// session 전환 뒤 늦게 도착한 local attachment가 B의 다음 provider request source로 누출되지 않는지 검증합니다.
+    /// - 검증 내용: A picker 시작, B setup, stale result, B request resolver input attachment 목록을 확인합니다.
+    /// - 사전 조건: A에서 picker를 연 뒤 B로 전환하고 A file result가 늦게 도착합니다.
+    /// - 기대 결과: B draft/context는 유지되고 B pending resolver input에는 attachment가 없습니다.
+    func testPreviousSessionAttachmentResultDoesNotEnterCurrentRequestPayload() async throws {
+        let catalogRows = makeCatalogRows()
+        let models = makeProviderModels()
+        let sessionA = AiChatSessionID(rawValue: makeUUID("17171717-7777-8888-9999-000000000635"))
+        let sessionB = AiChatSessionID(rawValue: makeUUID("18181818-7777-8888-9999-000000000635"))
+        let setupB = AiChatSetupState(
+            restoreSessionID: nil,
+            sessionID: sessionB,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "B request context"),
+            transcriptHistory: [],
+            draftText: "B prompt",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionA,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_006_355))
+        }
+        // store.exhaustivity = .off: A/B owner 전환과 resolver input만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.attachmentPickerTapped)
+        await store.receive(.delegate(.requestAttachmentPicker(sessionA)))
+        await store.send(.setup(setupB))
+        await store.send(.attachmentPickerSelection(sessionA, [URL(fileURLWithPath: "/tmp/A-only.txt")]))
+        await store.send(.submitTapped)
+
+        let pending = try XCTUnwrap(store.state.pendingRequestStart)
+        let resolverInput = AiChatFeature().makeRequestContextResolverInput(for: pending, state: store.state)
+        XCTAssertEqual(pending.sessionID, sessionB)
+        XCTAssertEqual(pending.preparedRequest.prompt, "B prompt")
+        XCTAssertEqual(resolverInput.currentContext.summary, "B request context")
+        XCTAssertTrue(resolverInput.attachments.isEmpty)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+    }
+
+    /// CBW-005-continue_chat_conversation_session: 빈 rows의 다른 session lock은 현재 composer를 잠그지 않는다.
+    /// foreground phase가 stale하더라도 현재 보이는 session identity와 다르면 독립 session 입력을 계속 허용하는지 검증합니다.
+    /// - 검증 내용: empty rows와 mismatched non-nil lock에서 submit 가능 여부와 processing affordance를 확인합니다.
+    /// - 사전 조건: 현재 session에는 valid model과 non-empty draft가 있고 다른 session lock이 foreground phase에 남아 있습니다.
+    /// - 기대 결과: 현재 submit은 활성화되고 stop 및 streaming processing projection은 표시되지 않습니다.
+    func testForegroundProcessingDifferentSessionDoesNotBlockSubmitWhenRowsAreEmpty() {
         let catalogRows = makeCatalogRows()
         let providerModels = makeProviderModels()
         let processingSessionID = AiChatSessionID(rawValue: makeUUID("33333330-7777-8888-9999-000000000001"))
@@ -5533,9 +5998,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 truncationReason: nil,
             ),
         )
-        let visibleRow = makeDeleteTestSessionSummary(sessionID: visibleSessionID, title: "Visible chat")
         let state = AiChatFeature.State(
-            sessionList: .init(allRows: [visibleRow], selectedSessionID: visibleSessionID),
+            mode: .chat,
+            sessionList: .init(rows: [], selectedSessionID: visibleSessionID),
             sessionID: visibleSessionID,
             sessionStatus: .active,
             currentContext: makeContextSnapshot(),
@@ -5546,8 +6011,16 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             executionPhase: .processing(lock),
         )
 
-        XCTAssertFalse(state.canSubmit)
-        XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
+        XCTAssertTrue(state.sessionList.rows.isEmpty)
+        XCTAssertTrue(state.canSubmit)
+        XCTAssertTrue(state.chatInputDisplayModel.canSubmit)
+        XCTAssertTrue(state.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertFalse(state.chatInputDisplayModel.isStopVisible)
+        XCTAssertNil(state.streamingAssistantDisplayModel)
+        XCTAssertEqual(
+            AiChatViewPresentation.resolve(state: state, hasCenteredEmptyContent: true),
+            .centeredEmpty,
+        )
     }
 
     func testSameSessionBackgroundProcessingRequestBlocksSubmit() {
@@ -6782,7 +7255,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store) { state in
             state.draftText = ""
-            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello while browsing history")]
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Hello while browsing history", createdAtMs: fixedMs),
+            ]
             state.lockedModelHandle = selectedHandle
             state.transcriptAutoScrollVersion = 1
         }
@@ -6805,7 +7280,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList.allRows.first?.title, "Hello while browsing history")
         XCTAssertEqual(store.state.sessionList.allRows.first?.status, .active)
 
-        let userMessage = AiChatMessage(role: .user, content: "Hello while browsing history")
+        let userMessage = AiChatMessage(
+            role: .user, content: "Hello while browsing history", createdAtMs: fixedMs,
+        )
         let expectedStartSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .active,
@@ -6858,7 +7335,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.mode = .sessions
         }
 
-        let assistantMessage = AiChatMessage(role: .assistant, content: "Still completed")
+        let assistantMessage = AiChatMessage(
+            role: .assistant, content: "Still completed", createdAtMs: fixedMs,
+        )
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: assistantMessage,
@@ -7380,5 +7859,27 @@ private func applyRestoredTargetSession(
         state.restoreFailure = nil
         state.mode = .chat
         state.sessionList.errorMessage = nil
+    }
+}
+
+private extension NSView {
+    func cbw005Descendant<ViewType: NSView>(ofType type: ViewType.Type) -> ViewType? {
+        if let matched = self as? ViewType {
+            return matched
+        }
+        for subview in subviews {
+            if let matched = subview.cbw005Descendant(ofType: type) {
+                return matched
+            }
+        }
+        return nil
+    }
+}
+
+private func drainCBW005MainQueue() async {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+            continuation.resume()
+        }
     }
 }

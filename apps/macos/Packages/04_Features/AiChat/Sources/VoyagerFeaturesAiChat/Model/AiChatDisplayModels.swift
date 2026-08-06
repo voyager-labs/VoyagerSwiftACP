@@ -69,6 +69,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
     public var isStopVisible: Bool
     public var canSubmit: Bool
     public var canStop: Bool
+    public var isComposerEditingDisabled: Bool
 
     public init(
         placeholder: String,
@@ -85,6 +86,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
         isStopVisible: Bool,
         canSubmit: Bool,
         canStop: Bool,
+        isComposerEditingDisabled: Bool,
     ) {
         self.placeholder = placeholder
         self.inputAccessibilityLabel = inputAccessibilityLabel
@@ -100,6 +102,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
         self.isStopVisible = isStopVisible
         self.canSubmit = canSubmit
         self.canStop = canStop
+        self.isComposerEditingDisabled = isComposerEditingDisabled
     }
 
     public var actionHelp: String {
@@ -193,12 +196,153 @@ public struct AiChatProcessingState: Equatable, Sendable {
 }
 
 public struct AiChatStreamingAssistantDisplayModel: Equatable, Sendable {
-    public var content: String
+    public var requestID: AiChatRequestID
+    public var content: String?
+    public var title: String
+    public var thinkingLabel: String?
+    public var activityStatusLabel: String?
     public var failure: AiChatExecutionFailure?
+    public var acceptedChunkRevision: Int
 
-    public init(content: String, failure: AiChatExecutionFailure? = nil) {
+    public init(
+        requestID: AiChatRequestID,
+        content: String?,
+        title: String,
+        thinkingLabel: String?,
+        acceptedChunkRevision: Int,
+        failure: AiChatExecutionFailure? = nil,
+        activityStatusLabel: String? = nil,
+    ) {
+        self.requestID = requestID
         self.content = content
+        self.title = title
+        self.thinkingLabel = Self.nonEmptyTrimmed(thinkingLabel)
+        self.activityStatusLabel = Self.nonEmptyTrimmed(activityStatusLabel)
         self.failure = failure
+        self.acceptedChunkRevision = acceptedChunkRevision
+    }
+
+    private static func nonEmptyTrimmed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
+enum AiChatAssistantHeaderPresentation: Equatable {
+    case full, completedHistorical
+    var showsVisualHeader: Bool {
+        self == .full
+    }
+
+    var showsProgressIndicator: Bool {
+        false
+    }
+
+    var accessibilityRoleLabel: String? {
+        self == .completedHistorical ? "Assistant response" : nil
+    }
+}
+
+enum AiChatAssistantResponsePresentationState: Equatable {
+    case waiting
+    case activeProcessingBody
+    case partialFailureBody
+    case terminalContentlessFailure
+    case historical
+}
+
+struct AiChatAssistantBodyPresentation: Equatable {
+    static let chunkFadeDuration = 0.15
+    let state: AiChatAssistantResponsePresentationState
+    let content: String?
+    let metadataPanelLabel: String
+    let showsInlineHeader: Bool
+    let showsWaiting: Bool
+    let isMetadataPanelEligible: Bool
+
+    var accessibilityMetadataLabel: String? {
+        isMetadataPanelEligible ? metadataPanelLabel : nil
+    }
+
+    init(
+        content: String?,
+        isProcessing: Bool,
+        failure: AiChatExecutionFailure?,
+        title: String = "Assistant",
+        thinkingLabel: String? = nil,
+        headerPresentation: AiChatAssistantHeaderPresentation = .full,
+        requestID: AiChatRequestID? = nil,
+        foregroundRequestID: AiChatRequestID? = nil,
+    ) {
+        let normalizedContent = Self.nonEmptyContent(content)
+        self.content = normalizedContent
+        metadataPanelLabel = Self.metadataLabel(title: title, thinkingLabel: thinkingLabel)
+        showsInlineHeader = headerPresentation == .full && normalizedContent == nil && failure == nil
+        showsWaiting = isProcessing && failure == nil && normalizedContent == nil
+        isMetadataPanelEligible = headerPresentation == .full
+            && normalizedContent != nil
+            && isProcessing
+            && failure == nil
+            && requestID != nil
+            && requestID == foregroundRequestID
+        state = Self.resolveState(
+            hasContent: normalizedContent != nil,
+            isProcessing: isProcessing,
+            failure: failure,
+            headerPresentation: headerPresentation,
+        )
+    }
+
+    static func presentsMetadataPanel(_ isEligible: Bool, _ isHovered: Bool, _ isFocused: Bool) -> Bool {
+        isEligible && (isHovered || isFocused)
+    }
+
+    static func waitingText(step: Int, reduceMotion: Bool) -> String {
+        guard !reduceMotion else { return "..." }
+        let normalizedStep = ((step % 3) + 3) % 3
+        return String(repeating: ".", count: normalizedStep + 1)
+    }
+
+    private static func nonEmptyContent(_ content: String?) -> String? {
+        let trimmed = content?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.flatMap { $0.isEmpty ? nil : content }
+    }
+
+    private static func metadataLabel(title: String, thinkingLabel: String?) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelTitle = normalizedTitle.isEmpty ? "Assistant" : normalizedTitle
+        let trimmedThinking = thinkingLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedThinking, !trimmedThinking.isEmpty else { return modelTitle }
+        return "\(modelTitle) · \(trimmedThinking)"
+    }
+
+    private static func resolveState(
+        hasContent: Bool,
+        isProcessing: Bool,
+        failure: AiChatExecutionFailure?,
+        headerPresentation: AiChatAssistantHeaderPresentation,
+    ) -> AiChatAssistantResponsePresentationState {
+        if headerPresentation == .completedHistorical { return .historical }
+        if failure != nil { return hasContent ? .partialFailureBody : .terminalContentlessFailure }
+        if isProcessing { return hasContent ? .activeProcessingBody : .waiting }
+        return .historical
+    }
+}
+
+extension AiChatExecutionActivityKind {
+    var aiChatStatusLabel: String {
+        switch self {
+        case .thinking:
+            "Thinking…"
+        case .searching:
+            "Searching…"
+        case .toolExecution:
+            "Running a tool…"
+        case .retrying:
+            "Retrying…"
+        case .answerGeneration:
+            "Generating answer…"
+        }
     }
 }
 

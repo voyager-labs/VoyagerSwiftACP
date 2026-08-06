@@ -117,8 +117,24 @@
   --macos-home-card-hover-stroke: color-mix(in srgb, var(--macos-separator-color) 34%, transparent);
   --macos-home-row-hover-fill: var(--macos-secondary-system-fill);
   --macos-home-icon-tile-fill: var(--macos-quinary-system-fill);
-  --macos-sidebar-location-fill: var(--macos-quinary-system-fill);
-  --macos-sidebar-location-hover-fill: var(--macos-secondary-system-fill);
+  --macos-sidebar-selection-background: color-mix(
+    in srgb,
+    var(--macos-label-color) 12%,
+    transparent
+  );
+  --macos-sidebar-hover-fill: rgb(0 0 0 / 6%);
+  --macos-sidebar-location-fill: color-mix(in srgb, var(--macos-label-color) 6%, transparent);
+  --macos-sidebar-location-hover-fill: rgb(0 0 0 / 6%);
+  --macos-sidebar-location-border-color: color-mix(
+    in srgb,
+    var(--macos-label-color) 6%,
+    transparent
+  );
+  --macos-sidebar-location-hover-border-color: color-mix(
+    in srgb,
+    var(--macos-label-color) 12%,
+    transparent
+  );
 
   /* Deprecated AppKit aliases kept for parity with the full NSColor token surface. */
   --macos-alternate-selected-control-color: var(--macos-selected-content-background-color);
@@ -242,6 +258,8 @@
     --macos-entry-accent-sheet-color: #79ab85;
     --macos-entry-accent-video-color: #83a5c1;
     --macos-entry-accent-archive-color: #c99b62;
+    --macos-sidebar-hover-fill: rgb(255 255 255 / 8%);
+    --macos-sidebar-location-hover-fill: rgb(255 255 255 / 8%);
   }
 }
 
@@ -304,6 +322,8 @@
   --macos-entry-accent-sheet-color: #79ab85;
   --macos-entry-accent-video-color: #83a5c1;
   --macos-entry-accent-archive-color: #c99b62;
+  --macos-sidebar-hover-fill: rgb(255 255 255 / 8%);
+  --macos-sidebar-location-hover-fill: rgb(255 255 255 / 8%);
 }
 
 @media (prefers-color-scheme: dark) {

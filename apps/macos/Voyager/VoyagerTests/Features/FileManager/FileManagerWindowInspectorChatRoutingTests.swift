@@ -215,7 +215,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         let userContext = AiChatCurrentContextSnapshot(summary: "User context")
         await store.send(.inspector(.aiChat(.draftTextChanged("User question"))))
         await store.send(.inspector(.aiChat(.currentContextChanged(userContext))))
-        await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+        await store.send(.inspector(.aiChat(.attachmentPickerSelection(sessionID, [
             URL(fileURLWithPath: "/tmp/inspector-race.txt"),
         ]))))
 
@@ -787,7 +787,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         case .draft:
             await store.send(.inspector(.aiChat(.draftTextChanged("User draft"))))
         case .attachment:
-            await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+            await store.send(.inspector(.aiChat(.attachmentPickerSelection(transientSessionID, [
                 URL(fileURLWithPath: "/tmp/inspector-pending.txt"),
             ]))))
         case .model:
@@ -1462,7 +1462,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         // 동일 session의 미전송 attachment 보존 결과만 선별 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+        await store.send(.inspector(.aiChat(.attachmentPickerSelection(sessionID, [
             URL(fileURLWithPath: "/tmp/idle-reopen.txt"),
         ]))))
         XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
