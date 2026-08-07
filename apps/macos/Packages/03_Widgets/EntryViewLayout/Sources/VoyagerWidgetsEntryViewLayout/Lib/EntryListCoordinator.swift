@@ -306,6 +306,7 @@ public final class EntryListCoordinator: NSObject {
         if presentationStructureChanged,
            snapshot.outlineProjection.revision == projectionSession.renderedProjectionRevision
         {
+            projectionSession.reset()
             outlineItems = flatItems
             rebuildItemIndexes()
             lastAppliedVisibleRows = []
