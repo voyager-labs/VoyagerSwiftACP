@@ -385,6 +385,9 @@ extension EntryListCoordinator {
             return
         }
 
+        let scrollAnchor = captureScrollAnchor()
+        let pathChanged = previous.currentPath != snapshot.currentPath
+
         let changes = snapshot.presentation.changes(from: previous.presentation)
         if changes.groupExpansionChanged {
             rebuildRowsAndReload()
@@ -395,6 +398,7 @@ extension EntryListCoordinator {
                       changes: changes,
                   )
         {
+            if !pathChanged { restoreScrollAnchor(scrollAnchor) }
             return
         } else if changes.sectionStructureChanged {
             rebuildRowsAndReload()
@@ -404,6 +408,7 @@ extension EntryListCoordinator {
                 presentation: snapshot.presentation,
             )
         }
+        if !pathChanged { restoreScrollAnchor(scrollAnchor) }
     }
 
     func tryIncrementalFlatRowUpdate(
@@ -536,7 +541,10 @@ extension EntryListCoordinator {
     }
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.currentPath != snapshot.currentPath { resetThumbnailSession() }
+        if previous.currentPath != snapshot.currentPath {
+            resetThumbnailSession()
+            restoredScrollForCurrentPath = false
+        }
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {

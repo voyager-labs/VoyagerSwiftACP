@@ -178,6 +178,7 @@ public final class EntryListCoordinator: NSObject {
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
+    var restoredScrollForCurrentPath = false
     var isRenderObservationEnabled = true
     let renderThrottler = MainThreadThrottler(intervalMs: 16, latest: true)
     let visibleRowsPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
@@ -490,6 +491,10 @@ public final class EntryListCoordinator: NSObject {
             tableView.moveItem(at: operation.from, inParent: nil, to: operation.to, inParent: nil)
         }
         tableView.endUpdates()
+        if !plan.updatedRowIndexes.isEmpty {
+            let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+            tableView.reloadData(forRowIndexes: plan.updatedRowIndexes, columnIndexes: columnIndexes)
+        }
         syncListSelectionFromStore()
         requestThumbnailsForVisibleRows()
         return true
@@ -500,6 +505,7 @@ public final class EntryListCoordinator: NSObject {
         let removedIndexes: IndexSet
         let insertedIndexes: IndexSet
         let moves: [(from: Int, to: Int)]
+        let updatedRowIndexes: IndexSet
     }
 
     private func makeIncrementalRowUpdatePlan(
@@ -564,6 +570,14 @@ public final class EntryListCoordinator: NSObject {
         }
         guard current == new else { return nil }
 
+        let updatedRowIndexes = IndexSet(new.enumerated().compactMap { index, itemID in
+            guard let oldItem = oldItemsByID[itemID],
+                  let incomingItem = incomingItemsByID[itemID],
+                  case let .entry(oldEntry) = oldItem.kind,
+                  case let .entry(incomingEntry) = incomingItem.kind
+            else { return nil }
+            return oldEntry == incomingEntry ? nil : index
+        })
         outlineItems = new.compactMap { itemID in
             guard let existing = oldItemsByID[itemID] else { return incomingItemsByID[itemID] }
             if let incoming = incomingItemsByID[itemID] {
@@ -579,7 +593,8 @@ public final class EntryListCoordinator: NSObject {
                 existing.isLoadingChildren = incoming.isLoadingChildren
             }
             return existing
-        }, removedIndexes: removedIndexes, insertedIndexes: insertIndexes, moves: moveOperations)
+        }, removedIndexes: removedIndexes, insertedIndexes: insertIndexes,
+        moves: moveOperations, updatedRowIndexes: updatedRowIndexes)
     }
 
     func rebuildItemIndexes() {
@@ -684,6 +699,8 @@ public final class EntryListCoordinator: NSObject {
         let itemCount = state.entries.count
         guard itemCount != 0 else { return }
         guard let savedOffset = state.savedScrollOffset else { return }
+        guard !restoredScrollForCurrentPath else { return }
+        restoredScrollForCurrentPath = true
         scrollView.contentView.scroll(to: savedOffset)
     }
 }
