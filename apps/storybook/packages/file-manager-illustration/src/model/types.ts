@@ -107,7 +107,69 @@ export type Entry = {
   readonly thumbnailSrc?: string
 }
 
+// 채팅 도메인 타입 — VoyagerFeaturesAiChat 프레젠테이션 상태의 native → Storybook 번역.
+// 원본 경로: apps/macos/Packages/04_Features/AiChat (AiChatViewPresentation, AiChatState).
+
+export type ChatMessage = {
+  readonly id: string
+  readonly role: "user" | "assistant"
+  readonly content: string
+  readonly timestamp?: string
+}
+
+export type ChatStreamingAssistant = {
+  readonly title: string
+  readonly thinkingLabel?: string
+  readonly activityStatusLabel?: string
+  readonly content?: string
+  readonly failure?: { readonly message: string; readonly recoveryLabel?: string }
+}
+
+export type ChatSessionRow = {
+  readonly id: string
+  readonly title: string
+  readonly detail?: string
+}
+
+export type ChatSessionSection = {
+  readonly id: string
+  readonly title: string
+  readonly rows: readonly ChatSessionRow[]
+}
+
+export type ChatConnectionError = {
+  readonly title: string
+  readonly detail: string
+  readonly actionLabel: string
+}
+
+export type ChatSurfaceState =
+  | {
+      readonly kind: "sessions"
+      readonly sections: readonly ChatSessionSection[]
+      readonly errorMessage?: string
+      readonly isLoading?: boolean
+      readonly emptyTitle?: string
+      readonly emptyDetail?: string
+    }
+  | {
+      readonly kind: "transcript"
+      readonly messages: readonly ChatMessage[]
+      readonly streamingAssistant?: ChatStreamingAssistant
+      readonly isProcessing?: boolean
+      readonly statusText?: string
+      readonly canRegenerate?: boolean
+    }
+  | {
+      readonly kind: "centeredEmpty"
+      readonly emptyTitle: string
+      readonly emptyDetail: string
+      readonly connectionError?: ChatConnectionError
+    }
+
 export type FileManagerIllustrationProps = {
   readonly files: readonly FileEntry[]
   readonly contentContext: ContentContext
+  // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/streaming/error/recovery)을 root에서 재현한다.
+  readonly chatSurface?: ChatSurfaceState
 }

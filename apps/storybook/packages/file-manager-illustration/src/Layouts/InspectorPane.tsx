@@ -1,6 +1,7 @@
 import type { FC } from "react"
+import { ChatSurface } from "../Domains/Chat/ChatSurface"
 import { SFSymbol } from "../Foundations/SFSymbol"
-import type { Entry } from "../model/types"
+import type { ChatSurfaceState, Entry } from "../model/types"
 
 export type InspectorChatHeader = "sessions" | "chat"
 
@@ -15,6 +16,12 @@ export interface InspectorPaneProps {
   readonly onOpenChatHistory: () => void
   readonly onOpenNewChat: () => void
   readonly onCloseChat: () => void
+  readonly onSessionSelected?: (id: string) => void
+  readonly onOpenSettings?: () => void
+  readonly onErrorRecovery?: () => void
+  readonly onRegenerate?: () => void
+  // 제공 시 inspector 본문이 ChatSurface(네이티브 AiChatView 번역)가 된다. 생략 시 기본 composer 본문.
+  readonly chatSurface?: ChatSurfaceState
 }
 
 export const InspectorPane: FC<InspectorPaneProps> = ({
@@ -27,6 +34,11 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
   onOpenChatHistory,
   onOpenNewChat,
   onCloseChat,
+  onSessionSelected,
+  onOpenSettings,
+  onErrorRecovery,
+  onRegenerate,
+  chatSurface,
 }) => {
   return (
     <aside className="inspector" aria-label="Context Pane">
@@ -79,31 +91,42 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
         )}
       </header>
 
-      {/* Chat content area */}
-      <section className="chat-pane">
-        {primaryEntry != null && (
-          <div className="quiet-card">
-            <span className="eyebrow">Selected Entry</span>
-            <strong>{primaryEntry.name}</strong>
-            <p>{selectedEntries.length} selected</p>
-          </div>
-        )}
-        <label className="composer">
-          <textarea
-            rows={5}
-            placeholder="Ask anything…"
-            value={requestText}
-            onInput={(e) => onRequestTextChange(e.currentTarget.value)}
-          />
-          <span className="composer-footer">
-            <SFSymbol name="plus" size={16} />
-            <em>GPT-5.2</em>
-            <span className="vc-send-button">
-              <SFSymbol name="arrow.up" size={16} />
+      {chatSurface != null ? (
+        <ChatSurface
+          state={chatSurface}
+          requestText={requestText}
+          onRequestTextChange={onRequestTextChange}
+          onSessionSelected={onSessionSelected}
+          onOpenSettings={onOpenSettings}
+          onErrorRecovery={onErrorRecovery}
+          onRegenerate={onRegenerate}
+        />
+      ) : (
+        <section className="chat-pane">
+          {primaryEntry != null && (
+            <div className="quiet-card">
+              <span className="eyebrow">Selected Entry</span>
+              <strong>{primaryEntry.name}</strong>
+              <p>{selectedEntries.length} selected</p>
+            </div>
+          )}
+          <label className="composer">
+            <textarea
+              rows={5}
+              placeholder="Ask anything…"
+              value={requestText}
+              onInput={(e) => onRequestTextChange(e.currentTarget.value)}
+            />
+            <span className="composer-footer">
+              <SFSymbol name="plus" size={16} />
+              <em>GPT-5.2</em>
+              <span className="vc-send-button">
+                <SFSymbol name="arrow.up" size={16} />
+              </span>
             </span>
-          </span>
-        </label>
-      </section>
+          </label>
+        </section>
+      )}
     </aside>
   )
 }

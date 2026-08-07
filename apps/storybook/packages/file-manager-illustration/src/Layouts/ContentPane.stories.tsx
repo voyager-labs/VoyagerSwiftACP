@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { FileToolbar } from "../Patterns/FileToolbar"
-import { StatusBar } from "../Patterns/StatusBar"
+import { FileToolbar } from "../Patterns/Content/FileToolbar"
+import { StatusBar } from "../Patterns/Content/StatusBar"
 import { files, noSelection } from "../data/mock-data"
 import { directoryBreadcrumb } from "../lib/navigation-data"
 import { FileManagerPrimaryContent } from "./FileManagerPrimaryContent"

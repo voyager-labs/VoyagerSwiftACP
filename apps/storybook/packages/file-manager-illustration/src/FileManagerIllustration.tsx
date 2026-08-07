@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react"
 import type { FC } from "react"
-import { FileBrowser } from "./Entries/FileBrowser"
+import { FileBrowser } from "./Domains/Entries/FileBrowser"
 import { FileManagerPrimaryContent } from "./Layouts/FileManagerPrimaryContent"
 import { FileManagerWindowLayout } from "./Layouts/FileManagerWindowLayout"
 import { InspectorPane } from "./Layouts/InspectorPane"
 import { Sidebar } from "./Layouts/Sidebar"
-import type { FileToolbarContent } from "./Patterns/FileToolbar"
-import { FileToolbar } from "./Patterns/FileToolbar"
-import { StatusBar } from "./Patterns/StatusBar"
+import type { FileToolbarContent } from "./Patterns/Content/FileToolbar"
+import { FileToolbar } from "./Patterns/Content/FileToolbar"
+import { StatusBar } from "./Patterns/Content/StatusBar"
 import { TrafficLights } from "./UI/Display/TrafficLights"
 import {
   deriveBreadcrumbSegments,
@@ -131,9 +131,21 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
   const handleOpenChatHistory = useCallback(() => dispatch({ type: "OPEN_CHAT_HISTORY" }), [])
   const handleOpenNewChat = useCallback(() => dispatch({ type: "OPEN_NEW_CHAT" }), [])
   const handleCloseChat = useCallback(() => dispatch({ type: "CLOSE_CHAT" }), [])
+  const handleNoop = useCallback(() => undefined, [])
 
   const toolbarContent: FileToolbarContent = route.kind === "home" ? "home" : "directory"
-  const inspectorChatTitle = state.inspectorChatHeader === "sessions" ? "Chat History" : windowTitle
+  const controlledChat = props.chatSurface != null
+  const effectiveInspectorOpen = controlledChat ? true : state.inspectorOpen
+  const effectiveChatHeader = controlledChat
+    ? props.chatSurface?.kind === "sessions"
+      ? "sessions"
+      : "chat"
+    : state.inspectorChatHeader
+  // native InspectorPaneView.chatHeaderTitle 과 대칭: sessions → "Chat History",
+  // 그 외는 첫 사용자 메시지 접두(80자) → "New Chat".
+  const chatSurfaceTitle = controlledChat ? deriveChatTitle(props.chatSurface) : null
+  const inspectorChatTitle =
+    effectiveChatHeader === "sessions" ? "Chat History" : (chatSurfaceTitle ?? windowTitle)
   const breadcrumbSegments = deriveBreadcrumbSegments(activeTab, selectedEntries)
 
   return (
@@ -142,7 +154,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
         <section
           className={[
             "mac-window",
-            !state.inspectorOpen && "inspector-closed",
+            !effectiveInspectorOpen && "inspector-closed",
             !state.sidebarOpen && "sidebar-closed",
           ]
             .filter(Boolean)
@@ -151,7 +163,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
         >
           <FileManagerWindowLayout
             sidebarOpen={state.sidebarOpen}
-            inspectorOpen={state.inspectorOpen}
+            inspectorOpen={effectiveInspectorOpen}
             sidebar={
               <Sidebar
                 locationShortcuts={locationShortcuts}
@@ -189,7 +201,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
             }
             inspector={
               <InspectorPane
-                chatHeader={state.inspectorChatHeader}
+                chatHeader={effectiveChatHeader}
                 requestText={state.requestText}
                 selectedEntries={selectedEntries}
                 primaryEntry={primaryEntry}
@@ -198,6 +210,11 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onOpenChatHistory={handleOpenChatHistory}
                 onOpenNewChat={handleOpenNewChat}
                 onCloseChat={handleCloseChat}
+                onSessionSelected={handleNoop}
+                onOpenSettings={handleNoop}
+                onErrorRecovery={handleNoop}
+                onRegenerate={handleNoop}
+                chatSurface={props.chatSurface}
               />
             }
           />
@@ -211,3 +228,12 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
 }
 
 FileManagerIllustration.displayName = "FileManagerIllustration"
+
+function deriveChatTitle(state: FileManagerIllustrationProps["chatSurface"]): string | null {
+  if (state == null || state.kind === "sessions") return null
+  if (state.kind === "centeredEmpty") return "New Chat"
+  const firstUser = state.messages.find((message) => message.role === "user")
+  if (firstUser == null) return "New Chat"
+  const normalized = firstUser.content.split(/\s+/).join(" ").trim()
+  return normalized.length > 0 ? normalized.slice(0, 80) : "New Chat"
+}

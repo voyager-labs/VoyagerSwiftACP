@@ -1,5 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { expect, userEvent, within } from "storybook/test"
+import {
+  chatSurfaceConversation,
+  chatSurfaceEmpty,
+  chatSurfaceError,
+  chatSurfaceHistory,
+  chatSurfaceStreaming,
+} from "../Domains/Chat/chat-fixtures"
 import { FileManagerIllustration } from "../FileManagerIllustration"
 import { publicFiles } from "../data/mock-data"
 
@@ -70,5 +77,47 @@ export const Home: Story = {
   play: async ({ canvasElement }) => {
     const home = within(canvasElement).getByRole("region", { name: "Home" })
     expect(home).toBeInTheDocument()
+  },
+}
+
+// VOY-721: Inspector Chat 상태 매트릭스를 root composition에서 재현.
+
+export const ChatHistory: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceHistory,
+  },
+}
+
+export const ChatConversation: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceConversation,
+  },
+}
+
+export const ChatEmpty: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceEmpty,
+  },
+}
+
+export const ChatStreaming: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceStreaming,
+  },
+}
+
+export const ChatErrorState: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceError,
   },
 }
