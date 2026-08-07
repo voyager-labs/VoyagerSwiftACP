@@ -346,7 +346,7 @@ public final class EntryListCoordinator: NSObject {
         if pathChanged {
             restoredScrollForCurrentPath = false
         }
-
+        let shouldRestoreSavedOffset = pathChanged || !restoredScrollForCurrentPath
         let capturedAnchor = pathChanged ? nil : captureScrollAnchor()
         materialize()
 
@@ -356,7 +356,7 @@ public final class EntryListCoordinator: NSObject {
         if structureChanged, state.renamingItemId != nil {
             syncListRenamingFromStore()
         }
-        if pathChanged {
+        if shouldRestoreSavedOffset {
             restoreScrollPositionIfNeeded()
         } else {
             let preservesScrollAnchor: Bool = switch updateKind {
