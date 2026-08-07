@@ -277,6 +277,9 @@ public final class EntryListCoordinator: NSObject {
         let snapshot = RenderSnapshot(state: state)
         let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
         let pathChanged = previousPath != snapshot.currentPath
+        if pathChanged {
+            restoredScrollForCurrentPath = false
+        }
         if snapshot.isHierarchyOutlineEnabled {
             applyStoreProjection(snapshot.outlineProjection, pathChanged: pathChanged)
             if !pathChanged {
