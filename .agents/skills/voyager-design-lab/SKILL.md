@@ -17,12 +17,13 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 
 ## Conditional references
 
-| Situation                                                                            | Read                                         | Do not read when                                                     |
-| ------------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
-| Story placement, root consumer, workflow proposal, or retirement                     | `references/authority-and-state-contract.md` | Editing an existing isolated atom with unchanged ownership           |
-| SwiftUI/AppKit source, screenshot, Tahoe/Sequoia, material, geometry, or token claim | `references/native-evidence-contract.md`     | Product behavior has no native-visual claim                          |
-| File Manager control icon, navigation glyph, or system symbol                        | `references/sf-symbol-contract.md`           | The visual is a file thumbnail, preview, or other non-symbol content |
-| Implementation review, validation, or handoff                                        | `references/review-and-verification.md`      | Planning-only work with no changed state                             |
+| Situation                                                                                        | Read                                         | Do not read when                                                     |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
+| Story placement, root consumer, workflow proposal, or retirement                                 | `references/authority-and-state-contract.md` | Editing an existing isolated atom with unchanged ownership           |
+| SwiftUI/AppKit source, screenshot, Tahoe/Sequoia, material, geometry, or token claim             | `references/native-evidence-contract.md`     | Product behavior has no native-visual claim                          |
+| File Manager control icon, navigation glyph, or system symbol                                    | `references/sf-symbol-contract.md`           | The visual is a file thumbnail, preview, or other non-symbol content |
+| Translating structure, state, geometry, or style between native and Storybook (either direction) | `references/translation-workflow.md`         | Editing an existing isolated atom with no native correspondence      |
+| Implementation review, validation, or handoff                                                    | `references/review-and-verification.md`      | Planning-only work with no changed state                             |
 
 ## Workflow
 
