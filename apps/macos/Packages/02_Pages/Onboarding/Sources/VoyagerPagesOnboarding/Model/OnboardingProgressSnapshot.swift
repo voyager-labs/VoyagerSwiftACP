@@ -31,9 +31,7 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             welcomeComplete: container.decodeIfPresent(Bool.self, forKey: .welcomeComplete) ?? true,
-            permissionsComplete: (container.decodeIfPresent(Bool.self, forKey: .permissionsComplete) ?? false)
-                || (container.decodeIfPresent(Bool.self, forKey: .accessUnlockComplete) ?? false)
-                || (container.decodeIfPresent(Bool.self, forKey: .betaAccessComplete) ?? false),
+            permissionsComplete: container.decodeIfPresent(Bool.self, forKey: .permissionsComplete) ?? false,
             aiProviderSetupComplete: container.decodeIfPresent(Bool.self, forKey: .aiProviderSetupComplete) ?? false,
             aiProviderSetupSkipped: container.decodeIfPresent(Bool.self, forKey: .aiProviderSetupSkipped) ?? false,
             aiProviderSetupChoice: container.decodeIfPresent(

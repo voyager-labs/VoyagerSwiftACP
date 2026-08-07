@@ -84,6 +84,7 @@ final class OnboardingCodableBackwardCompatTests: XCTestCase {
                 welcomeComplete: true,
                 permissionsComplete: false,
             ),
+            rawStepValue: "accessUnlock",
         )
 
         XCTAssertEqual(snapshot?.currentStep, .permissions)
@@ -100,6 +101,7 @@ final class OnboardingCodableBackwardCompatTests: XCTestCase {
                 welcomeComplete: true,
                 permissionsComplete: false,
             ),
+            rawStepValue: "betaAccess",
         )
 
         XCTAssertEqual(snapshot?.currentStep, .permissions)
@@ -151,7 +153,7 @@ final class OnboardingCodableBackwardCompatTests: XCTestCase {
 
     // MARK: - OnboardingStepState backward compat
 
-    func testDecodeLegacyBetaAccessComplete() throws {
+    func testDecodeLegacyBetaAccessCompleteDoesNotOverridePermissionsComplete() throws {
         let json = """
         {
             "betaAccessComplete": true,
@@ -166,10 +168,10 @@ final class OnboardingCodableBackwardCompatTests: XCTestCase {
         """
         let data = try XCTUnwrap(json.data(using: .utf8))
         let stepState = try JSONDecoder().decode(OnboardingStepState.self, from: data)
-        XCTAssertTrue(stepState.permissionsComplete)
+        XCTAssertFalse(stepState.permissionsComplete)
     }
 
-    func testDecodeLegacyAccessUnlockComplete() throws {
+    func testDecodeLegacyAccessUnlockCompleteDoesNotOverridePermissionsComplete() throws {
         let json = """
         {
             "accessUnlockComplete": true,
@@ -184,7 +186,7 @@ final class OnboardingCodableBackwardCompatTests: XCTestCase {
         """
         let data = try XCTUnwrap(json.data(using: .utf8))
         let stepState = try JSONDecoder().decode(OnboardingStepState.self, from: data)
-        XCTAssertTrue(stepState.permissionsComplete)
+        XCTAssertFalse(stepState.permissionsComplete)
     }
 
     func testDecodeMissingAccessUnlockDefaultsToFalse() throws {
