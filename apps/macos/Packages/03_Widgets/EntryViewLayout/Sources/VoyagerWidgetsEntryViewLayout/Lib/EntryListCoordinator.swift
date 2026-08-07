@@ -454,7 +454,12 @@ public final class EntryListCoordinator: NSObject {
 
             if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items, projection: projection) {
                 lastAppliedVisibleRows = newVisibleRows
-                if !pathChanged { restoreScrollAnchor(scrollAnchor) }
+                if pathChanged {
+                    restoredScrollForCurrentPath = false
+                    restoreScrollPositionIfNeeded()
+                } else {
+                    restoreScrollAnchor(scrollAnchor)
+                }
                 return
             }
 

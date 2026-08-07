@@ -185,10 +185,9 @@ public struct EntryViewLayoutState: Equatable {
         let previousSelectedIds = selectedIds
         let currentProjection = outlineProjection(isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled)
         let visibleEntryIDs = Set(currentProjection.visibleSelectableEntryIDs)
-        let hierarchyEntryIDs = preservesScrollIntent
-            ? hierarchy.nodesByID.values.flatMap(\.folder.children).map(\.id)
-            : []
-        let remainingIds = Set(entries.map(\.id)).union(hierarchyEntryIDs)
+        let remainingIds: Set<EntryModel.ID> = preservesScrollIntent
+            ? Set(entries.map(\.id)).union(hierarchy.nodesByID.values.flatMap(\.folder.children).map(\.id))
+            : visibleEntryIDs
         selectedIds = selectedIds.intersection(remainingIds)
 
         let projectionChanged = lastReconciledOutlineProjection.map {
