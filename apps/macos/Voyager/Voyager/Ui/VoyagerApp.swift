@@ -3,12 +3,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
-import VoyagerEntitiesAppPreferences
-import VoyagerEntitiesCollection
-import VoyagerFeaturesAccountAccess
-import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
-import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
@@ -46,17 +41,8 @@ struct VoyagerApp: App {
             $0.composerMetricClient = Self.makeComposerMetricClient()
             $0.collectionMetricClient = Self.makeCollectionMetricClient()
             $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
-                openMainWindow: { request in
-                    await MainActor.run {
-                        let resolvedPath: String = switch request {
-                        case .defaultTabPath:
-                            SettingsDefaults.defaultTabPath()
-                        case let .explicitPath(path):
-                            path
-                        }
-                        requestFileManagerNewWindow(path: resolvedPath)
-                    }
-                    await Task.yield()
+                openMainWindow: { _ in
+                    await appRootStore.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))).finish()
                     return true
                 },
             )

@@ -145,7 +145,7 @@ extension AccountAccessFeature {
                 state.lastCompleteSyncAt = date()
             }
             state.errorMessage = nil
-            return .none
+            return result.sessionExpiresAt != nil ? scheduleRefreshDeadline(&state) : .none
 
         case let .failure(error):
             guard case .invalidCredential = error else {
