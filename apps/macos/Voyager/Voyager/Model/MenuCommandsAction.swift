@@ -13,6 +13,7 @@ enum MenuCommandsAction: ViewAction {
 
     enum Delegate {
         case windowManager(WindowManagerAction)
+        case lifecycle(AppLifecycleAction.Delegate)
         case updater(UpdaterAction)
     }
 }

@@ -188,6 +188,9 @@ struct AppRootFeature {
         case let .menuCommands(.delegate(.windowManager(action))):
             return .send(.windowManager(action))
 
+        case let .menuCommands(.delegate(.lifecycle(delegate))):
+            return .send(.lifecycle(.delegate(delegate)))
+
         case let .menuCommands(.delegate(.updater(action))):
             return .send(.updater(action))
 
