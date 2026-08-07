@@ -277,7 +277,7 @@ public final class EntryListCoordinator: NSObject {
         let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
         let pathChanged = previousPath != snapshot.currentPath
         if snapshot.isHierarchyOutlineEnabled {
-            applyStoreProjection(snapshot.outlineProjection)
+            applyStoreProjection(snapshot.outlineProjection, pathChanged: pathChanged)
             if !pathChanged {
                 restoreScrollAnchor(scrollAnchor)
             }
@@ -439,8 +439,8 @@ public final class EntryListCoordinator: NSObject {
         }
     }
 
-    func applyStoreProjection(_ projection: EntryListOutlineProjection) {
-        let scrollAnchor = captureScrollAnchor()
+    func applyStoreProjection(_ projection: EntryListOutlineProjection, pathChanged: Bool = false) {
+        let scrollAnchor = pathChanged ? nil : captureScrollAnchor()
         let oldVisibleRows = lastAppliedVisibleRows
 
         projectionSession.apply(projection) { [weak self] projection, items in
@@ -450,7 +450,7 @@ public final class EntryListCoordinator: NSObject {
 
             if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items, projection: projection) {
                 lastAppliedVisibleRows = newVisibleRows
-                restoreScrollAnchor(scrollAnchor)
+                if !pathChanged { restoreScrollAnchor(scrollAnchor) }
                 return
             }
 
@@ -463,7 +463,7 @@ public final class EntryListCoordinator: NSObject {
             restoreScrollPositionIfNeeded()
             requestThumbnailsForVisibleRows()
             lastAppliedVisibleRows = newVisibleRows
-            restoreScrollAnchor(scrollAnchor)
+            if !pathChanged { restoreScrollAnchor(scrollAnchor) }
         }
     }
 

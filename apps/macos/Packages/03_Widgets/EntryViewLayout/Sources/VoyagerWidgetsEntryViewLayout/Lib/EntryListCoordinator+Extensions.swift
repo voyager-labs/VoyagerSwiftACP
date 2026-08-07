@@ -469,6 +469,16 @@ extension EntryListCoordinator {
             }
         }
         tableView.endUpdates()
+        let updatedRowIndexes = IndexSet(changes.updatedEntryIDs.flatMap { id in
+            entryItemsByID[id, default: []].compactMap { item in
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
+        })
+        if !updatedRowIndexes.isEmpty {
+            let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+            tableView.reloadData(forRowIndexes: updatedRowIndexes, columnIndexes: columnIndexes)
+        }
         syncListSelectionFromStore()
         requestThumbnailsForVisibleRows()
         return true
