@@ -274,9 +274,13 @@ public final class EntryListCoordinator: NSObject {
     func rebuildRowsAndReload() {
         let scrollAnchor = captureScrollAnchor()
         let snapshot = RenderSnapshot(state: state)
+        let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
+        let pathChanged = previousPath != snapshot.currentPath
         if snapshot.isHierarchyOutlineEnabled {
             applyStoreProjection(snapshot.outlineProjection)
-            restoreScrollAnchor(scrollAnchor)
+            if !pathChanged {
+                restoreScrollAnchor(scrollAnchor)
+            }
             return
         }
 
@@ -321,8 +325,6 @@ public final class EntryListCoordinator: NSObject {
                 requestThumbnailsForVisibleRows()
             }
         }
-        let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
-        let pathChanged = previousPath != snapshot.currentPath
         if !pathChanged {
             restoreScrollAnchor(scrollAnchor)
         }
