@@ -557,6 +557,7 @@ extension EntryListCoordinator {
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
             resetThumbnailSession()
+            restoredScrollForCurrentPath = false
         }
     }
 

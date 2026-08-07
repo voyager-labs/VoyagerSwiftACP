@@ -356,9 +356,8 @@ public final class EntryListCoordinator: NSObject {
         if structureChanged, state.renamingItemId != nil {
             syncListRenamingFromStore()
         }
-        if shouldRestoreSavedOffset {
-            restoreScrollPositionIfNeeded()
-        } else {
+        let restoredSavedOffset = shouldRestoreSavedOffset ? restoreScrollPositionIfNeeded() : false
+        if !restoredSavedOffset {
             let preservesScrollAnchor: Bool = switch updateKind {
             case .fullReload:
                 false
@@ -735,12 +734,14 @@ public final class EntryListCoordinator: NSObject {
         scrollView.contentView.scroll(to: targetOrigin)
     }
 
-    func restoreScrollPositionIfNeeded() {
+    @discardableResult
+    func restoreScrollPositionIfNeeded() -> Bool {
         let itemCount = state.entries.count
-        guard itemCount != 0 else { return }
-        guard let savedOffset = state.savedScrollOffset else { return }
-        guard !restoredScrollForCurrentPath else { return }
+        guard itemCount != 0 else { return false }
+        guard let savedOffset = state.savedScrollOffset else { return false }
+        guard !restoredScrollForCurrentPath else { return false }
         restoredScrollForCurrentPath = true
         scrollView.contentView.scroll(to: savedOffset)
+        return true
     }
 }
