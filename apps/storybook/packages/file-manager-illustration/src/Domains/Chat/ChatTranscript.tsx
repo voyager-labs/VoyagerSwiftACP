@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import type { ChatMessage, ChatStreamingAssistant } from "../../model/types"
@@ -26,7 +27,6 @@ export const ChatTranscript: FC<ChatTranscriptProps> = ({
   canRegenerate,
   requestText,
   onRequestTextChange,
-  onErrorRecovery,
   onRegenerate,
 }) => {
   const lastAssistantIndex = (() => {
@@ -50,16 +50,15 @@ export const ChatTranscript: FC<ChatTranscriptProps> = ({
 
         {streamingAssistant != null ? (
           <ChatAssistantCard
-            assistant={streamingAssistant}
+            title={streamingAssistant.title}
+            thinkingLabel={streamingAssistant.thinkingLabel}
+            activityStatusLabel={streamingAssistant.activityStatusLabel}
+            content={streamingAssistant.content}
             isProcessing={isProcessing}
-            onErrorRecovery={onErrorRecovery}
+            failure={streamingAssistant.failure?.message}
           />
         ) : isProcessing === true ? (
-          <ChatAssistantCard
-            assistant={{ title: "Assistant", content: undefined }}
-            isProcessing={true}
-            onErrorRecovery={onErrorRecovery}
-          />
+          <ChatAssistantCard title="Assistant" isProcessing={true} />
         ) : statusText != null && statusText !== "" ? (
           <p className="chat-status-row">{statusText}</p>
         ) : null}
@@ -79,13 +78,22 @@ interface ChatMessageRowProps {
 }
 
 const ChatMessageRow: FC<ChatMessageRowProps> = ({ message, showsRegenerate, onRegenerate }) => {
-  const isUser = message.role === "user"
-  return (
-    <article className={`chat-message chat-message-${message.role}`}>
-      <span className="chat-message-role">{isUser ? "You" : "Assistant"}</span>
-      <p className="chat-message-content">{message.content}</p>
-      <span className="chat-message-meta">
-        {message.timestamp != null ? <time>{message.timestamp}</time> : null}
+  if (message.role === "user") {
+    return (
+      <div className="chat-message-user">
+        <div className="chat-bubble">{message.content}</div>
+      </div>
+    )
+  }
+
+  if (message.role === "assistant") {
+    return (
+      <div className="chat-message-assistant">
+        <ChatAssistantCard
+          title="Assistant"
+          content={message.content}
+          headerPresentation="completedHistorical"
+        />
         {showsRegenerate ? (
           <button
             type="button"
@@ -96,45 +104,91 @@ const ChatMessageRow: FC<ChatMessageRowProps> = ({ message, showsRegenerate, onR
             <SFSymbol name="arrow.clockwise" size={12} />
           </button>
         ) : null}
-      </span>
+      </div>
+    )
+  }
+
+  // system / tool
+  return <p className="chat-status-row">{message.content}</p>
+}
+
+interface ChatAssistantCardProps {
+  readonly title: string
+  readonly thinkingLabel?: string
+  readonly activityStatusLabel?: string
+  readonly content?: string
+  readonly isProcessing?: boolean
+  readonly failure?: string
+  readonly headerPresentation?: "full" | "completedHistorical"
+}
+
+const ChatAssistantCard: FC<ChatAssistantCardProps> = ({
+  title,
+  thinkingLabel,
+  activityStatusLabel,
+  content,
+  isProcessing,
+  failure,
+  headerPresentation = "full",
+}) => {
+  const normalizedContent = content != null && content.trim() !== "" ? content : undefined
+  // 네이티브 AiChatAssistantBodyPresentation: header는 content·failure 둘 다 없을 때만(full).
+  const showsInlineHeader =
+    headerPresentation === "full" && normalizedContent == null && failure == null
+  const showsWaiting = isProcessing === true && failure == null && normalizedContent == null
+
+  return (
+    <article className="chat-assistant-card">
+      {showsInlineHeader ? (
+        <header className="chat-assistant-header">
+          <span className="chat-assistant-title">{title}</span>
+          {thinkingLabel != null && thinkingLabel !== "" ? (
+            <span className="chat-thinking">{thinkingLabel}</span>
+          ) : null}
+          {activityStatusLabel != null && activityStatusLabel !== "" ? (
+            <span className="chat-activity">{activityStatusLabel}</span>
+          ) : null}
+        </header>
+      ) : null}
+
+      {normalizedContent != null ? (
+        <p className="chat-message-content">{normalizedContent}</p>
+      ) : showsWaiting ? (
+        <ChatWaitingIndicator />
+      ) : null}
+
+      {failure != null && failure !== "" ? (
+        <div className="chat-failure" role="alert">
+          <span className="chat-failure-icon">
+            <SFSymbol name="exclamationmark.triangle.fill" size={10} />
+          </span>
+          <span className="chat-failure-message">{failure}</span>
+        </div>
+      ) : null}
     </article>
   )
 }
 
-interface ChatAssistantCardProps {
-  readonly assistant: ChatStreamingAssistant
-  readonly isProcessing?: boolean
-  readonly onErrorRecovery?: () => void
-}
+// AiChatWaitingIndicator 번역 — 0.4s 주기로 "."/".."/"..." 순환, reduce-motion 시 정지.
+const ChatWaitingIndicator: FC = () => {
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const [step, setStep] = useState(0)
 
-const ChatAssistantCard: FC<ChatAssistantCardProps> = ({
-  assistant,
-  isProcessing,
-  onErrorRecovery,
-}) => {
-  const hasContent = assistant.content != null && assistant.content !== ""
+  useEffect(() => {
+    if (reduceMotion) return
+    const id = window.setInterval(() => {
+      setStep((prev) => (prev + 1) % 3)
+    }, 400)
+    return () => window.clearInterval(id)
+  }, [reduceMotion])
+
+  const dots = ".".repeat((reduceMotion ? 2 : step) + 1)
   return (
-    <article className={`chat-assistant-card${isProcessing === true ? " is-processing" : ""}`}>
-      <span className="chat-message-role">{assistant.title}</span>
-      {assistant.thinkingLabel != null && isProcessing === true ? (
-        <span className="chat-thinking">
-          <span className="chat-spinner" aria-hidden="true" />
-          {assistant.thinkingLabel}
-        </span>
-      ) : null}
-      {assistant.activityStatusLabel != null && isProcessing === true ? (
-        <span className="chat-activity">{assistant.activityStatusLabel}</span>
-      ) : null}
-      {hasContent ? <p className="chat-message-content">{assistant.content}</p> : null}
-      {assistant.failure != null ? (
-        <div className="chat-failure" role="alert">
-          <SFSymbol name="exclamationmark.triangle" size={14} />
-          <span>{assistant.failure.message}</span>
-          <button type="button" className="chat-recovery" onClick={onErrorRecovery}>
-            {assistant.failure.recoveryLabel ?? "Retry"}
-          </button>
-        </div>
-      ) : null}
-    </article>
+    <span className="chat-waiting" aria-label="Waiting for assistant response">
+      {dots}
+    </span>
   )
 }

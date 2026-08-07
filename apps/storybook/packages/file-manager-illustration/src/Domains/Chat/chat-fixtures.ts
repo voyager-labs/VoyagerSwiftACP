@@ -69,8 +69,6 @@ export const chatStreamingAssistant: ChatStreamingAssistant = {
   title: "Assistant",
   thinkingLabel: "Thinking",
   activityStatusLabel: "Reading 6 PDFs",
-  content:
-    "I reviewed 6 PDFs. Three themes recur: citation networks around Fitchett 2014, file-organization taxonomies, and",
 }
 
 export const chatStreamingFailure: ChatStreamingAssistant = {
