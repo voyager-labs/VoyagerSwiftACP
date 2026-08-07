@@ -398,6 +398,11 @@ extension EntryListCoordinator {
                       changes: changes,
                   )
         {
+            if pathChanged {
+                restoredScrollForCurrentPath = false
+                restoreScrollPositionIfNeeded()
+            }
+            syncListRenamingFromStore()
             if !pathChanged { restoreScrollAnchor(scrollAnchor) }
             return
         } else if changes.sectionStructureChanged {
