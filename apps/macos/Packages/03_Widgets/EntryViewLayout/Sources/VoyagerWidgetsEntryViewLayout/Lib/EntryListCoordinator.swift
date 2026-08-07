@@ -124,6 +124,11 @@ typealias EntryListDateFormatting = EntryListCoordinatorDateFormatting
 
 @MainActor
 public final class EntryListCoordinator: NSObject {
+    enum PostReloadUpdateKind {
+        case fullReload
+        case incremental(preservesScrollAnchor: Bool)
+    }
+
     typealias RenderSnapshot = EntryListCoordinatorRenderSnapshot
     typealias OutlineItem = EntryListOutlineItem
 
@@ -218,10 +223,10 @@ public final class EntryListCoordinator: NSObject {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0)
         rebuildRowsAndReload()
-        syncListSelectionFromStore()
-        scrollToSelectionIfNeeded()
         restoreScrollPositionIfNeeded()
-        syncListRenamingFromStore()
+        if !restoredScrollForCurrentPath {
+            scrollToSelectionIfNeeded()
+        }
         CATransaction.commit()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
@@ -273,18 +278,11 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func rebuildRowsAndReload() {
-        let scrollAnchor = captureScrollAnchor()
         let snapshot = RenderSnapshot(state: state)
         let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
         let pathChanged = previousPath != snapshot.currentPath
-        if pathChanged {
-            restoredScrollForCurrentPath = false
-        }
         if snapshot.isHierarchyOutlineEnabled {
             applyStoreProjection(snapshot.outlineProjection, pathChanged: pathChanged)
-            if !pathChanged {
-                restoreScrollAnchor(scrollAnchor)
-            }
             return
         }
 
@@ -307,32 +305,71 @@ public final class EntryListCoordinator: NSObject {
            snapshot.outlineProjection.revision == projectionSession.renderedProjectionRevision
         {
             projectionSession.reset()
-            outlineItems = flatItems
-            rebuildItemIndexes()
-            lastAppliedVisibleRows = []
-            tableView.reloadData()
-            applyGroupExpansionState()
-            syncListSelectionFromStore()
-            syncListRenamingFromStore()
-            restoreScrollPositionIfNeeded()
-            requestThumbnailsForVisibleRows()
-        } else {
-            projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
-                guard let self else { return }
-                outlineItems = items
+            applyPostReloadPresentation(
+                pathChanged: pathChanged,
+                structureChanged: true,
+                updateKind: .fullReload,
+                selectionChanged: false,
+            ) {
+                outlineItems = flatItems
                 rebuildItemIndexes()
                 lastAppliedVisibleRows = []
                 tableView.reloadData()
                 applyGroupExpansionState()
-                syncListSelectionFromStore()
-                syncListRenamingFromStore()
-                restoreScrollPositionIfNeeded()
-                requestThumbnailsForVisibleRows()
+            }
+        } else {
+            projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
+                guard let self else { return }
+                applyPostReloadPresentation(
+                    pathChanged: pathChanged,
+                    structureChanged: true,
+                    updateKind: .fullReload,
+                    selectionChanged: false,
+                ) {
+                    outlineItems = items
+                    rebuildItemIndexes()
+                    lastAppliedVisibleRows = []
+                    tableView.reloadData()
+                    applyGroupExpansionState()
+                }
             }
         }
-        if !pathChanged {
-            restoreScrollAnchor(scrollAnchor)
+    }
+
+    func applyPostReloadPresentation(
+        pathChanged: Bool,
+        structureChanged: Bool,
+        updateKind: PostReloadUpdateKind,
+        selectionChanged: Bool,
+        materialize: () -> Void,
+    ) {
+        if pathChanged {
+            restoredScrollForCurrentPath = false
         }
+
+        let capturedAnchor = pathChanged ? nil : captureScrollAnchor()
+        materialize()
+
+        if structureChanged || selectionChanged {
+            syncListSelectionFromStore()
+        }
+        if structureChanged, state.renamingItemId != nil {
+            syncListRenamingFromStore()
+        }
+        if pathChanged {
+            restoreScrollPositionIfNeeded()
+        } else {
+            let preservesScrollAnchor: Bool = switch updateKind {
+            case .fullReload:
+                false
+            case let .incremental(preservesScrollAnchor):
+                preservesScrollAnchor
+            }
+            if !preservesScrollAnchor {
+                restoreScrollAnchor(capturedAnchor)
+            }
+        }
+        requestThumbnailsForVisibleRows()
     }
 
     func requestThumbnailsForVisibleRows() {
@@ -445,35 +482,31 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func applyStoreProjection(_ projection: EntryListOutlineProjection, pathChanged: Bool = false) {
-        let scrollAnchor = pathChanged ? nil : captureScrollAnchor()
         let oldVisibleRows = lastAppliedVisibleRows
 
         projectionSession.apply(projection) { [weak self] projection, items in
             guard let self else { return }
 
-            let newVisibleRows = projection.visibleRows
-
-            if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items, projection: projection) {
-                lastAppliedVisibleRows = newVisibleRows
-                if pathChanged {
-                    restoredScrollForCurrentPath = false
-                    restoreScrollPositionIfNeeded()
-                } else {
-                    restoreScrollAnchor(scrollAnchor)
+            applyPostReloadPresentation(
+                pathChanged: pathChanged,
+                structureChanged: true,
+                updateKind: .fullReload,
+                selectionChanged: false,
+            ) {
+                let newVisibleRows = projection.visibleRows
+                if !tryIncrementalRowUpdate(
+                    old: oldVisibleRows,
+                    new: newVisibleRows,
+                    items: items,
+                    projection: projection,
+                ) {
+                    outlineItems = items
+                    rebuildItemIndexes()
+                    tableView.reloadData()
+                    applyFolderExpansionState(for: projection)
                 }
-                return
+                lastAppliedVisibleRows = newVisibleRows
             }
-
-            outlineItems = items
-            rebuildItemIndexes()
-            tableView.reloadData()
-            applyFolderExpansionState(for: projection)
-            syncListSelectionFromStore()
-            syncListRenamingFromStore()
-            restoreScrollPositionIfNeeded()
-            requestThumbnailsForVisibleRows()
-            lastAppliedVisibleRows = newVisibleRows
-            if !pathChanged { restoreScrollAnchor(scrollAnchor) }
         }
     }
 
@@ -504,8 +537,6 @@ public final class EntryListCoordinator: NSObject {
             let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
             tableView.reloadData(forRowIndexes: plan.updatedRowIndexes, columnIndexes: columnIndexes)
         }
-        syncListSelectionFromStore()
-        requestThumbnailsForVisibleRows()
         return true
     }
 
