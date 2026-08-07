@@ -186,10 +186,13 @@ struct AppRootFeature {
             return .send(.windowManager(.lifecycle(.applyAppPreferences(preferences))))
 
         case let .menuCommands(.delegate(.windowManager(action))):
+            if case .file(.newWindow) = action,
+               state.windowManager.windows.isEmpty,
+               !state.lifecycle.isShellRuntimeReady
+            {
+                return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+            }
             return .send(.windowManager(action))
-
-        case let .menuCommands(.delegate(.lifecycle(delegate))):
-            return .send(.lifecycle(.delegate(delegate)))
 
         case let .menuCommands(.delegate(.updater(action))):
             return .send(.updater(action))

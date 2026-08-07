@@ -65,7 +65,7 @@ struct MenuCommandsFeature {
 
     private func routeFileTabAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
         switch command {
-        case .newWindow: .send(.delegate(.lifecycle(.openInitialWindowIfNeeded)))
+        case let .newWindow(path): .send(.delegate(.windowManager(.file(.newWindow(path: path)))))
         case .newTab: .send(.delegate(.windowManager(.file(.newTab))))
         case .closeTab: .send(.delegate(.windowManager(.file(.closeTab))))
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))

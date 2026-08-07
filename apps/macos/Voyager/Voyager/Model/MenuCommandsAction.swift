@@ -16,7 +16,6 @@ enum MenuCommandsAction: ViewAction, CasePathable {
     @CasePathable
     enum Delegate {
         case windowManager(WindowManagerAction)
-        case lifecycle(AppLifecycleAction.Delegate)
         case updater(UpdaterAction)
     }
 }
