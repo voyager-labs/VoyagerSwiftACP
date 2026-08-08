@@ -355,6 +355,47 @@ func TestAvailabilityPropagationTypedAdapterErrors(t *testing.T) {
 	}
 }
 
+func TestUnifiedListPreservesEntryNotFoundFromAdapter(t *testing.T) {
+	registry, bindings := unifiedFixture(t)
+	external := bindings[0].Adapter.(*recordingResourceAdapter)
+	external.listError = source.ErrEntryNotFound
+	service := mustUnifiedService(t, registry, bindings[:1])
+	path := "/external/missing"
+
+	_, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1, RequestedProperties: []string{},
+	})
+	if !errors.Is(err, ErrEntryNotFound) || err.Error() != "entry_not_found" {
+		t.Fatalf("UnifiedList() error = %v, want entry_not_found", err)
+	}
+}
+
+func TestUnifiedListKeepsEntryNotFoundAsPartialFailure(t *testing.T) {
+	registry, bindings := unifiedFixture(t)
+	external := bindings[0].Adapter.(*recordingResourceAdapter)
+	local := bindings[1].Adapter.(*recordingResourceAdapter)
+	external.listError = source.ErrEntryNotFound
+	local.listResults = []source.AdapterListResult{
+		adapterListResultFixture(t, bindings[1].SourceRef, "local", "item", nil),
+	}
+	service := mustUnifiedService(t, registry, bindings)
+	path := "/"
+
+	result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 2, RequestedProperties: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial := false
+	for _, warning := range result.Warnings {
+		partial = partial || warning.Code == source.WarningCodePartialResult
+	}
+	if len(result.Entries) != 1 || !partial {
+		t.Fatalf("UnifiedList() result = %#v, want one entry and partial_result warning", result)
+	}
+}
+
 func TestResolveEntryRejectsCrossSourceResult(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	external := bindings[0].Adapter.(*recordingResourceAdapter)

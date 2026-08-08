@@ -44,6 +44,7 @@ type scopePage struct {
 	warnings     []ScopeWarning
 	state        paginationScopeState
 	success      bool
+	failure      error
 }
 
 func NewUnifiedService(registry MountRegistry, bindings []ResourceAdapterBinding, cursorKey []byte, clock func() time.Time) (*UnifiedService, error) {
@@ -152,6 +153,9 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], request.RequestedProperties)
 		if err != nil {
 			pages[index] = service.adapterFailureScope(snapshot, scope, uint8(index))
+			pages[index].failure = err
+		} else {
+			pages[index].failure = adapterErr
 		}
 	}
 	entries := interleaveScopeEntries(pages, active)
@@ -641,11 +645,20 @@ func successfulAvailability(state domainentry.AvailabilityState) bool {
 }
 
 func allFailedError(pages []scopePage) error {
-	priority := []source.SourceErrorCode{source.SourceErrorCodePermissionDenied, source.SourceErrorCodeSourceDeleted, source.SourceErrorCodeSourceUnavailable, source.SourceErrorCodeAdapterFailure}
-	for _, code := range priority {
+	priority := []struct {
+		code  source.SourceErrorCode
+		cause error
+	}{
+		{source.SourceErrorCodePermissionDenied, source.ErrPermissionDenied},
+		{source.SourceErrorCodeSourceDeleted, source.ErrSourceDeleted},
+		{source.SourceErrorCodeSourceUnavailable, source.ErrSourceUnavailable},
+		{source.SourceErrorCodeEntryNotFound, source.ErrEntryNotFound},
+		{source.SourceErrorCodeAdapterFailure, source.ErrAdapterFailure},
+	}
+	for _, candidate := range priority {
 		for _, page := range pages {
-			if page.availability.Error != nil && page.availability.Error.Code == code {
-				return sourceErrorToApplication(code)
+			if errors.Is(page.failure, candidate.cause) || (page.availability.Error != nil && page.availability.Error.Code == candidate.code) {
+				return sourceErrorToApplication(candidate.code)
 			}
 		}
 	}
