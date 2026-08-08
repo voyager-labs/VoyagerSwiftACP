@@ -353,11 +353,7 @@ public final class EntryListCoordinator: NSObject {
         if structureChanged || selectionChanged {
             syncListSelectionFromStore()
         }
-        var scrolledToSelection = false
-        if state.shouldScrollToSelection {
-            scrollToSelectionIfNeeded()
-            scrolledToSelection = true
-        }
+        let scrolledToSelection = scrollToSelectionIfNeeded()
         if !scrolledToSelection {
             let restoredSavedOffset = shouldRestoreSavedOffset ? restoreScrollPositionIfNeeded() : false
             if !restoredSavedOffset {
@@ -444,8 +440,9 @@ public final class EntryListCoordinator: NSObject {
         store.send(.view(.saveScrollOffset(offset, forPath: state.currentPath)))
     }
 
-    func scrollToSelectionIfNeeded() {
-        guard state.shouldScrollToSelection else { return }
+    @discardableResult
+    func scrollToSelectionIfNeeded() -> Bool {
+        guard state.shouldScrollToSelection else { return false }
         let targetId = state.lastSelectedId
             ?? state.selectedIds.first
         guard let targetId,
@@ -455,10 +452,11 @@ public final class EntryListCoordinator: NSObject {
               .first(where: { $0 >= 0 })
         else {
             store.send(.view(.resetScrollFlag))
-            return
+            return false
         }
         tableView.scrollRowToVisible(row)
         store.send(.view(.resetScrollFlag))
+        return true
     }
 
     func updateDropTargetBorder(isTargeted: Bool) {
