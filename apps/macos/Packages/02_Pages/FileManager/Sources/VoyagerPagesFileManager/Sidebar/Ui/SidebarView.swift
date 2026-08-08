@@ -29,7 +29,7 @@ struct SidebarView: View {
     @State private var unpinnedContentTabReorderDragScopeID = FileManagerTopNavigationReorderDragScopeID(
         boundaryOwner: .unpinnedContentTabs,
     )
-    @State private var reorderSessionStore = FileManagerTopNavigationReorderLocalSessionStore()
+    @State private var reorderSessionStore = FileManagerTopNavigationReorderLocalSessionStore.shared
     @State private var activeTopNavigationReorderBoundaryID: Int?
     @State private var activeUnpinnedReorderBoundaryID: Int?
 
@@ -64,7 +64,8 @@ struct SidebarView: View {
         .onDisappear {
             activeTopNavigationReorderBoundaryID = nil
             activeUnpinnedReorderBoundaryID = nil
-            reorderSessionStore.clear()
+            // shared session store의 broad clear는 다른 창/최신 drag token을 덮어쓰므로 하지 않는다.
+            // session entry는 drag source의 terminal(cleanupOwnedToken) 또는 consume/TTL이 정리한다.
             sidebarStore.send(.view(.teardownContentTabDragSource))
         }
     }
@@ -77,6 +78,13 @@ struct SidebarView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         LazyVStack(alignment: .leading, spacing: 0) {
+                            if pinnedTopNavigationItems.isEmpty {
+                                fileManagerTopNavigationReorderDropSlot(.empty(
+                                    id: Int.min,
+                                    owner: .topNavigation,
+                                    domain: .pinned,
+                                ))
+                            }
                             reorderablePinnedContentTabRows(pinnedTopNavigationItems)
 
                             if !pinnedTopNavigationItems.isEmpty,
@@ -86,6 +94,13 @@ struct SidebarView: View {
                             }
 
                             reorderableContentTabRows(sidebarStore.unpinnedContentTabItems)
+                            if sidebarStore.unpinnedContentTabItems.isEmpty {
+                                fileManagerTopNavigationReorderDropSlot(.empty(
+                                    id: Int.min + 1,
+                                    owner: .unpinnedContentTabs,
+                                    domain: .unpinned,
+                                ))
+                            }
 
                             Spacer()
                                 .frame(height: 4)
@@ -137,6 +152,16 @@ struct SidebarView: View {
               currentWindowID != payload.sourceWindowID,
               sidebarStore.pendingContentTabMoveRequest == nil
         else { return }
+        // 외부 창 Content Tab drop은 production adapter로 typed route를 구한 뒤 preserve-domain transfer만 dispatch한다.
+        // 같은 창 명시 전환/배치 전송 의도는 later task가, Entry/File URL/Location은 기존 owner가 담당한다.
+        let route = ContentTabDropRouteProjection.route(
+            payload: payload,
+            targetWindowID: currentWindowID,
+            targetDomain: nil,
+            placement: nil,
+            targetSurface: .contentTabDomain,
+        )
+        guard route == .foreignPreserveDomainTransfer else { return }
         sidebarStore.send(.view(.receiveContentTabDrag(payload)))
     }
 
@@ -222,6 +247,7 @@ struct SidebarView: View {
             let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
                 for: items.map { .contentTab($0.id) },
                 owner: .unpinnedContentTabs,
+                contentTabDomain: .unpinned,
             )
 
             VStack(alignment: .leading, spacing: 0) {
@@ -443,6 +469,23 @@ struct SidebarView: View {
                     placement: result.placement,
                 )))
             },
+            targetWindowID: sidebarStore.currentWindowID,
+            contentTabIDsInDomain: { domain in
+                switch domain {
+                case .pinned: pinnedTopNavigationItems.map(\.id)
+                case .unpinned: sidebarStore.unpinnedContentTabItems.map(\.id)
+                }
+            },
+            onDomainTransition: { request in
+                sidebarStore.send(.view(.contentTabDomainTransitionRequested(request)))
+            },
+            onForeignExplicitTransfer: { payload, targetDomain, placement in
+                sidebarStore.send(.view(.receiveContentTabExplicitDomainDrag(
+                    payload: payload,
+                    targetDomain: targetDomain,
+                    placement: placement,
+                )))
+            },
         )
     }
 
@@ -470,6 +513,7 @@ private extension SidebarView {
             let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
                 for: items.map { .contentTab($0.id) },
                 owner: .topNavigation,
+                contentTabDomain: .pinned,
             )
 
             VStack(alignment: .leading, spacing: 0) {
