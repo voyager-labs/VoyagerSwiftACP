@@ -33,6 +33,25 @@ func TestUnifiedListRejectsUnsortedAdapterProperties(t *testing.T) {
 	}
 }
 
+func TestUnifiedListRejectsDuplicateAdapterRelativePath(t *testing.T) {
+	registry, bindings := unifiedFixture(t)
+	adapter := bindings[0].Adapter.(*recordingResourceAdapter)
+	item := adapterEntryFixture(t, bindings[0].SourceRef, "external", "item")
+	result := adapterListResultFixture(t, bindings[0].SourceRef, "external", "item", nil)
+	result.Items = append(result.Items, item)
+	adapter.listResults = []source.AdapterListResult{result}
+	service := mustUnifiedService(t, registry, bindings)
+	path := "/external"
+
+	_, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 2,
+		RequestedProperties: []string{},
+	})
+	if !errors.Is(err, ErrApplicationAdapterFailure) {
+		t.Fatalf("UnifiedList() error = %v, want %v", err, ErrApplicationAdapterFailure)
+	}
+}
+
 func TestResolveEntryRejectsUnsortedAdapterProperties(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	adapter := bindings[0].Adapter.(*recordingResourceAdapter)
