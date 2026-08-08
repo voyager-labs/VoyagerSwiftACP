@@ -70,19 +70,32 @@ public struct FileManagerFeature {
                 guard state.pendingSelectedContentTabClose?.operationID == operationID else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
-            case let .performSelectedContentTabPinMutation(operationID, tabID, .pin(requestedTabID)):
+            case let .performSelectedContentTabPinMutation(operationID, tabID, .pin(requestedTabID, placement)):
                 guard requestedTabID == tabID,
                       state.pendingSelectedContentTabPinMutation?.operationID == operationID,
                       state.pendingSelectedContentTabPinMutation?.currentTabID == tabID
                 else { return .none }
-                return requestTopNavigationPin(tabID: tabID, state: &state)
+                guard requestTopNavigationPin(tabID: tabID, placement: placement, state: &state) else {
+                    return .send(.selectedPinMutationItemCompleted(
+                        operationID: operationID,
+                        tabID: tabID,
+                        outcome: .remaining,
+                    ))
+                }
+                return .none
 
-            case let .performSelectedContentTabPinMutation(operationID, tabID, .unpin(requestedTabID)):
+            case let .performSelectedContentTabPinMutation(operationID, tabID, .unpin(requestedTabID, placement)):
                 guard requestedTabID == tabID,
                       state.pendingSelectedContentTabPinMutation?.operationID == operationID,
                       state.pendingSelectedContentTabPinMutation?.currentTabID == tabID
                 else { return .none }
-                prepareTopNavigationUnpin(tabID: tabID, state: &state)
+                guard prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state) else {
+                    return .send(.selectedPinMutationItemCompleted(
+                        operationID: operationID,
+                        tabID: tabID,
+                        outcome: .remaining,
+                    ))
+                }
                 return .none
 
             case let .performSelectedContentTabPinMutation(
@@ -99,6 +112,7 @@ public struct FileManagerFeature {
                     context: request.context,
                     rollback: rollback,
                     mutation: request.mutation,
+                    persistenceScopeID: request.persistenceScopeID,
                 )
                 return forwardPinnedRecordPersistence(
                     rebasedRequest,
@@ -161,17 +175,18 @@ public struct FileManagerFeature {
                     state: &state,
                 )
 
-            case let .contentTabs(.pin(tabID)):
+            case let .contentTabs(.pin(tabID, placement)):
                 guard state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
-                return requestTopNavigationPin(tabID: tabID, state: &state)
+                _ = requestTopNavigationPin(tabID: tabID, placement: placement, state: &state)
+                return .none
 
-            case let .contentTabs(.unpin(tabID)):
+            case let .contentTabs(.unpin(tabID, placement)):
                 guard state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
-                prepareTopNavigationUnpin(tabID: tabID, state: &state)
+                _ = prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state)
                 return .none
 
             case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
@@ -184,7 +199,7 @@ public struct FileManagerFeature {
                 state.dormantContentTabSlots.removeAll { $0.id == tabID }
                 state.pendingTopNavigationIntents.removeAll { pending in
                     switch pending.intent {
-                    case let .pin(id), let .unpin(id), let .close(id), let .update(id):
+                    case let .pin(id, _), let .unpin(id), let .close(id), let .update(id):
                         id == tabID
                     case .move, .movePinnedGroup:
                         false
@@ -366,6 +381,8 @@ public struct FileManagerFeature {
                       let pending = state.pendingSelectedContentTabPinMutation,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
+                      !isDirectPinMutation(contentTabAction)
+                      || pending.currentTopNavigationToken != nil,
                       !isStalePinnedRecordPersistenceResult(contentTabAction, in: state.contentTabs),
                       isCorrelatedSelectedContentTabPinMutation(
                           contentTabAction,
@@ -456,27 +473,51 @@ public struct FileManagerFeature {
 extension FileManagerFeature {
     private func requestTopNavigationPin(
         tabID: ContentTabID,
+        placement: ContentTabPlacement?,
         state: inout State,
-    ) -> Effect<Action> {
-        guard state.contentTabs.tabs[id: tabID]?.isPinned == false else { return .none }
+    ) -> Bool {
+        guard case .valid = ContentTabPinMutationPreflight.pin(
+            id: tabID,
+            placement: placement,
+            state: state.contentTabs,
+        ) else { return false }
         let dormantSlot = state.dormantContentTabSlots.first { $0.id == tabID }
+        let optimisticOrder: FileManagerTopNavigationOrder
+        if let placement {
+            guard let projectedOrder = FileManagerTopNavigationOrderPolicy.insertingContentTab(
+                tabID,
+                at: placement,
+                in: state.optimisticTopNavigationOrder,
+            ) else { return false }
+            optimisticOrder = projectedOrder
+        } else {
+            optimisticOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+                tabID,
+                into: state.optimisticTopNavigationOrder,
+                dormantSlot: dormantSlot,
+            )
+        }
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
-        state.pendingTopNavigationIntents.append(.init(token: token, intent: .pin(tabID)))
-        state.optimisticTopNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
-            tabID,
-            into: state.optimisticTopNavigationOrder,
-            dormantSlot: dormantSlot,
-        )
-        return .none
+        state.pendingTopNavigationIntents.append(.init(token: token, intent: .pin(tabID, placement: placement)))
+        if state.pendingSelectedContentTabPinMutation?.currentTabID == tabID {
+            state.pendingSelectedContentTabPinMutation?.currentTopNavigationToken = token
+        }
+        state.optimisticTopNavigationOrder = optimisticOrder
+        return true
     }
 
     private func prepareTopNavigationUnpin(
         tabID: ContentTabID,
+        placement: ContentTabPlacement?,
         state: inout State,
-    ) {
-        guard state.contentTabs.tabs[id: tabID]?.isPinned == true else { return }
+    ) -> Bool {
+        guard ContentTabPinMutationPreflight.unpin(
+            id: tabID,
+            placement: placement,
+            state: state.contentTabs,
+        ) != nil else { return false }
         let item = FileManagerTopNavigationItemID.contentTab(tabID)
-        guard let index = state.optimisticTopNavigationOrder.items.firstIndex(of: item) else { return }
+        guard let index = state.optimisticTopNavigationOrder.items.firstIndex(of: item) else { return false }
         let items = state.optimisticTopNavigationOrder.items
         let slot = FileManagerTopNavigationOrderPolicy.DormantContentTabSlot(
             id: tabID,
@@ -487,7 +528,11 @@ extension FileManagerFeature {
         state.dormantContentTabSlots.append(slot)
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
         state.pendingTopNavigationIntents.append(.init(token: token, intent: .unpin(tabID)))
+        if state.pendingSelectedContentTabPinMutation?.currentTabID == tabID {
+            state.pendingSelectedContentTabPinMutation?.currentTopNavigationToken = token
+        }
         state.optimisticTopNavigationOrder = .init(items: items.filter { $0 != item })
+        return true
     }
 
     private func requestTopNavigationClose(
@@ -532,7 +577,7 @@ extension FileManagerFeature {
         ) else { return .none }
         guard let pending = state.pendingTopNavigationIntents.last(where: { candidate in
             switch candidate.intent {
-            case let .pin(id), let .unpin(id), let .close(id), let .update(id): id == tabID
+            case let .pin(id, _), let .unpin(id), let .close(id), let .update(id): id == tabID
             case .move, .movePinnedGroup: false
             }
         }) else {
@@ -546,7 +591,7 @@ extension FileManagerFeature {
         let resolvedTerminal = resolveTopNavigationTerminal(terminal, state: state)
         let intent = pending.intent
         switch (intent, resolvedTerminal) {
-        case (.pin(_), .committed(_)):
+        case (.pin(_, _), .committed(_)):
             state.dormantContentTabSlots.removeAll { $0.id == tabID }
         case (.unpin(_), .failed(_)):
             state.dormantContentTabSlots.removeAll { $0.id == tabID }
@@ -636,7 +681,7 @@ extension FileManagerFeature {
         guard let index = state.pendingTopNavigationIntents.lastIndex(where: { pending in
             guard pending.persistenceContext == nil else { return false }
             switch pending.intent {
-            case let .pin(tabID), let .unpin(tabID), let .close(tabID), let .update(tabID):
+            case let .pin(tabID, _), let .unpin(tabID), let .close(tabID), let .update(tabID):
                 return tabID == request.tabID
             case .move, .movePinnedGroup:
                 return false
@@ -644,6 +689,12 @@ extension FileManagerFeature {
         }) else { return .none }
 
         state.pendingTopNavigationIntents[index].persistenceContext = request.context
+        if case let .selectedPin(operationID) = source,
+           state.pendingSelectedContentTabPinMutation?.operationID == operationID,
+           state.pendingSelectedContentTabPinMutation?.currentTabID == request.tabID
+        {
+            state.pendingSelectedContentTabPinMutation?.currentPersistenceContext = request.context
+        }
         return .send(.delegate(.persistPinnedRecordMutation(
             token: state.pendingTopNavigationIntents[index].token,
             source: source,
@@ -659,6 +710,14 @@ extension FileManagerFeature {
         terminal: FileManagerTopNavigationIntentTerminal,
         state: inout State,
     ) -> Effect<Action> {
+        if case let .selectedPin(operationID) = source {
+            guard let selectedPin = state.pendingSelectedContentTabPinMutation,
+                  selectedPin.operationID == operationID,
+                  selectedPin.currentTabID == request.tabID,
+                  selectedPin.currentPersistenceContext == request.context,
+                  selectedPin.currentTopNavigationToken == token
+            else { return .none }
+        }
         guard let pending = state.pendingTopNavigationIntents.first(where: { $0.token == token }) else {
             return .none
         }
@@ -935,7 +994,7 @@ extension FileManagerFeature {
         _ action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
-        let reducedAction: ContentTabAction = if case let .pin(tabID) = action {
+        let reducedAction: ContentTabAction = if case let .pin(tabID, placement) = action, placement == nil {
             .pinUsingDormantSlot(
                 tabID,
                 state.dormantContentTabSlots.first { $0.id == tabID },
@@ -1133,9 +1192,9 @@ func isCorrelatedSelectedContentTabPinMutation(
     switch action {
     case let .delegate(.persistPinnedRecord(request)):
         request.tabID == tabID
-    case let .pin(id):
+    case let .pin(id, _):
         id == tabID && target == .pinned
-    case let .unpin(id):
+    case let .unpin(id, _):
         id == tabID && target == .unpinned
     case let .updateActivePageAnchor(id, _):
         id == tabID
@@ -1160,9 +1219,9 @@ func isCorrelatedSelectedContentTabCloseMutation(
          let .requestClose(id),
          let .close(id),
          let .commitClose(id),
-         let .pin(id),
+         let .pin(id, _),
          let .pinUsingDormantSlot(id, _),
-         let .unpin(id):
+         let .unpin(id, _):
         id == tabID
     case let .updateActivePageAnchor(id, _):
         id == tabID

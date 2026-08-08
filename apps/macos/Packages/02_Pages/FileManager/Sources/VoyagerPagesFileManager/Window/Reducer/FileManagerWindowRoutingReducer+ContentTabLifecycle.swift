@@ -76,6 +76,74 @@ extension FileManagerWindowRoutingReducer {
         return .send(.processNextSelectedContentTabPinMutation(operationID: operationID))
     }
 
+    func handleRequestContentTabDomainTransition(
+        _ request: ContentTabDomainTransitionRequest,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard admittedContentTabDomainTransition(request, state: state) else { return .none }
+        let target: SelectedContentTabPinMutationTargetState = switch request.targetDomain {
+        case .pinned: .pinned
+        case .unpinned: .unpinned
+        }
+        let operationID = uuid()
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: target,
+            orderedTargetIDs: request.orderedTabIDs,
+            origin: .drag,
+            dragOperationID: request.operationID,
+            sourceWindowID: request.sourceWindowID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            initialPlacement: request.placement,
+        )
+        return .send(.processNextSelectedContentTabPinMutation(operationID: operationID))
+    }
+
+    private func admittedContentTabDomainTransition(
+        _ request: ContentTabDomainTransitionRequest,
+        state: State,
+    ) -> Bool {
+        guard state.canStartSelectedContentTabPinMutation,
+              request.sourceDomain != request.targetDomain,
+              state.windowID == request.sourceWindowID,
+              state.sidebar.currentWindowID == request.sourceWindowID,
+              !request.orderedTabIDs.isEmpty,
+              Set(request.orderedTabIDs).count == request.orderedTabIDs.count,
+              request.orderedTabIDs.contains(request.initiatingTabID)
+        else { return false }
+
+        let sourceIsPinned = request.sourceDomain == .pinned
+        guard request.orderedTabIDs.allSatisfy({ tabID in
+            guard let tab = state.contentTabs.tabs[id: tabID] else { return false }
+            let hasPinnedRecord = state.contentTabs.pinnedRecords[tabID] != nil
+            guard tab.isPinned == sourceIsPinned,
+                  hasPinnedRecord == sourceIsPinned
+            else { return false }
+            return request.targetDomain == .unpinned || state.canPinContentTab(tabID)
+        }) else { return false }
+
+        switch request.placement {
+        case let .before(anchorID), let .after(anchorID):
+            guard !request.orderedTabIDs.contains(anchorID),
+                  let anchor = state.contentTabs.tabs[id: anchorID],
+                  ContentTabDomain.domain(isPinned: anchor.isPinned) == request.targetDomain,
+                  (state.contentTabs.pinnedRecords[anchorID] != nil) == anchor.isPinned
+            else { return false }
+        case .empty:
+            guard !state.contentTabs.tabs.contains(where: { tab in
+                !request.orderedTabIDs.contains(tab.id)
+                    && ContentTabDomain.domain(isPinned: tab.isPinned) == request.targetDomain
+            }) else { return false }
+            if request.targetDomain == .pinned,
+               state.contentTabs.pinnedRecords.keys.contains(where: { !request.orderedTabIDs.contains($0) })
+            {
+                return false
+            }
+        }
+        return true
+    }
+
     func processNextSelectedContentTabPinMutation(
         operationID: UUID,
         state: inout State,
@@ -118,7 +186,7 @@ extension FileManagerWindowRoutingReducer {
             return .send(.performSelectedContentTabPinMutation(
                 operationID: operationID,
                 tabID: tabID,
-                action: .pin(tabID),
+                action: .pin(tabID, placement: pending.currentPlacement),
             ))
 
         case .unpinned:
@@ -131,7 +199,7 @@ extension FileManagerWindowRoutingReducer {
             return .send(.performSelectedContentTabPinMutation(
                 operationID: operationID,
                 tabID: tabID,
-                action: .unpin(tabID),
+                action: .unpin(tabID, placement: pending.currentPlacement),
             ))
         }
     }
@@ -184,6 +252,9 @@ extension FileManagerWindowRoutingReducer {
         switch outcome {
         case .success:
             pending.successCount += 1
+            if pending.origin == .drag {
+                pending.lastSuccessfullyPlacedID = tabID
+            }
         case .failure:
             pending.failureCount += 1
         case .remaining:
@@ -192,6 +263,8 @@ extension FileManagerWindowRoutingReducer {
         pending.cursor += 1
         pending.currentTabID = nil
         pending.currentItemRollbackSnapshot = nil
+        pending.currentPersistenceContext = nil
+        pending.currentTopNavigationToken = nil
         state.pendingSelectedContentTabPinMutation = pending
         return .send(.processNextSelectedContentTabPinMutation(operationID: operationID))
     }

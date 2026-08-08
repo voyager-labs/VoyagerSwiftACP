@@ -177,6 +177,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case resyncActiveCollectionNavigation
 
     case requestSelectedContentTabPinMutation(target: SelectedContentTabPinMutationTargetState)
+    case requestContentTabDomainTransition(ContentTabDomainTransitionRequest)
     case processNextSelectedContentTabPinMutation(operationID: UUID)
     case performSelectedContentTabPinMutation(
         operationID: UUID,
@@ -371,6 +372,12 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
         case requestContentTabMove(ContentTabMoveRequest)
         case receiveContentTabDrag(ContentTabDragPayload)
+        /// 외부 창 explicit domain 경계 drop 의도를 window manager로 전달한다.
+        case receiveContentTabExplicitDomainDrag(
+            payload: ContentTabDragPayload,
+            targetDomain: ContentTabDomain,
+            placement: ContentTabPlacement,
+        )
         case pinnedContentTabRuntimeNavigationChanged(
             tabID: ContentTabID,
             navigationState: ContentPageNavigationRoute,
