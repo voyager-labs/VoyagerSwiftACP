@@ -157,6 +157,9 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		} else {
 			pages[index].failure = adapterErr
 		}
+		if pages[index].state.State == paginationStateExhausted {
+			pages[index].state.ExhaustedSnapshot = snapshotForPage(pages[index])
+		}
 	}
 	entries := interleaveScopeEntries(pages, active)
 	if len(entries) > request.PageSize {
@@ -574,6 +577,7 @@ func restoreScopePage(scope selectedScope, state paginationScopeState) (scopePag
 	if snapshot.WarningCode != "" {
 		page.warnings = append(page.warnings, ScopeWarning{SourceInstanceID: scope.sourceRef.SourceInstanceID, MountID: scope.mount.MountID, Code: snapshot.WarningCode, Message: stableWarningMessage(snapshot.WarningCode), Retryable: snapshot.WarningRetryable})
 	}
+	page.failure = sourceFailure(snapshot.FailureCode)
 	return page, nil
 }
 
@@ -583,11 +587,46 @@ func snapshotForPage(page scopePage) *exhaustedScopeSnapshot {
 		snapshot.SourceErrorCode = page.availability.Error.Code
 		snapshot.SourceRetryable = page.availability.Error.Retryable
 	}
+	snapshot.FailureCode = failureSourceErrorCode(page.failure)
 	if len(page.warnings) > 0 {
 		snapshot.WarningCode = page.warnings[0].Code
 		snapshot.WarningRetryable = page.warnings[0].Retryable
 	}
 	return snapshot
+}
+
+func failureSourceErrorCode(err error) source.SourceErrorCode {
+	switch {
+	case errors.Is(err, source.ErrPermissionDenied):
+		return source.SourceErrorCodePermissionDenied
+	case errors.Is(err, source.ErrSourceDeleted):
+		return source.SourceErrorCodeSourceDeleted
+	case errors.Is(err, source.ErrSourceUnavailable):
+		return source.SourceErrorCodeSourceUnavailable
+	case errors.Is(err, source.ErrEntryNotFound):
+		return source.SourceErrorCodeEntryNotFound
+	case err != nil:
+		return source.SourceErrorCodeAdapterFailure
+	default:
+		return ""
+	}
+}
+
+func sourceFailure(code source.SourceErrorCode) error {
+	switch code {
+	case source.SourceErrorCodePermissionDenied:
+		return source.ErrPermissionDenied
+	case source.SourceErrorCodeSourceDeleted:
+		return source.ErrSourceDeleted
+	case source.SourceErrorCodeSourceUnavailable:
+		return source.ErrSourceUnavailable
+	case source.SourceErrorCodeEntryNotFound:
+		return source.ErrEntryNotFound
+	case source.SourceErrorCodeAdapterFailure:
+		return source.ErrAdapterFailure
+	default:
+		return nil
+	}
 }
 
 func activeScopeIndexes(states []paginationScopeState, start int) []int {

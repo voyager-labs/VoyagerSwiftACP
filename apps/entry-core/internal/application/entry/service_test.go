@@ -396,6 +396,34 @@ func TestUnifiedListKeepsEntryNotFoundAsPartialFailure(t *testing.T) {
 	}
 }
 
+func TestUnifiedListContinuationPreservesEntryNotFoundFailure(t *testing.T) {
+	registry, bindings := unifiedFixture(t)
+	external := bindings[0].Adapter.(*recordingResourceAdapter)
+	local := bindings[1].Adapter.(*recordingResourceAdapter)
+	localCursor := "local-next"
+	external.listError = source.ErrEntryNotFound
+	local.listResults = []source.AdapterListResult{
+		adapterListResultFixture(t, bindings[1].SourceRef, "local", "item", &localCursor),
+	}
+	service := mustUnifiedService(t, registry, bindings)
+	path := "/"
+
+	first, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 2, RequestedProperties: []string{},
+	})
+	if err != nil || first.NextPageToken == nil {
+		t.Fatalf("first page = %#v, error = %v", first, err)
+	}
+
+	_, err = service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 2,
+		PageToken: first.NextPageToken, RequestedProperties: []string{},
+	})
+	if !errors.Is(err, ErrEntryNotFound) || err.Error() != "entry_not_found" {
+		t.Fatalf("continued UnifiedList() error = %v, want entry_not_found", err)
+	}
+}
+
 func TestResolveEntryRejectsCrossSourceResult(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	external := bindings[0].Adapter.(*recordingResourceAdapter)

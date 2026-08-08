@@ -64,6 +64,46 @@ func TestCompositeCursor(t *testing.T) {
 	}
 }
 
+func TestCompositeCursorPreservesExhaustedFailureCode(t *testing.T) {
+	codec, err := newCompositeCursorCodec([]byte("01234567890123456789012345678901"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := cursorSnapshot(t)
+	snapshot.AvailabilityState = domainentry.AvailabilityStateError
+	snapshot.FreshnessState = domainentry.FreshnessStateUnknown
+	snapshot.SourceErrorCode = source.SourceErrorCodeAdapterFailure
+	snapshot.FailureCode = source.SourceErrorCodeEntryNotFound
+	states := []paginationScopeState{{ScopeIndex: 0, State: paginationStateExhausted, ExhaustedSnapshot: snapshot}}
+
+	token, err := codec.encode([32]byte{1}, [32]byte{2}, 0, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := codec.decode(token, [32]byte{1}, [32]byte{2}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.States[0].ExhaustedSnapshot.FailureCode; got != source.SourceErrorCodeEntryNotFound {
+		t.Fatalf("failure code = %q", got)
+	}
+}
+
+func TestCompositeCursorDecodesExhaustedSnapshotWithoutFailureCode(t *testing.T) {
+	snapshot := cursorSnapshot(t)
+	payload, err := encodeExhaustedSnapshot(*snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeExhaustedSnapshot(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.FailureCode != "" {
+		t.Fatalf("failure code = %q", decoded.FailureCode)
+	}
+}
+
 func cursorSnapshot(t *testing.T) *exhaustedScopeSnapshot {
 	t.Helper()
 	revision, _ := domainentry.NewRevision(domainentry.RevisionStrengthUnknown, nil)

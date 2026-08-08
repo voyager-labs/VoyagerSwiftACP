@@ -60,6 +60,7 @@ type exhaustedScopeSnapshot struct {
 	LastSyncAt        *time.Time
 	StaleAfter        *time.Time
 	SourceErrorCode   source.SourceErrorCode
+	FailureCode       source.SourceErrorCode
 	WarningCode       source.WarningCode
 	SourceRetryable   bool
 	WarningRetryable  bool
@@ -261,6 +262,12 @@ func encodeExhaustedSnapshot(snapshot exhaustedScopeSnapshot) ([]byte, error) {
 	if snapshot.WarningRetryable {
 		flags |= 8
 	}
+	if snapshot.FailureCode != "" {
+		if sourceErrorByte(snapshot.FailureCode) == 255 {
+			return nil, ErrInvalidPageToken
+		}
+		flags |= 16
+	}
 	result := []byte{revisionStrengthByte(snapshot.SourceRevision.Strength), byte(len(token))}
 	if result[0] == 0 {
 		return nil, ErrInvalidPageToken
@@ -275,6 +282,9 @@ func encodeExhaustedSnapshot(snapshot exhaustedScopeSnapshot) ([]byte, error) {
 	}
 	if snapshot.StaleAfter != nil {
 		result = appendCursorTime(result, *snapshot.StaleAfter)
+	}
+	if snapshot.FailureCode != "" {
+		result = append(result, sourceErrorByte(snapshot.FailureCode))
 	}
 	result = append(result, sourceErrorByte(snapshot.SourceErrorCode), warningByte(snapshot.WarningCode))
 	if len(result) > 180 {
@@ -318,7 +328,7 @@ func decodeExhaustedSnapshot(payload []byte) (exhaustedScopeSnapshot, error) {
 	}
 	flags := payload[offset]
 	offset++
-	if flags&0xf0 != 0 || observedRevision == 0 || availability == "" || freshness == "" {
+	if flags&0xe0 != 0 || observedRevision == 0 || availability == "" || freshness == "" {
 		return exhaustedScopeSnapshot{}, ErrInvalidPageToken
 	}
 	readTime := func(bit byte) (*time.Time, error) {
@@ -339,8 +349,20 @@ func decodeExhaustedSnapshot(payload []byte) (exhaustedScopeSnapshot, error) {
 	if err != nil {
 		return exhaustedScopeSnapshot{}, err
 	}
-	if offset+2 != len(payload) {
+	trailerLength := 2
+	if flags&16 != 0 {
+		trailerLength++
+	}
+	if offset+trailerLength != len(payload) {
 		return exhaustedScopeSnapshot{}, ErrInvalidPageToken
+	}
+	failureCode := source.SourceErrorCode("")
+	if flags&16 != 0 {
+		failureCode = sourceErrorFromByte(payload[offset])
+		if failureCode == "" {
+			return exhaustedScopeSnapshot{}, ErrInvalidPageToken
+		}
+		offset++
 	}
 	errorCode := sourceErrorFromByte(payload[offset])
 	offset++
@@ -348,7 +370,7 @@ func decodeExhaustedSnapshot(payload []byte) (exhaustedScopeSnapshot, error) {
 	if payload[offset-1] != 0 && errorCode == "" || payload[offset] != 0 && warningCode == "" {
 		return exhaustedScopeSnapshot{}, ErrInvalidPageToken
 	}
-	return exhaustedScopeSnapshot{SourceRevision: revision, ObservedRevision: observedRevision, AvailabilityState: availability, FreshnessState: freshness, ObservedAt: observedAt, LastSyncAt: lastSync, StaleAfter: staleAfter, SourceErrorCode: errorCode, WarningCode: warningCode, SourceRetryable: flags&4 != 0, WarningRetryable: flags&8 != 0}, nil
+	return exhaustedScopeSnapshot{SourceRevision: revision, ObservedRevision: observedRevision, AvailabilityState: availability, FreshnessState: freshness, ObservedAt: observedAt, LastSyncAt: lastSync, StaleAfter: staleAfter, SourceErrorCode: errorCode, FailureCode: failureCode, WarningCode: warningCode, SourceRetryable: flags&4 != 0, WarningRetryable: flags&8 != 0}, nil
 }
 
 func appendCursorTime(target []byte, value time.Time) []byte {
