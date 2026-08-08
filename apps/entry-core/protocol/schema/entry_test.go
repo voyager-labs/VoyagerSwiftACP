@@ -104,6 +104,34 @@ func TestEntryListStrictResponse(t *testing.T) {
 	}
 }
 
+func TestEntryListRejectsAllFailedSuccessResponse(t *testing.T) {
+	result := validLargeListResult()
+	result.Entries = []Entry{}
+	result.Availability[0] = SourceAvailability{
+		SourceInstanceID: testSourceID,
+		MountID:          "m",
+		State:            "error",
+		Error: &SourceError{
+			SourceInstanceID: testSourceID,
+			MountID:          "m",
+			Code:             "adapter_failure",
+			Message:          sourceErrorMessage("adapter_failure"),
+		},
+	}
+	result.Freshness[0].State = "unknown"
+
+	if err := result.Validate(); err == nil {
+		t.Fatal("all-failed success result accepted")
+	}
+	wire, err := json.Marshal(successWire{RequestID: "trusted", OK: true, Result: result})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeResponse(wire, MethodEntryList); err == nil {
+		t.Fatalf("all-failed success wire accepted: %s", wire)
+	}
+}
+
 func TestEntryResponseRejectsNonCanonicalVirtualPath(t *testing.T) {
 	result := validLargeListResult()
 	result.Entries = result.Entries[:1]

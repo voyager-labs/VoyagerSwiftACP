@@ -523,6 +523,7 @@ func (result EntryListResult) Validate() error {
 		return ErrInvalidResponse
 	}
 	scopes := make(map[string]struct{}, len(result.SourceRevision))
+	successfulScopes := 0
 	for i := range result.SourceRevision {
 		r, a, f := result.SourceRevision[i], result.Availability[i], result.Freshness[i]
 		scopeKey := r.SourceInstanceID + "\x00" + r.MountID
@@ -533,6 +534,12 @@ func (result EntryListResult) Validate() error {
 		if !validSourceInstanceID(r.SourceInstanceID) || !validUTF8Bytes(r.MountID, 1, 64) || r.SourceInstanceID != a.SourceInstanceID || r.MountID != a.MountID || r.SourceInstanceID != f.SourceInstanceID || r.MountID != f.MountID || !validRevision(r.SourceRevision) || !validObservedRevision(r.ObservedRevision) || !validSourceAvailability(a) || !validSourceFreshness(f) || !equalRevision(r.SourceRevision, f.SourceRevision) {
 			return ErrInvalidResponse
 		}
+		if a.State == "available" || a.State == "read_only" || a.State == "stale" {
+			successfulScopes++
+		}
+	}
+	if successfulScopes == 0 {
+		return ErrInvalidResponse
 	}
 	for _, entry := range result.Entries {
 		if !validEntry(entry) {
