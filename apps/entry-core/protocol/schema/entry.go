@@ -541,10 +541,16 @@ func (result EntryListResult) Validate() error {
 	if successfulScopes == 0 {
 		return ErrInvalidResponse
 	}
+	accessContexts := make(map[[3]string]struct{}, len(result.Entries))
 	for _, entry := range result.Entries {
 		if !validEntry(entry) {
 			return ErrInvalidResponse
 		}
+		accessKey := [3]string{entry.AccessContext.SourceInstanceID, entry.AccessContext.MountID, entry.AccessContext.VirtualPath}
+		if _, duplicate := accessContexts[accessKey]; duplicate {
+			return ErrInvalidResponse
+		}
+		accessContexts[accessKey] = struct{}{}
 		matched := false
 		for i, a := range result.Availability {
 			if a.SourceInstanceID == entry.AccessContext.SourceInstanceID && a.MountID == entry.AccessContext.MountID {

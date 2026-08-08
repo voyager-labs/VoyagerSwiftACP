@@ -132,6 +132,39 @@ func TestEntryListRejectsAllFailedSuccessResponse(t *testing.T) {
 	}
 }
 
+func TestEncodeResponseRejectsDuplicateAccessContext(t *testing.T) {
+	result := listResultWithDuplicateAccessContext()
+
+	encoded := EncodeResponse(NewSuccessResponse("trusted", result))
+	if !bytes.Contains(encoded, []byte(`"code":"internal_error"`)) {
+		t.Fatalf("EncodeResponse() = %s, want internal_error fallback", encoded)
+	}
+}
+
+func TestDecodeResponseRejectsDuplicateAccessContext(t *testing.T) {
+	result := listResultWithDuplicateAccessContext()
+	wire, err := json.Marshal(successWire{RequestID: "trusted", OK: true, Result: result})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := DecodeResponse(wire, MethodEntryList); err == nil {
+		t.Fatalf("DecodeResponse() accepted duplicate access context: %s", wire)
+	}
+}
+
+func TestEntryListAllowsSameEntryIDDifferentAccessContexts(t *testing.T) {
+	result := validLargeListResult()
+	result.Entries = result.Entries[:2]
+
+	if result.Entries[0].EntryRef.EntryID != result.Entries[1].EntryRef.EntryID {
+		t.Fatal("fixture does not share EntryID")
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatalf("same EntryID across projections rejected: %v", err)
+	}
+}
+
 func TestEntryResponseRejectsNonCanonicalVirtualPath(t *testing.T) {
 	result := validLargeListResult()
 	result.Entries = result.Entries[:1]
@@ -202,8 +235,16 @@ func validLargeListResult() EntryListResult {
 	entries := make([]Entry, 5)
 	for i := range entries {
 		entries[i] = entry
+		entries[i].AccessContext.VirtualPath = "/m/object-" + string(rune('a'+i))
 	}
 	return EntryListResult{Entries: entries, HasMore: false, ObservedAt: "2026-08-03T00:00:00Z", SourceRevision: []RevisionSummary{{SourceInstanceID: testSourceID, MountID: "m", SourceRevision: Revision{Strength: "unknown"}, ObservedRevision: Revision{Strength: "observed", Token: stringPointer("1")}}}, Availability: []SourceAvailability{{SourceInstanceID: testSourceID, MountID: "m", State: "available"}}, Freshness: []SourceFreshness{{SourceInstanceID: testSourceID, MountID: "m", State: "current", ObservedAt: "2026-08-03T00:00:00Z", SourceRevision: Revision{Strength: "unknown"}}}, Warnings: []Warning{}}
+}
+
+func listResultWithDuplicateAccessContext() EntryListResult {
+	result := validLargeListResult()
+	result.Entries = result.Entries[:2]
+	result.Entries[1].AccessContext = result.Entries[0].AccessContext
+	return result
 }
 
 func listResultWithUnsortedProperties() EntryListResult {
