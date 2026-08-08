@@ -188,7 +188,7 @@ struct AppRootFeature {
         case let .menuCommands(.delegate(.windowManager(action))):
             if case .file(.newWindow) = action,
                state.windowManager.windows.isEmpty,
-               !state.lifecycle.isShellRuntimeReady
+               !state.lifecycle.isShellRuntimeReady || onboardingWindowClient.isRequired()
             {
                 return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
             }
