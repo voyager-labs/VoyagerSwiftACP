@@ -20,9 +20,11 @@ public enum ContentTabTransfer {
         case sourceTabMissing
         case sourceTabAmbiguous
         case sourcePinParity
+        case missingPinnedTimestamp
         case ineligible(EligibilityRejection)
         case targetCapacityExceeded
         case targetMalformedOwnership
+        case targetPlacementInvalid
         case targetTabCollision
         case targetOwnerCollision
         case targetSessionCollision
@@ -81,6 +83,25 @@ public enum ContentTabTransfer {
         case rejected(Rejection)
     }
 
+    public struct DurablePinnedBatchMutation: Equatable, Sendable {
+        public let recordsToUpsert: [ContentTabPinnedRecord]
+        public let recordIDsToRemove: [String]
+        public let orderedTabIDs: [ContentTabID]
+        public let pinnedPlacement: ContentTabPlacement?
+
+        public init(
+            recordsToUpsert: [ContentTabPinnedRecord],
+            recordIDsToRemove: [String],
+            orderedTabIDs: [ContentTabID],
+            pinnedPlacement: ContentTabPlacement?,
+        ) {
+            self.recordsToUpsert = recordsToUpsert
+            self.recordIDsToRemove = recordIDsToRemove
+            self.orderedTabIDs = orderedTabIDs
+            self.pinnedPlacement = pinnedPlacement
+        }
+    }
+
     public struct SuccessToken: Equatable {
         let sourceFingerprint: WindowSnapshotFingerprint
         let targetFingerprint: WindowSnapshotFingerprint
@@ -91,6 +112,7 @@ public enum ContentTabTransfer {
         let targetWindowID: UUID
         let primaryTabID: ContentTabID
         public let rebindIntents: [RebindIntent]
+        public let durablePinnedMutation: DurablePinnedBatchMutation?
         let teardownIntents: [TeardownIntent]
         let sourceIsEmpty: Bool
         let sourceOutgoingOwner: OutgoingContentOwner
@@ -157,12 +179,20 @@ public enum ContentTabTransfer {
         target: FileManagerWindowState,
         orderedTabIDs: [ContentTabID],
         primaryTabID: ContentTabID,
+        sourceDomain: ContentTabDomain? = nil,
+        targetDomain: ContentTabDomain? = nil,
+        placement: ContentTabPlacement? = nil,
+        pinnedAt: Date? = nil,
     ) -> Result {
         switch preflight(
             source: source,
             target: target,
             orderedTabIDs: orderedTabIDs,
             primaryTabID: primaryTabID,
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            placement: placement,
+            pinnedAt: pinnedAt,
         ) {
         case let .success(token):
             apply(token)
@@ -189,6 +219,10 @@ public enum ContentTabTransfer {
         target: FileManagerWindowState,
         orderedTabIDs: [ContentTabID],
         primaryTabID: ContentTabID,
+        sourceDomain: ContentTabDomain? = nil,
+        targetDomain: ContentTabDomain? = nil,
+        placement: ContentTabPlacement? = nil,
+        pinnedAt: Date? = nil,
     ) -> Preflight {
         let windowIDs: WindowIDs
         switch validatedWindowIDs(source: source, target: target) {
@@ -218,14 +252,39 @@ public enum ContentTabTransfer {
             return .rejected(reason)
         }
 
+        let semantics: TransferSemantics
+        switch validatedSemantics(
+            workUnits: workUnits,
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            placement: placement,
+        ) {
+        case let .success(value):
+            semantics = value
+        case let .failure(reason):
+            return .rejected(reason)
+        }
+
+        let projectedWorkUnits: [ProjectedWorkUnit]
+        switch makeProjectedWorkUnits(workUnits: workUnits, semantics: semantics, pinnedAt: pinnedAt) {
+        case let .success(value):
+            projectedWorkUnits = value
+        case let .failure(reason):
+            return .rejected(reason)
+        }
+
         let targetPreparation: TargetPreparation
-        switch prepareTargetForInsertion(target, workUnits: workUnits) {
+        switch prepareTargetForInsertion(
+            target,
+            workUnits: projectedWorkUnits,
+            semantics: semantics,
+        ) {
         case let .success(value):
             targetPreparation = value
         case let .failure(reason):
             return .rejected(reason)
         }
-        if let reason = batchCollisionRejection(workUnits: workUnits, target: targetPreparation.state) {
+        if let reason = batchCollisionRejection(workUnits: projectedWorkUnits, target: targetPreparation.state) {
             return .rejected(reason)
         }
 
@@ -234,6 +293,9 @@ public enum ContentTabTransfer {
             target: target,
             preparedTarget: targetPreparation.state,
             workUnits: workUnits,
+            projectedWorkUnits: projectedWorkUnits,
+            semantics: semantics,
+            pinnedAt: pinnedAt,
             windowIDs: windowIDs,
             primaryTabID: primaryTabID,
         )
@@ -262,8 +324,139 @@ private extension ContentTabTransfer {
         let target: UUID
     }
 
+    enum TransferSemantics: Equatable {
+        case preserveDomain
+        case explicitSameDomain(targetDomain: ContentTabDomain, placement: ContentTabPlacement)
+        case explicitOppositeDomain(
+            sourceDomain: ContentTabDomain,
+            targetDomain: ContentTabDomain,
+            placement: ContentTabPlacement,
+        )
+
+        var targetDomain: ContentTabDomain? {
+            switch self {
+            case .preserveDomain:
+                nil
+            case let .explicitSameDomain(targetDomain, _):
+                targetDomain
+            case let .explicitOppositeDomain(_, targetDomain, _):
+                targetDomain
+            }
+        }
+
+        var placement: ContentTabPlacement? {
+            switch self {
+            case .preserveDomain:
+                nil
+            case let .explicitSameDomain(_, placement),
+                 let .explicitOppositeDomain(_, _, placement):
+                placement
+            }
+        }
+    }
+
+    struct ProjectedWorkUnit: Equatable {
+        let source: WorkUnit
+        let item: ContentTabItem
+        let pinnedRecord: ContentTabPinnedRecord?
+        let runtimePreservationRecord: ContentTabPinnedRecord?
+
+        var ownedSessionIDs: Set<AiChatSessionID> {
+            source.ownedSessionIDs
+        }
+    }
+
     struct TargetPreparation {
         let state: FileManagerWindowState
+    }
+
+    static func validatedSemantics(
+        workUnits: [WorkUnit],
+        sourceDomain: ContentTabDomain?,
+        targetDomain: ContentTabDomain?,
+        placement: ContentTabPlacement?,
+    ) -> Swift.Result<TransferSemantics, Rejection> {
+        guard let targetDomain else { return .success(.preserveDomain) }
+        guard let sourceDomain, let placement else {
+            return .failure(.targetPlacementInvalid)
+        }
+        let sourceIsPinned = sourceDomain == .pinned
+        guard workUnits.allSatisfy({ workUnit in
+            workUnit.item.isPinned == sourceIsPinned && (workUnit.pinnedRecord != nil) == sourceIsPinned
+        }) else {
+            return .failure(.sourcePinParity)
+        }
+        if sourceDomain == targetDomain {
+            return .success(.explicitSameDomain(targetDomain: targetDomain, placement: placement))
+        }
+        return .success(.explicitOppositeDomain(
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            placement: placement,
+        ))
+    }
+
+    static func makeProjectedWorkUnits(
+        workUnits: [WorkUnit],
+        semantics: TransferSemantics,
+        pinnedAt: Date?,
+    ) -> Swift.Result<[ProjectedWorkUnit], Rejection> {
+        switch semantics {
+        case .preserveDomain, .explicitSameDomain:
+            return .success(workUnits.map {
+                let runtimePreservationRecord: ContentTabPinnedRecord? = if $0.item.isPinned {
+                    $0.runtimePreservationRecord ?? $0.pinnedRecord
+                } else {
+                    nil
+                }
+                return ProjectedWorkUnit(
+                    source: $0,
+                    item: $0.item,
+                    pinnedRecord: $0.pinnedRecord,
+                    runtimePreservationRecord: runtimePreservationRecord,
+                )
+            })
+        case let .explicitOppositeDomain(_, targetDomain, _):
+            let targetIsPinned = targetDomain == .pinned
+            if targetIsPinned, pinnedAt == nil {
+                return .failure(.missingPinnedTimestamp)
+            }
+            let projectedUnits = try? workUnits.map { workUnit -> ProjectedWorkUnit in
+                var item = workUnit.item
+                item.isPinned = targetIsPinned
+                let pinnedRecord: ContentTabPinnedRecord?
+                if targetIsPinned {
+                    if let existing = workUnit.pinnedRecord ?? workUnit.runtimePreservationRecord {
+                        pinnedRecord = existing
+                    } else {
+                        let created = ContentTabPinnedRecord(
+                            id: item.id.rawValue,
+                            page: item.page,
+                            anchor: item.anchor,
+                            title: item.title,
+                            iconName: item.iconName,
+                            pinnedAt: pinnedAt!,
+                        )
+                        guard created.isPageAnchorCompatible else { throw Rejection.sourcePinParity }
+                        pinnedRecord = created
+                    }
+                } else {
+                    pinnedRecord = nil
+                }
+                return ProjectedWorkUnit(
+                    source: workUnit,
+                    item: item,
+                    pinnedRecord: pinnedRecord,
+                    runtimePreservationRecord: targetIsPinned
+                        ? workUnit.runtimePreservationRecord ?? pinnedRecord
+                        : nil,
+                )
+            }
+            if let projectedUnits {
+                return .success(projectedUnits)
+            }
+            return .failure(.sourcePinParity)
+        }
     }
 
     static func windowBusyRejection(
@@ -437,7 +630,8 @@ private extension ContentTabTransfer {
 
     static func prepareTargetForInsertion(
         _ target: FileManagerWindowState,
-        workUnits: [WorkUnit],
+        workUnits: [ProjectedWorkUnit],
+        semantics: TransferSemantics,
     ) -> Swift.Result<TargetPreparation, Rejection> {
         guard !hasTargetOwnerCollision(target, workUnits: workUnits) else {
             return .failure(.targetOwnerCollision)
@@ -450,6 +644,21 @@ private extension ContentTabTransfer {
             break
         case let .rejected(reason):
             return .failure(.ineligible(EligibilityRejection(reason)))
+        }
+
+        switch semantics {
+        case .preserveDomain:
+            break
+        case let .explicitSameDomain(targetDomain, placement),
+             let .explicitOppositeDomain(_, targetDomain, placement):
+            guard hasValidExplicitPlacement(
+                in: target,
+                orderedTabIDs: workUnits.map(\.item.id),
+                targetDomain: targetDomain,
+                placement: placement,
+            ) else {
+                return .failure(.targetPlacementInvalid)
+            }
         }
 
         let replacementIDs: Set<ContentTabID>
@@ -479,7 +688,7 @@ private extension ContentTabTransfer {
 
     static func hasTargetOwnerCollision(
         _ target: FileManagerWindowState,
-        workUnits: [WorkUnit],
+        workUnits: [ProjectedWorkUnit],
     ) -> Bool {
         workUnits.contains { workUnit in
             let tabID = workUnit.item.id
@@ -490,7 +699,7 @@ private extension ContentTabTransfer {
 
     static func validatedReplacementIDs(
         target: FileManagerWindowState,
-        workUnits: [WorkUnit],
+        workUnits: [ProjectedWorkUnit],
     ) -> Swift.Result<Set<ContentTabID>, Rejection> {
         var replacementIDs = Set<ContentTabID>()
         for workUnit in workUnits {
@@ -498,7 +707,7 @@ private extension ContentTabTransfer {
             guard target.contentTabs.tabs[id: tabID] != nil else { continue }
             guard target.isPassivePinnedProjection(
                 tabID: tabID,
-                sourceRecord: workUnit.pinnedRecord,
+                sourceRecord: workUnit.source.pinnedRecord,
             ) else {
                 return .failure(.targetTabCollision)
             }
@@ -508,7 +717,7 @@ private extension ContentTabTransfer {
     }
 
     static func batchCollisionRejection(
-        workUnits: [WorkUnit],
+        workUnits: [ProjectedWorkUnit],
         target: FileManagerWindowState,
     ) -> Rejection? {
         var occupiedSessionIDs = target.transferOwnedAiChatSessionIDs
@@ -537,6 +746,27 @@ private extension ContentTabTransfer {
         }
         return nil
     }
+
+    static func hasValidExplicitPlacement(
+        in target: FileManagerWindowState,
+        orderedTabIDs: [ContentTabID],
+        targetDomain: ContentTabDomain,
+        placement: ContentTabPlacement,
+    ) -> Bool {
+        switch placement {
+        case let .before(anchorID), let .after(anchorID):
+            guard !orderedTabIDs.contains(anchorID),
+                  let anchor = target.contentTabs.tabs[id: anchorID],
+                  ContentTabDomain.domain(isPinned: anchor.isPinned) == targetDomain,
+                  (target.contentTabs.pinnedRecords[anchorID] != nil) == anchor.isPinned
+            else { return false }
+            return true
+        case .empty:
+            return !target.contentTabs.tabs.contains(where: {
+                ContentTabDomain.domain(isPinned: $0.isPinned) == targetDomain
+            })
+        }
+    }
 }
 
 private extension ContentTabTransfer {
@@ -545,6 +775,9 @@ private extension ContentTabTransfer {
         let target: FileManagerWindowState
         let preparedTarget: FileManagerWindowState
         let workUnits: [WorkUnit]
+        let projectedWorkUnits: [ProjectedWorkUnit]
+        let semantics: TransferSemantics
+        let pinnedAt: Date?
         let windowIDs: WindowIDs
         let primaryTabID: ContentTabID
     }
@@ -570,6 +803,11 @@ private extension ContentTabTransfer {
             targetWindowID: context.windowIDs.target,
             primaryTabID: context.primaryTabID,
             rebindIntents: projection.rebindIntents,
+            durablePinnedMutation: durablePinnedMutation(
+                workUnits: context.workUnits,
+                projectedWorkUnits: context.projectedWorkUnits,
+                semantics: context.semantics,
+            ),
             teardownIntents: projection.teardownIntents,
             sourceIsEmpty: projection.source.contentTabs.tabs.isEmpty,
             sourceOutgoingOwner: projection.primaryOwner,
@@ -592,9 +830,10 @@ private extension ContentTabTransfer {
         let target = projectTarget(
             context.preparedTarget,
             originalTargetActiveID: context.target.contentTabs.activeTabID,
-            workUnits: context.workUnits,
+            workUnits: context.projectedWorkUnits,
             primaryTabID: context.primaryTabID,
             targetWindowID: context.windowIDs.target,
+            semantics: context.semantics,
         )
         let rebindContext = RebindContext(
             sourceBefore: context.source,
@@ -720,31 +959,45 @@ private extension ContentTabTransfer {
     static func projectTarget(
         _ prepared: FileManagerWindowState,
         originalTargetActiveID: ContentTabID?,
-        workUnits: [WorkUnit],
+        workUnits: [ProjectedWorkUnit],
         primaryTabID: ContentTabID,
         targetWindowID: UUID,
+        semantics: TransferSemantics,
     ) -> FileManagerWindowState {
         var target = prepared
-        var pinnedInsertionIndex = target.contentTabs.tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
-        for workUnit in workUnits where workUnit.item.isPinned {
-            target.contentTabs.tabs.insert(workUnit.item, at: pinnedInsertionIndex)
-            pinnedInsertionIndex += 1
-        }
-        for workUnit in workUnits where !workUnit.item.isPinned {
-            target.contentTabs.tabs.append(workUnit.item)
+
+        switch semantics {
+        case .preserveDomain:
+            var pinnedInsertionIndex = target.contentTabs.tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
+            for workUnit in workUnits where workUnit.item.isPinned {
+                target.contentTabs.tabs.insert(workUnit.item, at: pinnedInsertionIndex)
+                pinnedInsertionIndex += 1
+            }
+            for workUnit in workUnits where !workUnit.item.isPinned {
+                target.contentTabs.tabs.append(workUnit.item)
+            }
+        case let .explicitSameDomain(targetDomain, placement),
+             let .explicitOppositeDomain(_, targetDomain, placement):
+            guard let insertionIndex = explicitInsertionIndex(
+                in: target,
+                targetDomain: targetDomain,
+                placement: placement,
+            ) else {
+                return target
+            }
+            target.contentTabs.tabs.insert(contentsOf: workUnits.map(\.item), at: insertionIndex)
         }
 
         for workUnit in workUnits {
             let tabID = workUnit.item.id
-            var movedContent = workUnit.content
+            var movedContent = workUnit.source.content
             movedContent.applyTransferWindowContext(windowID: targetWindowID)
             target.suppressedPinnedTabIDs.remove(tabID)
             target.contentTabs.pinnedRecords[tabID] = workUnit.pinnedRecord
             target.pendingRuntimePreservationRecords[tabID] = workUnit.runtimePreservationRecord
-                ?? workUnit.pinnedRecord
             target.tabContentStates[tabID] = movedContent
-            target.tabInspectorStates[tabID] = workUnit.inspector
-            target.insertBackgroundOwners(workUnit, targetWindowID: targetWindowID)
+            target.tabInspectorStates[tabID] = workUnit.source.inspector
+            target.insertBackgroundOwners(workUnit.source, targetWindowID: targetWindowID)
         }
 
         target.contentTabs.activeTabID = primaryTabID
@@ -759,6 +1012,61 @@ private extension ContentTabTransfer {
         }
         target.syncContentTabSidebarItems()
         return target
+    }
+
+    static func explicitInsertionIndex(
+        in target: FileManagerWindowState,
+        targetDomain: ContentTabDomain,
+        placement: ContentTabPlacement,
+    ) -> Int? {
+        switch placement {
+        case let .before(anchorID):
+            target.contentTabs.tabs.index(id: anchorID)
+        case let .after(anchorID):
+            target.contentTabs.tabs.index(id: anchorID).map { $0 + 1 }
+        case .empty:
+            switch targetDomain {
+            case .pinned:
+                target.contentTabs.tabs.firstIndex(where: { !$0.isPinned }) ?? target.contentTabs.tabs.endIndex
+            case .unpinned:
+                target.contentTabs.tabs.endIndex
+            }
+        }
+    }
+
+    static func durablePinnedMutation(
+        workUnits: [WorkUnit],
+        projectedWorkUnits: [ProjectedWorkUnit],
+        semantics: TransferSemantics,
+    ) -> DurablePinnedBatchMutation? {
+        let orderedTabIDs = projectedWorkUnits.map(\.item.id)
+        switch semantics {
+        case .preserveDomain:
+            return nil
+        case let .explicitSameDomain(targetDomain, placement):
+            guard targetDomain == .pinned else { return nil }
+            return DurablePinnedBatchMutation(
+                recordsToUpsert: [],
+                recordIDsToRemove: [],
+                orderedTabIDs: orderedTabIDs,
+                pinnedPlacement: placement,
+            )
+        case let .explicitOppositeDomain(_, targetDomain, placement):
+            if targetDomain == .pinned {
+                return DurablePinnedBatchMutation(
+                    recordsToUpsert: projectedWorkUnits.compactMap(\.pinnedRecord),
+                    recordIDsToRemove: [],
+                    orderedTabIDs: orderedTabIDs,
+                    pinnedPlacement: placement,
+                )
+            }
+            return DurablePinnedBatchMutation(
+                recordsToUpsert: [],
+                recordIDsToRemove: workUnits.map(\.item.id.rawValue),
+                orderedTabIDs: orderedTabIDs,
+                pinnedPlacement: nil,
+            )
+        }
     }
 }
 

@@ -1423,6 +1423,524 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         )
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: target domain이 없으면 기존 preserve-domain batch transfer를
+    /// 유지한다.
+    /// Task 4 semantic helper가 명시 domain이 없는 foreign route를 기존 VOY-458 projection과 동일하게 위임하는지 검증한다.
+    /// - 검증 내용: 기존 preflight/apply 결과와 semantic wrapper의 token/result equality
+    /// - 사전 조건: mixed-domain frozen batch source와 기존 pinned/unpinned target
+    /// - 기대 결과: targetDomain/placement가 nil이면 기존 batch projection과 완전히 동일하다.
+    func testSemanticPreflightKeepsPreserveDomainTransferUnchangedWhenTargetDomainIsNil() throws {
+        let scenario = MixedBatchTransferScenario()
+
+        let baselineToken = try ContentTabTransfer.preflight(
+            source: scenario.source,
+            target: scenario.target,
+            orderedTabIDs: scenario.orderedIDs,
+            primaryTabID: scenario.unpinnedID,
+        ).successToken()
+        let semanticToken = try semanticPreflight(
+            source: scenario.source,
+            target: scenario.target,
+            orderedTabIDs: scenario.orderedIDs,
+            primaryTabID: scenario.unpinnedID,
+            sourceDomain: nil,
+            targetDomain: nil,
+            placement: nil,
+        ).successToken()
+
+        XCTAssertEqual(semanticToken, baselineToken)
+        XCTAssertNil(semanticToken.durablePinnedMutation)
+        XCTAssertEqual(ContentTabTransfer.apply(semanticToken), ContentTabTransfer.apply(baselineToken))
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: explicit same-domain transfer는 requested placement를 그대로
+    /// 따른다.
+    /// foreign same-domain batch가 append fallback 없이 `.before`, `.after`, `.empty` 표면에 contiguous insertion 되는지 검증한다.
+    /// - 검증 내용: same-domain target runtime ordering, moved-only selection, source survivor 보존
+    /// - 사전 조건: unpinned before/after target과 pinned empty target에 같은 frozen batch를 사용한다.
+    /// - 기대 결과: 각 placement가 target domain 내부 raw slot에 정확히 반영되고 source는 batch만 제거된다.
+    func testSemanticPreflightSupportsExplicitSameDomainPlacement() throws {
+        let firstID = ContentTabID(rawValue: "same-domain-first")
+        let secondID = ContentTabID(rawValue: "same-domain-second")
+        let survivorID = ContentTabID(rawValue: "same-domain-survivor")
+        let pinnedTargetID = ContentTabID(rawValue: "same-domain-target-pinned")
+        let unpinnedA = ContentTabID(rawValue: "same-domain-target-unpinned-a")
+        let unpinnedB = ContentTabID(rawValue: "same-domain-target-unpinned-b")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(survivorID, path: "/same-domain/survivor"),
+                Fixture.tab(firstID, path: "/same-domain/first"),
+                Fixture.tab(secondID, path: "/same-domain/second"),
+            ],
+            active: survivorID,
+        )
+        let orderedIDs = [firstID, secondID]
+
+        let beforeTarget = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(pinnedTargetID, path: "/same-domain/pinned", pinned: true),
+                Fixture.tab(unpinnedA, path: "/same-domain/unpinned-a"),
+                Fixture.tab(unpinnedB, path: "/same-domain/unpinned-b"),
+            ],
+            active: unpinnedA,
+        )
+        let beforeToken = try semanticPreflight(
+            source: source,
+            target: beforeTarget,
+            orderedTabIDs: orderedIDs,
+            primaryTabID: secondID,
+            sourceDomain: .unpinned,
+            targetDomain: .unpinned,
+            placement: .before(unpinnedA),
+        ).successToken()
+        XCTAssertNil(beforeToken.durablePinnedMutation)
+        let beforePostCommit = try ContentTabTransfer.apply(beforeToken).movedPostCommit()
+        XCTAssertEqual(
+            Array(beforePostCommit.target.contentTabs.tabs.ids),
+            [pinnedTargetID, firstID, secondID, unpinnedA, unpinnedB],
+        )
+        XCTAssertEqual(beforePostCommit.target.contentTabs.selectedTabIDs, Set(orderedIDs))
+        XCTAssertEqual(beforePostCommit.source.contentTabs.tabs.ids, [survivorID])
+
+        let afterToken = try semanticPreflight(
+            source: source,
+            target: beforeTarget,
+            orderedTabIDs: orderedIDs,
+            primaryTabID: secondID,
+            sourceDomain: .unpinned,
+            targetDomain: .unpinned,
+            placement: .after(unpinnedA),
+        ).successToken()
+        XCTAssertNil(afterToken.durablePinnedMutation)
+        let afterPostCommit = try ContentTabTransfer.apply(afterToken).movedPostCommit()
+        XCTAssertEqual(
+            Array(afterPostCommit.target.contentTabs.tabs.ids),
+            [pinnedTargetID, unpinnedA, firstID, secondID, unpinnedB],
+        )
+
+        let emptyPinnedTarget = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(unpinnedA, path: "/same-domain/empty-unpinned")],
+            active: unpinnedA,
+        )
+        let pinnedSource = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/same-domain/pinned-first", pinned: true),
+                Fixture.tab(secondID, path: "/same-domain/pinned-second", pinned: true),
+            ],
+            active: firstID,
+        ).withPinnedRecords(for: [firstID, secondID])
+        let emptyPinnedToken = try semanticPreflight(
+            source: pinnedSource,
+            target: emptyPinnedTarget,
+            orderedTabIDs: orderedIDs,
+            primaryTabID: firstID,
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: .empty,
+        ).successToken()
+        XCTAssertEqual(
+            emptyPinnedToken.durablePinnedMutation,
+            .init(
+                recordsToUpsert: [],
+                recordIDsToRemove: [],
+                orderedTabIDs: orderedIDs,
+                pinnedPlacement: .empty,
+            ),
+        )
+        let emptyPinnedPostCommit = try ContentTabTransfer.apply(emptyPinnedToken).closeSourceWindowPostCommit()
+        XCTAssertEqual(
+            Array(emptyPinnedPostCommit.target.contentTabs.tabs.ids),
+            [firstID, secondID, unpinnedA],
+        )
+        XCTAssertEqual(
+            emptyPinnedPostCommit.target.contentTabs.tabs.filter(\.isPinned).map(\.id),
+            orderedIDs,
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: explicit opposite-domain transfer는 pinned
+    /// marker/record와
+    /// runtime placement를 함께 바꾼다.
+    /// unpinned batch를 foreign pinned domain으로 옮길 때 requested placement 기준 contiguous block과 pinned record 생성이
+    /// 함께 frozen 되는지 검증한다.
+    /// - 검증 내용: opposite-domain pin target ordering, moved pinned markers/records, durable mutation timestamp equality
+    /// - 사전 조건: unpinned source batch와 pinned/unpinned target을 before/empty placement로 각각 구성한다.
+    /// - 기대 결과: moved batch는 pinned domain에 contiguous insertion 되고 새 pinned record는 주입된 timestamp를 그대로 쓴다.
+    func testSemanticPreflightProjectsOppositeDomainPinPlacementAndPinnedRecords() throws {
+        let firstID = ContentTabID(rawValue: "opposite-pin-first")
+        let secondID = ContentTabID(rawValue: "opposite-pin-second")
+        let targetPinnedA = ContentTabID(rawValue: "opposite-pin-target-a")
+        let targetPinnedB = ContentTabID(rawValue: "opposite-pin-target-b")
+        let targetUnpinned = ContentTabID(rawValue: "opposite-pin-target-unpinned")
+        let projectedPinnedAt = Date(timeIntervalSince1970: 987)
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/opposite-pin/first"),
+                Fixture.tab(secondID, path: "/opposite-pin/second"),
+            ],
+            active: secondID,
+        )
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetPinnedA, path: "/opposite-pin/target-a", pinned: true),
+                Fixture.tab(targetPinnedB, path: "/opposite-pin/target-b", pinned: true),
+                Fixture.tab(targetUnpinned, path: "/opposite-pin/target-unpinned"),
+            ],
+            active: targetUnpinned,
+        )
+        target.contentTabs.pinnedRecords[targetPinnedA] = try Fixture
+            .pinRecord(for: XCTUnwrap(target.contentTabs.tabs[id: targetPinnedA]))
+        target.contentTabs.pinnedRecords[targetPinnedB] = try Fixture
+            .pinRecord(for: XCTUnwrap(target.contentTabs.tabs[id: targetPinnedB]))
+
+        let beforeToken = try semanticPreflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [firstID, secondID],
+            primaryTabID: secondID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .before(targetPinnedB),
+            pinnedAt: projectedPinnedAt,
+        ).successToken()
+        XCTAssertEqual(
+            Array(beforeToken.projectedTarget.contentTabs.tabs.ids),
+            [targetPinnedA, firstID, secondID, targetPinnedB, targetUnpinned],
+        )
+        XCTAssertEqual(
+            beforeToken.projectedTarget.contentTabs.tabs.filter(\.isPinned).map(\.id),
+            [targetPinnedA, firstID, secondID, targetPinnedB],
+        )
+        XCTAssertNotNil(beforeToken.projectedTarget.contentTabs.pinnedRecords[firstID])
+        XCTAssertNotNil(beforeToken.projectedTarget.contentTabs.pinnedRecords[secondID])
+        XCTAssertEqual(
+            beforeToken.durablePinnedMutation,
+            .init(
+                recordsToUpsert: [
+                    Fixture.pinRecord(
+                        for: Fixture.tab(firstID, path: "/opposite-pin/first", pinned: true),
+                        pinnedAt: projectedPinnedAt,
+                    ),
+                    Fixture.pinRecord(
+                        for: Fixture.tab(secondID, path: "/opposite-pin/second", pinned: true),
+                        pinnedAt: projectedPinnedAt,
+                    ),
+                ],
+                recordIDsToRemove: [],
+                orderedTabIDs: [firstID, secondID],
+                pinnedPlacement: .before(targetPinnedB),
+            ),
+        )
+        XCTAssertEqual(beforeToken.projectedTarget.contentTabs.pinnedRecords[firstID]?.pinnedAt, projectedPinnedAt)
+        XCTAssertEqual(beforeToken.projectedTarget.contentTabs.pinnedRecords[secondID]?.pinnedAt, projectedPinnedAt)
+
+        let emptyTarget = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(targetUnpinned, path: "/opposite-pin/empty-unpinned")],
+            active: targetUnpinned,
+        )
+        let emptyToken = try semanticPreflight(
+            source: source,
+            target: emptyTarget,
+            orderedTabIDs: [firstID, secondID],
+            primaryTabID: firstID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .empty,
+            pinnedAt: projectedPinnedAt,
+        ).successToken()
+        XCTAssertEqual(
+            Array(emptyToken.projectedTarget.contentTabs.tabs.ids),
+            [firstID, secondID, targetUnpinned],
+        )
+        XCTAssertEqual(
+            emptyToken.durablePinnedMutation,
+            .init(
+                recordsToUpsert: [
+                    Fixture.pinRecord(
+                        for: Fixture.tab(firstID, path: "/opposite-pin/first", pinned: true),
+                        pinnedAt: projectedPinnedAt,
+                    ),
+                    Fixture.pinRecord(
+                        for: Fixture.tab(secondID, path: "/opposite-pin/second", pinned: true),
+                        pinnedAt: projectedPinnedAt,
+                    ),
+                ],
+                recordIDsToRemove: [],
+                orderedTabIDs: [firstID, secondID],
+                pinnedPlacement: .empty,
+            ),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: opposite-domain Pin은 deterministic timestamp 없이는
+    /// whole-request를 reject한다.
+    /// pure projection이 production time fallback을 만들지 않도록 preflight 단계에서 명시 timestamp를 강제한다.
+    /// - 검증 내용: typed rejection과 source/target snapshot immutability
+    /// - 사전 조건: unpinned source batch를 pinned target domain으로 보내되 pinnedAt은 nil이다.
+    /// - 기대 결과: success token 없이 reject되고 source/target은 변경되지 않는다.
+    func testSemanticPreflightRejectsOppositeDomainPinWithoutPinnedTimestamp() throws {
+        let firstID = ContentTabID(rawValue: "missing-pinned-at-first")
+        let secondID = ContentTabID(rawValue: "missing-pinned-at-second")
+        let targetPinned = ContentTabID(rawValue: "missing-pinned-at-target-pinned")
+        let targetUnpinned = ContentTabID(rawValue: "missing-pinned-at-target-unpinned")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/missing-pinned-at/first"),
+                Fixture.tab(secondID, path: "/missing-pinned-at/second"),
+            ],
+            active: firstID,
+        )
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetPinned, path: "/missing-pinned-at/pinned", pinned: true),
+                Fixture.tab(targetUnpinned, path: "/missing-pinned-at/unpinned"),
+            ],
+            active: targetUnpinned,
+        )
+        target.contentTabs.pinnedRecords[targetPinned] = try Fixture
+            .pinRecord(for: XCTUnwrap(target.contentTabs.tabs[id: targetPinned]))
+
+        try assertSemanticRejected(
+            .missingPinnedTimestamp,
+            source: source,
+            target: target,
+            request: SemanticTransferRequest(
+                orderedTabIDs: [firstID, secondID],
+                primaryTabID: firstID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                placement: .before(targetPinned),
+            ),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: explicit opposite-domain Unpin은 runtime placement만 바꾸고
+    /// durable pinned order에서는 제거한다.
+    /// pinned batch를 foreign unpinned domain으로 옮길 때 target runtime은 requested slot에 contiguous insertion 되지만
+    /// durable pinned projection은 moved IDs를 보존하지 않는지 검증한다.
+    /// - 검증 내용: opposite-domain unpin runtime ordering, pinned record removal, durable pinned order removal
+    /// - 사전 조건: pinned source batch와 pinned/unpinned target, explicit `.after` placement
+    /// - 기대 결과: target runtime은 unpinned slot으로 재배치되고 durable projection에는 기존 target pinned만 남는다.
+    func testSemanticPreflightProjectsOppositeDomainUnpinAsRuntimeOnlyPlacement() throws {
+        let firstID = ContentTabID(rawValue: "opposite-unpin-first")
+        let secondID = ContentTabID(rawValue: "opposite-unpin-second")
+        let targetPinned = ContentTabID(rawValue: "opposite-unpin-target-pinned")
+        let targetUnpinnedA = ContentTabID(rawValue: "opposite-unpin-target-a")
+        let targetUnpinnedB = ContentTabID(rawValue: "opposite-unpin-target-b")
+        let pinnedFirst = Fixture.tab(firstID, path: "/opposite-unpin/first", pinned: true)
+        let pinnedSecond = Fixture.tab(secondID, path: "/opposite-unpin/second", pinned: true)
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [pinnedFirst, pinnedSecond],
+            active: firstID,
+        )
+        source.contentTabs.pinnedRecords[firstID] = Fixture.pinRecord(for: pinnedFirst)
+        source.contentTabs.pinnedRecords[secondID] = Fixture.pinRecord(for: pinnedSecond)
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetPinned, path: "/opposite-unpin/target-pinned", pinned: true),
+                Fixture.tab(targetUnpinnedA, path: "/opposite-unpin/target-a"),
+                Fixture.tab(targetUnpinnedB, path: "/opposite-unpin/target-b"),
+            ],
+            active: targetUnpinnedA,
+        )
+        target.contentTabs.pinnedRecords[targetPinned] = try Fixture
+            .pinRecord(for: XCTUnwrap(target.contentTabs.tabs[id: targetPinned]))
+
+        let token = try semanticPreflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [firstID, secondID],
+            primaryTabID: secondID,
+            sourceDomain: .pinned,
+            targetDomain: .unpinned,
+            placement: .after(targetUnpinnedA),
+        ).successToken()
+
+        XCTAssertEqual(
+            Array(token.projectedTarget.contentTabs.tabs.ids),
+            [targetPinned, targetUnpinnedA, firstID, secondID, targetUnpinnedB],
+        )
+        XCTAssertEqual(
+            token.projectedTarget.contentTabs.tabs.filter { !$0.isPinned }.map(\.id),
+            [targetUnpinnedA, firstID, secondID, targetUnpinnedB],
+        )
+        XCTAssertNil(token.projectedTarget.contentTabs.pinnedRecords[firstID])
+        XCTAssertNil(token.projectedTarget.contentTabs.pinnedRecords[secondID])
+        XCTAssertEqual(
+            token.durablePinnedMutation,
+            .init(
+                recordsToUpsert: [],
+                recordIDsToRemove: [firstID.rawValue, secondID.rawValue],
+                orderedTabIDs: [firstID, secondID],
+                pinnedPlacement: nil,
+            ),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: foreign explicit Unpin은 target의 동일 global pinned
+    /// projection을 안전하게 교체한다.
+    /// 첫 Pin 이동으로 모든 창에 materialize된 passive pinned replica가 역방향 이동을 막지 않는지 검증한다.
+    /// - 검증 내용: 두 passive pinned replacement, requested unpinned placement, remove-only durable mutation
+    /// - 사전 조건: source와 target에 같은 pinned batch가 있고 target replica는 passive projection이다.
+    /// - 기대 결과: target replica가 중복 없이 unpinned batch로 교체되고 pinned records는 durable removal 대상이 된다.
+    func testSemanticUnpinReplacesPassiveGlobalPinnedProjectionsInTargetWindow() throws {
+        let firstID = ContentTabID(rawValue: "round-trip-unpin-first")
+        let secondID = ContentTabID(rawValue: "round-trip-unpin-second")
+        let targetUnpinnedA = ContentTabID(rawValue: "round-trip-unpin-target-a")
+        let targetUnpinnedB = ContentTabID(rawValue: "round-trip-unpin-target-b")
+        let firstPinned = Fixture.tab(firstID, path: "/round-trip-unpin/first", pinned: true)
+        let secondPinned = Fixture.tab(secondID, path: "/round-trip-unpin/second", pinned: true)
+        let firstRecord = Fixture.pinRecord(for: firstPinned)
+        let secondRecord = Fixture.pinRecord(for: secondPinned)
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [firstPinned, secondPinned],
+            active: firstID,
+        )
+        source.contentTabs.pinnedRecords = [firstID: firstRecord, secondID: secondRecord]
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                firstPinned,
+                secondPinned,
+                Fixture.tab(targetUnpinnedA, path: "/round-trip-unpin/target-a"),
+                Fixture.tab(targetUnpinnedB, path: "/round-trip-unpin/target-b"),
+            ],
+            active: targetUnpinnedA,
+        )
+        target.contentTabs.pinnedRecords = [firstID: firstRecord, secondID: secondRecord]
+
+        let token = try semanticPreflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [firstID, secondID],
+            primaryTabID: firstID,
+            sourceDomain: .pinned,
+            targetDomain: .unpinned,
+            placement: .after(targetUnpinnedA),
+        ).successToken()
+
+        XCTAssertEqual(
+            Array(token.projectedTarget.contentTabs.tabs.ids),
+            [targetUnpinnedA, firstID, secondID, targetUnpinnedB],
+        )
+        XCTAssertEqual(token.projectedTarget.contentTabs.tabs.filter(\.isPinned).map(\.id), [])
+        XCTAssertNil(token.projectedTarget.contentTabs.pinnedRecords[firstID])
+        XCTAssertNil(token.projectedTarget.contentTabs.pinnedRecords[secondID])
+        XCTAssertEqual(
+            token.durablePinnedMutation,
+            .init(
+                recordsToUpsert: [],
+                recordIDsToRemove: [firstID.rawValue, secondID.rawValue],
+                orderedTabIDs: [firstID, secondID],
+                pinnedPlacement: nil,
+            ),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: explicit semantic preflight는 invalid target anchor와
+    /// domain parity 위반을 fail-closed로 거절한다.
+    /// missing/stale/self/wrong-domain anchor와 non-empty `.empty` target, source pin parity mismatch가 축소 없이 reject되는지
+    /// 검증한다.
+    /// - 검증 내용: typed rejection과 source/target full snapshot equality
+    /// - 사전 조건: explicit same/opposite domain request에 invalid anchor/domain state만 각각 하나씩 주입한다.
+    /// - 기대 결과: success token 없이 reject되고 어떤 projection mutation도 일어나지 않는다.
+    func testSemanticPreflightRejectsInvalidTargetPlacementAndSourceDomainParityWithoutMutation() throws {
+        let firstID = ContentTabID(rawValue: "semantic-reject-first")
+        let secondID = ContentTabID(rawValue: "semantic-reject-second")
+        let targetPinned = ContentTabID(rawValue: "semantic-reject-target-pinned")
+        let targetUnpinned = ContentTabID(rawValue: "semantic-reject-target-unpinned")
+        let missingAnchorID = ContentTabID(rawValue: "semantic-reject-missing")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(firstID, path: "/semantic-reject/first"),
+                Fixture.tab(secondID, path: "/semantic-reject/second"),
+            ],
+            active: firstID,
+        )
+        let target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetPinned, path: "/semantic-reject/pinned", pinned: true),
+                Fixture.tab(targetUnpinned, path: "/semantic-reject/unpinned"),
+            ],
+            active: targetUnpinned,
+        )
+
+        try assertSemanticRejected(
+            .sourcePinParity,
+            source: source,
+            target: target,
+            request: SemanticTransferRequest(
+                orderedTabIDs: [firstID, secondID],
+                primaryTabID: firstID,
+                sourceDomain: .pinned,
+                targetDomain: .pinned,
+                placement: .before(targetPinned),
+            ),
+        )
+        try assertSemanticRejected(
+            semanticPlacementRejection,
+            source: source,
+            target: target,
+            request: SemanticTransferRequest(
+                orderedTabIDs: [firstID, secondID],
+                primaryTabID: firstID,
+                sourceDomain: .unpinned,
+                targetDomain: .unpinned,
+                placement: .before(missingAnchorID),
+            ),
+        )
+        try assertSemanticRejected(
+            semanticPlacementRejection,
+            source: source,
+            target: target,
+            request: SemanticTransferRequest(
+                orderedTabIDs: [firstID, secondID],
+                primaryTabID: firstID,
+                sourceDomain: .unpinned,
+                targetDomain: .unpinned,
+                placement: .before(firstID),
+            ),
+        )
+        try assertSemanticRejected(
+            semanticPlacementRejection,
+            source: source,
+            target: target,
+            request: SemanticTransferRequest(
+                orderedTabIDs: [firstID, secondID],
+                primaryTabID: firstID,
+                sourceDomain: .unpinned,
+                targetDomain: .unpinned,
+                placement: .before(targetPinned),
+            ),
+        )
+        try assertSemanticRejected(
+            semanticPlacementRejection,
+            source: source,
+            target: target,
+            request: SemanticTransferRequest(
+                orderedTabIDs: [firstID, secondID],
+                primaryTabID: firstID,
+                sourceDomain: .unpinned,
+                targetDomain: .unpinned,
+                placement: .empty,
+            ),
+        )
+    }
+
     private func batchPostCommit(
         source: FileManagerWindowState,
         target: FileManagerWindowState,
@@ -1435,6 +1953,33 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             target: target,
             orderedTabIDs: orderedTabIDs,
             primaryTabID: primaryTabID,
+        )
+        let result = try ContentTabTransfer.apply(preflight.successToken())
+        return closesSource
+            ? try result.closeSourceWindowPostCommit()
+            : try result.movedPostCommit()
+    }
+
+    private func semanticPostCommit(
+        source: FileManagerWindowState,
+        target: FileManagerWindowState,
+        orderedTabIDs: [ContentTabID],
+        primaryTabID: ContentTabID,
+        sourceDomain: ContentTabDomain?,
+        targetDomain: ContentTabDomain?,
+        placement: ContentTabPlacement?,
+        pinnedAt: Date? = nil,
+        closesSource: Bool = false,
+    ) throws -> ContentTabTransfer.PostCommit {
+        let preflight = semanticPreflight(
+            source: source,
+            target: target,
+            orderedTabIDs: orderedTabIDs,
+            primaryTabID: primaryTabID,
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            placement: placement,
+            pinnedAt: pinnedAt,
         )
         let result = try ContentTabTransfer.apply(preflight.successToken())
         return closesSource
@@ -1479,6 +2024,40 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(source, sourceBefore, file: file, line: line)
         XCTAssertEqual(target, targetBefore, file: file, line: line)
     }
+
+    private func assertSemanticRejected(
+        _ expected: ContentTabTransfer.Rejection,
+        source: FileManagerWindowState,
+        target: FileManagerWindowState,
+        request: SemanticTransferRequest,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) throws {
+        let sourceBefore = source
+        let targetBefore = target
+        let result = semanticPreflight(
+            source: source,
+            target: target,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.primaryTabID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            placement: request.placement,
+            pinnedAt: request.pinnedAt,
+        )
+        XCTAssertEqual(result.rejection, expected, file: file, line: line)
+        XCTAssertEqual(source, sourceBefore, file: file, line: line)
+        XCTAssertEqual(target, targetBefore, file: file, line: line)
+    }
+}
+
+private struct SemanticTransferRequest {
+    let orderedTabIDs: [ContentTabID]
+    let primaryTabID: ContentTabID
+    let sourceDomain: ContentTabDomain?
+    let targetDomain: ContentTabDomain?
+    let placement: ContentTabPlacement?
+    let pinnedAt: Date? = nil
 }
 
 private struct MixedBatchTransferScenario {
@@ -1704,14 +2283,17 @@ private enum Fixture {
         )
     }
 
-    static func pinRecord(for tab: ContentTabItem) -> ContentTabPinnedRecord {
+    static func pinRecord(
+        for tab: ContentTabItem,
+        pinnedAt: Date = Date(timeIntervalSince1970: 450),
+    ) -> ContentTabPinnedRecord {
         ContentTabPinnedRecord(
             id: tab.id.rawValue,
             page: tab.page,
             anchor: tab.anchor,
             title: tab.title,
             iconName: tab.iconName,
-            pinnedAt: Date(timeIntervalSince1970: 450),
+            pinnedAt: pinnedAt,
         )
     }
 
@@ -1788,6 +2370,34 @@ private extension ContentTabTransfer.Preflight {
     }
 }
 
+private extension CTM001MoveContentTabToAnotherWindowTests {
+    var semanticPlacementRejection: ContentTabTransfer.Rejection {
+        .targetPlacementInvalid
+    }
+
+    func semanticPreflight(
+        source: FileManagerWindowState,
+        target: FileManagerWindowState,
+        orderedTabIDs: [ContentTabID],
+        primaryTabID: ContentTabID,
+        sourceDomain: ContentTabDomain?,
+        targetDomain: ContentTabDomain?,
+        placement: ContentTabPlacement?,
+        pinnedAt: Date? = nil,
+    ) -> ContentTabTransfer.Preflight {
+        ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: orderedTabIDs,
+            primaryTabID: primaryTabID,
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            placement: placement,
+            pinnedAt: pinnedAt,
+        )
+    }
+}
+
 private extension ContentTabTransfer.Result {
     func movedPostCommit() throws -> ContentTabTransfer.PostCommit {
         guard case let .moved(postCommit) = self else {
@@ -1801,6 +2411,17 @@ private extension ContentTabTransfer.Result {
             throw TransferTestError.expectedCloseSourceWindow
         }
         return postCommit
+    }
+}
+
+private extension FileManagerWindowState {
+    func withPinnedRecords(for tabIDs: [ContentTabID]) -> FileManagerWindowState {
+        var copy = self
+        for tabID in tabIDs {
+            guard let tab = copy.contentTabs.tabs[id: tabID] else { continue }
+            copy.contentTabs.pinnedRecords[tabID] = Fixture.pinRecord(for: tab)
+        }
+        return copy
     }
 }
 
