@@ -11,7 +11,7 @@ final class EntryCoreClientTests: XCTestCase {
         let factory = RecordingTransportFactory(outcomes: [
             .success(response(id: "ping-id", result: #"{"message":"pong"}"#)),
             .success(response(id: "health-id", result: #"{"status":"healthy","state":"running"}"#)),
-            .success(response(id: "version-id", result: #"{"app_version":"2026.7.31","protocol_version":1}"#)),
+            .success(response(id: "version-id", result: #"{"app_version":"2026.7.31"}"#)),
         ])
         let client = makeClient(requestIDs: requestIDs, factory: factory)
         let endpoint = try EntryCoreEndpoint(path: endpointPath)
@@ -101,18 +101,18 @@ final class EntryCoreClientTests: XCTestCase {
             XCTAssertEqual(factory.requestCount, 1)
         }
 
-        let wrongProtocol =
+        let legacyProtocol =
             #"{"request_id":"active-id","protocol_version":2,"# +
             #""ok":true,"result":{"message":"pong"}}"#
         let decoderCases: [(EntryCoreClientError, Data)] = [
             (.malformedResponse, Data([0xFF])),
-            (.protocolMismatch, Data(wrongProtocol.utf8)),
+            (.protocolMismatch, Data(legacyProtocol.utf8)),
             (
                 .requestIDMismatch,
                 response(id: "other-id", result: #"{"message":"pong"}"#),
             ),
             (
-                .server(.internalError),
+                .protocolMismatch,
                 failure(
                     id: "active-id",
                     code: "internal_error",
@@ -134,7 +134,7 @@ final class EntryCoreClientTests: XCTestCase {
         let cases: [(EntryCoreClientError, Data)] = [
             (.malformedResponse, Data("secret-wire-value".utf8)),
             (.requestIDMismatch, response(id: "other-secret-id", result: #"{"message":"pong"}"#)),
-            (.server(.internalError), failure(
+            (.protocolMismatch, failure(
                 id: "secret-request-id",
                 code: "internal_error",
                 message: "secret-server-message",
@@ -182,13 +182,12 @@ final class EntryCoreClientTests: XCTestCase {
         )
         XCTAssertEqual(
             Set(object.keys),
-            ["request_id", "method", "params", "protocol_version"],
+            ["request_id", "method", "params"],
             file: file,
             line: line,
         )
         XCTAssertEqual(object["request_id"] as? String, id, file: file, line: line)
         XCTAssertEqual(object["method"] as? String, method.rawValue, file: file, line: line)
-        XCTAssertEqual(object["protocol_version"] as? Int, 1, file: file, line: line)
         XCTAssertEqual((object["params"] as? [String: Any])?.count, 0, file: file, line: line)
         let text = try XCTUnwrap(String(data: data, encoding: .utf8), file: file, line: line)
         XCTAssertFalse(text.contains(" "), file: file, line: line)
@@ -204,14 +203,14 @@ final class EntryCoreClientTests: XCTestCase {
 
     private func response(id: String, result: String) -> Data {
         let wire =
-            #"{"request_id":"\#(id)","protocol_version":1,"# +
+            #"{"request_id":"\#(id)","# +
             #""ok":true,"result":\#(result)}"#
         return Data(wire.utf8)
     }
 
     private func failure(id: String, code: String, message: String) -> Data {
         let wire =
-            #"{"request_id":"\#(id)","protocol_version":1,"ok":false,"# +
+            #"{"request_id":"\#(id)","ok":false,"# +
             #""error":{"code":"\#(code)","message":"\#(message)"}}"#
         return Data(wire.utf8)
     }

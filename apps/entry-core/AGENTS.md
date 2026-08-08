@@ -10,7 +10,7 @@
 ## Module and protocol boundaries
 
 - Keep the dependency-free module on the standard library while the implementation has no external dependency requirement. Adding a dependency, workspace, toolchain override, or code generation requires an explicitly owned task and corresponding verification-policy update.
-- Preserve protocol version `1`, default app version `0.1.0-dev`, one request and one response per Unix socket connection, and the required absolute `--socket` contract unless an active task explicitly versions or replaces that contract.
+- Preserve the unversioned initial canonical wire contract, default app version `0.1.0-dev`, one request and one response per Unix socket connection, and the required absolute `--socket` contract. Add a future version discriminator only when an observed compatibility break requires parallel decoding or migration.
 - Keep logs metadata-only. Never log raw request or response payloads, params, request IDs, secrets, or credentials.
 
 ## Package ownership

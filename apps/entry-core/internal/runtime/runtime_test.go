@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -48,12 +49,13 @@ func TestDispatchResults(t *testing.T) {
 	}{
 		{name: "ping", method: schema.MethodPing, want: schema.PingResult{Message: "pong"}},
 		{name: "health", method: schema.MethodHealth, want: schema.HealthResult{Status: "healthy", State: "running"}},
-		{name: "version", method: schema.MethodVersion, want: schema.VersionResult{AppVersion: "0.1.0-dev", ProtocolVersion: schema.ProtocolVersion}},
+		{name: "version", method: schema.MethodVersion, want: schema.VersionResult{AppVersion: "0.1.0-dev"}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result, protocolError := runtime.Dispatch(request(test.method))
+			response := runtime.Dispatch(context.Background(), request(test.method))
+			result, protocolError := response.Result, response.Error
 			if protocolError != nil {
 				t.Fatalf("unexpected protocol error: %#v", protocolError)
 			}
@@ -70,7 +72,8 @@ func TestDispatchWhileStopping(t *testing.T) {
 
 	for _, method := range []schema.Method{schema.MethodPing, schema.MethodHealth, schema.MethodVersion} {
 		t.Run(string(method), func(t *testing.T) {
-			result, protocolError := runtime.Dispatch(request(method))
+			response := runtime.Dispatch(context.Background(), request(method))
+			result, protocolError := response.Result, response.Error
 			if result != nil {
 				t.Fatalf("result = %#v, want nil", result)
 			}
@@ -89,11 +92,12 @@ func TestDispatchWhileStopping(t *testing.T) {
 
 func TestAppVersionInjection(t *testing.T) {
 	runtime := newWithAppVersion("9.8.7-test")
-	result, protocolError := runtime.Dispatch(request(schema.MethodVersion))
+	response := runtime.Dispatch(context.Background(), request(schema.MethodVersion))
+	result, protocolError := response.Result, response.Error
 	if protocolError != nil {
 		t.Fatalf("unexpected protocol error: %#v", protocolError)
 	}
-	want := schema.VersionResult{AppVersion: "9.8.7-test", ProtocolVersion: schema.ProtocolVersion}
+	want := schema.VersionResult{AppVersion: "9.8.7-test"}
 	if result != want {
 		t.Fatalf("result = %#v, want %#v", result, want)
 	}
@@ -101,20 +105,20 @@ func TestAppVersionInjection(t *testing.T) {
 
 func TestDispatchUnexpectedMethod(t *testing.T) {
 	runtime := New()
-	result, protocolError := runtime.Dispatch(request(schema.Method("future")))
+	response := runtime.Dispatch(context.Background(), request(schema.Method("future")))
+	result, protocolError := response.Result, response.Error
 	if result != nil {
 		t.Fatalf("result = %#v, want nil", result)
 	}
-	if protocolError == nil || protocolError.Code != schema.ErrorInternal || protocolError.Message != "internal error" {
+	if protocolError == nil || protocolError.Code != schema.ErrorUnknownMethod || protocolError.Message != "method is unknown" {
 		t.Fatalf("error = %#v, want canonical internal error", protocolError)
 	}
 }
 
 func request(method schema.Method) schema.Request {
 	return schema.Request{
-		RequestID:       "request-1",
-		ProtocolVersion: schema.ProtocolVersion,
-		Method:          method,
-		Params:          schema.EmptyParams{},
+		RequestID: "request-1",
+		Method:    method,
+		Params:    schema.EmptyParams{},
 	}
 }

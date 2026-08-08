@@ -78,10 +78,9 @@ func newClient(dial dialFunc, now func() time.Time) *Client {
 }
 
 type requestWire struct {
-	RequestID       string             `json:"request_id"`
-	ProtocolVersion int64              `json:"protocol_version"`
-	Method          schema.Method      `json:"method"`
-	Params          schema.EmptyParams `json:"params"`
+	RequestID string             `json:"request_id"`
+	Method    schema.Method      `json:"method"`
+	Params    schema.EmptyParams `json:"params"`
 }
 
 func (client *Client) Call(ctx context.Context, socketPath string, request schema.Request) (schema.Response, error) {
@@ -90,10 +89,9 @@ func (client *Client) Call(ctx context.Context, socketPath string, request schem
 	}
 
 	wire, err := json.Marshal(requestWire{
-		RequestID:       request.RequestID,
-		ProtocolVersion: request.ProtocolVersion,
-		Method:          request.Method,
-		Params:          request.Params,
+		RequestID: request.RequestID,
+		Method:    request.Method,
+		Params:    request.Params,
 	})
 	if err != nil {
 		return schema.Response{}, &ProtocolError{Reason: "request encoding", Err: err}
