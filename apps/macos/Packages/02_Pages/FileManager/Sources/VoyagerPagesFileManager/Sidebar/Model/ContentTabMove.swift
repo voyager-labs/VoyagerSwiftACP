@@ -15,6 +15,7 @@ public struct ContentTabDragPayload: Codable, Hashable, Sendable, Transferable {
     public let sourceWindowID: UUID
     public let initiatingTabID: ContentTabID
     public let orderedTabIDs: [ContentTabID]
+    public let sourceDomain: ContentTabDomain?
 
     public var tabID: ContentTabID {
         initiatingTabID
@@ -31,6 +32,7 @@ public struct ContentTabDragPayload: Codable, Hashable, Sendable, Transferable {
         self.sourceWindowID = sourceWindowID
         initiatingTabID = tabID
         orderedTabIDs = [tabID]
+        sourceDomain = nil
     }
 
     public init(
@@ -38,12 +40,14 @@ public struct ContentTabDragPayload: Codable, Hashable, Sendable, Transferable {
         sourceWindowID: UUID,
         initiatingTabID: ContentTabID,
         orderedTabIDs: [ContentTabID],
+        sourceDomain: ContentTabDomain? = nil,
     ) {
         schemaVersion = Self.supportedSchemaVersion
         self.operationID = operationID
         self.sourceWindowID = sourceWindowID
         self.initiatingTabID = initiatingTabID
         self.orderedTabIDs = orderedTabIDs
+        self.sourceDomain = sourceDomain
     }
 
     public static func isSupported(schemaVersion: Int) -> Bool {
@@ -61,6 +65,7 @@ public struct ContentTabDragPayload: Codable, Hashable, Sendable, Transferable {
         case tabID
         case initiatingTabID
         case orderedTabIDs
+        case sourceDomain
     }
 
     public init(from decoder: Decoder) throws {
@@ -74,10 +79,12 @@ public struct ContentTabDragPayload: Codable, Hashable, Sendable, Transferable {
             operationID = nil
             initiatingTabID = tabID
             orderedTabIDs = [tabID]
+            sourceDomain = nil
         case Self.supportedSchemaVersion:
             operationID = try container.decode(UUID.self, forKey: .operationID)
             initiatingTabID = try container.decode(ContentTabID.self, forKey: .initiatingTabID)
             orderedTabIDs = try container.decode([ContentTabID].self, forKey: .orderedTabIDs)
+            sourceDomain = try container.decodeIfPresent(ContentTabDomain.self, forKey: .sourceDomain)
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .schemaVersion,
@@ -99,6 +106,7 @@ public struct ContentTabDragPayload: Codable, Hashable, Sendable, Transferable {
             try container.encode(operationID, forKey: .operationID)
             try container.encode(initiatingTabID, forKey: .initiatingTabID)
             try container.encode(orderedTabIDs, forKey: .orderedTabIDs)
+            try container.encodeIfPresent(sourceDomain, forKey: .sourceDomain)
         default:
             throw EncodingError.invalidValue(
                 schemaVersion,
@@ -122,6 +130,7 @@ public struct ContentTabDragSnapshot: Equatable, Sendable {
     public let sourceWindowID: UUID
     public let initiatingTabID: ContentTabID
     public let orderedTabIDs: [ContentTabID]
+    public let sourceDomain: ContentTabDomain?
     public var lifecycle: Lifecycle
 
     public init(
@@ -129,12 +138,14 @@ public struct ContentTabDragSnapshot: Equatable, Sendable {
         sourceWindowID: UUID,
         initiatingTabID: ContentTabID,
         orderedTabIDs: [ContentTabID],
+        sourceDomain: ContentTabDomain? = nil,
         lifecycle: Lifecycle = .prepared,
     ) {
         self.operationID = operationID
         self.sourceWindowID = sourceWindowID
         self.initiatingTabID = initiatingTabID
         self.orderedTabIDs = orderedTabIDs
+        self.sourceDomain = sourceDomain
         self.lifecycle = lifecycle
     }
 
@@ -144,6 +155,7 @@ public struct ContentTabDragSnapshot: Equatable, Sendable {
             sourceWindowID: sourceWindowID,
             initiatingTabID: initiatingTabID,
             orderedTabIDs: orderedTabIDs,
+            sourceDomain: sourceDomain,
         )
     }
 
@@ -171,6 +183,7 @@ public struct ContentTabDragSnapshot: Equatable, Sendable {
         selectedTabIDs: Set<ContentTabID>,
         displayedOrderedTabIDs: [ContentTabID],
         sourceTabIDs: Set<ContentTabID>,
+        domainForTabID: (ContentTabID) -> ContentTabDomain? = { _ in nil },
     ) -> [ContentTabID]? {
         guard sourceTabIDs.contains(initiatingTabID) else { return nil }
         let normalizedOrderedIDs = normalizedDisplayedOrder(
@@ -182,6 +195,10 @@ public struct ContentTabDragSnapshot: Equatable, Sendable {
               normalizedSelectedIDs.contains(initiatingTabID)
         else {
             return [initiatingTabID]
+        }
+        // 같은 source domain의 selected IDs만 frozen 순서로 남긴다.
+        if let initiatingDomain = domainForTabID(initiatingTabID) {
+            return normalizedSelectedIDs.filter { domainForTabID($0) == initiatingDomain }
         }
         return normalizedSelectedIDs
     }
@@ -244,6 +261,9 @@ public struct ContentTabMoveRequest: Equatable, Sendable {
     public let initiatingTabID: ContentTabID
     public let orderedTabIDs: [ContentTabID]
     public let targetWindowID: UUID
+    public let sourceDomain: ContentTabDomain?
+    public let targetDomain: ContentTabDomain?
+    public let placement: ContentTabPlacement?
 
     public var tabID: ContentTabID {
         initiatingTabID
@@ -256,6 +276,9 @@ public struct ContentTabMoveRequest: Equatable, Sendable {
         initiatingTabID: ContentTabID,
         orderedTabIDs: [ContentTabID],
         targetWindowID: UUID,
+        sourceDomain: ContentTabDomain? = nil,
+        targetDomain: ContentTabDomain? = nil,
+        placement: ContentTabPlacement? = nil,
     ) {
         self.operationID = operationID
         self.requestID = requestID
@@ -263,6 +286,9 @@ public struct ContentTabMoveRequest: Equatable, Sendable {
         self.initiatingTabID = initiatingTabID
         self.orderedTabIDs = orderedTabIDs
         self.targetWindowID = targetWindowID
+        self.sourceDomain = sourceDomain
+        self.targetDomain = targetDomain
+        self.placement = placement
     }
 
     public init(

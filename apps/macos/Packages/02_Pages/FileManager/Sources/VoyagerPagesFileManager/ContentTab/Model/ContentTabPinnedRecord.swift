@@ -27,6 +27,15 @@ public struct ContentTabPinnedRecord: Equatable, Sendable, Codable, Identifiable
 
 public extension ContentTabPinnedRecord {
     var isPageAnchorCompatible: Bool {
+        Self.isPageAnchorCompatible(page: page, anchor: anchor)
+    }
+}
+
+extension ContentTabPinnedRecord {
+    static func isPageAnchorCompatible(
+        page: ContentTabPage,
+        anchor: ContentTabPageAnchor,
+    ) -> Bool {
         switch (page, anchor) {
         case (.home, .homeDefault):
             true
