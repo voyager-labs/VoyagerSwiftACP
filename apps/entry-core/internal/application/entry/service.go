@@ -805,7 +805,10 @@ func longestMatchingMount(mounts []domainentry.MountRef, path string) *domainent
 	return best
 }
 func propertiesWithinRequest(properties []domainentry.PropertyValue, requested []string) bool {
-	for _, property := range properties {
+	for propertyIndex, property := range properties {
+		if propertyIndex > 0 && properties[propertyIndex-1].PropertyID >= property.PropertyID {
+			return false
+		}
 		index := sort.SearchStrings(requested, property.PropertyID)
 		if index >= len(requested) || requested[index] != property.PropertyID {
 			return false
