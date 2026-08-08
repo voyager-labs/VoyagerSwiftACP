@@ -918,12 +918,6 @@ func validEntry(e Entry) bool {
 	return validEntryRef(e.EntryRef) && validSnapshot(e.EntrySnapshot) && validAccessContext(e.AccessContext) && e.EntryRef == e.EntrySnapshot.EntryRef && e.EntryRef.SourceInstanceID == e.AccessContext.SourceInstanceID && validCapabilitiesForAvailability(e.AccessContext.Capabilities, e.EntrySnapshot.Availability.State)
 }
 
-func validCapabilitiesForAvailability(value Capabilities, availability string) bool {
-	if availability != "read_only" {
-		return true
-	}
-	return !value.Writable && !value.Movable && !value.Copyable && !value.Deletable && !value.Commentable
-}
 func validEntryRef(r EntryRef) bool {
 	locator, err := domainentry.NewLocatorRef(r.CanonicalLocator)
 	if err != nil {
