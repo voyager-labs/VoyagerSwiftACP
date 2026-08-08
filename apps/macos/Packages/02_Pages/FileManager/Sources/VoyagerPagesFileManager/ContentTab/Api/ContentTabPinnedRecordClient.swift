@@ -234,7 +234,7 @@ public struct ContentTabPinnedRecordClient: Sendable {
                     try .currentV2(loadStore(defaults))
                 }
                 let store = try Self.writableStore(from: outcome)
-                let updatedStore = applying(
+                let updatedStore = try applying(
                     mutation,
                     to: store,
                     discoveredLocationIDs: discoveredLocationIDs,
@@ -387,13 +387,18 @@ public struct ContentTabPinnedRecordClient: Sendable {
                 validateCurrentIntent,
             )
         }
-        let disposition = try await updateStoreGuarded(generation, userDefaultsClient) { store in
-            try validateCurrentIntent()
-            return applying(
-                mutation,
-                to: store,
-                discoveredLocationIDs: discoveredLocationIDs,
-            )
+        let disposition: ContentTabPinnedRecordMutationDisposition
+        do {
+            disposition = try await updateStoreGuarded(generation, userDefaultsClient) { store in
+                try validateCurrentIntent()
+                return try applying(
+                    mutation,
+                    to: store,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                )
+            }
+        } catch ContentTabPinnedRecordPersistenceCommitError.superseded {
+            return .superseded
         }
         guard disposition == .applied else { return .superseded }
         try validateCurrentIntent()
@@ -575,11 +580,16 @@ extension ContentTabPinnedRecordClient: DependencyKey {
             discoveredLocationIDs: discoveredLocationIDs,
         )
         let store = try writableStore(from: outcome)
-        let updatedStore = applying(
-            mutation,
-            to: store,
-            discoveredLocationIDs: discoveredLocationIDs,
-        )
+        let updatedStore: ContentTabPinnedRecordStore
+        do {
+            updatedStore = try applying(
+                mutation,
+                to: store,
+                discoveredLocationIDs: discoveredLocationIDs,
+            )
+        } catch ContentTabPinnedRecordPersistenceCommitError.superseded {
+            return .superseded
+        }
         try Task.checkCancellation()
         guard latestMutationGenerations[generation.tabID] == generation.value else { return .superseded }
         try validateCurrentIntent()
@@ -617,7 +627,7 @@ extension ContentTabPinnedRecordClient: DependencyKey {
             discoveredLocationIDs: discoveredLocationIDs,
         )
         let store = try writableStore(from: outcome)
-        let updatedStore = applying(
+        let updatedStore = try applying(
             mutation,
             to: store,
             discoveredLocationIDs: discoveredLocationIDs,

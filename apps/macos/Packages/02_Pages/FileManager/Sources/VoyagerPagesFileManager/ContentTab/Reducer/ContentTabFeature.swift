@@ -949,7 +949,7 @@ private func persistPinnedRecordMutation(
             tabID: request.tabID,
             intentID: request.context.intentID,
         )
-        return applying(
+        return try applying(
             request.mutation,
             to: store,
             discoveredLocationIDs: discoveredLocationIDs,
@@ -1150,10 +1150,23 @@ func applying(
     _ mutation: ContentTabPinnedRecordPersistenceMutation,
     to store: ContentTabPinnedRecordStore,
     discoveredLocationIDs: [String],
-) -> ContentTabPinnedRecordStore {
+) throws -> ContentTabPinnedRecordStore {
     switch mutation {
     case let .upsert(record, dormantSlot, placement):
-        upsertPinnedRecord(
+        if let placement {
+            let durableOrder = FileManagerTopNavigationOrderPolicy.normalize(
+                store: store,
+                discoveredLocationIDs: discoveredLocationIDs,
+            ).durableOrder
+            guard FileManagerTopNavigationOrderPolicy.insertingContentTab(
+                ContentTabID(rawValue: record.id),
+                at: placement,
+                in: durableOrder,
+            ) != nil else {
+                throw ContentTabPinnedRecordPersistenceCommitError.superseded
+            }
+        }
+        return upsertPinnedRecord(
             record,
             in: store,
             dormantSlot: dormantSlot,
@@ -1161,7 +1174,7 @@ func applying(
             discoveredLocationIDs: discoveredLocationIDs,
         )
     case let .remove(recordID):
-        removePinnedRecord(
+        return removePinnedRecord(
             id: recordID,
             from: store,
             discoveredLocationIDs: discoveredLocationIDs,

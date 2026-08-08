@@ -1746,8 +1746,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     return value
                 }
                 if count == 1 { await gate.wait() }
-                let updated = persistedStore.withValue { store in
-                    store = applying(
+                let updated = try persistedStore.withValue { store in
+                    store = try applying(
                         mutation,
                         to: store,
                         discoveredLocationIDs: discoveredLocationIDs,
@@ -1820,8 +1820,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 }
                 if count == 1 { await gate.wait() }
                 if count == 2 { throw ExpectedPinnedRecordSaveFailure() }
-                let updated = persistedStore.withValue { store in
-                    store = applying(
+                let updated = try persistedStore.withValue { store in
+                    store = try applying(
                         mutation,
                         to: store,
                         discoveredLocationIDs: discoveredLocationIDs,
@@ -1956,8 +1956,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 412))
             $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
                 await gate.wait()
-                let updated = persistedStore.withValue { store in
-                    store = applying(
+                let updated = try persistedStore.withValue { store in
+                    store = try applying(
                         mutation,
                         to: store,
                         discoveredLocationIDs: discoveredLocationIDs,
@@ -2031,8 +2031,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
             $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
                 await gate.wait()
-                let updated = persistedStore.withValue { store in
-                    store = applying(
+                let updated = try persistedStore.withValue { store in
+                    store = try applying(
                         mutation,
                         to: store,
                         discoveredLocationIDs: discoveredLocationIDs,
@@ -2117,8 +2117,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, locationIDs, mutation in
                 discoveredLocationIDs.setValue(locationIDs)
                 await gate.wait()
-                let updated = persistedStore.withValue { store in
-                    store = applying(
+                let updated = try persistedStore.withValue { store in
+                    store = try applying(
                         mutation,
                         to: store,
                         discoveredLocationIDs: locationIDs,

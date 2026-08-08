@@ -3240,6 +3240,48 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         ])
     }
 
+    /// CTM-003-pin_content_tab_s: explicit Pin의 durable anchor가 사라지면 성공으로 보고하지 않는다.
+    /// 다른 창의 committed fan-out이 anchor를 제거한 뒤 도착한 stale placement를 non-applied로 구분하는지 검증한다.
+    /// - 검증 내용: missing durable anchor의 superseded disposition, write zero, revision stable
+    /// - 사전 조건: 요청은 pinned B 앞 placement를 유지하지만 persisted store에는 pinned B record/order가 없음
+    /// - 기대 결과: guarded commit은 superseded이고 durable store와 revision은 변경되지 않음
+    func testPin_explicitPlacementMissingDurableAnchorReturnsSupersededWithoutWrite() async throws {
+        let fixture = ExplicitPinPlacementFixture()
+        let staleStore = ContentTabPinnedRecordStore(
+            records: fixture.initialStore.records.filter { $0.id != fixture.pinnedB.rawValue },
+            topNavigationOrder: .init(items: fixture.initialStore.topNavigationOrder.items.filter {
+                $0 != .contentTab(fixture.pinnedB)
+            }),
+        )
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: staleStore)
+        let client = ContentTabPinnedRecordClient.liveValue
+        let beforeCommit = try client.loadTopNavigationCommit(
+            defaultsRecorder.client(),
+            [fixture.locationID],
+        )
+        let generation = client.reserveMutationGeneration(fixture.target)
+
+        let disposition = try await client.applyPersistenceMutationCommittedGuarded(
+            generation,
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [fixture.locationID],
+            mutation: .upsert(
+                record: Self.pinnedRecord(
+                    id: fixture.target,
+                    anchor: .directory(path: "/pin/target"),
+                    title: "Pin Target",
+                ),
+                dormantSlot: nil,
+                placement: .before(fixture.pinnedB),
+            ),
+        ) {}
+
+        XCTAssertEqual(disposition, .superseded)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        let afterCommit = try client.loadTopNavigationCommit(defaultsRecorder.client(), [fixture.locationID])
+        XCTAssertEqual(afterCommit, beforeCommit)
+    }
+
     /// CTM-003-pin_content_tab_s: committed readback은 마지막 durable revision을 그대로 반환한다.
     /// read 경로가 synthetic revision을 발급하지 않고 마지막 write revision을 재사용하는지 검증한다.
     /// - 검증 내용: explicit Pin commit 뒤 연속 readback revision stable, extra write zero
