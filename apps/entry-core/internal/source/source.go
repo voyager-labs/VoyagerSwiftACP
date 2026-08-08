@@ -586,7 +586,12 @@ func (result AdapterListResult) Validate(pageQuota int) error {
 		!equalOptionalString(result.Freshness.SourceRevision.Revision.Token, result.SourceRevision.Token) {
 		return ErrAdapterFailure
 	}
+	relativePaths := make(map[string]struct{}, len(result.Items))
 	for _, item := range result.Items {
+		if _, duplicate := relativePaths[item.RelativePath]; duplicate {
+			return ErrAdapterFailure
+		}
+		relativePaths[item.RelativePath] = struct{}{}
 		if item.Validate() != nil || item.EntrySnapshot.Availability != result.Availability || !equalAdapterFreshnessEnvelope(item.EntrySnapshot.Freshness, result.Freshness) {
 			return ErrAdapterFailure
 		}

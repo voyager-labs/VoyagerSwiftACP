@@ -45,6 +45,20 @@ func TestResourceAdapterContract(t *testing.T) {
 	}
 }
 
+func TestAdapterListResultRejectsDuplicateRelativePath(t *testing.T) {
+	sourceRef, mountRef := adapterContractRefs(t)
+	request, err := NewAdapterListRequest(sourceRef, mountRef, "", 2, nil, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := adapterContractResult(t, request, 2, nil)
+	result.Items[1] = result.Items[0]
+
+	if !errors.Is(result.Validate(request.PageQuota), ErrAdapterFailure) {
+		t.Fatal("duplicate relative path accepted")
+	}
+}
+
 func TestRequestedProperties(t *testing.T) {
 	sourceRef, mountRef := adapterContractRefs(t)
 	request, err := NewAdapterResolveRequest(sourceRef, mountRef, nil, stringPointer("item"), []string{"title"})
