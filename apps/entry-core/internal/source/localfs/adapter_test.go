@@ -205,6 +205,41 @@ func TestRootConfinement(t *testing.T) {
 	replaced = false
 }
 
+func TestLocalFSMissingDirectoryReturnsEntryNotFound(t *testing.T) {
+	root := t.TempDir()
+	delegate := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
+	adapter := NewResourceAdapter(delegate)
+	sourceRef, mountRef := canonicalRefs(t, delegate.SourceIdentity(), "localfs", root, "mount-local", "/local")
+	request, err := source.NewAdapterListRequest(sourceRef, mountRef, "missing", 1, nil, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = adapter.List(context.Background(), request)
+	if !errors.Is(err, source.ErrEntryNotFound) {
+		t.Fatalf("missing directory List() error = %v, want %v", err, source.ErrEntryNotFound)
+	}
+}
+
+func TestLocalFSDeletedRootReturnsSourceDeleted(t *testing.T) {
+	root := t.TempDir()
+	delegate := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
+	adapter := NewResourceAdapter(delegate)
+	sourceRef, mountRef := canonicalRefs(t, delegate.SourceIdentity(), "localfs", root, "mount-local", "/local")
+	request, err := source.NewAdapterListRequest(sourceRef, mountRef, "", 1, nil, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = adapter.List(context.Background(), request)
+	if !errors.Is(err, source.ErrSourceDeleted) {
+		t.Fatalf("deleted root List() error = %v, want %v", err, source.ErrSourceDeleted)
+	}
+}
+
 func TestRootConfinementFinalComponentReplacement(t *testing.T) {
 	root := t.TempDir()
 	safe := filepath.Join(root, "safe")

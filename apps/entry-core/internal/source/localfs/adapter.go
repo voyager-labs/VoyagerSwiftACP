@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,14 +191,14 @@ func (adapter *Adapter) listWithLimit(ctx context.Context, request listRequest, 
 func openVerifiedRoot(path string) (*os.Root, error) {
 	before, err := os.Lstat(path)
 	if err != nil {
-		return nil, source.ErrAdapterFailure
+		return nil, localFilesystemError(err, source.ErrSourceDeleted)
 	}
 	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 		return nil, source.ErrPathEscape
 	}
 	root, err := os.OpenRoot(path)
 	if err != nil {
-		return nil, source.ErrPathEscape
+		return nil, localFilesystemError(err, source.ErrSourceDeleted)
 	}
 	opened, err := root.Stat(".")
 	if err != nil {
@@ -205,7 +206,11 @@ func openVerifiedRoot(path string) (*os.Root, error) {
 		return nil, source.ErrAdapterFailure
 	}
 	after, err := os.Lstat(path)
-	if err != nil || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
+	if err != nil {
+		_ = root.Close()
+		return nil, localFilesystemError(err, source.ErrSourceDeleted)
+	}
+	if after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
 		_ = root.Close()
 		return nil, source.ErrPathEscape
 	}
@@ -226,18 +231,32 @@ func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
 	if relativePath != "" {
 		for _, component := range strings.Split(relativePath, "/") {
 			before, err := current.Lstat(component)
-			if err != nil || before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
+			if err != nil {
+				closeOwned()
+				return nil, localFilesystemError(err, source.ErrEntryNotFound)
+			}
+			if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 				closeOwned()
 				return nil, source.ErrPathEscape
 			}
 			next, err := current.OpenRoot(component)
 			if err != nil {
 				closeOwned()
-				return nil, source.ErrPathEscape
+				return nil, localFilesystemError(err, source.ErrEntryNotFound)
 			}
 			opened, openedErr := next.Lstat(".")
 			after, afterErr := current.Lstat(component)
-			if openedErr != nil || afterErr != nil || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
+			if openedErr != nil {
+				_ = next.Close()
+				closeOwned()
+				return nil, source.ErrAdapterFailure
+			}
+			if afterErr != nil {
+				_ = next.Close()
+				closeOwned()
+				return nil, localFilesystemError(afterErr, source.ErrEntryNotFound)
+			}
+			if after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
 				_ = next.Close()
 				closeOwned()
 				return nil, source.ErrPathEscape
@@ -247,23 +266,42 @@ func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
 		}
 	}
 	before, err := current.Lstat(".")
-	if err != nil || before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
+	if err != nil {
+		closeOwned()
+		return nil, localFilesystemError(err, source.ErrEntryNotFound)
+	}
+	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 		closeOwned()
 		return nil, source.ErrPathEscape
 	}
 	directory, err := current.Open(".")
 	if err != nil {
 		closeOwned()
-		return nil, source.ErrPathEscape
+		return nil, localFilesystemError(err, source.ErrEntryNotFound)
 	}
 	opened, openedErr := directory.Stat()
 	after, afterErr := current.Lstat(".")
 	closeOwned()
-	if openedErr != nil || afterErr != nil || !opened.IsDir() || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
+	if openedErr != nil {
+		_ = directory.Close()
+		return nil, source.ErrAdapterFailure
+	}
+	if afterErr != nil {
+		_ = directory.Close()
+		return nil, localFilesystemError(afterErr, source.ErrEntryNotFound)
+	}
+	if !opened.IsDir() || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
 		_ = directory.Close()
 		return nil, source.ErrPathEscape
 	}
 	return directory, nil
+}
+
+func localFilesystemError(err, notExist error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return notExist
+	}
+	return source.ErrAdapterFailure
 }
 
 func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (source.SourceItem, error) {
