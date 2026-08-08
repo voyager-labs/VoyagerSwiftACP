@@ -115,6 +115,27 @@ func TestEntryResponseRejectsNonCanonicalVirtualPath(t *testing.T) {
 	}
 }
 
+func TestEncodeResponseRejectsNonCanonicalSnapshotPropertyOrder(t *testing.T) {
+	result := listResultWithUnsortedProperties()
+
+	encoded := EncodeResponse(NewSuccessResponse("trusted", result))
+	if !bytes.Contains(encoded, []byte(`"code":"internal_error"`)) {
+		t.Fatalf("EncodeResponse() = %s, want internal_error fallback", encoded)
+	}
+}
+
+func TestDecodeResponseRejectsNonCanonicalSnapshotPropertyOrder(t *testing.T) {
+	result := listResultWithUnsortedProperties()
+	wire, err := json.Marshal(successWire{RequestID: "trusted", OK: true, Result: result})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := DecodeResponse(wire, MethodEntryList); err == nil {
+		t.Fatalf("DecodeResponse() accepted noncanonical properties: %s", wire)
+	}
+}
+
 func TestEntryListEncodedSizeBoundary(t *testing.T) {
 	t.Parallel()
 	result := validLargeListResult()
@@ -155,4 +176,15 @@ func validLargeListResult() EntryListResult {
 		entries[i] = entry
 	}
 	return EntryListResult{Entries: entries, HasMore: false, ObservedAt: "2026-08-03T00:00:00Z", SourceRevision: []RevisionSummary{{SourceInstanceID: testSourceID, MountID: "m", SourceRevision: Revision{Strength: "unknown"}, ObservedRevision: Revision{Strength: "observed", Token: stringPointer("1")}}}, Availability: []SourceAvailability{{SourceInstanceID: testSourceID, MountID: "m", State: "available"}}, Freshness: []SourceFreshness{{SourceInstanceID: testSourceID, MountID: "m", State: "current", ObservedAt: "2026-08-03T00:00:00Z", SourceRevision: Revision{Strength: "unknown"}}}, Warnings: []Warning{}}
+}
+
+func listResultWithUnsortedProperties() EntryListResult {
+	result := validLargeListResult()
+	result.Entries = result.Entries[:1]
+	first := result.Entries[0].EntrySnapshot.Properties[0]
+	first.PropertyID = "property.z"
+	second := first
+	second.PropertyID = "property.a"
+	result.Entries[0].EntrySnapshot.Properties = []PropertyValue{first, second}
+	return result
 }

@@ -929,15 +929,13 @@ func validSnapshot(s EntrySnapshot) bool {
 	if s.ParentRef != nil && (!validEntryRef(*s.ParentRef) || s.ParentRef.SourceInstanceID != s.EntryRef.SourceInstanceID) {
 		return false
 	}
-	seen := map[string]struct{}{}
-	for _, p := range s.Properties {
+	for index, p := range s.Properties {
 		if !validPropertyValue(p) || p.EntryID != s.EntryRef.EntryID {
 			return false
 		}
-		if _, ok := seen[p.PropertyID]; ok {
+		if index > 0 && s.Properties[index-1].PropertyID >= p.PropertyID {
 			return false
 		}
-		seen[p.PropertyID] = struct{}{}
 	}
 	return true
 }
