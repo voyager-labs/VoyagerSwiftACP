@@ -531,7 +531,7 @@ func (result EntryListResult) Validate() error {
 			return ErrInvalidResponse
 		}
 		scopes[scopeKey] = struct{}{}
-		if !validSourceInstanceID(r.SourceInstanceID) || !validUTF8Bytes(r.MountID, 1, 64) || r.SourceInstanceID != a.SourceInstanceID || r.MountID != a.MountID || r.SourceInstanceID != f.SourceInstanceID || r.MountID != f.MountID || !validRevision(r.SourceRevision) || !validObservedRevision(r.ObservedRevision) || !validSourceAvailability(a) || !validSourceFreshness(f) || !equalRevision(r.SourceRevision, f.SourceRevision) {
+		if !validSourceInstanceID(r.SourceInstanceID) || !validUTF8Bytes(r.MountID, 1, 64) || r.SourceInstanceID != a.SourceInstanceID || r.MountID != a.MountID || r.SourceInstanceID != f.SourceInstanceID || r.MountID != f.MountID || !validRevision(r.SourceRevision) || !validObservedRevision(r.ObservedRevision) || !validSourceAvailability(a) || !validSourceFreshness(f) || !validSourceOutcome(a, f, result.Warnings) || !equalRevision(r.SourceRevision, f.SourceRevision) {
 			return ErrInvalidResponse
 		}
 		if a.State == "available" || a.State == "read_only" || a.State == "stale" {
