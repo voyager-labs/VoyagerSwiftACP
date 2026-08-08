@@ -196,7 +196,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .constant(operationID)
             $0.date = .constant(Self.pinnedAt)
-            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, mutation in
+            $0.contentTabPinnedRecordClient.guardedApplyPersistenceMutationCommitted = { _, _, _, mutation, validate in
+                try validate()
                 let count = mutationCount.withValue { value in
                     value += 1
                     return value
@@ -205,10 +206,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     store = Self.applying(mutation, to: store)
                     return store
                 }
-                return .init(
+                return .applied(.init(
                     store: updated,
                     topNavigation: .init(order: updated.topNavigationOrder, revision: UInt64(count)),
-                )
+                ))
             }
         }
 
@@ -252,7 +253,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.contentTabPinnedRecordClient.reserveMutationGeneration = {
                 ContentTabPinnedRecordMutationGeneration(tabID: $0)
             }
-            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, _ in
+            $0.contentTabPinnedRecordClient.guardedApplyPersistenceMutationCommitted = { _, _, _, _, validate in
+                try validate()
                 mutationCount.withValue { $0 += 1 }
                 throw ContentTabPinnedRecordStoreLoadError.corruptUnavailable
             }
@@ -274,6 +276,64 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
             XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
         }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: app queue save 직전 superseded batch는 durable write 없이 종료한다.
+    /// source terminal 이후가 아니라 기존 storage lock 경계에서 stale intent를 차단하는지 검증한다.
+    /// - 검증 내용: guarded superseded 3회, unguarded write와 authoritative fan-out 0회, coordinator 재시작
+    /// - 사전 조건: 선택된 unpinned tab 3개와 save 직전 superseded를 반환하는 app persistence owner
+    /// - 기대 결과: 두 batch 모두 remaining으로 끝나고 모든 tab과 queue/coordinator가 원래 상태를 유지한다.
+    func testAppOwnedSupersededSelectedPinStopsBeforeDurableWriteAndAllowsRetry() async {
+        let sourceWindowID = UUID()
+        let otherWindowID = UUID()
+        let source = Self.makeThreeSelectedUnpinnedWindow(path: "/Users/test/Superseded")
+        let selectedIDs = source.contentTabs.tabs.map(\.id)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: sourceWindowID, window: source),
+            WindowSessionState(
+                id: otherWindowID,
+                window: FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Peer"),
+            ),
+        ]
+        let guardedCount = LockIsolated(0)
+        let unguardedWriteCount = LockIsolated(0)
+        let counts = LockIsolated(CTM003ActionCounts())
+        let store = Store(initialState: initialState) {
+            Self.trackedWindowManager(counts: counts)
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedApplyPersistenceMutationCommitted = { _, _, _, _, _ in
+                guardedCount.withValue { $0 += 1 }
+                return .superseded
+            }
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, _ in
+                unguardedWriteCount.withValue { $0 += 1 }
+                return .init(store: .init(), topNavigation: .init(order: .init(), revision: 1))
+            }
+        }
+
+        for _ in 0 ..< 2 {
+            let batchTask = store.send(.windows(.element(
+                id: sourceWindowID,
+                action: .window(.requestSelectedContentTabPinMutation(target: .pinned)),
+            )))
+            await batchTask.finish()
+            store.withState { state in
+                let sourceState = state.windows[id: sourceWindowID]?.window
+                XCTAssertNil(sourceState?.pendingSelectedContentTabPinMutation)
+                XCTAssertEqual(sourceState?.pendingTopNavigationIntents.isEmpty, true)
+                XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
+                XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
+                XCTAssertTrue(selectedIDs.allSatisfy { sourceState?.contentTabs.tabs[id: $0]?.isPinned == false })
+            }
+        }
+
+        XCTAssertEqual(guardedCount.value, selectedIDs.count * 2)
+        XCTAssertEqual(unguardedWriteCount.value, 0)
+        XCTAssertEqual(counts.value.batchCompleted, 2)
+        XCTAssertTrue(counts.value.applyByWindow.isEmpty)
     }
 
     /// CTM-003-pin_selected_content_tabs: globally stale success는 local cleanup만 수행한다.
@@ -554,7 +614,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     }
                     if case let .windows(.element(
                         id: windowID,
-                        action: .window(.applyCommittedTopNavigationSnapshot),
+                        action: .window(.applyCommittedTopNavigationSnapshot(_, _, _)),
                     )) = action {
                         value.applyByWindow[windowID, default: 0] += 1
                     }
@@ -648,7 +708,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     ) -> ContentTabPinnedRecordStore {
         var updated = store
         switch mutation {
-        case let .upsert(record, _):
+        case let .upsert(record, _, _):
             updated.records.removeAll { $0.id == record.id }
             updated.records.append(record)
             updated.topNavigationOrder.items.removeAll { $0 == .contentTab(ContentTabID(rawValue: record.id)) }

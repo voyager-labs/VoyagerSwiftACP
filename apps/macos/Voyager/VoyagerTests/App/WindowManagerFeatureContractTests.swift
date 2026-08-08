@@ -66,6 +66,15 @@ private actor PinnedRecordMutationGate {
     }
 }
 
+private struct ContentTabMovePersistenceActionCounts: Equatable {
+    var queuedRequests = 0
+    var sourceSucceeded = 0
+    var sourceRejected = 0
+    var lifecycleCompleted = 0
+    var nativeRequested = 0
+    var snapshotsByWindow: [UUID: Int] = [:]
+}
+
 private typealias PinnedGroupMovePersistence = @Sendable (
     UserDefaultsClient,
     [String],
@@ -996,7 +1005,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )))
         await fulfillment(of: [activationStarted, persistenceStarted], timeout: 5)
 
-        XCTAssertNil(store.state.windows[id: sourceID])
+        XCTAssertTrue(store.state.closingWindowIDs.contains(sourceID))
         XCTAssertEqual(store.state.topNavigationPersistenceQueue, [peerRequest])
         XCTAssertTrue(store.state.isTopNavigationPersistenceInFlight)
 
@@ -1436,12 +1445,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// pinned 저장 성공 이벤트는 external marker 여부와 무관하게 열린 모든 window로 fan-out한다.
-    /// pinned sidebar가 window마다 어긋나지 않고 external unpinned tab이 보존되는지 검증한다.
-    /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window authoritative pinned sync
-    /// - 사전 조건: 일반 window와 active external marker window, global pinned store 1개
-    /// - 기대 결과: 두 window 모두 동일한 pinned tab을 받고 external window의 unpinned tab은 유지
-    func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async throws {
+    /// app-owned pinned durable commit은 authoritative fan-out을 정확히 한 번만 수행한다.
+    /// parent completion 뒤 duplicate child terminal이 추가 store resync나 synthetic snapshot fan-out을 만들지 않는지 검증한다.
+    /// - 검증 내용: queue committed fan-out 1회, late child success resync 0회, external window runtime 보존
+    /// - 사전 조건: source/peer window 2개, in-flight pinned persistence request 1개, authoritative pinned store 1개
+    /// - 기대 결과: 두 window가 동일 committed snapshot을 한 번 받고 late child success 뒤 count/state가 유지된다.
+    func testPinnedRecordQueueCommitFansOutExactlyOnceAndIgnoresLateChildSuccess() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let pinnedStore = ContentTabPinnedRecordStore(records: [
@@ -1461,15 +1470,50 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         ]
         initialState.externalWindowBatchIDs[secondID] = UUID()
         let globalPinID = ContentTabID(rawValue: "global-pin")
-        let persistenceIntentID = try XCTUnwrap(initialState.windows[id: firstID]?.window.contentTabs
-            .markLatestPinnedRecordPersistenceIntent(for: globalPinID))
+        let persistenceIntentID = try XCTUnwrap(
+            initialState.windows[id: firstID]?.window.contentTabs
+                .markLatestPinnedRecordPersistenceIntent(for: globalPinID),
+        )
+        let context = ContentTabPinnedRecordTerminalContext(
+            intentID: persistenceIntentID,
+            generation: ContentTabPinnedRecordMutationGeneration(tabID: globalPinID),
+        )
+        let request = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: firstID,
+            token: .init(value: UUID()),
+            operation: .pinnedRecord(
+                source: .contentTab,
+                request: .init(
+                    tabID: globalPinID,
+                    context: context,
+                    rollback: .init(
+                        previousIsPinned: false,
+                        previousPinnedRecord: nil,
+                        previousTabIndex: nil,
+                    ),
+                    mutation: .upsert(
+                        record: pinnedStore.records[0],
+                        dormantSlot: nil,
+                    ),
+                    persistenceScopeID: UUID(),
+                ),
+                discoveredLocationIDs: [],
+            ),
+        )
+        initialState.topNavigationPersistenceQueue = [request]
+        initialState.isTopNavigationPersistenceInFlight = true
+        let counts = LockIsolated(WindowManagerPinnedCommitFanOutCounts())
 
         let store = TestStore(initialState: initialState) {
-            WindowManagerFeature()
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    counts.withValue { $0.record(action) }
+                    return .none
+                }
+            }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == "/Users/test/Documents" else { return false }
                 isDirectory?.pointee = ObjCBool(true)
@@ -1478,45 +1522,20 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
-        // pinnedRecordSaveSucceeded fan-out은 각 window reducer의 handoff child action을 동반하므로,
-        // 이 테스트는 parent sync action과 applyPinnedContentTabs payload만 검증한다.
+        // store.exhaustivity = .off: queue completion의 committed snapshot count와 late child terminal no-op만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.windows(.element(
-            id: firstID,
-            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
-                tabID: globalPinID,
-                context: ContentTabPinnedRecordTerminalContext(
-                    intentID: persistenceIntentID,
-                    generation: ContentTabPinnedRecordMutationGeneration(tabID: globalPinID),
-                ),
-            ))),
+        await store.send(.topNavigationPersistenceCompleted(.init(
+            request: request,
+            terminal: .committed(.init(order: pinnedStore.topNavigationOrder, revision: 1)),
+            authoritativePinnedContentTabs: ContentTabState.restoringPinnedRecords(from: pinnedStore).state,
         )))
-        await store.receive(\.pinnedContentTabsStoreChanged)
-        await store.receive { action in
-            guard case let .windows(.element(
-                id: id,
-                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
-            )) = action
-            else {
-                return false
-            }
-            return id == firstID
-                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-pin"]
-                && contentTabs.tabs[id: contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?.page == .home
-        }
-        await store.receive { action in
-            guard case let .windows(.element(
-                id: id,
-                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
-            )) = action
-            else {
-                return false
-            }
-            return id == secondID
-                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-pin"]
-                && contentTabs.tabs[id: contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?.page == .home
-        }
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(counts.value.storeChanged, 0)
+        XCTAssertEqual(counts.value.committedSnapshotByWindow[firstID], 1)
+        XCTAssertEqual(counts.value.committedSnapshotByWindow[secondID], 1)
+        XCTAssertTrue(counts.value.authoritativeSyncByWindow.isEmpty)
 
         XCTAssertEqual(store.state.windows[id: firstID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
         XCTAssertEqual(store.state.windows[id: secondID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
@@ -1526,6 +1545,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             },
             true,
         )
+
+        let countsAfterCommit = counts.value
+        await store.send(.windows(.element(
+            id: firstID,
+            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
+                tabID: globalPinID,
+                context: context,
+            ))),
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(counts.value, countsAfterCommit)
     }
 
     /// busy source window는 최신 pinned snapshot을 batch 완료 뒤 한 번 재생한다.
@@ -2414,6 +2445,30 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    private struct WindowManagerPinnedCommitFanOutCounts: Equatable {
+        var storeChanged = 0
+        var committedSnapshotByWindow: [UUID: Int] = [:]
+        var authoritativeSyncByWindow: [UUID: Int] = [:]
+
+        mutating func record(_ action: WindowManagerFeature.Action) {
+            if case .pinnedContentTabsStoreChanged = action {
+                storeChanged += 1
+            }
+            if case let .windows(.element(
+                id: windowID,
+                action: .window(.applyCommittedTopNavigationSnapshot),
+            )) = action {
+                committedSnapshotByWindow[windowID, default: 0] += 1
+            }
+            if case let .windows(.element(
+                id: windowID,
+                action: .window(.applyAuthoritativePinnedContentTabs),
+            )) = action {
+                authoritativeSyncByWindow[windowID, default: 0] += 1
+            }
+        }
+    }
+
     /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
     /// - 검증 내용: deleted directory record가 store에 있어도 sync fan-out state에는 유지되고 saveStore compaction이 호출되지 않음
     /// - 사전 조건: 열린 window 1개, global pinned store에 현재 존재하지 않는 directory record 1개
@@ -2763,6 +2818,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 previousTabIndex: nil,
             ),
             mutation: .upsert(record: record, dormantSlot: nil),
+            persistenceScopeID: UUID(47091),
         )
         let persistenceRequest = WindowManagerTopNavigationPersistenceRequest(
             sourceWindowID: closedSourceWindowID,
@@ -4843,6 +4899,784 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
     }
 
+    /// CTM-001-move_content_tab_to_another_window: explicit Pin transfer는 durable commit 전 projected window를 publish하지
+    /// 않는다.
+    /// 성공 후에는 source/target commit, authoritative snapshot fan-out, native/lifecycle one-shot dispatch를 함께 검증한다.
+    /// - 검증 내용: gate 전 불변, 3-tab exact mutation/location 전달, one-call/one-revision, source/peer authoritative snapshot
+    /// 1회, peer local runtime 보존
+    /// - 사전 조건: source 4-tab, pinned target anchor, idle peer, app-owned write gate
+    /// - 기대 결과: gate 전 window 불변, gate 후 source/target/peer가 revision 1개 commit으로 수렴하고 source에도 global pinned
+    /// 3개가 표시되며 activation/native dispatch는 각 1회다.
+    func testContentTabMoveExplicitPinDefersProjectedWindowCommitUntilDurablePersistenceSucceeds() async throws {
+        let sourceID = UUID(46901)
+        let targetID = UUID(46902)
+        let peerID = UUID(46903)
+        let token = FileManagerTopNavigationOperationToken(value: UUID(46904))
+        let movedID = ContentTabID(rawValue: "durable-pin-moved")
+        let movedSecondID = ContentTabID(rawValue: "durable-pin-moved-second")
+        let movedThirdID = ContentTabID(rawValue: "durable-pin-moved-third")
+        let sourceRemainderID = ContentTabID(rawValue: "durable-pin-source-remainder")
+        let targetPinnedID = ContentTabID(rawValue: "durable-pin-target-pinned")
+        let targetUnpinnedID = ContentTabID(rawValue: "durable-pin-target-unpinned")
+        let peerLocalID = ContentTabID(rawValue: "durable-pin-peer-local")
+        let pinnedAt = Date(timeIntervalSince1970: 697)
+        let targetPinnedRecord = ContentTabPinnedRecord(
+            id: targetPinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/durable-pin/target/pinned"),
+            title: "Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 111),
+        )
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46905),
+            requestID: UUID(46906),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID, movedSecondID, movedThirdID],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .after(targetPinnedID),
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (movedID, "/durable-pin/source/moved"),
+                (movedSecondID, "/durable-pin/source/moved-second"),
+                (movedThirdID, "/durable-pin/source/moved-third"),
+                (sourceRemainderID, "/durable-pin/source/remainder"),
+            ],
+        )
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetPinnedID, "/durable-pin/target/pinned"), (targetUnpinnedID, "/durable-pin/target/unpinned")],
+        )
+        target.window.contentTabs.tabs[id: targetPinnedID]?.isPinned = true
+        target.window.contentTabs.pinnedRecords[targetPinnedID] = targetPinnedRecord
+        target.window.lastConfirmedTopNavigationOrder = .init(items: [
+            .location("location-a"),
+            .contentTab(targetPinnedID),
+            .location("location-b"),
+        ])
+        target.window.syncContentTabSidebarItems()
+        var peer = FileManagerWindowFeature.State.makeInitial(path: "/durable-pin/peer")
+        peer.contentTabs.tabs.append(ContentTabItem(
+            id: peerLocalID,
+            page: .directory,
+            anchor: .directory(path: "/durable-pin/peer/local"),
+            isPinned: false,
+            title: "Peer Local",
+            iconName: "folder",
+        ))
+        peer.contentTabs.activeTabID = peerLocalID
+        peer.contentTabs.selectedTabIDs = [peerLocalID]
+        peer.contentTabs.selectionAnchorID = peerLocalID
+        peer.contentTabs.recentlyClosed = .init(
+            page: .directory,
+            anchor: .directory(path: "/durable-pin/peer/closed"),
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 510),
+            title: "Peer Closed",
+            iconName: "folder",
+        )
+        peer.syncContentTabSidebarItems()
+        let sourceBefore = source.window
+        let targetBefore = target.window
+        let peerBefore = peer
+        guard case let .success(expectedToken) = ContentTabTransfer.preflight(
+            source: source.window,
+            target: target.window,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.initiatingTabID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            placement: request.placement,
+            pinnedAt: pinnedAt,
+        ) else {
+            return XCTFail("Expected explicit Pin preflight success")
+        }
+        guard case .moved = ContentTabTransfer.apply(expectedToken) else {
+            return XCTFail("Expected non-empty source postCommit result")
+        }
+        let expectedMutation = try XCTUnwrap(expectedToken.durablePinnedMutation)
+        let committedStore = ContentTabPinnedRecordStore(
+            records: [targetPinnedRecord] + expectedMutation.recordsToUpsert,
+            topNavigationOrder: .init(items: [
+                .location("location-a"),
+                .contentTab(targetPinnedID),
+                .contentTab(movedID),
+                .contentTab(movedSecondID),
+                .contentTab(movedThirdID),
+                .location("location-b"),
+            ]),
+        )
+        let committedOrder = committedStore.topNavigationOrder
+        let committedRevision: UInt64 = 41
+        let writeGate = PinnedRecordMutationGate()
+        let clientCallCount = LockIsolated(0)
+        let activationCalls = LockIsolated<[UUID]>([])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target, .init(id: peerID, window: peer)]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(pinnedAt)
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
+            $0.fileOperationUndoManagerClient.moveScopes = { _ in .moved }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, locations, mutation in
+                clientCallCount.withValue { $0 += 1 }
+                XCTAssertEqual(locations, ["location-a", "location-b"])
+                XCTAssertEqual(mutation, expectedMutation)
+                await writeGate.wait()
+                return .init(
+                    store: committedStore,
+                    topNavigation: .init(order: committedOrder, revision: committedRevision),
+                )
+            }
+            $0.fileManagerWindowClient.activate = { id in
+                activationCalls.withValue { $0.append(id) }
+                return .discarded
+            }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await store.receive { action in
+            guard case let .topNavigationPersistenceRequested(receivedRequest) = action,
+                  case let .contentTabMove(receivedMoveRequest, mutation, discoveredLocationIDs) = receivedRequest
+                  .operation
+            else { return false }
+            return receivedRequest.sourceWindowID == sourceID
+                && receivedRequest.token == token
+                && receivedMoveRequest == request
+                && mutation == expectedMutation
+                && discoveredLocationIDs == ["location-a", "location-b"]
+        }
+        await writeGate.waitUntilWaiting()
+
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window, sourceBefore)
+        XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+        XCTAssertEqual(store.state.windows[id: peerID]?.window, peerBefore)
+        XCTAssertEqual(store.state.topNavigationPersistenceQueue.count, 1)
+        XCTAssertEqual(store.state.topNavigationPersistenceQueue.first?.sourceWindowID, sourceID)
+        XCTAssertTrue(store.state.isTopNavigationPersistenceInFlight)
+        XCTAssertEqual(store.state.contentTabMoveTransactions[request.requestID]?.request, request)
+        XCTAssertNil(store.state.contentTabMoveTerminalRecords[request.requestID])
+        XCTAssertTrue(store.state.contentTabMoveNativeEffectsPlans.isEmpty)
+        XCTAssertEqual(clientCallCount.value, 1)
+        XCTAssertTrue(activationCalls.value.isEmpty)
+
+        await writeGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+        let sourceWindow = store.state.windows[id: sourceID]?.window
+        let targetWindow = store.state.windows[id: targetID]?.window
+        let peerWindow = store.state.windows[id: peerID]?.window
+        XCTAssertEqual(store.state.topNavigationPersistenceQueue.count, 0)
+        XCTAssertFalse(store.state.isTopNavigationPersistenceInFlight)
+        XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
+        XCTAssertNil(store.state.contentTabMoveNativeEffectsPlans[request.requestID])
+        XCTAssertNil(store.state.contentTabMoveActivationAttempts[request.requestID])
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertNotNil(sourceWindow?.contentTabs.tabs[id: sourceRemainderID])
+        XCTAssertEqual(targetWindow?.contentTabs.activeTabID, movedID)
+        XCTAssertEqual(targetWindow?.contentTabs.selectionAnchorID, movedID)
+        XCTAssertNotNil(targetWindow?.contentTabs.tabs[id: movedID])
+        XCTAssertNotNil(targetWindow?.contentTabs.tabs[id: movedSecondID])
+        XCTAssertNotNil(targetWindow?.contentTabs.tabs[id: movedThirdID])
+        XCTAssertEqual(targetWindow?.contentTabs.tabs[id: movedID]?.isPinned, true)
+        XCTAssertEqual(targetWindow?.contentTabs.tabs[id: movedSecondID]?.isPinned, true)
+        XCTAssertEqual(targetWindow?.contentTabs.tabs[id: movedThirdID]?.isPinned, true)
+        XCTAssertEqual(targetWindow?.contentTabs.tabs[id: targetUnpinnedID]?.isPinned, false)
+        XCTAssertEqual(sourceWindow?.lastConfirmedTopNavigationOrder, committedOrder)
+        XCTAssertEqual(targetWindow?.lastConfirmedTopNavigationOrder, committedOrder)
+        XCTAssertEqual(peerWindow?.lastConfirmedTopNavigationOrder, committedOrder)
+        XCTAssertEqual(peerWindow?.lastConfirmedTopNavigationCommitRevision, committedRevision)
+        XCTAssertEqual(peerWindow?.contentTabs.activeTabID, peerLocalID)
+        XCTAssertEqual(peerWindow?.contentTabs.selectedTabIDs, [peerLocalID])
+        XCTAssertEqual(peerWindow?.contentTabs.selectionAnchorID, peerLocalID)
+        XCTAssertEqual(peerWindow?.contentTabs.recentlyClosed, peerBefore.contentTabs.recentlyClosed)
+        let expectedPinnedIDs = [targetPinnedID, movedID, movedSecondID, movedThirdID]
+        XCTAssertEqual(sourceWindow?.contentTabs.tabs.filter(\.isPinned).map(\.id), expectedPinnedIDs)
+        XCTAssertEqual(peerWindow?.contentTabs.tabs.filter(\.isPinned).map(\.id), expectedPinnedIDs)
+        XCTAssertEqual(clientCallCount.value, 1)
+        XCTAssertEqual(activationCalls.value, [targetID])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: opposite-domain Unpin은 remove-only durable mutation만 저장한다.
+    /// target runtime unpinned placement는 반영하지만 durable order에는 남기지 않는지 검증한다.
+    /// - 검증 내용: remove-only mutation, pinnedPlacement nil, target runtime placement, committed durable order에서 moved
+    /// tab 제외
+    /// - 사전 조건: source pinned tab 1개와 target unpinned anchor 2개
+    /// - 기대 결과: moved tab은 target unpinned placement로 이동하고 persistent pinned records/order에서는 제거된다.
+    func testContentTabMoveExplicitUnpinPersistsRemoveOnlyAndKeepsRuntimePlacementOnly() async throws {
+        let sourceID = UUID(46911)
+        let targetID = UUID(46912)
+        let movedID = ContentTabID(rawValue: "durable-unpin-moved")
+        let targetFirstID = ContentTabID(rawValue: "durable-unpin-target-first")
+        let targetSecondID = ContentTabID(rawValue: "durable-unpin-target-second")
+        let movedRecord = ContentTabPinnedRecord(
+            id: movedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/durable-unpin/source/moved"),
+            title: "Moved",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 211),
+        )
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46913),
+            requestID: UUID(46914),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .pinned,
+            targetDomain: .unpinned,
+            placement: .before(targetSecondID),
+        )
+        var source = try Self.makeContentTabMoveWindow(id: sourceID, tabs: [(movedID, "/durable-unpin/source/moved")])
+        source.window.contentTabs.tabs[id: movedID]?.isPinned = true
+        source.window.contentTabs.pinnedRecords[movedID] = movedRecord
+        source.window.syncContentTabSidebarItems()
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetFirstID, "/durable-unpin/target/first"), (targetSecondID, "/durable-unpin/target/second")],
+        )
+        guard case let .success(expectedToken) = ContentTabTransfer.preflight(
+            source: source.window,
+            target: target.window,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.initiatingTabID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            placement: request.placement,
+            pinnedAt: nil,
+        ) else {
+            return XCTFail("Expected explicit Unpin preflight success")
+        }
+        let expectedMutation = try XCTUnwrap(expectedToken.durablePinnedMutation)
+        guard case .closeSourceWindow = ContentTabTransfer.apply(expectedToken) else {
+            return XCTFail("Expected close-source unpin result")
+        }
+        let committedOrder = FileManagerTopNavigationOrder(items: [.location("location-a")])
+        let committedStore = ContentTabPinnedRecordStore(records: [], topNavigationOrder: committedOrder)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 212))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46915)) }
+            $0.fileOperationUndoManagerClient.moveScopes = { _ in .moved }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, mutation in
+                XCTAssertEqual(mutation.recordsToUpsert, [])
+                XCTAssertEqual(mutation.recordIDsToRemove, [movedID.rawValue])
+                XCTAssertEqual(mutation.orderedTabIDs, [movedID])
+                XCTAssertNil(mutation.pinnedPlacement)
+                XCTAssertEqual(mutation, expectedMutation)
+                return .init(
+                    store: committedStore,
+                    topNavigation: .init(order: committedOrder, revision: 51),
+                )
+            }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await store.receive { action in
+            guard case let .topNavigationPersistenceRequested(receivedRequest) = action,
+                  case let .contentTabMove(receivedMoveRequest, mutation, discoveredLocationIDs) = receivedRequest
+                  .operation
+            else { return false }
+            return receivedRequest.sourceWindowID == sourceID
+                && receivedMoveRequest == request
+                && mutation.recordsToUpsert.isEmpty
+                && mutation.recordIDsToRemove == [movedID.rawValue]
+                && mutation.orderedTabIDs == [movedID]
+                && mutation.pinnedPlacement == nil
+                && mutation == expectedMutation
+                && discoveredLocationIDs.isEmpty
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.closingWindowIDs.contains(sourceID) || store.state.windows[id: sourceID] == nil)
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs.map(\.id),
+            [targetFirstID, movedID, targetSecondID],
+        )
+        XCTAssertEqual(store.state.windows[id: targetID]?.window.contentTabs.tabs[id: movedID]?.isPinned, false)
+        XCTAssertFalse(committedStore.topNavigationOrder.items.contains(.contentTab(movedID)))
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: persistence failure는 forward undo 뒤 exact reverse undo로 동기 보상한다.
+    /// 성공 fan-out/native activation 없이 pre-state와 queue/transaction cleanup만 남겨야 한다.
+    /// - 검증 내용: moveScopes forward→reverse descriptor, rejection terminal 1회, snapshot/native 0회
+    /// - 사전 조건: explicit Pin request와 save failure
+    /// - 기대 결과: source/target exact pre-state 유지, generic rejection, queue/transaction empty
+    func testContentTabMoveDurablePersistenceFailureRollsBackUndoAndLeavesWindowsUnchanged() async throws {
+        let sourceID = UUID(46921)
+        let targetID = UUID(46922)
+        let movedID = ContentTabID(rawValue: "durable-failure-moved")
+        let targetPinnedID = ContentTabID(rawValue: "durable-failure-target-pinned")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46923),
+            requestID: UUID(46924),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .after(targetPinnedID),
+        )
+        var source = try Self.makeContentTabMoveWindow(id: sourceID, tabs: [(movedID, "/durable-failure/source/moved")])
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetPinnedID, "/durable-failure/target/pinned")],
+        )
+        target.window.contentTabs.tabs[id: targetPinnedID]?.isPinned = true
+        target.window.contentTabs.pinnedRecords[targetPinnedID] = ContentTabPinnedRecord(
+            id: targetPinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/durable-failure/target/pinned"),
+            title: "Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 301),
+        )
+        let sourceBefore = source.window
+        let targetBefore = target.window
+        guard case let .success(expectedToken) = ContentTabTransfer.preflight(
+            source: source.window,
+            target: target.window,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.initiatingTabID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            placement: request.placement,
+            pinnedAt: Date(timeIntervalSince1970: 302),
+        ) else {
+            return XCTFail("Expected failure-path preflight success")
+        }
+        let expectedMutation = try XCTUnwrap(expectedToken.durablePinnedMutation)
+        let expectedForwardUndo = [FileOperationUndoScopeMoveDescriptor(
+            source: UndoManagerScope(windowID: sourceID, contentTabID: movedID.rawValue),
+            target: UndoManagerScope(windowID: targetID, contentTabID: movedID.rawValue),
+            targetPolicy: .requireVacant,
+        )]
+        let expectedReverseUndo = [FileOperationUndoScopeMoveDescriptor(
+            source: UndoManagerScope(windowID: targetID, contentTabID: movedID.rawValue),
+            target: UndoManagerScope(windowID: sourceID, contentTabID: movedID.rawValue),
+            targetPolicy: .requireVacant,
+        )]
+        let undoBatches = LockIsolated<[[FileOperationUndoScopeMoveDescriptor]]>([])
+        let activationCalls = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 302))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46925)) }
+            $0.fileOperationUndoManagerClient.moveScopes = { descriptors in
+                undoBatches.withValue { $0.append(descriptors) }
+                return .moved
+            }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, mutation in
+                XCTAssertEqual(mutation, expectedMutation)
+                throw NSError(domain: "Task5", code: 1)
+            }
+            $0.fileManagerWindowClient.activate = { _ in
+                activationCalls.withValue { $0 += 1 }
+                return .discarded
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.contentTabMoveRejected(receivedRequest, category)),
+            )) = action
+            else { return false }
+            return id == sourceID && receivedRequest == request && category == .generic
+        }
+        await store.finish()
+
+        XCTAssertEqual(undoBatches.value, [expectedForwardUndo, expectedReverseUndo])
+        XCTAssertEqual(activationCalls.value, 0)
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs, sourceBefore.contentTabs.tabs)
+        XCTAssertEqual(store.state.windows[id: targetID]?.window.contentTabs.tabs, targetBefore.contentTabs.tabs)
+        XCTAssertNil(store.state.windows[id: sourceID]?.window.pendingContentTabMove)
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .rejected(.generic))
+        XCTAssertTrue(store.state.topNavigationPersistenceQueue.isEmpty)
+        XCTAssertFalse(store.state.isTopNavigationPersistenceInFlight)
+        XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: queue head와 exact request/token이 맞지 않는 completion은 전체 no-op이다.
+    /// exact completion 1회만 source/target/peer snapshot을 만들고 duplicate terminal은 두 번째 fan-out을 만들지 않는다.
+    /// - 검증 내용: foreign no-op, exact commit 1회, duplicate no-op
+    /// - 사전 조건: pending correlated transaction과 queue head exact request
+    /// - 기대 결과: foreign/duplicate completion은 상태와 snapshot count를 바꾸지 않는다.
+    func testContentTabMovePersistenceCompletionRequiresExactQueueHeadAndIgnoresDuplicateTerminal() async throws {
+        let sourceID = UUID(46931)
+        let targetID = UUID(46932)
+        let peerID = UUID(46933)
+        let remainderID = ContentTabID(rawValue: "correlated-remainder")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46934),
+            requestID: UUID(46935),
+            sourceWindowID: sourceID,
+            initiatingTabID: ContentTabID(rawValue: "correlated-primary"),
+            orderedTabIDs: [ContentTabID(rawValue: "correlated-primary")],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .empty,
+        )
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (request.initiatingTabID, "/correlated/source"),
+                (remainderID, "/correlated/remainder"),
+            ],
+        )
+        let target = WindowSessionState(
+            id: targetID,
+            window: .makeInitial(path: "/correlated/target", windowID: targetID),
+        )
+        let peer = FileManagerWindowFeature.State.makeInitial(path: "/correlated/peer")
+        guard case let .success(token) = ContentTabTransfer.preflight(
+            source: source.window,
+            target: target.window,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.initiatingTabID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            placement: request.placement,
+            pinnedAt: Date(timeIntervalSince1970: 401),
+        ), case .moved = ContentTabTransfer.apply(token) else {
+            return XCTFail("Expected correlated preflight success")
+        }
+        let exactMutation = try XCTUnwrap(token.durablePinnedMutation)
+        let exactRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceID,
+            token: .init(value: UUID(46936)),
+            operation: .contentTabMove(
+                request: request,
+                mutation: exactMutation,
+                discoveredLocationIDs: [],
+            ),
+        )
+        let foreignRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceID,
+            token: .init(value: UUID(46937)),
+            operation: .contentTabMove(
+                request: request,
+                mutation: exactMutation,
+                discoveredLocationIDs: [],
+            ),
+        )
+        let committedOrder = FileManagerTopNavigationOrder(items: [.contentTab(request.initiatingTabID)])
+        let committedResult = WindowManagerTopNavigationPersistenceResult(
+            request: exactRequest,
+            terminal: .committed(.init(order: committedOrder, revision: 61)),
+            authoritativePinnedContentTabs: ContentTabState
+                .restoringPinnedRecords(from: .init(records: [ContentTabPinnedRecord(
+                    id: request.initiatingTabID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: "/correlated/source"),
+                    title: nil,
+                    iconName: nil,
+                    pinnedAt: Date(timeIntervalSince1970: 401),
+                )])).state,
+        )
+        let foreignResult = WindowManagerTopNavigationPersistenceResult(
+            request: foreignRequest,
+            terminal: committedResult.terminal,
+            authoritativePinnedContentTabs: committedResult.authoritativePinnedContentTabs,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target, .init(id: peerID, window: peer)]
+        initialState.topNavigationPersistenceQueue = [exactRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
+        initialState.contentTabMoveTransactions[request.requestID] = .init(
+            request: request,
+            pendingPersistence: .init(
+                postCommit: {
+                    switch ContentTabTransfer.apply(token) {
+                    case let .moved(postCommit): postCommit
+                    case let .closeSourceWindow(postCommit): postCommit
+                    case .rejected: preconditionFailure("Expected validated token")
+                    }
+                }(),
+                closesSourceWindow: false,
+                undoDescriptors: [],
+            ),
+        )
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 401))
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        store.exhaustivity = .off
+        let stateBeforeForeign = store.state
+
+        await store.send(.topNavigationPersistenceCompleted(foreignResult))
+        XCTAssertEqual(store.state, stateBeforeForeign)
+
+        await store.send(.topNavigationPersistenceCompleted(committedResult))
+        await store.skipReceivedActions()
+        await store.finish()
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertTrue(store.state.topNavigationPersistenceQueue.isEmpty)
+        XCTAssertFalse(store.state.isTopNavigationPersistenceInFlight)
+        let stateAfterExact = store.state
+
+        await store.send(.topNavigationPersistenceCompleted(committedResult))
+        XCTAssertEqual(store.state, stateAfterExact)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: source close after enqueue는 app-owned persistence를 취소하지 않는다.
+    /// completion 뒤 source는 재생성되지 않고 target/peer만 authoritative snapshot으로 수렴해야 한다.
+    /// - 검증 내용: deferred close 유지, completion 뒤 source 제거, target/peer converge, source snapshot 0회
+    /// - 사전 조건: empty-source explicit Pin과 persistence gate, live peer 존재
+    /// - 기대 결과: close 전 source 유지, gate 후 source 제거, target/peer pinned state converge, source recreation 없음
+    func testContentTabMoveSourceCloseAfterEnqueueDoesNotCancelCorrelatedPersistence() async throws {
+        let sourceID = UUID(46941)
+        let targetID = UUID(46942)
+        let peerID = UUID(46943)
+        let movedID = ContentTabID(rawValue: "close-after-enqueue-moved")
+        let targetPinnedID = ContentTabID(rawValue: "close-after-enqueue-target-pinned")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46944),
+            requestID: UUID(46945),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .after(targetPinnedID),
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/close-after-enqueue/source/moved")],
+        )
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetPinnedID, "/close-after-enqueue/target/pinned")],
+        )
+        target.window.contentTabs.tabs[id: targetPinnedID]?.isPinned = true
+        target.window.contentTabs.pinnedRecords[targetPinnedID] = ContentTabPinnedRecord(
+            id: targetPinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/close-after-enqueue/target/pinned"),
+            title: nil,
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 601),
+        )
+        target.window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(targetPinnedID)])
+        let peer = FileManagerWindowFeature.State.makeInitial(path: "/close-after-enqueue/peer")
+        let writeGate = PinnedRecordMutationGate()
+        let pinnedRecord = try XCTUnwrap(target.window.contentTabs.pinnedRecords[targetPinnedID])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target, .init(id: peerID, window: peer)]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 602))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46946)) }
+            $0.fileOperationUndoManagerClient.moveScopes = { _ in .moved }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, _ in
+                await writeGate.wait()
+                return .init(
+                    store: .init(records: [
+                        pinnedRecord,
+                        ContentTabPinnedRecord(
+                            id: movedID.rawValue,
+                            page: .directory,
+                            anchor: .directory(path: "/close-after-enqueue/source/moved"),
+                            title: nil,
+                            iconName: nil,
+                            pinnedAt: Date(timeIntervalSince1970: 602),
+                        ),
+                    ], topNavigationOrder: .init(items: [.contentTab(targetPinnedID), .contentTab(movedID)])),
+                    topNavigation: .init(
+                        order: .init(items: [.contentTab(targetPinnedID), .contentTab(movedID)]),
+                        revision: 71,
+                    ),
+                )
+            }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await store.receive { action in
+            guard case let .topNavigationPersistenceRequested(receivedRequest) = action,
+                  case .contentTabMove = receivedRequest.operation
+            else { return false }
+            return receivedRequest.sourceWindowID == sourceID
+        }
+        await writeGate.waitUntilWaiting()
+        await store.send(.event(.windowClosed(sourceID)))
+        XCTAssertNotNil(store.state.windows[id: sourceID])
+        XCTAssertTrue(store.state.closingWindowIDs.contains(sourceID))
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(sourceID))
+
+        await writeGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.windows[id: sourceID])
+        XCTAssertNotNil(store.state.windows[id: targetID]?.window.contentTabs.tabs[id: movedID])
+        XCTAssertEqual(
+            store.state.windows[id: peerID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id),
+            [targetPinnedID, movedID],
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: newer peer revision은 older correlated completion으로 덮어쓰지 않는다.
+    /// source/target commit은 진행하되 peer local selection·active·recentlyClosed는 그대로 남아야 한다.
+    /// - 검증 내용: peer older snapshot ignore, source/target commit success, peer local state 보존
+    /// - 사전 조건: peer가 더 최신 revision 100을 이미 보유한 상태에서 commit revision 81 도착
+    /// - 기대 결과: peer revision/state unchanged, source/target는 81로 commit된다.
+    func testContentTabMoveOlderCorrelatedCommitDoesNotOverwriteNewerPeerRevision() async throws {
+        let sourceID = UUID(46951)
+        let targetID = UUID(46952)
+        let peerID = UUID(46953)
+        let movedID = ContentTabID(rawValue: "older-peer-moved")
+        let remainderID = ContentTabID(rawValue: "older-peer-remainder")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46954),
+            requestID: UUID(46955),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .empty,
+        )
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/older-peer/source/moved"), (remainderID, "/older-peer/source/remainder")],
+        )
+        let target = WindowSessionState(
+            id: targetID,
+            window: .makeInitial(path: "/older-peer/target", windowID: targetID),
+        )
+        var peer = FileManagerWindowFeature.State.makeInitial(path: "/older-peer/peer")
+        let peerLocalID = ContentTabID(rawValue: "older-peer-local")
+        peer.contentTabs.tabs.append(ContentTabItem(
+            id: peerLocalID,
+            page: .directory,
+            anchor: .directory(path: "/older-peer/local"),
+            isPinned: false,
+            title: "Local",
+            iconName: "folder",
+        ))
+        peer.contentTabs.activeTabID = peerLocalID
+        peer.contentTabs.selectedTabIDs = [peerLocalID]
+        peer.contentTabs.selectionAnchorID = peerLocalID
+        peer.contentTabs.recentlyClosed = .init(
+            page: .directory,
+            anchor: .directory(path: "/older-peer/closed"),
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 801),
+            title: "Closed",
+            iconName: "folder",
+        )
+        peer.lastConfirmedTopNavigationOrder = .init(items: [.location("latest-peer")])
+        peer.lastConfirmedTopNavigationCommitRevision = 100
+        peer.syncContentTabSidebarItems()
+        let peerBefore = peer
+        guard case let .success(token) = ContentTabTransfer.preflight(
+            source: source.window,
+            target: target.window,
+            orderedTabIDs: request.orderedTabIDs,
+            primaryTabID: request.initiatingTabID,
+            sourceDomain: request.sourceDomain,
+            targetDomain: request.targetDomain,
+            placement: request.placement,
+            pinnedAt: Date(timeIntervalSince1970: 802),
+        ), case .moved = ContentTabTransfer.apply(token) else {
+            return XCTFail("Expected peer revision preflight success")
+        }
+        let exactRequest = try WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceID,
+            token: .init(value: UUID(46956)),
+            operation: .contentTabMove(
+                request: request,
+                mutation: XCTUnwrap(token.durablePinnedMutation),
+                discoveredLocationIDs: [],
+            ),
+        )
+        let result = WindowManagerTopNavigationPersistenceResult(
+            request: exactRequest,
+            terminal: .committed(.init(order: .init(items: [.contentTab(movedID)]), revision: 81)),
+            authoritativePinnedContentTabs: ContentTabState.restoringPinnedRecords(from: .init(records: [
+                ContentTabPinnedRecord(
+                    id: movedID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: "/older-peer/source/moved"),
+                    title: nil,
+                    iconName: nil,
+                    pinnedAt: Date(timeIntervalSince1970: 802),
+                ),
+            ])).state,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target, .init(id: peerID, window: peer)]
+        initialState.topNavigationPersistenceQueue = [exactRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
+        initialState.contentTabMoveTransactions[request.requestID] = .init(
+            request: request,
+            pendingPersistence: .init(
+                postCommit: {
+                    switch ContentTabTransfer.apply(token) {
+                    case let .moved(postCommit): postCommit
+                    case let .closeSourceWindow(postCommit): postCommit
+                    case .rejected: preconditionFailure("Expected validated token")
+                    }
+                }(),
+                closesSourceWindow: false,
+                undoDescriptors: [],
+            ),
+        )
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 802))
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationPersistenceCompleted(result))
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows[id: peerID]?.window.lastConfirmedTopNavigationCommitRevision, 100)
+        XCTAssertEqual(
+            store.state.windows[id: peerID]?.window.lastConfirmedTopNavigationOrder,
+            peerBefore.lastConfirmedTopNavigationOrder,
+        )
+        XCTAssertEqual(store.state.windows[id: peerID]?.window.contentTabs.activeTabID, peerLocalID)
+        XCTAssertEqual(store.state.windows[id: peerID]?.window.contentTabs.selectedTabIDs, [peerLocalID])
+        XCTAssertEqual(store.state.windows[id: peerID]?.window.contentTabs.selectionAnchorID, peerLocalID)
+        XCTAssertEqual(
+            store.state.windows[id: peerID]?.window.contentTabs.recentlyClosed,
+            peerBefore.contentTabs.recentlyClosed,
+        )
+    }
+
     /// CTM-001-move_content_tab_to_another_window: native undo scope 이전 실패는 logical transfer를 commit하지 않는다.
     /// synchronous precondition 실패 뒤 source/target state와 native window effect가 그대로인지 검증한다.
     /// - 검증 내용: source tab/pending failure, target 부재, terminal rejection, activate/close 호출 횟수
@@ -5496,7 +6330,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     ) -> Bool {
         guard case let .windows(.element(
             id: id,
-            action: .window(.sidebar(.view(.moveContentTabs(payload: payload, targetWindowID: targetID)))),
+            action: .window(.sidebar(.view(.moveContentTabs(
+                payload: payload, targetWindowID: targetID, targetDomain: _, placement: _,
+            )))),
         )) = action else { return false }
         return id == request.sourceWindowID
             && payload.operationID == request.operationID
@@ -5847,6 +6683,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     previousTabIndex: 0,
                 ),
                 mutation: mutation,
+                persistenceScopeID: UUID(),
             )
             let queuedMutation = WindowManagerTopNavigationPersistenceRequest(
                 sourceWindowID: mutationOwnerID,
