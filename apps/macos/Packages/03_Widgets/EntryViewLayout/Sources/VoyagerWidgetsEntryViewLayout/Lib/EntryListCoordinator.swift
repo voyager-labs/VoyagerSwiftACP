@@ -353,20 +353,27 @@ public final class EntryListCoordinator: NSObject {
         if structureChanged || selectionChanged {
             syncListSelectionFromStore()
         }
+        var scrolledToSelection = false
+        if state.shouldScrollToSelection {
+            scrollToSelectionIfNeeded()
+            scrolledToSelection = true
+        }
+        if !scrolledToSelection {
+            let restoredSavedOffset = shouldRestoreSavedOffset ? restoreScrollPositionIfNeeded() : false
+            if !restoredSavedOffset {
+                let preservesScrollAnchor: Bool = switch updateKind {
+                case .fullReload:
+                    false
+                case let .incremental(preservesScrollAnchor):
+                    preservesScrollAnchor
+                }
+                if !preservesScrollAnchor {
+                    restoreScrollAnchor(capturedAnchor)
+                }
+            }
+        }
         if structureChanged, state.renamingItemId != nil {
             syncListRenamingFromStore()
-        }
-        let restoredSavedOffset = shouldRestoreSavedOffset ? restoreScrollPositionIfNeeded() : false
-        if !restoredSavedOffset {
-            let preservesScrollAnchor: Bool = switch updateKind {
-            case .fullReload:
-                false
-            case let .incremental(preservesScrollAnchor):
-                preservesScrollAnchor
-            }
-            if !preservesScrollAnchor {
-                restoreScrollAnchor(capturedAnchor)
-            }
         }
         requestThumbnailsForVisibleRows()
     }
