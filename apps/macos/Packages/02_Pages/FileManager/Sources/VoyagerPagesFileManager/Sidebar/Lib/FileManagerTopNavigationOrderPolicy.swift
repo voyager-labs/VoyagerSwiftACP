@@ -146,6 +146,36 @@ public enum FileManagerTopNavigationOrderPolicy {
         return .init(items: items)
     }
 
+    public static func insertingContentTab(
+        _ id: ContentTabID,
+        at placement: ContentTabPlacement,
+        in order: FileManagerTopNavigationOrder,
+    ) -> FileManagerTopNavigationOrder? {
+        guard FileManagerTopNavigationItemID.isValidRawID(id.rawValue) else { return nil }
+        let item = FileManagerTopNavigationItemID.contentTab(id)
+        var items = order.items.filter { $0 != item }
+        let insertionIndex: Int
+        switch placement {
+        case let .before(anchorID):
+            guard anchorID != id,
+                  let anchorIndex = items.firstIndex(of: .contentTab(anchorID))
+            else { return nil }
+            insertionIndex = anchorIndex
+        case let .after(anchorID):
+            guard anchorID != id,
+                  let anchorIndex = items.firstIndex(of: .contentTab(anchorID))
+            else { return nil }
+            insertionIndex = anchorIndex + 1
+        case .empty:
+            guard !items.contains(where: { candidate in
+                if case .contentTab = candidate { true } else { false }
+            }) else { return nil }
+            insertionIndex = items.endIndex
+        }
+        items.insert(item, at: insertionIndex)
+        return .init(items: items)
+    }
+
     public static func moving(
         _ source: FileManagerTopNavigationItemID,
         to destination: FileManagerTopNavigationMoveDestination,
