@@ -5339,15 +5339,24 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// CTM-001-move_content_tab_to_another_window: queue head와 exact request/token이 맞지 않는 completion은 전체 no-op이다.
-    /// exact completion 1회만 source/target/peer snapshot을 만들고 duplicate terminal은 두 번째 fan-out을 만들지 않는다.
-    /// - 검증 내용: foreign no-op, exact commit 1회, duplicate no-op
-    /// - 사전 조건: pending correlated transaction과 queue head exact request
-    /// - 기대 결과: foreign/duplicate completion은 상태와 snapshot count를 바꾸지 않는다.
+    /// exact completion은 target의 선행 authoritative Pin을 보존하고 duplicate terminal은 두 번째 fan-out을 만들지 않는다.
+    /// - 검증 내용: foreign no-op, target authoritative rebase, moved runtime owner 보존, duplicate no-op
+    /// - 사전 조건: pending correlated transaction, queue head exact request, target에 선행 global Pin projection 반영
+    /// - 기대 결과: exact commit 뒤 target은 선행 Pin과 moved tab을 모두 보존하고 foreign/duplicate는 상태를 바꾸지 않는다.
     func testContentTabMovePersistenceCompletionRequiresExactQueueHeadAndIgnoresDuplicateTerminal() async throws {
         let sourceID = UUID(46931)
         let targetID = UUID(46932)
         let peerID = UUID(46933)
         let remainderID = ContentTabID(rawValue: "correlated-remainder")
+        let globalPinnedID = ContentTabID(rawValue: "correlated-global-pinned")
+        let globalPinnedRecord = ContentTabPinnedRecord(
+            id: globalPinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/correlated/global-pinned"),
+            title: "Global Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 400),
+        )
         let request = ContentTabMoveRequest(
             operationID: UUID(46934),
             requestID: UUID(46935),
@@ -5366,7 +5375,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 (remainderID, "/correlated/remainder"),
             ],
         )
-        let target = WindowSessionState(
+        var target = WindowSessionState(
             id: targetID,
             window: .makeInitial(path: "/correlated/target", windowID: targetID),
         )
@@ -5384,6 +5393,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             return XCTFail("Expected correlated preflight success")
         }
         let exactMutation = try XCTUnwrap(token.durablePinnedMutation)
+        target.window.applyPinnedContentTabs(
+            ContentTabState.restoringPinnedRecords(from: .init(records: [globalPinnedRecord])).state,
+        )
+        target.window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(globalPinnedID)])
+        target.window.lastConfirmedTopNavigationCommitRevision = 60
         let exactRequest = WindowManagerTopNavigationPersistenceRequest(
             sourceWindowID: sourceID,
             token: .init(value: UUID(46936)),
@@ -5402,19 +5416,23 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 discoveredLocationIDs: [],
             ),
         )
-        let committedOrder = FileManagerTopNavigationOrder(items: [.contentTab(request.initiatingTabID)])
+        let movedPinnedRecord = ContentTabPinnedRecord(
+            id: request.initiatingTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/correlated/source"),
+            title: nil,
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 401),
+        )
+        let committedOrder = FileManagerTopNavigationOrder(items: [
+            .contentTab(globalPinnedID),
+            .contentTab(request.initiatingTabID),
+        ])
         let committedResult = WindowManagerTopNavigationPersistenceResult(
             request: exactRequest,
             terminal: .committed(.init(order: committedOrder, revision: 61)),
             authoritativePinnedContentTabs: ContentTabState
-                .restoringPinnedRecords(from: .init(records: [ContentTabPinnedRecord(
-                    id: request.initiatingTabID.rawValue,
-                    page: .directory,
-                    anchor: .directory(path: "/correlated/source"),
-                    title: nil,
-                    iconName: nil,
-                    pinnedAt: Date(timeIntervalSince1970: 401),
-                )])).state,
+                .restoringPinnedRecords(from: .init(records: [globalPinnedRecord, movedPinnedRecord])).state,
         )
         let foreignResult = WindowManagerTopNavigationPersistenceResult(
             request: foreignRequest,
@@ -5457,6 +5475,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
         XCTAssertTrue(store.state.topNavigationPersistenceQueue.isEmpty)
         XCTAssertFalse(store.state.isTopNavigationPersistenceInFlight)
+        let targetWindow = try XCTUnwrap(store.state.windows[id: targetID]?.window)
+        XCTAssertEqual(
+            targetWindow.contentTabs.tabs.filter(\.isPinned).map(\.id),
+            [globalPinnedID, request.initiatingTabID],
+        )
+        XCTAssertEqual(targetWindow.lastConfirmedTopNavigationOrder, committedOrder)
+        XCTAssertEqual(
+            targetWindow.tabContentStates[request.initiatingTabID]?.entryViewLayout.entryOperations.windowID,
+            targetID,
+        )
         let stateAfterExact = store.state
 
         await store.send(.topNavigationPersistenceCompleted(committedResult))

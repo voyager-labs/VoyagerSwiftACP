@@ -221,7 +221,7 @@ extension WindowManagerFeature {
         let targetSnapshotAction = committedTopNavigationSnapshotAction(
             for: request.targetWindowID,
             commit: commit,
-            authoritativePinnedContentTabs: nil,
+            authoritativePinnedContentTabs: authoritativePinnedContentTabs,
             state: state,
         )
         return .concatenate(
