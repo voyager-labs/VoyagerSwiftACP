@@ -1849,6 +1849,118 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         )
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: explicit pinned self-anchor는 passive projection 교체로
+    /// 정규화한다.
+    /// 다른 창의 동일 global pinned projection 위 drop이 stale self-anchor rejection 없이 원래 경계에 runtime owner를 복원하는지
+    /// 검증한다.
+    /// - 검증 내용: before/after self-anchor의 adjacent/empty normalization, 중복 없는 ordering, source runtime owner 보존
+    /// - 사전 조건: source pinned runtime tab과 target의 동일 ID passive projection 단독/양쪽 pinned neighbor 구성
+    /// - 기대 결과: self-anchor는 surviving neighbor 또는 empty 경계로 정규화되고 target projection이 source owner로 교체된다.
+    func testSemanticPreflightReplacesPassivePinnedSelfAnchorAtNormalizedBoundary() throws {
+        let leadingID = ContentTabID(rawValue: "self-anchor-leading")
+        let movedID = ContentTabID(rawValue: "self-anchor-moved")
+        let trailingID = ContentTabID(rawValue: "self-anchor-trailing")
+        let movedTab = Fixture.tab(movedID, path: "/self-anchor/moved", pinned: true)
+        let movedRecord = Fixture.pinRecord(for: movedTab)
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [movedTab],
+            active: movedID,
+        )
+        source.contentTabs.pinnedRecords[movedID] = movedRecord
+        source.content.pendingSelectEntryID = "/self-anchor/runtime-owner.txt"
+        source.tabContentStates[movedID] = source.content
+
+        try assertPassiveSelfAnchorWithNeighbors(
+            source: source,
+            movedTab: movedTab,
+            movedRecord: movedRecord,
+            leadingID: leadingID,
+            trailingID: trailingID,
+        )
+        try assertLonePassiveSelfAnchor(
+            source: source,
+            movedTab: movedTab,
+            movedRecord: movedRecord,
+        )
+    }
+
+    private func assertPassiveSelfAnchorWithNeighbors(
+        source: FileManagerWindowState,
+        movedTab: ContentTabItem,
+        movedRecord: ContentTabPinnedRecord,
+        leadingID: ContentTabID,
+        trailingID: ContentTabID,
+    ) throws {
+        let movedID = movedTab.id
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(leadingID, path: "/self-anchor/leading", pinned: true),
+                movedTab,
+                Fixture.tab(trailingID, path: "/self-anchor/trailing", pinned: true),
+            ],
+            active: leadingID,
+        )
+        target.contentTabs.pinnedRecords = try [
+            leadingID: Fixture.pinRecord(for: XCTUnwrap(target.contentTabs.tabs[id: leadingID])),
+            movedID: movedRecord,
+            trailingID: Fixture.pinRecord(for: XCTUnwrap(target.contentTabs.tabs[id: trailingID])),
+        ]
+
+        for placement in [ContentTabPlacement.before(movedID), .after(movedID)] {
+            let token = try semanticPreflight(
+                source: source,
+                target: target,
+                orderedTabIDs: [movedID],
+                primaryTabID: movedID,
+                sourceDomain: .pinned,
+                targetDomain: .pinned,
+                placement: placement,
+            ).successToken()
+
+            XCTAssertEqual(token.durablePinnedMutation?.pinnedPlacement, .before(trailingID))
+            XCTAssertEqual(Array(token.projectedTarget.contentTabs.tabs.ids), [leadingID, movedID, trailingID])
+            XCTAssertEqual(token.projectedTarget.contentTabs.tabs.count(where: { $0.id == movedID }), 1)
+            XCTAssertEqual(
+                token.projectedTarget.tabContentStates[movedID]?.pendingSelectEntryID,
+                "/self-anchor/runtime-owner.txt",
+            )
+            _ = try ContentTabTransfer.apply(token).closeSourceWindowPostCommit()
+        }
+    }
+
+    private func assertLonePassiveSelfAnchor(
+        source: FileManagerWindowState,
+        movedTab: ContentTabItem,
+        movedRecord: ContentTabPinnedRecord,
+    ) throws {
+        let movedID = movedTab.id
+        var loneTarget = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [movedTab],
+            active: movedID,
+        )
+        loneTarget.contentTabs.pinnedRecords[movedID] = movedRecord
+        let loneToken = try semanticPreflight(
+            source: source,
+            target: loneTarget,
+            orderedTabIDs: [movedID],
+            primaryTabID: movedID,
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: .before(movedID),
+        ).successToken()
+
+        XCTAssertEqual(loneToken.durablePinnedMutation?.pinnedPlacement, .empty)
+        XCTAssertEqual(Array(loneToken.projectedTarget.contentTabs.tabs.ids), [movedID])
+        XCTAssertEqual(
+            loneToken.projectedTarget.tabContentStates[movedID]?.pendingSelectEntryID,
+            "/self-anchor/runtime-owner.txt",
+        )
+        _ = try ContentTabTransfer.apply(loneToken).closeSourceWindowPostCommit()
+    }
+
     /// CTM-001-move_content_tab_to_another_file_manager_window: explicit semantic preflight는 invalid target anchor와
     /// domain parity 위반을 fail-closed로 거절한다.
     /// missing/stale/self/wrong-domain anchor와 non-empty `.empty` target, source pin parity mismatch가 축소 없이 reject되는지

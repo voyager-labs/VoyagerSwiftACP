@@ -294,7 +294,7 @@ public enum ContentTabTransfer {
             preparedTarget: targetPreparation.state,
             workUnits: workUnits,
             projectedWorkUnits: projectedWorkUnits,
-            semantics: semantics,
+            semantics: targetPreparation.semantics,
             pinnedAt: pinnedAt,
             windowIDs: windowIDs,
             primaryTabID: primaryTabID,
@@ -332,27 +332,6 @@ private extension ContentTabTransfer {
             targetDomain: ContentTabDomain,
             placement: ContentTabPlacement,
         )
-
-        var targetDomain: ContentTabDomain? {
-            switch self {
-            case .preserveDomain:
-                nil
-            case let .explicitSameDomain(targetDomain, _):
-                targetDomain
-            case let .explicitOppositeDomain(_, targetDomain, _):
-                targetDomain
-            }
-        }
-
-        var placement: ContentTabPlacement? {
-            switch self {
-            case .preserveDomain:
-                nil
-            case let .explicitSameDomain(_, placement),
-                 let .explicitOppositeDomain(_, _, placement):
-                placement
-            }
-        }
     }
 
     struct ProjectedWorkUnit: Equatable {
@@ -368,6 +347,7 @@ private extension ContentTabTransfer {
 
     struct TargetPreparation {
         let state: FileManagerWindowState
+        let semantics: TransferSemantics
     }
 
     static func validatedSemantics(
@@ -646,21 +626,6 @@ private extension ContentTabTransfer {
             return .failure(.ineligible(EligibilityRejection(reason)))
         }
 
-        switch semantics {
-        case .preserveDomain:
-            break
-        case let .explicitSameDomain(targetDomain, placement),
-             let .explicitOppositeDomain(_, targetDomain, placement):
-            guard hasValidExplicitPlacement(
-                in: target,
-                orderedTabIDs: workUnits.map(\.item.id),
-                targetDomain: targetDomain,
-                placement: placement,
-            ) else {
-                return .failure(.targetPlacementInvalid)
-            }
-        }
-
         let replacementIDs: Set<ContentTabID>
         switch validatedReplacementIDs(target: target, workUnits: workUnits) {
         case let .success(value):
@@ -673,17 +638,21 @@ private extension ContentTabTransfer {
             return .failure(.targetCapacityExceeded)
         }
 
-        var prepared = target
-        for index in prepared.contentTabs.tabs.indices.reversed() {
-            let tabID = prepared.contentTabs.tabs[index].id
-            guard replacementIDs.contains(tabID) else { continue }
-            prepared.contentTabs.tabs.remove(at: index)
-            prepared.contentTabs.pinnedRecords[tabID] = nil
-            prepared.pendingRuntimePreservationRecords[tabID] = nil
-            prepared.tabContentStates[tabID] = nil
-            prepared.tabInspectorStates[tabID] = nil
+        let prepared = removingPassiveProjections(replacementIDs, from: target)
+        let normalizedSemantics: TransferSemantics
+        switch validatedNormalizedSemantics(
+            semantics,
+            target: target,
+            preparedTarget: prepared,
+            replacementIDs: replacementIDs,
+            orderedTabIDs: workUnits.map(\.item.id),
+        ) {
+        case let .success(value):
+            normalizedSemantics = value
+        case let .failure(reason):
+            return .failure(reason)
         }
-        return .success(TargetPreparation(state: prepared))
+        return .success(TargetPreparation(state: prepared, semantics: normalizedSemantics))
     }
 
     static func hasTargetOwnerCollision(
@@ -714,6 +683,62 @@ private extension ContentTabTransfer {
             replacementIDs.insert(tabID)
         }
         return .success(replacementIDs)
+    }
+
+    static func removingPassiveProjections(
+        _ replacementIDs: Set<ContentTabID>,
+        from target: FileManagerWindowState,
+    ) -> FileManagerWindowState {
+        var prepared = target
+        for index in prepared.contentTabs.tabs.indices.reversed() {
+            let tabID = prepared.contentTabs.tabs[index].id
+            guard replacementIDs.contains(tabID) else { continue }
+            prepared.contentTabs.tabs.remove(at: index)
+            prepared.contentTabs.pinnedRecords[tabID] = nil
+            prepared.pendingRuntimePreservationRecords[tabID] = nil
+            prepared.tabContentStates[tabID] = nil
+            prepared.tabInspectorStates[tabID] = nil
+        }
+        return prepared
+    }
+
+    static func validatedNormalizedSemantics(
+        _ semantics: TransferSemantics,
+        target: FileManagerWindowState,
+        preparedTarget: FileManagerWindowState,
+        replacementIDs: Set<ContentTabID>,
+        orderedTabIDs: [ContentTabID],
+    ) -> Swift.Result<TransferSemantics, Rejection> {
+        let targetDomain: ContentTabDomain
+        let sourceDomain: ContentTabDomain?
+        let placement: ContentTabPlacement
+        switch semantics {
+        case .preserveDomain:
+            return .success(semantics)
+        case let .explicitSameDomain(domain, value):
+            (targetDomain, sourceDomain, placement) = (domain, nil, value)
+        case let .explicitOppositeDomain(source, target, value):
+            (targetDomain, sourceDomain, placement) = (target, source, value)
+        }
+        guard let placement = normalizedExplicitPlacement(
+            in: target,
+            replacementIDs: replacementIDs,
+            targetDomain: targetDomain,
+            placement: placement,
+        ), hasValidExplicitPlacement(
+            in: preparedTarget,
+            orderedTabIDs: orderedTabIDs,
+            targetDomain: targetDomain,
+            placement: placement,
+        ) else { return .failure(.targetPlacementInvalid) }
+        guard let sourceDomain else {
+            return .success(.explicitSameDomain(targetDomain: targetDomain, placement: placement))
+        }
+        return .success(.explicitOppositeDomain(
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            placement: placement,
+        ))
     }
 
     static func batchCollisionRejection(
