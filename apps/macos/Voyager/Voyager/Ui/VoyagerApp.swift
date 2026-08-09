@@ -3,7 +3,10 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
@@ -12,11 +15,11 @@ import VoyagerShared
 private final class AppRootStoreReference {
     var store: StoreOf<AppRootFeature>?
 
-    func accountAccessStore() -> StoreOf<AccountAccessFeature> {
+    func openInitialWindowIfNeeded() async {
         guard let store else {
-            preconditionFailure("AppRoot store must be configured before presenting onboarding.")
+            preconditionFailure("AppRoot store must be configured before opening the initial window.")
         }
-        return store.scope(state: \.lifecycle.accountAccess, action: \.lifecycle.accountAccess)
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))).finish()
     }
 }
 
@@ -42,7 +45,7 @@ struct VoyagerApp: App {
             $0.collectionMetricClient = Self.makeCollectionMetricClient()
             $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
                 openMainWindow: { _ in
-                    await appRootStore.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))).finish()
+                    await appRootStoreReference.openInitialWindowIfNeeded()
                     return true
                 },
             )
@@ -51,7 +54,6 @@ struct VoyagerApp: App {
             $0.metricsClient = Self.makeFileManagerMetricsClient()
         }
         appRootStoreReference.store = appRootStore
-
         configureFileManagerWindowCallbacks()
         appDelegate.configure(appRootStore: appRootStore)
         configureLogging()
