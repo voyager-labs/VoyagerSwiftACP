@@ -10402,6 +10402,62 @@ extension CTM003ManagePinnedContentTabsTests {
         await store.finish()
     }
 
+    /// CTM-003-pin_content_tab_s: 숨겨진 pinned record는 가시적으로 빈 pinned domain drop을 막지 않는다.
+    /// cross-window 이동 뒤 suppression된 authoritative record와 현재 창의 drop admission을 분리하는지 검증한다.
+    /// - 검증 내용: suppressed record 유지, `.empty` drag admission, singleton coordinator 생성
+    /// - 사전 조건: visible pinned tab은 없고 suppressed pinned record와 unpinned Directory가 존재함
+    /// - 기대 결과: record를 삭제하지 않고 empty Pin coordinator가 시작됨
+    func testDragPinIntoVisibleEmptyDomainIgnoresSuppressedPinnedRecord() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let sourceWindowID = matrixOperationID(group: 14, offset: 0)
+        let dragOperationID = matrixOperationID(group: 14, offset: 1)
+        let coordinatorOperationID = matrixOperationID(group: 14, offset: 2)
+        let targetID = fixture.orderedIDs[0]
+        let suppressedID = ContentTabID(rawValue: "suppressed-global-pinned")
+        var initialState = fixture.state
+        initialState.windowID = sourceWindowID
+        initialState.sidebar.currentWindowID = sourceWindowID
+        initialState.contentTabs.pinnedRecords[suppressedID] = Self.pinnedRecord(
+            id: suppressedID,
+            anchor: .directory(path: "/Users/test/SuppressedPinned"),
+        )
+        initialState.suppressedPinnedTabIDs = [suppressedID]
+        let request = ContentTabDomainTransitionRequest(
+            operationID: dragOperationID,
+            sourceWindowID: sourceWindowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            initiatingTabID: targetID,
+            orderedTabIDs: [targetID],
+            placement: .empty,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(coordinatorOperationID)
+        }
+        // store.exhaustivity = .off: visible empty admission과 coordinator 생성에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestContentTabDomainTransition(request)) {
+            $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+                operationID: coordinatorOperationID,
+                target: .pinned,
+                orderedTargetIDs: [targetID],
+                origin: .drag,
+                dragOperationID: dragOperationID,
+                sourceWindowID: sourceWindowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initialPlacement: .empty,
+            )
+        }
+        XCTAssertNotNil(store.state.contentTabs.pinnedRecords[suppressedID])
+        XCTAssertTrue(store.state.suppressedPinnedTabIDs.contains(suppressedID))
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// CTM-003-pin_selected_content_tabs: invalid drag batch는 첫 persistence 전에 전체 거부한다.
     /// malformed identity와 target locator를 축소하거나 fallback하지 않는 admission 계약을 검증한다.
     /// - 검증 내용: duplicate batch, wrong source window, missing anchor의 exact state no-op

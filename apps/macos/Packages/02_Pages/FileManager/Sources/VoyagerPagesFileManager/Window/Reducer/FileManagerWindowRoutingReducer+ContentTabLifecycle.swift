@@ -135,11 +135,6 @@ extension FileManagerWindowRoutingReducer {
                 !request.orderedTabIDs.contains(tab.id)
                     && ContentTabDomain.domain(isPinned: tab.isPinned) == request.targetDomain
             }) else { return false }
-            if request.targetDomain == .pinned,
-               state.contentTabs.pinnedRecords.keys.contains(where: { !request.orderedTabIDs.contains($0) })
-            {
-                return false
-            }
         }
         return true
     }
