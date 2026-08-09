@@ -404,12 +404,12 @@ extension EntryListCoordinator {
                 updateKind: .incremental(preservesScrollAnchor: false),
                 selectionChanged: false,
             ) {
+                projectionSession.reset()
                 if !tryIncrementalFlatRowUpdate(
                     previous: previous.presentation,
                     current: snapshot.presentation,
                     changes: changes,
                 ) {
-                    projectionSession.reset()
                     let flatItems = makeOutlineItems(presentation: snapshot.presentation)
                     outlineItems = flatItems
                     rebuildItemIndexes()
