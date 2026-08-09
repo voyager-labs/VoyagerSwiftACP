@@ -513,6 +513,32 @@ public struct FileManagerFeature {
              .tabContent(_, .internal(.stopObservingSystemNotifications)):
             true
 
+        case .internal(.entryActionCompleted):
+            true
+
+        case let .content(.entryViewLayout(.entryOperations(entryAction))),
+             let .tabContent(_, .entryViewLayout(.entryOperations(entryAction))),
+             let .internal(.sidebarEntryDrop(entryAction)):
+            isEntryOperationsCompletionActionAllowed(entryAction)
+
+        default:
+            false
+        }
+    }
+
+    private func isEntryOperationsCompletionActionAllowed(_ action: EntryOperationsAction) -> Bool {
+        switch action {
+        case .lifecycle(.operationStarted),
+             .lifecycle(.operationFinished),
+             .lifecycle(.dropOperationFinished),
+             .lifecycle(.entryActionCompleted),
+             .lifecycle(.emptyTrashCompleted),
+             .lifecycle(.pathsMutated),
+             .outcome(.entriesMutated),
+             .outcome(.undoManagerAvailabilityChanged),
+             .outcome(.entryActionReplayFinished):
+            true
+
         default:
             false
         }

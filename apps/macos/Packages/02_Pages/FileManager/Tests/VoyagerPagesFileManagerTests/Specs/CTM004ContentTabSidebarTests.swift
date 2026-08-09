@@ -4851,16 +4851,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.finish()
     }
 
-    /// CTM-004-directory_reload_lifecycle: 성공한 Sidebar Trash record의 실제 target 부모만 refresh함
-    /// moveToTrash client가 확정한 source/Trash 경로를 기준으로 active와 inactive Directory를 갱신한다.
-    /// - 검증 내용: active source reload 1회, inactive Trash parent pending, unrelated tab 불변
-    /// - 사전 조건: source active tab, Trash parent와 unrelated inactive tab, 성공한 moveToTrash record
-    /// - 기대 결과: 요청 경로가 아니라 record target 부모만 기존 directory refresh helper에 전달됨
-    func testSidebarTrashCompletion_refreshesSuccessfulTargetParents() async {
+    /// CTM-004-directory_reload_lifecycle: move participant 중 content와 Sidebar completion을 모두 처리함
+    /// 이미 시작된 EntryOperations의 reducer-owned completion이 Content Tab move gate를 통과하는지 검증한다.
+    /// - 검증 내용: content undo 등록, active source reload 1회, inactive Trash parent pending, unrelated tab 불변
+    /// - 사전 조건: move participant인 source active tab과 성공한 content/Sidebar EntryAction record
+    /// - 기대 결과: 두 completion이 기존 owner에 반영되고 요청 경로가 아닌 record target 부모만 refresh됨
+    func testMoveParticipantAllowsContentAndSidebarEntryCompletions() async throws {
         let activeID = ContentTabID(rawValue: "trash-source")
         let trashID = ContentTabID(rawValue: "trash-destination")
         let unrelatedID = ContentTabID(rawValue: "trash-unrelated")
-        let state = makeDirectoryReloadState(
+        let windowID = UUID()
+        var state = makeDirectoryReloadState(
             activeID: activeID,
             activePath: "/source",
             inactiveTabs: [
@@ -4868,22 +4869,55 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 .init(id: unrelatedID, path: "/unrelated", isPinned: false),
             ],
         )
-        let record = EntryActionRecord(
+        state.windowID = windowID
+        state.contentTabMoveParticipantRequestID = UUID()
+        state.sidebarEntryDropOperations.itemStates["/source/item.txt"] = .init(isBusy: true, lastError: nil)
+        let contentRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/source/old.txt", afterPath: "/source/new.txt")],
+        )
+        let sidebarRecord = EntryActionRecord(
             operationKind: .moveToTrash,
             targets: [.init(
                 beforePath: "/source/item.txt",
                 afterPath: "/actual-trash/item.txt",
             )],
         )
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: activeID.rawValue)
+        let manager = try XCTUnwrap(client.activate(scope))
+        let generation = try XCTUnwrap(client.generation(scope))
         let store = TestStore(initialState: state) {
-            FileManagerWindowRoutingReducer()
+            FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileOperationUndoManagerClient = client
+            $0.undoManagerClient = .previewValue
         }
-        // store.exhaustivity = .off: routed listing reload의 하위 정렬 action보다 target parent refresh를 검증한다.
+        // store.exhaustivity = .off: routed child action보다 participant 중 completion owner 반영을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))) {
+        await store.send(.internal(.entryActionCompleted(
+            tabID: activeID,
+            record: contentRecord,
+            undoManagerGeneration: generation,
+        )))
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoRecords, [contentRecord])
+        XCTAssertEqual(
+            store.state.tabContentStates[activeID]?.entryViewLayout.entryOperations.undoRecords,
+            [contentRecord],
+        )
+        XCTAssertTrue(manager.canUndo)
+
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.operationFinished(
+            "/source/item.txt",
+            .moveToTrash,
+            .success(()),
+        )))))
+        XCTAssertFalse(store.state.sidebarEntryDropOperations.itemStates["/source/item.txt"]?.isBusy ?? true)
+
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(sidebarRecord))))) {
             $0.pendingDirectoryReloadTabIDs = [trashID]
         }
         await store.receive(routedDirectoryReloadAction(tabID: activeID))
