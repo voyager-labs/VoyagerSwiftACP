@@ -374,6 +374,7 @@ extension EntryListCoordinator {
     @discardableResult
     func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
         guard previous.isHierarchyOutlineEnabled == snapshot.isHierarchyOutlineEnabled else {
+            projectionSession.reset()
             rebuildRowsAndReload()
             return true
         }
