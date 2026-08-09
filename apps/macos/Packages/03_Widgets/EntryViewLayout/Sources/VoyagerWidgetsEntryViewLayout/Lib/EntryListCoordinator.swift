@@ -445,13 +445,15 @@ public final class EntryListCoordinator: NSObject {
         guard state.shouldScrollToSelection else { return false }
         let targetId = state.lastSelectedId
             ?? state.selectedIds.first
-        guard let targetId,
-              let row = entryItemsByID[targetId]?
-              .lazy
-              .map({ self.tableView.row(forItem: $0) })
-              .first(where: { $0 >= 0 })
-        else {
+        guard let targetId else {
             store.send(.view(.resetScrollFlag))
+            return false
+        }
+        guard let row = entryItemsByID[targetId]?
+            .lazy
+            .map({ self.tableView.row(forItem: $0) })
+            .first(where: { $0 >= 0 })
+        else {
             return false
         }
         tableView.scrollRowToVisible(row)
