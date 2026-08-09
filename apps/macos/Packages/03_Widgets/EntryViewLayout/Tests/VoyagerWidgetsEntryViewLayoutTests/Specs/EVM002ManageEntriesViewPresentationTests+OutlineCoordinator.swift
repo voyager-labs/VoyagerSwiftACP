@@ -58,6 +58,32 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(coordinator.lastRenderSnapshot, EntryListCoordinatorRenderSnapshot(state: currentState))
     }
 
+    /// EVM-002-single_render_transaction_multi_field_projection: 구조 변경과 함께 종료된 rename을 coordinator에 반영한다.
+    /// retained row의 구조 갱신이 rename 종료 lifecycle을 건너뛰지 않는지 검증한다.
+    /// - 검증 내용: processRender의 구조 rebuild 경로가 nil renamingItemId를 list coordinator에 동기화한다.
+    /// - 사전 조건: 이전 snapshot의 retained entry가 rename 중이고 현재 snapshot에는 새 entry와 nil rename target이 있다.
+    /// - 기대 결과: 구조 갱신 뒤 coordinator의 이전 rename target이 제거된다.
+    func testStructuralRenderClearsRenameCoordinatorWhenStateEndsRename() {
+        let retainedEntry = EntryModel.temporaryFolder(id: "/root/retained", name: "retained")
+        let insertedEntry = EntryModel.temporaryFolder(id: "/root/inserted", name: "inserted")
+        var previousState = EntryViewLayoutState()
+        previousState.entries = [retainedEntry]
+        previousState.renamingItemId = retainedEntry.id
+
+        var currentState = EntryViewLayoutState()
+        currentState.entries = [retainedEntry, insertedEntry]
+
+        let store = Store(initialState: currentState) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.lastRenamingItemId = retainedEntry.id
+        coordinator.lastRenderSnapshot = EntryListCoordinatorRenderSnapshot(state: previousState)
+
+        coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: currentState))
+
+        XCTAssertNil(coordinator.lastRenamingItemId)
+    }
+
     // MARK: - EVM-002-toggle_directory_expansion_in_list
 
     /// EVM-002-toggle_directory_expansion_in_list: stale revision callback은 현재 hierarchy나 selection으로 전달되지 않는다.

@@ -368,7 +368,7 @@ public final class EntryListCoordinator: NSObject {
                 }
             }
         }
-        if structureChanged, state.renamingItemId != nil {
+        if structureChanged {
             syncListRenamingFromStore()
         }
         requestThumbnailsForVisibleRows()
