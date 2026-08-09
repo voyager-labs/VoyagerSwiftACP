@@ -1679,6 +1679,45 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         )
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: visible empty pinned drop은 durable global order에
+    /// 연결된다.
+    /// suppressed pinned projection이 있는 창의 empty drop이 전역 empty로 오인되지 않는지 검증한다.
+    /// - 검증 내용: runtime empty insertion과 durable pinned neighbor placement 분리
+    /// - 사전 조건: target pinned section은 비어 보이지만 confirmed global order에는 suppressed pinned tab이 있다.
+    /// - 기대 결과: runtime은 empty slot에 삽입되고 durable mutation은 suppressed global tab 뒤에 연결된다.
+    func testSemanticPreflightNormalizesVisibleEmptyPinnedDropToDurableGlobalNeighbor() throws {
+        let movedID = ContentTabID(rawValue: "visible-empty-moved")
+        let globalPinnedID = ContentTabID(rawValue: "visible-empty-global-pinned")
+        let targetUnpinnedID = ContentTabID(rawValue: "visible-empty-target-unpinned")
+        let pinnedAt = Date(timeIntervalSince1970: 1234)
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(movedID, path: "/visible-empty/moved")],
+            active: movedID,
+        )
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(targetUnpinnedID, path: "/visible-empty/target")],
+            active: targetUnpinnedID,
+        )
+        target.suppressedPinnedTabIDs = [globalPinnedID]
+        target.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(globalPinnedID)])
+
+        let token = try semanticPreflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [movedID],
+            primaryTabID: movedID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .empty,
+            pinnedAt: pinnedAt,
+        ).successToken()
+
+        XCTAssertEqual(token.projectedTarget.contentTabs.tabs.ids, [movedID, targetUnpinnedID])
+        XCTAssertEqual(token.durablePinnedMutation?.pinnedPlacement, .after(globalPinnedID))
+    }
+
     /// CTM-001-move_content_tab_to_another_file_manager_window: opposite-domain Pin은 deterministic timestamp 없이는
     /// whole-request를 reject한다.
     /// pure projection이 production time fallback을 만들지 않도록 preflight 단계에서 명시 timestamp를 강제한다.

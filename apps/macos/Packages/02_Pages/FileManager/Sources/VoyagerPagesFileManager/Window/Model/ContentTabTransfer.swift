@@ -831,6 +831,7 @@ private extension ContentTabTransfer {
             durablePinnedMutation: durablePinnedMutation(
                 workUnits: context.workUnits,
                 projectedWorkUnits: context.projectedWorkUnits,
+                target: context.target,
                 semantics: context.semantics,
             ),
             teardownIntents: projection.teardownIntents,
@@ -1062,6 +1063,7 @@ private extension ContentTabTransfer {
     static func durablePinnedMutation(
         workUnits: [WorkUnit],
         projectedWorkUnits: [ProjectedWorkUnit],
+        target: FileManagerWindowState,
         semantics: TransferSemantics,
     ) -> DurablePinnedBatchMutation? {
         let orderedTabIDs = projectedWorkUnits.map(\.item.id)
@@ -1074,7 +1076,7 @@ private extension ContentTabTransfer {
                 recordsToUpsert: [],
                 recordIDsToRemove: [],
                 orderedTabIDs: orderedTabIDs,
-                pinnedPlacement: placement,
+                pinnedPlacement: durablePinnedPlacement(in: target, movingTabIDs: orderedTabIDs, placement: placement),
             )
         case let .explicitOppositeDomain(_, targetDomain, placement):
             if targetDomain == .pinned {
@@ -1082,7 +1084,11 @@ private extension ContentTabTransfer {
                     recordsToUpsert: projectedWorkUnits.compactMap(\.pinnedRecord),
                     recordIDsToRemove: [],
                     orderedTabIDs: orderedTabIDs,
-                    pinnedPlacement: placement,
+                    pinnedPlacement: durablePinnedPlacement(
+                        in: target,
+                        movingTabIDs: orderedTabIDs,
+                        placement: placement,
+                    ),
                 )
             }
             return DurablePinnedBatchMutation(

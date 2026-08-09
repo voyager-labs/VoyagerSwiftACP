@@ -1,4 +1,21 @@
 extension ContentTabTransfer {
+    static func durablePinnedPlacement(
+        in target: FileManagerWindowState,
+        movingTabIDs: [ContentTabID],
+        placement: ContentTabPlacement,
+    ) -> ContentTabPlacement {
+        guard placement == .empty else { return placement }
+        let movingIDs = Set(movingTabIDs)
+        let anchorID: ContentTabID? = target.lastConfirmedTopNavigationOrder.items.reversed().lazy.compactMap { item in
+            guard case let .contentTab(id) = item,
+                  target.suppressedPinnedTabIDs.contains(id),
+                  !movingIDs.contains(id)
+            else { return nil }
+            return id
+        }.first
+        return anchorID.map(ContentTabPlacement.after) ?? .empty
+    }
+
     static func normalizedExplicitPlacement(
         in target: FileManagerWindowState,
         replacementIDs: Set<ContentTabID>,
