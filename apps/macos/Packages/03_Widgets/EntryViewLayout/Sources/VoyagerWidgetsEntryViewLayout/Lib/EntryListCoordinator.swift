@@ -354,6 +354,9 @@ public final class EntryListCoordinator: NSObject {
             syncListSelectionFromStore()
         }
         let scrolledToSelection = scrollToSelectionIfNeeded()
+        if scrolledToSelection {
+            restoredScrollForCurrentPath = true
+        }
         if !scrolledToSelection {
             let restoredSavedOffset = shouldRestoreSavedOffset ? restoreScrollPositionIfNeeded() : false
             if !restoredSavedOffset {
