@@ -165,9 +165,15 @@ extension OnboardingWindowClient: DependencyKey {
             forceOnboarding.withValue { $0 = false }
             presentationGate.reset()
         }
+        let forceClearingOpenMainWindow: @Sendable (OnboardingOpenMainWindowRequest) async -> Bool = { request in
+            forceOnboarding.withValue { $0 = false }
+            return await OnboardingOpenMainWindowAuthorization.$isAuthorized.withValue(true) {
+                await openMainWindow(request)
+            }
+        }
         let onboardingWindowClient = makeNestedOnboardingWindowClient(
             closeWindow: closeWindow,
-            openMainWindow: openMainWindow,
+            openMainWindow: forceClearingOpenMainWindow,
         )
         let showWindow = makeShowWindow(
             onboardingWindowClient: onboardingWindowClient,
@@ -193,14 +199,7 @@ extension OnboardingWindowClient: DependencyKey {
             },
             showWindow: showWindow,
             closeWindow: closeWindow,
-            openMainWindow: { request in
-                // openMainWindow가 호출되면 온보딩 완료 신호이므로 강제 온보딩을 해제하고,
-                // shell-ready gate(isRequired)를 우회해 메인 창이 열리도록 한다.
-                forceOnboarding.withValue { $0 = false }
-                return await OnboardingOpenMainWindowAuthorization.$isAuthorized.withValue(true) {
-                    await openMainWindow(request)
-                }
-            },
+            openMainWindow: forceClearingOpenMainWindow,
             resetStoredProgress: progressClient.reset,
         )
     }
