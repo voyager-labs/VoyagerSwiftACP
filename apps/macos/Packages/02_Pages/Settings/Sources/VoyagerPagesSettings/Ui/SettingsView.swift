@@ -10,28 +10,13 @@ public struct SettingsView: View {
 
     public var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
-            Group {
-                if viewStore.isContentLocked {
-                    VStack(spacing: 12) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.secondary)
-                        Text("Settings are locked")
-                            .font(.headline)
-                        Text("Active license required.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    TabView(selection: viewStore.binding(get: \.selectedSection, send: SettingsAction.selectSection)) {
-                        ForEach(SettingsSection.allCases) { section in
-                            tabContent(for: section)
-                                .tabItem {
-                                    Label(section.title, systemImage: section.iconName)
-                                }
-                                .tag(section)
+            TabView(selection: viewStore.binding(get: \.selectedSection, send: SettingsAction.selectSection)) {
+                ForEach(SettingsSection.visibleCases) { section in
+                    tabContent(for: section)
+                        .tabItem {
+                            Label(section.title, systemImage: section.iconName)
                         }
-                    }
+                        .tag(section)
                 }
             }
             .frame(width: 600, height: 400)
