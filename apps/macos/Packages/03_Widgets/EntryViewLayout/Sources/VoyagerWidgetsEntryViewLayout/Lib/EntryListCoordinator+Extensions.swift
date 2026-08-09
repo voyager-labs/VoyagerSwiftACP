@@ -409,6 +409,7 @@ extension EntryListCoordinator {
                     current: snapshot.presentation,
                     changes: changes,
                 ) {
+                    projectionSession.reset()
                     let flatItems = makeOutlineItems(presentation: snapshot.presentation)
                     outlineItems = flatItems
                     rebuildItemIndexes()
