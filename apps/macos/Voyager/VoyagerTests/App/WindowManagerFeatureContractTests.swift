@@ -4906,8 +4906,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// CTM-001-move_content_tab_to_another_window: explicit Pin transfer는 durable commit 전 projected window를 publish하지
     /// 않는다.
     /// 성공 후에는 source/target commit, authoritative snapshot fan-out, native/lifecycle one-shot dispatch를 함께 검증한다.
-    /// - 검증 내용: gate 전 불변, 3-tab exact mutation/location 전달, one-call/one-revision, source/peer authoritative snapshot
-    /// 1회, peer local runtime 보존
+    /// - 검증 내용: gate 전 participant child mutation 차단, 3-tab exact mutation/location 전달, one-call/one-revision,
+    /// source/peer authoritative snapshot 1회, peer local runtime 보존
     /// - 사전 조건: source 4-tab, pinned target anchor, idle peer, app-owned write gate
     /// - 기대 결과: gate 전 window 불변, gate 후 source/target/peer가 revision 1개 commit으로 수렴하고 source에도 global pinned
     /// 3개가 표시되며 activation/native dispatch는 각 1회다.
@@ -5083,6 +5083,25 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertTrue(store.state.contentTabMoveNativeEffectsPlans.isEmpty)
         XCTAssertEqual(clientCallCount.value, 1)
         XCTAssertTrue(activationCalls.value.isEmpty)
+
+        let targetInspectorVisibility = store.state.windows[id: targetID]?.window.inspector.inspectorVisible
+        let targetSidebarVisibility = store.state.windows[id: targetID]?.window.sidebar.sidebarVisible
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.inspector(.toggleInspector)),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.sidebar(.view(.setSidebarVisible(false)))),
+        )))
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.inspector.inspectorVisible,
+            targetInspectorVisibility,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.sidebar.sidebarVisible,
+            targetSidebarVisibility,
+        )
 
         await store.send(.windows(.element(
             id: targetID,

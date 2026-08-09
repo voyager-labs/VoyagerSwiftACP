@@ -21,6 +21,15 @@ public struct FileManagerFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
+            guard state.contentTabMoveParticipantRequestID == nil
+                || isContentTabMoveParticipantActionAllowed(action)
+            else { return .none }
+            return coreBody.reduce(into: &state, action: action)
+        }
+    }
+
+    @ReducerBuilder<State, Action> private var coreBody: some Reducer<State, Action> {
+        Reduce { state, action in
             switch action {
             case let .content(contentAction):
                 guard state.pendingSelectedContentTabClose == nil
@@ -483,6 +492,24 @@ public struct FileManagerFeature {
                 break
             }
             return .none
+        }
+    }
+
+    private func isContentTabMoveParticipantActionAllowed(_ action: Action) -> Bool {
+        switch action {
+        case .applyCommittedTopNavigationSnapshot,
+             .applyExternalCommittedTopNavigationOrder,
+             .contentTabMoveSucceeded,
+             .contentTabMoveRejected:
+            true
+
+        case .tabContent(_, .internal(.applyNavigationState)),
+             .tabContent(_, .internal(.startObservingSystemNotifications)),
+             .tabContent(_, .internal(.stopObservingSystemNotifications)):
+            true
+
+        default:
+            false
         }
     }
 }
