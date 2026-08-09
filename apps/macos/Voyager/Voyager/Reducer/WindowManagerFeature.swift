@@ -278,8 +278,11 @@ struct WindowManagerFeature {
                 guard result.succeeded else { return .none }
                 return finalizeWindowRemoval(id, state: &state)
 
+            case .finalizeDeferredWindowClosures:
+                return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
+
             case let .event(.windowClosed(id)):
-                if state.topNavigationPersistenceQueue.contains(where: { $0.sourceWindowID == id }) {
+                if topNavigationPersistenceParticipantWindowIDs(in: state).contains(id) {
                     return deferWindowRemovalUntilTopNavigationPersistenceCompletes(id, state: &state)
                 }
                 let wasFocused = state.focusedWindowID == id
@@ -369,7 +372,13 @@ struct WindowManagerFeature {
                     return .none
                 }
                 state.contentTabMoveTransactions[request.requestID] = nil
-                return .none
+                return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
+
+            case let .contentTabMoveWindowActionRequested(request, windowID, action):
+                guard state.contentTabMoveTransactions[request.requestID]?.request == request,
+                      isWindowReady(windowID, state: state)
+                else { return .none }
+                return .send(.windows(.element(id: windowID, action: .window(action))))
 
             case let .contentTabMoveNativeEffectsRequested(request):
                 return startContentTabMoveNativeEffects(request, state: &state)
@@ -1072,6 +1081,26 @@ extension WindowManagerFeature {
         )
     }
 
+    func committedTopNavigationSnapshotAction(
+        for windowID: State.WindowID,
+        commit: FileManagerTopNavigationCommit,
+        authoritativePinnedContentTabs: ContentTabState?,
+        state: State,
+    ) -> FileManagerWindowAction? {
+        guard let window = state.windows[id: windowID]?.window else { return nil }
+        if window.lastConfirmedTopNavigationCommitRevision.map({ commit.revision >= $0 }) != false {
+            return .applyCommittedTopNavigationSnapshot(
+                order: commit.order,
+                revision: commit.revision,
+                authoritativePinnedContentTabs: authoritativePinnedContentTabs,
+            )
+        }
+        return .applyExternalCommittedTopNavigationOrder(
+            commit.order,
+            revision: commit.revision,
+        )
+    }
+
     private func topNavigationSourceTerminalEffect(
         _ result: WindowManagerTopNavigationPersistenceResult,
         state: State,
@@ -1182,21 +1211,12 @@ extension WindowManagerFeature {
         state: State,
     ) -> Effect<Action> {
         .merge(windowIDs.compactMap { windowID in
-            guard let window = state.windows[id: windowID]?.window else { return nil }
-            let action: FileManagerWindowAction = if window.lastConfirmedTopNavigationCommitRevision
-                .map({ commit.revision >= $0 }) != false
-            {
-                .applyCommittedTopNavigationSnapshot(
-                    order: commit.order,
-                    revision: commit.revision,
-                    authoritativePinnedContentTabs: authoritativePinnedContentTabs,
-                )
-            } else {
-                .applyExternalCommittedTopNavigationOrder(
-                    commit.order,
-                    revision: commit.revision,
-                )
-            }
+            guard let action = committedTopNavigationSnapshotAction(
+                for: windowID,
+                commit: commit,
+                authoritativePinnedContentTabs: authoritativePinnedContentTabs,
+                state: state,
+            ) else { return nil }
             return .send(.windows(.element(id: windowID, action: .window(action))))
         })
     }

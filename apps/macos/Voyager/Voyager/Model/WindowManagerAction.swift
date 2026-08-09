@@ -348,12 +348,18 @@ enum WindowManagerAction: CasePathable {
     )
     case pendingWindowCloseFinalized(id: WindowManagerState.WindowID)
     case windowInvalidationFinished(id: WindowManagerState.WindowID, result: UndoManagerInvalidationResult)
+    case finalizeDeferredWindowClosures
     case externalOpenActivationResult(
         attempt: ExternalOpenActivationAttempt,
         result: FileManagerWindowActivationResult,
     )
     case contentTabMoveRequest(ContentTabMoveRequest)
     case contentTabMoveLifecycleCompleted(request: ContentTabMoveRequest)
+    case contentTabMoveWindowActionRequested(
+        request: ContentTabMoveRequest,
+        windowID: WindowManagerState.WindowID,
+        action: FileManagerWindowAction,
+    )
     case contentTabMoveNativeEffectsRequested(request: ContentTabMoveRequest)
     case contentTabMoveActivationResult(
         attempt: ContentTabMoveActivationAttempt,

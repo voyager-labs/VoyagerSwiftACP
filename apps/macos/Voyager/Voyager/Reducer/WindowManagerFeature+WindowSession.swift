@@ -283,14 +283,27 @@ extension WindowManagerFeature {
     func finalizeDeferredWindowClosuresWithoutPendingPersistence(
         state: inout State,
     ) -> Effect<Action> {
-        let pendingSourceWindowIDs = Set(state.topNavigationPersistenceQueue.map(\.sourceWindowID))
+        let pendingParticipantWindowIDs = topNavigationPersistenceParticipantWindowIDs(in: state)
         let readyWindowIDs = state.deferredClosedWindowIDs
-            .filter { !pendingSourceWindowIDs.contains($0) }
+            .filter { !pendingParticipantWindowIDs.contains($0) }
         var effects: [Effect<Action>] = []
         for id in readyWindowIDs {
             effects.append(finalizeWindowRemoval(id, state: &state))
         }
         return effects.isEmpty ? .none : .merge(effects)
+    }
+
+    func topNavigationPersistenceParticipantWindowIDs(in state: State) -> Set<State.WindowID> {
+        var windowIDs = Set(state.topNavigationPersistenceQueue.map(\.sourceWindowID))
+        for queuedRequest in state.topNavigationPersistenceQueue {
+            guard case let .contentTabMove(request, _, _) = queuedRequest.operation else { continue }
+            windowIDs.insert(request.targetWindowID)
+        }
+        for transaction in state.contentTabMoveTransactions.values {
+            windowIDs.insert(transaction.request.sourceWindowID)
+            windowIDs.insert(transaction.request.targetWindowID)
+        }
+        return windowIDs
     }
 
     func finalizeWindowRemoval(

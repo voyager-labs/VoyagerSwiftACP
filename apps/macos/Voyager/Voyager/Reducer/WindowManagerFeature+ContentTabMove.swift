@@ -100,6 +100,10 @@ extension WindowManagerFeature {
               state.contentTabMoveTerminalRecords[request.requestID] == .init(request: request, outcome: .succeeded)
         else { return .none }
         state.contentTabMoveNativeEffectsPlans[request.requestID] = nil
+        guard isWindowReady(request.targetWindowID, state: state) else {
+            state.contentTabMoveActivationAttempts[request.requestID] = nil
+            return .none
+        }
 
         let activationAttempt = ContentTabMoveActivationAttempt(request: request)
         let activationEffect: Effect<Action> = .run { [fileManagerWindowClient] send in
@@ -131,8 +135,9 @@ extension WindowManagerFeature {
         state.refreshContentTabMoveTargets()
 
         return .concatenate(
-            contentTabMoveTerminalEffect(request, outcome: .succeeded),
+            correlatedContentTabMoveTerminalEffect(request, outcome: .succeeded),
             contentTabMoveLifecycleEffects(
+                request: request,
                 teardownIntents: postCommit.teardownIntents,
                 rebindIntents: postCommit.rebinds,
             ),
@@ -153,7 +158,7 @@ extension WindowManagerFeature {
               let pendingPersistence = transaction.pendingPersistence
         else {
             return .merge(
-                finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state),
+                .send(.finalizeDeferredWindowClosures),
                 startNextTopNavigationPersistenceIfNeeded(state: &state),
             )
         }
@@ -175,14 +180,13 @@ extension WindowManagerFeature {
             let rollbackOutcome = fileOperationUndoManagerClient.moveScopes(
                 rollbackUndoDescriptors(from: pendingPersistence.undoDescriptors),
             )
-            state.contentTabMoveTransactions[request.requestID] = nil
             if rollbackOutcome != .moved {
                 assertionFailure("Correlated Content Tab move undo rollback should succeed")
             }
             return .concatenate(
                 rejectContentTabMove(request, category: contentTabMoveCategory(for: failure), state: &state),
+                .send(.contentTabMoveLifecycleCompleted(request: request)),
                 .merge(
-                    finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state),
                     startNextTopNavigationPersistenceIfNeeded(state: &state),
                 ),
             )
@@ -208,31 +212,49 @@ extension WindowManagerFeature {
         state.refreshContentTabMoveTargets()
 
         let bootstrapLifecycle = invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(state: &state)
-        let shouldAddressSourceWindow = state.windows[id: request.sourceWindowID] != nil
-            && !state.closingWindowIDs.contains(request.sourceWindowID)
+        let sourceSnapshotAction = committedTopNavigationSnapshotAction(
+            for: request.sourceWindowID,
+            commit: commit,
+            authoritativePinnedContentTabs: authoritativePinnedContentTabs,
+            state: state,
+        )
+        let targetSnapshotAction = committedTopNavigationSnapshotAction(
+            for: request.targetWindowID,
+            commit: commit,
+            authoritativePinnedContentTabs: nil,
+            state: state,
+        )
         return .concatenate(
             bootstrapLifecycle.cancel,
-            committedTopNavigationSnapshotEffects(
-                for: [request.targetWindowID],
-                commit: commit,
-                authoritativePinnedContentTabs: nil,
-                state: state,
-            ),
+            targetSnapshotAction.map {
+                contentTabMoveWindowActionEffect(
+                    request: request,
+                    windowID: request.targetWindowID,
+                    action: $0,
+                )
+            } ?? .none,
+            sourceSnapshotAction.map {
+                contentTabMoveWindowActionEffect(
+                    request: request,
+                    windowID: request.sourceWindowID,
+                    action: $0,
+                )
+            } ?? .none,
             fanOutCommittedTopNavigationSnapshot(
                 commit,
                 authoritativePinnedContentTabs: authoritativePinnedContentTabs,
                 state: state,
-                excludingWindowIDs: [request.targetWindowID],
+                excludingWindowIDs: [request.sourceWindowID, request.targetWindowID],
             ),
-            shouldAddressSourceWindow ? contentTabMoveTerminalEffect(request, outcome: .succeeded) : .none,
+            correlatedContentTabMoveTerminalEffect(request, outcome: .succeeded),
             contentTabMoveLifecycleEffects(
+                request: request,
                 teardownIntents: pendingPersistence.postCommit.teardownIntents,
                 rebindIntents: pendingPersistence.postCommit.rebinds,
             ),
             .send(.contentTabMoveLifecycleCompleted(request: request)),
             .send(.contentTabMoveNativeEffectsRequested(request: request)),
             .merge(
-                finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state),
                 startNextTopNavigationPersistenceIfNeeded(state: &state),
                 bootstrapLifecycle.restart,
             ),
@@ -245,26 +267,46 @@ extension WindowManagerFeature {
         state: inout State,
     ) -> Effect<Action> {
         state.recordContentTabMoveTerminal(.init(request: request, outcome: .rejected(category)))
+        if state.contentTabMoveTransactions[request.requestID]?.request == request {
+            return correlatedContentTabMoveTerminalEffect(request, outcome: .rejected(category))
+        }
         guard state.windows[id: request.sourceWindowID] != nil,
               !state.closingWindowIDs.contains(request.sourceWindowID)
         else { return .none }
         return contentTabMoveTerminalEffect(request, outcome: .rejected(category))
     }
 
+    private func correlatedContentTabMoveTerminalEffect(
+        _ request: ContentTabMoveRequest,
+        outcome: ContentTabMoveTerminalRecord.Outcome,
+    ) -> Effect<Action> {
+        contentTabMoveWindowActionEffect(
+            request: request,
+            windowID: request.sourceWindowID,
+            action: contentTabMoveTerminalWindowAction(request, outcome: outcome),
+        )
+    }
+
     private func contentTabMoveTerminalEffect(
         _ request: ContentTabMoveRequest,
         outcome: ContentTabMoveTerminalRecord.Outcome,
     ) -> Effect<Action> {
-        let windowAction: FileManagerWindowAction = switch outcome {
+        .send(.windows(.element(
+            id: request.sourceWindowID,
+            action: .window(contentTabMoveTerminalWindowAction(request, outcome: outcome)),
+        )))
+    }
+
+    private func contentTabMoveTerminalWindowAction(
+        _ request: ContentTabMoveRequest,
+        outcome: ContentTabMoveTerminalRecord.Outcome,
+    ) -> FileManagerWindowAction {
+        switch outcome {
         case .succeeded:
             .contentTabMoveSucceeded(request: request)
         case let .rejected(category):
             .contentTabMoveRejected(request: request, category: category)
         }
-        return .send(.windows(.element(
-            id: request.sourceWindowID,
-            action: .window(windowAction),
-        )))
     }
 
     private func contentTabMoveOverlapsActiveTransaction(
@@ -304,12 +346,16 @@ extension WindowManagerFeature {
     }
 
     private func contentTabMoveLifecycleEffects(
+        request: ContentTabMoveRequest,
         teardownIntents: [ContentTabTransfer.TeardownIntent],
         rebindIntents: [ContentTabTransfer.RebindIntent],
     ) -> Effect<Action> {
         .concatenate(
             contentTabMoveTeardownEffect(teardownIntents),
-            contentTabMoveObservationRebindEffect(rebindIntents),
+            contentTabMoveObservationRebindEffect(
+                request: request,
+                rebindIntents,
+            ),
         )
     }
 
@@ -335,40 +381,68 @@ extension WindowManagerFeature {
     }
 
     private func contentTabMoveObservationRebindEffect(
+        request: ContentTabMoveRequest,
         _ intents: [ContentTabTransfer.RebindIntent],
     ) -> Effect<Action> {
         .concatenate(intents.compactMap { intent in
             guard intent.rebindNavigationObservation else { return nil }
-            let targetEffect = contentTabMoveObservationSequence(intent.targetActiveNavigationObservation)
-            guard let source = intent.sourceActiveNavigationObservation else { return targetEffect }
-            return .concatenate(
-                contentTabMoveObservationSequence(source),
-                targetEffect,
-            )
+            var effects: [Effect<Action>] = []
+            if let source = intent.sourceActiveNavigationObservation {
+                effects.append(contentTabMoveObservationSequence(request: request, rebind: source))
+            }
+            effects.append(contentTabMoveObservationSequence(
+                request: request,
+                rebind: intent.targetActiveNavigationObservation,
+            ))
+            return effects.isEmpty ? nil : .concatenate(effects)
         })
     }
 
     private func contentTabMoveObservationSequence(
-        _ rebind: ContentTabTransfer.ActiveNavigationObservationRebind,
+        request: ContentTabMoveRequest,
+        rebind: ContentTabTransfer.ActiveNavigationObservationRebind,
     ) -> Effect<Action> {
         .concatenate(
-            contentTabMoveObservationEffect(rebind, action: .internal(.stopObservingSystemNotifications)),
-            contentTabMoveObservationEffect(rebind, action: .internal(.startObservingSystemNotifications)),
             contentTabMoveObservationEffect(
-                rebind,
+                request: request,
+                rebind: rebind,
+                action: .internal(.stopObservingSystemNotifications),
+            ),
+            contentTabMoveObservationEffect(
+                request: request,
+                rebind: rebind,
+                action: .internal(.startObservingSystemNotifications),
+            ),
+            contentTabMoveObservationEffect(
+                request: request,
+                rebind: rebind,
                 action: .internal(.applyNavigationState(rebind.navigationRoute)),
             ),
         )
     }
 
     private func contentTabMoveObservationEffect(
-        _ rebind: ContentTabTransfer.ActiveNavigationObservationRebind,
+        request: ContentTabMoveRequest,
+        rebind: ContentTabTransfer.ActiveNavigationObservationRebind,
         action: FileManagerContentAction,
     ) -> Effect<Action> {
-        .send(.windows(.element(
-            id: rebind.windowID,
-            action: .window(.tabContent(tabID: rebind.tabID, action: action)),
-        )))
+        contentTabMoveWindowActionEffect(
+            request: request,
+            windowID: rebind.windowID,
+            action: .tabContent(tabID: rebind.tabID, action: action),
+        )
+    }
+
+    private func contentTabMoveWindowActionEffect(
+        request: ContentTabMoveRequest,
+        windowID: State.WindowID,
+        action: FileManagerWindowAction,
+    ) -> Effect<Action> {
+        .send(.contentTabMoveWindowActionRequested(
+            request: request,
+            windowID: windowID,
+            action: action,
+        ))
     }
 
     private func contentTabMoveCategory(

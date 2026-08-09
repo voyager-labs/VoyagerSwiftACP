@@ -4725,6 +4725,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             targetWindowID: UUID(45846),
         )
         var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(
+            id: request.targetWindowID,
+            window: .makeInitial(path: "/callback-target"),
+        )]
         initialState.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
         initialState.contentTabMoveTransactions[requestID] = .init(request: request)
         initialState.contentTabMoveNativeEffectsPlans[requestID] = .init(
@@ -5298,6 +5302,22 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.contentTabMoveRequest(request))
         await store.receive { action in
+            guard case let .contentTabMoveWindowActionRequested(
+                receivedRequest,
+                windowID,
+                .contentTabMoveRejected(terminalRequest, category),
+            ) = action
+            else { return false }
+            return receivedRequest == request
+                && windowID == sourceID
+                && terminalRequest == request
+                && category == .generic
+        }
+        await store.receive { action in
+            guard case let .contentTabMoveLifecycleCompleted(receivedRequest) = action else { return false }
+            return receivedRequest == request
+        }
+        await store.receive { action in
             guard case let .windows(.element(
                 id: id,
                 action: .window(.contentTabMoveRejected(receivedRequest, category)),
@@ -5542,6 +5562,232 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             store.state.windows[id: peerID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id),
             [targetPinnedID, movedID],
         )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: target close during persistence는 commit까지 제거를 유예한다.
+    /// durable success를 surviving source에 fan-out한 다음 target tombstone을 정확히 한 번 제거해야 한다.
+    /// - 검증 내용: target deferred close, in-flight transaction 유지, commit fan-out 뒤 target 제거와 queue cleanup
+    /// - 사전 조건: explicit Pin request와 persistence gate, target native close callback
+    /// - 기대 결과: terminal 전 target 유지, commit 뒤 source pinned tab 보존, target 제거, transaction empty
+    func testContentTabMoveTargetCloseDuringDurablePersistencePublishesCommitBeforeRemoval() async throws {
+        let sourceID = UUID(46947)
+        let targetID = UUID(46948)
+        let movedID = ContentTabID(rawValue: "target-close-during-persistence-moved")
+        let targetPinnedID = ContentTabID(rawValue: "target-close-during-persistence-pinned")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46949),
+            requestID: UUID(46950),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .after(targetPinnedID),
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/target-close-during-persistence/source/moved")],
+        )
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetPinnedID, "/target-close-during-persistence/target/pinned")],
+        )
+        target.window.contentTabs.tabs[id: targetPinnedID]?.isPinned = true
+        target.window.contentTabs.pinnedRecords[targetPinnedID] = ContentTabPinnedRecord(
+            id: targetPinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/target-close-during-persistence/target/pinned"),
+            title: nil,
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 603),
+        )
+        target.window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(targetPinnedID)])
+        let writeGate = PinnedRecordMutationGate()
+        let undoBatches = LockIsolated<[[FileOperationUndoScopeMoveDescriptor]]>([])
+        let activationWindowIDs = LockIsolated<[WindowManagerFeature.State.WindowID]>([])
+        let targetPinnedRecord = try XCTUnwrap(target.window.contentTabs.pinnedRecords[targetPinnedID])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 604))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46951)) }
+            $0.fileOperationUndoManagerClient.moveScopes = { descriptors in
+                undoBatches.withValue { $0.append(descriptors) }
+                return .moved
+            }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, _ in
+                await writeGate.wait()
+                return .init(
+                    store: .init(
+                        records: [
+                            targetPinnedRecord,
+                            ContentTabPinnedRecord(
+                                id: movedID.rawValue,
+                                page: .directory,
+                                anchor: .directory(path: "/target-close-during-persistence/source/moved"),
+                                title: nil,
+                                iconName: nil,
+                                pinnedAt: Date(timeIntervalSince1970: 604),
+                            ),
+                        ],
+                        topNavigationOrder: .init(items: [.contentTab(targetPinnedID), .contentTab(movedID)]),
+                    ),
+                    topNavigation: .init(
+                        order: .init(items: [.contentTab(targetPinnedID), .contentTab(movedID)]),
+                        revision: 72,
+                    ),
+                )
+            }
+            $0.fileManagerWindowClient.activate = { windowID in
+                activationWindowIDs.withValue { $0.append(windowID) }
+                return .discarded
+            }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: cross-window persistence와 close lifecycle의 경계 상태만 검증
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await store.receive { action in
+            guard case let .topNavigationPersistenceRequested(receivedRequest) = action,
+                  case .contentTabMove = receivedRequest.operation
+            else { return false }
+            return receivedRequest.sourceWindowID == sourceID
+        }
+        await writeGate.waitUntilWaiting()
+
+        await store.send(.event(.windowClosed(targetID)))
+        XCTAssertNotNil(store.state.windows[id: targetID])
+        XCTAssertTrue(store.state.closingWindowIDs.contains(targetID))
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(targetID))
+        XCTAssertTrue(store.state.isTopNavigationPersistenceInFlight)
+        XCTAssertNotNil(store.state.contentTabMoveTransactions[request.requestID]?.pendingPersistence)
+
+        await writeGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(undoBatches.value.count, 1)
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedID]?.isPinned, true)
+        XCTAssertNil(store.state.windows[id: targetID])
+        XCTAssertFalse(store.state.closingWindowIDs.contains(targetID))
+        XCTAssertFalse(store.state.deferredClosedWindowIDs.contains(targetID))
+        XCTAssertTrue(store.state.topNavigationPersistenceQueue.isEmpty)
+        XCTAssertFalse(store.state.isTopNavigationPersistenceInFlight)
+        XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertTrue(activationWindowIDs.value.isEmpty)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: queue 제거 뒤 lifecycle 완료 전에도 target close를 유예한다.
+    /// active transaction이 남은 commit-to-lifecycle 구간을 persistence participant로 유지해야 한다.
+    /// - 검증 내용: queue 없는 active transaction의 target tombstone 유지와 lifecycle 완료 시 원자적 제거
+    /// - 사전 조건: source/target window와 pending persistence가 제거된 exact-correlated transaction
+    /// - 기대 결과: target close는 deferred 상태를 유지하고 lifecycle 완료가 transaction과 window를 함께 정리한다.
+    func testContentTabMoveTargetCloseAfterPersistenceQueueRemovalDefersUntilLifecycleCompletion() async throws {
+        let sourceID = UUID(46952)
+        let targetID = UUID(46953)
+        let movedID = ContentTabID(rawValue: "target-close-after-persistence-moved")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46954),
+            requestID: UUID(46955),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+        )
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/target-close-after-persistence/source/moved")],
+        )
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(movedID, "/target-close-after-persistence/target/moved")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        initialState.contentTabMoveTransactions[request.requestID] = .init(request: request)
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        // store.exhaustivity = .off: commit-to-lifecycle participant와 deferred removal 경계만 검증
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowClosed(targetID)))
+
+        XCTAssertNotNil(store.state.windows[id: targetID])
+        XCTAssertTrue(store.state.closingWindowIDs.contains(targetID))
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(targetID))
+        XCTAssertEqual(store.state.contentTabMoveTransactions[request.requestID]?.request, request)
+
+        await store.send(.contentTabMoveLifecycleCompleted(request: request))
+        await store.finish()
+
+        XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
+        XCTAssertNil(store.state.windows[id: targetID])
+        XCTAssertFalse(store.state.closingWindowIDs.contains(targetID))
+        XCTAssertFalse(store.state.deferredClosedWindowIDs.contains(targetID))
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: commit 뒤 닫힌 participant에는 예약된 action을 전달하지 않는다.
+    /// child action 방출 직전 transaction correlation과 window readiness를 다시 검증해야 한다.
+    /// - 검증 내용: closing source/target에 대한 committed snapshot action 억제
+    /// - 사전 조건: exact-correlated active transaction과 deferred participant tombstone
+    /// - 기대 결과: source/target의 confirmed revision이 변경되지 않는다.
+    func testContentTabMoveQueuedParticipantActionRevalidatesClosingWindowBeforeDelivery() async throws {
+        let sourceID = UUID(46956)
+        let targetID = UUID(46957)
+        let movedID = ContentTabID(rawValue: "target-close-before-action-moved")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46958),
+            requestID: UUID(46959),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+        )
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/target-close-before-action/source/moved")],
+        )
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(movedID, "/target-close-before-action/target/moved")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        initialState.closingWindowIDs.insert(sourceID)
+        initialState.deferredClosedWindowIDs.insert(sourceID)
+        initialState.closingWindowIDs.insert(targetID)
+        initialState.deferredClosedWindowIDs.insert(targetID)
+        initialState.contentTabMoveTransactions[request.requestID] = .init(request: request)
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        // store.exhaustivity = .off: closing target에 대한 correlated child action 억제만 검증
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveWindowActionRequested(
+            request: request,
+            windowID: targetID,
+            action: .applyCommittedTopNavigationSnapshot(
+                order: .init(items: [.contentTab(movedID)]),
+                revision: 73,
+                authoritativePinnedContentTabs: nil,
+            ),
+        ))
+        await store.send(.contentTabMoveWindowActionRequested(
+            request: request,
+            windowID: sourceID,
+            action: .applyCommittedTopNavigationSnapshot(
+                order: .init(items: [.contentTab(movedID)]),
+                revision: 74,
+                authoritativePinnedContentTabs: nil,
+            ),
+        ))
+        await store.finish()
+
+        XCTAssertNil(store.state.windows[id: sourceID]?.window.lastConfirmedTopNavigationCommitRevision)
+        XCTAssertNil(store.state.windows[id: targetID]?.window.lastConfirmedTopNavigationCommitRevision)
     }
 
     /// CTM-001-move_content_tab_to_another_window: newer peer revision은 older correlated completion으로 덮어쓰지 않는다.
