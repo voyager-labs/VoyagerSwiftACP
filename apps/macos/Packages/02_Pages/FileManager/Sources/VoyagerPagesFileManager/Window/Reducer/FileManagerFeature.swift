@@ -504,7 +504,8 @@ public struct FileManagerFeature {
              .backgroundInspectorAiChat,
              .backgroundInspectorAiChatSnapshotPersisted,
              .contentTabMoveSucceeded,
-             .contentTabMoveRejected:
+             .contentTabMoveRejected,
+             .onDisappear:
             true
 
         case .tabContent(_, .internal(.applyNavigationState)),

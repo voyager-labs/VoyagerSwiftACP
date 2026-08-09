@@ -541,8 +541,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.windows[id: windowID]?.window.deferredPinnedContentTabs)
     }
 
-    /// CTM-003-pin_selected_content_tabs: onDisappear는 coordinator/current/deferred를 폐기한다.
-    /// teardown 뒤 늦은 terminal이 child cleanup, count, progress, sync를 만들지 않는지 검증한다.
+    /// CTM-003-pin_selected_content_tabs: move participant 중에도 onDisappear는 coordinator/current/deferred를 폐기한다.
+    /// durable move가 창 제거를 유예해도 teardown과 늦은 terminal 차단은 즉시 실행되는지 검증한다.
     /// - 검증 내용: selected Pin cancel/clear, deferred discard, late terminal exact no-op
     /// - 사전 조건: current optimistic Pin과 authoritative deferred snapshot
     /// - 기대 결과: late terminal 전후 window state와 action counts가 동일하다.
@@ -559,6 +559,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             from: Self.store(recordID: "discarded", path: "/Users/test/Discarded"),
         ).state
         window.deferredPinnedContentTabsMode = .authoritative
+        window.contentTabMoveParticipantRequestID = UUID()
         let intentID = window.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
         let context = ContentTabPinnedRecordTerminalContext(
             intentID: intentID,
