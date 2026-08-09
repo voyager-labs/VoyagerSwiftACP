@@ -20,7 +20,6 @@ final class VoyagerEntryCoreProcessSmokeTests: XCTestCase {
         XCTAssertEqual(ping, EntryCorePingResult())
         XCTAssertEqual(health, EntryCoreHealthResult())
         XCTAssertFalse(version.appVersion.isEmpty)
-        XCTAssertEqual(version.protocolVersion, .v1)
 
         let firstPID = daemon1.pid
         let firstExit = try daemon1.terminate()

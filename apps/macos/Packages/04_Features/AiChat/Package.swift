@@ -18,6 +18,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.10.0"),
         .package(url: "https://github.com/pointfreeco/swift-perception", exact: "2.0.8"),
         .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", exact: "1.7.0"),
+        .package(url: "https://github.com/smittytone/HighlighterSwift", exact: "3.1.0"),
     ],
     targets: [
         .target(
@@ -32,6 +33,7 @@ let package = Package(
                 .product(name: "Perception", package: "swift-perception"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
                 .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
+                .product(name: "Highlighter", package: "HighlighterSwift"),
             ],
         ),
         .testTarget(

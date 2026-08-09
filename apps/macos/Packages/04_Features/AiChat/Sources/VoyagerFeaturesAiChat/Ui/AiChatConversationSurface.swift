@@ -4,130 +4,12 @@ import SwiftUI
 import VoyagerEntitiesAi
 import VoyagerShared
 
-struct AiChatTranscriptRowID: Hashable {
-    let index: Int
-    let role: AiChatMessageRole
-    let createdAtMs: Int64?
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(index)
-        hasher.combine(role.rawValue)
-        hasher.combine(createdAtMs)
-    }
-}
-
-enum AiChatTranscriptTimestampStyle: Equatable { case dateTime, relative, shortTime }
-struct AiChatTranscriptRowPresentation: Identifiable, Equatable {
-    let id: AiChatTranscriptRowID
-    let message: AiChatMessage
-    let timestampStyle: AiChatTranscriptTimestampStyle?
-    let timestampLabel, accessibilityTimestampLabel: String?
-    let isTimestampVisuallySuppressed: Bool
-    var hasTimestampMetadata: Bool {
-        (message.role == .user || message.role == .assistant) && message.createdAtMs != nil
-    }
-
-    var showsTimestampAffordance: Bool {
-        hasTimestampMetadata && !isTimestampVisuallySuppressed
-    }
-}
-
-struct AiChatTimestampAffordancePresentation: Equatable {
-    enum Placement: Equatable {
-        case userLeadingGutter, assistantTopTrailing
-
-        var horizontalOffset: CGFloat {
-            let offset = AiChatTimestampAffordancePresentation.controlSize + 4
-            return self == .userLeadingGutter ? -offset : offset
-        }
-    }
-
-    static let controlSize: CGFloat = 24, assistantTrailingGutter = controlSize + 4
-    static let tooltipMaximumWidth: CGFloat = 320
-    static let tooltipHorizontalPadding: CGFloat = 10, tooltipVerticalPadding: CGFloat = 6
-    let placement: Placement
-
-    static func presentsTooltip(hasTimestampMetadata: Bool, isClockHovered: Bool, isClockFocused: Bool) -> Bool {
-        hasTimestampMetadata && (isClockHovered || isClockFocused)
-    }
-}
-
-struct AiChatTranscriptPresentation: Equatable {
-    let rows: [AiChatTranscriptRowPresentation]
-    init(messages: [AiChatMessage], now: Date, locale: Locale, timeZone: TimeZone) {
-        rows = messages.enumerated().map { index, message in
-            let timestamp = Self.timestampPresentation(
-                createdAtMs: message.createdAtMs, now: now, locale: locale, timeZone: timeZone,
-            )
-            return AiChatTranscriptRowPresentation(
-                id: AiChatTranscriptRowID(index: index, role: message.role, createdAtMs: message.createdAtMs),
-                message: message,
-                timestampStyle: timestamp?.style,
-                timestampLabel: timestamp?.label,
-                accessibilityTimestampLabel: timestamp?.label,
-                isTimestampVisuallySuppressed: Self.suppressesTimestamp(
-                    message, after: index > 0 ? messages[index - 1] : nil,
-                ),
-            )
-        }
-    }
-
-    static func timestampPresentation(
-        createdAtMs: Int64?,
-        now: Date,
-        locale: Locale,
-        timeZone: TimeZone,
-    ) -> (style: AiChatTranscriptTimestampStyle, label: String)? {
-        guard let createdAtMs else { return nil }
-        let createdAt = Date(timeIntervalSince1970: TimeInterval(createdAtMs) / 1000)
-        if createdAt > now { return (.relative, "Just now") }
-        var calendar = locale.calendar
-        calendar.timeZone = timeZone
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        formatter.timeZone = timeZone
-        if calendar.isDate(createdAt, inSameDayAs: now) {
-            let age = now.timeIntervalSince(createdAt)
-            if age < 60 { return (.relative, "Just now") }
-            if age < 60 * 60 {
-                let relativeFormatter = RelativeDateTimeFormatter()
-                relativeFormatter.locale = locale
-                relativeFormatter.dateTimeStyle = .numeric
-                return (.relative, relativeFormatter.localizedString(for: createdAt, relativeTo: now))
-            }
-            formatter.timeStyle = .short
-            return (.shortTime, formatter.string(from: createdAt))
-        }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(createdAt, inSameDayAs: yesterday)
-        {
-            formatter.doesRelativeDateFormatting = true
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .short
-        } else {
-            let includesYear = calendar.component(.year, from: createdAt) != calendar.component(.year, from: now)
-            formatter.setLocalizedDateFormatFromTemplate(includesYear ? "yMMMdjm" : "MMMdjm")
-        }
-        return (.dateTime, formatter.string(from: createdAt))
-    }
-
-    private static func suppressesTimestamp(_ message: AiChatMessage, after previousMessage: AiChatMessage?) -> Bool {
-        guard let previousMessage,
-              previousMessage.role == message.role,
-              let earlier = previousMessage.createdAtMs,
-              let later = message.createdAtMs,
-              later >= earlier
-        else { return false }
-        let (delta, overflow) = later.subtractingReportingOverflow(earlier)
-        return !overflow && delta < 60000
-    }
-}
-
 struct AiChatConversationSurface: View {
     let state: AiChatState
     let skeleton: AiChatSkeletonDisplayModel
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
     let onOpenSettings: () -> Void
     let onErrorRecovery: () -> Void
     let onRegenerate: () -> Void
@@ -161,9 +43,11 @@ struct AiChatConversationSurface: View {
                 EmptyView()
             case .ready:
                 AiChatTranscriptSection(
+                    sessionID: state.sessionID,
                     messages: state.transcriptHistory,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                     isProcessing: false,
                     canRegenerate: state.canRegenerate,
                     statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -172,9 +56,11 @@ struct AiChatConversationSurface: View {
                 )
             case .processing:
                 AiChatTranscriptSection(
+                    sessionID: state.sessionID,
                     messages: state.transcriptHistory,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                     isProcessing: true,
                     canRegenerate: false,
                     streamingAssistant: state.streamingAssistantDisplayModel,
@@ -189,9 +75,11 @@ struct AiChatConversationSurface: View {
     private func transcriptSectionIfNeeded(isProcessing: Bool, canRegenerate: Bool) -> some View {
         if !state.transcriptHistory.isEmpty {
             AiChatTranscriptSection(
+                sessionID: state.sessionID,
                 messages: state.transcriptHistory,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
+                renderSession: renderSession,
                 isProcessing: isProcessing,
                 canRegenerate: canRegenerate,
                 statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -345,7 +233,22 @@ struct AiChatTranscriptRenderPlan: Equatable {
     }
 }
 
+struct AiChatStoredMessageViewIdentity: Hashable {
+    let sessionID: AiChatSessionID?
+    let index: Int
+    let role: String
+    let content: String
+
+    init(sessionID: AiChatSessionID?, index: Int, message: AiChatMessage) {
+        self.sessionID = sessionID
+        self.index = index
+        role = message.role.rawValue
+        content = message.content
+    }
+}
+
 private struct AiChatTranscriptSection: View {
+    let sessionID: AiChatSessionID?
     @Environment(\.locale)
     private var locale
     @Environment(\.timeZone)
@@ -353,6 +256,7 @@ private struct AiChatTranscriptSection: View {
     let messages: [AiChatMessage]
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
     let isProcessing: Bool
     let canRegenerate: Bool
     var statusText: String?
@@ -366,8 +270,16 @@ private struct AiChatTranscriptSection: View {
                     transcriptRow: .message(index: row.id.index),
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                     showsRegenerateAction: canRegenerate && row.id.index == latestAssistantMessageIndex,
                     onRegenerate: onRegenerate,
+                )
+                .id(
+                    AiChatStoredMessageViewIdentity(
+                        sessionID: sessionID,
+                        index: row.id.index,
+                        message: row.message,
+                    ),
                 )
             }
             if let streamingAssistant {
@@ -383,6 +295,7 @@ private struct AiChatTranscriptSection: View {
                     acceptedChunkRevision: streamingAssistant.acceptedChunkRevision,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                 )
             } else if isProcessing {
                 AiChatAssistantCard(
@@ -391,6 +304,7 @@ private struct AiChatTranscriptSection: View {
                     isProcessing: true,
                     searchPresentation: searchPresentation,
                     currentSearchMatch: currentSearchMatch,
+                    renderSession: renderSession,
                 )
             } else if let statusText {
                 requestStatusRow(statusText)
@@ -421,6 +335,7 @@ private struct AiChatMessageRow: View {
     let transcriptRow: AiChatTranscriptRowDiscriminator
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
+    let renderSession: AiChatAssistantMarkdownRenderSession
     let showsRegenerateAction: Bool
     let onRegenerate: () -> Void
     @Environment(\.colorScheme)
@@ -469,25 +384,53 @@ private struct AiChatMessageRow: View {
     }
 
     private func userMessage(timestampLabel: String?) -> some View {
-        HStack(spacing: 8) {
+        let blockID = userMessageBlockID
+        renderSession.registerSelectionProjection(
+            presentationID: blockID,
+            plainText: row.message.content,
+            searchText: row.message.content,
+            transcriptRow: transcriptRow,
+            blockIndex: 0,
+        )
+        return HStack(spacing: 8) {
             Spacer(minLength: 16)
-            Text(highlightedPlainText)
-                .font(VoyagerDS.Typography.body)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    VoyagerDS.Surface.userMessageBubbleBackground(for: colorScheme),
-                    in: RoundedRectangle(cornerRadius: VoyagerDS.Radius.userMessageBubble, style: .continuous),
+            AiChatUserMessageBubble(
+                blockID: blockID,
+                attributedText: highlightedPlainNSAttributedText,
+                rawMessageContent: row.message.content,
+                renderSession: renderSession,
+                transcriptRow: transcriptRow,
+            )
+            .overlay(alignment: .topLeading) {
+                timestampControlOverlay(
+                    timestampLabel: timestampLabel,
+                    placement: .userLeadingGutter,
                 )
-                .overlay(alignment: .topLeading) {
-                    timestampControlOverlay(
-                        timestampLabel: timestampLabel,
-                        placement: .userLeadingGutter,
-                    )
-                }
+            }
         }
         .overlay { matchAnchors(blockIndex: 0) }
+    }
+
+    private var highlightedPlainNSAttributedText: NSAttributedString {
+        AiChatAssistantMarkdownAttributedText.make(
+            text: row.message.content,
+            inlineIntents: [],
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: 0,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: 0),
+            appliesHangulWordPriorityLineBreak: true,
+        )
+    }
+
+    private var userMessageBlockID: AiChatMarkdownDocument.BlockID {
+        switch transcriptRow {
+        case let .message(index):
+            AiChatMarkdownDocument.BlockID(rawValue: "user-message-\(index)")
+        case .streamingAssistant:
+            AiChatMarkdownDocument.BlockID(rawValue: "user-message-streaming")
+        }
     }
 
     private func assistantMessage(timestampLabel: String?) -> some View {
@@ -500,6 +443,7 @@ private struct AiChatMessageRow: View {
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
                 transcriptRow: transcriptRow,
+                renderSession: renderSession,
             )
             .accessibilityElement(children: .contain)
             .accessibilityLabel(AiChatAssistantHeaderPresentation.completedHistorical.accessibilityRoleLabel ?? "")
@@ -691,6 +635,7 @@ private struct AiChatAssistantCard: View {
     let searchPresentation: AiChatTranscriptSearchPresentation
     let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     var transcriptRow: AiChatTranscriptRowDiscriminator = .streamingAssistant
+    let renderSession: AiChatAssistantMarkdownRenderSession
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if bodyPresentation.showsInlineHeader {
@@ -757,6 +702,7 @@ private struct AiChatAssistantCard: View {
                 transcriptRow: transcriptRow,
                 searchPresentation: searchPresentation,
                 currentSearchMatch: currentSearchMatch,
+                renderSession: renderSession,
             )
             .contentTransition(.opacity)
             .animation(

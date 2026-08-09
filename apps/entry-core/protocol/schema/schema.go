@@ -7,36 +7,49 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	MaxWireBytes          = 65_536
-	ProtocolVersion int64 = 1
-)
+const MaxWireBytes = 65_536
 
 type Method string
 
 const (
-	MethodPing    Method = "ping"
-	MethodHealth  Method = "health"
-	MethodVersion Method = "version"
+	MethodPing         Method = "ping"
+	MethodHealth       Method = "health"
+	MethodVersion      Method = "version"
+	MethodEntryList    Method = "entry.list"
+	MethodEntryResolve Method = "entry.resolve"
 )
 
 type ErrorCode string
 
 const (
-	ErrorRequestTooLarge            ErrorCode = "request_too_large"
-	ErrorInvalidRequest             ErrorCode = "invalid_request"
-	ErrorUnsupportedProtocolVersion ErrorCode = "unsupported_protocol_version"
-	ErrorUnknownMethod              ErrorCode = "unknown_method"
-	ErrorInternal                   ErrorCode = "internal_error"
+	ErrorRequestTooLarge   ErrorCode = "request_too_large"
+	ErrorInvalidRequest    ErrorCode = "invalid_request"
+	ErrorUnknownMethod     ErrorCode = "unknown_method"
+	ErrorInvalidPath       ErrorCode = "invalid_path"
+	ErrorMountNotFound     ErrorCode = "mount_not_found"
+	ErrorSourceNotFound    ErrorCode = "source_not_found"
+	ErrorInvalidSelector   ErrorCode = "invalid_selector"
+	ErrorContextMismatch   ErrorCode = "context_mismatch"
+	ErrorScopeTooLarge     ErrorCode = "scope_too_large"
+	ErrorInvalidPageToken  ErrorCode = "invalid_page_token"
+	ErrorPermissionDenied  ErrorCode = "permission_denied"
+	ErrorSourceUnavailable ErrorCode = "source_unavailable"
+	ErrorSourceDeleted     ErrorCode = "source_deleted"
+	ErrorEntryNotFound     ErrorCode = "entry_not_found"
+	ErrorUnsupported       ErrorCode = "unsupported"
+	ErrorConflict          ErrorCode = "conflict"
+	ErrorAdapterFailure    ErrorCode = "adapter_failure"
+	ErrorInternal          ErrorCode = "internal_error"
 )
 
 type EmptyParams struct{}
 
 type Request struct {
-	RequestID       string
-	ProtocolVersion int64
-	Method          Method
-	Params          EmptyParams
+	RequestID          string
+	Method             Method
+	Params             EmptyParams
+	EntryListParams    *EntryListParams
+	EntryResolveParams *EntryResolveParams
 }
 
 type ProtocolError struct {
@@ -44,45 +57,9 @@ type ProtocolError struct {
 	Message string    `json:"message"`
 }
 
-func DecodeRequest(wire []byte) (Request, string, *ProtocolError) {
-	if len(wire) > MaxWireBytes {
-		return Request{}, "", newProtocolError(ErrorRequestTooLarge)
-	}
-
-	root, err := parseJSON(wire)
-	if err != nil || root.kind != jsonObject {
-		return Request{}, "", newProtocolError(ErrorInvalidRequest)
-	}
-	trustworthyID := extractTrustworthyID(root)
-	fields, validEnvelope := objectFields(root, "request_id", "protocol_version", "method", "params")
-	if !validEnvelope || !validRequestID(fields["request_id"]) || fields["method"].kind != jsonString || !validEmptyParams(fields["params"]) {
-		return Request{}, trustworthyID, newProtocolError(ErrorInvalidRequest)
-	}
-
-	version, versionIsInteger := lexicalInteger(fields["protocol_version"])
-	if !versionIsInteger {
-		return Request{}, trustworthyID, newProtocolError(ErrorInvalidRequest)
-	}
-	if version != ProtocolVersion {
-		return Request{}, trustworthyID, newProtocolError(ErrorUnsupportedProtocolVersion)
-	}
-
-	method := Method(fields["method"].text)
-	if !method.valid() {
-		return Request{}, trustworthyID, newProtocolError(ErrorUnknownMethod)
-	}
-
-	return Request{
-		RequestID:       trustworthyID,
-		ProtocolVersion: version,
-		Method:          method,
-		Params:          EmptyParams{},
-	}, trustworthyID, nil
-}
-
 func (method Method) valid() bool {
 	switch method {
-	case MethodPing, MethodHealth, MethodVersion:
+	case MethodPing, MethodHealth, MethodVersion, MethodEntryList, MethodEntryResolve:
 		return true
 	default:
 		return false
@@ -139,10 +116,36 @@ func errorMessage(code ErrorCode) string {
 		return "request is too large"
 	case ErrorInvalidRequest:
 		return "request is invalid"
-	case ErrorUnsupportedProtocolVersion:
-		return "protocol version is unsupported"
 	case ErrorUnknownMethod:
 		return "method is unknown"
+	case ErrorInvalidPath:
+		return "path is invalid"
+	case ErrorMountNotFound:
+		return "mount was not found"
+	case ErrorSourceNotFound:
+		return "source was not found"
+	case ErrorInvalidPageToken:
+		return "page token is invalid"
+	case ErrorInvalidSelector:
+		return "selector is invalid"
+	case ErrorContextMismatch:
+		return "context does not match"
+	case ErrorScopeTooLarge:
+		return "scope is too large"
+	case ErrorPermissionDenied:
+		return "permission was denied"
+	case ErrorSourceUnavailable:
+		return "source is unavailable"
+	case ErrorSourceDeleted:
+		return "source was deleted"
+	case ErrorEntryNotFound:
+		return "entry was not found"
+	case ErrorUnsupported:
+		return "operation is unsupported"
+	case ErrorConflict:
+		return "request conflicts with current state"
+	case ErrorAdapterFailure:
+		return "adapter failed"
 	default:
 		return "internal error"
 	}
@@ -166,78 +169,81 @@ type HealthResult struct {
 func (HealthResult) isResult() {}
 
 type VersionResult struct {
-	AppVersion      string `json:"app_version"`
-	ProtocolVersion int64  `json:"protocol_version"`
+	AppVersion string `json:"app_version"`
 }
 
 func (VersionResult) isResult() {}
 
 type Response struct {
-	RequestID       string
-	ProtocolVersion int64
-	OK              bool
-	Result          Result
-	Error           *ProtocolError
+	RequestID string
+	OK        bool
+	Result    Result
+	Error     *ProtocolError
 }
 
 func NewSuccessResponse(requestID string, result Result) Response {
 	return Response{
-		RequestID:       requestID,
-		ProtocolVersion: ProtocolVersion,
-		OK:              true,
-		Result:          result,
+		RequestID: requestID,
+		OK:        true,
+		Result:    result,
 	}
 }
 
 func NewErrorResponse(requestID string, code ErrorCode) Response {
 	return Response{
-		RequestID:       requestID,
-		ProtocolVersion: ProtocolVersion,
-		Error:           newProtocolError(code),
+		RequestID: requestID,
+		Error:     newProtocolError(code),
 	}
 }
 
+func NewPageSizeTooSmallResponse(requestID string) Response {
+	return Response{RequestID: requestID, Error: &ProtocolError{Code: ErrorInvalidRequest, Message: "page_size_too_small"}}
+}
+
 type successWire struct {
-	RequestID       string `json:"request_id"`
-	ProtocolVersion int64  `json:"protocol_version"`
-	OK              bool   `json:"ok"`
-	Result          Result `json:"result"`
+	RequestID string `json:"request_id"`
+	OK        bool   `json:"ok"`
+	Result    Result `json:"result"`
 }
 
 type errorWire struct {
-	RequestID       string         `json:"request_id"`
-	ProtocolVersion int64          `json:"protocol_version"`
-	OK              bool           `json:"ok"`
-	Error           *ProtocolError `json:"error"`
+	RequestID string         `json:"request_id"`
+	OK        bool           `json:"ok"`
+	Error     *ProtocolError `json:"error"`
 }
 
 func EncodeResponse(response Response) []byte {
+	if !validEchoID(response.RequestID) {
+		return encodeInternalFallback(response.RequestID)
+	}
 	var (
 		encoded []byte
 		err     error
 	)
-	if response.ProtocolVersion != ProtocolVersion || !validEchoID(response.RequestID) {
-		return encodeInternalFallback(response.RequestID)
-	}
 	if response.OK {
+		if response.OK && !successFitsWire(response.RequestID, response.Result) {
+			return encodeInternalFallback(response.RequestID)
+		}
 		if response.RequestID == "" || response.Error != nil || !validResult(response.Result) {
 			return encodeInternalFallback(response.RequestID)
 		}
 		encoded, err = json.Marshal(successWire{
-			RequestID:       response.RequestID,
-			ProtocolVersion: ProtocolVersion,
-			OK:              true,
-			Result:          response.Result,
+			RequestID: response.RequestID,
+			OK:        true,
+			Result:    response.Result,
 		})
 	} else {
 		if response.Result != nil || !validProtocolError(response.Error) {
 			return encodeInternalFallback(response.RequestID)
 		}
+		errorValue := &ProtocolError{Code: response.Error.Code, Message: response.Error.Message}
+		if response.Error.Message != "page_size_too_small" {
+			errorValue = newProtocolError(response.Error.Code)
+		}
 		encoded, err = json.Marshal(errorWire{
-			RequestID:       response.RequestID,
-			ProtocolVersion: ProtocolVersion,
-			OK:              false,
-			Error:           newProtocolError(response.Error.Code),
+			RequestID: response.RequestID,
+			OK:        false,
+			Error:     errorValue,
 		})
 	}
 	if err != nil || len(encoded) > MaxWireBytes {
@@ -257,7 +263,11 @@ func validResult(result Result) bool {
 	case HealthResult:
 		return typed.Status == "healthy" && typed.State == "running"
 	case VersionResult:
-		return typed.AppVersion != "" && utf8.ValidString(typed.AppVersion) && typed.ProtocolVersion == ProtocolVersion
+		return typed.AppVersion != "" && utf8.ValidString(typed.AppVersion)
+	case EntryListResult:
+		return typed.Validate() == nil
+	case EntryResolveResult:
+		return typed.Validate() == nil
 	default:
 		return false
 	}
@@ -267,8 +277,14 @@ func validProtocolError(protocolError *ProtocolError) bool {
 	if protocolError == nil || protocolError.Message == "" || !utf8.ValidString(protocolError.Message) {
 		return false
 	}
+	if protocolError.Code == ErrorInvalidRequest && protocolError.Message == "page_size_too_small" {
+		return true
+	}
+	if protocolError.Message != errorMessage(protocolError.Code) {
+		return false
+	}
 	switch protocolError.Code {
-	case ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnsupportedProtocolVersion, ErrorUnknownMethod, ErrorInternal:
+	case ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInternal, ErrorInvalidPath, ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict, ErrorAdapterFailure:
 		return true
 	default:
 		return false
@@ -280,13 +296,12 @@ func encodeInternalFallback(requestID string) []byte {
 		requestID = ""
 	}
 	encoded, err := json.Marshal(errorWire{
-		RequestID:       requestID,
-		ProtocolVersion: ProtocolVersion,
-		OK:              false,
-		Error:           newProtocolError(ErrorInternal),
+		RequestID: requestID,
+		OK:        false,
+		Error:     newProtocolError(ErrorInternal),
 	})
 	if err != nil || len(encoded) > MaxWireBytes {
-		return []byte(`{"request_id":"","protocol_version":1,"ok":false,"error":{"code":"internal_error","message":"internal error"}}`)
+		return []byte(`{"request_id":"","ok":false,"error":{"code":"internal_error","message":"internal error"}}`)
 	}
 	return encoded
 }
@@ -305,8 +320,7 @@ func DecodeResponse(wire []byte, method Method) (Response, error) {
 	if !ok {
 		return Response{}, ErrInvalidResponse
 	}
-	version, integer := lexicalInteger(baseFields["protocol_version"])
-	if !integer || version != ProtocolVersion || !validResponseID(baseFields["request_id"]) || baseFields["ok"].kind != jsonBool {
+	if !validResponseID(baseFields["request_id"]) || baseFields["ok"].kind != jsonBool {
 		return Response{}, ErrInvalidResponse
 	}
 
@@ -315,7 +329,7 @@ func DecodeResponse(wire []byte, method Method) (Response, error) {
 		if requestID == "" {
 			return Response{}, ErrInvalidResponse
 		}
-		fields, success := objectFields(root, "request_id", "protocol_version", "ok", "result")
+		fields, success := objectFields(root, "request_id", "ok", "result")
 		if !success {
 			return Response{}, ErrInvalidResponse
 		}
@@ -326,7 +340,7 @@ func DecodeResponse(wire []byte, method Method) (Response, error) {
 		return NewSuccessResponse(requestID, result), nil
 	}
 
-	fields, failure := objectFields(root, "request_id", "protocol_version", "ok", "error")
+	fields, failure := objectFields(root, "request_id", "ok", "error")
 	if !failure {
 		return Response{}, ErrInvalidResponse
 	}
@@ -335,10 +349,9 @@ func DecodeResponse(wire []byte, method Method) (Response, error) {
 		return Response{}, ErrInvalidResponse
 	}
 	return Response{
-		RequestID:       requestID,
-		ProtocolVersion: ProtocolVersion,
-		OK:              false,
-		Error:           protocolError,
+		RequestID: requestID,
+		OK:        false,
+		Error:     protocolError,
 	}, nil
 }
 
@@ -350,7 +363,7 @@ func responseBaseFields(root jsonValue) (map[string]jsonValue, bool) {
 	for _, member := range root.members {
 		fields[member.name] = member.value
 	}
-	for _, required := range []string{"request_id", "protocol_version", "ok"} {
+	for _, required := range []string{"request_id", "ok"} {
 		if _, exists := fields[required]; !exists {
 			return nil, false
 		}
@@ -373,15 +386,23 @@ func decodeResult(value jsonValue, method Method) (Result, error) {
 		}
 		return HealthResult{Status: "healthy", State: "running"}, nil
 	case MethodVersion:
-		fields, ok := objectFields(value, "app_version", "protocol_version")
+		fields, ok := objectFields(value, "app_version")
 		if !ok || fields["app_version"].kind != jsonString || fields["app_version"].text == "" {
 			return nil, ErrInvalidResponse
 		}
-		version, integer := lexicalInteger(fields["protocol_version"])
-		if !integer || version != ProtocolVersion {
+		return VersionResult{AppVersion: fields["app_version"].text}, nil
+	case MethodEntryList:
+		result, ok := decodeEntryListResult(value)
+		if !ok {
 			return nil, ErrInvalidResponse
 		}
-		return VersionResult{AppVersion: fields["app_version"].text, ProtocolVersion: version}, nil
+		return result, nil
+	case MethodEntryResolve:
+		result, ok := decodeEntryResolveResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
 	default:
 		return nil, ErrInvalidResponse
 	}

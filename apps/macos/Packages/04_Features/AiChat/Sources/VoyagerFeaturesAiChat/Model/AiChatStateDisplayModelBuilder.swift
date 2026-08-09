@@ -194,7 +194,7 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var thinkingMenuIsDisabled: Bool {
-        resolvedSelectedModel == nil
+        !thinkingMenuItems.contains { $0.isEnabled }
     }
 
     private func thinkingUnavailableMenuItem(reason: String) -> AiChatThinkingMenuItemDisplayModel {
