@@ -180,6 +180,26 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: 빈 child-list key가 있는 projection은 folder expansion을 적용한다.
+    /// - 검증 내용: empty children topology가 incremental row update를 우회하고 full reload의 expansion 동기화를 실행하는지 검증한다.
+    /// - 사전 조건: collapsed folder가 렌더된 뒤 해당 folder의 children이 빈 배열인 expanded projection이 도착한다.
+    /// - 기대 결과: full reload 후 outline의 folder item이 물리적으로 expanded 상태가 된다.
+    func testProjectionWithEmptyChildListKeyAppliesFolderExpansion() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.outlineProjectionRevision = 1
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+
+        coordinator.applyStoreProjection(outlineProjection(revision: 1, roots: [folder]))
+
+        let item = try XCTUnwrap(coordinator.entryItemById[folder.id])
+        XCTAssertTrue(coordinator.tableView.isItemExpanded(item))
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: outline view delegate collapse는 store에 folderCollapseRequested를
     /// 전달한다.
     /// 키보드 left-arrow가 NSOutlineView.collapseItem을 호출하고 delegate callback이 coordinator를 통해 store action으로 전달되는 경로를

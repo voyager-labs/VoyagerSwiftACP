@@ -566,7 +566,7 @@ public final class EntryListCoordinator: NSObject {
         guard !old.isEmpty, !new.isEmpty,
               old.allSatisfy({ if case .entry = $0 { true } else { false } }),
               new.allSatisfy({ if case .entry = $0 { true } else { false } }),
-              !projection.childrenByParent.contains(where: { !$0.value.isEmpty })
+              projection.childrenByParent.isEmpty
         else { return nil }
 
         let oldSet = Set(old)
