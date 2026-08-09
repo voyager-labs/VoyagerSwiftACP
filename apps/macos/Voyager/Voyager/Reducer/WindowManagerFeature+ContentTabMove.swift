@@ -221,47 +221,20 @@ extension WindowManagerFeature {
         authoritativePinnedContentTabs: ContentTabState,
         state: inout State,
     ) -> Effect<Action> {
-        state.windows[id: request.sourceWindowID]?.window = pendingPersistence.postCommit.source
-        state.windows[id: request.targetWindowID]?.window = pendingPersistence.postCommit.target
-        setContentTabMoveParticipant(request, state: &state)
-        state.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
-        state.contentTabMoveTransactions[request.requestID] = .init(request: request)
-        state.contentTabMoveNativeEffectsPlans[request.requestID] = .init(
-            request: request,
-            closesSourceWindow: pendingPersistence.closesSourceWindow,
+        let usesUnavailableTargetFallback = installCorrelatedContentTabMoveCommit(
+            request,
+            pendingPersistence: pendingPersistence,
+            state: &state,
         )
-        state.contentTabMoveActivationAttempts[request.requestID] = .init(request: request)
-        state.refreshContentTabMoveTargets()
-
         let bootstrapLifecycle = invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(state: &state)
-        let sourceSnapshotAction = committedTopNavigationSnapshotAction(
-            for: request.sourceWindowID,
-            commit: commit,
-            authoritativePinnedContentTabs: authoritativePinnedContentTabs,
-            state: state,
-        )
-        let targetSnapshotAction = committedTopNavigationSnapshotAction(
-            for: request.targetWindowID,
-            commit: commit,
-            authoritativePinnedContentTabs: authoritativePinnedContentTabs,
-            state: state,
-        )
         return .concatenate(
             bootstrapLifecycle.cancel,
-            targetSnapshotAction.map {
-                contentTabMoveWindowActionEffect(
-                    request: request,
-                    windowID: request.targetWindowID,
-                    action: $0,
-                )
-            } ?? .none,
-            sourceSnapshotAction.map {
-                contentTabMoveWindowActionEffect(
-                    request: request,
-                    windowID: request.sourceWindowID,
-                    action: $0,
-                )
-            } ?? .none,
+            correlatedContentTabMoveParticipantSnapshotEffects(
+                request,
+                commit: commit,
+                authoritativePinnedContentTabs: authoritativePinnedContentTabs,
+                state: state,
+            ),
             fanOutCommittedTopNavigationSnapshot(
                 commit,
                 authoritativePinnedContentTabs: authoritativePinnedContentTabs,
@@ -271,8 +244,10 @@ extension WindowManagerFeature {
             correlatedContentTabMoveTerminalEffect(request, outcome: .succeeded),
             contentTabMoveLifecycleEffects(
                 request: request,
-                teardownIntents: pendingPersistence.postCommit.teardownIntents,
-                rebindIntents: pendingPersistence.postCommit.rebinds,
+                teardownIntents: usesUnavailableTargetFallback
+                    ? pendingPersistence.postCommit.unavailableTargetFallbackTeardownIntents
+                    : pendingPersistence.postCommit.teardownIntents,
+                rebindIntents: usesUnavailableTargetFallback ? [] : pendingPersistence.postCommit.rebinds,
             ),
             .send(.contentTabMoveLifecycleCompleted(request: request)),
             .send(.contentTabMoveNativeEffectsRequested(request: request)),
@@ -280,6 +255,62 @@ extension WindowManagerFeature {
                 startNextTopNavigationPersistenceIfNeeded(state: &state),
                 bootstrapLifecycle.restart,
             ),
+        )
+    }
+
+    private func installCorrelatedContentTabMoveCommit(
+        _ request: ContentTabMoveRequest,
+        pendingPersistence: ContentTabMoveTransaction.PendingPersistence,
+        state: inout State,
+    ) -> Bool {
+        let fallbackSource = isWindowReady(request.targetWindowID, state: state)
+            ? nil
+            : pendingPersistence.postCommit.unavailableTargetFallbackSource
+        if let fallbackSource {
+            let rollbackOutcome = fileOperationUndoManagerClient.moveScopes(
+                rollbackUndoDescriptors(from: pendingPersistence.undoDescriptors),
+            )
+            if rollbackOutcome != .moved {
+                assertionFailure("Unavailable target Content Tab move undo rollback should succeed")
+            }
+            state.windows[id: request.sourceWindowID]?.window = fallbackSource
+        } else {
+            state.windows[id: request.sourceWindowID]?.window = pendingPersistence.postCommit.source
+            state.windows[id: request.targetWindowID]?.window = pendingPersistence.postCommit.target
+        }
+        setContentTabMoveParticipant(request, state: &state)
+        state.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
+        state.contentTabMoveTransactions[request.requestID] = .init(request: request)
+        if fallbackSource == nil {
+            state.contentTabMoveNativeEffectsPlans[request.requestID] = .init(
+                request: request,
+                closesSourceWindow: pendingPersistence.closesSourceWindow,
+            )
+            state.contentTabMoveActivationAttempts[request.requestID] = .init(request: request)
+        }
+        state.refreshContentTabMoveTargets()
+        return fallbackSource != nil
+    }
+
+    private func correlatedContentTabMoveParticipantSnapshotEffects(
+        _ request: ContentTabMoveRequest,
+        commit: FileManagerTopNavigationCommit,
+        authoritativePinnedContentTabs: ContentTabState,
+        state: State,
+    ) -> Effect<Action> {
+        let snapshotEffect: (State.WindowID) -> Effect<Action> = { windowID in
+            committedTopNavigationSnapshotAction(
+                for: windowID,
+                commit: commit,
+                authoritativePinnedContentTabs: authoritativePinnedContentTabs,
+                state: state,
+            ).map {
+                contentTabMoveWindowActionEffect(request: request, windowID: windowID, action: $0)
+            } ?? .none
+        }
+        return .concatenate(
+            snapshotEffect(request.targetWindowID),
+            snapshotEffect(request.sourceWindowID),
         )
     }
 

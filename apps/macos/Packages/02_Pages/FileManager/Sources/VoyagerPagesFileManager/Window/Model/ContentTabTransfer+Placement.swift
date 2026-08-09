@@ -1,4 +1,24 @@
 extension ContentTabTransfer {
+    static func explicitInsertionIndex(
+        in target: FileManagerWindowState,
+        targetDomain: ContentTabDomain,
+        placement: ContentTabPlacement,
+    ) -> Int? {
+        switch placement {
+        case let .before(anchorID):
+            target.contentTabs.tabs.index(id: anchorID)
+        case let .after(anchorID):
+            target.contentTabs.tabs.index(id: anchorID).map { $0 + 1 }
+        case .empty:
+            switch targetDomain {
+            case .pinned:
+                target.contentTabs.tabs.firstIndex(where: { !$0.isPinned }) ?? target.contentTabs.tabs.endIndex
+            case .unpinned:
+                target.contentTabs.tabs.endIndex
+            }
+        }
+    }
+
     static func durablePinnedPlacement(
         in target: FileManagerWindowState,
         movingTabIDs: [ContentTabID],

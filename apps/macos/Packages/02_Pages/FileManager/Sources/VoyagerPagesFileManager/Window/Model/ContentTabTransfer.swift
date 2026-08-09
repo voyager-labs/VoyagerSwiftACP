@@ -67,6 +67,8 @@ public enum ContentTabTransfer {
     public struct PostCommit: Equatable {
         public let source: FileManagerWindowState
         public let target: FileManagerWindowState
+        public let unavailableTargetFallbackSource: FileManagerWindowState?
+        public let unavailableTargetFallbackTeardownIntents: [TeardownIntent]
         let rebind: RebindIntent
         public let rebinds: [RebindIntent]
         public let teardownIntents: [TeardownIntent]
@@ -108,6 +110,7 @@ public enum ContentTabTransfer {
         let workUnits: [WorkUnit]
         let projectedSource: FileManagerWindowState
         let projectedTarget: FileManagerWindowState
+        let unavailableTargetFallbackSource: FileManagerWindowState?
         let sourceWindowID: UUID
         let targetWindowID: UUID
         let primaryTabID: ContentTabID
@@ -308,6 +311,10 @@ public enum ContentTabTransfer {
         let postCommit = PostCommit(
             source: token.projectedSource,
             target: token.projectedTarget,
+            unavailableTargetFallbackSource: token.unavailableTargetFallbackSource,
+            unavailableTargetFallbackTeardownIntents: token.unavailableTargetFallbackSource == nil
+                ? []
+                : token.targetOutgoingOwner.map { makeTeardownIntents([$0]) } ?? [],
             rebind: primaryRebind,
             rebinds: token.rebindIntents,
             teardownIntents: token.teardownIntents,
@@ -824,6 +831,12 @@ private extension ContentTabTransfer {
             workUnits: context.workUnits,
             projectedSource: projection.source,
             projectedTarget: projection.target,
+            unavailableTargetFallbackSource: unavailableTargetFallbackSource(
+                source: context.source,
+                movedTabIDs: context.projectedWorkUnits.map(\.item.id),
+                shouldRetain: context.workUnits.allSatisfy(\.item.isPinned)
+                    && context.projectedWorkUnits.allSatisfy { !$0.item.isPinned },
+            ),
             sourceWindowID: context.windowIDs.source,
             targetWindowID: context.windowIDs.target,
             primaryTabID: context.primaryTabID,
@@ -1038,26 +1051,6 @@ private extension ContentTabTransfer {
         }
         target.syncContentTabSidebarItems()
         return target
-    }
-
-    static func explicitInsertionIndex(
-        in target: FileManagerWindowState,
-        targetDomain: ContentTabDomain,
-        placement: ContentTabPlacement,
-    ) -> Int? {
-        switch placement {
-        case let .before(anchorID):
-            target.contentTabs.tabs.index(id: anchorID)
-        case let .after(anchorID):
-            target.contentTabs.tabs.index(id: anchorID).map { $0 + 1 }
-        case .empty:
-            switch targetDomain {
-            case .pinned:
-                target.contentTabs.tabs.firstIndex(where: { !$0.isPinned }) ?? target.contentTabs.tabs.endIndex
-            case .unpinned:
-                target.contentTabs.tabs.endIndex
-            }
-        }
     }
 
     static func durablePinnedMutation(

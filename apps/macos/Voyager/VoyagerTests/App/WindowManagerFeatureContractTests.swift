@@ -5789,6 +5789,152 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertTrue(activationWindowIDs.value.isEmpty)
     }
 
+    /// CTM-001-move_content_tab_to_another_window: target close 중 durable Unpin은 source runtime을 보존한다.
+    /// remove-only commit 뒤 target tombstone이 제거되어도 moved tab의 유일한 runtime owner가 사라지지 않아야 한다.
+    /// - 검증 내용: target deferred close, remove-only commit, source unpinned fallback, undo scope 복귀, native effect 억제
+    /// - 사전 조건: 마지막 source pinned tab의 explicit Unpin과 persistence gate, target native close callback
+    /// - 기대 결과: target은 제거되고 moved tab은 source에 unpinned로 남으며 source close와 target activation은 실행되지 않는다.
+    func testContentTabMoveTargetCloseDuringDurableUnpinPreservesRuntimeInSource() async throws {
+        let sourceID = UUID(46956)
+        let targetID = UUID(46957)
+        let movedID = ContentTabID(rawValue: "target-close-during-unpin-moved")
+        let targetUnpinnedID = ContentTabID(rawValue: "target-close-during-unpin-anchor")
+        let targetLoadingOwnerID = UUID(46961)
+        let targetProbeRequestID = UUID(46962)
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46958),
+            requestID: UUID(46959),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .pinned,
+            targetDomain: .unpinned,
+            placement: .before(targetUnpinnedID),
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/target-close-during-unpin/source/moved")],
+        )
+        source.window.contentTabs.tabs[id: movedID]?.isPinned = true
+        let movedRecord = ContentTabPinnedRecord(
+            id: movedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/target-close-during-unpin/source/moved"),
+            title: nil,
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 605),
+        )
+        source.window.contentTabs.pinnedRecords[movedID] = movedRecord
+        source.window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(movedID)])
+        source.window.syncContentTabSidebarItems()
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetUnpinnedID, "/target-close-during-unpin/target/anchor")],
+        )
+        target.window.content.entryViewLayout.entryOperations.windowID = targetID
+        target.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetLoadingOwnerID
+        target.window.tabContentStates[targetUnpinnedID] = target.window.content
+        let writeGate = PinnedRecordMutationGate()
+        let undoBatches = LockIsolated<[[FileOperationUndoScopeMoveDescriptor]]>([])
+        let activationWindowIDs = LockIsolated<[WindowManagerFeature.State.WindowID]>([])
+        let closedWindowIDs = LockIsolated<[WindowManagerFeature.State.WindowID]>([])
+        let targetProbeStarted = expectation(description: "target outgoing loading probe started")
+        let targetProbeCancelled = expectation(description: "target outgoing loading probe cancelled")
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let targetCancelID = EntryOperationsLoadingCancelID.loadItems(
+            windowID: targetID,
+            ownerID: targetLoadingOwnerID,
+        )
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    guard case let .windows(.element(
+                        id: windowID,
+                        action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
+                    )) = action,
+                        windowID == targetID,
+                        probeRequestID == targetProbeRequestID
+                    else { return .none }
+                    return .run { _ in
+                        targetProbeStarted.fulfill()
+                        try await withTaskCancellationHandler {
+                            try await Task.sleep(for: .seconds(60))
+                        } onCancel: {
+                            targetProbeCancelled.fulfill()
+                        }
+                    }
+                    .cancellable(id: targetCancelID)
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 606))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46960)) }
+            $0.fileOperationUndoManagerClient.moveScopes = { descriptors in
+                undoBatches.withValue { $0.append(descriptors) }
+                return .moved
+            }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, mutation in
+                XCTAssertEqual(mutation.recordsToUpsert, [])
+                XCTAssertEqual(mutation.recordIDsToRemove, [movedID.rawValue])
+                XCTAssertNil(mutation.pinnedPlacement)
+                await writeGate.wait()
+                return .init(
+                    store: .init(records: [], topNavigationOrder: .init()),
+                    topNavigation: .init(order: .init(), revision: 73),
+                )
+            }
+            $0.fileManagerWindowClient.activate = { windowID in
+                activationWindowIDs.withValue { $0.append(windowID) }
+                return .discarded
+            }
+            $0.fileManagerWindowClient.close = { windowID in
+                closedWindowIDs.withValue { $0.append(windowID) }
+            }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: remove-only persistence와 target close fallback의 최종 ownership만 검증
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: targetProbeRequestID))),
+        )))
+        await fulfillment(of: [targetProbeStarted], timeout: 1)
+        await store.send(.contentTabMoveRequest(request))
+        await store.receive { action in
+            guard case let .topNavigationPersistenceRequested(receivedRequest) = action,
+                  case .contentTabMove = receivedRequest.operation
+            else { return false }
+            return receivedRequest.sourceWindowID == sourceID
+        }
+        await writeGate.waitUntilWaiting()
+
+        await store.send(.event(.windowClosed(targetID)))
+        XCTAssertNotNil(store.state.windows[id: targetID])
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(targetID))
+
+        await writeGate.open()
+        await fulfillment(of: [targetProbeCancelled], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let sourceWindow = try XCTUnwrap(store.state.windows[id: sourceID]?.window)
+        XCTAssertEqual(sourceWindow.contentTabs.tabs.map(\.id), [movedID])
+        XCTAssertEqual(sourceWindow.contentTabs.tabs[id: movedID]?.isPinned, false)
+        XCTAssertEqual(sourceWindow.contentTabs.activeTabID, movedID)
+        XCTAssertNotNil(sourceWindow.tabContentStates[movedID])
+        XCTAssertNil(store.state.windows[id: targetID])
+        XCTAssertEqual(undoBatches.value.count, 2)
+        XCTAssertTrue(activationWindowIDs.value.isEmpty)
+        XCTAssertTrue(closedWindowIDs.value.isEmpty)
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
+    }
+
     /// CTM-001-move_content_tab_to_another_window: queue 제거 뒤 lifecycle 완료 전에도 target close를 유예한다.
     /// active transaction이 남은 commit-to-lifecycle 구간을 persistence participant로 유지해야 한다.
     /// - 검증 내용: queue 없는 active transaction의 target tombstone 유지와 lifecycle 완료 시 원자적 제거
