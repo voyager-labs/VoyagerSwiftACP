@@ -499,6 +499,10 @@ public struct FileManagerFeature {
         switch action {
         case .applyCommittedTopNavigationSnapshot,
              .applyExternalCommittedTopNavigationOrder,
+             .backgroundAiChat,
+             .backgroundAiChatSnapshotPersisted,
+             .backgroundInspectorAiChat,
+             .backgroundInspectorAiChatSnapshotPersisted,
              .contentTabMoveSucceeded,
              .contentTabMoveRejected:
             true
