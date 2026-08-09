@@ -196,6 +196,7 @@ public struct FileManagerWindowState: Equatable {
     public var sidebarEntryDropOperations: EntryOperationsState
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
+    public var contentTabMoveParticipantRequestID: UUID?
     public var contentTabMoveFailurePresentation: ContentTabMoveFailurePresentation?
     var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
@@ -232,6 +233,7 @@ public struct FileManagerWindowState: Equatable {
         sidebarEntryDropOperations = .init()
         pendingCollectionOpenRequest = nil
         pendingContentTabMove = nil
+        contentTabMoveParticipantRequestID = nil
         contentTabMoveFailurePresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
@@ -628,6 +630,7 @@ public extension FileManagerWindowState {
                 && tabContentStates[tabID].map(isSelectedContentTabCloseBusy) == true
         }
         guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
               pendingSelectedContentTabClose == nil,
               pendingSelectedContentTabPinMutation == nil,
               pendingContentTabClose == nil,
@@ -647,6 +650,7 @@ public extension FileManagerWindowState {
 
     internal var canStartSelectedContentTabPinMutation: Bool {
         guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
               pendingSelectedContentTabPinMutation == nil,
               pendingSelectedContentTabClose == nil,
               pendingContentTabClose == nil,

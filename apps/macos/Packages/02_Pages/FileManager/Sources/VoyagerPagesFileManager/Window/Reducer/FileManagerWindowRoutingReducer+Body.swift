@@ -188,7 +188,8 @@ extension FileManagerWindowRoutingReducer {
                 return .send(.requestContentTabDomainTransition(request))
 
             case .sidebar(.delegate(.openContentTab)):
-                guard state.pendingSelectedContentTabClose == nil,
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs.count < ContentTabConstants.maxTabs
                 else { return .none }
                 return .send(.contentTabs(.open(.homeDefault)))
@@ -331,6 +332,7 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case .contentTabs(.open):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
                     return .none
                 }
@@ -382,7 +384,9 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case let .contentTabs(.requestClose(tabID)):
-                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      !state.contentTabs.pendingPinnedRecordIDs.contains(tabID)
+                else { return .none }
                 guard let tab = state.contentTabs.tabs[id: tabID] else { return .none }
                 if tab.isPinned {
                     return .send(.contentTabs(.close(tabID)))
@@ -390,14 +394,19 @@ extension FileManagerWindowRoutingReducer {
                 return prepareContentTabTeardown(tabID: tabID, state: &state)
 
             case let .contentTabs(.close(tabID)):
-                guard state.contentTabs.tabs[id: tabID] == nil else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.contentTabs.tabs[id: tabID] == nil
+                else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.commitClose(tabID)):
-                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      !state.contentTabs.pendingPinnedRecordIDs.contains(tabID)
+                else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case .contentTabs(.restore):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 if keepPendingContentTabCloseFocused(state: &state) {
                     return .none
                 }

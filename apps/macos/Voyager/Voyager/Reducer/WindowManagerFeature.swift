@@ -372,6 +372,7 @@ struct WindowManagerFeature {
                     return .none
                 }
                 state.contentTabMoveTransactions[request.requestID] = nil
+                clearContentTabMoveParticipant(request, state: &state)
                 return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
 
             case let .contentTabMoveWindowActionRequested(request, windowID, action):

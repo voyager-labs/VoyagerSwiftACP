@@ -53,6 +53,7 @@ extension WindowManagerFeature {
         prepared: PreparedContentTabMove,
         state: inout State,
     ) -> Effect<Action> {
+        setContentTabMoveParticipant(request, state: &state)
         if let durablePinnedMutation = prepared.durablePinnedMutation {
             return enqueueCorrelatedContentTabMovePersistence(
                 request,
@@ -67,6 +68,25 @@ extension WindowManagerFeature {
             closesSourceWindow: prepared.pendingPersistence.closesSourceWindow,
             state: &state,
         )
+    }
+
+    private func setContentTabMoveParticipant(
+        _ request: ContentTabMoveRequest,
+        state: inout State,
+    ) {
+        state.windows[id: request.sourceWindowID]?.window.contentTabMoveParticipantRequestID = request.requestID
+        state.windows[id: request.targetWindowID]?.window.contentTabMoveParticipantRequestID = request.requestID
+    }
+
+    func clearContentTabMoveParticipant(
+        _ request: ContentTabMoveRequest,
+        state: inout State,
+    ) {
+        for windowID in [request.sourceWindowID, request.targetWindowID]
+            where state.windows[id: windowID]?.window.contentTabMoveParticipantRequestID == request.requestID
+        {
+            state.windows[id: windowID]?.window.contentTabMoveParticipantRequestID = nil
+        }
     }
 
     private func enqueueCorrelatedContentTabMovePersistence(
@@ -125,6 +145,7 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         state.windows[id: request.sourceWindowID]?.window = postCommit.source
         state.windows[id: request.targetWindowID]?.window = postCommit.target
+        setContentTabMoveParticipant(request, state: &state)
         state.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
         state.contentTabMoveTransactions[request.requestID] = .init(request: request)
         state.contentTabMoveNativeEffectsPlans[request.requestID] = .init(
@@ -202,6 +223,7 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         state.windows[id: request.sourceWindowID]?.window = pendingPersistence.postCommit.source
         state.windows[id: request.targetWindowID]?.window = pendingPersistence.postCommit.target
+        setContentTabMoveParticipant(request, state: &state)
         state.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
         state.contentTabMoveTransactions[request.requestID] = .init(request: request)
         state.contentTabMoveNativeEffectsPlans[request.requestID] = .init(

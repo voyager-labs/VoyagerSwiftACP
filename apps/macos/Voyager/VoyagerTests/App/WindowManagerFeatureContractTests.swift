@@ -4964,6 +4964,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .contentTab(targetPinnedID),
             .location("location-b"),
         ])
+        target.window.contentTabs.recentlyClosed = .init(
+            page: .aiChat,
+            anchor: .aiChat(sessionID: "durable-pin-target-closed-chat"),
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 511),
+            title: "Target Closed",
+            iconName: "message",
+        )
         target.window.syncContentTabSidebarItems()
         var peer = FileManagerWindowFeature.State.makeInitial(path: "/durable-pin/peer")
         peer.contentTabs.tabs.append(ContentTabItem(
@@ -5025,6 +5033,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         initialState.windows = [source, target, .init(id: peerID, window: peer)]
         let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
             $0.date = .constant(pinnedAt)
+            $0.uuid = .incrementing
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
             $0.fileOperationUndoManagerClient.moveScopes = { _ in .moved }
             $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, locations, mutation in
@@ -5059,8 +5068,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await writeGate.waitUntilWaiting()
 
-        XCTAssertEqual(store.state.windows[id: sourceID]?.window, sourceBefore)
-        XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+        var sourceDuringPersistence = sourceBefore
+        sourceDuringPersistence.contentTabMoveParticipantRequestID = request.requestID
+        var targetDuringPersistence = targetBefore
+        targetDuringPersistence.contentTabMoveParticipantRequestID = request.requestID
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window, sourceDuringPersistence)
+        XCTAssertEqual(store.state.windows[id: targetID]?.window, targetDuringPersistence)
         XCTAssertEqual(store.state.windows[id: peerID]?.window, peerBefore)
         XCTAssertEqual(store.state.topNavigationPersistenceQueue.count, 1)
         XCTAssertEqual(store.state.topNavigationPersistenceQueue.first?.sourceWindowID, sourceID)
@@ -5070,6 +5083,51 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertTrue(store.state.contentTabMoveNativeEffectsPlans.isEmpty)
         XCTAssertEqual(clientCallCount.value, 1)
         XCTAssertTrue(activationCalls.value.isEmpty)
+
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.contentTabs(.pin(targetUnpinnedID))),
+        )))
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs[id: targetUnpinnedID]?.isPinned,
+            false,
+        )
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.contentTabs(.commitClose(targetUnpinnedID))),
+        )))
+        XCTAssertNotNil(store.state.windows[id: targetID]?.window.contentTabs.tabs[id: targetUnpinnedID])
+        let updatedTargetPinnedAnchor = ContentTabPageAnchor.directory(path: "/durable-pin/target/updated")
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.contentTabs(.updateActivePageAnchor(targetPinnedID, updatedTargetPinnedAnchor))),
+        )))
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs[id: targetPinnedID]?.anchor,
+            targetPinnedRecord.anchor,
+        )
+        let targetTabCountDuringPersistence = store.state.windows[id: targetID]?.window.contentTabs.tabs.count
+        let targetRecentlyClosedDuringPersistence = store.state.windows[id: targetID]?.window.contentTabs.recentlyClosed
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.contentTabs(.open(.directory(path: "/durable-pin/target/open-blocked")))),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.contentTabs(.restore)),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.request(.restoreLastClosedContentTab)),
+        )))
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs.count,
+            targetTabCountDuringPersistence,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.recentlyClosed,
+            targetRecentlyClosedDuringPersistence,
+        )
 
         await writeGate.open()
         await store.skipReceivedActions()
@@ -5082,6 +5140,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
         XCTAssertNil(store.state.contentTabMoveNativeEffectsPlans[request.requestID])
         XCTAssertNil(store.state.contentTabMoveActivationAttempts[request.requestID])
+        XCTAssertNil(sourceWindow?.contentTabMoveParticipantRequestID)
+        XCTAssertNil(targetWindow?.contentTabMoveParticipantRequestID)
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
         XCTAssertNotNil(sourceWindow?.contentTabs.tabs[id: sourceRemainderID])
         XCTAssertEqual(targetWindow?.contentTabs.activeTabID, movedID)

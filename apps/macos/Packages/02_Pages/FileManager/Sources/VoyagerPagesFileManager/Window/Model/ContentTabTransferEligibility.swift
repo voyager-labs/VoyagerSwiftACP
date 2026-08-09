@@ -31,6 +31,7 @@ enum ContentTabOwnershipInvariant: Equatable {
 extension FileManagerWindowState {
     var isContentTabMoveBusy: Bool {
         guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
               pendingSelectedContentTabClose == nil,
               pendingSelectedContentTabPinMutation == nil,
               pendingContentTabClose == nil,

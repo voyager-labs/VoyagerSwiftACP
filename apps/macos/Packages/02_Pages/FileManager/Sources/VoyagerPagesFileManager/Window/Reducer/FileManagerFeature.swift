@@ -165,10 +165,13 @@ public struct FileManagerFeature {
                 )
 
             case let .closeContentTabRequested(tabID):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.pendingSelectedContentTabClose == nil
+                else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.delegate(.persistPinnedRecord(request))):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 return forwardPinnedRecordPersistence(
                     request,
                     source: .contentTab,
@@ -176,25 +179,30 @@ public struct FileManagerFeature {
                 )
 
             case let .contentTabs(.pin(tabID, placement)):
-                guard state.pendingSelectedContentTabClose == nil,
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
                 _ = requestTopNavigationPin(tabID: tabID, placement: placement, state: &state)
                 return .none
 
             case let .contentTabs(.unpin(tabID, placement)):
-                guard state.pendingSelectedContentTabClose == nil,
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
                 _ = prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state)
                 return .none
 
             case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 prepareTopNavigationUpdate(tabID: tabID, anchor: anchor, state: &state)
                 return .none
 
             case let .contentTabs(.commitClose(tabID)):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.pendingSelectedContentTabClose == nil
+                else { return .none }
                 guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
                 state.dormantContentTabSlots.removeAll { $0.id == tabID }
                 state.pendingTopNavigationIntents.removeAll { pending in
@@ -215,6 +223,7 @@ public struct FileManagerFeature {
                 )
 
             case let .topNavigationMoveRequested(source, destination):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 return requestTopNavigationMove(
                     source: source,
                     destination: destination,
@@ -358,6 +367,7 @@ public struct FileManagerFeature {
                     .cancellable(id: SelectedContentTabCloseOperationCancelID(operationID: operationID))
 
             case let .contentTabs(contentTabAction):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 if let pending = state.pendingSelectedContentTabPinMutation,
                    let currentTabID = pending.currentTabID,
                    isSelectedContentTabPinMutationPersistenceReplacement(contentTabAction, for: currentTabID)
@@ -453,7 +463,14 @@ public struct FileManagerFeature {
         FileManagerWindowContentTabMoveReducer()
         FileManagerWindowRoutingReducer()
         FileManagerWindowUndoRoutingReducer()
-        FileManagerWindowCommandRoutingReducer()
+        Reduce { state, action in
+            if state.contentTabMoveParticipantRequestID != nil,
+               case .request(.restoreLastClosedContentTab) = action
+            {
+                return .none
+            }
+            return FileManagerWindowCommandRoutingReducer().reduce(into: &state, action: action)
+        }
 
         Reduce { state, action in
             switch action {
