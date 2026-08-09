@@ -67,7 +67,9 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             state.lastCompleteSyncAt = Self.referenceDate
             state.inFlightSyncReason = nil
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
         }
+        await store.skipInFlightEffects()
     }
 
     /// ACC-001-validate_account_session: invalid credential은 session expiry로 라우팅된다.
