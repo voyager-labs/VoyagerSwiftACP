@@ -825,6 +825,12 @@ private extension ContentTabTransfer {
 
     static func makeSuccessToken(_ context: PreflightContext) -> SuccessToken {
         let projection = makeBatchProjection(context)
+        let durablePinnedMutation = durablePinnedMutation(
+            workUnits: context.workUnits,
+            projectedWorkUnits: context.projectedWorkUnits,
+            target: context.target,
+            semantics: context.semantics,
+        )
         return SuccessToken(
             sourceFingerprint: makeFingerprint(context.source, windowID: context.windowIDs.source),
             targetFingerprint: makeFingerprint(context.target, windowID: context.windowIDs.target),
@@ -833,20 +839,20 @@ private extension ContentTabTransfer {
             projectedTarget: projection.target,
             unavailableTargetFallbackSource: unavailableTargetFallbackSource(
                 source: context.source,
-                movedTabIDs: context.projectedWorkUnits.map(\.item.id),
-                shouldRetain: context.workUnits.allSatisfy(\.item.isPinned)
-                    && context.projectedWorkUnits.allSatisfy { !$0.item.isPinned },
+                projectedItems: context.projectedWorkUnits.map {
+                    UnavailableTargetFallbackItem(
+                        item: $0.item,
+                        pinnedRecord: $0.pinnedRecord,
+                        runtimePreservationRecord: $0.runtimePreservationRecord,
+                    )
+                },
+                shouldRetain: durablePinnedMutation != nil,
             ),
             sourceWindowID: context.windowIDs.source,
             targetWindowID: context.windowIDs.target,
             primaryTabID: context.primaryTabID,
             rebindIntents: projection.rebindIntents,
-            durablePinnedMutation: durablePinnedMutation(
-                workUnits: context.workUnits,
-                projectedWorkUnits: context.projectedWorkUnits,
-                target: context.target,
-                semantics: context.semantics,
-            ),
+            durablePinnedMutation: durablePinnedMutation,
             teardownIntents: projection.teardownIntents,
             sourceIsEmpty: projection.source.contentTabs.tabs.isEmpty,
             sourceOutgoingOwner: projection.primaryOwner,

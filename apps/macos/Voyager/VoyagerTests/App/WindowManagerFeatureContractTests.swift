@@ -5672,13 +5672,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// CTM-001-move_content_tab_to_another_window: target close during persistence는 commit까지 제거를 유예한다.
-    /// durable success를 surviving source에 fan-out한 다음 target tombstone을 정확히 한 번 제거해야 한다.
-    /// - 검증 내용: target deferred close, in-flight transaction 유지, commit fan-out 뒤 target 제거와 queue cleanup
+    /// durable success를 surviving source에 fan-out한 다음 source runtime을 보존하고 target을 제거해야 한다.
+    /// - 검증 내용: target deferred close, commit fan-out, source runtime 보존, undo scope 복귀, target 제거
     /// - 사전 조건: explicit Pin request와 persistence gate, target native close callback
     /// - 기대 결과: terminal 전 target 유지, commit 뒤 source pinned tab 보존, target 제거, transaction empty
     func testContentTabMoveTargetCloseDuringDurablePersistencePublishesCommitBeforeRemoval() async throws {
         let sourceID = UUID(46947)
         let targetID = UUID(46948)
+        let sourceLoadingOwnerID = UUID(46963)
+        let sourceComposerOwnerID = UUID(46964)
         let movedID = ContentTabID(rawValue: "target-close-during-persistence-moved")
         let targetPinnedID = ContentTabID(rawValue: "target-close-during-persistence-pinned")
         let request = ContentTabMoveRequest(
@@ -5696,6 +5698,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: sourceID,
             tabs: [(movedID, "/target-close-during-persistence/source/moved")],
         )
+        var movedContent = try XCTUnwrap(source.window.tabContentStates[movedID])
+        movedContent.entryViewLayout.entryOperations.windowID = sourceID
+        movedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = sourceLoadingOwnerID
+        movedContent.composer.cancellationOwnerID = sourceComposerOwnerID
+        source.window.content = movedContent
+        source.window.tabContentStates[movedID] = movedContent
         Self.prepareContentTabMoveRequest(request, in: &source)
         var target = try Self.makeContentTabMoveWindow(
             id: targetID,
@@ -5777,8 +5785,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.skipReceivedActions()
         await store.finish()
 
-        XCTAssertEqual(undoBatches.value.count, 1)
+        XCTAssertEqual(undoBatches.value.count, 2)
         XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedID]?.isPinned, true)
+        let preservedContent = try XCTUnwrap(store.state.windows[id: sourceID]?.window.tabContentStates[movedID])
+        XCTAssertEqual(
+            preservedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID,
+            sourceLoadingOwnerID,
+        )
+        XCTAssertEqual(preservedContent.composer.cancellationOwnerID, sourceComposerOwnerID)
         XCTAssertNil(store.state.windows[id: targetID])
         XCTAssertFalse(store.state.closingWindowIDs.contains(targetID))
         XCTAssertFalse(store.state.deferredClosedWindowIDs.contains(targetID))
