@@ -1,13 +1,13 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
-import { ChatWaitingIndicator } from "./ChatWaitingIndicator"
+import { AiChatWaitingIndicator } from "./AiChatWaitingIndicator"
 
 // AiChatAssistantCard 번역 — header/body/failure 3분기 + 5상태 기기.
 // 원본: apps/macos/.../AiChatConversationSurface.swift (AiChatAssistantCard, AiChatAssistantBodyPresentation).
 // VStack(leading, spacing 12) padding v4; showsInlineHeader(full && content==nil && failure==nil);
 // showsWaiting(processing && failure==nil && content==nil).
 
-export interface ChatAssistantCardProps {
+export interface AiChatAssistantCardProps {
   readonly title: string
   readonly thinkingLabel?: string
   readonly activityStatusLabel?: string
@@ -17,7 +17,7 @@ export interface ChatAssistantCardProps {
   readonly headerPresentation?: "full" | "completedHistorical"
 }
 
-export const ChatAssistantCard: FC<ChatAssistantCardProps> = ({
+export const AiChatAssistantCard: FC<AiChatAssistantCardProps> = ({
   title,
   thinkingLabel,
   activityStatusLabel,
@@ -48,7 +48,7 @@ export const ChatAssistantCard: FC<ChatAssistantCardProps> = ({
       {normalizedContent != null ? (
         <p className="chat-message-content">{normalizedContent}</p>
       ) : showsWaiting ? (
-        <ChatWaitingIndicator />
+        <AiChatWaitingIndicator />
       ) : null}
 
       {failure != null && failure !== "" ? (
@@ -63,4 +63,4 @@ export const ChatAssistantCard: FC<ChatAssistantCardProps> = ({
   )
 }
 
-ChatAssistantCard.displayName = "ChatAssistantCard"
+AiChatAssistantCard.displayName = "AiChatAssistantCard"

@@ -9,7 +9,7 @@ import {
   chatSurfaceStreaming,
 } from "./chat-fixtures"
 
-// 채팅 도메인 스토리 — InspectorPane 헤더 + ChatSurface 본문의 상태 매트릭스.
+// 채팅 도메인 스토리 — InspectorPane 헤더 + AiChatView 본문의 상태 매트릭스.
 // 각 상태는 네이티브 AiChatViewPresentation에 대응한다.
 
 const meta = {

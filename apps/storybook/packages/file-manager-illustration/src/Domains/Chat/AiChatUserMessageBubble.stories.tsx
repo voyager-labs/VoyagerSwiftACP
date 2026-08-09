@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { ChatMessageBubble } from "./ChatMessageBubble"
+import { AiChatUserMessageBubble } from "./AiChatUserMessageBubble"
 
 const meta = {
-  component: ChatMessageBubble,
+  component: AiChatUserMessageBubble,
   tags: ["autodocs"],
   args: {
     children: "Summarize the selected research PDFs and group recurring file organization themes.",
   },
-} satisfies Meta<typeof ChatMessageBubble>
+} satisfies Meta<typeof AiChatUserMessageBubble>
 
 export default meta
 type Story = StoryObj<typeof meta>

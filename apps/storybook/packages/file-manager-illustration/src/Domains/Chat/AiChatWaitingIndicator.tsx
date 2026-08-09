@@ -4,7 +4,7 @@ import type { FC } from "react"
 // AiChatWaitingIndicator 번역 — 0.4s 주기로 "."/".."/"..." 순환, reduce-motion 시 정지.
 // 원본: TimelineView(.periodic(0.4)), 13pt semibold secondary, a11y "Waiting for assistant response".
 
-export const ChatWaitingIndicator: FC = () => {
+export const AiChatWaitingIndicator: FC = () => {
   const reduceMotion =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -27,4 +27,4 @@ export const ChatWaitingIndicator: FC = () => {
   )
 }
 
-ChatWaitingIndicator.displayName = "ChatWaitingIndicator"
+AiChatWaitingIndicator.displayName = "AiChatWaitingIndicator"

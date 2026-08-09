@@ -5,7 +5,7 @@ import type { ChatSessionSection } from "../../model/types"
 // AiChatSessionsView 번역 — 검색 필드, 선택적 에러, empty(로딩/title/detail), sections(rows) hover.
 // 원본: apps/macos/Packages/04_Features/AiChat/Sources/VoyagerFeaturesAiChat/Ui/AiChatSessionsView.swift.
 
-export interface ChatSessionsProps {
+export interface AiChatSessionsViewProps {
   readonly sections: readonly ChatSessionSection[]
   readonly errorMessage?: string
   readonly isLoading?: boolean
@@ -14,7 +14,7 @@ export interface ChatSessionsProps {
   readonly onSessionSelected?: (id: string) => void
 }
 
-export const ChatSessions: FC<ChatSessionsProps> = ({
+export const AiChatSessionsView: FC<AiChatSessionsViewProps> = ({
   sections,
   errorMessage,
   isLoading,
@@ -75,4 +75,4 @@ export const ChatSessions: FC<ChatSessionsProps> = ({
   )
 }
 
-ChatSessions.displayName = "ChatSessions"
+AiChatSessionsView.displayName = "AiChatSessionsView"

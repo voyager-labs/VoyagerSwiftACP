@@ -46,7 +46,7 @@ export type SelectedEntriesCardProps = {
   readonly primaryName: string
 }
 
-export type InspectorChatInputProps = {
+export type AiChatInputBarProps = {
   readonly requestText: string
   readonly onRequestTextChange: (value: string) => void
 }

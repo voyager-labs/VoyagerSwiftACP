@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { ChatAssistantCard } from "./ChatAssistantCard"
+import { AiChatAssistantCard } from "./AiChatAssistantCard"
 
 const meta = {
-  component: ChatAssistantCard,
+  component: AiChatAssistantCard,
   tags: ["autodocs"],
   args: {
     title: "Assistant",
   },
-} satisfies Meta<typeof ChatAssistantCard>
+} satisfies Meta<typeof AiChatAssistantCard>
 
 export default meta
 type Story = StoryObj<typeof meta>

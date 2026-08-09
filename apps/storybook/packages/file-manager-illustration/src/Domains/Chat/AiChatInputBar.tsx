@@ -1,12 +1,9 @@
 import type { ChangeEvent, FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import { IconButton } from "../../UI/Controls/IconButton"
-import type { InspectorChatInputProps } from "../../model/types"
+import type { AiChatInputBarProps } from "../../model/types"
 
-export const InspectorChatInput: FC<InspectorChatInputProps> = ({
-  requestText,
-  onRequestTextChange,
-}) => {
+export const AiChatInputBar: FC<AiChatInputBarProps> = ({ requestText, onRequestTextChange }) => {
   function handleInput(event: ChangeEvent<HTMLTextAreaElement>) {
     onRequestTextChange(event.currentTarget.value)
   }
@@ -25,4 +22,4 @@ export const InspectorChatInput: FC<InspectorChatInputProps> = ({
   )
 }
 
-InspectorChatInput.displayName = "InspectorChatInput"
+AiChatInputBar.displayName = "AiChatInputBar"

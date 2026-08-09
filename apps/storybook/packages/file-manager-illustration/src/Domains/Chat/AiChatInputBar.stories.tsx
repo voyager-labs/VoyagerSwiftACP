@@ -1,14 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { InspectorChatInput } from "./InspectorChatInput"
+import { AiChatInputBar } from "./AiChatInputBar"
 
 const meta = {
-  component: InspectorChatInput,
+  component: AiChatInputBar,
   tags: ["autodocs"],
   args: {
     requestText: "",
     onRequestTextChange: () => {},
   },
-} satisfies Meta<typeof InspectorChatInput>
+} satisfies Meta<typeof AiChatInputBar>
 
 export default meta
 type Story = StoryObj<typeof meta>

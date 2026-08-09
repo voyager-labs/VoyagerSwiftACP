@@ -1,14 +1,14 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import type { ChatMessage, ChatStreamingAssistant } from "../../model/types"
-import { ChatAssistantCard } from "./ChatAssistantCard"
-import { ChatMessageBubble } from "./ChatMessageBubble"
-import { InspectorChatInput } from "./InspectorChatInput"
+import { AiChatAssistantCard } from "./AiChatAssistantCard"
+import { AiChatInputBar } from "./AiChatInputBar"
+import { AiChatUserMessageBubble } from "./AiChatUserMessageBubble"
 
 // AiChatConversationSurface 번역 — 메시지 행 + streaming 카드 + status + composer를 조립.
 // 원본: apps/macos/.../AiChatConversationSurface.swift (AiChatTranscriptSection, AiChatMessageRow).
 
-export interface ChatTranscriptProps {
+export interface AiChatConversationSurfaceProps {
   readonly messages: readonly ChatMessage[]
   readonly streamingAssistant?: ChatStreamingAssistant
   readonly isProcessing?: boolean
@@ -20,7 +20,7 @@ export interface ChatTranscriptProps {
   readonly onRegenerate?: () => void
 }
 
-export const ChatTranscript: FC<ChatTranscriptProps> = ({
+export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
   messages,
   streamingAssistant,
   isProcessing,
@@ -41,7 +41,7 @@ export const ChatTranscript: FC<ChatTranscriptProps> = ({
     <section className="chat-transcript" aria-label="Conversation" aria-live="polite">
       <div className="chat-transcript-scroll">
         {messages.map((message, index) => (
-          <ChatMessageRow
+          <AiChatMessageRow
             key={message.id}
             message={message}
             showsRegenerate={canRegenerate === true && index === lastAssistantIndex}
@@ -51,7 +51,7 @@ export const ChatTranscript: FC<ChatTranscriptProps> = ({
 
         {streamingAssistant != null ? (
           <div className="chat-message-assistant">
-            <ChatAssistantCard
+            <AiChatAssistantCard
               title={streamingAssistant.title}
               thinkingLabel={streamingAssistant.thinkingLabel}
               activityStatusLabel={streamingAssistant.activityStatusLabel}
@@ -62,32 +62,36 @@ export const ChatTranscript: FC<ChatTranscriptProps> = ({
           </div>
         ) : isProcessing === true ? (
           <div className="chat-message-assistant">
-            <ChatAssistantCard title="Assistant" isProcessing={true} />
+            <AiChatAssistantCard title="Assistant" isProcessing={true} />
           </div>
         ) : statusText != null && statusText !== "" ? (
           <p className="chat-status-row">{statusText}</p>
         ) : null}
       </div>
 
-      <InspectorChatInput requestText={requestText} onRequestTextChange={onRequestTextChange} />
+      <AiChatInputBar requestText={requestText} onRequestTextChange={onRequestTextChange} />
     </section>
   )
 }
 
-ChatTranscript.displayName = "ChatTranscript"
+AiChatConversationSurface.displayName = "AiChatConversationSurface"
 
-interface ChatMessageRowProps {
+interface AiChatMessageRowProps {
   readonly message: ChatMessage
   readonly showsRegenerate?: boolean
   readonly onRegenerate?: () => void
 }
 
 // AiChatMessageRow 번역 — user(버블) / assistant(카드+regenerate) / system(tool) 분기.
-const ChatMessageRow: FC<ChatMessageRowProps> = ({ message, showsRegenerate, onRegenerate }) => {
+const AiChatMessageRow: FC<AiChatMessageRowProps> = ({
+  message,
+  showsRegenerate,
+  onRegenerate,
+}) => {
   if (message.role === "user") {
     return (
       <div className="chat-message-user">
-        <ChatMessageBubble>{message.content}</ChatMessageBubble>
+        <AiChatUserMessageBubble>{message.content}</AiChatUserMessageBubble>
       </div>
     )
   }
@@ -95,7 +99,7 @@ const ChatMessageRow: FC<ChatMessageRowProps> = ({ message, showsRegenerate, onR
   if (message.role === "assistant") {
     return (
       <div className="chat-message-assistant">
-        <ChatAssistantCard
+        <AiChatAssistantCard
           title="Assistant"
           content={message.content}
           headerPresentation="completedHistorical"

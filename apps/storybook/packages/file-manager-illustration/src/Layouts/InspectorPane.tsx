@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { ChatSurface } from "../Domains/Chat/ChatSurface"
+import { AiChatView } from "../Domains/Chat/AiChatView"
 import { SFSymbol } from "../Foundations/SFSymbol"
 import type { ChatSurfaceState, Entry } from "../model/types"
 
@@ -20,7 +20,7 @@ export interface InspectorPaneProps {
   readonly onOpenSettings?: () => void
   readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
-  // 제공 시 inspector 본문이 ChatSurface(네이티브 AiChatView 번역)가 된다. 생략 시 기본 composer 본문.
+  // 제공 시 inspector 본문이 AiChatView가 된다. 생략 시 기본 composer 본문.
   readonly chatSurface?: ChatSurfaceState
 }
 
@@ -92,7 +92,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
       </header>
 
       {chatSurface != null ? (
-        <ChatSurface
+        <AiChatView
           state={chatSurface}
           requestText={requestText}
           onRequestTextChange={onRequestTextChange}
