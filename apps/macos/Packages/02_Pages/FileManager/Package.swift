@@ -12,7 +12,6 @@ let kPackage = Package(
     ],
     dependencies: [
         // Local packages
-        .package(path: "../../04_Features/AccountAccess"),
         .package(path: "../../04_Features/AiChat"),
         .package(path: "../../04_Features/Composer"),
         .package(path: "../../04_Features/ContentPageNavigation"),
@@ -39,7 +38,6 @@ let kPackage = Package(
         .target(
             name: "VoyagerPagesFileManager",
             dependencies: [
-                .product(name: "VoyagerFeaturesAccountAccess", package: "AccountAccess"),
                 .product(name: "VoyagerFeaturesAiChat", package: "AiChat"),
                 .product(name: "VoyagerFeaturesComposer", package: "Composer"),
                 .product(name: "VoyagerFeaturesContentPageNavigation", package: "ContentPageNavigation"),

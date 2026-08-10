@@ -25,8 +25,8 @@ final class RelativeDateCompilerTests: XCTestCase {
 
         let plan = try compiler.compilePlan(conditions: [condition])
 
-        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate >= $time.today(-3)"))
-        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate < $time.today(-2)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSCreationDate >= $time.today(-3)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSCreationDate < $time.today(-2)"))
         XCTAssertEqual(plan.pushdownConditions, [condition])
     }
 
@@ -56,14 +56,7 @@ private extension RelativeDateCompilerTests {
     }
 
     func loadRegistry<T: Decodable>(fileName: String) throws -> T {
-        let rootURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fileURL = rootURL.appendingPathComponent("shared").appendingPathComponent(fileName)
-        let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(T.self, from: data)
+        try RepositorySharedFixture.decode(fileName: fileName, sourceFilePath: #filePath)
     }
 
     func makeTodayCompiler() throws -> SpotlightQueryCompiler {

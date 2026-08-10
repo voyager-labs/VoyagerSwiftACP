@@ -10,6 +10,67 @@ import XCTest
 
 @MainActor
 final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
+    func testAttachmentPickerCompletionKeepsOriginSessionAcrossWindowRouting() async throws {
+        let windowID = makeUUID("19191919-2222-3333-4444-000000000635")
+        let sessionA = AiChatSessionID(rawValue: makeUUID("20202020-2222-3333-4444-000000000635"))
+        let sessionB = AiChatSessionID(rawValue: makeUUID("21212121-2222-3333-4444-000000000635"))
+        let pickerStream = AsyncStream<[URL]>.makeStream()
+        let selectedURL = URL(fileURLWithPath: "/tmp/A-window-picker.txt")
+        var windowState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        windowState.inspector.aiChat = AiChatFeature.State(
+            sessionID: sessionA,
+            sessionStatus: .active,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [WindowSessionState(id: windowID, window: windowState)]
+        initialState.focusedWindowID = windowID
+        let setupB = AiChatSetupState(
+            restoreSessionID: nil,
+            sessionID: sessionB,
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "B draft",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.attachmentPickerClient.pickAttachments = {
+                await pickerStream.stream.first(where: { _ in true }) ?? []
+            }
+        }
+        // store.exhaustivity = .off: host origin propagation과 B attachment 불변성만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.requestAttachmentPicker(sessionA))),
+        )))
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.inspector(.aiChat(.setup(setupB)))),
+        )))
+        pickerStream.continuation.yield([selectedURL])
+        pickerStream.continuation.finish()
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: receivedWindowID,
+                action: .window(.inspector(.aiChat(.attachmentPickerSelection(originSessionID, urls)))),
+            )) = action
+            else { return false }
+            return receivedWindowID == windowID && originSessionID == sessionA && urls == [selectedURL]
+        }
+
+        let aiChat = try XCTUnwrap(store.state.windows[id: windowID]?.window.inspector.aiChat)
+        XCTAssertEqual(aiChat.sessionID, sessionB)
+        XCTAssertEqual(aiChat.draftText, "B draft")
+        XCTAssertTrue(aiChat.addedAttachments.isEmpty)
+    }
+
     func testAiChatDroppedAttachmentClearSelectionDelegateClearsContentSelection() async throws {
         let selectedEntry = makeEntry(name: "Dropped.md", fullPath: "/Users/test/Documents/Dropped.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
@@ -76,6 +137,14 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
                 expectedFolderStructureKey: .currentFolderOnly,
             ]
         }
+    }
+
+    private func makeUUID(_ rawValue: String) -> UUID {
+        guard let value = UUID(uuidString: rawValue) else {
+            XCTFail("Invalid UUID fixture: \(rawValue)")
+            return UUID()
+        }
+        return value
     }
 
     private func makeEntry(name: String, fullPath: String) -> EntryModel {

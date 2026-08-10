@@ -274,6 +274,7 @@ func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
     switch event {
     case let .started(context),
          let .delta(context, _),
+         let .status(context, _),
          let .failed(context, _):
         context.requestID
 
@@ -286,6 +287,7 @@ func aiChatEventRunID(_ event: AiChatEvent) -> AiChatRunID? {
     switch event {
     case let .started(context),
          let .delta(context, _),
+         let .status(context, _),
          let .failed(context, _):
         context.runID
 

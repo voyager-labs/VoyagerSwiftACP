@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccountAccess
 
 @Reducer
 public struct SettingsFeature {
@@ -25,10 +24,6 @@ public struct SettingsFeature {
         }
 
         Reduce { state, action in
-            // ponytail: launch 해당만 수행. AppRoot가
-            //   .bootstrapLocalPreferences (General/Appearance load)
-            //   .appLifecycleAccessSnapshotReady (accessStatus/Account snapshot)
-            // 로 1회씩 전달한다. onAppear는 UI lifecycle 전용.
             if case .bootstrapLocalPreferences = action {
                 return .merge(
                     .send(.general(.loadSettings)),
@@ -36,24 +31,18 @@ public struct SettingsFeature {
                 )
             }
 
-            if case let .appLifecycleAccessSnapshotReady(snapshot) = action {
-                state.accessStatus = snapshot.status
-                state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
-                return .none
-            }
-
             if case let .accountAccessPresentationUpdated(presentation) = action {
-                state.accessStatus = presentation.accessStatus ?? .none
                 state.accountSettings.presentation = presentation
                 return .none
             }
 
             if case .onAppear = action {
+                state.selectedSection = state.selectedSection == .account ? .general : state.selectedSection
                 return .none
             }
 
             if case let .selectSection(section) = action {
-                state.selectedSection = section
+                state.selectedSection = section == .account ? .general : section
                 return .none
             }
 
@@ -68,11 +57,6 @@ public struct SettingsFeature {
 
             if case .resetSectionForFreshOpen = action {
                 state.selectedSection = .general
-                return .none
-            }
-
-            if case let .accessStatusLoaded(status) = action {
-                state.accessStatus = status
                 return .none
             }
 

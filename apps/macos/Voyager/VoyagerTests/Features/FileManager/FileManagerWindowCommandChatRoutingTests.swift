@@ -164,6 +164,81 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - VOY-637-transcript_search_command
+
+    /// VOY-637-transcript_search_command: production command composition이 focused New Chat의 transcript search를 연다.
+    /// Settings commands root와 FileManager NSHosting root가 분리되어도 reducer command route로 local search를 전달한다.
+    /// - 검증 내용: AppRoot의 menu command부터 focused window의 AiChat transcriptSearch state까지 실제 reducer chain
+    /// - 사전 조건: focused FileManager inspector가 빈 transcript의 `.chat` mode로 표시됨
+    /// - 기대 결과: transcript search가 열리고 Collection Filter Composer는 열리지 않음
+    func testFindCommandFromProductionCompositionOpensFocusedChatTranscriptSearch() async {
+        let focusedUUID = makeUUID("00000000-0000-0000-0000-000000000637")
+        var window = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        window.inspector.inspectorVisible = true
+        window.inspector.inspectorPaneExists = true
+        window.inspector.activeMode = .chat
+        window.inspector.aiChat.mode = .chat
+
+        var initialState = AppRootFeature.State()
+        initialState.windowManager.windows = [
+            WindowSessionState(id: focusedUUID, window: window),
+        ]
+        initialState.windowManager.focusedWindowID = focusedUUID
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: production command chain의 중간 delegate action보다 최종 focused child state를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.menuCommands(.view(.edit(.find))))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: focusedUUID]?.window.inspector.aiChat.transcriptSearch.isPresented,
+            true,
+        )
+        XCTAssertFalse(MenuCommandsState(state: store.state).isComposerPresented)
+        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: focused FileManager window가 없으면 Find command는 no-op이다.
+    /// App command가 background window를 임의로 변경하지 않는 focused-window 경계를 검증한다.
+    /// - 검증 내용: `.edit(.find)`가 후속 window command를 방출하지 않는지 확인
+    /// - 사전 조건: WindowManager에 focused FileManager window가 없음
+    /// - 기대 결과: 상태 변경과 후속 action 없이 command가 종료됨
+    func testFindCommandWithoutFocusedWindowDoesNothing() async {
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.edit(.find))
+    }
+
+    /// VOY-637-transcript_search_command: stale focus가 남아 있어도 Find command는 live background window를 변경하지 않는다.
+    /// Focus invariant 위반을 MRU fallback으로 숨기지 않는 command routing 정책을 검증한다.
+    /// - 검증 내용: 존재하지 않는 focused ID에서 `.edit(.find)`가 후속 window command를 방출하지 않는지 확인
+    /// - 사전 조건: live background window 하나와 registry에 없는 focusedWindowID가 있음
+    /// - 기대 결과: live window 상태가 유지되고 후속 action 없이 command가 종료됨
+    func testFindCommandWithStaleFocusedWindowDoesNothing() async {
+        let liveWindowID = makeUUID("00000000-0000-0000-0000-000000000638")
+        let staleWindowID = makeUUID("00000000-0000-0000-0000-000000000639")
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(
+                id: liveWindowID,
+                window: FileManagerFeature.State.makeInitial(path: "/Users/test/Documents"),
+            ),
+        ]
+        initialState.focusedWindowID = staleWindowID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.edit(.find))
+        XCTAssertEqual(Array(store.state.windows.ids), [liveWindowID])
+    }
+
     private func makeWindowManagerStore(
         fixture: FocusedWindowFixture,
         savedSessionCount: LockIsolated<Int>? = nil,

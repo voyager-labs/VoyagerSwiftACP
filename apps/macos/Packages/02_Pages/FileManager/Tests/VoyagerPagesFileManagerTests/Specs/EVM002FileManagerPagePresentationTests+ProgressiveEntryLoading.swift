@@ -322,7 +322,7 @@ extension EVM002FileManagerPagePresentationTests {
     }
 
     /// EVM-002-progressive_entry_loading: host preset은 성공과 부분 실패 progressive QA 축을 제공한다.
-    /// FileManagerHost가 기본/session-lapse preset을 유지한 채 deterministic progressive-entry-loading 시나리오를 선택할 수 있어야 한다.
+    /// FileManagerHost가 기본 및 deterministic progressive-entry-loading 시나리오를 선택할 수 있어야 한다.
     /// - 검증 내용: named preset 목록과 scenario mapping의 progressive loading 축
     /// - 사전 조건: FileManagerHostPreset의 전체 preset 조합
     /// - 기대 결과: success/failure preset이 모두 존재하고 각각 success 및 partial-failure scenario로 해석된다.
@@ -331,15 +331,11 @@ extension EVM002FileManagerPagePresentationTests {
             Set(FileManagerHostPreset.allCases.map(\.rawValue)),
             [
                 "default",
-                "session-lapse-guard",
-                "session-lapse-sign-in-failed",
                 "progressive-entry-loading",
                 "progressive-entry-loading-failure",
             ],
         )
-        XCTAssertEqual(FileManagerHostPreset.default.scenario.sessionLapse, .none)
-        XCTAssertEqual(FileManagerHostPreset.sessionLapseGuard.scenario.sessionLapse, .active)
-        XCTAssertEqual(FileManagerHostPreset.sessionLapseSignInFailed.scenario.sessionLapse, .signInFailed)
+        XCTAssertEqual(FileManagerHostPreset.default.scenario.progressiveEntryLoading, .none)
         XCTAssertEqual(FileManagerHostPreset.progressiveEntryLoading.scenario.progressiveEntryLoading, .success)
         XCTAssertEqual(
             FileManagerHostPreset.progressiveEntryLoadingFailure.scenario.progressiveEntryLoading,

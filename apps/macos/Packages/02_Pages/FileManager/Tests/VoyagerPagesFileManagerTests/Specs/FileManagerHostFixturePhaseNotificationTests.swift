@@ -159,7 +159,11 @@ final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
 
         await store.send(.hierarchy(.folderExpansionRequested(id: projectsID))) {
             $0.hierarchy.setExpandedIDs([projectsID])
-            $0.hierarchy.nodesByID[projectsID] = .init(generation: 1, loadPhase: .loadingCore)
+            $0.hierarchy.nodesByID[projectsID] = .init(
+                expansionIntent: true,
+                generation: 1,
+                loadPhase: .loadingCore,
+            )
         }
         await store.receive(\.delegate.expandRequested)
         await store.finish()

@@ -116,6 +116,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case setSortOrder(VoyagerShared.SortOrder)
         case requestUndo
         case requestRedo
+        case find
         case toggleComposer
         case reopenChat
         case newChat
@@ -138,7 +139,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     public enum Delegate: Sendable {
         case openPathInNewWindow(String)
         case openAISettings
-        case requestAttachmentPicker
+        case requestAttachmentPicker(AiChatSessionID)
         case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
         case pinnedContentTabRuntimeNavigationChanged(
             tabID: ContentTabID,

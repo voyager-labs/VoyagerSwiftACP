@@ -46,20 +46,17 @@ public struct AccountAccessSessionSyncActivationCompletion: Equatable, Sendable 
     public let binding: UUID?
     public let intent: SessionSyncIntent
     public let reason: SyncReason
-    public let mutationGeneration: Int
 
     public init(
         requestGeneration: UInt64,
         binding: UUID?,
         intent: SessionSyncIntent,
         reason: SyncReason,
-        mutationGeneration: Int,
     ) {
         self.requestGeneration = requestGeneration
         self.binding = binding
         self.intent = intent
         self.reason = reason
-        self.mutationGeneration = mutationGeneration
     }
 }
 
@@ -93,13 +90,6 @@ public enum AccountAccessAction: CasePathable, Sendable {
         binding: UUID? = nil,
         result: Result<SessionSyncResult, SessionSyncError>,
     )
-    case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
-    case deviceBindingResponse(
-        generation: Int,
-        snapshot: AccessStatusSnapshot,
-        result: Result<DeviceBindingResponse, DeviceBindingError>,
-    )
-    case refreshAccessTapped
     case appDidBecomeActive
     case revalidatePersistedSession(generation: Int, reason: SyncReason = .foreground)
     case _persistedSessionRevalidated(
@@ -107,47 +97,14 @@ public enum AccountAccessAction: CasePathable, Sendable {
         reason: SyncReason = .foreground,
         result: PersistedSessionRevalidationResult,
     )
-    case openCheckoutTapped
-    case openPricingTapped
-    case openAccountTapped
-    case openAccessHelpTapped
-    case openEligibleDownloadTapped
-    case openBetaCodeHelpTapped
-    case _webURLResult(Result<Void, AccessError>)
     case _refreshDeadlineReached(generation: UInt64)
     case _sessionExpiredDetected
-    case _fetchRetryScheduled(Int)
-    case _cachedSnapshotRestored(
-        generation: UInt64,
-        binding: UUID?,
-        snapshot: AccessStatusSnapshot?,
-        validUntil: Date?,
-    )
-    case hydrateLaunchSnapshot(AccessStatusSnapshot)
-    case hydrateAccessFailure(error: AccessError, sessionExpiresAt: Date?)
     case signOut
     case appWillTerminate
-    case delegate(Delegate)
-
-    @CasePathable
-    public enum Recovery: Equatable, Sendable {
-        case sessionRequired
-        case snapshot(AccessStatusSnapshot)
-        case accessFailure(error: AccessError, sessionExpiresAt: Date?)
-        case deviceBindingFailure(snapshot: AccessStatusSnapshot, error: DeviceBindingError)
-        case updateEligibility(snapshot: AccessStatusSnapshot, failure: UpdateEligibilityFailure)
-    }
 
     public enum PersistedSessionRevalidationResult: Equatable, Sendable {
         case valid(session: AccountSession)
         case missing
         case storageUnavailable
-    }
-
-    @CasePathable
-    public enum Delegate: CasePathable, Sendable {
-        case unlocked(AccessStatusSnapshot)
-        case recoveryRequired(Recovery)
-        case signedOut
     }
 }

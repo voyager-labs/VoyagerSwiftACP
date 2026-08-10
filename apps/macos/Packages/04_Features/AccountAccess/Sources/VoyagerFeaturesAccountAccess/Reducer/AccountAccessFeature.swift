@@ -26,9 +26,6 @@ public struct AccountAccessFeature {
     @Dependency(\.continuousClock)
     var continuousClock
 
-    @Dependency(\.checkoutURLClient)
-    var checkoutURLClient
-
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
 
@@ -37,9 +34,6 @@ public struct AccountAccessFeature {
 
     @Dependency(\.deviceIdentityClient)
     var deviceIdentityClient
-
-    @Dependency(\.releaseIdentityClient)
-    var releaseIdentityClient
 
     enum CancelID: Hashable {
         case signInHandoff(AccountAccessHandoffScope)
@@ -129,15 +123,6 @@ public struct AccountAccessFeature {
             case let ._sessionSyncCompleted(generation, binding, result):
                 return handleSessionSyncCompleted(&state, generation: generation, binding: binding, result: result)
 
-            case .accessStatusResponse:
-                return .none
-
-            case .deviceBindingResponse:
-                return .none
-
-            case .refreshAccessTapped:
-                return handleRefreshAccessTapped(&state)
-
             case .appDidBecomeActive:
                 guard state.hasAccountSession, !state.isSessionExpired else {
                     return .none
@@ -163,65 +148,17 @@ public struct AccountAccessFeature {
                     result: result,
                 )
 
-            case .openCheckoutTapped:
-                return handleOpenCheckout(&state)
-
-            case .openPricingTapped:
-                return handleOpenPricing(&state)
-
-            case .openAccountTapped:
-                return handleOpenAccount(&state)
-
-            case .openAccessHelpTapped:
-                return handleOpenAccessHelp(&state)
-
-            case .openEligibleDownloadTapped:
-                return handleOpenEligibleDownload(&state)
-
-            case .openBetaCodeHelpTapped:
-                return handleOpenBetaCodeHelp(&state)
-
-            case let ._webURLResult(result):
-                return handleWebURLResult(&state, result: result)
-
             case let ._refreshDeadlineReached(generation):
                 return handleRefreshDeadlineReached(&state, generation: generation)
 
             case ._sessionExpiredDetected:
                 return handleSessionExpiredDetected(&state)
 
-            case let ._cachedSnapshotRestored(
-                generation: generation,
-                binding: binding,
-                snapshot: snapshot,
-                validUntil: validUntil,
-            ):
-                return handleCachedSnapshotRestored(
-                    &state,
-                    generation: generation,
-                    binding: binding,
-                    snapshot: snapshot,
-                    validUntil: validUntil,
-                )
-
-            case let .hydrateLaunchSnapshot(snapshot):
-                return handleHydrateLaunchSnapshot(&state, snapshot: snapshot)
-
-            case let .hydrateAccessFailure(error: error, sessionExpiresAt: sessionExpiresAt):
-                state.hydrateAccessFailureState(error: error, sessionExpiresAt: sessionExpiresAt)
-                return .none
-
-            case ._fetchRetryScheduled:
-                return .send(.sessionSyncRequested(intent: .validate, reason: .retry))
-
             case .signOut:
                 return handleSignOut(&state)
 
             case .appWillTerminate:
                 return handleAppWillTerminate(&state)
-
-            case .delegate:
-                return .none
             }
         }
     }
@@ -266,7 +203,6 @@ public struct AccountAccessFeature {
                 .cancel(id: CancelID.handoffCallbackTimeout(scope)),
                 cancelHandoffClaimAndExchange(scope: scope),
                 clearStoredHandoff(expectedState: expectedState, owner: scope),
-                .send(.delegate(.recoveryRequired(.sessionRequired))),
             )
         }
 
@@ -458,31 +394,6 @@ extension AccountAccessFeature {
         return session.refreshToken?.isEmpty == false ? .refresh : nil
     }
 
-    /// launch snapshot은 이미 완료된 sync 결과이므로 bootstrap에서 원격 재조회를 시작하지 않는다.
-    private func handleHydrateLaunchSnapshot(
-        _ state: inout State,
-        snapshot: AccessStatusSnapshot,
-    ) -> Effect<Action> {
-        state.hydrateLaunchSnapshotState(snapshot)
-
-        if snapshot.hasSession {
-            state.ttlTimerActive = true
-            return .merge(
-                observeAppDidBecomeActive(),
-                .cancel(id: CancelID.sessionSync),
-                scheduleRefreshDeadline(&state),
-            )
-        } else {
-            state.ttlTimerActive = false
-            return .merge(
-                .cancel(id: CancelID.sessionSync),
-                cancelRefreshDeadline(&state),
-                .cancel(id: CancelID.handoffCallbackTimeout(handoffScope(state))),
-                .cancel(id: CancelID.appDidBecomeActiveObserver),
-            )
-        }
-    }
-
     /// 앱이 foreground로 돌아올 때 access_status를 자동 갱신한다.
     private func observeAppDidBecomeActive() -> Effect<Action> {
         .run { [notificationCenterClient] send in
@@ -582,10 +493,9 @@ extension AccountAccessFeature {
         state.lastCompleteSyncAt = nil
         state.handoffTransaction = nil
         return .merge(
-            .run { [sessionClient, snapshotClient] send in
+            .run { [sessionClient, snapshotClient] _ in
                 try? await sessionClient.delete(.explicitSignOut)
                 await snapshotClient.remove(sessionBindingID, Self.gatewayEnvironment, snapshotGeneration)
-                await send(.delegate(.signedOut))
             },
             cancelRefreshDeadline(&state),
             .cancel(id: CancelID.sessionSync),
@@ -632,7 +542,6 @@ extension AccountAccessFeature {
             .cancel(id: CancelID.handoffCallbackTimeout(handoffScope(state))),
             cancelHandoffClaimAndExchange(scope: handoffScope(state)),
             clearStoredHandoff(expectedState: expectedState, owner: handoffScope(state)),
-            .send(.delegate(.recoveryRequired(.sessionRequired))),
         )
     }
 
@@ -692,59 +601,5 @@ extension AccountAccessFeature {
     func resetSessionRetryBudget(_ state: inout State) {
         state.fetchRetryCount = 0
         state.deviceBindingRetryCount = 0
-    }
-
-    private func handleOpenCheckout(_: inout State) -> Effect<Action> {
-        openWebURL(makeURL: checkoutURLClient.checkoutURL)
-    }
-
-    private func handleOpenPricing(_: inout State) -> Effect<Action> {
-        openWebURL(makeURL: checkoutURLClient.pricingURL)
-    }
-
-    private func handleOpenAccount(_: inout State) -> Effect<Action> {
-        openWebURL(makeURL: checkoutURLClient.accountURL)
-    }
-
-    private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
-        openWebURL(makeURL: checkoutURLClient.supportURL)
-    }
-
-    private func handleOpenEligibleDownload(_: inout State) -> Effect<Action> {
-        openWebURL(makeURL: checkoutURLClient.eligibleDownloadURL)
-    }
-
-    private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {
-        openWebURL(makeURL: checkoutURLClient.supportURL)
-    }
-
-    private func openWebURL(makeURL: @escaping @Sendable () throws -> URL) -> Effect<Action> {
-        .run { [checkoutURLClient] send in
-            do {
-                let url = try makeURL()
-                checkoutURLClient.openURL(url)
-                await send(._webURLResult(.success(())))
-            } catch let error as AccessError {
-                await send(._webURLResult(.failure(error)))
-            } catch {
-                await send(._webURLResult(.failure(.notConfigured)))
-            }
-        }
-    }
-
-    private func handleWebURLResult(
-        _ state: inout State,
-        result: Result<Void, AccessError>,
-    ) -> Effect<Action> {
-        switch result {
-        case .success:
-            return .none
-
-        case let .failure(error):
-            state.status = nil
-            state.isComplete = false
-            state.errorMessage = errorMessage(for: error)
-            return .none
-        }
     }
 }

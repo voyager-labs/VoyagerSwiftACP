@@ -17,6 +17,7 @@ cd "$REPO_ROOT"
 HAS_SCHEME_DEV=0
 HAS_CONFIG_DEBUG=0
 HAS_SUFFIX=0
+HAS_TARGET=0
 SCHEME=""
 
 prev=""
@@ -32,6 +33,9 @@ for arg in "$@"; do
   fi
   if [[ "$arg" == VOYAGER_APP_SUFFIX=* ]]; then
     HAS_SUFFIX=1
+  fi
+  if [[ "$arg" == "-target" ]]; then
+    HAS_TARGET=1
   fi
   prev="$arg"
 done
@@ -81,6 +85,9 @@ trap - EXIT
 for ((index = 0; index < ${#CACHE_FLAGS[@]}; index += 2)); do
   flag="${CACHE_FLAGS[index]}"
   value="${CACHE_FLAGS[index + 1]}"
+  if [[ "$HAS_TARGET" -eq 1 && "$flag" == "-derivedDataPath" ]]; then
+    continue
+  fi
   present=0
   for argument in "${XCODE_ARGS[@]}"; do
     if [[ "$argument" == "$flag" || "$argument" == "$flag="* ]]; then
@@ -92,6 +99,26 @@ for ((index = 0; index < ${#CACHE_FLAGS[@]}; index += 2)); do
     XCODE_ARGS+=("$flag" "$value")
   fi
 done
+
+if [[ "$HAS_TARGET" -eq 1 ]]; then
+  TARGET_OUTPUTS=(
+    "SYMROOT=$REPO_ROOT/build/dev/TargetBuild"
+    "OBJROOT=$REPO_ROOT/build/dev/TargetBuild/Intermediates.noindex"
+  )
+  for setting in "${TARGET_OUTPUTS[@]}"; do
+    key="${setting%%=*}"
+    present=0
+    for argument in "${XCODE_ARGS[@]}"; do
+      if [[ "$argument" == "$key="* ]]; then
+        present=1
+        break
+      fi
+    done
+    if [[ "$present" -eq 0 ]]; then
+      XCODE_ARGS+=("$setting")
+    fi
+  done
+fi
 
 ENTRYPOINT="${VOYAGER_XCODE_CACHE_ENTRYPOINT:-${SCHEME:-xcodebuild-wrapper}}"
 exec env VOYAGER_XCODE_CACHE_ENTRYPOINT="$ENTRYPOINT" python3 "$CACHE_RESOLVER" exec -- "$REAL" "${XCODE_ARGS[@]}"

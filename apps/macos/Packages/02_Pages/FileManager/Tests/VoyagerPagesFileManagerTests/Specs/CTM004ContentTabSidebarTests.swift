@@ -60,17 +60,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(sidebarItems[0].title, "Home")
         XCTAssertEqual(sidebarItems[0].iconName, "house")
         XCTAssertEqual(sidebarItems[0].pageType, .home)
-        XCTAssertEqual(sidebarItems[0].isPinned, false)
+        XCTAssertFalse(sidebarItems[0].isPinned)
         XCTAssertEqual(sidebarItems[1].id, directoryID)
         XCTAssertEqual(sidebarItems[1].title, "Test Folder")
         XCTAssertEqual(sidebarItems[1].iconName, "folder")
         XCTAssertEqual(sidebarItems[1].pageType, .directory)
-        XCTAssertEqual(sidebarItems[1].isPinned, true)
+        XCTAssertTrue(sidebarItems[1].isPinned)
         XCTAssertEqual(sidebarItems[2].id, collectionID)
         XCTAssertEqual(sidebarItems[2].title, "My Collection")
         XCTAssertEqual(sidebarItems[2].iconName, "list.bullet")
         XCTAssertEqual(sidebarItems[2].pageType, .collection)
-        XCTAssertEqual(sidebarItems[2].isPinned, false)
+        XCTAssertFalse(sidebarItems[2].isPinned)
     }
 
     /// CTM-004-sidebar_projection_content_tabs: Sidebar projection은 정확히 하나의 tab만 active로 표시함
@@ -529,7 +529,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
-        XCTAssertTrue(store.state.contentTabs.tabs.filter(\.isPinned).isEmpty)
+        XCTAssertFalse(store.state.contentTabs.tabs.contains(where: \.isPinned))
     }
 
     /// CTM-004-sidebar_fixed_locations_visibility: 사용자 토글은 hidden ID를 저장하고 Home projection을 즉시 갱신함
@@ -579,6 +579,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        XCTAssertTrue(store.state.sidebar.shouldShowFixedLocationSection)
+
         await store.send(.sidebar(.view(.setAllFixedLocationVisibility(false)))) {
             $0.sidebar.setAllFixedLocationVisibility(false)
             $0.syncHomeLocationItems()
@@ -586,6 +588,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(Set(persistedValues.value.last ?? []), allIDs)
         XCTAssertEqual(store.state.sidebar.allFixedLocationItems.count, 5)
         XCTAssertTrue(store.state.sidebar.fixedLocationItems.isEmpty)
+        XCTAssertFalse(store.state.sidebar.shouldShowFixedLocationSection)
         XCTAssertEqual(store.state.content.homeLocationItems.count, 5)
 
         await store.send(.sidebar(.view(.setAllFixedLocationVisibility(true)))) {
@@ -593,6 +596,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             $0.syncHomeLocationItems()
         }
         XCTAssertEqual(persistedValues.value.last, [])
+        XCTAssertTrue(store.state.sidebar.shouldShowFixedLocationSection)
         XCTAssertEqual(store.state.sidebar.fixedLocationItems.map(\.title), [
             "iCloud Drive",
             "OneDrive",

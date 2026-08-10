@@ -35,6 +35,22 @@ public enum AiChatMode: Equatable, Sendable {
     case chat
 }
 
+struct AiChatTranscriptHistoryMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
+struct AiChatStreamingAssistantDraftMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
 struct AiChatNewChatPreparationMutationTracker: Equatable {
     var value: UInt64 = 0
 
@@ -215,6 +231,8 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 public struct AiChatState: Equatable, Sendable {
     var cancellationOwnerID = UUID()
     var newChatPreparationMutationTracker = AiChatNewChatPreparationMutationTracker()
+    var transcriptHistoryMutationTracker = AiChatTranscriptHistoryMutationTracker()
+    var streamingAssistantDraftMutationTracker = AiChatStreamingAssistantDraftMutationTracker()
     var inspectorReopenMutationBaseline = AiChatInspectorReopenMutationBaseline()
     public var restoreSessionID: AiChatSessionID?
     public var deferredChatSessionRestoreID: AiChatSessionID?
@@ -231,13 +249,23 @@ public struct AiChatState: Equatable, Sendable {
     public var currentContext: AiChatCurrentContextSnapshot
     public var currentContextFolderStructureModes: AiChatCurrentContextFolderStructureModes
     public var addedAttachments: [AiChatAttachmentDraft]
-    public var transcriptHistory: [AiChatMessage]
+    public var transcriptHistory: [AiChatMessage] {
+        didSet {
+            transcriptHistoryMutationTracker.value &+= 1
+        }
+    }
+
     public var draftText: String
-    public var streamingAssistantDraft: String?
+    public var streamingAssistantDraft: String? {
+        didSet {
+            streamingAssistantDraftMutationTracker.value &+= 1
+        }
+    }
+
+    public var transcriptSearch: AiChatTranscriptSearchState
     public var transcriptAutoScrollVersion: Int
     public var catalogRows: [AiModelCatalogRow]
     public var modelListState: AiChatModelListState
-    public var isModelSelectorPresented: Bool
     public var selectedModelHandle: AiModelHandle?
     public var selectedThinking: AiThinkingSelection?
     public var unavailableSelectedModelHandle: AiModelHandle?
@@ -258,6 +286,11 @@ public struct AiChatState: Equatable, Sendable {
     public var providerConnectionSnapshot: AiChatProviderConnectionSnapshot
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
     public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
+
+    mutating func resetTranscriptSearchIfSessionChanges(to nextSessionID: AiChatSessionID?) {
+        guard sessionID != nextSessionID else { return }
+        transcriptSearch.reset()
+    }
 
     /// 기존 session runtime을 보존한 채 Chat 표시 의미 상태만 준비한다.
     @discardableResult
@@ -354,6 +387,7 @@ public struct AiChatState: Equatable, Sendable {
         restoreOutcome = nil
         restoreFailure = nil
         mode = .sessions
+        resetTranscriptSearchIfSessionChanges(to: sessionID)
         self.sessionID = sessionID
         sessionList.selectedSessionID = sessionID
         guard let restoreSessionID, restoreSessionID != sessionID else { return false }
@@ -380,10 +414,10 @@ public struct AiChatState: Equatable, Sendable {
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         streamingAssistantDraft: String? = nil,
+        transcriptSearch: AiChatTranscriptSearchState = .init(),
         transcriptAutoScrollVersion: Int = 0,
         catalogRows: [AiModelCatalogRow] = [],
         modelListState: AiChatModelListState? = nil,
-        isModelSelectorPresented: Bool = false,
         selectedModelHandle: AiModelHandle? = nil,
         selectedThinking: AiThinkingSelection? = nil,
         unavailableSelectedModelHandle: AiModelHandle? = nil,
@@ -423,11 +457,11 @@ public struct AiChatState: Equatable, Sendable {
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
         self.streamingAssistantDraft = streamingAssistantDraft
+        self.transcriptSearch = transcriptSearch
         self.transcriptAutoScrollVersion = transcriptAutoScrollVersion
         let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
         self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
         self.modelListState = resolvedModelListState
-        self.isModelSelectorPresented = isModelSelectorPresented
         self.selectedModelHandle = selectedModelHandle
         self.selectedThinking = selectedThinking
         self.unavailableSelectedModelHandle = unavailableSelectedModelHandle

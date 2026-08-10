@@ -21,7 +21,7 @@ public struct AiChatFeature {
         case sessionRename
         case newChat(ownerID: UUID)
         case transcriptScrollOffsetPersistence
-        case attachmentDrop
+        case attachmentDrop(AiChatSessionID)
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -63,7 +63,7 @@ public struct AiChatFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
-            if action.invalidatesPendingNewChatPreparation {
+            if action.invalidatesPendingNewChatPreparation(in: state) {
                 state.newChatPreparationMutationTracker.value &+= 1
             }
             switch action {
@@ -121,10 +121,10 @@ public struct AiChatFeature {
 
             case let .applyNewChatSelectionSeedIfCurrent(provenance, seed):
                 guard state.newChatPreparationProvenance == provenance else { return .none }
-                state.selectedModelHandle = seed?.modelHandle
-                state.selectedThinking = seed?.selectedThinking
+                let validatedSeed = AiChatStateSelection.revalidatedNewChatSelectionSeed(seed, state: state)
+                state.selectedModelHandle = validatedSeed?.modelHandle
+                state.selectedThinking = validatedSeed?.selectedThinking
                 state.unavailableSelectedModelHandle = nil
-                normalizeSelectionIfNeeded(&state)
                 return .none
 
             case .showSessionsTapped:
@@ -256,6 +256,31 @@ public struct AiChatFeature {
             case .backToSessionsTapped:
                 return handleBackToSessionsTapped(state: &state)
 
+            case .transcriptSearchOpened:
+                state.transcriptSearch.isPresented = true
+                state.transcriptSearch.focusRevision &+= 1
+                return .none
+
+            case .transcriptSearchClosed:
+                state.transcriptSearch.reset()
+                return .none
+
+            case let .transcriptSearchQueryChanged(query):
+                state.transcriptSearch.updateQuery(query)
+                return .none
+
+            case let .transcriptSearchMatchCountChanged(projection):
+                state.transcriptSearch.updateMatchCount(projection)
+                return .none
+
+            case .transcriptSearchNextTapped:
+                state.transcriptSearch.selectNextMatch()
+                return .none
+
+            case .transcriptSearchPreviousTapped:
+                state.transcriptSearch.selectPreviousMatch()
+                return .none
+
             case let .sessionSearchQueryChanged(query):
                 state.sessionList.updateQuery(query)
                 return .none
@@ -301,24 +326,39 @@ public struct AiChatFeature {
                 return .none
 
             case let .setup(setup):
+                let previousSessionID = state.sessionID
                 state.emptyDraftSessionID = nil
                 state.currentSessionCustomTitle = nil
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
-                guard let restoreSessionID = state.restoreSessionID else { return .none }
+                let attachmentDropCancellation: Effect<Action> = if let previousSessionID,
+                                                                    previousSessionID != state.sessionID
+                {
+                    .cancel(id: CancelID.attachmentDrop(previousSessionID))
+                } else {
+                    .none
+                }
+                guard let restoreSessionID = state.restoreSessionID else { return attachmentDropCancellation }
                 if restoreSessionID == state.sessionID,
                    state.transcriptHistory.isEmpty,
                    state.sessionStatus == .idle
                 {
                     // 새 ContentPane 채팅은 아직 저장된 세션이 없으므로 restore를 타지 않는다.
                     state.restoreSessionID = nil
-                    return .none
+                    return attachmentDropCancellation
                 }
                 state.sessionStatus = .restoring
-                return restoreSession(sessionID: restoreSessionID, state: state)
+                return .merge(
+                    attachmentDropCancellation,
+                    restoreSession(sessionID: restoreSessionID, state: state),
+                )
 
             case let .providerConnectionsUpdated(file):
                 return handleProviderConnectionsUpdated(file: file, state: &state)
+
+            case let .providerConnectionAuthorityUpdated(connectedProviders):
+                state.providerConnectionSnapshot = .known(connectedProviders)
+                return .none
 
             case let .modelListLoading(requestID, provider, credential):
                 guard state.modelListRequestID == requestID,
@@ -351,14 +391,6 @@ public struct AiChatFeature {
                 finalizeModelListBatchIfNeeded(&state)
                 return .none
 
-            case .modelSelectorTapped:
-                state.isModelSelectorPresented = true
-                return .none
-
-            case .modelSelectorDismissed:
-                state.isModelSelectorPresented = false
-                return .none
-
             case let .selectedModelChanged(handle):
                 return handleSelectedModelChanged(handle, state: &state)
 
@@ -384,16 +416,20 @@ public struct AiChatFeature {
                 return .none
 
             case .attachmentPickerTapped:
-                return .send(.delegate(.requestAttachmentPicker))
+                guard let sessionID = state.sessionID else { return .none }
+                return .send(.delegate(.requestAttachmentPicker(sessionID)))
 
-            case let .attachmentPickerSelection(urls):
+            case let .attachmentPickerSelection(originSessionID, urls):
+                guard state.sessionID == originSessionID else { return .none }
                 _ = addAttachmentDrafts(from: urls, skippingCurrentContextDuplicates: true, state: &state)
                 return .none
 
-            case let .attachmentDrop(providers):
-                return loadDroppedAttachmentURLs(from: providers)
+            case let .attachmentDrop(originSessionID, providers):
+                guard state.sessionID == originSessionID else { return .none }
+                return loadDroppedAttachmentURLs(from: providers, originSessionID: originSessionID)
 
-            case let .attachmentDropSelection(urls):
+            case let .attachmentDropSelection(originSessionID, urls):
+                guard state.sessionID == originSessionID else { return .none }
                 let didAddAttachments = addAttachmentDrafts(
                     from: urls,
                     skippingCurrentContextDuplicates: false,
@@ -505,20 +541,23 @@ public struct AiChatFeature {
 }
 
 private extension AiChatAction {
-    var invalidatesPendingNewChatPreparation: Bool {
+    func invalidatesPendingNewChatPreparation(in state: AiChatFeature.State) -> Bool {
         switch self {
-        case .selectedModelChanged,
-             .selectedThinkingChanged,
+        case let .selectedModelChanged(handle):
+            guard let handle else { return true }
+            return state.normalizedSelectionHandle(handle) != nil
+        case .selectedThinkingChanged,
              .currentContextChanged,
              .draftTextChanged,
-             .attachmentPickerSelection,
-             .attachmentDrop,
-             .attachmentDropSelection,
              .removeAddedAttachment,
              .folderStructureModeChanged:
-            true
+            return true
+        case let .attachmentPickerSelection(originSessionID, _),
+             let .attachmentDrop(originSessionID, _),
+             let .attachmentDropSelection(originSessionID, _):
+            return state.sessionID == originSessionID
         default:
-            false
+            return false
         }
     }
 }

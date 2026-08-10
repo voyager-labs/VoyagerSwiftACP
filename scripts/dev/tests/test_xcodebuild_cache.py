@@ -2,7 +2,10 @@ import contextlib
 import fcntl
 import io
 import json
+import select
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -11,6 +14,25 @@ from typing import cast, final, override
 from unittest.mock import patch
 
 from scripts.dev import xcodebuild_cache
+
+
+ROOT = Path(__file__).resolve().parents[3]
+LEASE_SCRIPT = """import sys
+from pathlib import Path
+from scripts.dev.xcodebuild_cache import CachePaths, lock_for_build
+
+paths = CachePaths(
+    Path(sys.argv[1]),
+    Path(sys.argv[2]),
+    sys.argv[3],
+    sys.argv[4],
+)
+handles = lock_for_build(paths)
+print("acquired", flush=True)
+sys.stdin.readline()
+for handle in handles:
+    handle.close()
+"""
 
 
 @final
@@ -62,6 +84,42 @@ class XcodebuildCacheTests(unittest.TestCase):
         metadata = json.loads(metadata_path.read_text())
         metadata["updated_at"] = time.time() - 60 * 24 * 60 * 60
         metadata_path.write_text(json.dumps(metadata))
+
+    def start_lease(
+        self, paths: xcodebuild_cache.CachePaths
+    ) -> subprocess.Popen[str]:
+        return subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                LEASE_SCRIPT,
+                str(paths.root),
+                str(paths.worktree),
+                paths.worktree_key,
+                paths.dependency_key,
+            ],
+            cwd=ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def await_lease(self, process: subprocess.Popen[str]) -> None:
+        assert process.stdout is not None
+        readable, _, _ = select.select([process.stdout], [], [], 5)
+        if not readable:
+            process.terminate()
+            _, stderr = process.communicate(timeout=5)
+            self.fail(f"lease process did not acquire lock: {stderr}")
+        self.assertEqual(process.stdout.readline(), "acquired\n")
+
+    def release_lease(self, process: subprocess.Popen[str]) -> None:
+        assert process.stdin is not None
+        process.stdin.write("release\n")
+        process.stdin.flush()
+        _, stderr = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 0, stderr)
 
     def test_matching_dependency_and_toolchain_share_package_cache(self) -> None:
         first = self.tmpdir / "first"
@@ -254,7 +312,7 @@ class XcodebuildCacheTests(unittest.TestCase):
         self.assertTrue(paths.derived_data.exists())
         self.assertFalse(xcodebuild_cache.is_safe_entry(self.root, outside))
 
-    def test_build_locks_are_shared_and_prune_needs_exclusive_lock(self) -> None:
+    def test_active_build_excludes_worktree_and_shares_package_cache(self) -> None:
         worktree = self.tmpdir / "worktree"
         paths = self.resolve(
             worktree,
@@ -262,26 +320,51 @@ class XcodebuildCacheTests(unittest.TestCase):
                 "workspace", self.make_workspace(worktree, {"pins": []})
             ),
         )
+        process = self.start_lease(paths)
+        self.await_lease(process)
 
-        first = xcodebuild_cache.lock_for_build(paths)
-        second = xcodebuild_cache.lock_for_build(paths)
+        worktree_lock = paths.lock_path.open("a+")
+        package_lock = paths.package_lock_path.open("a+")
         try:
-            self.assertIsNone(
-                xcodebuild_cache.try_exclusive_lock(paths.package_lock_path)
-            )
-            for handle in first:
-                handle.close()
-            self.assertIsNone(
-                xcodebuild_cache.try_exclusive_lock(paths.package_lock_path)
-            )
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(worktree_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            fcntl.flock(package_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
         finally:
-            for handle in second:
-                handle.close()
+            package_lock.close()
+            worktree_lock.close()
+            self.release_lease(process)
 
-        exclusive = xcodebuild_cache.try_exclusive_lock(paths.package_lock_path)
+        exclusive = xcodebuild_cache.try_exclusive_lock(paths.lock_path)
         self.assertIsNotNone(exclusive)
         if exclusive is not None:
             exclusive.close()
+
+    def test_distinct_worktrees_share_package_lock_concurrently(self) -> None:
+        first_worktree = self.tmpdir / "first"
+        second_worktree = self.tmpdir / "second"
+        first_paths = self.resolve(
+            first_worktree,
+            xcodebuild_cache.Selection(
+                "workspace", self.make_workspace(first_worktree, {"pins": []})
+            ),
+        )
+        second_paths = self.resolve(
+            second_worktree,
+            xcodebuild_cache.Selection(
+                "workspace", self.make_workspace(second_worktree, {"pins": []})
+            ),
+        )
+        self.assertEqual(first_paths.package_lock_path, second_paths.package_lock_path)
+        self.assertNotEqual(first_paths.lock_path, second_paths.lock_path)
+
+        first = self.start_lease(first_paths)
+        second = self.start_lease(second_paths)
+        try:
+            self.await_lease(first)
+            self.await_lease(second)
+        finally:
+            self.release_lease(first)
+            self.release_lease(second)
 
     def test_package_cache_report_and_prune_only_when_unreferenced(self) -> None:
         retired = self.tmpdir / "retired"

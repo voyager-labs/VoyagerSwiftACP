@@ -1,94 +1,90 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
 import VoyagerShared
 
 struct OnboardingView: View {
     let store: StoreOf<OnboardingFeature>
-    let accessStore: Store<OnboardingAccessProjection, OnboardingAccessIntent>
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
-            WithViewStore(accessStore, observe: { $0 }, content: { accessViewStore in
-                GeometryReader { proxy in
-                    let isWideLayout = proxy.size.width >= 900
-                    let horizontalPadding: CGFloat = 24
-                    let availableWidth = proxy.size.width - horizontalPadding * 2
-                    let contentWidth = min(availableWidth, 1040)
-                    let columnSpacing: CGFloat = 24
-                    let availableColumnWidth = max(contentWidth - columnSpacing, 0)
-                    let leftColumnWidth = availableColumnWidth * 0.4
-                    let rightColumnWidth = availableColumnWidth * 0.6
-                    let centeredContentWidth = min(max(contentWidth * 0.7, 560), min(contentWidth, 720))
-                    let topInsetPadding: CGFloat = 26
-                    let topBarWidth = contentWidth
+            GeometryReader { proxy in
+                let isWideLayout = proxy.size.width >= 900
+                let horizontalPadding: CGFloat = 24
+                let availableWidth = proxy.size.width - horizontalPadding * 2
+                let contentWidth = min(availableWidth, 1040)
+                let columnSpacing: CGFloat = 24
+                let availableColumnWidth = max(contentWidth - columnSpacing, 0)
+                let leftColumnWidth = availableColumnWidth * 0.4
+                let rightColumnWidth = availableColumnWidth * 0.6
+                let centeredContentWidth = min(max(contentWidth * 0.7, 560), min(contentWidth, 720))
+                let topInsetPadding: CGFloat = 26
+                let topBarWidth = contentWidth
 
+                ZStack {
                     ZStack {
-                        ZStack {
-                            VisualEffectBackgroundView(material: .hudWindow, blendingMode: .behindWindow)
-                            LinearGradient(
-                                colors: [
-                                    accentColor.opacity(0.18),
-                                    Color(nsColor: .windowBackgroundColor).opacity(0.18),
-                                    Color.clear,
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing,
-                            )
+                        VisualEffectBackgroundView(material: .hudWindow, blendingMode: .behindWindow)
+                        LinearGradient(
+                            colors: [
+                                accentColor.opacity(0.18),
+                                Color(nsColor: .windowBackgroundColor).opacity(0.18),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing,
+                        )
+                    }
+
+                    VStack(spacing: 12) {
+                        topInsetBar(viewStore: viewStore)
+                            .frame(width: topBarWidth)
+
+                        if let message = nextDisabledMessage(from: viewStore) {
+                            HStack {
+                                Spacer()
+                                Text(message)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(width: contentWidth)
                         }
 
-                        VStack(spacing: 12) {
-                            topInsetBar(viewStore: viewStore, accessViewStore: accessViewStore)
-                                .frame(width: topBarWidth)
-
-                            if let message = nextDisabledMessage(from: viewStore) {
-                                HStack {
-                                    Spacer()
-                                    Text(message)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                        Group {
+                            if isWideLayout {
+                                HStack(alignment: .center, spacing: columnSpacing) {
+                                    stepSummaryView(viewStore: viewStore, isCentered: false)
+                                        .frame(width: leftColumnWidth, alignment: .leading)
+                                    stepContent(for: viewStore.currentStep, isCentered: false)
+                                        .frame(width: rightColumnWidth, alignment: .leading)
                                 }
-                                .frame(width: contentWidth)
-                            }
-
-                            Group {
-                                if isWideLayout {
-                                    HStack(alignment: .center, spacing: columnSpacing) {
-                                        stepSummaryView(viewStore: viewStore, isCentered: false)
-                                            .frame(width: leftColumnWidth, alignment: .leading)
-                                        stepContent(for: viewStore.currentStep, isCentered: false)
-                                            .frame(width: rightColumnWidth, alignment: .leading)
+                                .frame(width: contentWidth, alignment: .center)
+                                .frame(maxHeight: .infinity, alignment: .center)
+                            } else {
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    VStack(spacing: 16) {
+                                        stepSummaryView(viewStore: viewStore, isCentered: true)
+                                        stepContent(for: viewStore.currentStep, isCentered: true)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                            .multilineTextAlignment(.center)
                                     }
-                                    .frame(width: contentWidth, alignment: .center)
-                                    .frame(maxHeight: .infinity, alignment: .center)
-                                } else {
-                                    VStack(spacing: 0) {
-                                        Spacer(minLength: 0)
-                                        VStack(spacing: 16) {
-                                            stepSummaryView(viewStore: viewStore, isCentered: true)
-                                            stepContent(for: viewStore.currentStep, isCentered: true)
-                                                .frame(maxWidth: .infinity, alignment: .center)
-                                                .multilineTextAlignment(.center)
-                                        }
-                                        .frame(width: centeredContentWidth, alignment: .center)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                        Spacer(minLength: 0)
-                                    }
+                                    .frame(width: centeredContentWidth, alignment: .center)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                                     Spacer(minLength: 0)
                                 }
+                                Spacer(minLength: 0)
                             }
                         }
-                        .padding(.horizontal, horizontalPadding)
-                        .padding(.top, topInsetPadding)
-                        .padding(.bottom, 16)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea(.container, edges: .top)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, topInsetPadding)
+                    .padding(.bottom, 16)
                 }
-                .onAppear {
-                    viewStore.send(.onAppear)
-                }
-            })
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(.container, edges: .top)
+            }
+            .onAppear {
+                viewStore.send(.onAppear)
+            }
         })
     }
 
@@ -100,15 +96,11 @@ struct OnboardingView: View {
 
     private func topInsetBar(
         viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
-        accessViewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
     ) -> some View {
         let sideSlotWidth: CGFloat = 200
 
         return HStack(spacing: 0) {
             Button {
-                if viewStore.currentStep == .accessUnlock, accessViewStore.canCancelSignIn {
-                    accessViewStore.send(.cancelSignIn)
-                }
                 viewStore.send(.backTapped)
             } label: {
                 topBarLabel("Back")
@@ -120,7 +112,7 @@ struct OnboardingView: View {
             stepDots(viewStore: viewStore)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            trailingActionButton(viewStore: viewStore, accessViewStore: accessViewStore)
+            trailingActionButton(viewStore: viewStore)
                 .frame(width: sideSlotWidth, alignment: .trailing)
         }
         .frame(height: 40)
@@ -135,43 +127,8 @@ struct OnboardingView: View {
     @ViewBuilder
     private func trailingActionButton(
         viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
-        accessViewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
     ) -> some View {
         switch viewStore.currentStep {
-        case .accessUnlock:
-            if accessViewStore.isComplete, accessViewStore.hasAccountSession {
-                nextButton(viewStore: viewStore)
-            } else if accessViewStore.canStartLogin {
-                Button {
-                    accessViewStore.send(.login)
-                } label: {
-                    topBarLabel("Sign In (Enter)")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(accentColor)
-                .keyboardShortcut(.return, modifiers: [])
-                .disabled(accessViewStore.isSignInInProgress)
-            } else if accessViewStore.canRetry {
-                Button {
-                    accessViewStore.send(.retry)
-                } label: {
-                    topBarLabel("Retry (Enter)")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(accentColor)
-                .keyboardShortcut(.return, modifiers: [])
-                .disabled(!accessViewStore.canRetry || accessViewStore.isSubmitting)
-            } else if accessViewStore.canRefreshAccess {
-                Button {
-                    accessViewStore.send(.refresh)
-                } label: {
-                    topBarLabel("Refresh (Enter)")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(accentColor)
-                .keyboardShortcut(.return, modifiers: [])
-                .disabled(accessViewStore.isSubmitting || accessViewStore.isSignInInProgress)
-            }
         case .complete:
             Button {
                 viewStore.send(.complete(.startUsingTapped))
@@ -252,8 +209,6 @@ struct OnboardingView: View {
         switch step {
         case .welcome:
             WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
-        case .accessUnlock:
-            UnlockAccessStepView(store: accessStore)
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .aiProviderSetup:

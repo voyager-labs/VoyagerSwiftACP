@@ -80,6 +80,20 @@ public enum AiChatNewChatSelectionSeedResolver {
     public static func resolve(
         windowLast: AiChatNewChatSelectionCandidate?,
         persistedDefault: AiChatPersistedSelectionCandidate?,
+        state: AiChatFeature.State,
+    ) -> AiChatNewChatSelectionSeed? {
+        if let windowLast, let seed = resolve(windowLast, state: state) {
+            return seed
+        }
+        guard let persistedDefault,
+              let candidate = runtimeCandidate(from: persistedDefault)
+        else { return nil }
+        return resolve(candidate, state: state)
+    }
+
+    public static func resolve(
+        windowLast: AiChatNewChatSelectionCandidate?,
+        persistedDefault: AiChatPersistedSelectionCandidate?,
         catalog: [AiProviderModel],
     ) -> AiChatNewChatSelectionSeed? {
         if let windowLast, let seed = resolve(windowLast, catalog: catalog) {
@@ -91,11 +105,41 @@ public enum AiChatNewChatSelectionSeedResolver {
         return resolve(candidate, catalog: catalog)
     }
 
+    static func revalidate(
+        _ seed: AiChatNewChatSelectionSeed?,
+        catalog: [AiProviderModel],
+    ) -> AiChatNewChatSelectionSeed? {
+        guard let seed else { return nil }
+        return resolve(
+            AiChatNewChatSelectionCandidate(
+                modelHandle: seed.modelHandle,
+                selectedThinking: seed.selectedThinking,
+            ),
+            catalog: catalog,
+        )
+    }
+
+    private static func resolve(
+        _ candidate: AiChatNewChatSelectionCandidate,
+        state: AiChatFeature.State,
+    ) -> AiChatNewChatSelectionSeed? {
+        AiChatStateSelection.revalidatedNewChatSelectionSeed(
+            AiChatNewChatSelectionSeed(
+                modelHandle: candidate.modelHandle,
+                selectedThinking: candidate.selectedThinking,
+            ),
+            state: state,
+        )
+    }
+
     private static func resolve(
         _ candidate: AiChatNewChatSelectionCandidate,
         catalog: [AiProviderModel],
     ) -> AiChatNewChatSelectionSeed? {
-        guard let model = catalog.first(where: { $0.id == candidate.modelHandle }) else { return nil }
+        guard let model = AiChatStateSelection.resolvedModel(
+            for: candidate.modelHandle,
+            in: catalog,
+        ) else { return nil }
         return AiChatNewChatSelectionSeed(
             modelHandle: model.id,
             selectedThinking: AiThinkingSelectionPolicy.normalize(

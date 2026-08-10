@@ -6,8 +6,8 @@ func aiChatRequestContextDisplayModel(
     addedAttachments: [AiChatAttachmentDraft],
     lockedRequestContext: AiChatLockedRequestContextSnapshot?,
 ) -> AiChatRequestContextDisplayModel {
-    if let lockedRequestContext {
-        return AiChatRequestContextDisplayModel(
+    let currentResponse = lockedRequestContext.map { lockedRequestContext in
+        AiChatRequestContextSectionDisplayModel(
             source: .locked,
             currentContext: aiChatCurrentContextChipDisplayModel(
                 for: lockedRequestContext.currentContext,
@@ -29,6 +29,7 @@ func aiChatRequestContextDisplayModel(
         source: .draft,
         currentContext: aiChatCurrentContextChipDisplayModel(for: currentContext),
         addedAttachments: addedAttachments.map(aiChatAddedAttachmentChipDisplayModel(for:)),
+        currentResponse: currentResponse,
     )
 }
 

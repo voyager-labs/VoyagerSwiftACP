@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import SwiftUI
-import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
 import VoyagerShared
 
@@ -111,187 +110,12 @@ private enum SmokeMode {
 
         let stepState: [String: Bool] = [
             "welcomeComplete": true,
-            "accessUnlockComplete": true,
             "permissionsComplete": true,
             "completeComplete": true,
         ]
 
         if let data = try? JSONSerialization.data(withJSONObject: stepState) {
             defaults.set(data, forKey: "onboardingStepState")
-        }
-    }
-}
-
-enum OnboardingHostAuthMode: String, CaseIterable {
-    case mock
-    case mockNoEntitlement
-    case mockRestoredAccess
-    case live
-
-    var title: String {
-        switch self {
-        case .mock: "Mock Account"
-        case .mockNoEntitlement: "Mock No Entitlement"
-        case .mockRestoredAccess: "Mock Restored Access"
-        case .live: "Live Account"
-        }
-    }
-
-    var summary: String {
-        switch self {
-        case .mock: "Hardcoded active access, no network calls."
-        case .mockNoEntitlement: "Account auth succeeds, entitlement check returns no access."
-        case .mockRestoredAccess: "Starts at AI Provider with a saved active access snapshot."
-        case .live: "Real Gateway + Web auth flow."
-        }
-    }
-
-    var seedsRestoredAccessProgress: Bool {
-        self == .mockRestoredAccess
-    }
-
-    var mockAccessStatusResponse: AccessStatusResponse {
-        switch self {
-        case .mock, .mockRestoredAccess, .live:
-            AccessStatusResponse(
-                hasAccess: true,
-                status: "active",
-                reason: "active_entitlement",
-                productKey: "core",
-                source: "polar",
-            )
-        case .mockNoEntitlement:
-            AccessStatusResponse(
-                hasAccess: false,
-                status: "none",
-                reason: "no_active_entitlement",
-                productKey: nil,
-                source: "polar",
-            )
-        }
-    }
-
-    var mockDeviceBindingOutcome: SessionSyncDeviceBindingOutcome {
-        switch self {
-        case .mock: .bound
-        case .mockNoEntitlement: .notAttempted
-        case .mockRestoredAccess: .alreadyBound
-        case .live: .notAttempted
-        }
-    }
-
-    var mockConnectedDeviceAvailability: ConnectedDeviceAvailability {
-        switch self {
-        case .mock, .mockRestoredAccess: .available
-        case .mockNoEntitlement: .unavailable
-        case .live: .unknown
-        }
-    }
-}
-
-struct OnboardingHostAuthClients {
-    let accountSessionClient: AccountSessionClient
-    let authNetworkClient: AuthNetworkClient
-    let signInHandoffClient: SignInHandoffClient
-}
-
-enum OnboardingHostMockAuthAssembly {
-    static func make(
-        mode: OnboardingHostAuthMode,
-        sessionHolder: MockSignInState,
-    ) -> OnboardingHostAuthClients {
-        seedRestoredAccessSessionIfNeeded(mode: mode, sessionHolder: sessionHolder)
-
-        let accessStatusResponse = mode.mockAccessStatusResponse
-        let sessionStatus: AccessStatus = accessStatusResponse.hasAccess ? .coreLicenseActive : .none
-        let deviceBindingOutcome = mode.mockDeviceBindingOutcome
-        let connectedDeviceAvailability = mode.mockConnectedDeviceAvailability
-
-        return OnboardingHostAuthClients(
-            accountSessionClient: AccountSessionClient(
-                read: { _ in sessionHolder.session },
-                persist: { session in sessionHolder.setSession(session) },
-                delete: { _ in sessionHolder.setSession(nil) },
-            ),
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                bindDevice: { _ in throw DeviceBindingError.notConfigured },
-                refreshToken: { throw AccessError.notConfigured },
-                syncSession: { intent, _ in
-                    switch intent {
-                    case .validate:
-                        return SessionSyncResult(
-                            sessionStatus: .unchanged,
-                            syncStatus: .complete,
-                            accessStatus: accessStatusResponse,
-                            deviceBindingOutcome: deviceBindingOutcome,
-                            connectedDeviceAvailability: connectedDeviceAvailability,
-                            sessionExpiresAt: sessionHolder.session?.expiresAt,
-                        )
-                    case .refresh:
-                        let renewedSession = AccountSession(
-                            accessToken: "mock-onboarding-refreshed-token",
-                            status: sessionStatus,
-                            expiresAt: Date().addingTimeInterval(3600),
-                        )
-                        sessionHolder.setSession(renewedSession)
-                        return SessionSyncResult(
-                            sessionStatus: .rotated,
-                            syncStatus: .complete,
-                            accessStatus: accessStatusResponse,
-                            deviceBindingOutcome: deviceBindingOutcome,
-                            connectedDeviceAvailability: connectedDeviceAvailability,
-                            sessionExpiresAt: renewedSession.expiresAt,
-                        )
-                    }
-                },
-            ),
-            signInHandoffClient: SignInHandoffClient { _ in
-                .failure
-            },
-        )
-    }
-
-    static func resetRestoredAccessSession(
-        sessionHolder: MockSignInState,
-    ) -> AccountSession {
-        let session = restoredAccessSession()
-        sessionHolder.setSession(session)
-        return session
-    }
-
-    static func restoredAccessSnapshot(
-        session: AccountSession,
-        fetchedAt: Date,
-    ) -> AccessStatusSnapshot? {
-        guard let sessionExpiresAt = session.expiresAt else {
-            return nil
-        }
-
-        return AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: sessionExpiresAt,
-            fetchedAt: fetchedAt,
-            sessionExpiresAt: sessionExpiresAt,
-            deviceBindingVerifiedAt: fetchedAt,
-        )
-    }
-
-    private static func restoredAccessSession() -> AccountSession {
-        AccountSession(
-            accessToken: "mock-onboarding-restored-token",
-            status: .coreLicenseActive,
-            expiresAt: Date().addingTimeInterval(3600),
-        )
-    }
-
-    private static func seedRestoredAccessSessionIfNeeded(
-        mode: OnboardingHostAuthMode,
-        sessionHolder: MockSignInState,
-    ) {
-        if mode == .mockRestoredAccess, sessionHolder.session == nil {
-            _ = resetRestoredAccessSession(sessionHolder: sessionHolder)
         }
     }
 }
@@ -339,7 +163,6 @@ struct OnboardingHostApp: App {
 
 @MainActor
 final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
-    private let sessionHolder = MockSignInState()
     private let debugStore = OnboardingHostDebugStore(initialScenario: .allGranted)
     private var debugPanel: NSPanel?
 
@@ -364,64 +187,21 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // 온보딩 창이 켜져 있으면 온보딩 흐름(AccountAccessFeature)으로 라우팅
         _ = VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
     }
 
     private func makeOnboardingWindowClient() -> OnboardingWindowClient {
-        let authClients = makeAuthClients()
-
-        return OnboardingWindowClient.makeStandaloneHost(
+        OnboardingWindowClient.makeStandaloneHost(
             openMainWindow: { _ in
                 await MainActor.run {
                     NSApp.terminate(nil)
                 }
                 return true
             },
-            accountSessionClient: authClients.accountSessionClient,
-            authNetworkClient: authClients.authNetworkClient,
-            signInHandoffClient: authClients.signInHandoffClient,
             permissionDebugScenario: { [debugStore] in
                 debugStore.currentScenario
             },
         )
-    }
-
-    private func makeAuthClients() -> OnboardingHostAuthClients {
-        let authMode = debugStore.currentAuthMode
-        switch authMode {
-        case .mock, .mockNoEntitlement, .mockRestoredAccess:
-            let mockClients = OnboardingHostMockAuthAssembly.make(
-                mode: authMode,
-                sessionHolder: sessionHolder,
-            )
-            return OnboardingHostAuthClients(
-                accountSessionClient: mockClients.accountSessionClient,
-                authNetworkClient: mockClients.authNetworkClient,
-                signInHandoffClient: makeMockSignInHandoffClient(),
-            )
-        case .live:
-            return OnboardingHostAuthClients(
-                accountSessionClient: .liveValue,
-                authNetworkClient: .liveValue,
-                signInHandoffClient: .liveValue,
-            )
-        }
-    }
-
-    private func makeMockSignInHandoffClient() -> SignInHandoffClient {
-        SignInHandoffClient { [sessionHolder] _ in
-            let mockSession = AccountSession(
-                accessToken: "mock-onboarding-token",
-                status: .coreLicenseActive,
-                expiresAt: Date().addingTimeInterval(3600),
-            )
-            sessionHolder.setSession(mockSession)
-            guard let callbackURL = URL(string: "voyager-onboarding-host://auth/callback") else {
-                return .failure
-            }
-            return .success(callbackURL: callbackURL)
-        }
     }
 
     func showDebugPanel() {
@@ -452,41 +232,6 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
 
     private func resetOnboardingProgress() {
         OnboardingWindowClient.liveValue.resetStoredProgress()
-        if debugStore.currentAuthMode.seedsRestoredAccessProgress {
-            let restoredSession = OnboardingHostMockAuthAssembly.resetRestoredAccessSession(
-                sessionHolder: sessionHolder,
-            )
-            seedRestoredAccessProgress(session: restoredSession)
-        }
-    }
-
-    private func seedRestoredAccessProgress(session: AccountSession) {
-        let defaults = UserDefaults.standard
-        defaults.set(1.2, forKey: "onboardingProgressVersion")
-        defaults.set("aiProviderSetup", forKey: "onboardingCurrentStep")
-
-        let stepState: [String: Any] = [
-            "welcomeComplete": true,
-            "accessUnlockComplete": true,
-            "permissionsComplete": true,
-            "aiProviderSetupComplete": false,
-            "aiProviderSetupSkipped": false,
-            "aiProviderSetupChoice": "none",
-            "aiProviderSetupStatus": "pending",
-            "completeComplete": false,
-        ]
-
-        if let data = try? JSONSerialization.data(withJSONObject: stepState) {
-            defaults.set(data, forKey: "onboardingStepState")
-        }
-
-        let snapshot = OnboardingHostMockAuthAssembly.restoredAccessSnapshot(
-            session: session,
-            fetchedAt: Date(),
-        )
-        if let snapshot, let data = try? JSONEncoder().encode(snapshot) {
-            defaults.set(data, forKey: "onboardingAccessSnapshot")
-        }
     }
 
     private func reloadOnboardingWindow() {
@@ -501,34 +246,23 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
 
 private final class OnboardingHostDebugStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var scenario: OnboardingPermissionDebugScenario
-    @Published private(set) var authMode: OnboardingHostAuthMode
 
     var onSettingsChanged: (@MainActor () -> Void)?
 
     private let lock = NSLock()
     nonisolated(unsafe) private var lockedScenario: OnboardingPermissionDebugScenario
-    nonisolated(unsafe) private var lockedAuthMode: OnboardingHostAuthMode
 
     init(
         initialScenario: OnboardingPermissionDebugScenario,
-        initialAuthMode: OnboardingHostAuthMode = .live,
     ) {
         scenario = initialScenario
-        authMode = initialAuthMode
         lockedScenario = initialScenario
-        lockedAuthMode = initialAuthMode
     }
 
     nonisolated var currentScenario: OnboardingPermissionDebugScenario {
         lock.lock()
         defer { lock.unlock() }
         return lockedScenario
-    }
-
-    nonisolated var currentAuthMode: OnboardingHostAuthMode {
-        lock.lock()
-        defer { lock.unlock() }
-        return lockedAuthMode
     }
 
     @MainActor
@@ -538,16 +272,6 @@ private final class OnboardingHostDebugStore: ObservableObject, @unchecked Senda
         lock.unlock()
 
         self.scenario = scenario
-        onSettingsChanged?()
-    }
-
-    @MainActor
-    func setAuthMode(_ mode: OnboardingHostAuthMode) {
-        lock.lock()
-        lockedAuthMode = mode
-        lock.unlock()
-
-        authMode = mode
         onSettingsChanged?()
     }
 }
@@ -595,46 +319,7 @@ private struct OnboardingHostDebugPanel: View {
                 }
             }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Account Auth Mode")
-                    .font(.headline)
-                Text("Live calls the real Gateway/Web. Mock returns hardcoded active access without network.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(spacing: 8) {
-                ForEach(OnboardingHostAuthMode.allCases, id: \.self) { mode in
-                    Button {
-                        store.setAuthMode(mode)
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Image(systemName: store.authMode == mode ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(store.authMode == mode ? .orange : .secondary)
-                                .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(mode.title)
-                                    .font(.system(.body, weight: .semibold))
-                                Text(mode.summary)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(store.authMode == mode ? Color.orange.opacity(0.16) : Color.secondary.opacity(0.08)),
-                    )
-                }
-            }
-
-            Text("Changing a scenario or auth mode reloads the onboarding window and replays the normal reducer path.")
+            Text("Changing a scenario reloads the onboarding window and replays the normal reducer path.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

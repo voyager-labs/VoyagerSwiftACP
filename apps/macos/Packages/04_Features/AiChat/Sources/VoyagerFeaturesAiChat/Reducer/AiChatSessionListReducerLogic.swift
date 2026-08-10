@@ -40,16 +40,17 @@ extension AiChatFeature {
         state: inout State,
     ) -> AiChatSessionSnapshot {
         let sessionID = AiChatSessionID(rawValue: uuid())
-        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: seed, state: &state)
+        let validatedSeed = AiChatStateSelection.revalidatedNewChatSelectionSeed(seed, state: state)
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: validatedSeed, state: &state)
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
             customTitle: nil,
-            provider: seed?.modelHandle.provider,
-            model: seed?.modelHandle,
-            selectedModelRow: state.resolvedModelRow(for: seed?.modelHandle),
-            selectedThinking: seed?.selectedThinking,
+            provider: validatedSeed?.modelHandle.provider,
+            model: validatedSeed?.modelHandle,
+            selectedModelRow: state.resolvedModelRow(for: validatedSeed?.modelHandle),
+            selectedThinking: validatedSeed?.selectedThinking,
             transcriptHistory: [],
             lastRequestID: nil,
             lastRunID: nil,
@@ -92,7 +93,8 @@ extension AiChatFeature {
     ) -> Effect<Action> {
         movePendingRequestStartToBackgroundIfNeeded(state: &state, targetSessionID: nil)
         let preservedExecutionPhase = state.executionPhase
-        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: seed, state: &state)
+        let validatedSeed = AiChatStateSelection.revalidatedNewChatSelectionSeed(seed, state: state)
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: validatedSeed, state: &state)
         state.emptyDraftSessionID = nil
         state.preparedTransientSessionID = sessionID
         preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
@@ -140,6 +142,7 @@ extension AiChatFeature {
             return .cancel(id: CancelID.restore)
         }
 
+        state.resetTranscriptSearchIfSessionChanges(to: sessionID)
         state.sessionList.cancelRenaming()
         state.sessionList.errorMessage = nil
 
@@ -177,6 +180,7 @@ extension AiChatFeature {
         state: inout State,
     ) {
         state.invalidatePreparedTransientSession()
+        state.resetTranscriptSearchIfSessionChanges(to: sessionID)
         state.sessionID = sessionID
         state.emptyDraftSessionID = sessionID
         state.sessionStatus = .idle
@@ -408,6 +412,7 @@ extension AiChatFeature {
     }
 
     func handleSessionRowTapped(sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
+        state.resetTranscriptSearchIfSessionChanges(to: sessionID)
         state.emptyDraftSessionID = nil
         state.sessionList.cancelRenaming()
         state.sessionList.selectedSessionID = sessionID
@@ -441,6 +446,7 @@ extension AiChatFeature {
         }
         state.pendingEmptyDraftDeletionSessionIDs.insert(emptyDraftSessionID)
         state.emptyDraftSessionID = nil
+        state.resetTranscriptSearchIfSessionChanges(to: nil)
         state.sessionID = nil
         state.restoreSessionID = nil
         state.restoreOutcome = nil
@@ -460,9 +466,9 @@ extension AiChatFeature {
         runID: AiChatRunID?,
         state: inout State,
     ) {
-        let preservesNewerRuntimeSelection = requestID.map {
-            state.completeInspectorReopenPersistenceBaseline(requestID: $0)
-        } ?? false
+        if let requestID {
+            _ = state.completeInspectorReopenPersistenceBaseline(requestID: requestID)
+        }
         if let requestID,
            let runID,
            let backgroundLock = state.backgroundExecutionPhases[requestID]?.lock,
@@ -489,11 +495,7 @@ extension AiChatFeature {
            state.mode == .chat,
            state.sessionID == snapshot.sessionID
         {
-            applyVisibleSavedSnapshot(
-                snapshot,
-                preservesNewerRuntimeSelection: preservesNewerRuntimeSelection,
-                state: &state,
-            )
+            applyVisibleSavedSnapshot(snapshot, state: &state)
         }
         if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
             state.sessionList.selectedSessionID = summary.sessionID
@@ -508,7 +510,6 @@ extension AiChatFeature {
 
     private func applyVisibleSavedSnapshot(
         _ snapshot: AiChatSessionSnapshot,
-        preservesNewerRuntimeSelection: Bool,
         state: inout State,
     ) {
         state.sessionID = snapshot.sessionID
@@ -520,10 +521,6 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lastRequestContext = snapshot.lastRequestContext
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
-        if !preservesNewerRuntimeSelection {
-            state.selectedModelHandle = snapshot.model
-            state.selectedThinking = snapshot.selectedThinking
-        }
         state.transcriptAutoScrollVersion += 1
     }
 

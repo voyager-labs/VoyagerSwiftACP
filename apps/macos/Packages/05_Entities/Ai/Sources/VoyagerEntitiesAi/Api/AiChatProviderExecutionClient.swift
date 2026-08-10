@@ -12,6 +12,7 @@ public enum AiChatProviderExecutionEvent: Equatable, Sendable {
     case requestPrepared(AiChatProviderRequestPayload)
     case started(context: AiChatRequestContextSnapshot)
     case delta(context: AiChatRequestContextSnapshot, text: String)
+    case status(context: AiChatRequestContextSnapshot, signal: AiChatExecutionActivitySignal)
     case final(response: AiChatResponse)
     case failed(context: AiChatRequestContextSnapshot, reason: AiChatExecutionFailure)
 }
