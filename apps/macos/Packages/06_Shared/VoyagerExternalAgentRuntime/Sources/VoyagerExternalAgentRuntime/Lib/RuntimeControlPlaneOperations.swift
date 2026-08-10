@@ -109,7 +109,11 @@ public extension RuntimeControlPlane {
         case .compatible:
             return try await mutateAfterPersistedTransitions { plane in
                 guard plane.sessionUnchanged(original, at: hostReference) else { return .stale }
-                plane.sessions[hostReference] = Session(stored: stored, active: true)
+                plane.sessions[hostReference] = Session(
+                    stored: stored,
+                    active: true,
+                    awaitingResumption: true,
+                )
                 return .restored
             }
         case .stale, .incompatible:

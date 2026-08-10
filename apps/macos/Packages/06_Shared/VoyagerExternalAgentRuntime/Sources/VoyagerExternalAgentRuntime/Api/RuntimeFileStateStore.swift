@@ -121,7 +121,13 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
     }
 
     private func ensureSnapshotPlaceholderExists() throws {
-        guard !FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                throw RuntimeHostError.persistenceFailure
+            }
+            return
+        }
         let didCreateFile = FileManager.default.createFile(
             atPath: fileURL.path,
             contents: Data(),

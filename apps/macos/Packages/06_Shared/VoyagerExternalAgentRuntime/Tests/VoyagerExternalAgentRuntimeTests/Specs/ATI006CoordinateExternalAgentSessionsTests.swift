@@ -707,6 +707,110 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.receivedRestartBindings().first?.capabilitySnapshot == .allSupported)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: restored run resumes provider event consumption.
+    /// 호환 가능한 복원 뒤 provider event와 terminal result 소비를 명시적으로 재개하는지 검증한다.
+    /// - 검증 내용: 복원된 run의 stream 호출, completed projection, artifact result 보존.
+    /// - 사전 조건: running snapshot과 compatible adapter binding이 저장되어 있다.
+    /// - 기대 결과: resume 경계가 provider 소비를 한 번 재개하고 terminal 결과를 반환한다.
+    @Test
+    func `restored run resumes provider event consumption`() async throws {
+        let host = ExternalAgentSessionReference("host-resume-consumption")
+        let run = RuntimeRunReference("run-resume-consumption")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: context,
+            projection: .running,
+            lastSequence: 0,
+            acceptedIdempotencyKeys: [],
+        )
+        let result = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://restored-result.json"],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "restored-completed",
+                kind: .completed,
+            )]],
+            terminalResultOverride: result,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        )))
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resumed = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(resumed == result)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await adapter.counts().stream == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: failed restored-run cleanup remains retryable.
+    /// 복원 소비의 terminal 저장과 interruption 저장이 연속 실패해도 lease를 다시 소비할 수 있는지 검증한다.
+    /// - 검증 내용: 두 번의 persistence failure 뒤 동일 restored run의 provider stream 재개.
+    /// - 사전 조건: compatible running snapshot과 첫 두 save를 실패시키는 state store가 있다.
+    /// - 기대 결과: 첫 resume은 persistenceFailure이고 두 번째 resume은 completed 결과를 반환한다.
+    @Test
+    func `restored run remains retryable after cleanup persistence failures`() async throws {
+        let host = ExternalAgentSessionReference("host-resume-retry")
+        let run = RuntimeRunReference("run-resume-retry")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-retry"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: context,
+            projection: .running,
+            lastSequence: 0,
+        )
+        let completed = makeEvent(
+            host: host,
+            run: run,
+            sequence: 1,
+            idempotencyKey: "retry-completed",
+            kind: .completed,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[completed]],
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            failingSaveNumbers: [1, 2],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await plane.resumeRestoredRun(hostReference: host)
+        }
+        let retried = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(retried.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await adapter.counts().stream == 2)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: only compatible restart binding is restored.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

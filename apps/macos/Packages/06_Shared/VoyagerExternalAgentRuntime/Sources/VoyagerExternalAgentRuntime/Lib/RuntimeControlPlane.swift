@@ -8,14 +8,20 @@ public actor RuntimeControlPlane {
         var hostAcceptedCount: Int
         var hostProcessedCount: Int
         var active: Bool
+        var awaitingResumption: Bool
 
-        init(stored: RuntimeStoredSession, active: Bool = false) {
+        init(
+            stored: RuntimeStoredSession,
+            active: Bool = false,
+            awaitingResumption: Bool = false,
+        ) {
             self.stored = stored
             acceptedCount = stored.acceptedEventCount
             processedCount = stored.processedEventCount
             hostAcceptedCount = stored.hostAcceptedEventCount
             hostProcessedCount = stored.hostProcessedEventCount
             self.active = active
+            self.awaitingResumption = awaitingResumption
         }
     }
 
@@ -114,7 +120,7 @@ public actor RuntimeControlPlane {
         }
     }
 
-    private func markInterrupted(_ host: ExternalAgentSessionReference) async throws {
+    func markInterrupted(_ host: ExternalAgentSessionReference) async throws {
         try await commit(host: host) { plane in
             plane.update(host) { session in
                 guard session.active, !session.stored.projection.isTerminal else { return }

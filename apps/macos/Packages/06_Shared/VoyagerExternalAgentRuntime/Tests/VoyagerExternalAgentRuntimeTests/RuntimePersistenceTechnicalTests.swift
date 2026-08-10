@@ -24,6 +24,29 @@ struct RuntimePersistenceTechnicalTests {
     }
 
     @Test
+    func `runtime state save preserves a nonempty directory target`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let target = root.appendingPathComponent("runtime.json", isDirectory: true)
+        let sentinel = target.appendingPathComponent("sentinel.txt")
+        let sentinelBytes = Data("preserve-directory".utf8)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try sentinelBytes.write(to: sentinel)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RuntimeFileStateStore(fileURL: target)
+        let state = RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await store.save(state)
+        }
+
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue)
+        #expect(try Data(contentsOf: sentinel) == sentinelBytes)
+    }
+
+    @Test
     func `file store rejects oversized snapshot before decoding`() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
