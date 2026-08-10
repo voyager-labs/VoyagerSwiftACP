@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import * as runtime from "../dist/index.js"
+import { verifyDesignVersionContract } from "./verify-design-version-contract.mjs"
 import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -130,6 +131,7 @@ assert.doesNotMatch(
 )
 assert.doesNotMatch(designTokensStorySource, /swiftUIMaterialMetadata\.sourceBaseline/)
 assert.doesNotMatch(fileManagerCss, /--macos-[a-z0-9-]+\s*:/)
+verifyDesignVersionContract(packageRoot, storybookRoot, css)
 
 for (const contract of [
   "--fm-native-window-width: 960px",
@@ -168,7 +170,7 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 177)
+assert.equal(fileManagerStories.length, 184)
 assert.equal(fileManagerPaths.size, 43)
 assert.equal(nonFileManagerStories.length, 0)
 

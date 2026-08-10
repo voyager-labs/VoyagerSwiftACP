@@ -91,6 +91,17 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Structure:** 40px chat-only header and chat body.
 - **States:** Chat History, conversation, closed.
 
+### AI Chat Input Bar
+
+- **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift`, its `AiChatInputDisplayModel`, and `AiChatView` placement rules.
+- **Design Version axis:** `current` is the adopted native translation. `candidate-material-controls` is an unadopted Storybook proposal selected independently from appearance, macOS baseline, UI state, and geometry.
+- **Current structure:** optional request-context sections, dynamically sized message field, plain text `+` attachment button, borderless native-menu model and thinking selectors, and one plain submit-or-stop button with the native SF Symbol glyph container.
+- **Comparison structure:** preserves the same presentation and action contracts while using `IconButton` and `PopUpButton` in the footer and the AppKit `contentBackground` role on the chat input surface.
+- **Geometry:** 8px internal padding and spacing, 46–160px message field height, 24×24px action control, 8px action radius, and a 16px Tahoe / 10px Sequoia composer radius.
+- **Placement:** conversation uses 10px horizontal, 8px top, and 10px bottom outer padding; centered-empty uses the input bar without that outer inset.
+- **States:** empty submit-disabled, draft submit-enabled, pending-resolution editing-disabled with stop, processing next-turn editing with stop, stop-disabled, unavailable model, populated request context, multiline maximum height, and 230px minimum inspector width.
+- **Tokens:** `current` preserves the native solid chat input background through `--macos-chat-input-background-color` → `--fm-chat-composer-bg`. The comparison version maps the chat input surface through `--macos-material-content-background` → `--fm-chat-candidate-input-background`; footer controls continue to use the shared `--fm-control` roles.
+
 ## 6. Motion & Interaction
 
 Use existing `--fm-motion-*` durations. Motion communicates hover, focus, selection, pane resizing, or pane visibility only. Animate transform and opacity for decorative transitions; split widths follow direct pointer input without ornamental animation. Respect `prefers-reduced-motion`.
