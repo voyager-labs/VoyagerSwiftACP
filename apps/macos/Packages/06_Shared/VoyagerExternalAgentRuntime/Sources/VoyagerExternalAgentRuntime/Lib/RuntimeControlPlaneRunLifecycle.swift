@@ -94,6 +94,13 @@ extension RuntimeControlPlane {
             for try await event in stream {
                 do {
                     if let terminal = try await accept(event, host: host, expectedSource: .provider) {
+                        if adapter.descriptor.capabilities.terminalResult == .supported {
+                            let result = try await adapter.terminalResult(for: receipt.runReference)
+                            guard result.runReference == receipt.runReference else {
+                                throw RuntimeHostError.malformedAdapterResponse
+                            }
+                            return resultRespectingStoredTerminal(result, host: host)
+                        }
                         return terminal
                     }
                 } catch {

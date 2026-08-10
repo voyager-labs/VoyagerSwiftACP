@@ -1157,6 +1157,41 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 0)
     }
 
+    /// ATI-006-project_external_agent_run_events: streaming terminal event preserves provider result metadata.
+    /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
+    /// - 검증 내용: terminal event 이후 provider terminal result의 artifact metadata 반환.
+    /// - 사전 조건: event stream과 terminal result를 모두 지원하는 adapter가 구성되어 있다.
+    /// - 기대 결과: terminal projection을 유지하면서 provider artifact reference가 호출자에게 전달된다.
+    @Test
+    func `streaming terminal event preserves provider result metadata`() async throws {
+        let host = ExternalAgentSessionReference("host-stream-result")
+        let run = RuntimeRunReference("run-stream-result")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "completed",
+                kind: .completed,
+            )]],
+            terminalResultOverride: RuntimeResult(
+                runReference: run,
+                outcome: .completed,
+                artifactReferences: ["artifact://result.json"],
+            ),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+
+        let result = try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+
+        #expect(result.outcome == .completed)
+        #expect(result.artifactReferences == ["artifact://result.json"])
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
     /// ATI-006-project_external_agent_run_events: bind persistence failure interrupts before event projection.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
