@@ -34,6 +34,9 @@ case "$SCHEME" in
     Voyager-Dev)
         ARTIFACT_KEY="voyager-dev"
         ;;
+    Voyager-Lifecycle-Smoke)
+        ARTIFACT_KEY="voyager-lifecycle-smoke"
+        ;;
     VoyagerHelper-Dev)
         ARTIFACT_KEY="voyager-helper-dev"
         ;;

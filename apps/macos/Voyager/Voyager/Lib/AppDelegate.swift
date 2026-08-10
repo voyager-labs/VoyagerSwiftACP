@@ -12,6 +12,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
     /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.
     var callbackScheme: String = AppHandoffTarget.liveValue.callbackScheme
+    /// Application-hosted XCTest boots the real app delegate before test cases run.
+    /// Keep automatic app lifecycle dispatch at this boundary so reducer tests can
+    /// still exercise lifecycle actions explicitly.
+    var shouldSuppressAutomaticLifecycle: () -> Bool = {
+        AppHostTestMode.current?.suppressesAutomaticLifecycle == true
+    }
 
     override init() {
         super.init()
@@ -22,6 +28,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
+        guard !shouldSuppressAutomaticLifecycle() else { return }
+
+        AppHostLifecycleIntegrationProbe.shared.record(.willFinishLaunching)
+
         // 현재 앱 신원에 맞는 scheme으로 ExternalFileRouter 초기화
         let scheme = AppHandoffTarget.liveValue.callbackScheme
         withAppRootStore {
@@ -41,6 +51,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        guard !shouldSuppressAutomaticLifecycle() else { return }
+
+        AppHostLifecycleIntegrationProbe.shared.record(.didFinishLaunching)
+
         NSApp.servicesProvider = self
         withAppRootStore {
             $0.send(.lifecycle(.launch(.didFinishLaunching)))
@@ -143,7 +157,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        withAppRootStore {
+        guard !shouldSuppressAutomaticLifecycle() else { return true }
+
+        return withAppRootStore {
             $0.send(.lifecycle(.launch(.appReopen(hasVisibleWindows: flag))))
             return true
         } onMissing: {
@@ -162,7 +178,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        withAppRootStore {
+        guard !shouldSuppressAutomaticLifecycle() else { return .terminateNow }
+
+        AppHostLifecycleIntegrationProbe.shared.record(.terminationRequested)
+
+        return withAppRootStore {
             $0.send(.lifecycle(.termination(.requestTermination)))
             return .terminateLater
         } onMissing: {

@@ -152,6 +152,10 @@ EXCLUDED_SWIFT_SOURCE_DIRS = {
 
 # Direct ProcessInfo environment access is closed by default.
 ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
+    "apps/macos/Voyager/Voyager/Lib/AppHostTestMode.swift": {
+        "VOYAGER_APP_HOST_TEST_MODE",
+        "XCTestConfigurationFilePath",
+    },
     "apps/macos/Voyager/Voyager/Reducer/AppRootFeature.swift": {
         "XCTestConfigurationFilePath",
     },

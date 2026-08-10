@@ -4,6 +4,7 @@ import Foundation
 import Logging
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerEntryCoreClient
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -32,6 +33,7 @@ struct VoyagerApp: App {
 
     @MainActor
     init() {
+        let appHostTestMode = AppHostTestMode.current
         let appRootStoreReference = AppRootStoreReference()
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
         let fileManagerWindowClient = makeFileManagerWindowClientLive(
@@ -52,11 +54,69 @@ struct VoyagerApp: App {
             $0.fileManagerWindowClient = fileManagerWindowClient
             $0.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
             $0.metricsClient = Self.makeFileManagerMetricsClient()
+            if appHostTestMode == .lifecycleIntegration {
+                Self.configureLifecycleIntegrationDependencies(&$0)
+            }
         }
         appRootStoreReference.store = appRootStore
         configureFileManagerWindowCallbacks()
         appDelegate.configure(appRootStore: appRootStore)
+        AppHostLifecycleIntegrationProbe.shared.register(appDelegate: appDelegate)
         configureLogging()
+    }
+
+    private static func configureLifecycleIntegrationDependencies(
+        _ dependencies: inout DependencyValues,
+    ) {
+        dependencies.date = .constant(Date(timeIntervalSince1970: 0))
+        dependencies.uuid = .incrementing
+        dependencies.continuousClock = ContinuousClock()
+        dependencies.notificationCenterClient = .testValue
+        dependencies.userDefaultsClient = .testValue
+        dependencies.onboardingWindowClient = OnboardingWindowClient(
+            isRequired: { false },
+            showIfNeeded: { false },
+            showWindow: {},
+            closeWindow: {},
+            openMainWindow: { _ in true },
+        )
+        dependencies.helperAppClient = HelperAppClient(
+            start: {
+                await AppHostLifecycleIntegrationProbe.shared.record(.helperStarted)
+            },
+            stop: {},
+            isRunning: { true },
+            terminationEvents: { AsyncStream { $0.finish() } },
+            ensureRunning: {},
+        )
+        dependencies.helperStateClient = HelperStateClient(
+            resolve: { HelperState(helperReady: true, helperBundleVersion: nil) },
+            observe: { AsyncStream { $0.finish() } },
+        )
+        dependencies.entryCoreEndpointClient = EntryCoreEndpointClient {
+            try EntryCoreEndpoint(path: "/tmp/voyager-lifecycle-integration.sock")
+        }
+        dependencies.entryCoreClient = EntryCoreClient(
+            ping: { _ in EntryCorePingResult() },
+            health: { _ in
+                await AppHostLifecycleIntegrationProbe.shared.record(.entryCoreHealthChecked)
+                return EntryCoreHealthResult()
+            },
+            version: { _ in try EntryCoreVersionResult(appVersion: "lifecycle-integration") },
+        )
+        dependencies.fileManagerWindowClient = FileManagerWindowClient(
+            open: { _ in
+                await AppHostLifecycleIntegrationProbe.shared.record(.initialWindowOpened)
+            },
+            openTab: { _ in },
+            activate: { _ in .becameKey },
+            close: { _ in },
+            closeAll: {},
+            focusPath: { _ in },
+        )
+        dependencies.appTerminationReplyClient = AppTerminationReplyClient { shouldTerminate in
+            await AppHostLifecycleIntegrationProbe.shared.record(.terminationReply(shouldTerminate))
+        }
     }
 
     private static func makeComposerMetricClient() -> ComposerMetricClient {

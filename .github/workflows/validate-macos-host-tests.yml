@@ -1,0 +1,63 @@
+name: validate-macos-host-tests
+
+on:
+  workflow_call:
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - ".github/workflows/validate-macos-host-tests.yml"
+      - ".xcode-version"
+      - "apps/macos/**"
+      - "scripts/dev/**"
+      - "mise.toml"
+  workflow_dispatch:
+
+concurrency:
+  group: validate-macos-host-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  application-hosted-xctest:
+    name: macOS application-hosted XCTest
+    runs-on: ${{ fromJSON(vars.RELEASE_MACOS_RUNS_ON_GITHUB || '["macos-15"]') }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v4
+
+      - name: Select pinned Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCODE_VERSION="$(tr -d '[:space:]' < .xcode-version)"
+          XCODE_APP="$(xcodes installed "$XCODE_VERSION" --no-color || true)"
+          if [[ -z "$XCODE_APP" ]]; then
+            XCODE_APP="/Applications/Xcode_${XCODE_VERSION}.app"
+          fi
+          test -d "$XCODE_APP/Contents/Developer"
+          sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Run Voyager application-hosted XCTest suite
+        run: mise run macos-test -- "VOYAGER_APP_SUFFIX=-ci-${{ github.run_id }}-${{ github.run_attempt }}"
+
+      - name: Run opt-in lifecycle integration smoke
+        run: mise run macos-lifecycle-smoke -- "VOYAGER_APP_SUFFIX=-ci-${{ github.run_id }}-${{ github.run_attempt }}"
+
+      - name: Upload XCTest result bundles
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-host-xcresults-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: build/dev/DerivedData/Logs/Test/*.xcresult

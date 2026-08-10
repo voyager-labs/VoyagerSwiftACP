@@ -1,0 +1,35 @@
+{
+  "configurations" : [
+    {
+      "id" : "E3F9C0D8-C19E-46CA-B8FF-9F17035DF797",
+      "name" : "Lifecycle Integration",
+      "options" : {
+        "environmentVariableEntries" : [
+          {
+            "key" : "VOYAGER_APP_HOST_TEST_MODE",
+            "value" : "lifecycle-integration"
+          }
+        ]
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "defaultTestExecutionTimeAllowance" : 30,
+    "maximumTestExecutionTimeAllowance" : 60,
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "AppHostLifecycleIntegrationSmokeTests/testAutomaticLaunchReachesShellReadinessAndTerminatesOrderly()"
+      ],
+      "target" : {
+        "containerPath" : "container:Voyager.xcodeproj",
+        "identifier" : "7E14EDDA2E86622E005AC834",
+        "name" : "VoyagerTests"
+      }
+    }
+  ],
+  "version" : 1
+}
