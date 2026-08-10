@@ -1726,14 +1726,17 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.receive(\.internal.homeAiChatNewChatSeedRequested)
         await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
 
+        let placeholderID = try XCTUnwrap(UUID(uuidString: fixture.placeholderSessionID))
         let attachmentURL = URL(fileURLWithPath: "/tmp/home-pending.txt")
-        await store.sendTabContent(.aiChat(.attachmentPickerSelection([attachmentURL])))
+        await store.sendTabContent(.aiChat(.attachmentPickerSelection(
+            AiChatSessionID(rawValue: placeholderID),
+            [attachmentURL],
+        )))
         XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
 
         await fixture.modelLoadGate.resume(returning: [fixture.defaultModel])
         await store.receiveTabContent(\.aiChat.modelListLoaded)
 
-        let placeholderID = try XCTUnwrap(UUID(uuidString: fixture.placeholderSessionID))
         XCTAssertEqual(store.state.content.aiChat.sessionID?.rawValue, placeholderID)
         XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
         XCTAssertNil(store.state.content.aiChat.preparedTransientSessionID)
