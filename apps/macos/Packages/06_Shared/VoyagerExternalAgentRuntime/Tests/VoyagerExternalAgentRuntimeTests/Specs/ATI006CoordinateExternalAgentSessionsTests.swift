@@ -97,6 +97,40 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 0)
     }
 
+    /// ATI-006-capture_external_agent_context_policy: launch rejects policy-ready execution context mutations.
+    /// 승인된 실행 컨텍스트 전체가 provider launch 전까지 불변인지 검증한다.
+    /// - 검증 내용: working directory, allowed roots, request context 변경 거부.
+    /// - 사전 조건: 전체 실행 컨텍스트가 포함된 policy-ready snapshot이 저장되어 있다.
+    /// - 기대 결과: 변경된 launch 요청은 거부되고 provider launch 호출은 발생하지 않는다.
+    @Test
+    func `launch rejects policy-ready execution context mutations`() async throws {
+        let adapter = finalBoundaryTestsMakeApprovalAdapter()
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: "host-policy-context",
+            runReference: RuntimeRunReference("run-policy-context"),
+            adapterID: RuntimeAdapterID("sdk"),
+            contextPolicy: finalBoundaryTestsMakeContext(),
+            input: RuntimeSensitiveInput("not persisted"),
+        )
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        for context in mutatedExecutionContexts(from: request.contextPolicy) {
+            let changed = RuntimeLaunchRequest(
+                externalAgentSessionReference: request.externalAgentSessionReference,
+                runReference: request.runReference,
+                adapterID: request.adapterID,
+                contextPolicy: context,
+                input: request.input,
+            )
+            await #expect(throws: RuntimeHostError.invalidEvent) {
+                try await plane.run(changed)
+            }
+        }
+        #expect(await adapter.counts().launch == 0)
+    }
+
     /// ATI-006-capture_external_agent_context_policy: restart identity includes namespace and excludes sensitive
     /// context.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
@@ -713,6 +747,33 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(stale == .stale)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: restore rejects execution context mutations.
+    /// 재시작 호환성 검사가 승인된 실행 컨텍스트 전체를 비교하는지 검증한다.
+    /// - 검증 내용: working directory, allowed roots, request context 변경 시 stale 판정.
+    /// - 사전 조건: provider handle과 전체 실행 컨텍스트 snapshot이 저장되어 있다.
+    /// - 기대 결과: 변경된 컨텍스트는 adapter compatibility 호출 전에 복원에서 제외된다.
+    @Test
+    func `restore rejects execution context mutations`() async throws {
+        let stored = finalBoundaryTestsMakeStored(
+            host: "host-restore-policy",
+            run: RuntimeRunReference("run-restore-policy"),
+        )
+
+        for context in mutatedExecutionContexts(from: stored.contextPolicy) {
+            let adapter = finalBoundaryTestsMakeAdapter()
+            let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: finalBoundaryTestsMakeState([
+                stored,
+            ])))
+            try await plane.register(adapter)
+
+            #expect(try await plane.restore(
+                hostReference: stored.externalAgentSessionReference,
+                expectedContext: context,
+            ) == .stale)
+            #expect(await adapter.receivedRestartBindings().isEmpty)
+        }
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: capability snapshot mismatch cannot restore.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
@@ -1307,15 +1368,18 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await waitForProjection(.running, host: host, on: plane)
         _ = try await plane.ingestHostEvent(sourceIsolationTestsMakeHostProgress(host: host, run: run, sequence: 1))
 
+        let savesBeforeFreshEvent = await store.saveCount
         let freshPlane = RuntimeControlPlane(store: store)
-        let second = try await freshPlane.ingestHostEvent(sourceIsolationTestsMakeHostProgress(
-            host: host,
-            run: run,
-            sequence: 2,
-        ))
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try await freshPlane.ingestHostEvent(sourceIsolationTestsMakeHostProgress(
+                host: host,
+                run: run,
+                sequence: 2,
+            ))
+        }
 
-        #expect(second == nil)
         #expect(await freshPlane.projection(for: host) == .eventProjected)
+        #expect(await store.saveCount == savesBeforeFreshEvent)
         task.cancel()
     }
 
@@ -1725,7 +1789,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             sequence: 1,
             key: "one",
         ))
-        #expect(await plane.projection(for: host) == .eventDuplicateIgnored)
+        #expect(await plane.projection(for: host) == .eventProjected)
         _ = try await plane.ingestHostEvent(finalReviewTestsMakeHostEvent(
             host: host,
             run: run,
@@ -1796,6 +1860,95 @@ struct ATI006CoordinateExternalAgentSessionsTests {
 
         #expect(result?.outcome == .interrupted)
         #expect(await plane.projection(for: "host-hydrate") == .interrupted)
+    }
+
+    /// ATI-006-project_external_agent_run_events: inactive hydrated session rejects nonterminal host events.
+    /// 복원 검증을 거치지 않은 persisted session이 host progress로 활성화되지 않는지 검증한다.
+    /// - 검증 내용: inactive nonterminal session의 progress event 거부와 projection 보존.
+    /// - 사전 조건: running projection이 저장됐지만 control plane restore는 수행되지 않았다.
+    /// - 기대 결과: host progress는 invalid event로 거부되고 persisted projection은 유지된다.
+    @Test
+    func `inactive hydrated session rejects nonterminal host events`() async throws {
+        let stored = storageBoundaryTestsMakeStored(
+            host: "host-inactive-event",
+            run: RuntimeRunReference("run-inactive-event"),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: storageBoundaryTestsMakeState([
+            stored,
+        ])))
+        try await plane.register(storageBoundaryTestsMakeAdapter())
+
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try await plane.ingestHostEvent(finalBoundaryTestsMakeHostProgress(
+                host: stored.externalAgentSessionReference,
+                run: stored.runReference,
+            ))
+        }
+        #expect(await plane.projection(for: stored.externalAgentSessionReference) == .running)
+    }
+
+    /// ATI-006-project_external_agent_run_events: inactive host terminal gap does not reactivate session.
+    /// 순서가 건너뛴 terminal evidence가 restore 경계를 우회해 세션을 활성화하지 않는지 검증한다.
+    /// - 검증 내용: terminal gap의 out-of-order 기록과 후속 nonterminal event 거부.
+    /// - 사전 조건: inactive running session의 host sequence cursor가 0으로 저장되어 있다.
+    /// - 기대 결과: sequence 2 terminal은 terminalize하지 않고 세션도 active로 전환하지 않는다.
+    @Test
+    func `inactive host terminal gap does not reactivate session`() async throws {
+        let stored = storageBoundaryTestsMakeStored(
+            host: "host-inactive-terminal-gap",
+            run: RuntimeRunReference("run-inactive-terminal-gap"),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: storageBoundaryTestsMakeState([
+            stored,
+        ])))
+        try await plane.register(storageBoundaryTestsMakeAdapter())
+
+        #expect(try await plane.ingestHostEvent(RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("host-terminal-gap"),
+            sequence: 2,
+            idempotencyKey: RuntimeIdempotencyKey("host-terminal-gap"),
+            timestamp: Date(timeIntervalSince1970: 2),
+            externalAgentSessionReference: stored.externalAgentSessionReference,
+            runReference: stored.runReference,
+            kind: .interrupted,
+        )) == nil)
+        #expect(await plane.projection(for: stored.externalAgentSessionReference) == .eventOutOfOrder)
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try await plane.ingestHostEvent(finalBoundaryTestsMakeHostProgress(
+                host: stored.externalAgentSessionReference,
+                run: stored.runReference,
+            ))
+        }
+    }
+
+    private func mutatedExecutionContexts(from context: RuntimeContextPolicy) -> [RuntimeContextPolicy] {
+        [
+            RuntimeContextPolicy(
+                branchReference: context.branchReference,
+                authorizationGeneration: context.authorizationGeneration,
+                localCorrelation: context.localCorrelation,
+                workingDirectory: "/private/other-workspace",
+                allowedRoots: context.allowedRoots,
+                requestContext: context.requestContext,
+            ),
+            RuntimeContextPolicy(
+                branchReference: context.branchReference,
+                authorizationGeneration: context.authorizationGeneration,
+                localCorrelation: context.localCorrelation,
+                workingDirectory: context.workingDirectory,
+                allowedRoots: ["/private/other-root"],
+                requestContext: context.requestContext,
+            ),
+            RuntimeContextPolicy(
+                branchReference: context.branchReference,
+                authorizationGeneration: context.authorizationGeneration,
+                localCorrelation: context.localCorrelation,
+                workingDirectory: context.workingDirectory,
+                allowedRoots: context.allowedRoots,
+                requestContext: "other-request",
+            ),
+        ]
     }
 
     private func finalBoundaryTestsMakeAdapter(providerNamespace: String = "sdk") -> DeterministicRuntimeAdapter {

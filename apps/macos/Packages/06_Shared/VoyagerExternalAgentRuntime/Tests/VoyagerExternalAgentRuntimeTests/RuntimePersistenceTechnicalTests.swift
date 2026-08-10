@@ -130,6 +130,31 @@ struct RuntimePersistenceTechnicalTests {
         }
     }
 
+    @Test
+    func `corrupted snapshots are quarantined with original bytes`() async throws {
+        let snapshots = [
+            Data("not-json".utf8),
+            Data(#"{"schema_version":1,"sessions":"invalid"}"#.utf8),
+        ]
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("runtime.json")
+        let quarantineURL = fileURL.appendingPathExtension("corrupt")
+
+        for snapshot in snapshots {
+            try snapshot.write(to: fileURL)
+            let store = RuntimeFileStateStore(fileURL: fileURL)
+
+            await #expect(throws: RuntimeHostError.persistenceFailure) {
+                _ = try await store.load()
+            }
+            #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+            #expect(try Data(contentsOf: quarantineURL) == snapshot)
+        }
+    }
+
     @Test(arguments: [
         RuntimeTransportKind.processJSONL,
 
