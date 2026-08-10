@@ -1,7 +1,12 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
-import type { ChatConnectionError, ChatSurfaceState } from "../../model/types"
+import type {
+  AiChatInputBarActions,
+  ChatConnectionError,
+  ChatSurfaceState,
+} from "../../model/types"
 import { AiChatConversationSurface } from "./AiChatConversationSurface"
+import { AiChatInputBar } from "./AiChatInputBar"
 import { AiChatSessionsView } from "./AiChatSessionsView"
 
 // AiChatView 번역 — 프레젠테이션 상태(sessions/transcript/centeredEmpty)에 따라 본문을 전환한다.
@@ -15,6 +20,7 @@ export interface AiChatViewProps {
   readonly onOpenSettings?: () => void
   readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
+  readonly inputActions?: AiChatInputBarActions
 }
 
 export const AiChatView: FC<AiChatViewProps> = ({
@@ -25,6 +31,7 @@ export const AiChatView: FC<AiChatViewProps> = ({
   onOpenSettings,
   onErrorRecovery,
   onRegenerate,
+  inputActions,
 }) => {
   switch (state.kind) {
     case "sessions":
@@ -48,6 +55,8 @@ export const AiChatView: FC<AiChatViewProps> = ({
           canRegenerate={state.canRegenerate}
           requestText={requestText}
           onRequestTextChange={onRequestTextChange}
+          inputPresentation={state.inputBar}
+          inputActions={inputActions}
           onErrorRecovery={onErrorRecovery}
           onRegenerate={onRegenerate}
         />
@@ -55,13 +64,23 @@ export const AiChatView: FC<AiChatViewProps> = ({
     case "centeredEmpty":
       return (
         <section className="chat-empty" aria-label="Empty chat">
-          <div className="chat-empty-content">
-            <strong>{state.emptyTitle}</strong>
-            <p>{state.emptyDetail}</p>
+          <div className="chat-empty-copy">
+            <div className="chat-empty-content">
+              <strong>{state.emptyTitle}</strong>
+              <p>{state.emptyDetail}</p>
+            </div>
+            {state.connectionError != null ? (
+              <AiChatConnectionCta cta={state.connectionError} onOpenSettings={onOpenSettings} />
+            ) : null}
           </div>
-          {state.connectionError != null ? (
-            <AiChatConnectionCta cta={state.connectionError} onOpenSettings={onOpenSettings} />
-          ) : null}
+          <div className="chat-input-bar-frame is-centered-empty">
+            <AiChatInputBar
+              requestText={requestText}
+              onRequestTextChange={onRequestTextChange}
+              presentation={state.inputBar}
+              actions={inputActions}
+            />
+          </div>
         </section>
       )
   }

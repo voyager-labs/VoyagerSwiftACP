@@ -1,6 +1,11 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
-import type { ChatMessage, ChatStreamingAssistant } from "../../model/types"
+import type {
+  AiChatInputBarActions,
+  AiChatInputBarPresentation,
+  ChatMessage,
+  ChatStreamingAssistant,
+} from "../../model/types"
 import { AiChatAssistantCard } from "./AiChatAssistantCard"
 import { AiChatInputBar } from "./AiChatInputBar"
 import { AiChatUserMessageBubble } from "./AiChatUserMessageBubble"
@@ -16,6 +21,8 @@ export interface AiChatConversationSurfaceProps {
   readonly canRegenerate?: boolean
   readonly requestText: string
   readonly onRequestTextChange: (value: string) => void
+  readonly inputPresentation: AiChatInputBarPresentation
+  readonly inputActions?: AiChatInputBarActions
   readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
 }
@@ -28,6 +35,8 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
   canRegenerate,
   requestText,
   onRequestTextChange,
+  inputPresentation,
+  inputActions,
   onRegenerate,
 }) => {
   const lastAssistantIndex = (() => {
@@ -69,7 +78,14 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
         ) : null}
       </div>
 
-      <AiChatInputBar requestText={requestText} onRequestTextChange={onRequestTextChange} />
+      <div className="chat-input-bar-frame">
+        <AiChatInputBar
+          requestText={requestText}
+          onRequestTextChange={onRequestTextChange}
+          presentation={inputPresentation}
+          actions={inputActions}
+        />
+      </div>
     </section>
   )
 }

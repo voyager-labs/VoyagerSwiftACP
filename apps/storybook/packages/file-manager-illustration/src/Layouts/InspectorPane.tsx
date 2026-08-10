@@ -1,7 +1,7 @@
 import type { FC } from "react"
 import { AiChatView } from "../Domains/Chat/AiChatView"
 import { SFSymbol } from "../Foundations/SFSymbol"
-import type { ChatSurfaceState, Entry } from "../model/types"
+import type { AiChatInputBarActions, ChatSurfaceState, Entry } from "../model/types"
 
 export type InspectorChatHeader = "sessions" | "chat"
 
@@ -20,6 +20,7 @@ export interface InspectorPaneProps {
   readonly onOpenSettings?: () => void
   readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
+  readonly chatInputActions?: AiChatInputBarActions
   // 제공 시 inspector 본문이 AiChatView가 된다. 생략 시 기본 composer 본문.
   readonly chatSurface?: ChatSurfaceState
 }
@@ -38,6 +39,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
   onOpenSettings,
   onErrorRecovery,
   onRegenerate,
+  chatInputActions,
   chatSurface,
 }) => {
   return (
@@ -100,6 +102,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
           onOpenSettings={onOpenSettings}
           onErrorRecovery={onErrorRecovery}
           onRegenerate={onRegenerate}
+          inputActions={chatInputActions}
         />
       ) : (
         <section className="chat-pane">

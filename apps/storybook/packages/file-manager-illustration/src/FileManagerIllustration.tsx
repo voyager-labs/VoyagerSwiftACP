@@ -214,6 +214,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onOpenSettings={handleNoop}
                 onErrorRecovery={handleNoop}
                 onRegenerate={handleNoop}
+                chatInputActions={props.chatInputActions}
                 chatSurface={props.chatSurface}
               />
             }
