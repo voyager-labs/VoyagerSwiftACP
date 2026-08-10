@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { useState } from "react"
+import { fn } from "storybook/test"
 import { InspectorPane } from "../../Layouts/InspectorPane"
 import { files } from "../../data/mock-data"
+import type { AiChatInputBarActions } from "../../model/types"
 import {
   chatSurfaceConversation,
   chatSurfaceEmpty,
@@ -12,6 +15,16 @@ import {
 // 채팅 도메인 스토리 — InspectorPane 헤더 + AiChatView 본문의 상태 매트릭스.
 // 각 상태는 네이티브 AiChatViewPresentation에 대응한다.
 
+const chatInputActions = {
+  onAddAttachment: fn(),
+  onModelSelected: fn(),
+  onThinkingSelected: fn(),
+  onSubmit: fn(),
+  onStop: fn(),
+  onRemoveContextItem: fn(),
+  onAttachmentsDropped: fn(),
+} satisfies AiChatInputBarActions
+
 const meta = {
   component: InspectorPane,
   tags: ["autodocs"],
@@ -22,14 +35,31 @@ const meta = {
     selectedEntries: files.slice(0, 3),
     primaryEntry: files[0],
     chatTitle: "Review collection PDFs",
-    onRequestTextChange: () => {},
-    onOpenChatHistory: () => {},
-    onOpenNewChat: () => {},
-    onCloseChat: () => {},
-    onSessionSelected: () => {},
-    onOpenSettings: () => {},
-    onErrorRecovery: () => {},
-    onRegenerate: () => {},
+    onRequestTextChange: fn(),
+    onOpenChatHistory: fn(),
+    onOpenNewChat: fn(),
+    onCloseChat: fn(),
+    onSessionSelected: fn(),
+    onOpenSettings: fn(),
+    onErrorRecovery: fn(),
+    onRegenerate: fn(),
+    chatInputActions,
+  },
+  render: function Render(args) {
+    const [requestText, setRequestText] = useState(args.requestText)
+
+    function handleRequestTextChange(value: string) {
+      setRequestText(value)
+      args.onRequestTextChange(value)
+    }
+
+    return (
+      <InspectorPane
+        {...args}
+        requestText={requestText}
+        onRequestTextChange={handleRequestTextChange}
+      />
+    )
   },
 } satisfies Meta<typeof InspectorPane>
 

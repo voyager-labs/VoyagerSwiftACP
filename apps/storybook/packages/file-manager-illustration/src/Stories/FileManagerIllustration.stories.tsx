@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, userEvent, within } from "storybook/test"
+import { expect, fn, userEvent, within } from "storybook/test"
 import {
   chatSurfaceConversation,
   chatSurfaceEmpty,
@@ -9,6 +9,7 @@ import {
 } from "../Domains/Chat/chat-fixtures"
 import { FileManagerIllustration } from "../FileManagerIllustration"
 import { publicFiles } from "../data/mock-data"
+import type { AiChatInputBarActions } from "../model/types"
 
 const defaultTabs = [
   { id: "recents", label: "Recents" },
@@ -21,10 +22,21 @@ const defaultTabs = [
   { id: "collection", label: "Research Collection" },
 ] as const
 
+const chatInputActions = {
+  onAddAttachment: fn(),
+  onModelSelected: fn(),
+  onThinkingSelected: fn(),
+  onSubmit: fn(),
+  onStop: fn(),
+  onRemoveContextItem: fn(),
+  onAttachmentsDropped: fn(),
+} satisfies AiChatInputBarActions
+
 const meta = {
   component: FileManagerIllustration,
   tags: ["autodocs"],
   parameters: { layout: "fullscreen" },
+  args: { chatInputActions },
 } satisfies Meta<typeof FileManagerIllustration>
 
 export default meta
