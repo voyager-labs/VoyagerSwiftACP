@@ -17,6 +17,21 @@ struct AnthropicStreamConsumptionState {
     }
 
     mutating func consume(_ event: AnthropicStreamEvent) throws -> String? {
+        try consumeContent(event)
+    }
+
+    mutating func consume(
+        _ event: AnthropicStreamEvent,
+        activityState: inout AnthropicActivityState,
+    ) throws -> [AiChatProviderPayloadEmission] {
+        var emissions = activityState.consume(event)
+        if let delta = try consumeContent(event), !delta.isEmpty {
+            emissions.append(.delta(delta))
+        }
+        return emissions
+    }
+
+    private mutating func consumeContent(_ event: AnthropicStreamEvent) throws -> String? {
         switch event.consumptionResult {
         case let .delta(text):
             deltas.append(text)
@@ -72,7 +87,8 @@ extension AnthropicStreamEvent {
                 return .ignore
             }
         case "content_block_stop":
-            return index.map(AnthropicStreamConsumptionResult.finishToolInput) ?? .ignore
+            guard let index, contentBlock == nil else { return .ignore }
+            return .finishToolInput(index)
         case "message_stop":
             return nonEmptyText(message?.resolvedText).map(AnthropicStreamConsumptionResult.final) ?? .ignore
         case "error":

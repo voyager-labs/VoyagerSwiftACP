@@ -73,17 +73,17 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         XCTAssertEqual(plan.pushdownConditions, [condition])
     }
 
-    func testConditionCompilerEqOnExtensionUsesMditemAttribute() throws {
+    func testConditionCompilerAnyOnExtensionUsesMditemAttribute() throws {
         let compiler = try makeCompiler()
         let condition = SearchConditionPayload(
             propertyKey: "extension",
-            operator: "eq",
-            value: .string("pdf"),
+            operator: "any",
+            value: .array([.string("pdf")]),
         )
 
         let plan = try compiler.compilePlan(conditions: [condition])
 
-        XCTAssertTrue(plan.predicate.contains("kMDItemFSName == \"pdf\""))
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSName == \"*.pdf\""))
         XCTAssertEqual(plan.pushdownConditions, [condition])
     }
 }
@@ -98,14 +98,6 @@ private extension FilterSearchQueryBuilderTests {
     }
 
     func loadRegistry<T: Decodable>(fileName: String) throws -> T {
-        let rootURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fileURL = rootURL.appendingPathComponent("shared").appendingPathComponent(fileName)
-        let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(T.self, from: data)
+        try RepositorySharedFixture.decode(fileName: fileName, sourceFilePath: #filePath)
     }
 }

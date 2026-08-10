@@ -7,7 +7,7 @@ import VoyagerShared
 /// AI connection 저장소(VoyagerEntitiesAi.AiConnectionRootResolver)와 root를 분리한다.
 actor AccountTokenFileStore {
     private let fileManager = FileManager.default
-    private let payloadURL: URL
+    nonisolated let payloadURL: URL
     private let handoffStagingURL: URL
     private let lockURL: URL
     private let rollbackMarkerURL: URL

@@ -1,0 +1,298 @@
+[data-file-manager-illustration] .sidebar {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+[data-file-manager-illustration] .sidebar-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 50px;
+  flex-shrink: 0;
+  padding: 0 var(--fm-space-5);
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .sidebar-hide-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--fm-radius-md);
+  background: transparent;
+  padding: 0;
+  color: var(--fm-icon-secondary);
+  font-size: var(--fm-font-size-title);
+  transition: background-color var(--fm-motion-fast) ease, color var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .sidebar-hide-button:hover {
+  background: var(--fm-control-hover);
+  color: var(--fm-icon-primary);
+}
+
+[data-file-manager-illustration] .sidebar-hide-button:active {
+  background: var(--fm-control-pressed);
+}
+
+[data-file-manager-illustration] .sidebar-hide-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .sidebar.standalone {
+  width: var(--fm-window-sidebar-width);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+[data-file-manager-illustration] .location-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--fm-sidebar-location-cell-size), 1fr));
+  gap: var(--fm-space-4);
+  margin-bottom: var(--fm-space-4);
+  padding: 0 var(--fm-space-6);
+}
+
+[data-file-manager-illustration] .location-shortcuts button {
+  display: grid;
+  width: 100%;
+  min-width: var(--fm-sidebar-location-cell-size);
+  height: var(--fm-sidebar-location-cell-size);
+  place-items: center;
+  border: 1px solid var(--fm-sidebar-location-border);
+  border-radius: var(--fm-sidebar-location-radius);
+  background: var(--fm-sidebar-location);
+  color: var(--fm-icon-primary);
+  box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
+  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
+    color var(--fm-motion-fast) ease, transform var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .location-shortcuts button:hover {
+  background: var(--fm-sidebar-location-hover);
+  border-color: var(--fm-sidebar-location-hover-border);
+}
+
+[data-file-manager-illustration] .location-shortcuts button:active {
+  background: var(--fm-control-pressed);
+  transform: translateY(1px);
+}
+
+[data-file-manager-illustration] .location-shortcuts button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring), inset 0 1px 0 var(--fm-control-inner-highlight);
+}
+
+[data-file-manager-illustration] .folder-glyph {
+  display: inline-block;
+  position: relative;
+}
+
+[data-file-manager-illustration] .sidebar-section header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--fm-space-4) var(--fm-space-4);
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-bold);
+}
+
+[data-file-manager-illustration] .sidebar-section header button {
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-tertiary);
+  font-size: var(--fm-font-size-title);
+  line-height: 1;
+  padding: 0;
+  transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms
+    ease;
+}
+
+[data-file-manager-illustration] .sidebar-section header button:hover {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .sidebar-section header button:active {
+  transform: translateY(1px);
+}
+
+[data-file-manager-illustration] .sidebar-section header button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .sidebar-section nav {
+  display: grid;
+  gap: var(--fm-space-1);
+}
+
+[data-file-manager-illustration] .sidebar-tab-list {
+  display: grid;
+  gap: var(--fm-space-2);
+  overflow: auto;
+  padding: 0 var(--fm-space-6);
+  align-content: start;
+}
+
+[data-file-manager-illustration] .nav-item-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .nav-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fm-space-4);
+  width: 100%;
+  height: 24px;
+  border: 0;
+  border-radius: var(--fm-sidebar-row-radius);
+  background: transparent;
+  padding: 0 calc(var(--fm-space-4) + var(--fm-sidebar-tab-action-size)) 0 var(--fm-space-4);
+  color: var(--fm-text-secondary);
+  text-align: left;
+  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
+    color var(--fm-motion-fast) ease, transform var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .nav-item:hover {
+  background: var(--fm-sidebar-hover);
+}
+
+[data-file-manager-illustration] .nav-item:active {
+  background: var(--fm-control-pressed);
+  transform: translateY(1px);
+}
+
+[data-file-manager-illustration] .nav-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .nav-item strong {
+  overflow: hidden;
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .nav-item.active {
+  background: var(--fm-sidebar-selection);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .nav-icon.active {
+  color: var(--fm-selection-label);
+}
+
+[data-file-manager-illustration] .nav-item-action {
+  position: absolute;
+  right: var(--fm-space-3);
+  display: grid;
+  width: var(--fm-sidebar-tab-action-size);
+  height: var(--fm-sidebar-tab-action-size);
+  place-items: center;
+  visibility: hidden;
+  border: 0;
+  border-radius: var(--fm-radius-xs);
+  background: transparent;
+  padding: 0;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+  font-weight: var(--fm-weight-semibold);
+  opacity: 0;
+  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
+    color var(--fm-motion-fast) ease, opacity var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .nav-item-container:hover .nav-item-action,
+[data-file-manager-illustration] .nav-item-container:focus-within .nav-item-action,
+[data-file-manager-illustration] .nav-item-container.action-revealed .nav-item-action {
+  visibility: visible;
+  opacity: 1;
+}
+
+[data-file-manager-illustration] .nav-item-action:hover {
+  background: var(--fm-control-hover);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .nav-item-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fm-text-tertiary);
+}
+
+[data-file-manager-illustration] .folder-glyph::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: -3px;
+  width: 7px;
+  height: 4px;
+  border-radius: var(--fm-radius-xs) var(--fm-radius-xs) 0 0;
+  background: inherit;
+}
+
+[data-file-manager-illustration] .nav-icon svg,
+[data-file-manager-illustration] .nav-icon .sf-symbol {
+  display: block;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+}
+
+[data-file-manager-illustration] .sidebar-divider {
+  height: 1px;
+  margin: var(--fm-space-3) var(--fm-space-6);
+  background: var(--fm-separator);
+}
+
+[data-file-manager-illustration] .sidebar-new-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  width: 100%;
+  height: 24px;
+  border: 0;
+  border-radius: var(--fm-sidebar-row-radius);
+  background: transparent;
+  padding: 0 var(--fm-space-4);
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-regular);
+  text-align: left;
+  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
+    color var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .sidebar-new-tab:hover {
+  background: var(--fm-sidebar-hover);
+}
+
+[data-file-manager-illustration] .sidebar-new-tab span:first-child {
+  color: var(--fm-selection-label);
+}
+
+[data-file-manager-illustration] .sidebar-new-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}

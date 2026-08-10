@@ -44,34 +44,52 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(supportedThinkingState.chatInputDisplayModel.effortLabel, "default")
     }
 
-    // MARK: - CBW-004-open_chat_model_selector
+    /// CBW-004-show_active_chat_provider_and_model: streaming metadata는 selected request lock에서만 투영한다.
+    /// processing 중 selector, catalog, current session 값이 바뀌어도 응답 header가 submit 시점 metadata를 유지하는지 검증합니다.
+    /// - 검증 내용: trimmed locked row title, lock thinking label, waiting content,
+    ///   selector/catalog/session mutation 불변성을 확인합니다.
+    /// - 사전 조건: high thinking과 공백이 포함된 display name을 가진 request lock이 processing 중입니다.
+    /// - 기대 결과: projection은 mutable state를 무시하고 trimmed lock title과 thinking label을 유지합니다.
+    func testShowActiveChatProviderAndModelProjectsOnlyLockedStreamingMetadata() throws {
+        let rows = makeCatalogRows()
+        let lockedRow = AiModelCatalogRow(
+            handle: rows[0].handle,
+            displayName: "  Locked GPT  ",
+            authMethod: rows[0].authMethod,
+            subtitle: rows[0].subtitle,
+            sortOrder: rows[0].sortOrder,
+            isDefault: rows[0].isDefault,
+            isRecommended: rows[0].isRecommended,
+        )
+        let lockedSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114004"))
+        let context = makeRequestContext(
+            sessionID: lockedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224004")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334004")),
+            model: lockedRow.handle,
+            selectedRow: lockedRow,
+            selectedThinking: .effort(.high),
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: lockedRow.handle,
+            selectedRow: lockedRow,
+            assistantReplacementIndex: nil,
+        )
+        let mutatedState = AiChatFeature.State(
+            sessionID: lockedSessionID,
+            catalogRows: [rows[1]],
+            modelListState: .loaded([makeThinkingCapableProviderModels()[1]]),
+            selectedModelHandle: rows[1].handle,
+            selectedThinking: .effort(.minimal),
+            executionPhase: .processing(lock),
+        )
 
-    /// CBW-004-open_chat_model_selector: 모델 selector presentation은 선택 상태를 변경하지 않는다.
-    /// selector 열기/닫기와 동일 모델 선택이 현재 active model을 오염시키지 않는지 검증합니다.
-    /// - 검증 내용: presentation flag toggle, same-model no-op, dismissal behavior
-    /// - 사전 조건: 모델 하나가 이미 선택된 active chat 상태
-    /// - 기대 결과: selector UI 상태만 바뀌고 selected model handle은 유지된다.
-    func testOpenChatModelSelectorTogglesWithoutTouchingSelection() async {
-        let catalogRows = [makeCatalogRows()[0]]
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle,
-        )) {
-            AiChatFeature()
-        }
-
-        await store.send(.modelSelectorTapped) { state in
-            state.isModelSelectorPresented = true
-        }
-        await store.send(.selectedModelChanged(catalogRows[0].handle))
-        await store.send(.modelSelectorDismissed) { state in
-            state.isModelSelectorPresented = false
-        }
-
-        XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
-        XCTAssertFalse(store.state.isModelSelectorPresented)
+        let projection = try XCTUnwrap(mutatedState.streamingAssistantDisplayModel)
+        XCTAssertNil(projection.content)
+        XCTAssertEqual(projection.title, "Locked GPT")
+        XCTAssertEqual(projection.thinkingLabel, "high")
     }
 
     // MARK: - CBW-004-show_available_chat_models
@@ -103,7 +121,6 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(sections.last?.rows.map(\.title), ["Claude Sonnet 4"])
         XCTAssertTrue(state.modelSelectorHasPresentableContent)
         XCTAssertFalse(state.modelSelectorIsDisabled)
-        XCTAssertTrue(AiChatModelSelectorLayout.usesScrollableContent(for: state.modelSelectorContentState))
     }
 
     // MARK: - CBW-004-select_active_chat_model
@@ -114,11 +131,13 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
     /// - 사전 조건: OpenAI 모델로 첫 요청이 processing 중인 상태
     /// - 기대 결과: 첫 request는 OpenAI로 유지되고 두 번째 request는 Anthropic으로 생성된다.
     func testSelectActiveChatModelAppliesOnlyToNextRequest() async throws {
+        let persistence = AiChatSessionPersistenceSpy()
         let fixture = makeCBW004SubmitFixture(
             draftText: "Draft",
             selectedHandle: makeCatalogRows()[0].handle,
             selectedThinking: .effort(.medium),
             fixedMs: 1_700_000_000_600,
+            persistence: persistence,
         )
         let store = fixture.store
         applyCBW004ObservationFocusedExhaustivity(to: store)
@@ -133,18 +152,40 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             state.selectedModelHandle = fixture.catalogRows[1].handle
             state.unavailableSelectedModelHandle = nil
         }
+        await store.send(.selectedThinkingChanged(.effort(.minimal))) { state in
+            state.selectedThinking = .effort(.minimal)
+        }
 
         guard case let .processing(lock) = store.state.executionPhase else {
             return XCTFail("Expected request to remain locked while processing")
         }
         XCTAssertEqual(lock.context.model, fixture.catalogRows[0].handle)
+        XCTAssertEqual(lock.context.selectedThinking, .effort(.medium))
         XCTAssertEqual(store.state.selectedModelHandle, fixture.catalogRows[1].handle)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.minimal))
 
-        await store.send(.resetTapped)
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: firstRequest.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+            completedAtMs: 1_700_000_000_601,
+        ))))
+        await store.receive { action in
+            guard case let .sessionSnapshotSaved(_, snapshot, requestID, runID) = action else { return false }
+            return snapshot?.model == fixture.catalogRows[0].handle
+                && requestID == firstRequest.context.requestID
+                && runID == firstRequest.context.runID
+        }
+
+        let persistedSnapshot = try XCTUnwrap(persistence.snapshots.last)
+        XCTAssertEqual(persistedSnapshot.model, fixture.catalogRows[0].handle)
+        XCTAssertEqual(persistedSnapshot.selectedThinking, .effort(.medium))
+        XCTAssertEqual(store.state.selectedModelHandle, fixture.catalogRows[1].handle)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.minimal))
+
         await store.send(.draftTextChanged("Second request")) { state in
             state.draftText = "Second request"
         }
-        store.dependencies.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_601))
+        store.dependencies.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_602))
         await store.send(.submitTapped)
         await resolvePendingRequestContext(store)
 
@@ -152,6 +193,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(fixture.stream.requests.count, 2)
         XCTAssertEqual(secondRequest.context.model, fixture.catalogRows[1].handle)
         XCTAssertEqual(secondRequest.context.selectedModel, fixture.models[1])
+        XCTAssertEqual(secondRequest.context.selectedThinking, .effort(.minimal))
     }
 
     // MARK: - CBW-004-select_chat_model_thinking
@@ -227,13 +269,78 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
     }
 
+    /// CBW-004-select_chat_model_thinking: row가 없는 lock은 raw handle과 Assistant fallback을 사용한다.
+    /// catalog에 같은 handle의 mutable row가 있거나 locked handle이 공백이어도 deterministic title fallback을 유지하는지 검증합니다.
+    /// - 검증 내용: trimmed raw handle, mutable catalog 무시, Assistant fallback, nil thinking projection을 확인합니다.
+    /// - 사전 조건: selectedModelRow가 없는 두 processing lock과 서로 다른 current catalog 상태를 구성합니다.
+    /// - 기대 결과: title은 lock handle 또는 Assistant이고 thinking label은 nil입니다.
+    func testSelectChatModelThinkingUsesRawLockedAndAssistantFallbacksWithoutMutableCatalog() throws {
+        let mutableRow = makeCatalogRows()[0]
+        let lockedSessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555554004"))
+        let rawHandle = AiModelHandle(provider: .openai, rawValue: "  locked-raw-model  ")
+        let rawContext = makeRequestContext(
+            sessionID: lockedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666664004")),
+            runID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777774004")),
+            model: rawHandle,
+            selectedRow: mutableRow,
+        )
+        let rawLock = makeTask4LockWithoutSelectedRow(
+            request: AiChatRequest(context: rawContext, messages: []),
+            selectedHandle: rawHandle,
+        )
+        let mutableCatalogRow = AiModelCatalogRow(
+            handle: rawHandle,
+            displayName: "Mutable Catalog Name",
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: false,
+            isRecommended: false,
+        )
+        let rawState = AiChatFeature.State(
+            sessionID: lockedSessionID,
+            catalogRows: [mutableCatalogRow],
+            executionPhase: .processing(rawLock),
+        )
+        let rawProjection = try XCTUnwrap(rawState.streamingAssistantDisplayModel)
+        XCTAssertEqual(rawProjection.title, "locked-raw-model")
+        XCTAssertNil(rawProjection.thinkingLabel)
+
+        let blankHandle = AiModelHandle(provider: .openai, rawValue: "  ")
+        let blankContext = makeRequestContext(
+            sessionID: lockedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("88888888-8888-8888-8888-888888884004")),
+            runID: AiChatRunID(rawValue: makeUUID("99999999-9999-9999-9999-999999994004")),
+            model: blankHandle,
+            selectedRow: mutableRow,
+        )
+        let blankLock = makeTask4LockWithoutSelectedRow(
+            request: AiChatRequest(context: blankContext, messages: []),
+            selectedHandle: blankHandle,
+        )
+        let blankState = AiChatFeature.State(sessionID: lockedSessionID, executionPhase: .processing(blankLock))
+        let blankProjection = try XCTUnwrap(blankState.streamingAssistantDisplayModel)
+        XCTAssertEqual(blankProjection.title, "Assistant")
+        XCTAssertNil(blankProjection.thinkingLabel)
+
+        let blankThinkingProjection = AiChatStreamingAssistantDisplayModel(
+            requestID: blankContext.requestID,
+            content: nil,
+            title: "Assistant",
+            thinkingLabel: "  \n",
+            acceptedChunkRevision: 0,
+        )
+        XCTAssertNil(blankThinkingProjection.thinkingLabel)
+    }
+
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
     /// CBW-004-show_unavailable_chat_model_state: model list 비가용 상태를 selector contract로 표시한다.
-    /// loading/empty/failed/unsupported provider 상태가 사용자에게 구분되는지 검증합니다.
+    /// loading/empty/failed/unsupported provider 상태가 사용자에게 구분되고 트리거가 비활성화되는지 검증합니다.
     /// - 검증 내용: content state, disabled 여부, unsupported provider copy
     /// - 사전 조건: modelListState가 loading, empty, failed, unsupported failure인 상태
-    /// - 기대 결과: selector가 각 상태를 명시적 display contract로 노출한다.
+    /// - 기대 결과: selector가 각 상태를 명시적 display contract로 노출하고 활성화된 선택지가 없으므로 트리거가 비활성화된다.
     func testShowUnavailableChatModelStateProvidesExplicitSelectorStates() {
         let loadingState = AiChatFeature.State(modelListState: .loading)
         let emptyState = AiChatFeature.State(modelListState: .empty)
@@ -261,8 +368,53 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             title: "Provider unsupported",
             detail: "ChatGPT Codex model listing is unavailable.",
         )))
+        // 활성화된 선택지가 없는 상태는 트리거를 비활성화한다.
+        XCTAssertTrue(loadingState.modelSelectorIsDisabled)
         XCTAssertTrue(emptyState.modelSelectorIsDisabled)
-        XCTAssertFalse(unsupportedState.modelSelectorIsDisabled)
+        XCTAssertTrue(failedState.modelSelectorIsDisabled)
+        XCTAssertTrue(unsupportedState.modelSelectorIsDisabled)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: loaded catalog라도 활성화된 row가 없으면 트리거를 비활성화한다.
+    /// 모든 모델이 unavailable한 loaded catalog에서 selector가 활성화된 선택지 부재로 disabled 상태가 되는지 검증합니다.
+    /// - 검증 내용: loaded content state, presentable content, 전체 row 비활성화일 때 modelSelectorIsDisabled true
+    /// - 사전 조건: 단일 모델이 loaded 상태이지만 unavailableReason로 인해 row가 모두 비활성화된다.
+    /// - 기대 결과: selector는 loaded content를 노출하지만 활성화된 선택지가 없으므로 트리거가 비활성화된다.
+    func testShowUnavailableChatModelStateDisablesWhenLoadedCatalogHasNoEnabledRows() {
+        let handle = AiModelHandle(provider: .openai, rawValue: "unavailable-model")
+        let row = AiModelCatalogRow(
+            handle: handle,
+            displayName: "Unavailable model",
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: false,
+            isRecommended: false,
+        )
+        let unavailableModel = AiProviderModel(
+            id: handle,
+            provider: .openai,
+            rawModelID: handle.rawValue,
+            displayName: "Unavailable model",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .effort(values: [.medium], defaultValue: .medium),
+            unavailableReason: AiModelUnavailableReason(
+                message: "Quota exhausted for this model.",
+            ),
+        )
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            catalogRows: [row],
+            modelListState: .loaded([unavailableModel]),
+        )
+
+        guard case let .loaded(sections) = state.modelSelectorContentState else {
+            return XCTFail("Expected loaded model selector content")
+        }
+        XCTAssertEqual(sections.first?.rows.map(\.isEnabled), [false])
+        XCTAssertTrue(state.modelSelectorHasPresentableContent)
+        XCTAssertTrue(state.modelSelectorIsDisabled)
     }
 
     /// CBW-004-show_unavailable_chat_model_state: 현재 선택 모델이 catalog에서 사라지면 제출을 막는다.
@@ -1791,61 +1943,101 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
 
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
-    /// CBW-004-show_unavailable_chat_model_state: Selected Model Changed Clears Unavailable Selection Without Mutating
-    /// Locked Model
-    /// CBW-004 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
-    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
-    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
-    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
-    func testSelectedModelChangedClearsUnavailableSelectionWithoutMutatingLockedModel() async {
-        let catalogRows = makeCatalogRows()
-        let summary = makeContextSnapshot()
-        let sessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222222"))
-        let unresolvableHandle = makeUnresolvableModelHandle()
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: sessionID,
-            sessionStatus: .active,
-            currentContext: summary,
-            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            draftText: "Draft",
-            catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[1].handle,
-            lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: nil,
-            executionPhase: .processing(makeRequestLock(
-                kind: .submit,
-                request: AiChatRequest(
-                    context: makeRequestContext(
-                        sessionID: sessionID,
-                        requestID: AiChatRequestID(rawValue: UUID()),
-                        runID: AiChatRunID(rawValue: UUID()),
-                        model: catalogRows[1].handle,
-                        selectedRow: catalogRows[1],
-                    ),
-                    messages: [],
-                ),
-                selectedHandle: catalogRows[1].handle,
-                selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil,
-            )),
-        )) {
+    /// CBW-004-show_unavailable_chat_model_state: unavailable non-nil 모델 action은 현재 선택을 바꾸지 않는다.
+    /// stale UI가 unavailable B를 보내도 유효한 A와 모든 draft bookkeeping을 보존하는지 검증합니다.
+    /// - 검증 내용: 전체 state/effect no-op, transient marker, Thinking, recovery/failure bookkeeping, active locks
+    /// - 사전 조건: available A가 선택되고 같은 catalog의 B는 unavailable인 processing 상태
+    /// - 기대 결과: unavailable B action 전후 State가 완전히 같고 effect가 생성되지 않는다.
+    func testSelectedModelChangedWithUnavailableNonNilHandleIsCompleteNoOp() async {
+        let models = makeThinkingCapableProviderModels()
+        let unavailableModel = makeCBW004UnavailableModel(models[1])
+        let initialState = makeCBW004SelectionBookkeepingState(models: [models[0], unavailableModel])
+        let store = TestStore(initialState: initialState) {
             AiChatFeature()
         }
 
-        await store.send(.selectedModelChanged(unresolvableHandle)) { state in
-            state.selectedModelHandle = nil
-            state.unavailableSelectedModelHandle = nil
+        await store.send(.selectedModelChanged(unavailableModel.id))
+
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: absent non-nil 모델 action은 현재 선택을 바꾸지 않는다.
+    /// catalog에 없는 B가 전달되어도 explicit deselection으로 해석되지 않는지 검증합니다.
+    /// - 검증 내용: 전체 state/effect no-op, transient marker, Thinking, recovery/failure bookkeeping, active locks
+    /// - 사전 조건: available A가 선택되고 요청된 B handle은 loaded catalog에 없는 processing 상태
+    /// - 기대 결과: absent B action 전후 State가 완전히 같고 effect가 생성되지 않는다.
+    func testSelectedModelChangedWithAbsentNonNilHandleIsCompleteNoOp() async {
+        let initialState = makeCBW004SelectionBookkeepingState(models: makeThinkingCapableProviderModels())
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
         }
 
-        XCTAssertEqual(store.state.lockedModelHandle, catalogRows[1].handle)
-        XCTAssertNil(store.state.selectedModelHandle)
+        await store.send(.selectedModelChanged(makeUnresolvableModelHandle()))
 
-        if case let .processing(processing, _, selectedModel) = store.state.surfaceState {
-            XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
-            XCTAssertNil(selectedModel)
-        } else {
-            XCTFail("Expected processing surface state after clearing invalid selection")
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
+    }
+
+    /// CBW-004-select_active_chat_model: explicit nil은 draft 선택만 명시적으로 해제한다.
+    /// stale non-nil no-op과 달리 nil action이 선택/Thinking/recovery presentation을 지우는지 검증합니다.
+    /// - 검증 내용: draft selection clear, mutation tracking, active/background lock preservation
+    /// - 사전 조건: available A와 Thinking, recovery/failure bookkeeping, active locks가 존재한다.
+    /// - 기대 결과: draft selection bookkeeping은 정리되고 request-scoped lock은 그대로 유지된다.
+    func testSelectedModelChangedWithNilExplicitlyDeselectsAndPreservesLocks() async {
+        let initialState = makeCBW004SelectionBookkeepingState(models: makeThinkingCapableProviderModels())
+        let lockedModelHandle = initialState.lockedModelHandle
+        let executionPhase = initialState.executionPhase
+        let backgroundExecutionPhases = initialState.backgroundExecutionPhases
+        var expectedState = initialState
+        expectedState.newChatPreparationMutationTracker.value &+= 1
+        expectedState.preparedTransientSessionID = nil
+        expectedState.selectedModelHandle = nil
+        expectedState.selectedThinking = nil
+        expectedState.unavailableSelectedModelHandle = nil
+        expectedState.lastExecutionFailure = nil
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
         }
+
+        await store.send(.selectedModelChanged(nil)) { state in
+            state = expectedState
+        }
+
+        XCTAssertEqual(store.state.lockedModelHandle, lockedModelHandle)
+        XCTAssertEqual(store.state.executionPhase, executionPhase)
+        XCTAssertEqual(store.state.backgroundExecutionPhases, backgroundExecutionPhases)
+    }
+
+    /// CBW-004-select_active_chat_model: available B action은 B를 선택하고 Thinking을 정규화한다.
+    /// stale non-nil guard가 정상 선택 경로를 막지 않고 기존 capability policy를 유지하는지 검증합니다.
+    /// - 검증 내용: selected model 변경, incompatible Thinking normalization, active/background lock preservation
+    /// - 사전 조건: available A와 high Thinking이 선택되고 available B는 high를 지원하지 않는다.
+    /// - 기대 결과: draft는 B/provider default로 바뀌고 request-scoped lock은 그대로 유지된다.
+    func testSelectedModelChangedWithAvailableHandleSelectsAndNormalizesThinking() async {
+        let models = makeThinkingCapableProviderModels()
+        let initialState = makeCBW004SelectionBookkeepingState(models: models)
+        let lockedModelHandle = initialState.lockedModelHandle
+        let executionPhase = initialState.executionPhase
+        let backgroundExecutionPhases = initialState.backgroundExecutionPhases
+        var expectedState = initialState
+        expectedState.newChatPreparationMutationTracker.value &+= 1
+        expectedState.preparedTransientSessionID = nil
+        expectedState.selectedModelHandle = models[1].id
+        expectedState.selectedThinking = nil
+        expectedState.unavailableSelectedModelHandle = nil
+        expectedState.lastExecutionFailure = nil
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
+        }
+
+        await store.send(.selectedModelChanged(models[1].id)) { state in
+            state = expectedState
+        }
+
+        XCTAssertEqual(store.state.lockedModelHandle, lockedModelHandle)
+        XCTAssertEqual(store.state.executionPhase, executionPhase)
+        XCTAssertEqual(store.state.backgroundExecutionPhases, backgroundExecutionPhases)
     }
 
     /// CBW-004-select_chat_model_thinking: capability별 Thinking 선택을 중립 정책으로 정규화한다.
@@ -1937,11 +2129,38 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(options.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(512), .tokenBudget(1024)])
         XCTAssertEqual(options.map(\.title), ["Provider default", "128 tokens", "512 tokens", "1024 tokens"])
 
-        let duplicateDefaultOptions = AiThinkingSelectionPolicy.options(
+        let duplicateMinimumDefaultOptions = AiThinkingSelectionPolicy.options(
             capability: .tokenBudget(min: 128, max: 1024, defaultValue: 128),
             supportsNone: false,
         )
-        XCTAssertEqual(duplicateDefaultOptions.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(1024)])
+        XCTAssertEqual(duplicateMinimumDefaultOptions.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(1024)])
+
+        let duplicateMaximumDefaultOptions = AiThinkingSelectionPolicy.options(
+            capability: .tokenBudget(min: 128, max: 1024, defaultValue: 1024),
+            supportsNone: false,
+        )
+        XCTAssertEqual(duplicateMaximumDefaultOptions.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(1024)])
+
+        let singleValueOptions = AiThinkingSelectionPolicy.options(
+            capability: .tokenBudget(min: 512, max: 512, defaultValue: 512),
+            supportsNone: false,
+        )
+        XCTAssertEqual(singleValueOptions.map(\.selection), [nil, .tokenBudget(512)])
+
+        let belowMinimumDefaultOptions = AiThinkingSelectionPolicy.options(
+            capability: .tokenBudget(min: 128, max: 1024, defaultValue: 64),
+            supportsNone: true,
+        )
+        XCTAssertEqual(
+            belowMinimumDefaultOptions.map(\.selection),
+            [nil, AiThinkingSelection.none, .tokenBudget(128), .tokenBudget(1024)],
+        )
+
+        let aboveMaximumDefaultOptions = AiThinkingSelectionPolicy.options(
+            capability: .tokenBudget(min: 128, max: 1024, defaultValue: 2048),
+            supportsNone: false,
+        )
+        XCTAssertEqual(aboveMaximumDefaultOptions.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(1024)])
         XCTAssertTrue(AiThinkingSelectionPolicy.options(
             capability: .unknown(reason: .init(message: "Metadata pending")),
             supportsNone: true,
@@ -1952,6 +2171,1304 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             "Thinking unavailable",
         )
     }
+
+    // MARK: - CBW-004-show_available_chat_models
+
+    /// CBW-004-show_available_chat_models: 기존 7-인자 row initializer의 source compatibility를 보존한다.
+    /// VOY-678 이전 public 호출자가 새 menu metadata를 전달하지 않아도 기존 동작으로 초기화되는지 검증합니다.
+    /// - 검증 내용: public initializer signature, enabled default, disabled reason, accessibility defaults
+    /// - 사전 조건: selected와 not-selected row를 기존 7개 인자로만 생성합니다.
+    /// - 기대 결과: 두 row 모두 enabled이고 label 기반 접근성 값이 selection 상태를 반영합니다.
+    func testModelCatalogRowLegacyInitializerPreservesConservativeMenuDefaults() {
+        let handle = AiModelHandle(provider: .openai, rawValue: "legacy-model")
+        let label = AiChatModelLabel(title: "Legacy model", subtitle: "OpenAI")
+        let selectedRow = AiChatModelCatalogRowDisplayModel(
+            handle: handle,
+            label: label,
+            providerBadge: "OpenAI",
+            isSelected: true,
+            isLocked: false,
+            isDefault: true,
+            isRecommended: false,
+        )
+        let notSelectedRow = AiChatModelCatalogRowDisplayModel(
+            handle: handle,
+            label: label,
+            providerBadge: "OpenAI",
+            isSelected: false,
+            isLocked: false,
+            isDefault: true,
+            isRecommended: false,
+        )
+
+        XCTAssertTrue(selectedRow.isEnabled)
+        XCTAssertNil(selectedRow.disabledReason)
+        XCTAssertEqual(selectedRow.accessibilityLabel, label.title)
+        XCTAssertEqual(selectedRow.accessibilityValue, "Selected")
+        XCTAssertTrue(notSelectedRow.isEnabled)
+        XCTAssertNil(notSelectedRow.disabledReason)
+        XCTAssertEqual(notSelectedRow.accessibilityLabel, label.title)
+        XCTAssertEqual(notSelectedRow.accessibilityValue, "Not selected")
+    }
+
+    /// CBW-004-show_available_chat_models: native menu model projection은 provider와 model 순서 및 handle identity를 보존한다.
+    /// 같은 표시 이름을 가진 모델도 handle로 구분하고 unavailable/status 항목은 선택 불가능한 접근성 상태로 노출하는지 검증합니다.
+    /// - 검증 내용: provider/model ordering, duplicate title handle identity, single selection, disabled reason,
+    /// accessibility metadata
+    /// - 사전 조건: provider 순서가 지정되고 같은 이름의 selectable/unavailable 모델과 loading status가 있습니다.
+    /// - 기대 결과: 입력 순서와 handle은 유지되고 selected는 하나이며 unavailable/status 항목은 disabled 상태입니다.
+    func testNativeMenuModelProjectionPreservesIdentityOrderAndDisabledMetadata() throws {
+        let firstHandle = AiModelHandle(provider: .openai, rawValue: "shared-primary")
+        let unavailableHandle = AiModelHandle(provider: .openai, rawValue: "shared-unavailable")
+        let anthropicHandle = AiModelHandle(provider: .anthropic, rawValue: "shared-anthropic")
+        let models = [
+            AiProviderModel(
+                id: firstHandle,
+                provider: .openai,
+                rawModelID: firstHandle.rawValue,
+                displayName: "Shared model",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unsupported(reason: .init(message: "Thinking unavailable")),
+            ),
+            AiProviderModel(
+                id: unavailableHandle,
+                provider: .openai,
+                rawModelID: unavailableHandle.rawValue,
+                displayName: "Shared model",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unsupported(reason: .init(message: "Thinking unavailable")),
+                unavailableReason: .init(message: "Temporarily unavailable"),
+            ),
+            AiProviderModel(
+                id: anthropicHandle,
+                provider: .anthropic,
+                rawModelID: anthropicHandle.rawValue,
+                displayName: "Shared model",
+                providerDisplayName: "Anthropic",
+                thinkingCapability: .unsupported(reason: .init(message: "Thinking unavailable")),
+            ),
+        ]
+        let rows = [
+            AiModelCatalogRow(
+                handle: firstHandle,
+                displayName: "Shared model",
+                authMethod: .apiKey,
+                subtitle: nil,
+                sortOrder: 10,
+                isDefault: true,
+                isRecommended: true,
+            ),
+            AiModelCatalogRow(
+                handle: unavailableHandle,
+                displayName: "Shared model",
+                authMethod: .apiKey,
+                subtitle: nil,
+                sortOrder: 20,
+                isDefault: false,
+                isRecommended: false,
+            ),
+            AiModelCatalogRow(
+                handle: anthropicHandle,
+                displayName: "Shared model",
+                authMethod: .apiKey,
+                subtitle: nil,
+                sortOrder: 30,
+                isDefault: false,
+                isRecommended: false,
+            ),
+        ]
+        let state = AiChatFeature.State(
+            catalogRows: rows,
+            modelListState: .loaded(models),
+            selectedModelHandle: firstHandle,
+            providerConnectionSnapshot: .known([.anthropic, .openai]),
+            availableModelsByProvider: [
+                .anthropic: [models[2]],
+                .openai: [models[1], models[0]],
+            ],
+        )
+
+        let sections = state.modelCatalogState.sections
+        XCTAssertEqual(sections.map(\.provider), [.anthropic, .openai])
+        XCTAssertEqual(sections.map(\.title), ["Anthropic", "OpenAI"])
+        XCTAssertEqual(sections[0].rows.map(\.handle), [anthropicHandle])
+        XCTAssertEqual(sections[1].rows.map(\.handle), [unavailableHandle, firstHandle])
+        XCTAssertEqual(sections.flatMap(\.rows).map(\.title), ["Shared model", "Shared model", "Shared model"])
+        XCTAssertEqual(sections.flatMap(\.rows).filter(\.isSelected).map(\.handle), [firstHandle])
+
+        let selectedRow = try XCTUnwrap(sections.flatMap(\.rows).first { $0.handle == firstHandle })
+        XCTAssertTrue(selectedRow.isEnabled)
+        XCTAssertNil(selectedRow.disabledReason)
+        XCTAssertEqual(selectedRow.accessibilityLabel, "Shared model")
+        XCTAssertEqual(selectedRow.accessibilityValue, "Selected")
+
+        let unavailableRow = try XCTUnwrap(sections.flatMap(\.rows).first { $0.handle == unavailableHandle })
+        XCTAssertFalse(unavailableRow.isEnabled)
+        XCTAssertFalse(unavailableRow.isSelected)
+        XCTAssertEqual(unavailableRow.disabledReason, "Temporarily unavailable")
+        XCTAssertEqual(unavailableRow.accessibilityLabel, "Shared model")
+        XCTAssertEqual(unavailableRow.accessibilityValue, "Unavailable: Temporarily unavailable")
+
+        guard case let .loading(status) = AiChatFeature.State(modelListState: .loading).modelSelectorContentState else {
+            return XCTFail("Expected loading model selector status")
+        }
+        XCTAssertFalse(status.isEnabled)
+        XCTAssertFalse(status.isSelected)
+        XCTAssertEqual(status.disabledReason, "Fetching available models from connected providers.")
+        XCTAssertEqual(status.accessibilityLabel, "Loading models")
+        XCTAssertEqual(status.accessibilityValue, "Fetching available models from connected providers.")
+    }
+
+    // MARK: - CBW-004-select_chat_model_thinking
+
+    /// CBW-004-select_chat_model_thinking: native menu Thinking projection은 policy option과 associated value identity를
+    /// 그대로 보존한다.
+    /// provider default와 none을 구분하고 unsupported model 및 no-model 상태가 서로 다른 disabled projection인지 검증합니다.
+    /// - 검증 내용: policy option/order, selection identity, single selection, unsupported item metadata, no-model trigger
+    /// state
+    /// - 사전 조건: none을 지원하는 effort model, unsupported model, 선택 model이 없는 loaded state가 있습니다.
+    /// - 기대 결과: 지원 model은 policy와 동일한 항목을 제공하고 unsupported/no-model 상태는 선택 동작을 제공하지 않습니다.
+    func testNativeMenuThinkingProjectionMirrorsPolicyAndDisabledStates() throws {
+        let handle = AiModelHandle(provider: .openai, rawValue: "thinking-model")
+        let capableModel = AiProviderModel(
+            id: handle,
+            provider: .openai,
+            rawModelID: handle.rawValue,
+            displayName: "Thinking model",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: .low),
+            supportsThinkingNone: true,
+        )
+        let row = AiModelCatalogRow(
+            handle: handle,
+            displayName: capableModel.displayName,
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: true,
+            isRecommended: true,
+        )
+        let state = AiChatFeature.State(
+            catalogRows: [row],
+            modelListState: .loaded([capableModel]),
+            selectedModelHandle: handle,
+            selectedThinking: AiThinkingSelection.none,
+        )
+        let expectedOptions = AiThinkingSelectionPolicy.options(
+            capability: capableModel.thinkingCapability,
+            supportsNone: capableModel.supportsThinkingNone,
+        )
+
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: state).thinkingMenuItems.map(\.selection),
+            expectedOptions.map(\.selection),
+        )
+        let thinkingMenuItems = AiChatStateDisplayModelBuilder(state: state).thinkingMenuItems
+        XCTAssertEqual(thinkingMenuItems.map(\.title), expectedOptions.map(\.title))
+        XCTAssertEqual(thinkingMenuItems.map(\.id), expectedOptions.map(\.selection))
+        XCTAssertEqual(Set(thinkingMenuItems.map(\.id)).count, thinkingMenuItems.count)
+        XCTAssertNil(thinkingMenuItems.first?.id)
+        XCTAssertEqual(thinkingMenuItems[1].id, AiThinkingSelection.none)
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: state).thinkingMenuItems.filter(\.isSelected).map(\.selection),
+            [AiThinkingSelection.none],
+        )
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: state).thinkingMenuItems.first?.accessibilityValue,
+            "Not selected",
+        )
+        XCTAssertEqual(AiChatStateDisplayModelBuilder(state: state).thinkingMenuItems[1].accessibilityValue, "Selected")
+        XCTAssertFalse(AiChatStateDisplayModelBuilder(state: state).thinkingMenuIsDisabled)
+
+        let unavailableCapabilities: [(AiModelThinkingCapability, String)] = [
+            (
+                .unsupported(reason: .init(message: "Thinking is unavailable for this model.")),
+                "Thinking is unavailable for this model.",
+            ),
+            (
+                .unknown(reason: .init(message: "Thinking metadata is not loaded yet.")),
+                "Thinking metadata is not loaded yet.",
+            ),
+        ]
+        for (capability, unavailableReason) in unavailableCapabilities {
+            let unavailableModel = AiProviderModel(
+                id: handle,
+                provider: .openai,
+                rawModelID: handle.rawValue,
+                displayName: "Thinking model",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: capability,
+            )
+            let unavailableState = AiChatFeature.State(
+                catalogRows: [row],
+                modelListState: .loaded([unavailableModel]),
+                selectedModelHandle: handle,
+            )
+            let unavailableProjection = AiChatStateDisplayModelBuilder(state: unavailableState)
+            XCTAssertEqual(unavailableProjection.thinkingMenuItems.count, 1)
+            let unavailableItem = try XCTUnwrap(unavailableProjection.thinkingMenuItems.first)
+            XCTAssertNil(unavailableItem.id)
+            XCTAssertNil(unavailableItem.selection)
+            XCTAssertEqual(unavailableItem.title, "Thinking unavailable")
+            XCTAssertFalse(unavailableItem.isEnabled)
+            XCTAssertFalse(unavailableItem.isSelected)
+            XCTAssertEqual(unavailableItem.disabledReason, unavailableReason)
+            XCTAssertEqual(unavailableItem.accessibilityLabel, "Thinking unavailable")
+            XCTAssertEqual(unavailableItem.accessibilityValue, "Unavailable: \(unavailableReason)")
+            // unsupported/unknown capability는 활성화된 thinking 선택지가 없으므로 트리거를 비활성화한다.
+            XCTAssertTrue(unavailableProjection.thinkingMenuIsDisabled)
+        }
+
+        let noModelState = AiChatFeature.State(modelListState: .loaded([]))
+        XCTAssertTrue(AiChatStateDisplayModelBuilder(state: noModelState).thinkingMenuItems.isEmpty)
+        XCTAssertTrue(AiChatStateDisplayModelBuilder(state: noModelState).thinkingMenuIsDisabled)
+    }
+
+    /// CBW-004-select_chat_model_thinking: 범위 밖 token default는 enabled native menu 항목에서 제외한다.
+    /// provider가 최소값 아래나 최대값 위 default를 보내도 reducer가 수용하는 경계 선택지만 노출하는지 검증합니다.
+    /// - 검증 내용: below-min/above-max default의 enabled menu item 부재와 provider-default/min/max ordering
+    /// - 사전 조건: 128...1024 범위에 default 64 또는 2048인 token budget model이 선택되어 있습니다.
+    /// - 기대 결과: 각 menu에는 provider default, 128, 1024만 enabled 상태로 순서대로 존재합니다.
+    func testNativeMenuThinkingProjectionOmitsOutOfRangeTokenDefaults() {
+        let handle = AiModelHandle(provider: .openai, rawValue: "out-of-range-default-model")
+        let row = AiModelCatalogRow(
+            handle: handle,
+            displayName: "Out-of-range default model",
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: true,
+            isRecommended: true,
+        )
+
+        for invalidDefault in [64, 2048] {
+            let model = AiProviderModel(
+                id: handle,
+                provider: .openai,
+                rawModelID: handle.rawValue,
+                displayName: row.displayName,
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .tokenBudget(min: 128, max: 1024, defaultValue: invalidDefault),
+            )
+            let state = AiChatFeature.State(
+                catalogRows: [row],
+                modelListState: .loaded([model]),
+                selectedModelHandle: handle,
+            )
+            let enabledSelections = AiChatStateDisplayModelBuilder(state: state).thinkingMenuItems
+                .filter(\.isEnabled)
+                .map(\.selection)
+
+            XCTAssertEqual(enabledSelections, [nil, .tokenBudget(128), .tokenBudget(1024)])
+            XCTAssertFalse(enabledSelections.contains(.tokenBudget(invalidDefault)))
+        }
+    }
+
+    /// CBW-004-select_chat_model_thinking: 역전된 token budget metadata는 선택지를 만들거나 정규화하지 않는다.
+    /// provider metadata의 최소 token이 최대 token보다 큰 경우에도 정책이 안전하게 fail closed 하는지 검증합니다.
+    /// - 검증 내용: malformed token budget options와 non-nil selection normalization
+    /// - 사전 조건: minimumTokens 1024, maximumTokens 128인 token budget capability
+    /// - 기대 결과: options는 비어 있고 non-nil token budget selection은 nil로 정규화된다.
+    func testMalformedThinkingTokenBudgetPolicyFailsClosed() {
+        let capability = AiModelThinkingCapability.tokenBudget(min: 1024, max: 128, defaultValue: 512)
+
+        XCTAssertTrue(AiThinkingSelectionPolicy.options(
+            capability: capability,
+            supportsNone: true,
+        ).isEmpty)
+        XCTAssertNil(AiThinkingSelectionPolicy.normalize(
+            .tokenBudget(512),
+            capability: capability,
+            supportsNone: true,
+        ))
+        XCTAssertNil(AiThinkingSelectionPolicy.normalize(
+            AiThinkingSelection.none,
+            capability: capability,
+            supportsNone: true,
+        ))
+    }
+
+    /// CBW-004-select_chat_model_thinking: malformed token budget model은 비활성 unavailable 항목만 노출한다.
+    /// stale UI가 유효하지 않은 Thinking 값을 직접 보내도 feature 상태와 effect가 그대로 유지되는지 검증합니다.
+    /// - 검증 내용: unavailable projection metadata와 invalid selectedThinkingChanged의 full-state/effect no-op
+    /// - 사전 조건: malformed token budget model과 untouched transient session이 선택된 상태
+    /// - 기대 결과: action-free unavailable 항목 하나만 보이고 invalid action은 어떤 상태나 effect도 바꾸지 않는다.
+    func testMalformedThinkingTokenBudgetProjectsUnavailableAndRejectsDirectSelection() async throws {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114005"))
+        let handle = AiModelHandle(provider: .openai, rawValue: "malformed-thinking-model")
+        let model = AiProviderModel(
+            id: handle,
+            provider: .openai,
+            rawModelID: handle.rawValue,
+            displayName: "Malformed Thinking model",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .tokenBudget(min: 1024, max: 128, defaultValue: 512),
+            supportsThinkingNone: true,
+        )
+        let row = AiModelCatalogRow(
+            handle: handle,
+            displayName: model.displayName,
+            authMethod: .apiKey,
+            subtitle: nil,
+            sortOrder: 0,
+            isDefault: true,
+            isRecommended: true,
+        )
+        let initialState = AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            preparedTransientSessionID: sessionID,
+            catalogRows: [row],
+            modelListState: .loaded([model]),
+            selectedModelHandle: handle,
+        )
+        let projection = AiChatStateDisplayModelBuilder(state: initialState)
+
+        // malformed token budget policy는 unavailable 항목만 노출하므로 활성화된 선택지가 없고 트리거가 비활성화된다.
+        XCTAssertTrue(projection.thinkingMenuIsDisabled)
+        XCTAssertEqual(projection.thinkingMenuItems.count, 1)
+        let item = try XCTUnwrap(projection.thinkingMenuItems.first)
+        XCTAssertNil(item.selection)
+        XCTAssertEqual(item.title, "Thinking unavailable")
+        XCTAssertFalse(item.isSelected)
+        XCTAssertFalse(item.isEnabled)
+
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
+        }
+        await store.send(.selectedThinkingChanged(.tokenBudget(512)))
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: 같은 handle이 unavailable로 갱신되면 draft 선택을 해제한다.
+    /// catalog refresh가 선택 불가능한 모델을 draft 경계에서 제거하고 기존 복구 handle만 보존하는지 검증합니다.
+    /// - 검증 내용: selected model/thinking clear, unavailable recovery handle, submit/regenerate gate
+    /// - 사전 조건: assistant transcript와 선택 모델이 있고 같은 handle의 모델이 unavailable로 다시 loaded 됩니다.
+    /// - 기대 결과: 자동 fallback 없이 draft 선택이 해제되고 submit/regenerate가 모두 비활성화됩니다.
+    func testUnavailableRefreshClearsDraftSelectionAndSubmissionGates() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let unavailableModel = makeCBW004UnavailableModel(selectedModel)
+        let requestID = makeUUID("00000000-0000-0000-0000-000000004101")
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114101")),
+            sessionStatus: .active,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Question"),
+                AiChatMessage(role: .assistant, content: "Answer"),
+            ],
+            draftText: "Next question",
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([selectedModel]),
+            selectedModelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+            modelListRequestID: requestID,
+            modelListProvider: .openai,
+            modelListProviderOrder: [.openai],
+            modelListPendingProviders: [.openai],
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: catalog batch bookkeeping보다 draft availability 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.modelListLoaded(
+            requestID: requestID,
+            provider: .openai,
+            models: [unavailableModel],
+        ))
+
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(store.state.unavailableSelectedModelHandle, selectedModel.id)
+        XCTAssertFalse(store.state.canSubmit)
+        XCTAssertFalse(store.state.canRegenerate)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: stale unavailable 선택과 실행 action은 새 요청을 만들지 않는다.
+    /// 비활성 row의 stale action과 직접 submit/regenerate가 domain availability를 우회하지 않는지 검증합니다.
+    /// - 검증 내용: direct selection no-op, canSubmit/canRegenerate false, pending/lock/request 미생성
+    /// - 사전 조건: loaded catalog에 unavailable 모델만 있고 draft와 assistant transcript가 존재합니다.
+    /// - 기대 결과: 모델은 선택되지 않고 submit/regenerate 모두 effect나 request를 시작하지 않습니다.
+    func testUnavailableModelCannotBeSelectedOrStartFreshRequest() async {
+        let availableModel = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = makeCBW004UnavailableModel(availableModel)
+        let stream = AiChatExecutionStreamDriver()
+        let initialState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114102")),
+            sessionStatus: .active,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Question"),
+                AiChatMessage(role: .assistant, content: "Answer"),
+            ],
+            draftText: "Next question",
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+            selectedModelHandle: nil,
+            providerConnectionSnapshot: .known([.openai]),
+        )
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+            $0.aiChatContextPartResolverClient = .init { _ in
+                AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+            }
+        }
+        // store.exhaustivity = .off: stale action과 request guard의 완전한 no-op만 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.selectedModelChanged(unavailableModel.id))
+        XCTAssertEqual(store.state, initialState)
+        XCTAssertFalse(store.state.canSubmit)
+        XCTAssertFalse(store.state.canRegenerate)
+
+        await store.send(.submitTapped)
+        await store.send(.regenerateTapped)
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: pending context 완료는 최신 availability를 다시 검증한다.
+    /// 요청 준비 후 catalog가 unavailable로 바뀐 race에서 승인된 pending snapshot을 재작성하지 않는지 검증합니다.
+    /// - 검증 내용: refresh 중 pending Equatable 보존, completion 후 lock/request 미생성
+    /// - 사전 조건: available 모델로 승인된 pending request와 같은 handle의 unavailable refresh가 존재합니다.
+    /// - 기대 결과: refresh는 pending을 그대로 두고 resolution completion은 이를 소비하되 새 lock을 만들지 않습니다.
+    func testUnavailableRefreshPreventsPendingContextResolutionFromCreatingLock() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = makeCBW004UnavailableModel(model)
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004103")
+        let refreshID = makeUUID("00000000-0000-0000-0000-000000004104")
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114103"))
+        let message = AiChatMessage(role: .user, content: "Pending request")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: model,
+            selectedRow: row,
+            selectedThinking: .effort(.medium),
+            preparedRequest: AiChatPreparedRequest(
+                prompt: message.content,
+                messages: [message],
+                persistenceTranscriptHistory: [message],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            catalogRows: [row],
+            modelListState: .loaded([model]),
+            selectedModelHandle: model.id,
+            selectedThinking: .effort(.medium),
+            pendingRequestStart: pendingRequest,
+            modelListRequestID: refreshID,
+            modelListProvider: .openai,
+            modelListProviderOrder: [.openai],
+            modelListPendingProviders: [.openai],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: pending snapshot 보존과 lock 미생성 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.modelListLoaded(
+            requestID: refreshID,
+            provider: .openai,
+            models: [unavailableModel],
+        ))
+        XCTAssertEqual(store.state.pendingRequestStart, pendingRequest)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: 선택 provider 부분 완료 unavailable은 foreground lock을 막는다.
+    /// aggregate loading이어도 선택 provider의 성공 결과가 확정되면 stale approved snapshot을 실행하지 않는지 검증합니다.
+    /// - 검증 내용: foreground pending 소비 후 lock/request 미생성
+    /// - 사전 조건: OpenAI unavailable 결과가 완료되었고 Anthropic만 pending인 multi-provider refresh입니다.
+    /// - 기대 결과: resolution completion은 pending을 소비하되 unavailable OpenAI request를 시작하지 않습니다.
+    func testPartialProviderUnavailableCompletionPreventsPendingContextResolutionFromCreatingLock() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = makeCBW004UnavailableModel(model)
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004109")
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114109"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: sessionID,
+            model: model,
+            row: row,
+            prompt: "Partial foreground pending request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            pendingRequestStart: pendingRequest,
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListPendingProviders: [.anthropic],
+            modelListLoadedModelsByProvider: [.openai: [unavailableModel]],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_109))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: provider별 부분 완료에서 lock 미생성 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: 선택 provider 부분 완료 unavailable은 background lock을 막는다.
+    /// background pending dictionary도 provider별 authoritative 결과로 stale approved snapshot을 차단하는지 검증합니다.
+    /// - 검증 내용: background pending 소비 후 background lock/request 미생성
+    /// - 사전 조건: OpenAI unavailable 결과가 완료되었고 Anthropic만 pending인 multi-provider refresh입니다.
+    /// - 기대 결과: resolution completion은 pending을 소비하되 background execution phase를 만들지 않습니다.
+    func testPartialProviderUnavailableCompletionPreventsBackgroundPendingContextResolutionFromCreatingLock() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = makeCBW004UnavailableModel(model)
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004110")
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114110"))
+        let backgroundSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222224110"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: backgroundSessionID,
+            model: model,
+            row: row,
+            prompt: "Partial background pending request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: visibleSessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            backgroundPendingRequestStarts: [resolutionID: pendingRequest],
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListPendingProviders: [.anthropic],
+            modelListLoadedModelsByProvider: [.openai: [unavailableModel]],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_110))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: provider별 부분 완료에서 background lock 미생성 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertTrue(store.state.backgroundExecutionPhases.isEmpty)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: known 연결 목록에 없는 provider는 foreground pending을 거부한다.
+    /// catalog 결과가 미완료여도 연결 authority가 선택 provider의 부재를 확정하는지 검증합니다.
+    /// - 검증 내용: known-disconnected provider의 foreground pending 소비 후 lock/request 미생성
+    /// - 사전 조건: OpenAI frozen pending이 있고 known 연결 목록에는 Anthropic만 있습니다.
+    /// - 기대 결과: resolution completion은 pending을 소비하되 OpenAI request를 시작하지 않습니다.
+    func testKnownDisconnectedProviderPreventsForegroundPendingContextResolutionFromCreatingLock() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004116")
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114116"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: sessionID,
+            model: selectedModel,
+            row: row,
+            prompt: "Known disconnected foreground request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            pendingRequestStart: pendingRequest,
+            modelListPendingProviders: [.openai],
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_116))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: known-disconnected foreground pending의 거부 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: known 연결 목록에 없는 provider는 background pending을 거부한다.
+    /// foreground와 분리된 background owner도 같은 canonical connection authority를 적용하는지 검증합니다.
+    /// - 검증 내용: known-disconnected provider의 background pending 소비 후 lock/request 미생성
+    /// - 사전 조건: OpenAI frozen background pending이 있고 known 연결 목록에는 Anthropic만 있습니다.
+    /// - 기대 결과: resolution completion은 pending을 소비하되 background execution phase를 만들지 않습니다.
+    func testKnownDisconnectedProviderPreventsBackgroundPendingContextResolutionFromCreatingLock() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004117")
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114117"))
+        let backgroundSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222224117"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: backgroundSessionID,
+            model: selectedModel,
+            row: row,
+            prompt: "Known disconnected background request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: visibleSessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            backgroundPendingRequestStarts: [resolutionID: pendingRequest],
+            modelListFailedProviders: [.openai: .init(message: "Stale OpenAI listing failure")],
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_117))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: known-disconnected background pending의 거부 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertTrue(store.state.backgroundExecutionPhases.isEmpty)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: 선택 provider failure-only는 unavailable 확정이 아니다.
+    /// 성공한 provider catalog가 없는 실패 결과만으로 approved frozen snapshot을 폐기하지 않는지 검증합니다.
+    /// - 검증 내용: failure-only loading 중 foreground request/lock 생성
+    /// - 사전 조건: OpenAI load는 실패했고 Anthropic만 pending인 multi-provider refresh입니다.
+    /// - 기대 결과: resolution completion은 frozen OpenAI snapshot으로 기존 요청을 시작합니다.
+    func testPartialProviderFailureDoesNotDropApprovedPendingContextResolution() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004111")
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114111"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: sessionID,
+            model: model,
+            row: row,
+            prompt: "Failed provider pending request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            pendingRequestStart: pendingRequest,
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListPendingProviders: [.anthropic],
+            modelListFailedProviders: [.openai: .init(message: "OpenAI model list request failed.")],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_111))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: failure-only refresh에서 approved pending 실행 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(stream.requests.count, 1)
+        XCTAssertEqual(stream.requests.first?.context.selectedModel, model)
+        if case let .processing(lock) = store.state.executionPhase {
+            XCTAssertEqual(lock.selectedModelHandle, model.id)
+            XCTAssertEqual(lock.context.selectedModel, model)
+        } else {
+            XCTFail("failure-only provider result should preserve the approved pending request")
+        }
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: 선택 provider failure 뒤 다른 provider 성공은 foreground pending을 보존한다.
+    /// 최종 aggregate가 다른 provider 모델만 포함해도 실패 provider의 absence를 unavailable로 확정하지 않는지 검증합니다.
+    /// - 검증 내용: failure → success 완료 순서, final loaded aggregate, frozen foreground request/lock 생성
+    /// - 사전 조건: OpenAI frozen pending이 있고 OpenAI 실패 뒤 Anthropic 성공으로 batch가 완료됩니다.
+    /// - 기대 결과: pending은 완료 전까지 보존되고 context resolution은 원래 OpenAI 모델 metadata로 요청을 시작합니다.
+    func testSelectedProviderFailureThenOtherProviderSuccessPreservesForegroundPendingRequest() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004112")
+        let batchID = makeUUID("00000000-0000-0000-0000-000000004113")
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114112"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: sessionID,
+            model: selectedModel,
+            row: row,
+            prompt: "Failure then success foreground request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            pendingRequestStart: pendingRequest,
+            modelListRequestID: batchID,
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListPendingProviders: [.openai, .anthropic],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_112))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: provider 완료 순서와 frozen foreground request 시작 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.modelListLoadFailed(
+            requestID: batchID,
+            provider: .openai,
+            failure: failure,
+        ))
+        XCTAssertEqual(store.state.pendingRequestStart, pendingRequest)
+
+        await store.send(.modelListLoaded(
+            requestID: batchID,
+            provider: .anthropic,
+            models: [otherProviderModel],
+        ))
+        XCTAssertEqual(store.state.modelListState, .loaded([otherProviderModel]))
+        XCTAssertEqual(store.state.modelListFailedProviders, [.openai: failure])
+        XCTAssertEqual(store.state.pendingRequestStart, pendingRequest)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(stream.requests.first?.context.selectedModel, selectedModel)
+        if case let .processing(lock) = store.state.executionPhase {
+            XCTAssertEqual(lock.context.selectedModel, selectedModel)
+            XCTAssertEqual(lock.selectedModelHandle, selectedModel.id)
+        } else {
+            XCTFail("provider failure must not consume the approved foreground request")
+        }
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: 다른 provider 성공 뒤 선택 provider failure는 background pending을 보존한다.
+    /// provider completion 역순에서도 failure evidence가 final aggregate absence보다 우선하는지 검증합니다.
+    /// - 검증 내용: success → failure 완료 순서, final loaded aggregate, frozen background request/lock 생성
+    /// - 사전 조건: OpenAI frozen background pending이 있고 Anthropic 성공 뒤 OpenAI 실패로 batch가 완료됩니다.
+    /// - 기대 결과: context resolution은 background pending을 원래 OpenAI 모델 metadata로 시작합니다.
+    func testOtherProviderSuccessThenSelectedProviderFailurePreservesBackgroundPendingRequest() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004114")
+        let batchID = makeUUID("00000000-0000-0000-0000-000000004115")
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114114"))
+        let backgroundSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222224114"))
+        let pendingRequest = makeCBW004PendingRequest(
+            resolutionID: resolutionID,
+            sessionID: backgroundSessionID,
+            model: selectedModel,
+            row: row,
+            prompt: "Success then failure background request",
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: visibleSessionID,
+            sessionStatus: .active,
+            modelListState: .loading,
+            backgroundPendingRequestStarts: [resolutionID: pendingRequest],
+            modelListRequestID: batchID,
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListPendingProviders: [.openai, .anthropic],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_114))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: provider 완료 역순과 frozen background request 시작 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.modelListLoaded(
+            requestID: batchID,
+            provider: .anthropic,
+            models: [otherProviderModel],
+        ))
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pendingRequest)
+
+        await store.send(.modelListLoadFailed(
+            requestID: batchID,
+            provider: .openai,
+            failure: failure,
+        ))
+        XCTAssertEqual(store.state.modelListState, .loaded([otherProviderModel]))
+        XCTAssertEqual(store.state.modelListFailedProviders, [.openai: failure])
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pendingRequest)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertEqual(stream.requests.first?.context.selectedModel, selectedModel)
+        guard let phase = store.state.backgroundExecutionPhases.values.first,
+              case let .processing(lock) = phase
+        else {
+            return XCTFail("provider failure must not consume the approved background request")
+        }
+        XCTAssertEqual(lock.context.selectedModel, selectedModel)
+        XCTAssertEqual(lock.selectedModelHandle, selectedModel.id)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: loading은 승인된 pending 모델의 unavailable 확정이 아니다.
+    /// context resolution과 catalog refresh가 겹쳐도 마지막 approved snapshot이 조용히 소실되지 않는지 검증합니다.
+    /// - 검증 내용: loading 중 foreground pending 소비와 frozen model request/lock 생성
+    /// - 사전 조건: available 모델로 승인된 pending request 이후 catalog refresh가 loading 상태입니다.
+    /// - 기대 결과: resolution completion은 frozen pending으로 기존 요청을 시작하고 같은 모델 lock을 만듭니다.
+    func testCatalogLoadingDoesNotDropApprovedPendingContextResolution() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004106")
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114106"))
+        let message = AiChatMessage(role: .user, content: "Approved pending request")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: model,
+            selectedRow: row,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: message.content,
+                messages: [message],
+                persistenceTranscriptHistory: [message],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            catalogRows: [row],
+            modelListState: .loading,
+            pendingRequestStart: pendingRequest,
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListPendingProviders: [.openai],
+            modelListLoadedModelsByProvider: [.anthropic: []],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_004_106))
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: loading race에서 approved pending의 요청 시작만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(stream.requests.count, 1)
+        XCTAssertEqual(stream.requests.first?.context.selectedModel, model)
+        if case let .processing(lock) = store.state.executionPhase {
+            XCTAssertEqual(lock.selectedModelHandle, model.id)
+            XCTAssertEqual(lock.context.selectedModel, model)
+        } else {
+            XCTFail("approved pending request should start while catalog refresh is unresolved")
+        }
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: background pending도 unavailable refresh를 lock 없이 종료한다.
+    /// foreground와 별도 dictionary owner인 background resolution 경계가 canonical availability를 우회하지 않는지 검증합니다.
+    /// - 검증 내용: refresh 중 background pending Equatable 보존, completion 후 background lock/request 미생성
+    /// - 사전 조건: 다른 session의 approved pending과 같은 handle이 unavailable로 refresh 됩니다.
+    /// - 기대 결과: refresh는 pending을 재작성하지 않고 completion은 이를 소비하되 어떤 execution phase도 만들지 않습니다.
+    func testUnavailableRefreshPreventsBackgroundPendingContextResolutionFromCreatingLock() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = makeCBW004UnavailableModel(model)
+        let row = makeCatalogRows()[0]
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000004107")
+        let refreshID = makeUUID("00000000-0000-0000-0000-000000004108")
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114107"))
+        let backgroundSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222224107"))
+        let message = AiChatMessage(role: .user, content: "Background pending request")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: backgroundSessionID,
+            selectedModel: model,
+            selectedRow: row,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: message.content,
+                messages: [message],
+                persistenceTranscriptHistory: [message],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: visibleSessionID,
+            sessionStatus: .active,
+            catalogRows: [row],
+            modelListState: .loaded([model]),
+            backgroundPendingRequestStarts: [resolutionID: pendingRequest],
+            modelListRequestID: refreshID,
+            modelListProvider: .openai,
+            modelListProviderOrder: [.openai],
+            modelListPendingProviders: [.openai],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient = .init { request in
+                stream.stream(for: request)
+            }
+        }
+        // store.exhaustivity = .off: background pending snapshot 보존과 lock 미생성만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.modelListLoaded(
+            requestID: refreshID,
+            provider: .openai,
+            models: [unavailableModel],
+        ))
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pendingRequest)
+
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertTrue(store.state.backgroundExecutionPhases.isEmpty)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertTrue(stream.requests.isEmpty)
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: connection authority 갱신은 active request lock을 바꾸지 않는다.
+    /// provider 연결 snapshot만 교체하고 request-scoped execution truth는 유지하는지 검증합니다.
+    /// - 검증 내용: authority snapshot 변경과 foreground/background lock의 완전한 불변성
+    /// - 사전 조건: foreground와 background request가 실행 중이고 OpenAI/Anthropic 연결 snapshot이 있습니다.
+    /// - 기대 결과: snapshot만 Anthropic으로 바뀌고 두 execution phase와 locked handle은 동일합니다.
+    func testProviderConnectionAuthorityUpdatePreservesActiveRequestLocks() async {
+        let initialState = makeCBW004SelectionBookkeepingState(models: makeThinkingCapableProviderModels())
+        let lockedModelHandle = initialState.lockedModelHandle
+        let executionPhase = initialState.executionPhase
+        let backgroundExecutionPhases = initialState.backgroundExecutionPhases
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
+        }
+
+        await store.send(.providerConnectionAuthorityUpdated([.anthropic])) { state in
+            state.providerConnectionSnapshot = .known([.anthropic])
+        }
+
+        XCTAssertEqual(store.state.lockedModelHandle, lockedModelHandle)
+        XCTAssertEqual(store.state.executionPhase, executionPhase)
+        XCTAssertEqual(store.state.backgroundExecutionPhases, backgroundExecutionPhases)
+        await store.finish()
+    }
+
+    /// CBW-004-show_unavailable_chat_model_state: catalog availability 변경은 active request lock을 바꾸지 않는다.
+    /// draft 모델이 unavailable로 바뀌어도 이미 processing 중인 request-scoped truth가 유지되는지 검증합니다.
+    /// - 검증 내용: processing lock과 background execution snapshot의 Equatable 불변성
+    /// - 사전 조건: 선택 모델로 foreground lock이 processing 중이고 같은 handle이 unavailable로 refresh 됩니다.
+    /// - 기대 결과: draft 선택만 복구 상태로 이동하고 기존 lock과 processing phase는 동일합니다.
+    func testUnavailableRefreshPreservesActiveRequestLockExactly() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = makeCBW004UnavailableModel(model)
+        let row = makeCatalogRows()[0]
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114104"))
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224104")),
+                runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334104")),
+                model: model.id,
+                selectedRow: row,
+                selectedModel: model,
+                selectedThinking: .effort(.medium),
+            ),
+            messages: [AiChatMessage(role: .user, content: "Locked request")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: model.id,
+            selectedRow: row,
+            assistantReplacementIndex: nil,
+        )
+        let backgroundSessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444104"))
+        let backgroundRequest = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: backgroundSessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("55555555-5555-5555-5555-555555554104")),
+                runID: AiChatRunID(rawValue: makeUUID("66666666-6666-6666-6666-666666664104")),
+                model: model.id,
+                selectedRow: row,
+                selectedModel: model,
+                selectedThinking: .effort(.medium),
+            ),
+            messages: [AiChatMessage(role: .user, content: "Background locked request")],
+        )
+        let backgroundLock = makeRequestLock(
+            kind: .submit,
+            request: backgroundRequest,
+            selectedHandle: model.id,
+            selectedRow: row,
+            assistantReplacementIndex: nil,
+        )
+        let backgroundExecutionPhases = [backgroundLock.requestID: AiChatExecutionPhase.processing(backgroundLock)]
+        let refreshID = makeUUID("00000000-0000-0000-0000-000000004105")
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            catalogRows: [row],
+            modelListState: .loaded([model]),
+            selectedModelHandle: model.id,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: model.id,
+            executionPhase: .processing(lock),
+            backgroundExecutionPhases: backgroundExecutionPhases,
+            modelListRequestID: refreshID,
+            modelListProvider: .openai,
+            modelListProviderOrder: [.openai],
+            modelListPendingProviders: [.openai],
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: catalog bookkeeping을 제외하고 request lock의 완전한 불변성만 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.modelListLoaded(
+            requestID: refreshID,
+            provider: .openai,
+            models: [unavailableModel],
+        ))
+
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+        XCTAssertEqual(store.state.backgroundExecutionPhases, backgroundExecutionPhases)
+        XCTAssertEqual(store.state.lockedModelHandle, model.id)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertEqual(store.state.unavailableSelectedModelHandle, model.id)
+    }
+}
+
+private func makeCBW004SelectionBookkeepingState(models: [AiProviderModel]) -> AiChatFeature.State {
+    let catalogRows = makeCatalogRows()
+    let selectedModel = models[0]
+    let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114201"))
+    let foregroundRequest = AiChatRequest(
+        context: makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222224201")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333334201")),
+            model: selectedModel.id,
+            selectedRow: catalogRows[0],
+            selectedModel: selectedModel,
+            selectedThinking: .effort(.high),
+        ),
+        messages: [AiChatMessage(role: .user, content: "Foreground request")],
+    )
+    let foregroundLock = makeRequestLock(
+        kind: .submit,
+        request: foregroundRequest,
+        selectedHandle: selectedModel.id,
+        selectedRow: catalogRows[0],
+        assistantReplacementIndex: nil,
+    )
+    let backgroundSessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444201"))
+    let backgroundRequest = AiChatRequest(
+        context: makeRequestContext(
+            sessionID: backgroundSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("55555555-5555-5555-5555-555555554201")),
+            runID: AiChatRunID(rawValue: makeUUID("66666666-6666-6666-6666-666666664201")),
+            model: selectedModel.id,
+            selectedRow: catalogRows[0],
+            selectedModel: selectedModel,
+            selectedThinking: .effort(.high),
+        ),
+        messages: [AiChatMessage(role: .user, content: "Background request")],
+    )
+    let backgroundLock = makeRequestLock(
+        kind: .submit,
+        request: backgroundRequest,
+        selectedHandle: selectedModel.id,
+        selectedRow: catalogRows[0],
+        assistantReplacementIndex: nil,
+    )
+
+    return AiChatFeature.State(
+        mode: .chat,
+        sessionID: sessionID,
+        preparedTransientSessionID: sessionID,
+        sessionStatus: .active,
+        currentContext: makeContextSnapshot(),
+        transcriptHistory: [AiChatMessage(role: .user, content: "Draft context")],
+        draftText: "Draft",
+        catalogRows: catalogRows,
+        modelListState: .loaded(models),
+        selectedModelHandle: selectedModel.id,
+        selectedThinking: .effort(.high),
+        unavailableSelectedModelHandle: makeUnresolvableModelHandle(),
+        lockedModelHandle: selectedModel.id,
+        lastExecutionFailure: .unsupportedProvider,
+        executionPhase: .processing(foregroundLock),
+        backgroundExecutionPhases: [
+            backgroundLock.requestID: .failed(backgroundLock, .unsupportedProvider),
+        ],
+        providerConnectionSnapshot: .known([.openai, .anthropic]),
+    )
+}
+
+private func makeCBW004PendingRequest(
+    resolutionID: UUID,
+    sessionID: AiChatSessionID,
+    model: AiProviderModel,
+    row: AiModelCatalogRow,
+    prompt: String,
+) -> AiChatPendingRequestStart {
+    let message = AiChatMessage(role: .user, content: prompt)
+    return AiChatPendingRequestStart(
+        resolutionID: resolutionID,
+        kind: .submit,
+        sessionID: sessionID,
+        selectedModel: model,
+        selectedRow: row,
+        preparedRequest: AiChatPreparedRequest(
+            prompt: prompt,
+            messages: [message],
+            persistenceTranscriptHistory: [message],
+            assistantReplacementIndex: nil,
+            historyTruncation: .init(
+                includedMessageCount: 1,
+                excludedMessageCount: 0,
+                budget: 24000,
+                truncationReason: nil,
+            ),
+        ),
+    )
+}
+
+private func makeCBW004UnavailableModel(_ model: AiProviderModel) -> AiProviderModel {
+    AiProviderModel(
+        id: model.id,
+        provider: model.provider,
+        rawModelID: model.rawModelID,
+        displayName: model.displayName,
+        providerDisplayName: model.providerDisplayName,
+        thinkingCapability: model.thinkingCapability,
+        supportsThinkingNone: model.supportsThinkingNone,
+        unavailableReason: .init(message: "Model is temporarily unavailable."),
+    )
 }
 
 @MainActor
@@ -1975,12 +3492,14 @@ private func makeCBW004SubmitFixture(
     selectedHandle: AiModelHandle,
     selectedThinking: AiThinkingSelection?,
     fixedMs: Int64,
+    persistence: AiChatSessionPersistenceSpy? = nil,
 ) -> CBW004SubmitFixture {
     let catalogRows = makeCatalogRows()
     let models = makeThinkingCapableProviderModels()
     let stream = AiChatExecutionStreamDriver()
     let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111114004"))
     let store = TestStore(initialState: AiChatFeature.State(
+        mode: .chat,
         sessionID: sessionID,
         sessionStatus: .active,
         currentContext: makeContextSnapshot(),
@@ -2002,6 +3521,14 @@ private func makeCBW004SubmitFixture(
         $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
             stream.stream(for: request)
         })
+        $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+            loadSession: { _ in nil },
+            saveSession: { snapshot in
+                guard let persistence else { return snapshot }
+                return await persistence.save(snapshot)
+            },
+            deleteSession: { _ in },
+        )
         $0.aiConnectionsFileClient = AIConnectionsFileClient(
             load: {
                 makeConnectionsFile(providers: [
@@ -2025,5 +3552,22 @@ private func makeCBW004SubmitFixture(
         stream: stream,
         catalogRows: catalogRows,
         models: models,
+    )
+}
+
+private func makeTask4LockWithoutSelectedRow(
+    request: AiChatRequest,
+    selectedHandle: AiModelHandle,
+) -> AiChatRequestLock {
+    AiChatRequestLock(
+        kind: .submit,
+        requestID: request.context.requestID,
+        runID: request.context.runID,
+        context: request.context,
+        request: request,
+        selectedModelHandle: selectedHandle,
+        selectedModelRow: nil,
+        assistantReplacementIndex: nil,
+        observabilitySummary: .init(submittedAtMs: 0),
     )
 }

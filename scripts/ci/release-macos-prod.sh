@@ -155,7 +155,7 @@ verify_archive_artifacts() {
   # 5. FilterSearchXPC.xpc: Mach service name is prod variant
   if [[ -d "${xpc_path}" ]]; then
     local mach_service
-    mach_service="$(plutil -p "${xpc_path}/Contents/Info.plist" | grep -A1 '"MachServices"' | tail -1 | sed 's/.*"\(.*\)" => true/\1/')"
+    mach_service="$(/usr/libexec/PlistBuddy -c 'Print :MachServices' "${xpc_path}/Contents/Info.plist" | sed -n 's/^[[:space:]]*\([^ =][^=]*\) = true$/\1/p')"
     if [[ "${mach_service}" != "fm.voyager.Voyager.FilterSearchXPC" ]]; then
       echo "error: FilterSearchXPC Mach service name is '${mach_service}', expected 'fm.voyager.Voyager.FilterSearchXPC'" >&2
       errors=$((errors + 1))
@@ -309,6 +309,13 @@ build_notarize() {
 
   log "Creating Sparkle zip..."
   "${SCRIPT_DIR}/create-sparkle-zip.sh"
+
+  log "Verifying optimized release artifacts..."
+  "${SCRIPT_DIR}/verify-release-artifacts.sh" \
+    "${BUILD_DIR}/Voyager.xcarchive" \
+    "${BUILD_DIR}/export/Voyager.app" \
+    "${BUILD_DIR}/Voyager-${VERSION}.zip" \
+    "${BUILD_DIR}/Voyager.dmg"
 
   log "Generating Sparkle appcast..."
   "${SCRIPT_DIR}/generate-sparkle-appcast.sh"

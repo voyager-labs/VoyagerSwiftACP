@@ -84,6 +84,11 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             setup: AiChatSetupState,
             connectionsFile: AIConnectionsFile,
         )
+        case aiChatReopenInspectorOpenLoaded(
+            requestID: UUID,
+            setup: AiChatSetupState,
+            connectionsFile: AIConnectionsFile,
+        )
         case aiChatNewChatDefaultsLoaded(
             requestID: UUID,
             candidate: AiChatPersistedSelectionCandidate?,
@@ -111,7 +116,9 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case setSortOrder(VoyagerShared.SortOrder)
         case requestUndo
         case requestRedo
+        case find
         case toggleComposer
+        case reopenChat
         case newChat
         case showChatHistory
         case cut
@@ -132,7 +139,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     public enum Delegate: Sendable {
         case openPathInNewWindow(String)
         case openAISettings
-        case requestAttachmentPicker
+        case requestAttachmentPicker(AiChatSessionID)
         case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
         case pinnedContentTabRuntimeNavigationChanged(
             tabID: ContentTabID,

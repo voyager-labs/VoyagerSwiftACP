@@ -54,6 +54,11 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
+            key = "VOYAGER_PROJECT_ROOT"
+            value = "$(SRCROOT)/../../../.."
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "INJECTION_PROJECT_ROOT"
             value = "$(SRCROOT)/../.."
             isEnabled = "YES">

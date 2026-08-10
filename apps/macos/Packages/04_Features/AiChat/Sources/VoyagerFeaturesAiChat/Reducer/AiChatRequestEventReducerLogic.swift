@@ -9,11 +9,29 @@ extension AiChatFeature {
             handleStartedEvent(context, state: &state)
         case let .delta(context, text):
             handleDeltaEvent(context: context, text: text, state: &state)
+        case let .status(context, signal):
+            handleStatusEvent(context: context, signal: signal, state: &state)
         case let .final(response):
             handleFinalEvent(response, state: &state)
         case let .failed(context, reason):
             handleFailedEvent(context: context, reason: reason, state: &state)
         }
+    }
+
+    private func handleStatusEvent(
+        context: AiChatRequestContextSnapshot,
+        signal: AiChatExecutionActivitySignal,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let matched = processingLock(matching: context, state: state) else { return .none }
+        let updatedLock = matched.lock.recordingActivity(signal)
+        guard updatedLock != matched.lock else { return .none }
+        if matched.isBackground {
+            state.backgroundExecutionPhases[updatedLock.requestID] = .processing(updatedLock)
+        } else {
+            state.executionPhase = .processing(updatedLock)
+        }
+        return .none
     }
 
     private func handleStartedEvent(_ context: AiChatRequestContextSnapshot, state: inout State) -> Effect<Action> {
@@ -26,7 +44,11 @@ extension AiChatFeature {
         text: String,
         state: inout State,
     ) -> Effect<Action> {
-        guard let matched = processingLock(matching: context, state: state) else { return .none }
+        guard let matched = processingLock(matching: context, state: state),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return .none
+        }
         let updatedLock = matched.lock.recordingDelta(at: currentTimestampMs())
         if matched.isBackground {
             state.backgroundExecutionPhases[updatedLock.requestID] = .processing(updatedLock)
@@ -44,9 +66,14 @@ extension AiChatFeature {
         guard let matched = processingLock(matching: response.context, state: state) else { return .none }
 
         let terminalTimestampMs = currentTimestampMs()
+        let assistantMessage = AiChatMessage(
+            role: response.assistantMessage.role,
+            content: response.assistantMessage.content,
+            createdAtMs: terminalTimestampMs,
+        )
         let normalizedResponse = AiChatResponse(
             context: response.context,
-            assistantMessage: response.assistantMessage,
+            assistantMessage: assistantMessage,
             completedAtMs: terminalTimestampMs,
         )
         let finalizedLock = matched.lock.recordingTerminal(at: terminalTimestampMs, failure: nil, wasCancelled: false)
@@ -75,6 +102,10 @@ extension AiChatFeature {
             )
             state.executionPhase = .completed(finalizedLock.recordingFinalSnapshot(snapshot))
         }
+        state.prepareInspectorReopenPersistenceBaseline(
+            requestID: finalizedLock.requestID,
+            sessionID: snapshot.sessionID,
+        )
         return saveFinalSnapshot(snapshot, finalizedLock: finalizedLock.recordingFinalSnapshot(snapshot))
     }
 

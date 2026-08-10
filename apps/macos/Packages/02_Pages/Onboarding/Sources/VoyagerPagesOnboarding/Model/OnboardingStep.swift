@@ -2,7 +2,6 @@ import Foundation
 
 enum OnboardingStep: String, CaseIterable, Codable {
     case welcome
-    case accessUnlock
     case permissions
     case aiProviderSetup
     case complete
@@ -15,8 +14,6 @@ enum OnboardingStep: String, CaseIterable, Codable {
         switch self {
         case .welcome:
             "Welcome"
-        case .accessUnlock:
-            "Unlock Voyager"
         case .permissions:
             "Permissions"
         case .aiProviderSetup:
@@ -30,8 +27,6 @@ enum OnboardingStep: String, CaseIterable, Codable {
         switch self {
         case .welcome:
             "A quick setup before you dive in."
-        case .accessUnlock:
-            "Activate your Voyager license to continue."
         case .permissions:
             "Just a couple of permissions to get you going."
         case .aiProviderSetup:
@@ -53,12 +48,11 @@ enum OnboardingStep: String, CaseIterable, Codable {
         return Self.allCases[previousIndex]
     }
 
-    /// 커스텀 디코더 — 레거시 `"betaAccess"` rawValue를 `.accessUnlock`로 매핑.
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
         switch raw {
         case "accessUnlock", "betaAccess":
-            self = .accessUnlock
+            self = .permissions
         case "welcome":
             self = .welcome
         case "permissions":
