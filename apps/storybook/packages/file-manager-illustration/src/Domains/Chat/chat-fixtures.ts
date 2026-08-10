@@ -5,6 +5,7 @@ import type {
   ChatStreamingAssistant,
   ChatSurfaceState,
 } from "../../model/types"
+import { aiChatInputProcessing, aiChatInputReadyEmpty } from "./ai-chat-input-fixtures"
 
 // 채팅 도메인 deterministic fixture — network·clock·random 미의존.
 // 원본: AiChatState (sessionList, transcriptHistory, streamingAssistantDisplayModel).
@@ -95,12 +96,14 @@ export const chatSurfaceHistory: ChatSurfaceState = {
 export const chatSurfaceConversation: ChatSurfaceState = {
   kind: "transcript",
   messages: chatTranscriptMessages,
+  inputBar: aiChatInputReadyEmpty,
   canRegenerate: true,
 }
 
 export const chatSurfaceStreaming: ChatSurfaceState = {
   kind: "transcript",
   messages: chatTranscriptMessages.slice(0, 1),
+  inputBar: aiChatInputProcessing,
   streamingAssistant: chatStreamingAssistant,
   isProcessing: true,
 }
@@ -108,6 +111,7 @@ export const chatSurfaceStreaming: ChatSurfaceState = {
 export const chatSurfaceError: ChatSurfaceState = {
   kind: "transcript",
   messages: chatTranscriptMessages.slice(0, 3),
+  inputBar: aiChatInputReadyEmpty,
   streamingAssistant: chatStreamingFailure,
   canRegenerate: true,
 }
@@ -116,5 +120,6 @@ export const chatSurfaceEmpty: ChatSurfaceState = {
   kind: "centeredEmpty",
   emptyTitle: "Ask about your files",
   emptyDetail: "Voyager can summarize, organize, and find connections across the selected entries.",
+  inputBar: aiChatInputReadyEmpty,
   connectionError: chatConnectionError,
 }

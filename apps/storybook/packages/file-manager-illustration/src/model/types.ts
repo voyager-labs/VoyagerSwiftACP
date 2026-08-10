@@ -46,11 +46,6 @@ export type SelectedEntriesCardProps = {
   readonly primaryName: string
 }
 
-export type AiChatInputBarProps = {
-  readonly requestText: string
-  readonly onRequestTextChange: (value: string) => void
-}
-
 export type SearchFieldProps = {
   readonly value?: string
   readonly placeholder?: string
@@ -143,6 +138,94 @@ export type ChatConnectionError = {
   readonly actionLabel: string
 }
 
+export type AiChatInputActionPresentation =
+  | {
+      readonly kind: "submit"
+      readonly isEnabled: boolean
+      readonly accessibilityLabel: string
+      readonly help: string
+    }
+  | {
+      readonly kind: "stop"
+      readonly isEnabled: boolean
+      readonly accessibilityLabel: string
+      readonly help: string
+    }
+
+export type AiChatInputSelectorPresentation = {
+  readonly label: string
+  readonly accessibilityLabel: string
+  readonly accessibilityValue: string
+  readonly isDisabled: boolean
+}
+
+export type AiChatInputMenuSelectorPresentation = AiChatInputSelectorPresentation & {
+  readonly value: string
+  readonly options: readonly {
+    readonly value: string
+    readonly label: string
+    readonly detail?: string
+    readonly disabled?: boolean
+  }[]
+}
+
+export type AiChatInputContextItem = {
+  readonly id: string
+  readonly title: string
+  readonly detail?: string
+  readonly symbolName?: string
+  readonly trailingSymbolName?: string
+  readonly isRemovable?: boolean
+}
+
+export type AiChatInputContextGroup = {
+  readonly id: string
+  readonly label: string
+  readonly items: readonly AiChatInputContextItem[]
+}
+
+export type AiChatInputContextSection = {
+  readonly id: string
+  readonly kind: "currentResponse" | "nextMessage"
+  readonly label: string
+  readonly isEditable: boolean
+  readonly groups: readonly AiChatInputContextGroup[]
+}
+
+export type AiChatInputBarPresentation = {
+  readonly placeholder: string
+  readonly inputAccessibilityLabel: string
+  readonly inputAccessibilityHint: string
+  readonly contextAffordanceLabel: string
+  readonly modelSelector: AiChatInputMenuSelectorPresentation
+  readonly thinkingSelector: AiChatInputMenuSelectorPresentation
+  readonly action: AiChatInputActionPresentation
+  readonly isComposerEditingDisabled: boolean
+  readonly contextSections: readonly AiChatInputContextSection[]
+}
+
+export type AiChatAttachmentDropPayload = {
+  readonly files: readonly File[]
+  readonly urls: readonly URL[]
+}
+
+export type AiChatInputBarActions = {
+  readonly onAddAttachment?: () => void
+  readonly onModelSelected?: (value: string) => void
+  readonly onThinkingSelected?: (value: string) => void
+  readonly onSubmit?: () => void
+  readonly onStop?: () => void
+  readonly onRemoveContextItem?: (itemID: string) => void
+  readonly onAttachmentsDropped?: (payload: AiChatAttachmentDropPayload) => void
+}
+
+export type AiChatInputBarProps = {
+  readonly requestText: string
+  readonly onRequestTextChange: (value: string) => void
+  readonly presentation: AiChatInputBarPresentation
+  readonly actions?: AiChatInputBarActions
+}
+
 export type ChatSurfaceState =
   | {
       readonly kind: "sessions"
@@ -155,6 +238,7 @@ export type ChatSurfaceState =
   | {
       readonly kind: "transcript"
       readonly messages: readonly ChatMessage[]
+      readonly inputBar: AiChatInputBarPresentation
       readonly streamingAssistant?: ChatStreamingAssistant
       readonly isProcessing?: boolean
       readonly statusText?: string
@@ -164,6 +248,7 @@ export type ChatSurfaceState =
       readonly kind: "centeredEmpty"
       readonly emptyTitle: string
       readonly emptyDetail: string
+      readonly inputBar: AiChatInputBarPresentation
       readonly connectionError?: ChatConnectionError
     }
 
@@ -172,4 +257,5 @@ export type FileManagerIllustrationProps = {
   readonly contentContext: ContentContext
   // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/streaming/error/recovery)을 root에서 재현한다.
   readonly chatSurface?: ChatSurfaceState
+  readonly chatInputActions?: AiChatInputBarActions
 }
