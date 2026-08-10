@@ -207,7 +207,7 @@ struct FileManagerSidebarContentTabMoveReducer {
                 state.pendingContentTabMoveRequest = request
                 return .send(.delegate(.requestContentTabMove(request)))
 
-            case let .view(.moveContentTabs(payload, targetWindowID)):
+            case let .view(.moveContentTabs(payload, targetWindowID, targetDomain, placement)):
                 guard state.pendingContentTabMoveRequest == nil,
                       let sourceWindowID = state.currentWindowID,
                       sourceWindowID == payload.sourceWindowID,
@@ -247,6 +247,9 @@ struct FileManagerSidebarContentTabMoveReducer {
                     initiatingTabID: payload.initiatingTabID,
                     orderedTabIDs: payload.orderedTabIDs,
                     targetWindowID: targetWindowID,
+                    sourceDomain: payload.sourceDomain,
+                    targetDomain: targetDomain,
+                    placement: placement,
                 )
                 state.contentTabDragSnapshot = nil
                 state.pendingContentTabMoveRequest = request
@@ -260,18 +263,26 @@ struct FileManagerSidebarContentTabMoveReducer {
                     return .none
                 }
 
-                let sourceTabIDs = Set(state.contentTabSidebarItems.map(\.id))
+                // Sidebar 표시 순서와 isPinned에서 source domain lookup을 만들어 frozen batch를 같은 domain으로 좁힌다.
+                let domainByTabID = Dictionary(
+                    state.contentTabSidebarItems.map {
+                        ($0.id, ContentTabDomain.domain(isPinned: $0.isPinned))
+                    },
+                    uniquingKeysWith: { current, _ in current },
+                )
                 guard let orderedTabIDs = ContentTabDragSnapshot.frozenOrderedTabIDs(
                     initiatingTabID: initiatingTabID,
                     selectedTabIDs: selectedTabIDs,
                     displayedOrderedTabIDs: state.contentTabSelectionOrderedIDs,
-                    sourceTabIDs: sourceTabIDs,
+                    sourceTabIDs: Set(domainByTabID.keys),
+                    domainForTabID: { domainByTabID[$0] },
                 ) else { return .none }
                 state.contentTabDragSnapshot = ContentTabDragSnapshot(
                     operationID: uuid(),
                     sourceWindowID: sourceWindowID,
                     initiatingTabID: initiatingTabID,
                     orderedTabIDs: orderedTabIDs,
+                    sourceDomain: domainByTabID[initiatingTabID],
                 )
                 return .none
 
@@ -310,6 +321,24 @@ struct FileManagerSidebarContentTabMoveReducer {
                       state.pendingContentTabMoveRequest == nil
                 else { return .none }
                 return .send(.delegate(.receiveContentTabDrag(payload)))
+
+            case let .view(.receiveContentTabExplicitDomainDrag(payload, targetDomain, placement)):
+                // 외부 창 explicit domain 경계 drop도 preserve-domain transfer와 동일한 target-side guard를 적용한다.
+                // 실제 canonical ContentTabMoveRequest 구성은 window manager가 source 창으로 route한 뒤
+                // `moveContentTabs`에서 수행한다. 여기서는 target 가용성/중복 pending만 fail-safe로 검증한다.
+                guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
+                      let currentWindowID = state.currentWindowID,
+                      currentWindowID != payload.sourceWindowID,
+                      state.pendingContentTabMoveRequest == nil
+                else { return .none }
+                return .send(.delegate(.receiveContentTabExplicitDomainDrag(
+                    payload: payload,
+                    targetDomain: targetDomain,
+                    placement: placement,
+                )))
+
+            case let .view(.contentTabDomainTransitionRequested(request)):
+                return .send(.delegate(.contentTabDomainTransitionRequested(request)))
 
             default:
                 return .none

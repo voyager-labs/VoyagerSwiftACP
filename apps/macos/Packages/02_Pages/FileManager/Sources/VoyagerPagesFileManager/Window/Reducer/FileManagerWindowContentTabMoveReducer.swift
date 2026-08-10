@@ -10,6 +10,7 @@ struct FileManagerWindowContentTabMoveReducer {
         Reduce { state, action in
             switch action {
             case let .sidebar(.view(.moveContentTab(tabID, targetWindowID))):
+                guard state.pendingSelectedContentTabPinMutation == nil else { return .none }
                 prepareSingletonRequest(
                     tabID: tabID,
                     targetWindowID: targetWindowID,
@@ -22,6 +23,7 @@ struct FileManagerWindowContentTabMoveReducer {
                 orderedTabIDs,
                 targetWindowID,
             ))):
+                guard state.pendingSelectedContentTabPinMutation == nil else { return .none }
                 prepareMenuBatchRequest(
                     initiatingTabID: initiatingTabID,
                     orderedTabIDs: orderedTabIDs,
@@ -30,7 +32,8 @@ struct FileManagerWindowContentTabMoveReducer {
                 )
                 return .none
 
-            case let .sidebar(.view(.moveContentTabs(payload, targetWindowID))):
+            case let .sidebar(.view(.moveContentTabs(payload, targetWindowID, _, _))):
+                guard state.pendingSelectedContentTabPinMutation == nil else { return .none }
                 prepareBatchRequest(
                     payload: payload,
                     targetWindowID: targetWindowID,
@@ -54,7 +57,18 @@ struct FileManagerWindowContentTabMoveReducer {
                 return .send(.delegate(.requestContentTabMove(request)))
 
             case let .sidebar(.delegate(.receiveContentTabDrag(payload))):
+                guard state.pendingSelectedContentTabPinMutation == nil else { return .none }
                 return .send(.delegate(.receiveContentTabDrag(payload)))
+
+            case let .sidebar(.delegate(.receiveContentTabExplicitDomainDrag(payload, targetDomain, placement))):
+                // 외부 창 explicit domain 경계 drop 의도를 window manager로 동일하게 통과시킨다.
+                // window manager가 source 창의 canonical moveContentTabs로 route한다.
+                guard state.pendingSelectedContentTabPinMutation == nil else { return .none }
+                return .send(.delegate(.receiveContentTabExplicitDomainDrag(
+                    payload: payload,
+                    targetDomain: targetDomain,
+                    placement: placement,
+                )))
 
             case let .contentTabMoveSucceeded(request):
                 guard isMatchingInFlightRequest(request, state: state) else {

@@ -54,6 +54,7 @@ public enum ContentTabPinnedRecordPersistenceMutation: Equatable, Sendable {
     case upsert(
         record: ContentTabPinnedRecord,
         dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+        placement: ContentTabPlacement? = nil,
     )
     case remove(recordID: String)
 }
@@ -63,17 +64,28 @@ public struct ContentTabPinnedRecordPersistenceRequest: Equatable, Sendable {
     public let context: ContentTabPinnedRecordTerminalContext
     public let rollback: ContentTabPinnedRecordRollbackSnapshot
     public let mutation: ContentTabPinnedRecordPersistenceMutation
+    let persistenceScopeID: UUID
 
     public init(
         tabID: ContentTabID,
         context: ContentTabPinnedRecordTerminalContext,
         rollback: ContentTabPinnedRecordRollbackSnapshot,
         mutation: ContentTabPinnedRecordPersistenceMutation,
+        persistenceScopeID: UUID,
     ) {
         self.tabID = tabID
         self.context = context
         self.rollback = rollback
         self.mutation = mutation
+        self.persistenceScopeID = persistenceScopeID
+    }
+
+    public func validateCurrentIntent() throws {
+        try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: persistenceScopeID,
+            tabID: tabID,
+            intentID: context.intentID,
+        )
     }
 }
 
@@ -126,12 +138,12 @@ public enum ContentTabAction: Sendable {
         anchorID: ContentTabID,
         placement: FileManagerTopNavigationReorderPlacement,
     )
-    case pin(ContentTabID)
+    case pin(ContentTabID, placement: ContentTabPlacement? = nil)
     case pinUsingDormantSlot(
         ContentTabID,
         FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
     )
-    case unpin(ContentTabID)
+    case unpin(ContentTabID, placement: ContentTabPlacement? = nil)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)
     case updateRuntimePageAnchor(ContentTabID, ContentTabPageAnchor)
     case pinnedRecordSaveSucceeded(

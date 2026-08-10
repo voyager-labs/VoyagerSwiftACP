@@ -1465,6 +1465,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             sourceWindowID: fixture.sourceWindowID,
             initiatingTabID: fixture.tabB,
             orderedTabIDs: [fixture.tabA, fixture.tabB],
+            sourceDomain: .unpinned,
         )
         await store.send(.view(.prepareContentTabDrag(
             initiatingTabID: fixture.tabB,
@@ -1670,6 +1671,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             sourceWindowID: fixture.sourceWindowID,
             initiatingTabID: fixture.tabA,
             orderedTabIDs: [fixture.tabA],
+            sourceDomain: .unpinned,
         )
         await supersedingStore.send(.view(.prepareContentTabDrag(
             initiatingTabID: fixture.tabA,
@@ -2116,7 +2118,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// entered/updated hot path가 payload나 token을 읽지 않고 승인 상태와 owned boundary만 사용하는지 검증한다.
     /// - 검증 내용: 두 exact shape의 move proposal, data query 0회, update 중 Binding write 0회, pinned target 거부
     /// - 사전 조건: exact local runtime/base-only item과 유효한 local store entry
-    /// - 기대 결과: repeated update는 setter/data/store를 건드리지 않고 exit 뒤에도 session entry가 유지됨
+    /// - 기대 결과: repeated update와 거부된 hover는 source token을 지우지 않고 session entry를 유지함
     func testFileManagerTopNavigationReorderDestinationPreflightAcceptsExactShapesWithoutConsumptionOrRepeatedQueries(
     ) throws {
         let sourceID = ContentTabID(rawValue: "source")
@@ -2171,7 +2173,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(pinnedView.draggingEntered(pasteboardItems: [baseOnlyItem]), [])
         XCTAssertNil(pinnedBoundary.value)
-        XCTAssertNil(sessionStore.entry)
+        XCTAssertNotNil(sessionStore.entry)
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: drag 종료와 dismantle은 accepted state와 owned boundary만 정리함
@@ -4849,16 +4851,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.finish()
     }
 
-    /// CTM-004-directory_reload_lifecycle: 성공한 Sidebar Trash record의 실제 target 부모만 refresh함
-    /// moveToTrash client가 확정한 source/Trash 경로를 기준으로 active와 inactive Directory를 갱신한다.
-    /// - 검증 내용: active source reload 1회, inactive Trash parent pending, unrelated tab 불변
-    /// - 사전 조건: source active tab, Trash parent와 unrelated inactive tab, 성공한 moveToTrash record
-    /// - 기대 결과: 요청 경로가 아니라 record target 부모만 기존 directory refresh helper에 전달됨
-    func testSidebarTrashCompletion_refreshesSuccessfulTargetParents() async {
+    /// CTM-004-directory_reload_lifecycle: move participant 중 content와 Sidebar completion을 모두 처리함
+    /// 이미 시작된 EntryOperations의 reducer-owned completion이 Content Tab move gate를 통과하는지 검증한다.
+    /// - 검증 내용: content undo 등록, active source reload 1회, inactive Trash parent pending, unrelated tab 불변
+    /// - 사전 조건: move participant인 source active tab과 성공한 content/Sidebar EntryAction record
+    /// - 기대 결과: 두 completion이 기존 owner에 반영되고 요청 경로가 아닌 record target 부모만 refresh됨
+    func testMoveParticipantAllowsContentAndSidebarEntryCompletions() async throws {
         let activeID = ContentTabID(rawValue: "trash-source")
         let trashID = ContentTabID(rawValue: "trash-destination")
         let unrelatedID = ContentTabID(rawValue: "trash-unrelated")
-        let state = makeDirectoryReloadState(
+        let windowID = UUID()
+        var state = makeDirectoryReloadState(
             activeID: activeID,
             activePath: "/source",
             inactiveTabs: [
@@ -4866,22 +4869,55 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 .init(id: unrelatedID, path: "/unrelated", isPinned: false),
             ],
         )
-        let record = EntryActionRecord(
+        state.windowID = windowID
+        state.contentTabMoveParticipantRequestID = UUID()
+        state.sidebarEntryDropOperations.itemStates["/source/item.txt"] = .init(isBusy: true, lastError: nil)
+        let contentRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/source/old.txt", afterPath: "/source/new.txt")],
+        )
+        let sidebarRecord = EntryActionRecord(
             operationKind: .moveToTrash,
             targets: [.init(
                 beforePath: "/source/item.txt",
                 afterPath: "/actual-trash/item.txt",
             )],
         )
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: activeID.rawValue)
+        let manager = try XCTUnwrap(client.activate(scope))
+        let generation = try XCTUnwrap(client.generation(scope))
         let store = TestStore(initialState: state) {
-            FileManagerWindowRoutingReducer()
+            FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileOperationUndoManagerClient = client
+            $0.undoManagerClient = .previewValue
         }
-        // store.exhaustivity = .off: routed listing reload의 하위 정렬 action보다 target parent refresh를 검증한다.
+        // store.exhaustivity = .off: routed child action보다 participant 중 completion owner 반영을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))) {
+        await store.send(.internal(.entryActionCompleted(
+            tabID: activeID,
+            record: contentRecord,
+            undoManagerGeneration: generation,
+        )))
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoRecords, [contentRecord])
+        XCTAssertEqual(
+            store.state.tabContentStates[activeID]?.entryViewLayout.entryOperations.undoRecords,
+            [contentRecord],
+        )
+        XCTAssertTrue(manager.canUndo)
+
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.operationFinished(
+            "/source/item.txt",
+            .moveToTrash,
+            .success(()),
+        )))))
+        XCTAssertFalse(store.state.sidebarEntryDropOperations.itemStates["/source/item.txt"]?.isBusy ?? true)
+
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(sidebarRecord))))) {
             $0.pendingDirectoryReloadTabIDs = [trashID]
         }
         await store.receive(routedDirectoryReloadAction(tabID: activeID))
@@ -6954,6 +6990,513 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ))
     }
 
+    // MARK: - CTM-004-content_tab_domain_routing
+
+    /// CTM-004-content_tab_domain_routing: ContentTabDomain은 pinned/unpinned 두 의미만 노출한다.
+    /// domain 값 모델이 transport와 무관하게 고정된 두 case를 가지는지 검증한다.
+    /// - 검증 내용: allCases 순서, pinned/unpinned 비동등성, isPinned → domain 변환
+    /// - 사전 조건: 없음
+    /// - 기대 결과: allCases == [.unpinned, .pinned], 두 값은 서로 다르다
+    func testContentTabDomainDistinguishesPinnedAndUnpinned() {
+        XCTAssertEqual(ContentTabDomain.allCases, [.unpinned, .pinned])
+        XCTAssertNotEqual(ContentTabDomain.pinned, .unpinned)
+        XCTAssertEqual(ContentTabDomain.domain(isPinned: true), .pinned)
+        XCTAssertEqual(ContentTabDomain.domain(isPinned: false), .unpinned)
+    }
+
+    /// CTM-004-content_tab_domain_routing: placement는 Content Tab anchor만 노출하고 Location은 anchor가 아니다.
+    /// before/after/empty 의미가 tab ID를 정확히 드러내는지 검증한다.
+    /// - 검증 내용: before/after anchorTabID 일치, empty는 nil
+    /// - 사전 조건: 없음
+    /// - 기대 결과: before/after는 anchor ID를, empty는 nil을 반환한다
+    func testContentTabPlacementExposesContentTabAnchorOnly() {
+        let anchor = ContentTabID(rawValue: "placement-anchor")
+        XCTAssertEqual(ContentTabPlacement.before(anchor).anchorTabID, anchor)
+        XCTAssertEqual(ContentTabPlacement.after(anchor).anchorTabID, anchor)
+        XCTAssertNil(ContentTabPlacement.empty.anchorTabID)
+    }
+
+    /// CTM-004-content_tab_domain_routing: 선택된 initiator는 같은 source domain selected IDs만 frozen 순서로 가져간다.
+    /// 반대 domain의 selected tabs는 batch에서 배제된다.
+    /// - 검증 내용: pinned initiator가 unpinned selected를 빼고 pinned selected만 Sidebar 표시 순서로 freeze
+    /// - 사전 조건: pinned A/B, unpinned C/D가 섞인 표시 순서와 전체 mixed selection
+    /// - 기대 결과: pinned initiator frozen batch == [pinnedA, pinnedB]
+    func testFrozenBatchCarriesOnlySameSourceDomainSelectedIDsInSidebarOrder() {
+        let pinnedA = ContentTabID(rawValue: "frozen-pinned-a")
+        let pinnedB = ContentTabID(rawValue: "frozen-pinned-b")
+        let unpinnedC = ContentTabID(rawValue: "frozen-unpinned-c")
+        let unpinnedD = ContentTabID(rawValue: "frozen-unpinned-d")
+        let sourceTabIDs: Set<ContentTabID> = [pinnedA, pinnedB, unpinnedC, unpinnedD]
+        let displayedOrder = [pinnedA, unpinnedC, pinnedB, unpinnedD]
+        let mixedSelection: Set<ContentTabID> = [pinnedA, pinnedB, unpinnedC, unpinnedD]
+        let domainForTabID: (ContentTabID) -> ContentTabDomain? = { tabID in
+            [pinnedA, pinnedB].contains(tabID) ? .pinned : .unpinned
+        }
+
+        let frozen = ContentTabDragSnapshot.frozenOrderedTabIDs(
+            initiatingTabID: pinnedB,
+            selectedTabIDs: mixedSelection,
+            displayedOrderedTabIDs: displayedOrder,
+            sourceTabIDs: sourceTabIDs,
+            domainForTabID: domainForTabID,
+        )
+
+        XCTAssertEqual(frozen, [pinnedA, pinnedB])
+    }
+
+    /// CTM-004-content_tab_domain_routing: 선택되지 않은 initiator는 항상 batch-of-one이다.
+    /// mixed selection이 있어도 initiator가 선택 밖이면 singleton만 freeze한다.
+    /// - 검증 내용: unselected initiator frozen batch == [initiator]
+    /// - 사전 조건: pinned/unpinned mixed selection과 선택 밖 initiator
+    /// - 기대 결과: initiator singleton 하나만 freeze한다
+    func testFrozenBatchUnselectedInitiatorIsBatchOfOneRegardlessOfMixedSelection() {
+        let pinnedA = ContentTabID(rawValue: "frozen-unselected-pinned")
+        let unpinnedC = ContentTabID(rawValue: "frozen-unselected-unpinned")
+        let initiator = ContentTabID(rawValue: "frozen-unselected-init")
+        let sourceTabIDs: Set<ContentTabID> = [pinnedA, unpinnedC, initiator]
+        let displayedOrder = [pinnedA, unpinnedC, initiator]
+        let mixedSelection: Set<ContentTabID> = [pinnedA, unpinnedC]
+        let domainForTabID: (ContentTabID) -> ContentTabDomain? = { tabID in
+            tabID == pinnedA ? .pinned : .unpinned
+        }
+
+        let frozen = ContentTabDragSnapshot.frozenOrderedTabIDs(
+            initiatingTabID: initiator,
+            selectedTabIDs: mixedSelection,
+            displayedOrderedTabIDs: displayedOrder,
+            sourceTabIDs: sourceTabIDs,
+            domainForTabID: domainForTabID,
+        )
+
+        XCTAssertEqual(frozen, [initiator])
+    }
+
+    /// CTM-004-content_tab_domain_routing: domain lookup이 없으면 legacy all-member 동작을 유지한다.
+    /// 기존 CTM001 호출처럼 domainForTabID 기본값을 쓸 때 domain 분류 없이 모든 selected를 freeze한다.
+    /// - 검증 내용: domainForTabID 생략 시 selected 전체가 frozen 순서로 유지
+    /// - 사전 조건: 동일 domain tab A/B 전체 selection
+    /// - 기대 결과: frozen batch == [A, B]
+    func testFrozenBatchDefaultDomainLookupPreservesLegacyAllMemberBehavior() {
+        let tabA = ContentTabID(rawValue: "frozen-legacy-a")
+        let tabB = ContentTabID(rawValue: "frozen-legacy-b")
+        let sourceTabIDs: Set<ContentTabID> = [tabA, tabB]
+        let displayedOrder = [tabA, tabB]
+        let selection: Set<ContentTabID> = [tabA, tabB]
+
+        let frozen = ContentTabDragSnapshot.frozenOrderedTabIDs(
+            initiatingTabID: tabA,
+            selectedTabIDs: selection,
+            displayedOrderedTabIDs: displayedOrder,
+            sourceTabIDs: sourceTabIDs,
+        )
+
+        XCTAssertEqual(frozen, [tabA, tabB])
+    }
+
+    /// CTM-004-content_tab_domain_routing: 동일 창 동일 domain은 VOY-458 batch reorder로 분류한다.
+    /// - 검증 내용: same window + same domain route == .sameWindowSameDomainReorder
+    /// - 사전 조건: 동일 windowID, pinned source/target, Content Tab anchor
+    /// - 기대 결과: reorder route
+    func testRouterClassifiesSameWindowSameDomainAsReorder() {
+        let windowID = UUID()
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: windowID,
+            targetWindowID: windowID,
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: .before(ContentTabID(rawValue: "reorder-anchor")),
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .sameWindowSameDomainReorder)
+    }
+
+    /// CTM-004-content_tab_domain_routing: 동일 창 반대 domain은 placement를 포함한 Pin/Unpin 전환 의도로 분류한다.
+    /// - 검증 내용: same window + opposite domain route == .sameWindowOppositeDomainTransition(placement:)
+    /// - 사전 조건: 동일 windowID, unpinned source + pinned target, Content Tab row placement
+    /// - 기대 결과: 요청한 placement를 그대로 실은 transition route
+    func testRouterClassifiesSameWindowOppositeDomainAsTransition() {
+        let windowID = UUID()
+        let placement = ContentTabPlacement.before(ContentTabID(rawValue: "transition-anchor"))
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: windowID,
+            targetWindowID: windowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: placement,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .sameWindowOppositeDomainTransition(placement: placement))
+    }
+
+    /// CTM-004-content_tab_domain_routing: 외부 창 domain 미지정은 preserve-domain transfer로 분류한다.
+    /// - 검증 내용: foreign + targetDomain nil route == .foreignPreserveDomainTransfer
+    /// - 사전 조건: 서로 다른 windowID, targetDomain nil, placement nil
+    /// - 기대 결과: preserve-domain transfer route
+    func testRouterClassifiesForeignUnspecifiedTargetAsPreserveDomainTransfer() {
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: UUID(),
+            targetWindowID: UUID(),
+            sourceDomain: .unpinned,
+            targetDomain: nil,
+            placement: nil,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .foreignPreserveDomainTransfer)
+    }
+
+    /// CTM-004-content_tab_domain_routing: 외부 창 explicit 동일 domain은 placement transfer로 분류한다.
+    /// - 검증 내용: foreign + explicit same domain route == .foreignExplicitSameDomainTransfer(placement)
+    /// - 사전 조건: 서로 다른 windowID, pinned source/target, Content Tab anchor placement
+    /// - 기대 결과: explicit same-domain placement transfer route
+    func testRouterClassifiesForeignExplicitSameDomainAsPlacementTransfer() {
+        let placement = ContentTabPlacement.after(ContentTabID(rawValue: "foreign-same-anchor"))
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: UUID(),
+            targetWindowID: UUID(),
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: placement,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .foreignExplicitSameDomainTransfer(placement: placement))
+    }
+
+    /// CTM-004-content_tab_domain_routing: 외부 창 explicit 반대 domain은 transfer + 전환 의도로 분류한다.
+    /// - 검증 내용: foreign + explicit opposite domain route == .foreignExplicitOppositeDomainTransfer(placement)
+    /// - 사전 조건: 서로 다른 windowID, unpinned source + pinned target, Content Tab anchor placement
+    /// - 기대 결과: explicit opposite-domain transition transfer route
+    func testRouterClassifiesForeignExplicitOppositeDomainAsTransitionTransfer() {
+        let placement = ContentTabPlacement.before(ContentTabID(rawValue: "foreign-opposite-anchor"))
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: UUID(),
+            targetWindowID: UUID(),
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: placement,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .foreignExplicitOppositeDomainTransfer(placement: placement))
+    }
+
+    /// CTM-004-content_tab_domain_routing: 비 Content Tab 표면과 explicit domain 누락 placement는 dispatch 0회 reject다.
+    /// - 검증 내용: nonContentTab surface → rejected, foreign explicit domain without placement → rejected
+    /// - 사전 조건: Location 표면 입력과 placement nil foreign explicit domain 입력
+    /// - 기대 결과: 두 입력 모두 .rejected
+    func testRouterRejectsLocationSurfaceAndExplicitDomainMissingPlacement() {
+        let windowID = UUID()
+        let locationRoute = ContentTabDragRouter.classify(.init(
+            sourceWindowID: windowID,
+            targetWindowID: windowID,
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: .before(ContentTabID(rawValue: "location-rejected")),
+            targetSurface: .nonContentTab,
+        ))
+        XCTAssertEqual(locationRoute, .rejected)
+
+        let missingPlacementRoute = ContentTabDragRouter.classify(.init(
+            sourceWindowID: UUID(),
+            targetWindowID: UUID(),
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: nil,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(missingPlacementRoute, .rejected)
+    }
+
+    /// CTM-004-content_tab_domain_routing: 동일 창 반대 domain 전환은 explicit placement가 없으면 reject다.
+    /// - 검증 내용: same window + opposite domain + placement nil → .rejected
+    /// - 사전 조건: 동일 windowID, unpinned source + pinned target, placement nil
+    /// - 기대 결과: placement가 없으면 전환 의도를 내지 않고 reject한다
+    func testRouterRejectsSameWindowOppositeDomainWithoutPlacement() {
+        let windowID = UUID()
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: windowID,
+            targetWindowID: windowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: nil,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .rejected)
+    }
+
+    /// CTM-004-content_tab_domain_routing: `.empty` placement는 Content Tab domain 표면에서 유효하다.
+    /// 빈 domain slot은 row anchor가 없어도 Location/비 Content Tab 표면과 구분되어 reject되지 않는다.
+    /// - 검증 내용: foreign explicit same domain + `.empty` → placement transfer(placement: .empty)
+    /// - 사전 조건: 서로 다른 windowID, pinned source/target, `.empty` placement, contentTabDomain 표면
+    /// - 기대 결과: `.empty`를 그대로 실은 same-domain placement transfer route
+    func testRouterAcceptsEmptyPlacementOnContentTabDomainSurface() {
+        let route = ContentTabDragRouter.classify(.init(
+            sourceWindowID: UUID(),
+            targetWindowID: UUID(),
+            sourceDomain: .pinned,
+            targetDomain: .pinned,
+            placement: .empty,
+            targetSurface: .contentTabDomain,
+        ))
+        XCTAssertEqual(route, .foreignExplicitSameDomainTransfer(placement: .empty))
+    }
+
+    /// CTM-004-content_tab_domain_routing: production adapter는 각 canonical drop마다 정확히 하나의 typed route를 낸다.
+    /// ContentTabDropRouteProjection.route가 ContentTabDragRouter.classify를 위임받아 정확한 placement와 함께 동작하는지 검증한다.
+    /// - 검증 내용: 5종 matrix + Location reject 각각이 adapter를 통해 정확히 한 건의 route로 산출
+    /// - 사전 조건: 동일/외부 window, same/opposite/nil domain, before/after/empty/nonContentTab 입력
+    /// - 기대 결과: 각 입력이 기대한 route를 정확히 하나 반환
+    func testContentTabDropRouteProjectionEmitsTypedRouteForEachCanonicalDrop() {
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let payload = ContentTabDragPayload(
+            operationID: UUID(),
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: ContentTabID(rawValue: "adapter-tab"),
+            orderedTabIDs: [ContentTabID(rawValue: "adapter-tab")],
+            sourceDomain: .unpinned,
+        )
+
+        XCTAssertEqual(
+            ContentTabDropRouteProjection.route(
+                payload: payload,
+                targetWindowID: sourceWindowID,
+                targetDomain: .unpinned,
+                placement: .before(ContentTabID(rawValue: "adapter-reorder")),
+                targetSurface: .contentTabDomain,
+            ),
+            .sameWindowSameDomainReorder,
+        )
+        let transitionPlacement = ContentTabPlacement.after(ContentTabID(rawValue: "adapter-transition"))
+        XCTAssertEqual(
+            ContentTabDropRouteProjection.route(
+                payload: payload,
+                targetWindowID: sourceWindowID,
+                targetDomain: .pinned,
+                placement: transitionPlacement,
+                targetSurface: .contentTabDomain,
+            ),
+            .sameWindowOppositeDomainTransition(placement: transitionPlacement),
+        )
+        XCTAssertEqual(
+            ContentTabDropRouteProjection.route(
+                payload: payload,
+                targetWindowID: targetWindowID,
+                targetDomain: nil,
+                placement: nil,
+                targetSurface: .contentTabDomain,
+            ),
+            .foreignPreserveDomainTransfer,
+        )
+        let samePlacement = ContentTabPlacement.empty
+        XCTAssertEqual(
+            ContentTabDropRouteProjection.route(
+                payload: payload,
+                targetWindowID: targetWindowID,
+                targetDomain: .unpinned,
+                placement: samePlacement,
+                targetSurface: .contentTabDomain,
+            ),
+            .foreignExplicitSameDomainTransfer(placement: samePlacement),
+        )
+        let oppositePlacement = ContentTabPlacement.before(ContentTabID(rawValue: "adapter-opposite"))
+        XCTAssertEqual(
+            ContentTabDropRouteProjection.route(
+                payload: payload,
+                targetWindowID: targetWindowID,
+                targetDomain: .pinned,
+                placement: oppositePlacement,
+                targetSurface: .contentTabDomain,
+            ),
+            .foreignExplicitOppositeDomainTransfer(placement: oppositePlacement),
+        )
+        XCTAssertEqual(
+            ContentTabDropRouteProjection.route(
+                payload: payload,
+                targetWindowID: targetWindowID,
+                targetDomain: .pinned,
+                placement: .before(ContentTabID(rawValue: "adapter-location")),
+                targetSurface: .nonContentTab,
+            ),
+            .rejected,
+        )
+    }
+
+    /// CTM-004-content_tab_domain_routing: production adapter는 외부 창 generic drop을 preserve-domain transfer로 산출한다.
+    /// SidebarView 외부 창 drop 경로(ContentTabDropDelegate → receiveContentTabDrag)가 이 adapter를 통해
+    /// 정확히 하나의 preserve-domain transfer route를 내는지 검증한다.
+    /// - 검증 내용: 외부 창 + targetDomain nil generic drop → .foreignPreserveDomainTransfer 단일 route
+    /// - 사전 조건: 서로 다른 windowID, sourceDomain이 있는 v2 payload, generic contentTabDomain 표면
+    /// - 기대 결과: 정확히 .foreignPreserveDomainTransfer 한 건
+    func testContentTabDropRouteProjectionResolvesCanonicalForeignDropAsPreserveDomainTransfer() {
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let payload = ContentTabDragPayload(
+            operationID: UUID(),
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: ContentTabID(rawValue: "foreign-drop-tab"),
+            orderedTabIDs: [ContentTabID(rawValue: "foreign-drop-tab")],
+            sourceDomain: .unpinned,
+        )
+
+        let route = ContentTabDropRouteProjection.route(
+            payload: payload,
+            targetWindowID: targetWindowID,
+            targetDomain: nil,
+            placement: nil,
+            targetSurface: .contentTabDomain,
+        )
+
+        XCTAssertEqual(route, .foreignPreserveDomainTransfer)
+    }
+
+    /// CTM-004-content_tab_domain_routing: v2 payload는 optional sourceDomain을 round-trip하고 v1은 무시한다.
+    /// - 검증 내용: v2 encode/decode sourceDomain 보존, v2 생략 → nil, v1 decode → nil, v1 encode key allowlist 유지
+    /// - 사전 조건: sourceDomain이 있는 v2, 없는 v2, v1 JSON
+    /// - 기대 결과: v2만 sourceDomain을 보존하고 v1은 schemaVersion/sourceWindowID/tabID key만 가진다
+    func testContentTabDragPayloadV2CarriesOptionalSourceDomainAndV1IgnoresIt() throws {
+        let sourceWindowID = UUID()
+        let tabID = ContentTabID(rawValue: "domain-payload-tab")
+        let v2WithDomain = ContentTabDragPayload(
+            operationID: UUID(),
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: tabID,
+            orderedTabIDs: [tabID],
+            sourceDomain: .pinned,
+        )
+        let decoded = try JSONDecoder().decode(
+            ContentTabDragPayload.self,
+            from: JSONEncoder().encode(v2WithDomain),
+        )
+        XCTAssertEqual(decoded.sourceDomain, .pinned)
+
+        let v2WithoutDomain = ContentTabDragPayload(
+            operationID: UUID(),
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: tabID,
+            orderedTabIDs: [tabID],
+        )
+        let decodedWithout = try JSONDecoder().decode(
+            ContentTabDragPayload.self,
+            from: JSONEncoder().encode(v2WithoutDomain),
+        )
+        XCTAssertNil(decodedWithout.sourceDomain)
+
+        let v1Data = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": ContentTabDragPayload.legacySchemaVersion,
+            "sourceWindowID": sourceWindowID.uuidString,
+            "tabID": ["rawValue": tabID.rawValue],
+        ])
+        let v1Payload = try JSONDecoder().decode(ContentTabDragPayload.self, from: v1Data)
+        XCTAssertNil(v1Payload.sourceDomain)
+        let v1Object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(v1Payload)) as? [String: Any],
+        )
+        XCTAssertEqual(Set(v1Object.keys), ["schemaVersion", "sourceWindowID", "tabID"])
+    }
+
+    /// CTM-004-content_tab_domain_routing: snapshot은 sourceDomain을 payload로 전달한다.
+    /// - 검증 내용: snapshot.sourceDomain == payload.sourceDomain
+    /// - 사전 조건: sourceDomain .pinned를 가진 snapshot
+    /// - 기대 결과: payload도 동일 sourceDomain을 가진다
+    func testContentTabDragSnapshotCarriesSourceDomainIntoPayload() {
+        let tabID = ContentTabID(rawValue: "snapshot-domain-tab")
+        let snapshot = ContentTabDragSnapshot(
+            operationID: UUID(),
+            sourceWindowID: UUID(),
+            initiatingTabID: tabID,
+            orderedTabIDs: [tabID],
+            sourceDomain: .pinned,
+        )
+        XCTAssertEqual(snapshot.sourceDomain, .pinned)
+        XCTAssertEqual(snapshot.payload.sourceDomain, .pinned)
+    }
+
+    /// CTM-004-content_tab_domain_routing: move request는 optional source/target domain과 placement를 보존한다.
+    /// - 검증 내용: request sourceDomain/targetDomain/placement round-trip
+    /// - 사전 조건: 세 semantic field를 모두 채운 request
+    /// - 기대 결과: 각 field가 입력 그대로 보존된다
+    func testContentTabMoveRequestThreadsOptionalSemanticFields() {
+        let placement = ContentTabPlacement.after(ContentTabID(rawValue: "request-anchor"))
+        let request = ContentTabMoveRequest(
+            operationID: UUID(),
+            requestID: UUID(),
+            sourceWindowID: UUID(),
+            initiatingTabID: ContentTabID(rawValue: "request-tab"),
+            orderedTabIDs: [ContentTabID(rawValue: "request-tab")],
+            targetWindowID: UUID(),
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: placement,
+        )
+        XCTAssertEqual(request.sourceDomain, .unpinned)
+        XCTAssertEqual(request.targetDomain, .pinned)
+        XCTAssertEqual(request.placement, placement)
+    }
+
+    /// CTM-004-content_tab_domain_routing: prepare는 같은 source domain selected IDs만 freeze하고 mixed selection을 보존한다.
+    /// native threshold에서 동결된 batch가 반대 domain selected tab을 배제하면서 selectedTabIDs는 그대로 두는지 검증한다.
+    /// - 검증 내용: frozen batch == pinned selected만, sourceDomain == .pinned, reducer는 selectedTabIDs를 mutate하지 않는다
+    /// - 사전 조건: pinned A/B, unpinned C가 있고 selection이 셋 모두인 Sidebar state
+    /// - 기대 결과: snapshot orderedTabIDs == [pinnedA, pinnedB], sourceDomain == .pinned, caller selection은 그대로
+    func testPrepareContentTabDragFreezesSameDomainBatchAndPreservesMixedSelection() async {
+        let pinnedA = ContentTabID(rawValue: "prepare-pinned-a")
+        let pinnedB = ContentTabID(rawValue: "prepare-pinned-b")
+        let unpinnedC = ContentTabID(rawValue: "prepare-unpinned-c")
+        let sourceWindowID = UUID()
+        let operationID = UUID()
+        let tabState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedA,
+                    page: .directory,
+                    anchor: .directory(path: "/a"),
+                    isPinned: true,
+                    title: "A",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: pinnedB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: true,
+                    title: "B",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: unpinnedC,
+                    page: .directory,
+                    anchor: .directory(path: "/c"),
+                    isPinned: false,
+                    title: "C",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedB,
+        )
+        var state = FileManagerSidebarState()
+        state.currentWindowID = sourceWindowID
+        state.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: tabState)
+        state.contentTabSelectionOrderedIDs = [pinnedA, unpinnedC, pinnedB]
+        let store = TestStore(initialState: state) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+        }
+
+        let expected = ContentTabDragSnapshot(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: pinnedB,
+            orderedTabIDs: [pinnedA, pinnedB],
+            sourceDomain: .pinned,
+        )
+        await store.send(.view(.prepareContentTabDrag(
+            initiatingTabID: pinnedB,
+            selectedTabIDs: [pinnedA, pinnedB, unpinnedC],
+        ))) {
+            $0.contentTabDragSnapshot = expected
+        }
+    }
+
     private static func fixedLocationClient() -> FileManagerLocationsClient {
         FileManagerLocationsClient { _ in
             [
@@ -7076,5 +7619,827 @@ private actor CTM004ReplayFileOperationGate {
     func resume() {
         suspension?.resume()
         suspension = nil
+    }
+}
+
+extension CTM004ContentTabSidebarTests {
+    // MARK: - CTM-004-content_tab_domain_transition_drag
+
+    /// CTM-004-content_tab_domain_transition_drag: same-window opposite-domain drop은 frozen batch 요청을 한 번 전달함
+    /// canonical move payload와 local reorder token을 함께 검증해 Pin placement 요청으로 승격하는지 확인한다.
+    /// - 검증 내용: source domain, frozen order, operation ID, before anchor 및 dispatch 횟수
+    /// - 사전 조건: unpinned source batch와 pinned target anchor, 동일 window, 유효한 local token
+    /// - 기대 결과: reorder dispatch 없이 정확히 한 transition request가 생성되고 source token이 소비됨
+    func testSameWindowOppositeDomainDropDispatchesFrozenBatchTransitionExactlyOnce() throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let operationID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let sourceID = ContentTabID(rawValue: "source")
+        let selectedID = ContentTabID(rawValue: "selected")
+        let anchorID = ContentTabID(rawValue: "anchor")
+        let sourceScope = try FileManagerTopNavigationReorderDragScopeID(
+            rawValue: XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333")),
+            boundaryOwner: .unpinnedContentTabs,
+        )
+        let targetScope = try FileManagerTopNavigationReorderDragScopeID(
+            rawValue: XCTUnwrap(UUID(uuidString: "44444444-4444-4444-4444-444444444444")),
+            boundaryOwner: .topNavigation,
+        )
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(sourceID),
+            dragScopeID: sourceScope,
+        )
+        let movePayload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: windowID,
+            initiatingTabID: sourceID,
+            orderedTabIDs: [selectedID, sourceID],
+            sourceDomain: .unpinned,
+        )
+        let token = try FileManagerTopNavigationReorderLocalToken(
+            rawValue: XCTUnwrap(UUID(uuidString: "55555555-5555-5555-5555-555555555555")),
+        )
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: reorderPayload, token: token)
+        var requests: [ContentTabDomainTransitionRequest] = []
+        var reorders: [FileManagerTopNavigationReorderDropResult] = []
+        let activeBoundaryID = Binding<Int?>(get: { nil }, set: { _ in })
+        let boundary = FileManagerTopNavigationReorderDropBoundary(
+            id: 0,
+            owner: .topNavigation,
+            anchorID: .contentTab(anchorID),
+            placement: .before,
+            contentTabDomain: .pinned,
+        )
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: activeBoundaryID,
+            boundary: boundary,
+            dragScopeID: targetScope,
+            sessionStore: sessionStore,
+            boundaryOwnerForItem: { id in id == .contentTab(anchorID) ? .topNavigation : nil },
+            onReorder: { reorders.append($0) },
+            targetWindowID: windowID,
+            contentTabIDsInDomain: { $0 == .pinned ? [anchorID] : [selectedID, sourceID] },
+            onDomainTransition: { requests.append($0) },
+        ))
+        let reorderData = try JSONEncoder().encode(reorderPayload)
+        let moveData = try JSONEncoder().encode(movePayload)
+        let item = FileManagerTopNavigationReorderPasteboardItem(
+            types: [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal, .contentTabMove],
+            dataForType: { type in
+                switch type {
+                case .fileManagerTopNavigationReorder: reorderData
+                case .fileManagerTopNavigationReorderLocal: token.data
+                case .contentTabMove: moveData
+                default: nil
+                }
+            },
+        )
+
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        XCTAssertTrue(view.performDrop(pasteboardItems: [item]))
+        XCTAssertEqual(reorders, [])
+        XCTAssertEqual(requests, [.init(
+            operationID: operationID,
+            sourceWindowID: windowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            initiatingTabID: sourceID,
+            orderedTabIDs: [selectedID, sourceID],
+            placement: .before(anchorID),
+        )])
+        XCTAssertNil(sessionStore.entry)
+    }
+
+    /// CTM-004-content_tab_domain_transition_drag: Sidebar View action은 semantic request를 그대로 delegate에 전달함
+    /// transport adapter가 request를 재구성하거나 중복 dispatch하지 않는지 검증한다.
+    /// - 검증 내용: View → Delegate exact equality
+    /// - 사전 조건: 유효한 same-window domain transition request
+    /// - 기대 결과: state 변화 없이 delegate action 한 번 수신
+    func testSidebarRelaysContentTabDomainTransitionRequestExactlyOnce() async {
+        let request = ContentTabDomainTransitionRequest(
+            operationID: UUID(),
+            sourceWindowID: UUID(),
+            sourceDomain: .pinned,
+            targetDomain: .unpinned,
+            initiatingTabID: .init(rawValue: "source"),
+            orderedTabIDs: [.init(rawValue: "source")],
+            placement: .empty,
+        )
+        let store = TestStore(initialState: FileManagerSidebarState()) {
+            FileManagerSidebarFeature()
+        }
+
+        await store.send(.view(.contentTabDomainTransitionRequested(request)))
+        await store.receive(\.delegate.contentTabDomainTransitionRequested, request)
+    }
+}
+
+extension CTM004ContentTabSidebarTests {
+    // MARK: - CTM-004-foreign_explicit_domain_drop
+
+    /// 외부 창 Content Tab drop이 각 route마다 정확히 하나의 typed pasteboard item을 만드는 헬퍼.
+    private func makeForeignExplicitDropPasteboardItem(
+        reorderPayload: FileManagerTopNavigationReorderDragPayload,
+        movePayload: ContentTabDragPayload,
+        token: FileManagerTopNavigationReorderLocalToken,
+    ) throws -> FileManagerTopNavigationReorderPasteboardItem {
+        let reorderData = try JSONEncoder().encode(reorderPayload)
+        let moveData = try JSONEncoder().encode(movePayload)
+        return FileManagerTopNavigationReorderPasteboardItem(
+            types: [.fileManagerTopNavigationReorder, .fileManagerTopNavigationReorderLocal, .contentTabMove],
+            dataForType: { type in
+                switch type {
+                case .fileManagerTopNavigationReorder: reorderData
+                case .fileManagerTopNavigationReorderLocal: token.data
+                case .contentTabMove: moveData
+                default: nil
+                }
+            },
+        )
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: 외부 창 explicit 동일 domain drop은 transfer callback을 정확히 한 번 dispatch한다.
+    /// frozen batch IDs, target domain, placement가 손실 없이 전달되는지 production drop destination 레벨에서 검증한다.
+    /// - 검증 내용: onForeignExplicitTransfer 1회 (정확한 payload/targetDomain/placement), onReorder/onDomainTransition 0회
+    /// - 사전 조건: foreign source window, pinned source/target domain, 유효한 local token, pinned anchor 경계
+    /// - 기대 결과: transfer intent 한 건, 기존 owner로 reorder/transition dispatch 없음
+    func testForeignExplicitSameDomainDropDispatchesTransferExactlyOnce() throws {
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let operationID = try XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
+        let initiatingID = ContentTabID(rawValue: "foreign-same-initiating")
+        let selectedID = ContentTabID(rawValue: "foreign-same-selected")
+        let anchorID = ContentTabID(rawValue: "foreign-same-anchor")
+        let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+        let targetScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .topNavigation)
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(initiatingID),
+            dragScopeID: sourceScope,
+        )
+        let movePayload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: [selectedID, initiatingID],
+            sourceDomain: .pinned,
+        )
+        let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+        // 외부 창 drag: shared session store에 source가 begin한 token이 있다 (process-local replay 보증).
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: reorderPayload, token: token)
+        var transfers: [(
+            payload: ContentTabDragPayload,
+            targetDomain: ContentTabDomain,
+            placement: ContentTabPlacement,
+        )] = []
+        var reorders: [FileManagerTopNavigationReorderDropResult] = []
+        var transitions: [ContentTabDomainTransitionRequest] = []
+        let boundary = FileManagerTopNavigationReorderDropBoundary(
+            id: 0,
+            owner: .topNavigation,
+            anchorID: .contentTab(anchorID),
+            placement: .before,
+            contentTabDomain: .pinned,
+        )
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+            boundary: boundary,
+            dragScopeID: targetScope,
+            sessionStore: sessionStore,
+            boundaryOwnerForItem: { id in id == .contentTab(anchorID) ? .topNavigation : nil },
+            onReorder: { reorders.append($0) },
+            targetWindowID: targetWindowID,
+            contentTabIDsInDomain: { $0 == .pinned ? [anchorID] : [selectedID, initiatingID] },
+            onDomainTransition: { transitions.append($0) },
+            onForeignExplicitTransfer: { payload, domain, placement in
+                transfers.append((payload, domain, placement))
+            },
+        ))
+        let item = try makeForeignExplicitDropPasteboardItem(
+            reorderPayload: reorderPayload,
+            movePayload: movePayload,
+            token: token,
+        )
+
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        XCTAssertTrue(view.performDrop(pasteboardItems: [item]))
+
+        XCTAssertEqual(transfers.count, 1)
+        XCTAssertEqual(transfers[0].payload, movePayload)
+        XCTAssertEqual(transfers[0].payload.orderedTabIDs, [selectedID, initiatingID])
+        XCTAssertEqual(transfers[0].targetDomain, .pinned)
+        XCTAssertEqual(transfers[0].placement, .before(anchorID))
+        XCTAssertEqual(reorders, [])
+        XCTAssertEqual(transitions, [])
+        // consume는 파괴적 — entry가 비워졌는지 확인한다.
+        XCTAssertNil(sessionStore.entry)
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: 외부 창 explicit 반대 domain drop도 transfer callback을 정확히 한 번 dispatch한다.
+    /// 반대 domain 전환 의도가 transfer+Pin/Unpin 두 단계로 쪼개지지 않고 단일 요청에 실리는지 검증한다.
+    /// - 검증 내용: onForeignExplicitTransfer 1회 (정확한 payload/targetDomain/placement), onDomainTransition 0회
+    /// - 사전 조건: foreign source window, unpinned source + pinned target domain, after placement 경계
+    /// - 기대 결과: opposite-domain transfer intent 한 건, same-window transition owner로 누수 없음
+    func testForeignExplicitOppositeDomainDropDispatchesTransferExactlyOnce() throws {
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "44444444-4444-4444-4444-444444444444"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "55555555-5555-5555-5555-555555555555"))
+        let operationID = try XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666"))
+        let initiatingID = ContentTabID(rawValue: "foreign-opposite-initiating")
+        let anchorID = ContentTabID(rawValue: "foreign-opposite-anchor")
+        let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+        let targetScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .topNavigation)
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(initiatingID),
+            dragScopeID: sourceScope,
+        )
+        let movePayload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: [initiatingID],
+            sourceDomain: .unpinned,
+        )
+        let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+        // shared session store에 source가 begin한 token이 있다 (process-local replay 보증).
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: reorderPayload, token: token)
+        var transfers: [(
+            payload: ContentTabDragPayload,
+            targetDomain: ContentTabDomain,
+            placement: ContentTabPlacement,
+        )] = []
+        var transitions: [ContentTabDomainTransitionRequest] = []
+        let boundary = FileManagerTopNavigationReorderDropBoundary(
+            id: 1,
+            owner: .topNavigation,
+            anchorID: .contentTab(anchorID),
+            placement: .after,
+            contentTabDomain: .pinned,
+        )
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+            boundary: boundary,
+            dragScopeID: targetScope,
+            sessionStore: sessionStore,
+            boundaryOwnerForItem: { id in id == .contentTab(anchorID) ? .topNavigation : nil },
+            onReorder: { _ in },
+            targetWindowID: targetWindowID,
+            contentTabIDsInDomain: { $0 == .pinned ? [anchorID] : [initiatingID] },
+            onDomainTransition: { transitions.append($0) },
+            onForeignExplicitTransfer: { payload, domain, placement in
+                transfers.append((payload, domain, placement))
+            },
+        ))
+        let item = try makeForeignExplicitDropPasteboardItem(
+            reorderPayload: reorderPayload,
+            movePayload: movePayload,
+            token: token,
+        )
+
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        XCTAssertTrue(view.performDrop(pasteboardItems: [item]))
+
+        XCTAssertEqual(transfers.count, 1)
+        XCTAssertEqual(transfers[0].payload, movePayload)
+        XCTAssertEqual(transfers[0].targetDomain, .pinned)
+        XCTAssertEqual(transfers[0].placement, .after(anchorID))
+        XCTAssertEqual(transitions, [])
+        XCTAssertNil(sessionStore.entry)
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: shared session store의 token과 일치하지 않으면 reject한다.
+    /// pasteboard token과 store entry token이 다르거나 store가 비어 있으면 semantic dispatch가 0회여야 한다.
+    /// - 검증 내용: mismatch token → draggingEntered [], performDrop false, transfer/reorder/transition 0회
+    /// - 사전 조건: foreign explicit domain 입력이지만 session store entry token과 불일치
+    /// - 기대 결과: 모든 callback 0회
+    func testForeignExplicitDomainDropRejectsMismatchedToken() throws {
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd"))
+        let operationID = UUID()
+        let initiatingID = ContentTabID(rawValue: "mismatch-initiating")
+        let anchorID = ContentTabID(rawValue: "mismatch-anchor")
+        let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+        let targetScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .topNavigation)
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(initiatingID),
+            dragScopeID: sourceScope,
+        )
+        let movePayload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: [initiatingID],
+            sourceDomain: .pinned,
+        )
+        let droppedToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+        let storedToken = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: reorderPayload, token: storedToken)
+        var transfers = 0
+        var reorders = 0
+        var transitions = 0
+        let boundary = FileManagerTopNavigationReorderDropBoundary(
+            id: 0,
+            owner: .topNavigation,
+            anchorID: .contentTab(anchorID),
+            placement: .before,
+            contentTabDomain: .pinned,
+        )
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+            boundary: boundary,
+            dragScopeID: targetScope,
+            sessionStore: sessionStore,
+            boundaryOwnerForItem: { id in id == .contentTab(anchorID) ? .topNavigation : nil },
+            onReorder: { _ in reorders += 1 },
+            targetWindowID: targetWindowID,
+            contentTabIDsInDomain: { $0 == .pinned ? [anchorID] : [initiatingID] },
+            onDomainTransition: { _ in transitions += 1 },
+            onForeignExplicitTransfer: { _, _, _ in transfers += 1 },
+        ))
+        let item = try makeForeignExplicitDropPasteboardItem(
+            reorderPayload: reorderPayload,
+            movePayload: movePayload,
+            token: droppedToken,
+        )
+
+        // mismatch token: acceptsDragScope가 entry token과 불일치로 reject한다.
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), [])
+        XCTAssertFalse(view.performDrop(pasteboardItems: [item]))
+        XCTAssertEqual(transfers, 0)
+        XCTAssertEqual(reorders, 0)
+        XCTAssertEqual(transitions, 0)
+        // mismatch drop은 stored entry를 덮어쓰지 않는다 (token-owned cleanup).
+        XCTAssertEqual(sessionStore.entry?.token, storedToken)
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: matching token은 정확히 한 번만 dispatch되고 재전송은 reject한다.
+    /// consume이 파괴적이므로 동일 pasteboard로 두 번째 drop 시 entry가 비어 0회 dispatch된다.
+    /// - 검증 내용: 첫 drop 1회 dispatch + entry 소비, 두 번째 drop 0회 dispatch
+    /// - 사전 조건: matching token을 가진 foreign explicit domain pasteboard 하나
+    /// - 기대 결과: transfer 1회(첫 drop), 0회(replay), reorder/transition 0회
+    func testForeignExplicitDomainDropDispatchesOnceAndRejectsReplay() throws {
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "ffffffff-ffff-ffff-ffff-ffffffffffff"))
+        let operationID = UUID()
+        let initiatingID = ContentTabID(rawValue: "replay-initiating")
+        let anchorID = ContentTabID(rawValue: "replay-anchor")
+        let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+        let targetScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .topNavigation)
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(initiatingID),
+            dragScopeID: sourceScope,
+        )
+        let movePayload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: [initiatingID],
+            sourceDomain: .pinned,
+        )
+        let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: reorderPayload, token: token)
+        var transfers = 0
+        var reorders = 0
+        var transitions = 0
+        let boundary = FileManagerTopNavigationReorderDropBoundary(
+            id: 0,
+            owner: .topNavigation,
+            anchorID: .contentTab(anchorID),
+            placement: .before,
+            contentTabDomain: .pinned,
+        )
+        let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+            boundary: boundary,
+            dragScopeID: targetScope,
+            sessionStore: sessionStore,
+            boundaryOwnerForItem: { id in id == .contentTab(anchorID) ? .topNavigation : nil },
+            onReorder: { _ in reorders += 1 },
+            targetWindowID: targetWindowID,
+            contentTabIDsInDomain: { $0 == .pinned ? [anchorID] : [initiatingID] },
+            onDomainTransition: { _ in transitions += 1 },
+            onForeignExplicitTransfer: { _, _, _ in transfers += 1 },
+        ))
+        let item = try makeForeignExplicitDropPasteboardItem(
+            reorderPayload: reorderPayload,
+            movePayload: movePayload,
+            token: token,
+        )
+
+        // 첫 drop: matching token consume → 1회 dispatch.
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        XCTAssertTrue(view.performDrop(pasteboardItems: [item]))
+        XCTAssertEqual(transfers, 1)
+        XCTAssertEqual(reorders, 0)
+        XCTAssertEqual(transitions, 0)
+        XCTAssertNil(sessionStore.entry)
+
+        // replay: 동일 pasteboard, 이미 consume된 token → acceptsDragScope/performDrop 모두 0회.
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), [])
+        XCTAssertFalse(view.performDrop(pasteboardItems: [item]))
+        XCTAssertEqual(transfers, 1)
+        XCTAssertEqual(reorders, 0)
+        XCTAssertEqual(transitions, 0)
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: foreign explicit 경계 drop은 기존 route owner를 덮어쓰지 않는다.
+    /// same-window same-domain reorder, same-window opposite transition, foreign preserve-domain이
+    /// 각각 기존 owner로 그대로 흘러가는지 회귀 검증한다.
+    /// - 검증 내용: same-domain→onReorder, opposite→onDomainTransition, foreign preserve(no sourceDomain)→0 dispatch
+    /// - 사전 조건: 동일 window reorder/transition setup과 foreign preserve 스타일 입력
+    /// - 기대 결과: 세 입력 모두 기존 owner에서 처리되고 foreign transfer callback은 0회
+    func testForeignExplicitDomainRoutingPreservesExistingRouteOwners() throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777"))
+        let foreignWindowID = try XCTUnwrap(UUID(uuidString: "88888888-8888-8888-8888-888888888888"))
+        let operationID = UUID()
+        let sourceID = ContentTabID(rawValue: "regression-source")
+        let anchorID = ContentTabID(rawValue: "regression-anchor")
+        let targetScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .topNavigation)
+        let boundary = FileManagerTopNavigationReorderDropBoundary(
+            id: 0,
+            owner: .topNavigation,
+            anchorID: .contentTab(anchorID),
+            placement: .before,
+            contentTabDomain: .pinned,
+        )
+        let boundaryOwnerForItem: @MainActor (FileManagerTopNavigationItemID)
+            -> FileManagerTopNavigationReorderBoundaryOwner? = { id in
+                (id == .contentTab(anchorID) || id == .contentTab(sourceID)) ? .topNavigation : nil
+            }
+        let contentTabIDsInDomain: @MainActor (ContentTabDomain) -> [ContentTabID] = { _ in [anchorID] }
+
+        // (1) same-window same-domain reorder → onReorder 1회, transfer/transition 0회
+        do {
+            let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+            let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+            // same-domain reorder는 같은 boundary scope 안에서 일어난다.
+            let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+                sourceID: .contentTab(sourceID),
+                dragScopeID: targetScope,
+            )
+            sessionStore.begin(payload: reorderPayload, token: token)
+            let sameDomainMove = ContentTabDragPayload(
+                operationID: operationID,
+                sourceWindowID: windowID,
+                initiatingTabID: sourceID,
+                orderedTabIDs: [sourceID],
+                sourceDomain: .pinned,
+            )
+            var reorders: [FileManagerTopNavigationReorderDropResult] = []
+            var transfers: [ContentTabDragPayload] = []
+            var transitions: [ContentTabDomainTransitionRequest] = []
+            let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+                activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+                boundary: boundary,
+                dragScopeID: targetScope,
+                sessionStore: sessionStore,
+                boundaryOwnerForItem: boundaryOwnerForItem,
+                onReorder: { reorders.append($0) },
+                targetWindowID: windowID,
+                contentTabIDsInDomain: contentTabIDsInDomain,
+                onDomainTransition: { transitions.append($0) },
+                onForeignExplicitTransfer: { payload, _, _ in transfers.append(payload) },
+            ))
+            let item = try makeForeignExplicitDropPasteboardItem(
+                reorderPayload: reorderPayload,
+                movePayload: sameDomainMove,
+                token: token,
+            )
+
+            XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+            XCTAssertTrue(view.performDrop(pasteboardItems: [item]))
+            XCTAssertEqual(reorders.count, 1)
+            XCTAssertEqual(reorders[0].sourceID, .contentTab(sourceID))
+            XCTAssertEqual(transfers, [])
+            XCTAssertEqual(transitions, [])
+        }
+
+        // (2) same-window opposite-domain transition → onDomainTransition 1회, transfer 0회
+        do {
+            let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+            let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+            let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+            let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+                sourceID: .contentTab(sourceID),
+                dragScopeID: sourceScope,
+            )
+            sessionStore.begin(payload: reorderPayload, token: token)
+            let oppositeMove = ContentTabDragPayload(
+                operationID: operationID,
+                sourceWindowID: windowID,
+                initiatingTabID: sourceID,
+                orderedTabIDs: [sourceID],
+                sourceDomain: .unpinned,
+            )
+            var transfers: [ContentTabDragPayload] = []
+            var transitions: [ContentTabDomainTransitionRequest] = []
+            let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+                activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+                boundary: boundary,
+                dragScopeID: targetScope,
+                sessionStore: sessionStore,
+                boundaryOwnerForItem: boundaryOwnerForItem,
+                onReorder: { _ in },
+                targetWindowID: windowID,
+                contentTabIDsInDomain: contentTabIDsInDomain,
+                onDomainTransition: { transitions.append($0) },
+                onForeignExplicitTransfer: { payload, _, _ in transfers.append(payload) },
+            ))
+            let item = try makeForeignExplicitDropPasteboardItem(
+                reorderPayload: reorderPayload,
+                movePayload: oppositeMove,
+                token: token,
+            )
+
+            XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+            XCTAssertTrue(view.performDrop(pasteboardItems: [item]))
+            XCTAssertEqual(transitions.count, 1)
+            XCTAssertEqual(transitions[0].targetDomain, .pinned)
+            XCTAssertEqual(transfers, [])
+        }
+
+        // (3) foreign preserve-domain (sourceDomain 없는 generic drop) → 경계에서 0 dispatch
+        do {
+            let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+            let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+            let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+            let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+                sourceID: .contentTab(sourceID),
+                dragScopeID: sourceScope,
+            )
+            // matching token을 설치해도 sourceDomain이 없으면 explicit transfer로 분류되지 않는다.
+            sessionStore.begin(payload: reorderPayload, token: token)
+            let preserveMove = ContentTabDragPayload(
+                operationID: operationID,
+                sourceWindowID: foreignWindowID,
+                initiatingTabID: sourceID,
+                orderedTabIDs: [sourceID],
+                sourceDomain: nil,
+            )
+            var transfers: [ContentTabDragPayload] = []
+            var reorders: [FileManagerTopNavigationReorderDropResult] = []
+            var transitions: [ContentTabDomainTransitionRequest] = []
+            let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+                activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+                boundary: boundary,
+                dragScopeID: targetScope,
+                sessionStore: sessionStore,
+                boundaryOwnerForItem: boundaryOwnerForItem,
+                onReorder: { reorders.append($0) },
+                targetWindowID: windowID,
+                contentTabIDsInDomain: contentTabIDsInDomain,
+                onDomainTransition: { transitions.append($0) },
+                onForeignExplicitTransfer: { payload, _, _ in transfers.append(payload) },
+            ))
+            let item = try makeForeignExplicitDropPasteboardItem(
+                reorderPayload: reorderPayload,
+                movePayload: preserveMove,
+                token: token,
+            )
+
+            // preserve-domain은 경계 domain 분류(sourceDomain)가 없으므로 explicit transfer가 되지 않는다.
+            _ = view.draggingEntered(pasteboardItems: [item])
+            _ = view.performDrop(pasteboardItems: [item])
+            XCTAssertEqual(transfers, [])
+            XCTAssertEqual(reorders, [])
+            XCTAssertEqual(transitions, [])
+        }
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: malformed/missing 입력은 semantic dispatch 0회로 reject한다.
+    /// 누락된 source domain, domain이 없는 경계, 잘못된 anchor가 transfer/reorder/transition 어디로도 가지 않는지 검증한다.
+    /// - 검증 내용: 세 malformed 입력 모두 0 dispatch
+    /// - 사전 조건: foreign drop with sourceDomain nil / boundary contentTabDomain nil / anchor가 target domain에 없음
+    /// - 기대 결과: onForeignExplicitTransfer, onReorder, onDomainTransition 모두 0회
+    func testForeignExplicitDomainDropRejectsMalformedInputs() throws {
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "99999999-9999-9999-9999-999999999999"))
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+        let operationID = UUID()
+        let initiatingID = ContentTabID(rawValue: "malformed-initiating")
+        let anchorID = ContentTabID(rawValue: "malformed-anchor")
+        let sourceScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .unpinnedContentTabs)
+        let targetScope = FileManagerTopNavigationReorderDragScopeID(boundaryOwner: .topNavigation)
+        let reorderPayload = FileManagerTopNavigationReorderDragPayload(
+            sourceID: .contentTab(initiatingID),
+            dragScopeID: sourceScope,
+        )
+        let token = FileManagerTopNavigationReorderLocalToken(rawValue: UUID())
+
+        struct DropProbe {
+            let view: FileManagerTopNavigationReorderDropDestinationView
+            let transfers: () -> Int
+            let reorders: () -> Int
+            let transitions: () -> Int
+        }
+
+        func makeView(
+            boundary: FileManagerTopNavigationReorderDropBoundary,
+            contentTabIDsInDomain: @escaping @MainActor (ContentTabDomain) -> [ContentTabID],
+        ) -> DropProbe {
+            var transfers = 0
+            var reorders = 0
+            var transitions = 0
+            let sessionStore = FileManagerTopNavigationReorderLocalSessionStore(nowNanoseconds: { 100 })
+            // matching token을 설치해 consume까지 도달한 뒤 malformed 조건에서 reject되는지 검증한다.
+            sessionStore.begin(payload: reorderPayload, token: token)
+            let view = FileManagerTopNavigationReorderDropDestinationView(configuration: .init(
+                activeBoundaryID: Binding(get: { nil }, set: { _ in }),
+                boundary: boundary,
+                dragScopeID: targetScope,
+                sessionStore: sessionStore,
+                boundaryOwnerForItem: { id in id == .contentTab(anchorID) ? .topNavigation : nil },
+                onReorder: { _ in reorders += 1 },
+                targetWindowID: targetWindowID,
+                contentTabIDsInDomain: contentTabIDsInDomain,
+                onDomainTransition: { _ in transitions += 1 },
+                onForeignExplicitTransfer: { _, _, _ in transfers += 1 },
+            ))
+            return DropProbe(
+                view: view,
+                transfers: { transfers },
+                reorders: { reorders },
+                transitions: { transitions },
+            )
+        }
+
+        // (1) foreign drop with sourceDomain nil → explicit domain 분류 불가 → 0 dispatch
+        do {
+            let boundary = FileManagerTopNavigationReorderDropBoundary(
+                id: 0,
+                owner: .topNavigation,
+                anchorID: .contentTab(anchorID),
+                placement: .before,
+                contentTabDomain: .pinned,
+            )
+            let probe = makeView(boundary: boundary) {
+                $0 == .pinned ? [anchorID] : []
+            }
+            let movePayload = ContentTabDragPayload(
+                operationID: operationID,
+                sourceWindowID: sourceWindowID,
+                initiatingTabID: initiatingID,
+                orderedTabIDs: [initiatingID],
+                sourceDomain: nil,
+            )
+            let item = try makeForeignExplicitDropPasteboardItem(
+                reorderPayload: reorderPayload,
+                movePayload: movePayload,
+                token: token,
+            )
+
+            _ = probe.view.draggingEntered(pasteboardItems: [item])
+            _ = probe.view.performDrop(pasteboardItems: [item])
+            XCTAssertEqual(probe.transfers(), 0)
+            XCTAssertEqual(probe.reorders(), 0)
+            XCTAssertEqual(probe.transitions(), 0)
+        }
+
+        // (2) domain이 없는 경계(Content Tab이 아닌 표면) → semanticPlacement nil → 0 dispatch
+        do {
+            let nonContentTabBoundary = FileManagerTopNavigationReorderDropBoundary(
+                id: 0,
+                owner: .topNavigation,
+                anchorID: .contentTab(anchorID),
+                placement: .before,
+                contentTabDomain: nil,
+            )
+            let probe = makeView(
+                boundary: nonContentTabBoundary,
+                contentTabIDsInDomain: { _ in [] },
+            )
+            let movePayload = ContentTabDragPayload(
+                operationID: operationID,
+                sourceWindowID: sourceWindowID,
+                initiatingTabID: initiatingID,
+                orderedTabIDs: [initiatingID],
+                sourceDomain: .pinned,
+            )
+            let item = try makeForeignExplicitDropPasteboardItem(
+                reorderPayload: reorderPayload,
+                movePayload: movePayload,
+                token: token,
+            )
+
+            _ = probe.view.draggingEntered(pasteboardItems: [item])
+            _ = probe.view.performDrop(pasteboardItems: [item])
+            XCTAssertEqual(probe.transfers(), 0)
+            XCTAssertEqual(probe.reorders(), 0)
+            XCTAssertEqual(probe.transitions(), 0)
+        }
+
+        // (3) anchor가 target domain에 없는 well-formed foreign drop → validTarget 실패 → 0 dispatch
+        do {
+            let boundary = FileManagerTopNavigationReorderDropBoundary(
+                id: 0,
+                owner: .topNavigation,
+                anchorID: .contentTab(anchorID),
+                placement: .before,
+                contentTabDomain: .pinned,
+            )
+            let probe = makeView(boundary: boundary) { _ in [] }
+            let movePayload = ContentTabDragPayload(
+                operationID: operationID,
+                sourceWindowID: sourceWindowID,
+                initiatingTabID: initiatingID,
+                orderedTabIDs: [initiatingID],
+                sourceDomain: .pinned,
+            )
+            let item = try makeForeignExplicitDropPasteboardItem(
+                reorderPayload: reorderPayload,
+                movePayload: movePayload,
+                token: token,
+            )
+
+            _ = probe.view.draggingEntered(pasteboardItems: [item])
+            _ = probe.view.performDrop(pasteboardItems: [item])
+            XCTAssertEqual(probe.transfers(), 0)
+            XCTAssertEqual(probe.reorders(), 0)
+            XCTAssertEqual(probe.transitions(), 0)
+        }
+    }
+
+    /// CTM-004-foreign_explicit_domain_drop: source reducer는 targetDomain/placement를 정확한 ContentTabMoveRequest로 구성한다.
+    /// 외부 창 explicit domain drop이 window manager route 뒤 source moveContentTabs에 도달하면
+    /// snapshot을 소비하고 pending을 한 번 예약하며 정확한 semantic field를 가진 요청을 위임한다.
+    /// - 검증 내용: request sourceDomain/targetDomain/placement/orderedTabIDs exact, snapshot clear, pending 예약 1회
+    /// - 사전 조건: inFlight snapshot과 target 가용성이 있는 Sidebar state
+    /// - 기대 결과: 정확히 하나의 requestContentTabMove delegate가 exact field로 방출된다
+    func testSidebarMoveContentTabsExplicitDomainBuildsRequestWithTargetDomainAndPlacement() async {
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let operationID = UUID()
+        let requestID = UUID()
+        let initiatingID = ContentTabID(rawValue: "explicit-source-initiating")
+        let selectedID = ContentTabID(rawValue: "explicit-source-selected")
+        let anchorID = ContentTabID(rawValue: "explicit-target-anchor")
+        let snapshot = ContentTabDragSnapshot(
+            operationID: operationID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: [selectedID, initiatingID],
+            sourceDomain: .unpinned,
+            lifecycle: .inFlight,
+        )
+        let payload = snapshot.payload
+        let placement = ContentTabPlacement.before(anchorID)
+        let tabState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: selectedID,
+                    page: .directory,
+                    anchor: .directory(path: "/selected"),
+                    isPinned: false,
+                    title: "Selected",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: initiatingID,
+                    page: .directory,
+                    anchor: .directory(path: "/initiating"),
+                    isPinned: false,
+                    title: "Initiating",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: initiatingID,
+        )
+        var state = FileManagerSidebarState()
+        state.currentWindowID = sourceWindowID
+        state.contentTabDragSnapshot = snapshot
+        state.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: tabState)
+        state.contentTabMoveTargets = [ContentTabMoveTarget(
+            windowID: targetWindowID,
+            displayTitle: "Target",
+            availableSlots: .max,
+        )]
+        let store = TestStore(initialState: state) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+        }
+        let expectedRequest = ContentTabMoveRequest(
+            operationID: operationID,
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            initiatingTabID: initiatingID,
+            orderedTabIDs: [selectedID, initiatingID],
+            targetWindowID: targetWindowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: placement,
+        )
+
+        await store.send(.view(.moveContentTabs(
+            payload: payload,
+            targetWindowID: targetWindowID,
+            targetDomain: .pinned,
+            placement: placement,
+        ))) {
+            $0.contentTabDragSnapshot = nil
+            $0.pendingContentTabMoveRequest = expectedRequest
+        }
+        await store.receive(\.delegate.requestContentTabMove, expectedRequest)
     }
 }

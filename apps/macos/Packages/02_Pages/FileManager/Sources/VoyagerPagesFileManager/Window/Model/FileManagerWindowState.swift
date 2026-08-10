@@ -99,7 +99,7 @@ public enum FileManagerTopNavigationIntent: Equatable, Sendable {
         orderedIDs: [ContentTabID],
         destination: FileManagerTopNavigationMoveDestination,
     )
-    case pin(ContentTabID)
+    case pin(ContentTabID, placement: ContentTabPlacement? = nil)
     case unpin(ContentTabID)
     case close(ContentTabID)
     case update(ContentTabID)
@@ -196,6 +196,7 @@ public struct FileManagerWindowState: Equatable {
     public var sidebarEntryDropOperations: EntryOperationsState
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
+    public var contentTabMoveParticipantRequestID: UUID?
     public var contentTabMoveFailurePresentation: ContentTabMoveFailurePresentation?
     var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
@@ -232,6 +233,7 @@ public struct FileManagerWindowState: Equatable {
         sidebarEntryDropOperations = .init()
         pendingCollectionOpenRequest = nil
         pendingContentTabMove = nil
+        contentTabMoveParticipantRequestID = nil
         contentTabMoveFailurePresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
@@ -412,13 +414,27 @@ public struct PendingContentTabTeardown: Equatable, Sendable {
     }
 }
 
+public enum SelectedContentTabPinMutationOrigin: Equatable, Sendable {
+    case menu
+    case drag
+}
+
 public struct PendingSelectedContentTabPinMutation: Equatable {
     public let operationID: UUID
     public let target: SelectedContentTabPinMutationTargetState
     public let orderedTargetIDs: [ContentTabID]
+    public let origin: SelectedContentTabPinMutationOrigin
+    public let dragOperationID: UUID?
+    public let sourceWindowID: UUID?
+    public let sourceDomain: ContentTabDomain?
+    public let targetDomain: ContentTabDomain?
+    public let initialPlacement: ContentTabPlacement?
     public var cursor: Int
     public var currentTabID: ContentTabID?
     public var currentItemRollbackSnapshot: ContentTabPinnedRecordRollbackSnapshot?
+    public var lastSuccessfullyPlacedID: ContentTabID?
+    public var currentPersistenceContext: ContentTabPinnedRecordTerminalContext?
+    public var currentTopNavigationToken: FileManagerTopNavigationOperationToken?
     public var successCount: Int
     public var failureCount: Int
     public var remainingCount: Int
@@ -427,13 +443,27 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         orderedTargetIDs.count
     }
 
+    public var currentPlacement: ContentTabPlacement? {
+        guard origin == .drag else { return nil }
+        return lastSuccessfullyPlacedID.map(ContentTabPlacement.after) ?? initialPlacement
+    }
+
     public init(
         operationID: UUID,
         target: SelectedContentTabPinMutationTargetState,
         orderedTargetIDs: [ContentTabID],
+        origin: SelectedContentTabPinMutationOrigin = .menu,
+        dragOperationID: UUID? = nil,
+        sourceWindowID: UUID? = nil,
+        sourceDomain: ContentTabDomain? = nil,
+        targetDomain: ContentTabDomain? = nil,
+        initialPlacement: ContentTabPlacement? = nil,
         cursor: Int = 0,
         currentTabID: ContentTabID? = nil,
         currentItemRollbackSnapshot: ContentTabPinnedRecordRollbackSnapshot? = nil,
+        lastSuccessfullyPlacedID: ContentTabID? = nil,
+        currentPersistenceContext: ContentTabPinnedRecordTerminalContext? = nil,
+        currentTopNavigationToken: FileManagerTopNavigationOperationToken? = nil,
         successCount: Int = 0,
         failureCount: Int = 0,
         remainingCount: Int = 0,
@@ -441,9 +471,18 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         self.operationID = operationID
         self.target = target
         self.orderedTargetIDs = orderedTargetIDs
+        self.origin = origin
+        self.dragOperationID = dragOperationID
+        self.sourceWindowID = sourceWindowID
+        self.sourceDomain = sourceDomain
+        self.targetDomain = targetDomain
+        self.initialPlacement = initialPlacement
         self.cursor = cursor
         self.currentTabID = currentTabID
         self.currentItemRollbackSnapshot = currentItemRollbackSnapshot
+        self.lastSuccessfullyPlacedID = lastSuccessfullyPlacedID
+        self.currentPersistenceContext = currentPersistenceContext
+        self.currentTopNavigationToken = currentTopNavigationToken
         self.successCount = successCount
         self.failureCount = failureCount
         self.remainingCount = remainingCount
@@ -591,6 +630,7 @@ public extension FileManagerWindowState {
                 && tabContentStates[tabID].map(isSelectedContentTabCloseBusy) == true
         }
         guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
               pendingSelectedContentTabClose == nil,
               pendingSelectedContentTabPinMutation == nil,
               pendingContentTabClose == nil,
@@ -610,10 +650,13 @@ public extension FileManagerWindowState {
 
     internal var canStartSelectedContentTabPinMutation: Bool {
         guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
               pendingSelectedContentTabPinMutation == nil,
               pendingSelectedContentTabClose == nil,
               pendingContentTabClose == nil,
               pendingContentTabTeardown == nil,
+              pendingContentTabMove == nil,
+              pendingTopNavigationIntents.isEmpty,
               contentTabs.pendingPinnedRecordIDs.isEmpty,
               !isSelectedContentTabCloseBusy(content),
               !contentTabs.orderedValidSelectedTabIDs.contains(where: { tabID in
@@ -659,12 +702,22 @@ public extension FileManagerWindowState {
                 in: order,
             )
 
-        case let .pin(id):
-            FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
-                id,
-                into: order,
-                dormantSlot: dormantSlots.first { $0.id == id },
-            )
+        case let .pin(id, placement):
+            if let placement,
+               let placedOrder = FileManagerTopNavigationOrderPolicy.insertingContentTab(
+                   id,
+                   at: placement,
+                   in: order,
+               )
+            {
+                placedOrder
+            } else {
+                FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+                    id,
+                    into: order,
+                    dormantSlot: dormantSlots.first { $0.id == id },
+                )
+            }
 
         case let .unpin(id), let .close(id):
             FileManagerTopNavigationOrder(items: order.items.filter { $0 != .contentTab(id) })

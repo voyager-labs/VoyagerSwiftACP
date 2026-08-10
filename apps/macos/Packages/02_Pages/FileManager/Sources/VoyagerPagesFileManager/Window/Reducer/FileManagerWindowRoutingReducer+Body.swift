@@ -36,6 +36,9 @@ extension FileManagerWindowRoutingReducer {
             case let .requestSelectedContentTabPinMutation(target):
                 return handleRequestSelectedContentTabPinMutation(target: target, state: &state)
 
+            case let .requestContentTabDomainTransition(request):
+                return handleRequestContentTabDomainTransition(request, state: &state)
+
             case let .processNextSelectedContentTabPinMutation(operationID):
                 return processNextSelectedContentTabPinMutation(operationID: operationID, state: &state)
 
@@ -49,7 +52,19 @@ extension FileManagerWindowRoutingReducer {
 
             case let .selectedPinMutationBatchCompleted(result):
                 let replayAction = takeDeferredPinnedContentTabsAction(state: &state)
+                let replaySnapshot: Effect<Action> = if case .applyAuthoritativePinnedContentTabs = replayAction,
+                                                        let revision = state.lastConfirmedTopNavigationCommitRevision
+                {
+                    .send(.applyCommittedTopNavigationSnapshot(
+                        order: state.lastConfirmedTopNavigationOrder,
+                        revision: revision,
+                        authoritativePinnedContentTabs: nil,
+                    ))
+                } else {
+                    .none
+                }
                 return .concatenate(
+                    replaySnapshot,
                     replayAction.map(Effect.send) ?? .none,
                     selectedContentTabPinMutationFeedbackEffect(result),
                 )
@@ -169,8 +184,12 @@ extension FileManagerWindowRoutingReducer {
             case let .sidebar(.delegate(.setSelectedContentTabsPinned(target))):
                 return .send(.requestSelectedContentTabPinMutation(target: target))
 
+            case let .sidebar(.delegate(.contentTabDomainTransitionRequested(request))):
+                return .send(.requestContentTabDomainTransition(request))
+
             case .sidebar(.delegate(.openContentTab)):
-                guard state.pendingSelectedContentTabClose == nil,
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs.count < ContentTabConstants.maxTabs
                 else { return .none }
                 return .send(.contentTabs(.open(.homeDefault)))
@@ -204,7 +223,9 @@ extension FileManagerWindowRoutingReducer {
                 return .none
 
             case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement))):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.pendingSelectedContentTabPinMutation == nil
+                else { return .none }
                 if case let .contentTab(sourceTabID) = sourceID,
                    state.contentTabs.tabs[id: sourceTabID]?.isPinned == false
                 {
@@ -311,6 +332,7 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case .contentTabs(.open):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
                     return .none
                 }
@@ -362,7 +384,9 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case let .contentTabs(.requestClose(tabID)):
-                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      !state.contentTabs.pendingPinnedRecordIDs.contains(tabID)
+                else { return .none }
                 guard let tab = state.contentTabs.tabs[id: tabID] else { return .none }
                 if tab.isPinned {
                     return .send(.contentTabs(.close(tabID)))
@@ -370,14 +394,19 @@ extension FileManagerWindowRoutingReducer {
                 return prepareContentTabTeardown(tabID: tabID, state: &state)
 
             case let .contentTabs(.close(tabID)):
-                guard state.contentTabs.tabs[id: tabID] == nil else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      state.contentTabs.tabs[id: tabID] == nil
+                else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.commitClose(tabID)):
-                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
+                guard state.contentTabMoveParticipantRequestID == nil,
+                      !state.contentTabs.pendingPinnedRecordIDs.contains(tabID)
+                else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case .contentTabs(.restore):
+                guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 if keepPendingContentTabCloseFocused(state: &state) {
                     return .none
                 }

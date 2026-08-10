@@ -467,7 +467,13 @@ extension WindowManagerFeature {
         return .merge(
             targetWindowIDs.map { id in
                 .concatenate(
-                    applyDefaultWindowBootstrap(result, to: id),
+                    applyDefaultWindowBootstrap(
+                        result,
+                        to: id,
+                        hasLiveSiblingWindow: state.windows.ids.contains { siblingID in
+                            siblingID != id && !state.closingWindowIDs.contains(siblingID)
+                        },
+                    ),
                     .send(.windowReadyToOpen(id: id)),
                 )
             },
@@ -492,8 +498,9 @@ extension WindowManagerFeature {
     func applyDefaultWindowBootstrap(
         _ result: DefaultWindowBootstrapResult,
         to windowID: State.WindowID,
+        hasLiveSiblingWindow: Bool = false,
     ) -> Effect<Action> {
-        .send(.windows(.element(
+        let bootstrapEffect: Effect<Action> = .send(.windows(.element(
             id: windowID,
             action: .window(.applyBootstrap(.init(
                 arrangementAvailability: result.arrangementAvailability,
@@ -502,6 +509,16 @@ extension WindowManagerFeature {
                 fixedLocationItems: result.fixedLocationItems,
             ))),
         )))
+        guard hasLiveSiblingWindow, !result.contentTabs.tabs.filter(\.isPinned).isEmpty else {
+            return bootstrapEffect
+        }
+        return .concatenate(
+            .send(.windows(.element(
+                id: windowID,
+                action: .window(.applyPinnedContentTabs(result.contentTabs)),
+            ))),
+            bootstrapEffect,
+        )
     }
 
     private func livePendingDefaultBootstrapWindowIDs(_ state: State) -> [State.WindowID] {

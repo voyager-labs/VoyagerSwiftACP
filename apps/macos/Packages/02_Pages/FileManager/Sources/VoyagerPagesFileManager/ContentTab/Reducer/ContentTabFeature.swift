@@ -78,14 +78,14 @@ public struct ContentTabFeature {
                     state: &state,
                 )
 
-            case let .pin(id):
-                return pin(id: id, dormantSlot: nil, state: &state)
+            case let .pin(id, placement):
+                return pin(id: id, dormantSlot: nil, placement: placement, state: &state)
 
             case let .pinUsingDormantSlot(id, dormantSlot):
-                return pin(id: id, dormantSlot: dormantSlot, state: &state)
+                return pin(id: id, dormantSlot: dormantSlot, placement: nil, state: &state)
 
-            case let .unpin(id):
-                return unpin(id: id, state: &state)
+            case let .unpin(id, placement):
+                return unpin(id: id, placement: placement, state: &state)
 
             case let .updateActivePageAnchor(id, newAnchor):
                 return updateActivePageAnchor(id: id, newAnchor: newAnchor, state: &state)
@@ -237,7 +237,7 @@ extension ContentTabFeature {
         }
 
         if tab.isPinned {
-            return unpin(id: id, state: &state)
+            return unpin(id: id, placement: nil, state: &state)
         }
 
         if state.tabs.count == 1 {
@@ -553,33 +553,35 @@ extension ContentTabFeature {
     private func pin(
         id: ContentTabID,
         dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+        placement: ContentTabPlacement?,
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
-        state.previousActiveTabID = nil
-        guard let tab = state.tabs[id: id], !tab.isPinned,
-              let previousTabIndex = state.tabs.index(id: id)
-        else { return .none }
-
-        let pinnedRecord = ContentTabPinnedRecord(
-            id: id.rawValue,
-            page: tab.page,
-            anchor: tab.anchor,
-            title: tab.title,
-            iconName: tab.iconName,
-            pinnedAt: date(),
-        )
-        guard pinnedRecord.isPageAnchorCompatible else {
+        let preflight: ContentTabPinMutationPreflight.PinContext
+        switch ContentTabPinMutationPreflight.pin(id: id, placement: placement, state: state) {
+        case let .valid(context):
+            preflight = context
+        case .incompatiblePageAnchor:
             state.pinnedRecordPersistenceError = nil
+            return .none
+        case .invalid:
             return .none
         }
 
-        let previousPinnedRecord = state.pinnedRecords[id]
+        let pinnedRecord = ContentTabPinnedRecord(
+            id: id.rawValue,
+            page: preflight.tab.page,
+            anchor: preflight.tab.anchor,
+            title: preflight.tab.title,
+            iconName: preflight.tab.iconName,
+            pinnedAt: date(),
+        )
+
         let selectedTabIDs = state.selectedTabIDs
         let selectionAnchorID = state.selectionAnchorID
-        var pinnedTab = tab
+        var pinnedTab = preflight.tab
         pinnedTab.isPinned = true
         state.tabs.remove(id: id)
-        state.tabs.insert(pinnedTab, at: ordinaryPinInsertionIndex(in: state))
+        state.tabs.insert(pinnedTab, at: preflight.insertionIndex)
         state.selectedTabIDs = selectedTabIDs
         state.selectionAnchorID = selectionAnchorID
         state.pinnedRecords[id] = pinnedRecord
@@ -593,28 +595,37 @@ extension ContentTabFeature {
             context: .init(intentID: intentID, generation: generation),
             rollback: .init(
                 previousIsPinned: false,
-                previousPinnedRecord: previousPinnedRecord,
-                previousTabIndex: previousTabIndex,
+                previousPinnedRecord: preflight.previousPinnedRecord,
+                previousTabIndex: preflight.previousTabIndex,
             ),
-            mutation: .upsert(record: pinnedRecord, dormantSlot: dormantSlot),
+            mutation: .upsert(
+                record: pinnedRecord,
+                dormantSlot: placement == nil ? dormantSlot : nil,
+                placement: placement,
+            ),
+            persistenceScopeID: state.pinnedRecordPersistenceScopeID,
         )
         return persistPinnedRecord(request, state: state)
     }
 
-    private func unpin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
-        state.previousActiveTabID = nil
-        guard let tab = state.tabs[id: id], tab.isPinned,
-              let previousTabIndex = state.tabs.index(id: id)
-        else { return .none }
+    private func unpin(
+        id: ContentTabID,
+        placement: ContentTabPlacement?,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard let preflight = ContentTabPinMutationPreflight.unpin(
+            id: id,
+            placement: placement,
+            state: state,
+        ) else { return .none }
 
-        let previousPinnedRecord = state.pinnedRecords[id]
         let selectedTabIDs = state.selectedTabIDs
         let selectionAnchorID = state.selectionAnchorID
 
-        var unpinnedTab = tab
+        var unpinnedTab = preflight.tab
         unpinnedTab.isPinned = false
         state.tabs.remove(id: id)
-        state.tabs.append(unpinnedTab)
+        state.tabs.insert(unpinnedTab, at: preflight.insertionIndex)
         state.selectedTabIDs = selectedTabIDs
         state.selectionAnchorID = selectionAnchorID
         state.pinnedRecords.removeValue(forKey: id)
@@ -628,10 +639,11 @@ extension ContentTabFeature {
             context: .init(intentID: intentID, generation: generation),
             rollback: .init(
                 previousIsPinned: true,
-                previousPinnedRecord: previousPinnedRecord,
-                previousTabIndex: previousTabIndex,
+                previousPinnedRecord: preflight.previousPinnedRecord,
+                previousTabIndex: preflight.previousTabIndex,
             ),
             mutation: .remove(recordID: id.rawValue),
+            persistenceScopeID: state.pinnedRecordPersistenceScopeID,
         )
         return persistPinnedRecord(request, state: state)
     }
@@ -693,6 +705,7 @@ extension ContentTabFeature {
                 previousTabIndex: nil,
             ),
             mutation: .upsert(record: updatedRecord, dormantSlot: nil),
+            persistenceScopeID: state.pinnedRecordPersistenceScopeID,
         )
         return persistPinnedRecord(request, state: state)
     }
@@ -727,6 +740,65 @@ extension ContentTabFeature {
     }
 }
 
+enum ContentTabPinMutationPreflight {
+    struct PinContext {
+        let tab: ContentTabItem
+        let previousTabIndex: Int
+        let insertionIndex: Int
+        let previousPinnedRecord: ContentTabPinnedRecord?
+    }
+
+    struct UnpinContext {
+        let tab: ContentTabItem
+        let previousTabIndex: Int
+        let insertionIndex: Int
+        let previousPinnedRecord: ContentTabPinnedRecord?
+    }
+
+    enum PinResult {
+        case valid(PinContext)
+        case incompatiblePageAnchor
+        case invalid
+    }
+
+    static func pin(
+        id: ContentTabID,
+        placement: ContentTabPlacement?,
+        state: ContentTabState,
+    ) -> PinResult {
+        guard let tab = state.tabs[id: id], !tab.isPinned,
+              let previousTabIndex = state.tabs.index(id: id),
+              let insertionIndex = pinInsertionIndex(for: placement, sourceID: id, state: state)
+        else { return .invalid }
+        guard ContentTabPinnedRecord.isPageAnchorCompatible(page: tab.page, anchor: tab.anchor) else {
+            return .incompatiblePageAnchor
+        }
+        return .valid(.init(
+            tab: tab,
+            previousTabIndex: previousTabIndex,
+            insertionIndex: insertionIndex,
+            previousPinnedRecord: state.pinnedRecords[id],
+        ))
+    }
+
+    static func unpin(
+        id: ContentTabID,
+        placement: ContentTabPlacement?,
+        state: ContentTabState,
+    ) -> UnpinContext? {
+        guard let tab = state.tabs[id: id], tab.isPinned,
+              let previousTabIndex = state.tabs.index(id: id),
+              let insertionIndex = unpinInsertionIndex(for: placement, sourceID: id, state: state)
+        else { return nil }
+        return .init(
+            tab: tab,
+            previousTabIndex: previousTabIndex,
+            insertionIndex: insertionIndex,
+            previousPinnedRecord: state.pinnedRecords[id],
+        )
+    }
+}
+
 private func ordinaryPinInsertionIndex(in state: ContentTabState) -> Int {
     state.tabs.firstIndex(where: { !$0.isPinned }) ?? state.tabs.endIndex
 }
@@ -744,21 +816,13 @@ private func pinnedRecordPersistenceAction(
             tabID: request.tabID,
             intentID: request.context.intentID,
         )
-        let disposition = try await client.updateStoreGuarded(
-            request.context.generation,
-            defaults,
-        ) { store in
-            try PinnedRecordPersistenceIntent.checkCurrent(
-                scopeID: persistenceScopeID,
-                tabID: request.tabID,
-                intentID: request.context.intentID,
-            )
-            return applying(
-                request.mutation,
-                to: store,
-                discoveredLocationIDs: discoveredLocationIDs,
-            )
-        }
+        let disposition = try await persistPinnedRecordMutation(
+            request: request,
+            discoveredLocationIDs: discoveredLocationIDs,
+            client: client,
+            defaults: defaults,
+            persistenceScopeID: persistenceScopeID,
+        )
         return pinnedRecordDispositionAction(disposition, request: request)
     } catch is CancellationError {
         return .pinnedRecordSaveNotApplied(
@@ -783,6 +847,55 @@ private func pinnedRecordPersistenceAction(
     }
 }
 
+private func pinInsertionIndex(
+    for placement: ContentTabPlacement?,
+    sourceID: ContentTabID,
+    state: ContentTabState,
+) -> Int? {
+    guard let placement else { return ordinaryPinInsertionIndex(in: state) }
+    switch placement {
+    case let .before(anchorID):
+        guard anchorID != sourceID,
+              state.tabs[id: anchorID]?.isPinned == true,
+              state.pinnedRecords[anchorID] != nil
+        else { return nil }
+        return state.tabs.filter { $0.id != sourceID }.firstIndex { $0.id == anchorID }
+    case let .after(anchorID):
+        guard anchorID != sourceID,
+              state.tabs[id: anchorID]?.isPinned == true,
+              state.pinnedRecords[anchorID] != nil,
+              let anchorIndex = state.tabs.filter({ $0.id != sourceID }).firstIndex(where: { $0.id == anchorID })
+        else { return nil }
+        return anchorIndex + 1
+    case .empty:
+        guard !state.tabs.contains(where: \.isPinned), state.pinnedRecords.isEmpty else { return nil }
+        return 0
+    }
+}
+
+private func unpinInsertionIndex(
+    for placement: ContentTabPlacement?,
+    sourceID: ContentTabID,
+    state: ContentTabState,
+) -> Int? {
+    let remainingTabs = state.tabs.filter { $0.id != sourceID }
+    guard let placement else { return remainingTabs.endIndex }
+    switch placement {
+    case let .before(anchorID):
+        guard anchorID != sourceID, state.tabs[id: anchorID]?.isPinned == false else { return nil }
+        return remainingTabs.firstIndex { $0.id == anchorID }
+    case let .after(anchorID):
+        guard anchorID != sourceID,
+              state.tabs[id: anchorID]?.isPinned == false,
+              let anchorIndex = remainingTabs.firstIndex(where: { $0.id == anchorID })
+        else { return nil }
+        return anchorIndex + 1
+    case .empty:
+        guard !remainingTabs.contains(where: { !$0.isPinned }) else { return nil }
+        return remainingTabs.endIndex
+    }
+}
+
 private func pinnedRecordDispositionAction(
     _ disposition: ContentTabPinnedRecordMutationDisposition,
     request: ContentTabPinnedRecordPersistenceRequest,
@@ -796,6 +909,50 @@ private func pinnedRecordDispositionAction(
             context: request.context,
             reason: .superseded,
             rollback: request.rollback,
+        )
+    }
+}
+
+private func persistPinnedRecordMutation(
+    request: ContentTabPinnedRecordPersistenceRequest,
+    discoveredLocationIDs: [String],
+    client: ContentTabPinnedRecordClient,
+    defaults: UserDefaultsClient,
+    persistenceScopeID: UUID,
+) async throws -> ContentTabPinnedRecordMutationDisposition {
+    if request.mutation.hasExplicitPlacement {
+        let disposition = try await client.applyPersistenceMutationCommittedGuarded(
+            request.context.generation,
+            defaults,
+            discoveredLocationIDs: discoveredLocationIDs,
+            mutation: request.mutation,
+        ) {
+            try PinnedRecordPersistenceIntent.checkCurrent(
+                scopeID: persistenceScopeID,
+                tabID: request.tabID,
+                intentID: request.context.intentID,
+            )
+        }
+        switch disposition {
+        case .applied:
+            return .applied
+        case .superseded:
+            return .superseded
+        }
+    }
+    return try await client.updateStoreGuarded(
+        request.context.generation,
+        defaults,
+    ) { store in
+        try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: persistenceScopeID,
+            tabID: request.tabID,
+            intentID: request.context.intentID,
+        )
+        return try applying(
+            request.mutation,
+            to: store,
+            discoveredLocationIDs: discoveredLocationIDs,
         )
     }
 }
@@ -910,8 +1067,33 @@ func upsertPinnedRecord(
     _ record: ContentTabPinnedRecord,
     in existingStore: ContentTabPinnedRecordStore,
     dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot? = nil,
+    placement: ContentTabPlacement? = nil,
     discoveredLocationIDs: [String] = [],
 ) -> ContentTabPinnedRecordStore {
+    let tabID = ContentTabID(rawValue: record.id)
+    if let placement {
+        let projection = FileManagerTopNavigationOrderPolicy.normalize(
+            store: existingStore,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        guard let insertedOrder = FileManagerTopNavigationOrderPolicy.insertingContentTab(
+            tabID,
+            at: placement,
+            in: projection.durableOrder,
+        ) else { return existingStore }
+        var records = projection.normalizedStore.records
+        if let existingIndex = records.firstIndex(where: { $0.id == record.id }) {
+            records[existingIndex] = record
+        } else {
+            records.append(record)
+        }
+        return ContentTabPinnedRecordStore(
+            schemaVersion: projection.normalizedStore.schemaVersion,
+            records: records,
+            topNavigationOrder: insertedOrder,
+        )
+    }
+
     var records = existingStore.records
     let existingIndex = records.firstIndex(where: { $0.id == record.id })
     if let existingIndex {
@@ -919,7 +1101,6 @@ func upsertPinnedRecord(
     } else {
         records.append(record)
     }
-    let tabID = ContentTabID(rawValue: record.id)
     let baseStore = ContentTabPinnedRecordStore(
         schemaVersion: existingStore.schemaVersion,
         records: records,
@@ -958,21 +1139,42 @@ func removePinnedRecord(
     ).normalizedStore
 }
 
+private extension ContentTabPinnedRecordPersistenceMutation {
+    var hasExplicitPlacement: Bool {
+        guard case let .upsert(_, _, placement) = self else { return false }
+        return placement != nil
+    }
+}
+
 func applying(
     _ mutation: ContentTabPinnedRecordPersistenceMutation,
     to store: ContentTabPinnedRecordStore,
     discoveredLocationIDs: [String],
-) -> ContentTabPinnedRecordStore {
+) throws -> ContentTabPinnedRecordStore {
     switch mutation {
-    case let .upsert(record, dormantSlot):
-        upsertPinnedRecord(
+    case let .upsert(record, dormantSlot, placement):
+        if let placement {
+            let durableOrder = FileManagerTopNavigationOrderPolicy.normalize(
+                store: store,
+                discoveredLocationIDs: discoveredLocationIDs,
+            ).durableOrder
+            guard FileManagerTopNavigationOrderPolicy.insertingContentTab(
+                ContentTabID(rawValue: record.id),
+                at: placement,
+                in: durableOrder,
+            ) != nil else {
+                throw ContentTabPinnedRecordPersistenceCommitError.superseded
+            }
+        }
+        return upsertPinnedRecord(
             record,
             in: store,
             dormantSlot: dormantSlot,
+            placement: placement,
             discoveredLocationIDs: discoveredLocationIDs,
         )
     case let .remove(recordID):
-        removePinnedRecord(
+        return removePinnedRecord(
             id: recordID,
             from: store,
             discoveredLocationIDs: discoveredLocationIDs,

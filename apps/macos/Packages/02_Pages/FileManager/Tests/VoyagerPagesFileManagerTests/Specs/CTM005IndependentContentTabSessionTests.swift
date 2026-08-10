@@ -7850,7 +7850,12 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    func testBackgroundAiChatFinalSaveRefreshesActiveSameSessionTranscript() async {
+    /// CTM-005-independent_content_tab_session: move participant 상태에서도 background AI Chat final save를 반영
+    /// Content Tab 이동과 무관한 reducer-owned completion이 lifecycle 정리를 완료하는지 검증한다.
+    /// - 검증 내용: final snapshot 전파와 background owner 제거
+    /// - 사전 조건: window가 Content Tab move participant이고 동일 session의 background owner가 존재
+    /// - 기대 결과: participant guard가 completion을 차단하지 않고 active/cache 상태를 갱신
+    func testBackgroundAiChatFinalSaveDuringMoveParticipationRefreshesActiveSession() async {
         let aiChatTabID = ContentTabID()
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let requestLock = makeRequestLock(sessionID: aiSessionID)
@@ -7900,6 +7905,7 @@ extension CTM005IndependentContentTabSessionTests {
         state.content = activeContent
         state.tabContentStates = [aiChatTabID: activeContent]
         state.backgroundAiChatStates[aiSessionID] = backgroundContent
+        state.contentTabMoveParticipantRequestID = UUID()
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {

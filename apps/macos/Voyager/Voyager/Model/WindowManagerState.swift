@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 
 struct WindowManagerTopNavigationPersistenceRequest: Equatable {
@@ -21,6 +22,11 @@ struct WindowManagerTopNavigationPersistenceRequest: Equatable {
         case pinnedRecord(
             source: FileManagerPinnedRecordPersistenceSource,
             request: ContentTabPinnedRecordPersistenceRequest,
+            discoveredLocationIDs: [String],
+        )
+        case contentTabMove(
+            request: ContentTabMoveRequest,
+            mutation: ContentTabTransfer.DurablePinnedBatchMutation,
             discoveredLocationIDs: [String],
         )
     }
@@ -90,6 +96,14 @@ struct ContentTabMoveTerminalRecord: Equatable {
 
 struct ContentTabMoveTransaction: Equatable {
     let request: ContentTabMoveRequest
+
+    var pendingPersistence: PendingPersistence?
+
+    struct PendingPersistence: Equatable {
+        let postCommit: ContentTabTransfer.PostCommit
+        let closesSourceWindow: Bool
+        let undoDescriptors: [FileOperationUndoScopeMoveDescriptor]
+    }
 }
 
 struct ContentTabMoveNativeEffectsPlan: Equatable {

@@ -27,6 +27,15 @@ public struct ContentTabPinnedRecordPersistenceCommit: Equatable, Sendable {
     }
 }
 
+public enum ContentTabPinnedRecordGuardedCommitDisposition: Equatable, Sendable {
+    case applied(ContentTabPinnedRecordPersistenceCommit)
+    case superseded
+}
+
+public enum ContentTabPinnedRecordPersistenceCommitError: Error, Equatable, Sendable {
+    case superseded
+}
+
 public struct FileManagerTopNavigationCommit: Equatable, Sendable {
     public let order: FileManagerTopNavigationOrder
     public let revision: UInt64
@@ -88,6 +97,18 @@ public struct ContentTabPinnedRecordClient: Sendable {
         [String],
         ContentTabPinnedRecordPersistenceMutation,
     ) async throws -> ContentTabPinnedRecordPersistenceCommit
+    public var applyDurablePinnedBatchMutationCommitted: @Sendable (
+        UserDefaultsClient,
+        [String],
+        ContentTabTransfer.DurablePinnedBatchMutation,
+    ) async throws -> ContentTabPinnedRecordPersistenceCommit
+    public var guardedApplyPersistenceMutationCommitted: (@Sendable (
+        ContentTabPinnedRecordMutationGeneration,
+        UserDefaultsClient,
+        [String],
+        ContentTabPinnedRecordPersistenceMutation,
+        @escaping @Sendable () throws -> Void,
+    ) async throws -> ContentTabPinnedRecordGuardedCommitDisposition)?
 
     nonisolated public init(
         loadStore: @escaping @Sendable (UserDefaultsClient) throws -> ContentTabPinnedRecordStore,
@@ -145,6 +166,11 @@ public struct ContentTabPinnedRecordClient: Sendable {
             UserDefaultsClient,
             [String],
             ContentTabPinnedRecordPersistenceMutation,
+        ) async throws -> ContentTabPinnedRecordPersistenceCommit)? = nil,
+        applyDurablePinnedBatchMutationCommitted: (@Sendable (
+            UserDefaultsClient,
+            [String],
+            ContentTabTransfer.DurablePinnedBatchMutation,
         ) async throws -> ContentTabPinnedRecordPersistenceCommit)? = nil,
     ) {
         let resolvedUpdateStoreAndLoad = updateStoreAndLoad ?? { userDefaultsClient, transform in
@@ -208,7 +234,7 @@ public struct ContentTabPinnedRecordClient: Sendable {
                     try .currentV2(loadStore(defaults))
                 }
                 let store = try Self.writableStore(from: outcome)
-                let updatedStore = applying(
+                let updatedStore = try applying(
                     mutation,
                     to: store,
                     discoveredLocationIDs: discoveredLocationIDs,
@@ -221,6 +247,28 @@ public struct ContentTabPinnedRecordClient: Sendable {
                     topNavigation: .init(order: updatedStore.topNavigationOrder, revision: 0),
                 )
             }
+        self.applyDurablePinnedBatchMutationCommitted = applyDurablePinnedBatchMutationCommitted
+            ?? { defaults, discoveredLocationIDs, mutation in
+                let outcome: ContentTabPinnedRecordStoreLoadOutcome = if let classifyStoreLoad {
+                    try classifyStoreLoad(defaults, discoveredLocationIDs)
+                } else {
+                    try .currentV2(loadStore(defaults))
+                }
+                let store = try Self.writableStore(from: outcome)
+                let updatedStore = try Self.applyingDurablePinnedBatchMutation(
+                    mutation,
+                    to: store,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                )
+                if updatedStore != store {
+                    try saveStore(updatedStore, defaults)
+                }
+                return ContentTabPinnedRecordPersistenceCommit(
+                    store: updatedStore,
+                    topNavigation: .init(order: updatedStore.topNavigationOrder, revision: 0),
+                )
+            }
+        guardedApplyPersistenceMutationCommitted = nil
     }
 
     private static func defaultMoveTopNavigationItem(
@@ -322,11 +370,50 @@ public struct ContentTabPinnedRecordClient: Sendable {
         try updateStore(userDefaultsClient, transform)
         return .applied
     }
+
+    public func applyPersistenceMutationCommittedGuarded(
+        _ generation: ContentTabPinnedRecordMutationGeneration,
+        _ userDefaultsClient: UserDefaultsClient,
+        discoveredLocationIDs: [String],
+        mutation: ContentTabPinnedRecordPersistenceMutation,
+        validateCurrentIntent: @escaping @Sendable () throws -> Void,
+    ) async throws -> ContentTabPinnedRecordGuardedCommitDisposition {
+        if let guardedApplyPersistenceMutationCommitted {
+            return try await guardedApplyPersistenceMutationCommitted(
+                generation,
+                userDefaultsClient,
+                discoveredLocationIDs,
+                mutation,
+                validateCurrentIntent,
+            )
+        }
+        let disposition: ContentTabPinnedRecordMutationDisposition
+        do {
+            disposition = try await updateStoreGuarded(generation, userDefaultsClient) { store in
+                try validateCurrentIntent()
+                return try applying(
+                    mutation,
+                    to: store,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                )
+            }
+        } catch ContentTabPinnedRecordPersistenceCommitError.superseded {
+            return .superseded
+        }
+        guard disposition == .applied else { return .superseded }
+        try validateCurrentIntent()
+        guard isCurrentMutationGeneration(generation) else { return .superseded }
+        let store = try loadStore(userDefaultsClient)
+        return .applied(ContentTabPinnedRecordPersistenceCommit(
+            store: store,
+            topNavigation: .init(order: store.topNavigationOrder, revision: 0),
+        ))
+    }
 }
 
 extension ContentTabPinnedRecordClient: DependencyKey {
     nonisolated public static var liveValue: ContentTabPinnedRecordClient {
-        ContentTabPinnedRecordClient(
+        var client = ContentTabPinnedRecordClient(
             loadStore: { userDefaultsClient in
                 try Self.loadStoreValue(userDefaultsClient)
             },
@@ -438,7 +525,24 @@ extension ContentTabPinnedRecordClient: DependencyKey {
                     mutation: mutation,
                 )
             },
+            applyDurablePinnedBatchMutationCommitted: { defaults, discoveredLocationIDs, mutation in
+                try Self.applyDurablePinnedBatchMutationCommittedValue(
+                    defaults,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                    mutation: mutation,
+                )
+            },
         )
+        client.guardedApplyPersistenceMutationCommitted = { generation, defaults, locationIDs, mutation, validate in
+            try Self.applyPersistenceMutationCommittedGuardedValue(
+                generation,
+                defaults,
+                discoveredLocationIDs: locationIDs,
+                mutation: mutation,
+                validateCurrentIntent: validate,
+            )
+        }
+        return client
     }
 
     nonisolated public static var testValue: ContentTabPinnedRecordClient {
@@ -459,6 +563,57 @@ extension ContentTabPinnedRecordClient: DependencyKey {
     nonisolated(unsafe) private static var latestTopNavigationOperationToken: UUID?
     nonisolated(unsafe) private static var latestTopNavigationCommitRevision: UInt64 = 0
 
+    private static func applyPersistenceMutationCommittedGuardedValue(
+        _ generation: ContentTabPinnedRecordMutationGeneration,
+        _ userDefaultsClient: UserDefaultsClient,
+        discoveredLocationIDs: [String],
+        mutation: ContentTabPinnedRecordPersistenceMutation,
+        validateCurrentIntent: @escaping @Sendable () throws -> Void,
+    ) throws -> ContentTabPinnedRecordGuardedCommitDisposition {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+        try Task.checkCancellation()
+        guard latestMutationGenerations[generation.tabID] == generation.value else { return .superseded }
+        try validateCurrentIntent()
+        let outcome = try loadStoreOutcomeValue(
+            userDefaultsClient,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        let store = try writableStore(from: outcome)
+        let updatedStore: ContentTabPinnedRecordStore
+        do {
+            updatedStore = try applying(
+                mutation,
+                to: store,
+                discoveredLocationIDs: discoveredLocationIDs,
+            )
+        } catch ContentTabPinnedRecordPersistenceCommitError.superseded {
+            return .superseded
+        }
+        try Task.checkCancellation()
+        guard latestMutationGenerations[generation.tabID] == generation.value else { return .superseded }
+        try validateCurrentIntent()
+        guard updatedStore != store else {
+            return .applied(ContentTabPinnedRecordPersistenceCommit(
+                store: store,
+                topNavigation: .init(order: store.topNavigationOrder, revision: latestTopNavigationCommitRevision),
+            ))
+        }
+        let data = try JSONEncoder().encode(updatedStore)
+        try Task.checkCancellation()
+        guard latestMutationGenerations[generation.tabID] == generation.value else { return .superseded }
+        try validateCurrentIntent()
+        userDefaultsClient.setObject(data, storageKey)
+        latestTopNavigationCommitRevision &+= 1
+        return .applied(ContentTabPinnedRecordPersistenceCommit(
+            store: updatedStore,
+            topNavigation: .init(
+                order: updatedStore.topNavigationOrder,
+                revision: latestTopNavigationCommitRevision,
+            ),
+        ))
+    }
+
     private static func applyPersistenceMutationCommittedValue(
         _ userDefaultsClient: UserDefaultsClient,
         discoveredLocationIDs: [String],
@@ -472,7 +627,41 @@ extension ContentTabPinnedRecordClient: DependencyKey {
             discoveredLocationIDs: discoveredLocationIDs,
         )
         let store = try writableStore(from: outcome)
-        let updatedStore = applying(
+        let updatedStore = try applying(
+            mutation,
+            to: store,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        try Task.checkCancellation()
+        if updatedStore != store {
+            let data = try JSONEncoder().encode(updatedStore)
+            try Task.checkCancellation()
+            userDefaultsClient.setObject(data, storageKey)
+        }
+        latestTopNavigationCommitRevision &+= 1
+        return ContentTabPinnedRecordPersistenceCommit(
+            store: updatedStore,
+            topNavigation: .init(
+                order: updatedStore.topNavigationOrder,
+                revision: latestTopNavigationCommitRevision,
+            ),
+        )
+    }
+
+    private static func applyDurablePinnedBatchMutationCommittedValue(
+        _ userDefaultsClient: UserDefaultsClient,
+        discoveredLocationIDs: [String],
+        mutation: ContentTabTransfer.DurablePinnedBatchMutation,
+    ) throws -> ContentTabPinnedRecordPersistenceCommit {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+        try Task.checkCancellation()
+        let outcome = try loadStoreOutcomeValue(
+            userDefaultsClient,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        let store = try writableStore(from: outcome)
+        let updatedStore = try applyingDurablePinnedBatchMutation(
             mutation,
             to: store,
             discoveredLocationIDs: discoveredLocationIDs,
@@ -505,7 +694,6 @@ extension ContentTabPinnedRecordClient: DependencyKey {
             discoveredLocationIDs: discoveredLocationIDs,
         )
         let store = try writableStore(from: outcome)
-        latestTopNavigationCommitRevision &+= 1
         return FileManagerTopNavigationCommit(
             order: store.topNavigationOrder,
             revision: latestTopNavigationCommitRevision,
@@ -718,6 +906,88 @@ extension ContentTabPinnedRecordClient: DependencyKey {
         }
         userDefaultsClient.setObject(data, storageKey)
         return .applied
+    }
+
+    private static func applyingDurablePinnedBatchMutation(
+        _ mutation: ContentTabTransfer.DurablePinnedBatchMutation,
+        to store: ContentTabPinnedRecordStore,
+        discoveredLocationIDs: [String],
+    ) throws -> ContentTabPinnedRecordStore {
+        let projection = FileManagerTopNavigationOrderPolicy.normalize(
+            store: store,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )
+        let removedRecordIDs = Set(mutation.recordIDsToRemove)
+        let upsertedRecordsByID = Dictionary(uniqueKeysWithValues: mutation.recordsToUpsert.map { ($0.id, $0) })
+        let orderedTabIDSet = Set(mutation.orderedTabIDs)
+        guard orderedTabIDSet.count == mutation.orderedTabIDs.count else {
+            throw ContentTabPinnedRecordPersistenceCommitError.superseded
+        }
+
+        var updatedStore = projection.normalizedStore
+        updatedStore.records = projection.normalizedStore.records.filter { record in
+            !removedRecordIDs.contains(record.id) && upsertedRecordsByID[record.id] == nil
+        } + mutation.recordsToUpsert
+
+        let finalRecordIDs = Set(updatedStore.records.map(\.id))
+        var items = projection.durableOrder.items.filter { item in
+            guard case let .contentTab(id) = item else { return true }
+            return !removedRecordIDs.contains(id.rawValue) && !orderedTabIDSet.contains(id)
+        }
+
+        if let pinnedPlacement = mutation.pinnedPlacement {
+            guard mutation.orderedTabIDs.allSatisfy({
+                FileManagerTopNavigationItemID.isValidRawID($0.rawValue)
+                    && finalRecordIDs.contains($0.rawValue)
+            }) else {
+                throw ContentTabPinnedRecordPersistenceCommitError.superseded
+            }
+            let insertionIndex = try pinnedInsertionIndex(
+                for: pinnedPlacement,
+                in: items,
+                movingIDs: orderedTabIDSet,
+            )
+            items.insert(
+                contentsOf: mutation.orderedTabIDs.map(FileManagerTopNavigationItemID.contentTab),
+                at: insertionIndex,
+            )
+        }
+
+        updatedStore.topNavigationOrder = .init(items: items)
+        return FileManagerTopNavigationOrderPolicy.normalize(
+            store: updatedStore,
+            discoveredLocationIDs: discoveredLocationIDs,
+        ).normalizedStore
+    }
+
+    private static func pinnedInsertionIndex(
+        for placement: ContentTabPlacement,
+        in items: [FileManagerTopNavigationItemID],
+        movingIDs: Set<ContentTabID>,
+    ) throws -> Int {
+        switch placement {
+        case let .before(anchorID):
+            guard !movingIDs.contains(anchorID),
+                  let anchorIndex = items.firstIndex(of: .contentTab(anchorID))
+            else {
+                throw ContentTabPinnedRecordPersistenceCommitError.superseded
+            }
+            return anchorIndex
+        case let .after(anchorID):
+            guard !movingIDs.contains(anchorID),
+                  let anchorIndex = items.firstIndex(of: .contentTab(anchorID))
+            else {
+                throw ContentTabPinnedRecordPersistenceCommitError.superseded
+            }
+            return anchorIndex + 1
+        case .empty:
+            guard !items.contains(where: {
+                if case .contentTab = $0 { true } else { false }
+            }) else {
+                throw ContentTabPinnedRecordPersistenceCommitError.superseded
+            }
+            return items.endIndex
+        }
     }
 }
 

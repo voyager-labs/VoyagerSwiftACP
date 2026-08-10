@@ -111,6 +111,11 @@ final class FileManagerTopNavigationReorderLocalSessionStore {
 
     nonisolated static let defaultTimeToLiveNanoseconds: UInt64 = 60_000_000_000
 
+    /// process-local 공유 session store. 같은 process의 서로 다른 창 사이 drag에서
+    /// source가 begin한 token을 target boundary drop destination이 consume할 수 있게 한다.
+    /// 이 공유 store가 foreign explicit drop의 token match/replay 보증을 가능하게 한다.
+    static let shared = FileManagerTopNavigationReorderLocalSessionStore()
+
     private let timeToLiveNanoseconds: UInt64
     private let nowNanoseconds: @MainActor () -> UInt64
 
