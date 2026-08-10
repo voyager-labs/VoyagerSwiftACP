@@ -90,7 +90,7 @@ public struct AiSettingsState: Equatable {
         case .providerDefault:
             nil
         case .none:
-            .some(.none)
+            .some(AiThinkingSelection.none)
         case let .effort(rawEffort):
             AiThinkingEffort(rawValue: rawEffort).map { .effort($0) }
         case let .tokenBudget(value):
@@ -145,7 +145,7 @@ public struct AiSettingsState: Equatable {
         case .providerDefault:
             nil
         case .none:
-            .some(.none)
+            .some(AiThinkingSelection.none)
         case let .effort(rawValue):
             AiThinkingEffort(rawValue: rawValue).map(AiThinkingSelection.effort)
         case let .tokenBudget(value):

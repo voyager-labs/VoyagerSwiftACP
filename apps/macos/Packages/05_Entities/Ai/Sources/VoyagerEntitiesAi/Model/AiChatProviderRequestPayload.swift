@@ -143,7 +143,7 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
         switch selection {
         case nil:
             nil
-        case .some(.none):
+        case .some(AiThinkingSelection.none):
             AiChatProviderThinkingPayload.none
         case let .some(.effort(value)):
             .effort(value)

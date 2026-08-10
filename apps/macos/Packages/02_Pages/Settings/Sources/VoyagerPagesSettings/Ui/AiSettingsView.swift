@@ -501,7 +501,7 @@ private extension AiSettingsView {
         case .providerDefault:
             nil
         case .none:
-            .some(.none)
+            .some(AiThinkingSelection.none)
         case let .effort(value):
             AiThinkingEffort(rawValue: value).map(AiThinkingSelection.effort)
         case let .tokenBudget(value):
