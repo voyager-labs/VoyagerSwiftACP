@@ -67,6 +67,7 @@ public struct RuntimeContextPolicy: Hashable, Codable, Sendable {
     public let workingDirectory: String?
     public let allowedRoots: [String]
     public let requestContext: String?
+    let executionContextFingerprint: String
     public init(
         branchReference: String,
         authorizationGeneration: UInt64,
@@ -81,12 +82,18 @@ public struct RuntimeContextPolicy: Hashable, Codable, Sendable {
         self.workingDirectory = workingDirectory
         self.allowedRoots = allowedRoots
         self.requestContext = requestContext
+        executionContextFingerprint = Self.makeExecutionContextFingerprint(
+            workingDirectory: workingDirectory,
+            allowedRoots: allowedRoots,
+            requestContext: requestContext,
+        )
     }
 
     enum CodingKeys: String, CodingKey {
         case branchReference = "branch_reference"
         case authorizationGeneration = "authorization_generation"
         case localCorrelation = "local_correlation"
+        case executionContextFingerprint = "execution_context_fingerprint"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -94,6 +101,10 @@ public struct RuntimeContextPolicy: Hashable, Codable, Sendable {
         branchReference = try container.decode(String.self, forKey: .branchReference)
         authorizationGeneration = try container.decode(UInt64.self, forKey: .authorizationGeneration)
         localCorrelation = try container.decode(String.self, forKey: .localCorrelation)
+        executionContextFingerprint = try container.decode(
+            String.self,
+            forKey: .executionContextFingerprint,
+        )
         workingDirectory = nil
         allowedRoots = []
         requestContext = nil
@@ -104,6 +115,7 @@ public struct RuntimeContextPolicy: Hashable, Codable, Sendable {
         try container.encode(branchReference, forKey: .branchReference)
         try container.encode(authorizationGeneration, forKey: .authorizationGeneration)
         try container.encode(localCorrelation, forKey: .localCorrelation)
+        try container.encode(executionContextFingerprint, forKey: .executionContextFingerprint)
     }
 
     func hasSameRestartIdentity(as other: Self) -> Bool {

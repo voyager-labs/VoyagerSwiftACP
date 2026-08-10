@@ -79,7 +79,7 @@ public extension RuntimeControlPlane {
               let stored = original?.stored,
               !stored.projection.isTerminal,
               let providerInternalSessionReference = stored.providerInternalSessionReference,
-              stored.contextPolicy.hasSameRestartIdentity(as: expectedContext),
+              stored.contextPolicy.hasSameExecutionContext(as: expectedContext),
               let adapter = adapters[stored.adapterID],
               stored.providerNamespace == adapter.descriptor.providerNamespace,
               stored.adapterVersion == adapter.descriptor.adapterVersion,

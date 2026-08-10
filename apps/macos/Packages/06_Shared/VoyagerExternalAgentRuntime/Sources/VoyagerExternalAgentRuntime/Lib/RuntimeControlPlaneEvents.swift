@@ -41,7 +41,6 @@ extension RuntimeControlPlane {
         if cursor.acceptedKeys.contains(event.idempotencyKey) {
             session.stored = session.stored
                 .withEvidence(.ignoredDuplicate(event.idempotencyKey))
-                .withProjection(.eventDuplicateIgnored)
             sessions[host] = session
             return nil
         }
@@ -110,8 +109,11 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
     ) throws {
-        guard let session = sessions[host],
-              session.active || (expectedSource == .host && !session.stored.projection.isTerminal),
+        guard let session = sessions[host] else { throw RuntimeHostError.malformedAdapterResponse }
+        let acceptsInactiveHostTerminal = expectedSource == .host
+            && terminalResult(for: event) != nil
+            && !session.stored.projection.isTerminal
+        guard session.active || acceptsInactiveHostTerminal,
               event.source == expectedSource,
               event.runReference == session.stored.runReference,
               event.externalAgentSessionReference == host,
@@ -135,7 +137,9 @@ extension RuntimeControlPlane {
         } else {
             session.hostAcceptedCount += 1
         }
-        session.active = terminal == nil
+        if terminal != nil {
+            session.active = false
+        }
         let providerKeys = isProvider
             ? Array((session.stored.acceptedIdempotencyKeys + [event.idempotencyKey])
                 .suffix(RuntimeBoundaryLimits.persistedEventEntries))

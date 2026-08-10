@@ -211,6 +211,6 @@ extension RuntimeStoredSession {
             && adapterVersion == descriptor.adapterVersion
             && providerBranch == descriptor.providerBranch
             && capabilitySnapshot == descriptor.capabilities
-            && contextPolicy.hasSameRestartIdentity(as: request.contextPolicy)
+            && contextPolicy.hasSameExecutionContext(as: request.contextPolicy)
     }
 }
