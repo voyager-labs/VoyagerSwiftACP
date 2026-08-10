@@ -96,15 +96,44 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
             guard data.count <= RuntimeBoundaryLimits.snapshotBytes else {
                 throw RuntimeHostError.persistenceFailure
             }
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-            )
-            try data.write(to: fileURL, options: .atomic)
+            try replaceSnapshot(with: data)
         } catch let error as RuntimeHostError {
             throw error
         } catch {
             throw RuntimeHostError.persistenceFailure
         }
+    }
+
+    private func replaceSnapshot(with data: Data) throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try setPermissions(0o700, at: directory)
+
+        let temporaryURL = directory
+            .appendingPathComponent(".\(fileURL.lastPathComponent).tmp-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+
+        try data.write(to: temporaryURL, options: .atomic)
+        try setPermissions(0o600, at: temporaryURL)
+        try ensureSnapshotPlaceholderExists()
+        _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: temporaryURL)
+        try setPermissions(0o600, at: fileURL)
+    }
+
+    private func ensureSnapshotPlaceholderExists() throws {
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let didCreateFile = FileManager.default.createFile(
+            atPath: fileURL.path,
+            contents: Data(),
+            attributes: [.posixPermissions: NSNumber(value: 0o600)],
+        )
+        guard didCreateFile else { throw RuntimeHostError.persistenceFailure }
+    }
+
+    private func setPermissions(_ permissions: Int, at url: URL) throws {
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: permissions)],
+            ofItemAtPath: url.path,
+        )
     }
 }

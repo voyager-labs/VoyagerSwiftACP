@@ -5,6 +5,25 @@ import Testing
 @Suite("RuntimePersistenceTechnicalTests")
 struct RuntimePersistenceTechnicalTests {
     @Test
+    func `runtime state storage remains owner only across writes`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = root.appendingPathComponent("runtime", isDirectory: true)
+        let fileURL = directory.appendingPathComponent("state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        let state = RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
+
+        try await store.save(state)
+        try await store.save(state)
+
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+        let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        #expect((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        #expect((fileAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+    }
+
+    @Test
     func `file store rejects oversized snapshot before decoding`() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
