@@ -120,10 +120,6 @@ scripts/dev/macos-launch.sh \
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
 run = "scripts/dev/macos-test.sh \"$@\""
 
-[tasks.macos-lifecycle-smoke]
-description = "macOS app-host lifecycle integration smoke"
-run = "scripts/dev/macos-test.sh --scheme Voyager-Lifecycle-Smoke \"$@\""
-
 [tasks.macos-helper-test]
 description = "macOS Helper 개발 스킴 테스트 (xcbeautify 필터링)"
 run = "scripts/dev/macos-test.sh --scheme VoyagerHelper-Dev \"$@\""

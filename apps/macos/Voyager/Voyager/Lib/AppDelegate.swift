@@ -16,7 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Keep automatic app lifecycle dispatch at this boundary so reducer tests can
     /// still exercise lifecycle actions explicitly.
     var shouldSuppressAutomaticLifecycle: () -> Bool = {
-        AppHostTestMode.current?.suppressesAutomaticLifecycle == true
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     override init() {
@@ -29,8 +29,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_: Notification) {
         guard !shouldSuppressAutomaticLifecycle() else { return }
-
-        AppHostLifecycleIntegrationProbe.shared.record(.willFinishLaunching)
 
         // 현재 앱 신원에 맞는 scheme으로 ExternalFileRouter 초기화
         let scheme = AppHandoffTarget.liveValue.callbackScheme
@@ -52,8 +50,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         guard !shouldSuppressAutomaticLifecycle() else { return }
-
-        AppHostLifecycleIntegrationProbe.shared.record(.didFinishLaunching)
 
         NSApp.servicesProvider = self
         withAppRootStore {
@@ -179,8 +175,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard !shouldSuppressAutomaticLifecycle() else { return .terminateNow }
-
-        AppHostLifecycleIntegrationProbe.shared.record(.terminationRequested)
 
         return withAppRootStore {
             $0.send(.lifecycle(.termination(.requestTermination)))

@@ -277,31 +277,6 @@ final class AppRootCompositionTests: XCTestCase {
 
     // MARK: - App host lifecycle
 
-    func testAppHostTestModeDefaultsToIsolationAndRequiresXCTestForIntegration() {
-        XCTAssertNil(AppHostTestMode.resolve(environment: [:]))
-        XCTAssertNil(AppHostTestMode.resolve(environment: [
-            AppHostTestMode.environmentKey: AppHostTestMode.lifecycleIntegration.rawValue,
-        ]))
-        XCTAssertEqual(
-            AppHostTestMode.resolve(environment: ["XCTestConfigurationFilePath": "/tmp/config"]),
-            .isolated,
-        )
-        XCTAssertEqual(
-            AppHostTestMode.resolve(environment: [
-                "XCTestConfigurationFilePath": "/tmp/config",
-                AppHostTestMode.environmentKey: AppHostTestMode.lifecycleIntegration.rawValue,
-            ]),
-            .lifecycleIntegration,
-        )
-        XCTAssertEqual(
-            AppHostTestMode.resolve(environment: [
-                "XCTestConfigurationFilePath": "/tmp/config",
-                AppHostTestMode.environmentKey: "unsupported",
-            ]),
-            .isolated,
-        )
-    }
-
     func testAppDelegateSuppressesAutomaticLifecycleDispatchDuringXCTestHosting() {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {

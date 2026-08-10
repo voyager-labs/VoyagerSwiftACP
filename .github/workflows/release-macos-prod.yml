@@ -10,10 +10,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  macos-host-tests:
-    name: Verify macOS application-hosted XCTest
-    uses: ./.github/workflows/validate-macos-host-tests.yml
-
   release-identity:
     name: Prepare release identity
     runs-on: ubuntu-latest
@@ -112,7 +108,7 @@ jobs:
 
   build-notarize:
     name: Build, notarize (prod)
-    needs: [fetch-sparkle-baseline, macos-host-tests, release-identity]
+    needs: [fetch-sparkle-baseline, release-identity]
     runs-on: ${{ fromJSON(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
     environment: production
     outputs:
