@@ -96,7 +96,7 @@ public extension RuntimeControlPlane {
             adapterVersion: stored.adapterVersion,
             providerBranch: stored.providerBranch,
             capabilitySnapshot: stored.capabilitySnapshot,
-            contextPolicy: stored.contextPolicy,
+            contextPolicy: expectedContext,
         )
         let compatibility: RuntimeRestartCompatibility
         do {

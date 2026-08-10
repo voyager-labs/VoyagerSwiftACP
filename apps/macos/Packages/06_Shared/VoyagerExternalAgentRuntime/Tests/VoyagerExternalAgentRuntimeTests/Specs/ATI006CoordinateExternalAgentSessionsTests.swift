@@ -707,6 +707,42 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.receivedRestartBindings().first?.capabilitySnapshot == .allSupported)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: hydrated restart binding receives validated execution context.
+    /// 파일 저장 후 hydrate된 세션도 검증된 현재 실행 컨텍스트를 adapter에 전달하는지 검증한다.
+    /// - 검증 내용: working directory, allowed roots, request context가 restart binding에 유지된다.
+    /// - 사전 조건: 전체 실행 컨텍스트 fingerprint가 포함된 running snapshot이 파일 store에 저장되어 있다.
+    /// - 기대 결과: restore는 성공하고 adapter는 caller가 제공한 full expected context를 수신한다.
+    @Test
+    func `hydrated restart binding receives validated execution context`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = boundedModelTestsMakeCanonicalContext()
+        let stored = boundedModelTestsMakeRunningSession(
+            host: "host-hydrated-binding",
+            run: RuntimeRunReference("run-hydrated-binding"),
+            context: context,
+        )
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        try await store.save(RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(
+            hostReference: stored.externalAgentSessionReference,
+            expectedContext: context,
+        ) == .restored)
+        let binding = try #require(await adapter.receivedRestartBindings().first)
+        #expect(binding.contextPolicy.workingDirectory == context.workingDirectory)
+        #expect(binding.contextPolicy.allowedRoots == context.allowedRoots)
+        #expect(binding.contextPolicy.requestContext == context.requestContext)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: restored run resumes provider event consumption.
     /// 호환 가능한 복원 뒤 provider event와 terminal result 소비를 명시적으로 재개하는지 검증한다.
     /// - 검증 내용: 복원된 run의 stream 호출, completed projection, artifact result 보존.
