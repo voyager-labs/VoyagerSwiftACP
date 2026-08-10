@@ -458,17 +458,23 @@ extension EntryListCoordinator {
             let newChildren = newParent.children
             let oldIDs = oldChildren.map(\.id)
             let newIDs = newChildren.map(\.id)
-            let retained = Set(oldIDs).intersection(newIDs)
+            let oldIDSet = Set(oldIDs)
+            let newIDSet = Set(newIDs)
+            let retained = oldIDSet.intersection(newIDSet)
             guard retained.count >= min(oldIDs.count, newIDs.count) - 1
             else { return false }
             let retainedOrderPreserved = oldIDs.filter { retained.contains($0) }
                 == newIDs.filter { retained.contains($0) }
             guard retainedOrderPreserved else { return false }
-            let removed = IndexSet(oldIDs.enumerated().compactMap { newIDs.contains($0.element) ? nil : $0.offset })
-            let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDs.contains($0.element) ? nil : $0.offset })
+            let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
+            let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
             guard max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count) else { return false }
+            let oldChildrenByID = Dictionary(
+                oldChildren.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first },
+            )
             let retainedChildren = newChildren.map { newItem in
-                if let existing = oldChildren.first(where: { $0.id == newItem.id }) {
+                if let existing = oldChildrenByID[newItem.id] {
                     existing.kind = newItem.kind
                     existing.isLoadingChildren = newItem.isLoadingChildren
                     return existing
