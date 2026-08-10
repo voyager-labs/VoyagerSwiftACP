@@ -31,7 +31,7 @@ public actor RuntimeControlPlane {
     var hydrationTask: Task<RuntimeStoredState?, Error>?
     var hydrated = false
     var inFlightOperations: [ExternalAgentSessionReference: Int] = [:]
-    var terminalPending: Set<ExternalAgentSessionReference> = []
+    var terminalPending: [ExternalAgentSessionReference: Int] = [:]
     var operationWaiters: [ExternalAgentSessionReference: [CheckedContinuation<Void, Never>]] = [:]
     var persistenceMutationLocked = false
     var persistenceMutationWaiters: [CheckedContinuation<Void, Never>] = []

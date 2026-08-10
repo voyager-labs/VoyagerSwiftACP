@@ -142,7 +142,7 @@ public extension RuntimeControlPlane {
         for hostReference: ExternalAgentSessionReference,
         requiring capability: RuntimeCapability,
     ) throws -> (any ExternalAgentRuntimeAdapter, RuntimeStoredSession) {
-        guard !terminalPending.contains(hostReference) else { throw RuntimeHostError.invalidEvent }
+        guard terminalPending[hostReference, default: 0] == 0 else { throw RuntimeHostError.invalidEvent }
         guard !persistingHosts.contains(hostReference) else { throw RuntimeHostError.invalidEvent }
         let binding = try activeAdapter(for: hostReference)
         try require(capability, in: binding.1.capabilitySnapshot)
@@ -160,8 +160,21 @@ public extension RuntimeControlPlane {
         }
     }
 
+    internal func beginTerminalTransition(_ hostReference: ExternalAgentSessionReference) {
+        terminalPending[hostReference, default: 0] += 1
+    }
+
+    internal func endTerminalTransition(_ hostReference: ExternalAgentSessionReference) {
+        let remaining = terminalPending[hostReference, default: 0] - 1
+        if remaining <= 0 {
+            terminalPending[hostReference] = nil
+        } else {
+            terminalPending[hostReference] = remaining
+        }
+    }
+
     internal func waitForOperationsBeforeTerminal(_ hostReference: ExternalAgentSessionReference) async {
-        terminalPending.insert(hostReference)
+        beginTerminalTransition(hostReference)
         guard inFlightOperations[hostReference, default: 0] > 0 else { return }
         await withCheckedContinuation { continuation in
             operationWaiters[hostReference, default: []].append(continuation)

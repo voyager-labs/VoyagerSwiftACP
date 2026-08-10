@@ -1442,6 +1442,41 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().cancellation == 0)
     }
 
+    /// ATI-006-project_external_agent_run_events: overlapping terminal transitions retain operation exclusion.
+    /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
+    /// - 검증 내용: 같은 host의 terminal transition 하나가 종료되어도 남은 transition이 operation admission을 차단한다.
+    /// - 사전 조건: 실행 중인 세션에 겹친 terminal transition 두 개가 등록되어 있다.
+    /// - 기대 결과: 첫 transition 종료 뒤 cancellation은 invalidEvent이고 adapter는 호출되지 않는다.
+    @Test
+    func `overlapping terminal transitions retain operation exclusion`() async throws {
+        let host: ExternalAgentSessionReference = "host-overlapping-terminal"
+        let run = RuntimeRunReference("run-overlapping-terminal")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let runTask = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        try await waitForProjection(.running, host: host, on: plane)
+        await plane.beginTerminalTransition(host)
+        await plane.beginTerminalTransition(host)
+        await plane.endTerminalTransition(host)
+
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.requestCancellation(hostReference: host, operationID: RuntimeOperationID("cancel"))
+        }
+        #expect(await adapter.counts().cancellation == 0)
+
+        await plane.endTerminalTransition(host)
+        runTask.cancel()
+        _ = await runTask.result
+    }
+
     /// ATI-006-project_external_agent_run_events: stale sequence is evidence and cannot move projection backward.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
