@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerShared
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -353,6 +354,47 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         XCTAssertTrue(coordinator.entryItemsByID[first.id]?.first === firstItem)
         XCTAssertTrue(coordinator.entryItemsByID[second.id]?.first === secondItem)
+    }
+
+    // MARK: - EVM-002-incremental_hierarchy_bulk_reorder
+
+    /// EVM-002-incremental_hierarchy_bulk_reorder: 대규모 root 재정렬은 전체 reload로 전환한다.
+    /// - 검증 내용: move operation 상한을 초과한 reorder가 기존 item을 재사용하지 않는지 확인한다.
+    /// - 사전 조건: 34개 root entry가 표시된 hierarchy coordinator에 전체 역순 projection을 적용한다.
+    /// - 기대 결과: 최종 row 순서는 새 projection과 같고 retained item identity는 재구성된다.
+    func testHierarchyBulkReorderFallsBackToFullReload() throws {
+        let roots = (0 ..< 34).map { index in
+            makeHierarchyIntegrationEntry(
+                id: "/root/item-\(index)",
+                name: String(format: "item-%02d", 33 - index),
+            )
+        }
+        let reorderedRoots = roots
+        var state = EntryViewLayoutState()
+        state.entries = roots
+        state.hierarchy = .init(rootPath: "/root")
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: .zero)
+        coordinator.bind(to: view)
+        let retainedItem = try XCTUnwrap(coordinator.entryItemsByID[roots[0].id]?.first)
+
+        coordinator.applyStoreProjection(makeIncrementalOutlineProjection(
+            revision: 2,
+            roots: reorderedRoots,
+            sortOrder: .descending,
+        ))
+
+        XCTAssertEqual(
+            (0 ..< view.tableView.numberOfRows).compactMap { row in
+                guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
+                      case let .entry(entry) = item.kind
+                else { return nil }
+                return entry.id
+            },
+            reorderedRoots.map(\.id),
+        )
+        XCTAssertNotIdentical(coordinator.entryItemsByID[roots[0].id]?.first, retainedItem)
     }
 
     /// EVM-002-incremental_flat_rows: 동일 group의 entry 삽입/삭제는 group item과 retained entry를 보존한다.
@@ -1037,6 +1079,7 @@ extension EVM002ManageEntriesViewPresentationTests {
 private func makeIncrementalOutlineProjection(
     revision: Int,
     roots: [EntryModel],
+    sortOrder: VoyagerShared.SortOrder = .ascending,
 ) -> EntryListOutlineProjection {
     EntryListOutlineProjection(
         revision: revision,
@@ -1044,7 +1087,7 @@ private func makeIncrementalOutlineProjection(
         hierarchyState: .init(rootPath: "/root"),
         context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
         sortKey: .name,
-        sortOrder: .ascending,
+        sortOrder: sortOrder,
     )
 }
 

@@ -131,6 +131,7 @@ public final class EntryListCoordinator: NSObject {
 
     typealias RenderSnapshot = EntryListCoordinatorRenderSnapshot
     typealias OutlineItem = EntryListOutlineItem
+    private static let maxIncrementalRootMoveOperations = 32
 
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState {
@@ -612,16 +613,9 @@ public final class EntryListCoordinator: NSObject {
             insertIndexes.insert(index)
         }
 
-        var moveOperations: [(from: Int, to: Int)] = []
-        for (targetIndex, itemID) in new.enumerated() {
-            guard let currentIndex = current.firstIndex(of: itemID) else { return nil }
-            if currentIndex != targetIndex {
-                current.remove(at: currentIndex)
-                current.insert(itemID, at: targetIndex)
-                moveOperations.append((currentIndex, targetIndex))
-            }
+        guard let moveOperations = makeIncrementalRootMoveOperations(current: current, new: new) else {
+            return nil
         }
-        guard current == new else { return nil }
 
         let updatedRowIndexes = IndexSet(new.enumerated().compactMap { index, itemID in
             guard let oldItem = oldItemsByID[itemID],
@@ -648,6 +642,26 @@ public final class EntryListCoordinator: NSObject {
             return existing
         }, removedIndexes: removedIndexes, insertedIndexes: insertIndexes,
         moves: moveOperations, updatedRowIndexes: updatedRowIndexes)
+    }
+
+    private func makeIncrementalRootMoveOperations(
+        current initial: [EntryListOutlineProjection.ItemID],
+        new: [EntryListOutlineProjection.ItemID],
+    ) -> [(from: Int, to: Int)]? {
+        var current = initial
+        var moveOperations: [(from: Int, to: Int)] = []
+        for (targetIndex, itemID) in new.enumerated() {
+            guard let currentIndex = current.firstIndex(of: itemID) else { return nil }
+            if currentIndex != targetIndex {
+                current.remove(at: currentIndex)
+                current.insert(itemID, at: targetIndex)
+                moveOperations.append((currentIndex, targetIndex))
+            }
+        }
+        guard current == new,
+              moveOperations.count <= Self.maxIncrementalRootMoveOperations
+        else { return nil }
+        return moveOperations
     }
 
     func rebuildItemIndexes() {
