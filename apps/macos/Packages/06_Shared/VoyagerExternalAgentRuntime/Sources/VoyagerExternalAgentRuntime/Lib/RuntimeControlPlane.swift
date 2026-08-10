@@ -78,8 +78,8 @@ public actor RuntimeControlPlane {
             if sessions[reservation.host]?.stored.projection.isTerminal == true {
                 return resultRespectingStoredTerminal(result, host: reservation.host)
             }
-            await waitForOperationsBeforeTerminal(reservation.host)
-            defer { terminalPending.remove(reservation.host) }
+            beginTerminalTransition(reservation.host)
+            defer { endTerminalTransition(reservation.host) }
             try await commit(host: reservation.host) { plane in
                 plane.finish(result, host: reservation.host)
             }

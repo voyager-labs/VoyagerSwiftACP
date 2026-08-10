@@ -1724,13 +1724,13 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 0)
     }
 
-    /// ATI-006-project_external_agent_run_events: operation started first completes before terminal transition.
+    /// ATI-006-project_external_agent_run_events: terminal transition does not wait for a delayed operation.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
     /// - 사전 조건: 결정적 adapter와 isolated runtime state store가 구성되어 있다.
     /// - 기대 결과: 해당 interaction의 관찰 가능한 결과와 오류 경계가 유지된다.
     @Test
-    func `operation started first completes before terminal transition`() async throws {
+    func `terminal transition does not wait for delayed operation`() async throws {
         let host: ExternalAgentSessionReference = "host-a"
         let run = RuntimeRunReference("run-a")
         let adapter = DeterministicRuntimeAdapter(
@@ -1744,7 +1744,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 kind: .completed,
             )]],
             eventStreamDelay: .milliseconds(50),
-            operationDelay: .milliseconds(150),
+            operationDelay: .seconds(1),
         )
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
         try await plane.register(adapter)
@@ -1756,10 +1756,11 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         }
         try await Task.sleep(for: .milliseconds(70))
 
-        #expect(await plane.projection(for: host) == .running)
-        try await cancellationTask.value
+        #expect(await plane.projection(for: host) == .completed)
         #expect(try await runTask.value.outcome == .completed)
         #expect(await adapter.counts().cancellation == 1)
+        cancellationTask.cancel()
+        _ = await cancellationTask.result
     }
 
     /// ATI-006-project_external_agent_run_events: duplicate and ordering evidence survives persistence.

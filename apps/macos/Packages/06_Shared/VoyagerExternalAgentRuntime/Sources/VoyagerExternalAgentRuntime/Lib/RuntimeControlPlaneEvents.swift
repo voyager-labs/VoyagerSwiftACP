@@ -15,11 +15,11 @@ extension RuntimeControlPlane {
         try validate(event, host: host, expectedSource: expectedSource)
         let terminal = terminalResult(for: event)
         if terminal != nil {
-            await waitForOperationsBeforeTerminal(host)
+            beginTerminalTransition(host)
         }
         defer {
             if terminal != nil {
-                terminalPending.remove(host)
+                endTerminalTransition(host)
             }
         }
         return try await commit(host: host) { plane in
