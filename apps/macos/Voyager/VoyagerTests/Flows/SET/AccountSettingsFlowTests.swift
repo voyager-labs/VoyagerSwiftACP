@@ -128,7 +128,7 @@ final class AccountSettingsFlowTests: XCTestCase {
             state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)
         }
 
-        XCTAssertEqual(expiryStore.state.settings.accessStatus, AccessStatus.none)
+        XCTAssertNil(expiryStore.state.lifecycle.accountAccess.status)
         XCTAssertTrue(expiryStore.state.settings.accountSettings.presentation.didSignInFail)
         await expiryStore.finish()
     }
@@ -182,7 +182,6 @@ final class AccountSettingsFlowTests: XCTestCase {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accountAccess.hasAccountSession = true
         initialState.lifecycle.accountAccess.status = .coreLicenseActive
-        initialState.settings.accessStatus = .coreLicenseActive
         initialState.settings.accountSettings.presentation = AccountAccessPresentation(
             hasAccountSession: true,
         )
