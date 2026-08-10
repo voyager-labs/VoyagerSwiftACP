@@ -200,6 +200,42 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(coordinator.tableView.isItemExpanded(item))
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: expanded empty topology에서 root-only projection으로 전환하면 folder를 물리적으로
+    /// 접는다.
+    /// - 검증 내용: 이전 projection의 children topology가 남아 있으면 새 projection의 visible row 수가 같아도 full reload와 collapse 동기화를
+    /// 실행하는지 검증한다.
+    /// - 사전 조건: 빈 children key를 가진 expanded folder projection이 적용된 뒤 같은 folder의 collapsed root-only projection이 도착한다.
+    /// - 기대 결과: full reload 뒤 새로 reacquire한 outline item이 물리적으로 collapsed 상태다.
+    func testExpandedEmptyTopologyCollapsesOnRootOnlyProjection() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.outlineProjectionRevision = 1
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+
+        coordinator.applyStoreProjection(outlineProjection(revision: 1, roots: [folder]))
+        let expandedItem = try XCTUnwrap(coordinator.entryItemById[folder.id])
+        XCTAssertTrue(coordinator.tableView.isItemExpanded(expandedItem))
+
+        var collapsedHierarchy = EntryListHierarchyState(rootPath: "/root")
+        collapsedHierarchy.setExpandedIDs([])
+        let collapsedProjection = EntryListOutlineProjection(
+            revision: 2,
+            rootEntries: [folder],
+            hierarchyState: collapsedHierarchy,
+            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+        coordinator.applyStoreProjection(collapsedProjection)
+
+        let collapsedItem = try XCTUnwrap(coordinator.entryItemById[folder.id])
+        XCTAssertFalse(coordinator.tableView.isItemExpanded(collapsedItem))
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: outline view delegate collapse는 store에 folderCollapseRequested를
     /// 전달한다.
     /// 키보드 left-arrow가 NSOutlineView.collapseItem을 호출하고 delegate callback이 coordinator를 통해 store action으로 전달되는 경로를

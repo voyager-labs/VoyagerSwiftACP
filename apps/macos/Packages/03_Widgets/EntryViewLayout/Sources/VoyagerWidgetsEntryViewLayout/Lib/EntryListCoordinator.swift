@@ -161,6 +161,7 @@ public final class EntryListCoordinator: NSObject {
     var groupItemByName: [String: OutlineItem] = [:]
     let projectionSession = EntryListCoordinatorProjectionSession()
     var lastAppliedVisibleRows: [EntryListOutlineProjection.ItemID] = []
+    var lastAppliedProjectionHasHierarchyTopology = false
     var renderedProjectionRevision: Int? {
         projectionSession.renderedProjectionRevision
     }
@@ -503,7 +504,9 @@ public final class EntryListCoordinator: NSObject {
                 selectionChanged: false,
             ) {
                 let newVisibleRows = projection.visibleRows
-                if !tryIncrementalRowUpdate(
+                let hasHierarchyTopology = !projection.childrenByParent.isEmpty
+                let shouldForceFullReload = lastAppliedProjectionHasHierarchyTopology || hasHierarchyTopology
+                if shouldForceFullReload || !tryIncrementalRowUpdate(
                     old: oldVisibleRows,
                     new: newVisibleRows,
                     items: items,
@@ -515,6 +518,7 @@ public final class EntryListCoordinator: NSObject {
                     applyFolderExpansionState(for: projection)
                 }
                 lastAppliedVisibleRows = newVisibleRows
+                lastAppliedProjectionHasHierarchyTopology = hasHierarchyTopology
             }
         }
     }
