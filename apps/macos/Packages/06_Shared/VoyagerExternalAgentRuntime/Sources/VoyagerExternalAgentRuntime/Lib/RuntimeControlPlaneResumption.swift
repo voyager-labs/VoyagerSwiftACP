@@ -22,8 +22,8 @@ public extension RuntimeControlPlane {
             if sessions[hostReference]?.stored.projection.isTerminal == true {
                 return resultRespectingStoredTerminal(result, host: hostReference)
             }
-            await waitForOperationsBeforeTerminal(hostReference)
-            defer { terminalPending.remove(hostReference) }
+            beginTerminalTransition(hostReference)
+            defer { endTerminalTransition(hostReference) }
             try await commit(host: hostReference) { plane in
                 plane.finish(result, host: hostReference)
             }

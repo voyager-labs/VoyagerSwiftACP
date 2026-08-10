@@ -21,9 +21,7 @@ public extension RuntimeControlPlane {
                 runReference: session.runReference,
                 authorizationGeneration: session.contextPolicy.authorizationGeneration,
             ))
-            finishOperation(for: hostReference)
         } catch {
-            finishOperation(for: hostReference)
             throw normalizeAdapterError(error)
         }
     }
@@ -43,9 +41,7 @@ public extension RuntimeControlPlane {
                 runReference: session.runReference,
                 input: input,
             ))
-            finishOperation(for: hostReference)
         } catch {
-            finishOperation(for: hostReference)
             throw normalizeAdapterError(error)
         }
     }
@@ -61,9 +57,7 @@ public extension RuntimeControlPlane {
                 operationID: operationID,
                 runReference: session.runReference,
             ))
-            finishOperation(for: hostReference)
         } catch {
-            finishOperation(for: hostReference)
             throw normalizeAdapterError(error)
         }
     }
@@ -146,18 +140,7 @@ public extension RuntimeControlPlane {
         guard !persistingHosts.contains(hostReference) else { throw RuntimeHostError.invalidEvent }
         let binding = try activeAdapter(for: hostReference)
         try require(capability, in: binding.1.capabilitySnapshot)
-        inFlightOperations[hostReference, default: 0] += 1
         return binding
-    }
-
-    internal func finishOperation(for hostReference: ExternalAgentSessionReference) {
-        let remaining = max(0, inFlightOperations[hostReference, default: 0] - 1)
-        if remaining == 0 {
-            inFlightOperations[hostReference] = nil
-            operationWaiters.removeValue(forKey: hostReference)?.forEach { $0.resume() }
-        } else {
-            inFlightOperations[hostReference] = remaining
-        }
     }
 
     internal func beginTerminalTransition(_ hostReference: ExternalAgentSessionReference) {
@@ -170,14 +153,6 @@ public extension RuntimeControlPlane {
             terminalPending[hostReference] = nil
         } else {
             terminalPending[hostReference] = remaining
-        }
-    }
-
-    internal func waitForOperationsBeforeTerminal(_ hostReference: ExternalAgentSessionReference) async {
-        beginTerminalTransition(hostReference)
-        guard inFlightOperations[hostReference, default: 0] > 0 else { return }
-        await withCheckedContinuation { continuation in
-            operationWaiters[hostReference, default: []].append(continuation)
         }
     }
 
