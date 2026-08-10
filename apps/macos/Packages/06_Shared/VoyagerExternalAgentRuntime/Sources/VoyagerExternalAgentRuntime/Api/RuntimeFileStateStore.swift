@@ -19,14 +19,25 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
     public func load() async throws -> RuntimeStoredState? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try readSnapshotData()
-        let version = try schemaVersion(in: data)
+        let version: Int
+        do {
+            version = try schemaVersion(in: data)
+        } catch {
+            try quarantineCorruptedSnapshot()
+            throw RuntimeHostError.persistenceFailure
+        }
         if version > RuntimeStoredState.currentSchemaVersion {
             throw RuntimeHostError.unsupportedSchemaVersion(version)
         }
         if version < RuntimeStoredState.currentSchemaVersion {
             return try migrate(data, from: version)
         }
-        return try decode(data)
+        do {
+            return try decode(data)
+        } catch {
+            try quarantineCorruptedSnapshot()
+            throw RuntimeHostError.persistenceFailure
+        }
     }
 
     private func readSnapshotData() throws -> Data {
@@ -60,6 +71,23 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
         } catch let error as RuntimeHostError {
             throw error
         } catch { throw RuntimeHostError.persistenceFailure }
+    }
+
+    private func quarantineCorruptedSnapshot() throws {
+        let quarantineURL = fileURL.appendingPathExtension("corrupt")
+        do {
+            if FileManager.default.fileExists(atPath: quarantineURL.path) {
+                _ = try FileManager.default.replaceItemAt(quarantineURL, withItemAt: fileURL)
+            } else {
+                try FileManager.default.moveItem(at: fileURL, to: quarantineURL)
+            }
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: quarantineURL.path,
+            )
+        } catch {
+            throw RuntimeHostError.persistenceFailure
+        }
     }
 
     public func save(_ state: RuntimeStoredState) async throws {
