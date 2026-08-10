@@ -1,6 +1,7 @@
 package unixsocket
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -314,12 +315,7 @@ func (server *Server) handleConnection(connection net.Conn) {
 		if protocolError != nil {
 			response = schema.NewErrorResponse(trustworthyID, protocolError.Code)
 		} else {
-			result, dispatchError := server.runtime.Dispatch(request)
-			if dispatchError != nil {
-				response = schema.NewErrorResponse(trustworthyID, dispatchError.Code)
-			} else {
-				response = schema.NewSuccessResponse(trustworthyID, result)
-			}
+			response = server.runtime.Dispatch(context.Background(), request)
 		}
 	}
 

@@ -47,3 +47,73 @@
 [data-file-manager-illustration] .fm-composer-footer .vc-icon-button {
   margin-left: auto;
 }
+
+/* === MenuItem === */
+[data-file-manager-illustration] .fm-menu-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  background: transparent;
+  padding: var(--fm-space-3) var(--fm-space-4);
+  color: var(--fm-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition: background-color 120ms ease;
+}
+
+[data-file-manager-illustration] .fm-menu-item:hover:not(:disabled) {
+  background: var(--fm-selection);
+}
+
+[data-file-manager-illustration] .fm-menu-item.destructive {
+  color: var(--fm-red);
+}
+
+[data-file-manager-illustration] .fm-menu-item:disabled {
+  opacity: 0.4;
+}
+
+[data-file-manager-illustration] .fm-menu-item kbd {
+  color: var(--fm-text-tertiary);
+  font: inherit;
+}
+
+/* === Tooltip === */
+[data-file-manager-illustration] .fm-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+[data-file-manager-illustration] .fm-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + var(--fm-space-3));
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: var(--fm-radius-sm);
+  background: rgba(0, 0, 0, 0.85);
+  padding: var(--fm-space-2) var(--fm-space-4);
+  color: #fff;
+  font-size: var(--fm-font-size-caption);
+  line-height: 1.3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  z-index: 100;
+}
+
+[data-file-manager-illustration] .fm-tooltip:hover::after {
+  opacity: 1;
+}
+
+/* === TextField (textarea variant) === */
+[data-file-manager-illustration] textarea.vc-form-field {
+  resize: none;
+  min-height: 60px;
+  line-height: var(--fm-line-body);
+}

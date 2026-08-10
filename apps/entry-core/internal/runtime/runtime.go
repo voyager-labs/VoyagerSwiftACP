@@ -2,8 +2,6 @@ package runtime
 
 import (
 	"sync"
-
-	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
 var AppVersion = "0.1.0-dev"
@@ -16,9 +14,11 @@ const (
 )
 
 type Runtime struct {
-	mu         sync.RWMutex
-	state      State
-	appVersion string
+	mu           sync.RWMutex
+	state        State
+	appVersion   string
+	entryService EntryService
+	workspaceID  string
 }
 
 func New() *Runtime {
@@ -26,10 +26,11 @@ func New() *Runtime {
 }
 
 func newWithAppVersion(appVersion string) *Runtime {
-	return &Runtime{
-		state:      StateRunning,
-		appVersion: appVersion,
-	}
+	return newWithAppVersionAndServices(appVersion, "", nil)
+}
+
+func newWithAppVersionAndServices(appVersion, workspaceID string, service EntryService) *Runtime {
+	return &Runtime{state: StateRunning, appVersion: appVersion, entryService: service, workspaceID: workspaceID}
 }
 
 func (runtime *Runtime) State() State {
@@ -46,30 +47,4 @@ func (runtime *Runtime) BeginStopping() bool {
 	}
 	runtime.state = StateStopping
 	return true
-}
-
-func (runtime *Runtime) Dispatch(request schema.Request) (schema.Result, *schema.ProtocolError) {
-	runtime.mu.RLock()
-	defer runtime.mu.RUnlock()
-	if runtime.state != StateRunning {
-		return nil, internalError()
-	}
-
-	switch request.Method {
-	case schema.MethodPing:
-		return schema.PingResult{Message: "pong"}, nil
-	case schema.MethodHealth:
-		return schema.HealthResult{Status: "healthy", State: string(StateRunning)}, nil
-	case schema.MethodVersion:
-		return schema.VersionResult{
-			AppVersion:      runtime.appVersion,
-			ProtocolVersion: schema.ProtocolVersion,
-		}, nil
-	default:
-		return nil, internalError()
-	}
-}
-
-func internalError() *schema.ProtocolError {
-	return schema.NewErrorResponse("", schema.ErrorInternal).Error
 }

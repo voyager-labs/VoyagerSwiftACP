@@ -4,6 +4,7 @@ import SwiftUI
 struct AiChatModelSelectorButton: View {
     let store: StoreOf<AiChatFeature>
     let state: AiChatState
+    let isEditingDisabled: Bool
 
     var body: some View {
         Menu {
@@ -30,7 +31,7 @@ struct AiChatModelSelectorButton: View {
         }
         .menuIndicator(.visible)
         .menuStyle(.borderlessButton)
-        .disabled(state.modelSelectorIsDisabled)
+        .disabled(isEditingDisabled || state.modelSelectorIsDisabled)
         .accessibilityLabel("Model")
         .accessibilityValue(AiChatSelectorLabels.modelSelectorAccessibilityValue(for: state))
     }

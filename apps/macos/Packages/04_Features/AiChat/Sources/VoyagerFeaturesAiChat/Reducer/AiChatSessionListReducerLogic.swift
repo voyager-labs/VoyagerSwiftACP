@@ -466,9 +466,9 @@ extension AiChatFeature {
         runID: AiChatRunID?,
         state: inout State,
     ) {
-        let preservesNewerRuntimeSelection = requestID.map {
-            state.completeInspectorReopenPersistenceBaseline(requestID: $0)
-        } ?? false
+        if let requestID {
+            _ = state.completeInspectorReopenPersistenceBaseline(requestID: requestID)
+        }
         if let requestID,
            let runID,
            let backgroundLock = state.backgroundExecutionPhases[requestID]?.lock,
@@ -495,11 +495,7 @@ extension AiChatFeature {
            state.mode == .chat,
            state.sessionID == snapshot.sessionID
         {
-            applyVisibleSavedSnapshot(
-                snapshot,
-                preservesNewerRuntimeSelection: preservesNewerRuntimeSelection,
-                state: &state,
-            )
+            applyVisibleSavedSnapshot(snapshot, state: &state)
         }
         if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
             state.sessionList.selectedSessionID = summary.sessionID
@@ -514,7 +510,6 @@ extension AiChatFeature {
 
     private func applyVisibleSavedSnapshot(
         _ snapshot: AiChatSessionSnapshot,
-        preservesNewerRuntimeSelection: Bool,
         state: inout State,
     ) {
         state.sessionID = snapshot.sessionID
@@ -526,10 +521,6 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lastRequestContext = snapshot.lastRequestContext
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
-        if !preservesNewerRuntimeSelection {
-            state.selectedModelHandle = snapshot.model
-            state.selectedThinking = snapshot.selectedThinking
-        }
         state.transcriptAutoScrollVersion += 1
     }
 

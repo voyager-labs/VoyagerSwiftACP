@@ -7,13 +7,10 @@ public enum AccountSettingsAction: CasePathable, Sendable {
     case signOutTapped
     case signOutConfirmed
     case signOutCancelled
-    case retryTapped
-    case manageAccountTapped
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
         case signInRequested
         case signOutRequested
-        case retryRequested
     }
 }

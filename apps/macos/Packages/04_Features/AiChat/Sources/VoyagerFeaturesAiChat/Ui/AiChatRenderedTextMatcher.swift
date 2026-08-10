@@ -107,21 +107,31 @@ struct AiChatTranscriptSearchPresentation: Equatable {
     let matches: [AiChatRenderedTextMatchDescriptor]
     private let matchesByBlock: [AiChatTranscriptBlockAnchor: AiChatTranscriptBlockMatchProjection]
 
+    @MainActor
     init(
         query: String,
         messages: [AiChatMessage],
         streamingAssistantContent: String?,
     ) {
+        let renderer = AiChatAssistantMarkdownRenderSession()
         var renderedRows = messages.enumerated().map { index, message in
-            AiChatTranscriptRenderedRow(
-                transcriptRow: .message(index: index),
-                renderedBlocks: Self.renderedBlocks(for: message),
+            let row = AiChatTranscriptRowDiscriminator.message(index: index)
+            return AiChatTranscriptRenderedRow(
+                transcriptRow: row,
+                renderedBlocks: Self.renderedBlocks(
+                    for: message,
+                    transcriptRow: row,
+                    renderer: renderer,
+                ),
             )
         }
         if let streamingAssistantContent {
             renderedRows.append(AiChatTranscriptRenderedRow(
                 transcriptRow: .streamingAssistant,
-                renderedBlocks: AssistantMarkdownBlock.parse(streamingAssistantContent).map(\.renderedText),
+                renderedBlocks: renderer.render(
+                    content: streamingAssistantContent,
+                    transcriptRow: .streamingAssistant,
+                ).document.searchBlocks,
             ))
         }
         self.init(query: query, renderedRows: renderedRows)
@@ -264,10 +274,15 @@ struct AiChatTranscriptSearchPresentation: Equatable {
         }
     }
 
-    private static func renderedBlocks(for message: AiChatMessage) -> [String] {
+    @MainActor
+    private static func renderedBlocks(
+        for message: AiChatMessage,
+        transcriptRow: AiChatTranscriptRowDiscriminator,
+        renderer: AiChatAssistantMarkdownRenderSession,
+    ) -> [String] {
         switch message.role {
         case .assistant:
-            AssistantMarkdownBlock.parse(message.content).map(\.renderedText)
+            renderer.render(content: message.content, transcriptRow: transcriptRow).document.searchBlocks
         case .user, .system, .tool:
             [message.content]
         }
@@ -284,6 +299,7 @@ struct AiChatTranscriptSearchProjectionRequest: Equatable {
         let index: Int
         let rendering: AiChatTranscriptStableRowRendering
         let content: String
+        let renderedBlocks: [String]
     }
 
     let isPresented: Bool
@@ -292,12 +308,14 @@ struct AiChatTranscriptSearchProjectionRequest: Equatable {
     let stableRows: [StableRow]
     let stableRowsRevision: UInt64
     let streamingAssistantContent: String?
+    let streamingRenderedBlocks: [String]?
     let streamingRevision: UInt64
 
     var requiresWork: Bool {
         isPresented && !query.isEmpty
     }
 
+    @MainActor
     static func make(
         isPresented: Bool,
         query: String,
@@ -315,22 +333,31 @@ struct AiChatTranscriptSearchProjectionRequest: Equatable {
                 stableRows: [],
                 stableRowsRevision: stableRowsRevision,
                 streamingAssistantContent: nil,
+                streamingRenderedBlocks: nil,
                 streamingRevision: streamingRevision,
             )
         }
+        let renderer = AiChatAssistantMarkdownRenderSession()
         return Self(
             isPresented: true,
             query: query,
             sessionToken: sessionToken,
             stableRows: messages.enumerated().map { index, message in
-                StableRow(
+                let row = AiChatTranscriptRowDiscriminator.message(index: index)
+                return StableRow(
                     index: index,
                     rendering: message.role == .assistant ? .assistantMarkdown : .plain,
                     content: message.content,
+                    renderedBlocks: message.role == .assistant
+                        ? renderer.render(content: message.content, transcriptRow: row).document.searchBlocks
+                        : [message.content],
                 )
             },
             stableRowsRevision: stableRowsRevision,
             streamingAssistantContent: streamingAssistantContent,
+            streamingRenderedBlocks: streamingAssistantContent.map { content in
+                renderer.render(content: content, transcriptRow: .streamingAssistant).document.searchBlocks
+            },
             streamingRevision: streamingRevision,
         )
     }
@@ -357,7 +384,9 @@ struct AiChatTranscriptSearchRequestSource {
     let streamingRevision: UInt64
 }
 
+@MainActor
 struct AiChatTranscriptSearchRequestCache {
+    private let fallbackRenderer = AiChatAssistantMarkdownRenderSession()
     private var cachedSessionToken: UUID?
     private var cachedMessageCount = 0
     private var cachedTranscriptRevision: UInt64 = 0
@@ -365,10 +394,12 @@ struct AiChatTranscriptSearchRequestCache {
     private var stableRowsRevision: UInt64 = 0
     private(set) var diagnostics = AiChatTranscriptSearchRequestCacheDiagnostics()
 
+    @MainActor
     mutating func request(
         isPresented: Bool,
         query: String,
         source: AiChatTranscriptSearchRequestSource,
+        assistantRenderer: AiChatAssistantMarkdownRenderSession? = nil,
     ) -> AiChatTranscriptSearchProjectionRequest {
         let sessionToken = source.sessionToken
         let messages = source.messages
@@ -396,7 +427,10 @@ struct AiChatTranscriptSearchRequestCache {
             cachedSessionToken = sessionToken
             cachedMessageCount = messages.count
             cachedTranscriptRevision = transcriptRevision
-            cachedStableRows = Self.stableRows(from: messages)
+            cachedStableRows = stableRows(
+                from: messages,
+                assistantRenderer: assistantRenderer,
+            )
             stableRowsRevision &+= 1
             diagnostics.stableRowsBuildCount += 1
         }
@@ -407,18 +441,31 @@ struct AiChatTranscriptSearchRequestCache {
             stableRows: cachedStableRows,
             stableRowsRevision: stableRowsRevision,
             streamingAssistantContent: streamingAssistantContent,
+            streamingRenderedBlocks: streamingAssistantContent.map { content in
+                (assistantRenderer ?? fallbackRenderer)
+                    .render(content: content, transcriptRow: .streamingAssistant)
+                    .document.searchBlocks
+            },
             streamingRevision: streamingRevision,
         )
     }
 
-    private static func stableRows(
+    private func stableRows(
         from messages: [AiChatMessage],
+        assistantRenderer: AiChatAssistantMarkdownRenderSession?,
     ) -> [AiChatTranscriptSearchProjectionRequest.StableRow] {
-        messages.enumerated().map { index, message in
+        let renderer = assistantRenderer ?? fallbackRenderer
+        return messages.enumerated().map { index, message in
             AiChatTranscriptSearchProjectionRequest.StableRow(
                 index: index,
                 rendering: message.role == .assistant ? .assistantMarkdown : .plain,
                 content: message.content,
+                renderedBlocks: message.role == .assistant
+                    ? renderer.render(
+                        content: message.content,
+                        transcriptRow: .message(index: index),
+                    ).document.searchBlocks
+                    : [message.content],
             )
         }
     }
@@ -459,7 +506,7 @@ actor AiChatTranscriptSearchProjector {
     private var stablePresentation: AiChatTranscriptSearchPresentation?
     private var projectionDiagnostics = AiChatTranscriptSearchProjectionDiagnostics()
 
-    init(streamingDebounce: Duration = .milliseconds(80)) {
+    init(streamingDebounce: Duration = .zero) {
         self.streamingDebounce = streamingDebounce
     }
 
@@ -543,12 +590,14 @@ actor AiChatTranscriptSearchProjector {
         request: AiChatTranscriptSearchProjectionRequest,
         generation: UInt64,
     ) throws -> AiChatTranscriptSearchPresentation {
-        guard let streamingContent = request.streamingAssistantContent else { return stable }
+        guard request.streamingAssistantContent != nil,
+              let streamingRenderedBlocks = request.streamingRenderedBlocks
+        else { return stable }
         try checkCancellation(generation: generation)
         let renderedRows = [
             AiChatTranscriptRenderedRow(
                 transcriptRow: .streamingAssistant,
-                renderedBlocks: AssistantMarkdownBlock.parse(streamingContent).map(\.renderedText),
+                renderedBlocks: streamingRenderedBlocks,
             ),
         ]
         let streaming = AiChatTranscriptSearchPresentation(
@@ -566,12 +615,7 @@ actor AiChatTranscriptSearchProjector {
         renderedRows.reserveCapacity(request.stableRows.count)
         for row in request.stableRows {
             try Task.checkCancellation()
-            let blocks: [String] = switch row.rendering {
-            case .plain:
-                [row.content]
-            case .assistantMarkdown:
-                AssistantMarkdownBlock.parse(row.content).map(\.renderedText)
-            }
+            let blocks = row.renderedBlocks
             renderedRows.append(AiChatTranscriptRenderedRow(
                 transcriptRow: .message(index: row.index),
                 renderedBlocks: blocks,

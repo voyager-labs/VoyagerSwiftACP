@@ -61,7 +61,7 @@ func TestDaemonProcessSmoke(t *testing.T) {
 		cliPath,
 		socketPath,
 		"version",
-		"{\"app_version\":\"9.8.7-test\",\"protocol_version\":1}\n",
+		"{\"app_version\":\"9.8.7-test\"}\n",
 	)
 
 	sendMalformedRequest(t, socketPath)
@@ -237,7 +237,7 @@ func sendMalformedRequest(t *testing.T, socketPath string) {
 	if !ok {
 		t.Fatal("malformed request connection is not Unix")
 	}
-	const malformed = `{"request_id":"task8-raw-id","protocol_version":1,"method":"ping","params":{"marker":"task8-sensitive-marker"}`
+	const malformed = `{"request_id":"malformed-raw-id","method":"ping","params":{"marker":"sensitive-payload-marker"}`
 	if _, err := io.WriteString(connection, malformed); err != nil {
 		t.Fatalf("write malformed request: %v", err)
 	}
@@ -254,7 +254,7 @@ func assertMetadataOnlyLogs(t *testing.T, stdout, stderr string) {
 	if stdout != "" {
 		t.Fatalf("daemon stdout=%q, want empty", stdout)
 	}
-	for _, sensitive := range []string{"task8-sensitive-marker", "task8-raw-id", "request_id", "params"} {
+	for _, sensitive := range []string{"sensitive-payload-marker", "malformed-raw-id", "request_id", "params"} {
 		if strings.Contains(stderr, sensitive) {
 			t.Fatal("daemon stderr leaked malformed request data")
 		}

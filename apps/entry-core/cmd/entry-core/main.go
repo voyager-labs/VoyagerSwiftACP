@@ -38,10 +38,9 @@ func run(ctx context.Context, args []string, random io.Reader, stdout, stderr io
 	}
 
 	request := schema.Request{
-		RequestID:       hex.EncodeToString(requestIDBytes),
-		ProtocolVersion: schema.ProtocolVersion,
-		Method:          method,
-		Params:          schema.EmptyParams{},
+		RequestID: hex.EncodeToString(requestIDBytes),
+		Method:    method,
+		Params:    schema.EmptyParams{},
 	}
 	response, err := client.Call(ctx, socketPath, request)
 	if err != nil {

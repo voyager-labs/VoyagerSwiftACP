@@ -243,7 +243,7 @@ func TestDaemonSecondSignalSubprocessSkipsGrace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	secret := "TASK6-UNIQUE-REQUEST-SECRET"
+	secret := "UNIQUE-REQUEST-PAYLOAD-SECRET"
 	if _, err := connection.Write([]byte(`{"request_id":"raw-id","params":{"secret":"` + secret)); err != nil {
 		t.Fatal(err)
 	}

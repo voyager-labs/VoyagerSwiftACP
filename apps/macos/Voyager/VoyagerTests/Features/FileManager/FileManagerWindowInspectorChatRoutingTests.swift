@@ -215,7 +215,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         let userContext = AiChatCurrentContextSnapshot(summary: "User context")
         await store.send(.inspector(.aiChat(.draftTextChanged("User question"))))
         await store.send(.inspector(.aiChat(.currentContextChanged(userContext))))
-        await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+        await store.send(.inspector(.aiChat(.attachmentPickerSelection(sessionID, [
             URL(fileURLWithPath: "/tmp/inspector-race.txt"),
         ]))))
 
@@ -250,9 +250,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(request.context.currentContext, userContext)
         XCTAssertEqual(request.context.requestContext.addedAttachments.count, 1)
         XCTAssertEqual(request.context.selectedThinking, .effort(.high))
-        XCTAssertEqual(request.messages.last, AiChatMessage(role: .user, content: "User question"))
+        let submittedMessage = AiChatMessage(
+            role: .user,
+            content: "User question",
+            createdAtMs: 1_700_000_000_000,
+        )
+        XCTAssertEqual(request.messages.last, submittedMessage)
         XCTAssertEqual(snapshot.sessionID, sessionID)
-        XCTAssertEqual(snapshot.transcriptHistory.last, AiChatMessage(role: .user, content: "User question"))
+        XCTAssertEqual(snapshot.transcriptHistory.last, submittedMessage)
 
         await store.send(.inspector(.aiChat(.cancelTapped)))
         await store.finish()
@@ -787,7 +792,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         case .draft:
             await store.send(.inspector(.aiChat(.draftTextChanged("User draft"))))
         case .attachment:
-            await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+            await store.send(.inspector(.aiChat(.attachmentPickerSelection(transientSessionID, [
                 URL(fileURLWithPath: "/tmp/inspector-pending.txt"),
             ]))))
         case .model:
@@ -1462,7 +1467,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         // 동일 session의 미전송 attachment 보존 결과만 선별 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+        await store.send(.inspector(.aiChat(.attachmentPickerSelection(sessionID, [
             URL(fileURLWithPath: "/tmp/idle-reopen.txt"),
         ]))))
         XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)

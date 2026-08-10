@@ -3,6 +3,7 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 import VoyagerEntitiesAi
+import VoyagerShared
 
 struct AiChatInputBar: View {
     let store: StoreOf<AiChatFeature>
@@ -10,8 +11,9 @@ struct AiChatInputBar: View {
     let input: AiChatInputDisplayModel
     let requestContext: AiChatRequestContextDisplayModel
     let colorScheme: ColorScheme
+    let composerIdentity: AiChatComposerIdentity
+    @ObservedObject var focusOwner: AiChatInputFocusOwner
 
-    @Binding var isChatInputFocused: Bool
     @Binding var chatInputTextHeight: CGFloat
 
     var body: some View {
@@ -33,10 +35,13 @@ struct AiChatInputBar: View {
                     .fixedSize(horizontal: true, vertical: false)
                 }
                 .buttonStyle(.plain)
+                .disabled(input.isComposerEditingDisabled)
+                .accessibilityLabel("Add attachment")
                 HStack(alignment: .bottom, spacing: 8) {
                     AiChatModelSelectorButton(
                         store: store,
                         state: state,
+                        isEditingDisabled: input.isComposerEditingDisabled,
                     )
                     AiChatThinkingSelectorButton(
                         store: store,
@@ -51,16 +56,16 @@ struct AiChatInputBar: View {
         }
         .padding(8)
         .onChange(of: state.isProcessing) { isProcessing in
-            if !isProcessing {
+            if !isProcessing, focusOwner.isFocused(for: composerIdentity) {
                 restoreChatInputFocus()
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer, style: .continuous)
                 .fill(chatInputBackground),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer, style: .continuous)
                 .strokeBorder(chatInputBorder, lineWidth: 1),
         )
         .onDrop(of: attachmentDropTypeIdentifiers, isTargeted: nil) { providers in
@@ -75,9 +80,10 @@ struct AiChatInputBar: View {
                     get: { state.draftText },
                     set: { store.send(.draftTextChanged($0)) },
                 ),
-                isFocused: $isChatInputFocused,
                 measuredHeight: $chatInputTextHeight,
-                isDisabled: state.isProcessing,
+                composerIdentity: composerIdentity,
+                focusOwner: focusOwner,
+                isDisabled: input.isComposerEditingDisabled,
                 maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
                 onSubmit: { submitAndRestoreInputFocus() },
                 onAttachmentsDropped: { urls in
@@ -90,7 +96,7 @@ struct AiChatInputBar: View {
 
             if state.draftText.isEmpty {
                 Text(input.placeholder)
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -112,15 +118,11 @@ struct AiChatInputBar: View {
     }
 
     private var chatInputBackground: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.06)
-            : Color.black.opacity(0.025)
+        VoyagerDS.Surface.chatInputBackground(for: colorScheme)
     }
 
     private var chatInputBorder: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.09)
-            : Color.black.opacity(0.09)
+        VoyagerDS.Surface.inputBorder(for: colorScheme)
     }
 
     private var chatInputActionButton: some View {
@@ -161,24 +163,29 @@ struct AiChatInputBar: View {
     }
 
     private func handleAttachmentDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard !input.isComposerEditingDisabled else { return false }
         let supportedProviders = providers.filter { provider in
             provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
         }
-        guard !supportedProviders.isEmpty else { return false }
-        store.send(.attachmentDrop(supportedProviders.map(AiChatAttachmentDropProvider.init(provider:))))
+        guard !supportedProviders.isEmpty, let sessionID = state.sessionID else { return false }
+        store.send(.attachmentDrop(
+            sessionID,
+            supportedProviders.map(AiChatAttachmentDropProvider.init(provider:)),
+        ))
         restoreChatInputFocus()
         return true
     }
 
     private func acceptDroppedAttachments(_ urls: [URL]) {
-        store.send(.attachmentDropSelection(urls))
+        guard !input.isComposerEditingDisabled, let sessionID = state.sessionID else { return }
+        store.send(.attachmentDropSelection(sessionID, urls))
         restoreChatInputFocus()
     }
 
     private func restoreChatInputFocus() {
-        Task { @MainActor in
-            isChatInputFocused = true
+        Task { @MainActor [composerIdentity, focusOwner] in
+            focusOwner.requestFocus(for: composerIdentity)
         }
     }
 
@@ -188,7 +195,7 @@ struct AiChatInputBar: View {
             .foregroundStyle(.white)
             .frame(width: 24, height: 24)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
                     .fill(Color.primary),
             )
             .opacity(1)
@@ -198,47 +205,155 @@ struct AiChatInputBar: View {
 
 private extension AiChatInputBar {
     @ViewBuilder var requestContextRow: some View {
-        if !requestContext.isEmpty {
-            AiChatRequestContextRow(store: store, state: state, displayModel: requestContext)
+        let presentation = AiChatRequestContextRowPresentation(
+            displayModel: requestContext,
+            isNextMessageEditable: !input.isComposerEditingDisabled,
+        )
+        if !presentation.sections.isEmpty {
+            AiChatRequestContextRow(store: store, state: state, presentation: presentation)
         }
+    }
+}
+
+struct AiChatRequestContextRowPresentation: Equatable {
+    enum Kind: Hashable {
+        case currentResponse
+        case nextMessage
+    }
+
+    struct Section: Equatable {
+        let kind: Kind
+        let label: String
+        let section: AiChatRequestContextSectionDisplayModel
+        let isEditable: Bool
+    }
+
+    let sections: [Section]
+
+    init(
+        currentResponse: AiChatRequestContextSectionDisplayModel?,
+        nextMessage: AiChatRequestContextSectionDisplayModel,
+        isNextMessageEditable: Bool,
+    ) {
+        var sections: [Section] = []
+        if let currentResponse, !currentResponse.isEmpty {
+            sections.append(Section(
+                kind: .currentResponse,
+                label: "Current response context",
+                section: currentResponse,
+                isEditable: false,
+            ))
+        }
+        if !nextMessage.isEmpty {
+            sections.append(Section(
+                kind: .nextMessage,
+                label: "Next message context",
+                section: nextMessage,
+                isEditable: isNextMessageEditable,
+            ))
+        }
+        self.sections = sections
+    }
+
+    init(displayModel: AiChatRequestContextDisplayModel, isNextMessageEditable: Bool) {
+        self.init(
+            currentResponse: displayModel.currentResponse,
+            nextMessage: AiChatRequestContextSectionDisplayModel(
+                source: displayModel.source,
+                currentContext: displayModel.currentContext,
+                addedAttachments: displayModel.addedAttachments,
+            ),
+            isNextMessageEditable: isNextMessageEditable,
+        )
     }
 }
 
 private struct AiChatRequestContextRow: View {
     let store: StoreOf<AiChatFeature>
     let state: AiChatState
-    let displayModel: AiChatRequestContextDisplayModel
+    let presentation: AiChatRequestContextRowPresentation
 
-    private var destinationProvider: AiProvider? {
-        state.executionPhase.lock?.selectedModelHandle.provider ?? state.selectedModelHandle?.provider
-    }
-
-    private var currentContextSnapshot: AiChatCurrentContextSnapshot {
-        state.executionPhase.lock?.context.requestContext.currentContext ?? state.currentContext
-    }
-
-    private var destinationLabel: String {
-        destinationProvider.map(aiChatProviderSectionTitle(for:)) ?? "Selected provider"
+    private var currentResponseLock: AiChatRequestLock? {
+        state.executionPhase.lock
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let currentContext = displayModel.currentContext {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .center, spacing: 8) {
-                        groupLabel("Current context")
-                        currentContextChip(currentContext, isEditable: displayModel.source == .draft)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(presentation.sections, id: \.kind) { section in
+                contextSection(section)
             }
+        }
+    }
 
-            if !displayModel.addedAttachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .center, spacing: 8) {
-                        groupLabel("Attachments")
-                        ForEach(displayModel.addedAttachments) { attachment in
-                            attachmentChip(attachment, isEditable: displayModel.source == .draft)
-                        }
+    private func contextSection(_ presentation: AiChatRequestContextRowPresentation.Section) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(presentation.label)
+                .font(VoyagerDS.Typography.chip)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityAddTraits(.isHeader)
+
+            contextRows(
+                section: presentation.section,
+                currentContextSnapshot: currentContextSnapshot(for: presentation.kind),
+                destinationProvider: destinationProvider(for: presentation.kind),
+                isEditable: presentation.isEditable,
+                sectionLabel: presentation.label,
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(presentation.label)
+    }
+
+    private func currentContextSnapshot(
+        for kind: AiChatRequestContextRowPresentation.Kind,
+    ) -> AiChatCurrentContextSnapshot {
+        switch kind {
+        case .currentResponse:
+            currentResponseLock?.context.requestContext.currentContext ?? .init()
+        case .nextMessage:
+            state.currentContext
+        }
+    }
+
+    private func destinationProvider(for kind: AiChatRequestContextRowPresentation.Kind) -> AiProvider? {
+        switch kind {
+        case .currentResponse:
+            currentResponseLock?.selectedModelHandle.provider
+        case .nextMessage:
+            state.selectedModelHandle?.provider
+        }
+    }
+
+    private func contextRows(
+        section: AiChatRequestContextSectionDisplayModel,
+        currentContextSnapshot: AiChatCurrentContextSnapshot,
+        destinationProvider: AiProvider?,
+        isEditable: Bool,
+        sectionLabel: String?,
+    ) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .center, spacing: 8) {
+                if let currentContext = section.currentContext {
+                    groupLabel("Current context")
+                    currentContextChip(
+                        currentContext,
+                        snapshot: currentContextSnapshot,
+                        destinationProvider: destinationProvider,
+                        sourceLabel: sectionLabel.map { "\($0) current context" } ?? "Current context",
+                        isEditable: isEditable,
+                    )
+                }
+
+                if !section.addedAttachments.isEmpty {
+                    groupLabel("Attachments")
+                    ForEach(section.addedAttachments) { attachment in
+                        attachmentChip(
+                            attachment,
+                            destinationProvider: destinationProvider,
+                            sourceLabel: sectionLabel.map { "\($0) attachments" } ?? "Attachments",
+                            isEditable: isEditable,
+                        )
                     }
                 }
             }
@@ -252,13 +367,19 @@ private struct AiChatRequestContextRow: View {
     }
 
     @ViewBuilder
-    private func currentContextChip(_ chip: AiChatCurrentContextChipDisplayModel, isEditable: Bool) -> some View {
+    private func currentContextChip(
+        _ chip: AiChatCurrentContextChipDisplayModel,
+        snapshot: AiChatCurrentContextSnapshot,
+        destinationProvider: AiProvider?,
+        sourceLabel: String,
+        isEditable: Bool,
+    ) -> some View {
         let statusLabel = aiChatCurrentContextStatusLabel(
-            for: currentContextSnapshot,
+            for: snapshot,
             destinationProvider: destinationProvider,
         )
         let statusDetail = aiChatCurrentContextStatusDetail(
-            for: currentContextSnapshot,
+            for: snapshot,
             destinationProvider: destinationProvider,
         )
         let modeDetail = chip
@@ -268,12 +389,12 @@ private struct AiChatRequestContextRow: View {
             content: ChipContent(
                 title: chip.title,
                 help: aiChatRequestContextTooltipText(
-                    sourceLabel: "Current context",
-                    destinationLabel: destinationLabel,
+                    sourceLabel: sourceLabel,
+                    destinationLabel: destinationLabel(for: destinationProvider),
                     statusLabel: statusLabel,
                     statusDetail: detail.isEmpty ? chip.title : detail,
                 ),
-                accessibilityLabel: "Current context",
+                accessibilityLabel: sourceLabel,
             ),
             icon: ChipIcon(systemName: chip.iconSystemName, assetName: chip.iconAssetName, filePath: chip.iconFilePath),
             isRemovable: false,
@@ -291,22 +412,27 @@ private struct AiChatRequestContextRow: View {
     }
 
     @ViewBuilder
-    private func attachmentChip(_ chip: AiChatAddedAttachmentChipDisplayModel, isEditable: Bool) -> some View {
+    private func attachmentChip(
+        _ chip: AiChatAddedAttachmentChipDisplayModel,
+        destinationProvider: AiProvider?,
+        sourceLabel: String,
+        isEditable: Bool,
+    ) -> some View {
         let modeDetail = chip
             .folderStructureMode == .includeSubfolders ? "Includes subfolders · names and paths only" : nil
         let view = chipView(
             content: ChipContent(
                 title: chip.title,
                 help: aiChatRequestContextTooltipText(
-                    sourceLabel: "Attachments",
-                    destinationLabel: destinationLabel,
+                    sourceLabel: sourceLabel,
+                    destinationLabel: destinationLabel(for: destinationProvider),
                     statusLabel: chip.statusLabel,
                     statusDetail: [chip.statusDetail, modeDetail].compactMap(\.self).joined(separator: " · "),
                 ),
-                accessibilityLabel: "Remove attachment",
+                accessibilityLabel: "Remove \(sourceLabel.lowercased())",
             ),
             icon: ChipIcon(systemName: chip.iconSystemName, assetName: chip.iconAssetName, filePath: chip.iconFilePath),
-            isRemovable: chip.isRemovable,
+            isRemovable: isEditable && chip.isRemovable,
             remove: {
                 store.send(.removeAddedAttachment(chip.attachmentID))
             },
@@ -320,6 +446,10 @@ private struct AiChatRequestContextRow: View {
             },
         )
         view
+    }
+
+    private func destinationLabel(for provider: AiProvider?) -> String {
+        provider.map(aiChatProviderSectionTitle(for:)) ?? "Selected provider"
     }
 
     private struct ChipContent {
@@ -362,20 +492,8 @@ private struct AiChatRequestContextRow: View {
         )
     }
 
-    private func chipIconSystemName(_ systemName: String) -> String {
-        systemName == "folder" ? "folder.fill" : systemName
-    }
-
-    private func chipIconSystemSize(for systemName: String) -> CGFloat {
-        systemName == "folder" ? 10 : 9
-    }
-
-    private func chipIconForegroundStyle(for systemName: String) -> Color {
-        systemName == "folder" ? Color(nsColor: .systemBlue) : .secondary
-    }
-
     private var chipTitleFont: Font {
-        .system(size: 11, weight: .medium)
+        VoyagerDS.Typography.chip
     }
 }
 
@@ -394,9 +512,17 @@ private struct AiChatRemovableRequestContextChip: View {
     let accessibilityLabel: String
     let remove: () -> Void
 
+    @Environment(\.colorScheme)
+    private var colorScheme
     @State private var isHovering = false
     @State private var isFolderMenuHovering = false
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
     @State private var isRemoveHovering = false
+    @State private var resolvedFileIcon: NSImage?
+    @State private var currentIconFilePath: String?
+    @State private var iconLoadTask: Task<Void, Never>?
+    @State private var iconLoadGeneration = 0
 
     var body: some View {
         HStack(spacing: 4) {
@@ -431,6 +557,12 @@ private struct AiChatRemovableRequestContextChip: View {
                 isFolderMenuHovering = false
                 isRemoveHovering = false
             }
+        }
+        .task(id: iconFilePath) {
+            await resolveFileIcon(for: iconFilePath)
+        }
+        .onDisappear {
+            cancelFileIconLoad()
         }
     }
 
@@ -511,16 +643,22 @@ private struct AiChatRemovableRequestContextChip: View {
 
     private func actionButtonBackground(isHighlighted: Bool) -> some View {
         Circle()
-            .fill(isHighlighted ? Color.primary.opacity(0.08) : Color.clear)
+            .fill(isHighlighted ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
     }
 
     @ViewBuilder private var chipIcon: some View {
-        if let iconFilePath {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: iconFilePath))
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 11, height: 11)
-                .accessibilityHidden(true)
+        if iconFilePath != nil {
+            Group {
+                if let resolvedFileIcon {
+                    Image(nsImage: resolvedFileIcon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 11, height: 11)
+            .accessibilityHidden(true)
         } else if let iconAssetName {
             Image(iconAssetName)
                 .resizable()
@@ -533,6 +671,50 @@ private struct AiChatRemovableRequestContextChip: View {
                 .foregroundStyle(chipIconForegroundStyle(for: iconSystemName))
                 .accessibilityHidden(true)
         }
+    }
+
+    @MainActor
+    private func resolveFileIcon(for path: String?) async {
+        iconLoadTask?.cancel()
+        iconLoadGeneration += 1
+        let generation = iconLoadGeneration
+        currentIconFilePath = path
+        resolvedFileIcon = nil
+        guard let path else {
+            iconLoadTask = nil
+            return
+        }
+
+        let workspaceClient = workspaceClient
+        let task = Task { @MainActor in
+            let icon = await workspaceClient.iconForFileAsync(path)
+            guard AiChatRequestContextIconResolution.shouldApply(
+                capturedPath: path,
+                currentPath: currentIconFilePath,
+                capturedGeneration: generation,
+                currentGeneration: iconLoadGeneration,
+                isCancelled: Task.isCancelled,
+            ) else { return }
+            resolvedFileIcon = icon
+        }
+        iconLoadTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if currentIconFilePath == path, iconLoadGeneration == generation {
+            iconLoadTask = nil
+        }
+    }
+
+    @MainActor
+    private func cancelFileIconLoad() {
+        iconLoadTask?.cancel()
+        iconLoadTask = nil
+        iconLoadGeneration += 1
+        currentIconFilePath = nil
+        resolvedFileIcon = nil
     }
 
     private func chipIconSystemName(_ systemName: String) -> String {
@@ -548,7 +730,7 @@ private struct AiChatRemovableRequestContextChip: View {
     }
 
     private var chipTitleFont: Font {
-        .system(size: 11, weight: .medium)
+        VoyagerDS.Typography.chip
     }
 
     private var chipHorizontalPadding: CGFloat {
@@ -561,11 +743,25 @@ private struct AiChatRemovableRequestContextChip: View {
 
     private var chipBackground: some View {
         Capsule(style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor))
+            .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme))
     }
 
     private var chipBorder: some View {
         Capsule(style: .continuous)
-            .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            .strokeBorder(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 1)
+    }
+}
+
+enum AiChatRequestContextIconResolution {
+    static func shouldApply(
+        capturedPath: String,
+        currentPath: String?,
+        capturedGeneration: Int,
+        currentGeneration: Int,
+        isCancelled: Bool,
+    ) -> Bool {
+        !isCancelled
+            && currentPath == capturedPath
+            && currentGeneration == capturedGeneration
     }
 }

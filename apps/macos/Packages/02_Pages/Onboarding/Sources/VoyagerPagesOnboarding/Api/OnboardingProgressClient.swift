@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccountAccess
 import VoyagerShared
 
 struct OnboardingProgressClient {
@@ -25,10 +24,10 @@ extension OnboardingProgressClient: DependencyKey {
         static let version = "onboardingProgressVersion"
         static let currentStep = "onboardingCurrentStep"
         static let stepState = "onboardingStepState"
-        static let accessSnapshot = "onboardingAccessSnapshot"
+        static let legacyAccessSnapshot = "onboardingAccessSnapshot"
     }
 
-    nonisolated static let currentVersion = 1.2
+    nonisolated static let currentVersion = 1.3
 
     nonisolated static var liveValue: OnboardingProgressClient {
         OnboardingProgressClient(
@@ -52,7 +51,9 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
 
-                guard let step = OnboardingStep(rawValue: currentStepRaw) else {
+                guard let stepData = "\"\(currentStepRaw)\"".data(using: .utf8),
+                      let step = try? JSONDecoder().decode(OnboardingStep.self, from: stepData)
+                else {
                     return .resetRequired
                 }
                 guard let data = userDefaultsClient.object(Keys.stepState) as? Data else {
@@ -61,16 +62,12 @@ extension OnboardingProgressClient: DependencyKey {
                 guard let stepState = try? JSONDecoder().decode(OnboardingStepState.self, from: data) else {
                     return .resetRequired
                 }
-                let accessSnapshot = (userDefaultsClient.object(Keys.accessSnapshot) as? Data).flatMap { data in
-                    try? JSONDecoder().decode(AccessStatusSnapshot.self, from: data)
-                }
-
                 if version != currentVersion {
                     guard let snapshot = Self.migratedSnapshot(
                         version: version,
                         currentStep: step,
                         stepState: stepState,
-                        accessSnapshot: accessSnapshot,
+                        rawStepValue: currentStepRaw,
                     ) else { return .resetRequired }
                     guard Self.persist(snapshot, userDefaultsClient: userDefaultsClient) == .success else {
                         return .resetRequired
@@ -78,10 +75,10 @@ extension OnboardingProgressClient: DependencyKey {
                     return .success(snapshot)
                 }
 
+                userDefaultsClient.setObject(nil, Keys.legacyAccessSnapshot)
                 return .success(OnboardingProgressSnapshot(
                     currentStep: step,
                     stepState: stepState,
-                    accessSnapshot: accessSnapshot,
                 ))
             },
             save: { snapshot in
@@ -96,7 +93,7 @@ extension OnboardingProgressClient: DependencyKey {
                 userDefaultsClient.setObject(nil, Keys.version)
                 userDefaultsClient.setObject(nil, Keys.currentStep)
                 userDefaultsClient.setObject(nil, Keys.stepState)
-                userDefaultsClient.setObject(nil, Keys.accessSnapshot)
+                userDefaultsClient.setObject(nil, Keys.legacyAccessSnapshot)
             },
         )
     }
@@ -105,22 +102,36 @@ extension OnboardingProgressClient: DependencyKey {
         version: Double,
         currentStep: OnboardingStep,
         stepState: OnboardingStepState,
-        accessSnapshot: AccessStatusSnapshot?,
+        rawStepValue: String? = nil,
     ) -> OnboardingProgressSnapshot? {
-        guard version == 1.1 else { return nil }
-
         var migratedStepState = stepState
-        if migratedStepState.completeComplete {
-            migratedStepState.aiProviderSetupComplete = true
-            migratedStepState.aiProviderSetupSkipped = true
-            migratedStepState.aiProviderSetupChoice = .setUpLater
-            migratedStepState.aiProviderSetupStatus = .skipped
+        switch version {
+        case 1.1:
+            if migratedStepState.completeComplete {
+                migratedStepState.aiProviderSetupComplete = true
+                migratedStepState.aiProviderSetupSkipped = true
+                migratedStepState.aiProviderSetupChoice = .setUpLater
+                migratedStepState.aiProviderSetupStatus = .skipped
+            }
+        case 1.2:
+            // v1.2에서 accessUnlock/betaAccess 레거시 rawValue가 permissions로
+            // 디코딩된 경우에만 permissionsComplete 보정. 실제 permissions 단계에
+            // 머물던 사용자의 진행 상태는 변경하지 않는다.
+            let isLegacyAccessRaw = rawStepValue == "accessUnlock" || rawStepValue == "betaAccess"
+            if isLegacyAccessRaw, !migratedStepState.permissionsComplete {
+                migratedStepState.permissionsComplete = true
+            }
+        default:
+            return nil
         }
 
+        let migratedStep: OnboardingStep = switch currentStep {
+        case .welcome, .permissions, .aiProviderSetup, .complete:
+            currentStep
+        }
         return OnboardingProgressSnapshot(
-            currentStep: currentStep,
+            currentStep: migratedStep,
             stepState: migratedStepState,
-            accessSnapshot: accessSnapshot,
         )
     }
 
@@ -135,11 +146,7 @@ extension OnboardingProgressClient: DependencyKey {
         userDefaultsClient.setObject(currentVersion, Keys.version)
         userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
         userDefaultsClient.setObject(data, Keys.stepState)
-        if let accessSnapshot = snapshot.accessSnapshot,
-           let data = try? JSONEncoder().encode(accessSnapshot)
-        {
-            userDefaultsClient.setObject(data, Keys.accessSnapshot)
-        }
+        userDefaultsClient.setObject(nil, Keys.legacyAccessSnapshot)
         return .success
     }
 

@@ -1,4 +1,4 @@
-import type { HomeFavorite, HomeLocation, HomeRecentChat } from "../model/home"
+import type { HomeFavorite, HomeLocation } from "../model/home"
 
 export const homeFavorites: readonly HomeFavorite[] = [
   {
@@ -45,32 +45,5 @@ export const homeLocations: readonly HomeLocation[] = [
     glyph: "⌘",
     destinationTabId: "directory",
     path: "/Applications",
-  },
-]
-
-export const homeRecentChats: readonly HomeRecentChat[] = [
-  {
-    id: "chat-research-summary",
-    sessionId: "session-research-summary",
-    title: "Summarize research notes",
-    detail: "Research Collection",
-    updatedLabel: "12m ago",
-    destinationTabId: "ai-chat",
-  },
-  {
-    id: "chat-project-plan",
-    sessionId: "session-project-plan",
-    title: "Outline the project plan",
-    detail: "Voyager Design Lab",
-    updatedLabel: "Yesterday",
-    destinationTabId: "ai-chat",
-  },
-  {
-    id: "chat-release-notes",
-    sessionId: "session-release-notes",
-    title: "Draft release notes",
-    detail: "Product Briefs",
-    updatedLabel: "Mon",
-    destinationTabId: "ai-chat",
   },
 ]

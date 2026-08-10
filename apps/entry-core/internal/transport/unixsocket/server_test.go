@@ -55,7 +55,7 @@ func TestServerMalformedThenValidPing(t *testing.T) {
 	var logs bytes.Buffer
 	logger := log.New(&logs, "", 0)
 	server, path := runningServer(t, logger, testDurations())
-	secret := "TASK4-SECRET-MARKER"
+	secret := "REQUEST-SECRET-MARKER"
 	malformed := []byte(`{"request_id":"raw-id", "params":{"secret":"` + secret)
 	response, err := schema.DecodeResponse(exchange(t, path, malformed), schema.MethodPing)
 	if err != nil || response.OK || response.Error.Code != schema.ErrorInvalidRequest {
@@ -197,7 +197,7 @@ func shutdownServer(t *testing.T, server *Server, force <-chan struct{}) {
 }
 
 func requestWireFor(method schema.Method, requestID string) []byte {
-	return []byte(`{"request_id":"` + requestID + `","protocol_version":1,"method":"` + string(method) + `","params":{}}`)
+	return []byte(`{"request_id":"` + requestID + `","method":"` + string(method) + `","params":{}}`)
 }
 
 func exchange(t *testing.T, path string, wire []byte) []byte {
