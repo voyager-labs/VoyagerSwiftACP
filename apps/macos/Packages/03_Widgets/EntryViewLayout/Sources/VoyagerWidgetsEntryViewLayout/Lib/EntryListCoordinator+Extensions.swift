@@ -304,6 +304,12 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
 }
 
 extension EntryListCoordinator {
+    func reloadTablePreservingScrollAnchor(_ reload: () -> Void) {
+        let scrollAnchor = captureScrollAnchor()
+        reload()
+        restoreScrollAnchor(scrollAnchor)
+    }
+
     public func observeListStore() {
         observeRenderLoop()
     }
@@ -319,25 +325,32 @@ extension EntryListCoordinator {
         }
     }
 
-    private func processRender(_ snapshot: RenderSnapshot) {
+    func processRender(_ snapshot: RenderSnapshot) {
         guard let previous = lastRenderSnapshot else {
             lastRenderSnapshot = snapshot
             return
         }
 
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0)
         handleSnapshotChanges(previous: previous, snapshot: snapshot)
+        CATransaction.commit()
 
         lastRenderSnapshot = snapshot
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         handleVisibleColumnsChange(previous: previous, snapshot: snapshot)
-        rebuildRowsIfNeeded(previous: previous, snapshot: snapshot)
+        let didRebuildRows = rebuildRowsIfNeeded(previous: previous, snapshot: snapshot)
         updateListMetricsIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
-        syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        if !didRebuildRows {
+            syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        }
         reloadVisibleRowsIfNeeded(previous: previous, snapshot: snapshot)
-        syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
+        if !didRebuildRows {
+            syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
+        }
         syncSortIndicatorsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
@@ -352,37 +365,150 @@ extension EntryListCoordinator {
         isApplyingColumnsFromStore = false
         syncListSortIndicators(sortKey: snapshot.sortKey.sharedSortKey, sortOrder: snapshot.sortOrder)
         syncListRenamingFromStore()
-        tableView.reloadData()
+        reloadTablePreservingScrollAnchor {
+            tableView.reloadData()
+        }
         requestThumbnailsForVisibleRows()
     }
 
-    func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+    @discardableResult
+    func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
         guard previous.isHierarchyOutlineEnabled == snapshot.isHierarchyOutlineEnabled else {
+            projectionSession.reset()
             rebuildRowsAndReload()
-            return
+            return true
         }
 
         if snapshot.isHierarchyOutlineEnabled {
             if !previous.outlineProjection.hasSameOutlineShape(as: snapshot.outlineProjection) {
                 rebuildRowsAndReload()
+                return true
             } else if !previous.outlineProjection.hasSameStructure(as: snapshot.outlineProjection) {
                 reloadVisibleRowsForContentChange(
                     previous: previous.outlineProjection,
                     snapshot: snapshot.outlineProjection,
                 )
             }
-            return
+            return false
         }
 
+        let pathChanged = previous.currentPath != snapshot.currentPath
+
         let changes = snapshot.presentation.changes(from: previous.presentation)
-        if changes.sectionStructureChanged || changes.groupExpansionChanged {
+        if changes.groupExpansionChanged {
             rebuildRowsAndReload()
+            return true
+        } else if changes.sectionStructureChanged {
+            applyPostReloadPresentation(
+                pathChanged: pathChanged,
+                structureChanged: true,
+                updateKind: .incremental(preservesScrollAnchor: false),
+                selectionChanged: false,
+            ) {
+                projectionSession.reset()
+                if !tryIncrementalFlatRowUpdate(
+                    previous: previous.presentation,
+                    current: snapshot.presentation,
+                    changes: changes,
+                ) {
+                    let flatItems = makeOutlineItems(presentation: snapshot.presentation)
+                    outlineItems = flatItems
+                    rebuildItemIndexes()
+                    lastAppliedVisibleRows = []
+                    tableView.reloadData()
+                    applyGroupExpansionState()
+                }
+            }
+            return true
         } else if !changes.updatedEntryIDs.isEmpty {
             reloadVisibleRowsForPresentationChange(
                 changedEntryIDs: changes.updatedEntryIDs,
                 presentation: snapshot.presentation,
             )
         }
+        return false
+    }
+
+    func tryIncrementalFlatRowUpdate(
+        previous: EntryViewLayoutPresentation,
+        current: EntryViewLayoutPresentation,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) -> Bool {
+        guard previous.sections.count == current.sections.count,
+              previous.sections.enumerated().allSatisfy({ index, section in
+                  let next = current.sections[index]
+                  return section.id == next.id
+                      && section.title == next.title
+                      && section.colorCode == next.colorCode
+                      && section.isCollapsed == next.isCollapsed
+              })
+        else { return false }
+
+        let changedCount = changes.insertedEntryIDs.count + changes.removedEntryIDs.count
+        guard changedCount * 2 <= max(previous.entries.count, current.entries.count) else { return false }
+        let incomingItems = makeOutlineItems(presentation: current)
+
+        var childUpdates: [(parent: OutlineItem, removed: IndexSet, inserted: IndexSet)] = []
+        for (sectionIndex, oldParent) in outlineItems.enumerated() {
+            guard sectionIndex < incomingItems.count,
+                  oldParent.id == incomingItems[sectionIndex].id
+            else { return false }
+            let newParent = incomingItems[sectionIndex]
+            let oldChildren = oldParent.children
+            let newChildren = newParent.children
+            let oldIDs = oldChildren.map(\.id)
+            let newIDs = newChildren.map(\.id)
+            let oldIDSet = Set(oldIDs)
+            let newIDSet = Set(newIDs)
+            let retained = oldIDSet.intersection(newIDSet)
+            guard retained.count >= min(oldIDs.count, newIDs.count) - 1
+            else { return false }
+            let retainedOrderPreserved = oldIDs.filter { retained.contains($0) }
+                == newIDs.filter { retained.contains($0) }
+            guard retainedOrderPreserved else { return false }
+            let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
+            let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
+            guard max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count) else { return false }
+            let oldChildrenByID = Dictionary(
+                oldChildren.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first },
+            )
+            let retainedChildren = newChildren.map { newItem in
+                if let existing = oldChildrenByID[newItem.id] {
+                    existing.kind = newItem.kind
+                    existing.isLoadingChildren = newItem.isLoadingChildren
+                    return existing
+                }
+                return newItem
+            }
+            oldParent.children = retainedChildren
+            childUpdates.append((oldParent, removed, inserted))
+        }
+
+        guard childUpdates.contains(where: { !$0.removed.isEmpty || !$0.inserted.isEmpty }) else { return false }
+
+        rebuildItemIndexes()
+        tableView.beginUpdates()
+        for update in childUpdates {
+            if !update.removed.isEmpty {
+                tableView.removeItems(at: update.removed, inParent: update.parent, withAnimation: .slideLeft)
+            }
+            if !update.inserted.isEmpty {
+                tableView.insertItems(at: update.inserted, inParent: update.parent, withAnimation: .slideDown)
+            }
+        }
+        tableView.endUpdates()
+        let updatedRowIndexes = IndexSet(changes.updatedEntryIDs.flatMap { id in
+            entryItemsByID[id, default: []].compactMap { item in
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
+        })
+        if !updatedRowIndexes.isEmpty {
+            let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+            tableView.reloadData(forRowIndexes: updatedRowIndexes, columnIndexes: columnIndexes)
+        }
+        return true
     }
 
     func reloadVisibleRowsForPresentationChange(
@@ -437,8 +563,9 @@ extension EntryListCoordinator {
     }
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.currentPath != snapshot.currentPath { resetThumbnailSession()
-            hasRestoredScrollPosition = false
+        if previous.currentPath != snapshot.currentPath {
+            resetThumbnailSession()
+            restoredScrollForCurrentPath = false
         }
     }
 

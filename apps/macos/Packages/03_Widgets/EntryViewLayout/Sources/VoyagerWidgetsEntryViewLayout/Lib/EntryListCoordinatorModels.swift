@@ -67,7 +67,7 @@ enum EntryListOutlineItemKind {
 
 final class EntryListOutlineItem: Hashable {
     var kind: EntryListOutlineItemKind
-    let children: [EntryListOutlineItem]
+    var children: [EntryListOutlineItem]
     let id: String
     var isLoadingChildren: Bool
 
@@ -127,11 +127,13 @@ final class EntryListCoordinatorProjectionSession {
     private(set) var isApplyingStoreProjection = false
     private(set) var pendingProjection: EntryListOutlineProjection?
     private var renderedProjection: EntryListOutlineProjection?
+    private var pendingItems: [EntryListOutlineItem]?
 
     func reset() {
         renderedProjectionRevision = nil
         isApplyingStoreProjection = false
         pendingProjection = nil
+        pendingItems = nil
         renderedProjection = nil
     }
 
@@ -139,10 +141,27 @@ final class EntryListCoordinatorProjectionSession {
         _ projection: EntryListOutlineProjection,
         perform: (EntryListOutlineProjection, [EntryListOutlineItem]) -> Void,
     ) {
+        apply(projection, items: nil, perform: perform)
+    }
+
+    func apply(
+        _ projection: EntryListOutlineProjection,
+        flatItems: [EntryListOutlineItem],
+        perform: (EntryListOutlineProjection, [EntryListOutlineItem]) -> Void,
+    ) {
+        apply(projection, items: flatItems, perform: perform)
+    }
+
+    private func apply(
+        _ projection: EntryListOutlineProjection,
+        items: [EntryListOutlineItem]?,
+        perform: (EntryListOutlineProjection, [EntryListOutlineItem]) -> Void,
+    ) {
         guard shouldReplace(projection, current: renderedProjection) else { return }
         guard !isApplyingStoreProjection else {
             if shouldReplace(projection, current: pendingProjection ?? renderedProjection) {
                 pendingProjection = projection
+                pendingItems = items
             }
             return
         }
@@ -150,12 +169,14 @@ final class EntryListCoordinatorProjectionSession {
         isApplyingStoreProjection = true
         renderedProjectionRevision = projection.revision
         renderedProjection = projection
-        perform(projection, Self.makeOutlineItems(from: projection))
+        perform(projection, items ?? Self.makeOutlineItems(from: projection))
         isApplyingStoreProjection = false
 
         if let pendingProjection {
             self.pendingProjection = nil
-            apply(pendingProjection, perform: perform)
+            let pendingItems = pendingItems
+            self.pendingItems = nil
+            apply(pendingProjection, items: pendingItems, perform: perform)
         }
     }
 

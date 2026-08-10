@@ -9,7 +9,9 @@ extension EntryListCoordinator {
         if tableView.numberOfRows > 0 {
             tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0 ..< tableView.numberOfRows))
         }
-        tableView.reloadData()
+        reloadTablePreservingScrollAnchor {
+            tableView.reloadData()
+        }
         syncListRenamingFromStore()
         requestThumbnailsForVisibleRows()
     }
