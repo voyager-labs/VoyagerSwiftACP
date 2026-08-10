@@ -54,7 +54,8 @@ final class SettingsGeneralFlowTests: XCTestCase {
     func testCheckForUpdatesRoutesFromSettingsToRootUpdater() async {
         let checkForUpdatesCalls = LockIsolated(0)
         var initialState = AppRootFeature.State()
-        initialState.updater.isAccessEligible = true
+        initialState.updater.didConfigure = true
+        initialState.updater.didStartAtLaunch = true
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {

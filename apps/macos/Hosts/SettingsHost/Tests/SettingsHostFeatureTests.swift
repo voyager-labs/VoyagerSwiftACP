@@ -41,12 +41,9 @@ final class SettingsHostFeatureTests: XCTestCase {
     func testConfirmedSignOutDelegateRoutesOnceAndProjectsAccountAccess() async {
         var initialState = SettingsHostState()
         initialState.accountAccess.hasAccountSession = true
-        initialState.accountAccess.status = .coreLicenseActive
         initialState.settings = SettingsState(
-            accessStatus: .coreLicenseActive,
             accountPresentation: AccountAccessPresentation(
                 hasAccountSession: true,
-                accessStatus: .coreLicenseActive,
             ),
         )
         let store = makeStore(initialState: initialState)
@@ -62,51 +59,11 @@ final class SettingsHostFeatureTests: XCTestCase {
             state.accountAccess.status = nil
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
-            state.settings.accessStatus = AccessStatus.none
             state.settings.accountSettings.presentation = AccountAccessPresentation()
         }
 
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedOut)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
-        await store.receive(\.accountAccess.delegate)
-        await store.receive(\.settings.accountAccessPresentationUpdated)
         await store.finish()
-    }
-
-    @MainActor
-    func testRetryDelegateRoutesOnceAndProjectsAccountAccess() async {
-        var initialState = SettingsHostState()
-        initialState.accountAccess.hasAccountSession = true
-        initialState.accountAccess.status = .networkFailure
-        initialState.settings = SettingsState(
-            accountPresentation: AccountAccessPresentation(
-                hasAccountSession: true,
-                accessStatus: .networkFailure,
-            ),
-        )
-        let syncCallCount = LockIsolated(0)
-        let store = makeStore(
-            initialState: initialState,
-            persistedSession: AccountSession(
-                accessToken: "test-access-token",
-                status: .coreLicenseActive,
-                refreshToken: "test-refresh-token",
-                expiresAt: .sessionExpiryPast,
-            ),
-            syncSession: { _, _ in
-                syncCallCount.withValue { $0 += 1 }
-                throw SessionSyncError.capabilityMiss
-            },
-        )
-        store.exhaustivity = .off
-
-        await store.send(.settings(.delegate(.account(.retryRequested))))
-        await store.finish()
-
-        XCTAssertEqual(syncCallCount.value, 1)
-        XCTAssertFalse(store.state.accountAccess.isSubmitting)
-        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnavailable)
     }
 
     @MainActor

@@ -231,10 +231,7 @@ final class SettingsHostPresetTests: XCTestCase {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.signedIn.scenario)
 
         XCTAssertTrue(state.accountSettings.presentation.hasAccountSession)
-        XCTAssertEqual(state.accountSettings.presentation.accessStatus, .coreLicenseActive)
-        XCTAssertEqual(state.accessStatus, .coreLicenseActive)
         XCTAssertEqual(state.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementActive)
     }
 
     @MainActor
@@ -242,10 +239,7 @@ final class SettingsHostPresetTests: XCTestCase {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.signedOut.scenario)
 
         XCTAssertFalse(state.accountSettings.presentation.hasAccountSession)
-        XCTAssertNil(state.accountSettings.presentation.accessStatus)
-        XCTAssertEqual(state.accessStatus, .none)
         XCTAssertEqual(state.accountSettings.setAuthState, .signedOut)
-        XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementUnknown)
     }
 
     @MainActor
@@ -253,9 +247,6 @@ final class SettingsHostPresetTests: XCTestCase {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.authExpired.scenario)
 
         XCTAssertTrue(state.accountSettings.presentation.hasAccountSession)
-        XCTAssertEqual(state.accountSettings.presentation.accessStatus, .trialExpired)
-        XCTAssertEqual(state.accessStatus, .trialExpired)
-        XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementExpired)
     }
 
     @MainActor
@@ -270,8 +261,6 @@ final class SettingsHostPresetTests: XCTestCase {
             let state = SettingsState.hostPreset(for: preset.scenario)
 
             XCTAssertFalse(state.accountSettings.presentation.hasAccountSession)
-            XCTAssertNil(state.accountSettings.presentation.accessStatus)
-            XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementUnknown)
         }
     }
 }

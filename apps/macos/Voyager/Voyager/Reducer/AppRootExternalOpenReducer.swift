@@ -74,7 +74,7 @@ extension AppRootFeature {
     }
 
     func canFlushPendingExternalRoutes(_ state: State) -> Bool {
-        state.lifecycle.isExternalRouteFlushAllowed
+        state.lifecycle.isShellReady && !onboardingWindowClient.isRequired()
     }
 
     func flushPendingExternalRoutes(state: inout State) -> Effect<Action> {
@@ -121,7 +121,6 @@ extension AppRootFeature {
         }
         if requiresFallback,
            state.lifecycle.didFinishLaunching,
-           state.lifecycle.accessGatePhase == .recoveryRequired,
            !state.isExternalURLFlushDelegateScheduled
         {
             state.isExternalURLFlushDelegateScheduled = true
@@ -135,7 +134,7 @@ extension AppRootFeature {
               state.activePendingExternalURL == nil,
               state.pendingExternalURLs.isEmpty,
               !state.externalOpenBatchQueue.isEmpty,
-              state.lifecycle.isExternalRouteFlushAllowed,
+              canFlushPendingExternalRoutes(state),
               !onboardingWindowClient.isRequired()
         else { return .none }
 
@@ -565,7 +564,7 @@ extension AppRootFeature {
     }
 
     func isCurrentTrackedPendingRequest(_ requestID: UUID, state: State) -> Bool {
-        state.lifecycle.isExternalRouteFlushAllowed
+        state.lifecycle.isShellReady
             && state.activePendingExternalURL?.requestID == requestID
     }
 

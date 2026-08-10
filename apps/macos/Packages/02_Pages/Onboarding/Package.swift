@@ -11,7 +11,6 @@ let kPackage = Package(
     ],
     dependencies: [
         .package(path: "../../04_Features/AiProviderConnection"),
-        .package(path: "../../04_Features/AccountAccess"),
         .package(path: "../../05_Entities/AppPreferences"),
         .package(path: "../../05_Entities/Ai"),
         .package(path: "../../06_Shared/VoyagerShared"),
@@ -31,7 +30,6 @@ let kPackage = Package(
                 .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerFeaturesAiProviderConnection", package: "AiProviderConnection"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
-                .product(name: "VoyagerFeaturesAccountAccess", package: "AccountAccess"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
@@ -50,7 +48,6 @@ let kPackage = Package(
                 .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerFeaturesAiProviderConnection", package: "AiProviderConnection"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
-                .product(name: "VoyagerFeaturesAccountAccess", package: "AccountAccess"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
