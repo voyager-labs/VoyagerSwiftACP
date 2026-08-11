@@ -45,6 +45,7 @@ extension RuntimeControlPlane {
         }
         let descriptor = adapter.descriptor
         try requireExecutionOutput(in: descriptor.capabilities)
+        try requireExecutionContext(request.contextPolicy, in: descriptor.capabilities)
         let host = request.externalAgentSessionReference
         try requireAvailableRunReference(request.runReference, excluding: host, in: registry)
         guard var current = registry[host] else { throw RuntimeHostError.invalidEvent }
@@ -234,6 +235,18 @@ extension RuntimeControlPlane {
             throw RuntimeHostError.capabilityUnknown(.eventStream)
         }
         throw RuntimeHostError.capabilityUnsupported(.eventStream)
+    }
+
+    private func requireExecutionContext(
+        _ contextPolicy: RuntimeContextPolicy,
+        in capabilities: RuntimeCapabilities,
+    ) throws {
+        if contextPolicy.workingDirectory != nil {
+            try require(.workingDirectory, in: capabilities)
+        }
+        if !contextPolicy.allowedRoots.isEmpty {
+            try require(.additionalRoots, in: capabilities)
+        }
     }
 }
 

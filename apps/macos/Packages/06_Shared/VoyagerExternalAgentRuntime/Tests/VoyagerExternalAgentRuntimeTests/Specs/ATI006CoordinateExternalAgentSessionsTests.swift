@@ -253,6 +253,88 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-capture_external_agent_context_policy: requested working directory requires adapter capability.
+    /// working directory를 적용할 수 없는 adapter가 승인된 실행 컨텍스트 밖에서 시작되지 않는지 검증한다.
+    /// - 검증 내용: unknown/unsupported workingDirectory capability의 typed launch 거부.
+    /// - 사전 조건: launch context에 workingDirectory가 지정되어 있다.
+    /// - 기대 결과: provider launch 전에 capability 오류가 발생하고 adapter는 호출되지 않는다.
+    @Test(arguments: [RuntimeCapabilityStatus.unknown, .unsupported])
+    func `requested working directory requires adapter capability`(status: RuntimeCapabilityStatus) async throws {
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: contextCapabilityTestsMakeCapabilities(workingDirectory: status),
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: "host-working-directory-capability",
+            runReference: RuntimeRunReference("run-working-directory-capability"),
+            adapterID: RuntimeAdapterID("sdk"),
+            contextPolicy: RuntimeContextPolicy(
+                branchReference: "feat/voy-696",
+                authorizationGeneration: 1,
+                localCorrelation: "local-working-directory-capability",
+                workingDirectory: "/tmp/workspace",
+            ),
+            input: RuntimeSensitiveInput("not persisted"),
+        )
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        if status == .unknown {
+            await #expect(throws: RuntimeHostError.capabilityUnknown(.workingDirectory)) {
+                _ = try await plane.run(request)
+            }
+        } else {
+            await #expect(throws: RuntimeHostError.capabilityUnsupported(.workingDirectory)) {
+                _ = try await plane.run(request)
+            }
+        }
+        #expect(await adapter.counts().launch == 0)
+    }
+
+    /// ATI-006-capture_external_agent_context_policy: requested allowed roots require adapter capability.
+    /// 추가 root를 적용할 수 없는 adapter가 승인된 root 경계를 무시하고 시작되지 않는지 검증한다.
+    /// - 검증 내용: unknown/unsupported additionalRoots capability의 typed launch 거부.
+    /// - 사전 조건: launch context에 allowedRoots가 하나 이상 지정되어 있다.
+    /// - 기대 결과: provider launch 전에 capability 오류가 발생하고 adapter는 호출되지 않는다.
+    @Test(arguments: [RuntimeCapabilityStatus.unknown, .unsupported])
+    func `requested allowed roots require adapter capability`(status: RuntimeCapabilityStatus) async throws {
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: contextCapabilityTestsMakeCapabilities(additionalRoots: status),
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: "host-additional-roots-capability",
+            runReference: RuntimeRunReference("run-additional-roots-capability"),
+            adapterID: RuntimeAdapterID("sdk"),
+            contextPolicy: RuntimeContextPolicy(
+                branchReference: "feat/voy-696",
+                authorizationGeneration: 1,
+                localCorrelation: "local-additional-roots-capability",
+                allowedRoots: ["/tmp/workspace"],
+            ),
+            input: RuntimeSensitiveInput("not persisted"),
+        )
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        if status == .unknown {
+            await #expect(throws: RuntimeHostError.capabilityUnknown(.additionalRoots)) {
+                _ = try await plane.run(request)
+            }
+        } else {
+            await #expect(throws: RuntimeHostError.capabilityUnsupported(.additionalRoots)) {
+                _ = try await plane.run(request)
+            }
+        }
+        #expect(await adapter.counts().launch == 0)
+    }
+
     /// ATI-006-capture_external_agent_context_policy: sensitive input is bounded.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
@@ -1899,6 +1981,41 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await plane.projection(for: host) == .completed)
     }
 
+    /// ATI-006-project_external_agent_run_events: transient finish persistence failure retries terminal result.
+    /// provider terminal 결과를 확보한 뒤 첫 저장만 실패해도 interrupted로 덮지 않는지 검증한다.
+    /// - 검증 내용: 동일 terminal result의 persistence 재시도와 completed projection 보존.
+    /// - 사전 조건: terminal-only adapter가 completed 결과를 반환하고 finish save #4만 실패한다.
+    /// - 기대 결과: 재시도 저장이 성공하고 public run과 durable projection 모두 completed로 수렴한다.
+    @Test
+    func `transient finish persistence failure retries terminal result`() async throws {
+        let host: ExternalAgentSessionReference = "host-transient-finish-persistence"
+        let run = RuntimeRunReference("run-transient-finish-persistence")
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://finish-retry.json"],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            terminalResultOverride: expected,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [4])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let result = try await runPolicyReady(
+            plane,
+            makeLaunch(host: host, run: run, adapterID: "terminal"),
+        )
+
+        #expect(result == expected)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.saveCount == 5)
+    }
+
     /// ATI-006-project_external_agent_run_events: bind persistence failure interrupts before event projection.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
@@ -2933,6 +3050,22 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             capabilities: .allSupported,
             eventsByLaunch: [[]],
             eventStreamDelay: .milliseconds(50),
+        )
+    }
+
+    private func contextCapabilityTestsMakeCapabilities(
+        workingDirectory: RuntimeCapabilityStatus = .supported,
+        additionalRoots: RuntimeCapabilityStatus = .supported,
+    ) -> RuntimeCapabilities {
+        RuntimeCapabilities(
+            discovery: .supported,
+            eventStream: .supported,
+            approval: .supported,
+            cancellation: .supported,
+            queuedInput: .supported,
+            terminalResult: .supported,
+            workingDirectory: workingDirectory,
+            additionalRoots: additionalRoots,
         )
     }
 

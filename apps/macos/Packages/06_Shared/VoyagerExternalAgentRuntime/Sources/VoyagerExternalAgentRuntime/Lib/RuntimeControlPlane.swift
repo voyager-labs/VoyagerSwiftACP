@@ -148,19 +148,9 @@ public actor RuntimeControlPlane {
         reservation: RunReservation,
         lease: UInt64,
     ) async throws -> RuntimeResult {
+        let result: RuntimeResult
         do {
-            let result = try await consume(receipt, from: reservation.adapter, host: reservation.host)
-            if sessions[reservation.host]?.stored.projection.isTerminal == true {
-                return resultRespectingStoredTerminal(result, host: reservation.host)
-            }
-            return try await commit(host: reservation.host) { plane, registry in
-                try plane.finishTransition(
-                    result,
-                    host: reservation.host,
-                    lease: lease,
-                    in: &registry,
-                )
-            }
+            result = try await consume(receipt, from: reservation.adapter, host: reservation.host)
         } catch {
             let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
             try? await commit(host: reservation.host) { plane, registry in
@@ -171,6 +161,30 @@ public actor RuntimeControlPlane {
                 )
             }
             throw primary
+        }
+        if sessions[reservation.host]?.stored.projection.isTerminal == true {
+            return resultRespectingStoredTerminal(result, host: reservation.host)
+        }
+        return try await persistTerminalResult(result, host: reservation.host, lease: lease)
+    }
+
+    private func persistTerminalResult(
+        _ result: RuntimeResult,
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> RuntimeResult {
+        do {
+            return try await commit(host: host) { plane, registry in
+                try plane.finishTransition(result, host: host, lease: lease, in: &registry)
+            }
+        } catch RuntimeHostError.persistenceFailure {
+            do {
+                return try await commit(host: host) { plane, registry in
+                    try plane.finishTransition(result, host: host, lease: lease, in: &registry)
+                }
+            } catch RuntimeHostError.persistenceFailure {
+                throw RuntimeHostError.persistenceFailure
+            }
         }
     }
 
