@@ -275,7 +275,7 @@ extension FileManagerWindowRoutingReducer {
                 return .send(.topNavigationMoveRequested(source: sourceID, destination: destination))
 
             case .content(.delegate(.requestDuplicate)):
-                let command: Action.WindowCommand = state.contentTabs.selectedTabIDs.count > 1
+                let command: Action.WindowCommand = state.contentTabs.orderedValidSelectedTabIDs.count > 1
                     ? .duplicateSelectedContentTabs
                     : .duplicate
                 return .send(.request(command))

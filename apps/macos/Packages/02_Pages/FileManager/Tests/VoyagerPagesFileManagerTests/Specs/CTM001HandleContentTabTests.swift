@@ -1586,16 +1586,18 @@ final class CTM001HandleContentTabTests: XCTestCase {
     }
 
     /// CTM-001-duplicate_selected_content_tabs: Content duplicate delegate는 Window selection policy를 따름
-    /// 동일한 Cmd-D intent가 single selection에서는 entry, multi selection에서는 selected tabs duplicate로 분기되는지 검증한다.
+    /// 동일한 Cmd-D intent가 canonical single selection에서는 entry, multi selection에서는 selected tabs duplicate로 분기되는지 검증한다.
     /// - 검증 내용: selected tab count별 Content delegate→Window request mapping
-    /// - 사전 조건: active A와 single A 또는 multi A/B selection을 가진 Window state
-    /// - 기대 결과: single은 `.duplicate`, multi는 `.duplicateSelectedContentTabs` request를 수신함
+    /// - 사전 조건: active A와 single A, multi A/B, 또는 valid A와 stale ID selection을 가진 Window state
+    /// - 기대 결과: canonical single은 `.duplicate`, canonical multi는 `.duplicateSelectedContentTabs` request를 수신함
     func testDuplicateContentDelegate_routesBySelectedContentTabCount() async {
         let tabA = ContentTabID(rawValue: "content-route-a")
         let tabB = ContentTabID(rawValue: "content-route-b")
+        let staleTabID = ContentTabID(rawValue: "content-route-stale")
         for (selectedTabIDs, expectsBulkDuplicate) in [
             (Set([tabA]), false),
             (Set([tabA, tabB]), true),
+            (Set([tabA, staleTabID]), false),
         ] {
             var state = FileManagerFeature.State()
             state.contentTabs = ContentTabState(
