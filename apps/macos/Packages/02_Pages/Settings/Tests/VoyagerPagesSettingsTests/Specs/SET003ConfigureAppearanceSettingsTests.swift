@@ -31,8 +31,8 @@ import XCTest
 
 @MainActor
 final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
-    nonisolated(unsafe) private var storage: InMemoryStorage!
-    nonisolated(unsafe) private var themeRecorder: ThemeApplyRecorder!
+    nonisolated(unsafe) private var storage = InMemoryStorage()
+    nonisolated(unsafe) private var themeRecorder = ThemeApplyRecorder()
 
     override func setUp() {
         super.setUp()
@@ -40,19 +40,11 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
         themeRecorder = ThemeApplyRecorder()
     }
 
-    override func tearDown() {
-        storage = nil
-        themeRecorder = nil
-        super.tearDown()
-    }
-
     private func makeStore(
         loadTheme: @escaping @Sendable () -> AppTheme = { .system },
     ) -> TestStore<AppearanceSettingsFeature.State, AppearanceSettingsFeature.Action> {
-        // swiftlint:disable:next force_unwrapping
-        let storage = storage!
-        // swiftlint:disable:next force_unwrapping
-        let recorder = themeRecorder!
+        let storage = storage
+        let recorder = themeRecorder
         let userDefaultsClient = UserDefaultsClient(
             bool: { key in storage.getBool(key) ?? false },
             setBool: { value, key in storage.setBool(value, forKey: key) },
