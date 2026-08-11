@@ -15,9 +15,11 @@ final class EOP007EntryContextActionsTests: XCTestCase {
     /// - 검증 내용: Finder 표시 action이 선택 항목 URL을 reveal 의존성에 전달하는지 확인합니다.
     /// - 사전 조건: EntryOpenClient.revealInFinder mock으로 교체, 호출 기록 준비
     /// - 기대 결과: 리듀서가 올바른 URL로 EntryOpenClient.revealInFinder를 호출
-    func testRevealEntriesInFinder_success() async {
-        let filePath = "/Users/test/document.txt"
-        let fileURL = URL(fileURLWithPath: filePath)
+    func testRevealEntriesInFinder_success() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+        let fileURL = sandbox.fileURL
         let revealCalls = CallRecorder<[URL]>()
 
         let store = EntryOperationsTestSupport.makeStore {
@@ -64,9 +66,11 @@ final class EOP007EntryContextActionsTests: XCTestCase {
     /// - 검증 내용: Services action이 서비스 이름과 선택 항목 URL을 performService 의존성에 전달하는지 확인합니다.
     /// - 사전 조건: EntryOpenClient.performService mock으로 교체, 호출 기록 준비
     /// - 기대 결과: 리듀서가 올바른 서비스 이름과 URL로 EntryOpenClient.performService를 호출
-    func testShowServices_success() async {
-        let filePath = "/Users/test/document.txt"
-        let fileURL = URL(fileURLWithPath: filePath)
+    func testShowServices_success() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+        let fileURL = sandbox.fileURL
         let serviceName = "Mail/Compose"
         let performServiceCalls = CallRecorder<(String, [URL])>()
 
@@ -115,9 +119,11 @@ final class EOP007EntryContextActionsTests: XCTestCase {
     /// - 검증 내용: 공유 action이 선택 항목 URL과 anchor 좌표를 share 의존성에 전달하는지 확인합니다.
     /// - 사전 조건: EntryOpenClient.shareItems mock으로 교체, 호출 기록 준비
     /// - 기대 결과: 리듀서가 올바른 URL과 anchor로 EntryOpenClient.shareItems를 호출
-    func testShareEntriesViaSystemShareSheet_success() async {
-        let filePath = "/Users/test/photo.jpg"
-        let fileURL = URL(fileURLWithPath: filePath)
+    func testShareEntriesViaSystemShareSheet_success() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/images/jpeg/hopper.jpg")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+        let fileURL = sandbox.fileURL
         let anchor = CGPoint(x: 100, y: 200)
         let shareCalls = CallRecorder<([URL], CGPoint?)>()
 
@@ -146,8 +152,10 @@ final class EOP007EntryContextActionsTests: XCTestCase {
     /// - 검증 내용: anchor가 없는 공유 action도 URL 목록과 nil anchor로 share 의존성을 호출하는지 확인합니다.
     /// - 사전 조건: EntryOpenClient.shareItems mock, anchor = nil
     /// - 기대 결과: URL과 nil anchor로 호출되고 실제 공유 UI는 실행되지 않음
-    func testShareEntriesViaSystemShareSheet_nilAnchor() async {
-        let filePath = "/Users/test/document.pdf"
+    func testShareEntriesViaSystemShareSheet_nilAnchor() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/documents/pdf/pdf-test.pdf")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
         let shareCalls = CallRecorder<([URL], CGPoint?)>()
 
         let store = EntryOperationsTestSupport.makeStore {
