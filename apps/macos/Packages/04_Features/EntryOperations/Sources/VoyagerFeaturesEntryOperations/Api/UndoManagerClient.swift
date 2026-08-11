@@ -126,6 +126,24 @@ public enum FileOperationUndoScopesMoveOutcome: Equatable, Sendable {
     case targetOccupied(UndoManagerScope)
 }
 
+public struct FileOperationUndoScopeMoveReceipt: Equatable, Sendable {
+    public let descriptor: FileOperationUndoScopeMoveDescriptor
+    public let targetGeneration: UInt64?
+
+    public init(
+        descriptor: FileOperationUndoScopeMoveDescriptor,
+        targetGeneration: UInt64?,
+    ) {
+        self.descriptor = descriptor
+        self.targetGeneration = targetGeneration
+    }
+}
+
+public enum FileOperationUndoScopeMoveReconciliationOutcome: Equatable, Sendable {
+    case restored
+    case historyLost(FileOperationUndoScopesMoveOutcome)
+}
+
 @MainActor
 public final class FileOperationUndoManagerRegistry {
     public typealias Generation = UInt64
@@ -227,6 +245,54 @@ public final class FileOperationUndoManagerRegistry {
         precondition(plannedMoves.count == descriptors.count, "Validated Undo scope source disappeared")
         commit(plannedMoves, originalEntries: originalEntries)
         return .moved
+    }
+
+    public func reconcileFailedScopeMove(
+        _ receipts: [FileOperationUndoScopeMoveReceipt],
+        reverseOutcome: FileOperationUndoScopesMoveOutcome,
+    ) -> FileOperationUndoScopeMoveReconciliationOutcome {
+        var updatedEntries = entries
+        var restoredEntries: [(scope: UndoManagerScope, entry: Entry)] = []
+        var discardedEntries: [Entry] = []
+        var didLoseHistory = false
+
+        for receipt in receipts {
+            let source = receipt.descriptor.source
+            let target = receipt.descriptor.target
+            let sourceEntry = updatedEntries[source]
+            let targetEntry = updatedEntries[target]
+            let targetGenerationMatches = receipt.targetGeneration.map { generation in
+                targetEntry?.generation == generation
+            } ?? false
+
+            if sourceEntry == nil, targetGenerationMatches, let targetEntry {
+                updatedEntries.removeValue(forKey: target)
+                updatedEntries[source] = targetEntry
+                restoredEntries.append((source, targetEntry))
+                continue
+            }
+
+            didLoseHistory = true
+            if sourceEntry == nil {
+                let manager = UndoManager()
+                manager.groupsByEvent = false
+                updatedEntries[source] = Entry(manager: manager, generation: nextGeneration())
+            }
+            if targetGenerationMatches, let targetEntry {
+                updatedEntries.removeValue(forKey: target)
+                discardedEntries.append(targetEntry)
+            }
+        }
+
+        entries = updatedEntries
+        for entry in discardedEntries {
+            clearNativeHistory(entry)
+        }
+        for restored in restoredEntries {
+            FileOperationUndoManagerHandlerStore.store(for: restored.entry.manager)
+                .rebind(to: restored.scope)
+        }
+        return didLoseHistory ? .historyLost(reverseOutcome) : .restored
     }
 
     public func undoManager(for scope: UndoManagerScope) -> UndoManager? {
@@ -464,6 +530,10 @@ public struct FileOperationUndoManagerClient: Sendable {
     public var moveScopes: @Sendable (
         [FileOperationUndoScopeMoveDescriptor],
     ) -> FileOperationUndoScopesMoveOutcome
+    public var reconcileFailedScopeMove: @Sendable (
+        [FileOperationUndoScopeMoveReceipt],
+        FileOperationUndoScopesMoveOutcome,
+    ) -> FileOperationUndoScopeMoveReconciliationOutcome
     public var deactivateAll: @MainActor @Sendable (UUID) async -> Void
     public var undoManager: @MainActor @Sendable (UndoManagerScope) async -> UndoManager?
     public var registerUndo: @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool
@@ -486,6 +556,10 @@ public struct FileOperationUndoManagerClient: Sendable {
         moveScopes: @escaping @Sendable (
             [FileOperationUndoScopeMoveDescriptor],
         ) -> FileOperationUndoScopesMoveOutcome,
+        reconcileFailedScopeMove: @escaping @Sendable (
+            [FileOperationUndoScopeMoveReceipt],
+            FileOperationUndoScopesMoveOutcome,
+        ) -> FileOperationUndoScopeMoveReconciliationOutcome,
         deactivateAll: @escaping @MainActor @Sendable (UUID) async -> Void,
         undoManager: @escaping @MainActor @Sendable (UndoManagerScope) async -> UndoManager?,
         registerUndo: @escaping @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool,
@@ -501,6 +575,7 @@ public struct FileOperationUndoManagerClient: Sendable {
         self.deactivate = deactivate
         self.moveScope = moveScope
         self.moveScopes = moveScopes
+        self.reconcileFailedScopeMove = reconcileFailedScopeMove
         self.deactivateAll = deactivateAll
         self.undoManager = undoManager
         self.registerUndo = registerUndo
@@ -527,6 +602,11 @@ public extension FileOperationUndoManagerClient {
             },
             moveScopes: { descriptors in
                 withRegistry(registry) { $0.moveScopes(descriptors) }
+            },
+            reconcileFailedScopeMove: { receipts, reverseOutcome in
+                withRegistry(registry) {
+                    $0.reconcileFailedScopeMove(receipts, reverseOutcome: reverseOutcome)
+                }
             },
             deactivateAll: { registry.deactivateAll(windowID: $0) },
             undoManager: { registry.undoManager(for: $0) },
@@ -580,6 +660,7 @@ extension FileOperationUndoManagerClient: DependencyKey {
                 guard let first = descriptors.first else { return .emptyBatch }
                 return .sourceMissing(first.source)
             },
+            reconcileFailedScopeMove: { _, reverseOutcome in .historyLost(reverseOutcome) },
             deactivateAll: { _ in },
             undoManager: { _ in nil },
             registerUndo: { _, _, _ in false },
