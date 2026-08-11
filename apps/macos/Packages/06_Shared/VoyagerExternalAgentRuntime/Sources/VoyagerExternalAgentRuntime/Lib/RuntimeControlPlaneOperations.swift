@@ -67,19 +67,18 @@ public extension RuntimeControlPlane {
         expectedContext: RuntimeContextPolicy,
     ) async throws -> RuntimeRestoreResult {
         try await hydrateIfNeeded()
-        let original = sessions[hostReference]
-        guard original?.active != true else { throw RuntimeHostError.activeRunExists }
-        guard sessionUnchanged(original, at: hostReference),
-              let stored = original?.stored,
-              !stored.projection.isTerminal,
-              let providerInternalSessionReference = stored.providerInternalSessionReference,
+        guard let original = sessions[hostReference] else { return .stale }
+        guard !original.active else { throw RuntimeHostError.activeRunExists }
+        let stored = original.stored
+        guard !stored.projection.isTerminal else { return .stale }
+        guard let providerInternalSessionReference = stored.providerInternalSessionReference,
               stored.contextPolicy.hasSameExecutionContext(as: expectedContext),
               let adapter = adapters[stored.adapterID],
               stored.providerNamespace == adapter.descriptor.providerNamespace,
               stored.adapterVersion == adapter.descriptor.adapterVersion,
               stored.providerBranch == adapter.descriptor.providerBranch,
               stored.capabilitySnapshot == adapter.descriptor.capabilities
-        else { return .stale }
+        else { return try await releaseStaleRestoreReservation(original, at: hostReference) }
         try require(.sameIdentityResume, in: stored.capabilitySnapshot)
         let binding = RuntimeRestartBinding(
             externalAgentSessionReference: stored.externalAgentSessionReference,
@@ -111,6 +110,23 @@ public extension RuntimeControlPlane {
                 return .restored
             }
         case .stale, .incompatible:
+            return try await releaseStaleRestoreReservation(original, at: hostReference)
+        }
+    }
+
+    private func releaseStaleRestoreReservation(
+        _ original: Session,
+        at host: ExternalAgentSessionReference,
+    ) async throws -> RuntimeRestoreResult {
+        try await commit(host: host) { plane in
+            guard plane.sessionUnchanged(original, at: host),
+                  var current = plane.sessions[host],
+                  !current.stored.projection.isTerminal
+            else { return .stale }
+            current.stored = current.stored.withProjection(.interrupted)
+            current.active = false
+            current.awaitingResumption = false
+            plane.sessions[host] = current
             return .stale
         }
     }

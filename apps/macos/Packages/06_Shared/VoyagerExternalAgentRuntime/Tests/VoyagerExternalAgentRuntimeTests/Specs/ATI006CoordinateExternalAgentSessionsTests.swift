@@ -887,6 +887,55 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(stale == .stale)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: stale hydrated session releases its host.
+    /// 복원할 수 없는 file-hydrated 세션이 같은 host의 새 실행을 영구 차단하지 않는지 검증한다.
+    /// - 검증 내용: context mismatch의 stale 판정, interrupted persistence, same-host relaunch 완료.
+    /// - 사전 조건: provider handle이 있는 running snapshot과 다른 expected context가 주어진다.
+    /// - 기대 결과: stale 세션은 terminal 상태로 정리되고 새 run이 같은 host에서 완료된다.
+    @Test
+    func `stale hydrated session releases its host`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        try await store.save(reviewRegressionTestsMakeRunningState())
+        let host = ExternalAgentSessionReference("host-a")
+        let run = RuntimeRunReference("run-b")
+        let completed = makeEvent(
+            host: host,
+            run: run,
+            sequence: 1,
+            idempotencyKey: "replacement-completed",
+            kind: .completed,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[completed]],
+        )
+        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await plane.register(adapter)
+
+        let stale = try await plane.restore(
+            hostReference: host,
+            expectedContext: RuntimeContextPolicy(
+                branchReference: "other",
+                authorizationGeneration: 1,
+                localCorrelation: "local-a",
+            ),
+        )
+        let released = try #require(try await store.load()?.sessions.first)
+        let replacement = makeLaunch(host: host, run: run, adapterID: "sdk")
+
+        #expect(stale == .stale)
+        #expect(released.projection == .interrupted)
+        try await plane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await plane.run(replacement).outcome == .completed)
+        #expect(await adapter.counts().launch == 1)
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: restore rejects execution context mutations.
     /// 재시작 호환성 검사가 승인된 실행 컨텍스트 전체를 비교하는지 검증한다.
     /// - 검증 내용: working directory, allowed roots, request context 변경 시 stale 판정.
