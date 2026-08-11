@@ -1724,6 +1724,48 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 0)
     }
 
+    /// ATI-006-project_external_agent_run_events: invalid running snapshot does not reserve its host.
+    /// provider handle이 없는 running snapshot을 격리한 뒤 같은 host를 새 실행에 사용할 수 있는지 검증한다.
+    /// - 검증 내용: current-schema invariant 위반의 quarantine과 다음 hydration의 host reservation 해제.
+    /// - 사전 조건: provider handle만 누락된 running snapshot이 실제 file store에 저장되어 있다.
+    /// - 기대 결과: 최초 load는 persistence failure이고 재시도한 새 실행은 완료된다.
+    @Test
+    func `invalid running snapshot does not reserve its host`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let invalidState = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [
+                RuntimeStoredSession(
+                    externalAgentSessionReference: "host-a",
+                    providerInternalSessionReference: nil,
+                    runReference: RuntimeRunReference("run-a"),
+                    adapterID: RuntimeAdapterID("sdk"),
+                    adapterVersion: "1.0.0",
+                    capabilitySnapshot: .allSupported,
+                    contextPolicy: reviewRegressionTestsMakeContext(),
+                    projection: .running,
+                    lastSequence: 0,
+                ),
+            ],
+        )
+        try JSONEncoder().encode(invalidState).write(to: fileURL, options: .atomic)
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await plane.register(adapter)
+        let launch = makeLaunch(host: "host-a", run: RuntimeRunReference("run-b"), adapterID: "sdk")
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            _ = try await runPolicyReady(plane, launch)
+        }
+        #expect(FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("corrupt").path))
+        #expect(try await runPolicyReady(plane, launch).outcome == .completed)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// ATI-006-project_external_agent_run_events: terminal transition does not wait for a delayed operation.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

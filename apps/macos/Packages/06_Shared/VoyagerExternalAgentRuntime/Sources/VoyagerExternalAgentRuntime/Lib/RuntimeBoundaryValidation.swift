@@ -49,6 +49,7 @@ extension RuntimeStoredSession {
                 !$0.rawValue.isEmpty
                     && $0.rawValue.unicodeScalars.count <= RuntimeBoundaryLimits.opaqueProviderHandleScalars
             } ?? true
+            && (!projection.requiresProviderSessionReference || providerInternalSessionReference != nil)
             && acceptedIdempotencyKeys.count <= RuntimeBoundaryLimits.persistedEventEntries
             && acceptedIdempotencyKeys.allSatisfy(\.rawValue.isRuntimeBounded)
             && hostAcceptedIdempotencyKeys.count <= RuntimeBoundaryLimits.persistedEventEntries
@@ -64,6 +65,18 @@ extension RuntimeStoredSession {
             && hostProcessedEventCount >= hostAcceptedEventCount
             && hostProcessedEventCount <= RuntimeBoundaryLimits.acceptedEventsPerRun
             && contextPolicy.isWithinRuntimeBounds
+    }
+}
+
+extension RuntimeProjection {
+    var requiresProviderSessionReference: Bool {
+        switch self {
+        case .running, .eventProjected, .eventDuplicateIgnored, .eventOutOfOrder:
+            true
+        case .policyPending, .policyReady, .launching, .launchBlocked, .launchCancelled,
+             .launchFailed, .completed, .failed, .interrupted:
+            false
+        }
     }
 }
 
