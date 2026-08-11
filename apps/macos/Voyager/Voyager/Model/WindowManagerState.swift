@@ -55,6 +55,12 @@ struct ContentTabMoveTerminalRecord: Equatable {
         case rejected(ContentTabMoveFailurePresentation.Category)
     }
 
+    enum UndoRecovery: Equatable {
+        case preserved
+        case reconciled(FileOperationUndoScopesMoveOutcome)
+        case historyLost(FileOperationUndoScopesMoveOutcome)
+    }
+
     let operationID: UUID
     let requestID: UUID
     let sourceWindowID: UUID
@@ -62,12 +68,17 @@ struct ContentTabMoveTerminalRecord: Equatable {
     let orderedTabIDs: [ContentTabID]
     let targetWindowID: UUID
     let outcome: Outcome
+    let undoRecovery: UndoRecovery
 
     var tabID: ContentTabID {
         initiatingTabID
     }
 
-    init(request: ContentTabMoveRequest, outcome: Outcome) {
+    init(
+        request: ContentTabMoveRequest,
+        outcome: Outcome,
+        undoRecovery: UndoRecovery = .preserved,
+    ) {
         operationID = request.operationID
         requestID = request.requestID
         sourceWindowID = request.sourceWindowID
@@ -75,6 +86,7 @@ struct ContentTabMoveTerminalRecord: Equatable {
         orderedTabIDs = request.orderedTabIDs
         targetWindowID = request.targetWindowID
         self.outcome = outcome
+        self.undoRecovery = undoRecovery
     }
 
     init(
@@ -83,6 +95,7 @@ struct ContentTabMoveTerminalRecord: Equatable {
         tabID: ContentTabID,
         targetWindowID: UUID,
         outcome: Outcome,
+        undoRecovery: UndoRecovery = .preserved,
     ) {
         operationID = requestID
         self.requestID = requestID
@@ -91,6 +104,7 @@ struct ContentTabMoveTerminalRecord: Equatable {
         orderedTabIDs = [tabID]
         self.targetWindowID = targetWindowID
         self.outcome = outcome
+        self.undoRecovery = undoRecovery
     }
 }
 
@@ -103,6 +117,19 @@ struct ContentTabMoveTransaction: Equatable {
         let postCommit: ContentTabTransfer.PostCommit
         let closesSourceWindow: Bool
         let undoDescriptors: [FileOperationUndoScopeMoveDescriptor]
+        let undoMoveReceipts: [FileOperationUndoScopeMoveReceipt]
+
+        init(
+            postCommit: ContentTabTransfer.PostCommit,
+            closesSourceWindow: Bool,
+            undoDescriptors: [FileOperationUndoScopeMoveDescriptor],
+            undoMoveReceipts: [FileOperationUndoScopeMoveReceipt] = [],
+        ) {
+            self.postCommit = postCommit
+            self.closesSourceWindow = closesSourceWindow
+            self.undoDescriptors = undoDescriptors
+            self.undoMoveReceipts = undoMoveReceipts
+        }
     }
 }
 

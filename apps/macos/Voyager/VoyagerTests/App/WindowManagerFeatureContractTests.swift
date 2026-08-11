@@ -5426,6 +5426,127 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
     }
 
+    /// CTM-001-move_content_tab_to_another_window: reverse Undo scope 이동 실패는 history loss를 명시하고 close 전 수렴한다.
+    /// durable failure와 target close가 겹쳐도 generation-qualified reconciliation이 participant 해제보다 먼저 수행되는지 검증한다.
+    /// - 검증 내용: forward receipt, typed reverse failure, reconciliation→Undo invalidation→native finalize 순서, terminal
+    /// recovery
+    /// - 사전 조건: explicit Pin persistence failure, target native close callback, reverse target occupied
+    /// - 기대 결과: logical pre-state 유지, history loss 기록, transaction 정리 후 target close 완료, success/native activation 없음
+    func testContentTabMoveRollbackFailureReconcilesUndoBeforeDeferredTargetClose() async throws {
+        let sourceID = UUID(46926)
+        let targetID = UUID(46927)
+        let movedID = ContentTabID(rawValue: "rollback-recovery-moved")
+        let targetPinnedID = ContentTabID(rawValue: "rollback-recovery-target-pinned")
+        let request = ContentTabMoveRequest(
+            operationID: UUID(46928),
+            requestID: UUID(46929),
+            sourceWindowID: sourceID,
+            initiatingTabID: movedID,
+            orderedTabIDs: [movedID],
+            targetWindowID: targetID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            placement: .after(targetPinnedID),
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedID, "/rollback-recovery/source/moved")],
+        )
+        Self.prepareContentTabMoveRequest(request, in: &source)
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetPinnedID, "/rollback-recovery/target/pinned")],
+        )
+        target.window.contentTabs.tabs[id: targetPinnedID]?.isPinned = true
+        target.window.contentTabs.pinnedRecords[targetPinnedID] = ContentTabPinnedRecord(
+            id: targetPinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/rollback-recovery/target/pinned"),
+            title: "Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 303),
+        )
+        let sourceBefore = source.window
+        let forwardDescriptor = FileOperationUndoScopeMoveDescriptor(
+            source: UndoManagerScope(windowID: sourceID, contentTabID: movedID.rawValue),
+            target: UndoManagerScope(windowID: targetID, contentTabID: movedID.rawValue),
+        )
+        let reverseOutcome = FileOperationUndoScopesMoveOutcome.targetOccupied(forwardDescriptor.source)
+        let writeGate = PinnedRecordMutationGate()
+        let moveCallCount = LockIsolated(0)
+        let lifecycleCalls = LockIsolated<[String]>([])
+        let activationCalls = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 304))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46930)) }
+            $0.fileOperationUndoManagerClient.moveScopes = { descriptors in
+                let call = moveCallCount.withValue { value in
+                    value += 1
+                    return value
+                }
+                XCTAssertEqual(descriptors, call == 1 ? [forwardDescriptor] : [
+                    .init(source: forwardDescriptor.target, target: forwardDescriptor.source),
+                ])
+                return call == 1 ? .moved : reverseOutcome
+            }
+            $0.fileOperationUndoManagerClient.generation = { scope in
+                scope == forwardDescriptor.target ? 91 : nil
+            }
+            $0.fileOperationUndoManagerClient.reconcileFailedScopeMove = { receipts, outcome in
+                XCTAssertEqual(receipts, [
+                    .init(descriptor: forwardDescriptor, targetGeneration: 91),
+                ])
+                XCTAssertEqual(outcome, reverseOutcome)
+                lifecycleCalls.withValue { $0.append("reconcile") }
+                return .historyLost(outcome)
+            }
+            $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, _ in
+                await writeGate.wait()
+                throw NSError(domain: "UndoRollbackRecovery", code: 1)
+            }
+            $0.undoManagerClient.invalidateWindow = { id in
+                lifecycleCalls.withValue { $0.append("invalidate:\(id)") }
+                return .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { id in
+                lifecycleCalls.withValue { $0.append("finalize:\(id)") }
+            }
+            $0.fileManagerWindowClient.activate = { _ in
+                activationCalls.withValue { $0 += 1 }
+                return .discarded
+            }
+        }
+        // store.exhaustivity = .off: recovery와 deferred close terminal의 observable ordering만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await writeGate.waitUntilWaiting()
+        await store.send(.event(.windowClosed(targetID)))
+        XCTAssertNotNil(store.state.windows[id: targetID])
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(targetID))
+
+        await writeGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(moveCallCount.value, 2)
+        XCTAssertEqual(
+            lifecycleCalls.value,
+            ["reconcile", "invalidate:\(targetID)", "finalize:\(targetID)"],
+        )
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs, sourceBefore.contentTabs.tabs)
+        XCTAssertNil(store.state.windows[id: targetID])
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .rejected(.generic))
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.undoRecovery,
+            .historyLost(reverseOutcome),
+        )
+        XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
+        XCTAssertEqual(activationCalls.value, 0)
+    }
+
     /// CTM-001-move_content_tab_to_another_window: queue head와 exact request/token이 맞지 않는 completion은 전체 no-op이다.
     /// exact completion은 target의 선행 authoritative Pin을 보존하고 duplicate terminal은 두 번째 fan-out을 만들지 않는다.
     /// - 검증 내용: foreign no-op, target authoritative rebase, moved runtime owner 보존, duplicate no-op
@@ -5689,12 +5810,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// CTM-001-move_content_tab_to_another_window: target close during persistence는 commit까지 제거를 유예한다.
-    /// durable success를 surviving source에 fan-out한 다음 source runtime을 보존하고 target을 제거해야 한다.
-    /// - 검증 내용: target deferred close, commit fan-out, source runtime 보존, undo scope 복귀, target 제거
-    /// - 사전 조건: explicit Pin request와 persistence gate, target native close callback
-    /// - 기대 결과: terminal 전 target 유지, commit 뒤 source pinned tab 보존, target 제거, transaction empty
-    func testContentTabMoveTargetCloseDuringDurablePersistencePublishesCommitBeforeRemoval() async throws {
+    /// CTM-001-move_content_tab_to_another_window: target close fallback의 Undo 역이동 실패를 수렴한다.
+    /// durable success를 surviving source에 fan-out한 뒤 generation-qualified reconciliation을 기록해야 한다.
+    /// - 검증 내용: target deferred close, commit fan-out, source runtime 보존, Undo reconciliation, target 제거
+    /// - 사전 조건: explicit Pin request와 persistence gate, target native close callback, reverse target occupied
+    /// - 기대 결과: commit 뒤 source pinned tab 보존, history loss 기록, target 제거, transaction empty
+    func testContentTabMoveTargetCloseFallbackReconcilesUndoBeforeRemoval() async throws {
         let sourceID = UUID(46947)
         let targetID = UUID(46948)
         let sourceLoadingOwnerID = UUID(46963)
@@ -5712,6 +5833,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             targetDomain: .pinned,
             placement: .after(targetPinnedID),
         )
+        let forwardDescriptor = FileOperationUndoScopeMoveDescriptor(
+            source: UndoManagerScope(windowID: sourceID, contentTabID: movedID.rawValue),
+            target: UndoManagerScope(windowID: targetID, contentTabID: movedID.rawValue),
+        )
+        let reverseOutcome = FileOperationUndoScopesMoveOutcome.targetOccupied(forwardDescriptor.source)
         var source = try Self.makeContentTabMoveWindow(
             id: sourceID,
             tabs: [(movedID, "/target-close-during-persistence/source/moved")],
@@ -5738,7 +5864,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         target.window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(targetPinnedID)])
         let writeGate = PinnedRecordMutationGate()
-        let undoBatches = LockIsolated<[[FileOperationUndoScopeMoveDescriptor]]>([])
+        let moveCallCount = LockIsolated(0)
         let activationWindowIDs = LockIsolated<[WindowManagerFeature.State.WindowID]>([])
         let targetPinnedRecord = try XCTUnwrap(target.window.contentTabs.pinnedRecords[targetPinnedID])
         var initialState = WindowManagerFeature.State()
@@ -5747,8 +5873,24 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 604))
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46951)) }
             $0.fileOperationUndoManagerClient.moveScopes = { descriptors in
-                undoBatches.withValue { $0.append(descriptors) }
-                return .moved
+                let call = moveCallCount.withValue { value in
+                    value += 1
+                    return value
+                }
+                XCTAssertEqual(descriptors, call == 1 ? [forwardDescriptor] : [
+                    .init(source: forwardDescriptor.target, target: forwardDescriptor.source),
+                ])
+                return call == 1 ? .moved : reverseOutcome
+            }
+            $0.fileOperationUndoManagerClient.generation = { scope in
+                scope == forwardDescriptor.target ? 92 : nil
+            }
+            $0.fileOperationUndoManagerClient.reconcileFailedScopeMove = { receipts, outcome in
+                XCTAssertEqual(receipts, [
+                    .init(descriptor: forwardDescriptor, targetGeneration: 92),
+                ])
+                XCTAssertEqual(outcome, reverseOutcome)
+                return .historyLost(outcome)
             }
             $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, _ in
                 await writeGate.wait()
@@ -5803,7 +5945,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.skipReceivedActions()
         await store.finish()
 
-        XCTAssertEqual(undoBatches.value.count, 2)
+        XCTAssertEqual(moveCallCount.value, 2)
         XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedID]?.isPinned, true)
         let preservedContent = try XCTUnwrap(store.state.windows[id: sourceID]?.window.tabContentStates[movedID])
         XCTAssertEqual(
@@ -5818,6 +5960,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertFalse(store.state.isTopNavigationPersistenceInFlight)
         XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.undoRecovery,
+            .historyLost(reverseOutcome),
+        )
         XCTAssertTrue(activationWindowIDs.value.isEmpty)
     }
 

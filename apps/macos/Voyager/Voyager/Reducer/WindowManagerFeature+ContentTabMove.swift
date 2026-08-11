@@ -208,16 +208,38 @@ extension WindowManagerFeature {
             let rollbackOutcome = fileOperationUndoManagerClient.moveScopes(
                 rollbackUndoDescriptors(from: pendingPersistence.undoDescriptors),
             )
-            if rollbackOutcome != .moved {
-                assertionFailure("Correlated Content Tab move undo rollback should succeed")
-            }
+            let undoRecovery = contentTabMoveUndoRecovery(
+                pendingPersistence: pendingPersistence,
+                rollbackOutcome: rollbackOutcome,
+            )
             return .concatenate(
-                rejectContentTabMove(request, category: contentTabMoveCategory(for: failure), state: &state),
+                rejectContentTabMove(
+                    request,
+                    category: contentTabMoveCategory(for: failure),
+                    state: &state,
+                    undoRecovery: undoRecovery,
+                ),
                 .send(.contentTabMoveLifecycleCompleted(request: request)),
                 .merge(
                     startNextTopNavigationPersistenceIfNeeded(state: &state),
                 ),
             )
+        }
+    }
+
+    private func contentTabMoveUndoRecovery(
+        pendingPersistence: ContentTabMoveTransaction.PendingPersistence,
+        rollbackOutcome: FileOperationUndoScopesMoveOutcome,
+    ) -> ContentTabMoveTerminalRecord.UndoRecovery {
+        guard rollbackOutcome != .moved else { return .preserved }
+        return switch fileOperationUndoManagerClient.reconcileFailedScopeMove(
+            pendingPersistence.undoMoveReceipts,
+            rollbackOutcome,
+        ) {
+        case .restored:
+            .reconciled(rollbackOutcome)
+        case let .historyLost(reverseOutcome):
+            .historyLost(reverseOutcome)
         }
     }
 
@@ -273,20 +295,27 @@ extension WindowManagerFeature {
         let fallbackSource = isWindowReady(request.targetWindowID, state: state)
             ? nil
             : pendingPersistence.postCommit.unavailableTargetFallbackSource
+        let undoRecovery: ContentTabMoveTerminalRecord.UndoRecovery
         if let fallbackSource {
             let rollbackOutcome = fileOperationUndoManagerClient.moveScopes(
                 rollbackUndoDescriptors(from: pendingPersistence.undoDescriptors),
             )
-            if rollbackOutcome != .moved {
-                assertionFailure("Unavailable target Content Tab move undo rollback should succeed")
-            }
+            undoRecovery = contentTabMoveUndoRecovery(
+                pendingPersistence: pendingPersistence,
+                rollbackOutcome: rollbackOutcome,
+            )
             state.windows[id: request.sourceWindowID]?.window = fallbackSource
         } else {
+            undoRecovery = .preserved
             state.windows[id: request.sourceWindowID]?.window = pendingPersistence.postCommit.source
             state.windows[id: request.targetWindowID]?.window = pendingPersistence.postCommit.target
         }
         setContentTabMoveParticipant(request, state: &state)
-        state.recordContentTabMoveTerminal(.init(request: request, outcome: .succeeded))
+        state.recordContentTabMoveTerminal(.init(
+            request: request,
+            outcome: .succeeded,
+            undoRecovery: undoRecovery,
+        ))
         state.contentTabMoveTransactions[request.requestID] = .init(request: request)
         if fallbackSource == nil {
             state.contentTabMoveNativeEffectsPlans[request.requestID] = .init(
@@ -325,8 +354,13 @@ extension WindowManagerFeature {
         _ request: ContentTabMoveRequest,
         category: ContentTabMoveFailurePresentation.Category,
         state: inout State,
+        undoRecovery: ContentTabMoveTerminalRecord.UndoRecovery = .preserved,
     ) -> Effect<Action> {
-        state.recordContentTabMoveTerminal(.init(request: request, outcome: .rejected(category)))
+        state.recordContentTabMoveTerminal(.init(
+            request: request,
+            outcome: .rejected(category),
+            undoRecovery: undoRecovery,
+        ))
         if state.contentTabMoveTransactions[request.requestID]?.request == request {
             return correlatedContentTabMoveTerminalEffect(request, outcome: .rejected(category))
         }
@@ -643,6 +677,12 @@ extension WindowManagerFeature {
         let undoDescriptors = contentTabMoveUndoDescriptors(token, originalTarget: targetWindow)
         let undoOutcome = fileOperationUndoManagerClient.moveScopes(undoDescriptors)
         guard undoOutcome == .moved else { throw PreparedContentTabMoveError.undoOutcome(undoOutcome) }
+        let undoMoveReceipts = undoDescriptors.map { descriptor in
+            FileOperationUndoScopeMoveReceipt(
+                descriptor: descriptor,
+                targetGeneration: fileOperationUndoManagerClient.generation(descriptor.target),
+            )
+        }
 
         let pendingPersistence = switch ContentTabTransfer.apply(token) {
         case let .moved(postCommit):
@@ -650,12 +690,14 @@ extension WindowManagerFeature {
                 postCommit: postCommit,
                 closesSourceWindow: false,
                 undoDescriptors: undoDescriptors,
+                undoMoveReceipts: undoMoveReceipts,
             )
         case let .closeSourceWindow(postCommit):
             ContentTabMoveTransaction.PendingPersistence(
                 postCommit: postCommit,
                 closesSourceWindow: true,
                 undoDescriptors: undoDescriptors,
+                undoMoveReceipts: undoMoveReceipts,
             )
         case .rejected:
             preconditionFailure("Validated ContentTabTransfer token must apply infallibly")
