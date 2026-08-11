@@ -371,8 +371,12 @@ struct FileManagerContentNavigationBridgeReducer {
             fileChangeGatewayClient.updateInterests([interest])
             var previousBatchFingerprint: GatewayBatchFingerprint?
             await withTaskCancellationHandler {
-                for await events in fileChangeGatewayClient.observeEvents() {
-                    let changedEvents = gatewayRelevantChangedEvents(events, interest: interest, openedURL: openedURL)
+                for await batch in fileChangeGatewayClient.observeEvents() {
+                    let changedEvents = gatewayRelevantChangedEvents(
+                        batch.events,
+                        interest: interest,
+                        openedURL: openedURL,
+                    )
                     guard !changedEvents.isEmpty else { continue }
                     let batchFingerprint = GatewayBatchFingerprint(events: changedEvents)
                     guard batchFingerprint != previousBatchFingerprint else { continue }
@@ -381,7 +385,7 @@ struct FileManagerContentNavigationBridgeReducer {
                     if interest.purpose == .collectionStale {
                         collectionStalenessClient.invalidateRecords(changedEvents.map(\.path))
                     }
-                    if let chainToken = fileChangeGatewayClient.currentDeliveryChainToken() {
+                    if let chainToken = batch.deliveryChainToken {
                         logFileManagerDeliveryMarker(
                             "fs_bridge_sent",
                             events: changedEvents,
@@ -389,7 +393,10 @@ struct FileManagerContentNavigationBridgeReducer {
                             latencyFrom: changedEvents.map(\.emittedAt).min(),
                         )
                     }
-                    await send(.externalFileSystemChanged(changedEvents))
+                    await send(.externalFileSystemChanged(
+                        changedEvents,
+                        deliveryChainToken: batch.deliveryChainToken,
+                    ))
                 }
                 fileChangeGatewayClient.removeInterests([interest.id])
             } onCancel: {

@@ -13,13 +13,10 @@ struct FileManagerContentSyncReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
-    @Dependency(\.fileChangeGatewayClient)
-    private var fileChangeGatewayClient
-
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .externalFileSystemChanged(events):
+            case let .externalFileSystemChanged(events, deliveryChainToken):
                 let paths = events.map(\.path)
                 switch state.navigation.navigationState {
                 case .collection:
@@ -27,14 +24,14 @@ struct FileManagerContentSyncReducer {
                     guard affectsCollection else {
                         return .none
                     }
-                    logFileManagerReloadRequest(events)
+                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
                     return .send(.collection(.externalPathsChanged(paths)))
 
                 case let .folder(path):
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
-                    logFileManagerReloadRequest(events)
+                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
                     let normalizedPaths = paths.map(normalizedPath(for:))
                     let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
                     let removedPrefixes = removedPrefixes(for: events)
@@ -51,7 +48,7 @@ struct FileManagerContentSyncReducer {
                     )
 
                 case .recents, .tags, .computer:
-                    logFileManagerReloadRequest(events)
+                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
                     return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
 
                 case .home, .aiChat, .aiChatSessions:
@@ -64,12 +61,15 @@ struct FileManagerContentSyncReducer {
         }
     }
 
-    private func logFileManagerReloadRequest(_ events: [FileChangeGatewayEvent]) {
-        guard let chainToken = fileChangeGatewayClient.currentDeliveryChainToken() else { return }
+    private func logFileManagerReloadRequest(
+        _ events: [FileChangeGatewayEvent],
+        deliveryChainToken: String?,
+    ) {
+        guard let deliveryChainToken else { return }
         logFileManagerDeliveryMarker(
             "fs_reload_requested",
             events: events,
-            chainToken: chainToken,
+            chainToken: deliveryChainToken,
             latencyFrom: events.map(\.emittedAt).min(),
         )
     }

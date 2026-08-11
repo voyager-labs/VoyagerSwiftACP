@@ -111,7 +111,7 @@ private struct DirectoryLoadFailureRetryFixture {
     let staleEntry: EntryModel
     let gate: DirectoryLoadSuspensionGate
     let loadPaths: LockIsolated<[String]>
-    let eventContinuation: LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>
+    let eventContinuation: LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>
     let store: TestStore<FileManagerFeature.State, FileManagerWindowAction>
 }
 
@@ -126,7 +126,7 @@ private struct InactiveDirectoryRestoreFixture {
     let loadPaths: LockIsolated<[String]>
     let watchedRoots: LockIsolated<[[String]]>
     let removedInterestIDs: LockIsolated<Set<String>>
-    let eventContinuation: LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>
+    let eventContinuation: LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>
     let store: TestStore<FileManagerFeature.State, FileManagerWindowAction>
 
     @MainActor
@@ -141,7 +141,7 @@ private struct InactiveDirectoryRestoreFixture {
         let loads = LockIsolated<[String]>([])
         let roots = LockIsolated<[[String]]>([])
         let removedIDs = LockIsolated<Set<String>>([])
-        let continuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let continuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         var state = makeState(homeID, directoryID, path)
         state.tabContentStates[directoryID]?.entryViewLayout.mode = .grid
         state.tabContentStates[directoryID]?.entryViewLayout.entries = [stale]
@@ -1542,7 +1542,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let gate = DirectoryLoadSuspensionGate()
         let loadPaths = LockIsolated<[String]>([])
         let watchedRoots = LockIsolated<[[String]]>([])
-        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         var fallbackContent = FileManagerContentFeature.State()
         fallbackContent.navigation.seedInitialFolderPath(fallbackPath)
         fallbackContent.entryViewLayout.mode = .grid
@@ -11289,7 +11289,7 @@ private extension CTM005IndependentContentTabSessionTests {
         let staleEntry = EntryModel.temporaryFolder(id: "\(directoryPath)/Stale", name: "Stale")
         let gate = DirectoryLoadSuspensionGate()
         let loadPaths = LockIsolated<[String]>([])
-        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         var state = makeDirectoryHandoffState(
             homeID: homeID,
             tabs: [.init(id: directoryID, anchorPath: directoryPath, savedPath: directoryPath)],

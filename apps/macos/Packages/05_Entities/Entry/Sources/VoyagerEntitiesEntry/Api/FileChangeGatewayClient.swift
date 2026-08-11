@@ -4,38 +4,18 @@ import os
 import VoyagerShared
 
 public struct FileChangeGatewayClient: Sendable {
-    public var observeEvents: @Sendable () -> AsyncStream<[FileChangeGatewayEvent]>
+    public var observeEvents: @Sendable () -> AsyncStream<FileChangeGatewayEventBatch>
     public var updateInterests: @Sendable ([FileChangeWatchInterest]) -> Void
     public var removeInterests: @Sendable ([String]) -> Void
-    public var currentDeliveryChainToken: @Sendable () -> String?
 
     nonisolated public init(
-        observeEvents: @escaping @Sendable () -> AsyncStream<[FileChangeGatewayEvent]>,
+        observeEvents: @escaping @Sendable () -> AsyncStream<FileChangeGatewayEventBatch>,
         updateInterests: @escaping @Sendable ([FileChangeWatchInterest]) -> Void,
         removeInterests: @escaping @Sendable ([String]) -> Void,
-        currentDeliveryChainToken: @escaping @Sendable () -> String? = { nil },
     ) {
         self.observeEvents = observeEvents
         self.updateInterests = updateInterests
         self.removeInterests = removeInterests
-        self.currentDeliveryChainToken = currentDeliveryChainToken
-    }
-}
-
-private final class FileChangeGatewayDeliveryContext: @unchecked Sendable {
-    private let lock = NSLock()
-    private var chainToken: String?
-
-    func update(_ chainToken: String) {
-        lock.lock()
-        self.chainToken = chainToken
-        lock.unlock()
-    }
-
-    func current() -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return chainToken
     }
 }
 
@@ -49,8 +29,7 @@ extension FileChangeGatewayClient: DependencyKey {
     )
 
     nonisolated private static func live() -> FileChangeGatewayClient {
-        let deliveryContext = FileChangeGatewayDeliveryContext()
-        return FileChangeGatewayClient(
+        FileChangeGatewayClient(
             observeEvents: {
                 AsyncStream { continuation in
                     final class ObserverBox: @unchecked Sendable {
@@ -65,16 +44,19 @@ extension FileChangeGatewayClient: DependencyKey {
                     ) { notification in
                         let events = FileChangeGatewayPayload.events(from: notification.userInfo)
                         guard !events.isEmpty else { return }
-                        if let chainToken = fileChangeGatewayDeliveryChainToken(from: notification.userInfo) {
-                            deliveryContext.update(chainToken)
+                        let deliveryChainToken = fileChangeGatewayDeliveryChainToken(from: notification.userInfo)
+                        if let deliveryChainToken {
                             logFileChangeGatewayDeliveryMarker(
                                 "fs_notification_received",
                                 events: events,
-                                chainToken: chainToken,
+                                chainToken: deliveryChainToken,
                                 latencyFrom: events.map(\.emittedAt).min(),
                             )
                         }
-                        continuation.yield(events)
+                        continuation.yield(.init(
+                            events: events,
+                            deliveryChainToken: deliveryChainToken,
+                        ))
                     }
 
                     continuation.onTermination = { @Sendable _ in
@@ -98,7 +80,6 @@ extension FileChangeGatewayClient: DependencyKey {
                     userInfo: FileChangeGatewayPayload.userInfo(forRemovedInterestIDs: ids),
                 )
             },
-            currentDeliveryChainToken: { deliveryContext.current() },
         )
     }
 }

@@ -460,7 +460,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             [changedPath],
             flags: UInt32(kFSEventStreamEventFlagItemCreated),
         )
-        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(currentPath)
         let interestUpdated = expectation(description: "Folder interest forwarded promptly")
@@ -490,9 +490,80 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             XCTAssertEqual(effectOrder.value, ["interest"])
             return true
         }
-        eventContinuation.value?.yield(changedEvents)
-        await store.receive(\.externalFileSystemChanged, changedEvents)
+        eventContinuation.value?.yield(.init(events: changedEvents))
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == changedEvents && deliveryChainToken == nil
+        }
         eventContinuation.value?.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: queued batches retain their own delivery-chain token.
+    /// observer가 두 batch를 먼저 enqueue해도 bridge action이 batch별 token을 그대로 전달하는지 검증한다.
+    /// - 검증 내용: first와 second externalFileSystemChanged action이 각각 원래 batch token을 보존한다.
+    /// - 사전 조건: 같은 folder observer에 서로 다른 token의 relevant event batch 두 개가 queue된다.
+    /// - 기대 결과: 첫 action에는 first token, 둘째 action에는 second token이 전달된다.
+    func testGatewayDeliveryChainTokensRemainBoundToBatches() async {
+        let folderPath = "/tmp/voyager"
+        let firstBatch = FileChangeGatewayEventBatch(
+            events: [FileChangeGatewayEvent(
+                path: "\(folderPath)/first.txt",
+                flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            )],
+            deliveryChainToken: "00000000-0000-0000-0000-000000000001",
+        )
+        let secondBatch = FileChangeGatewayEventBatch(
+            events: [FileChangeGatewayEvent(
+                path: "\(folderPath)/second.txt",
+                flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                emittedAt: Date(timeIntervalSince1970: 1_700_000_001),
+            )],
+            deliveryChainToken: "00000000-0000-0000-0000-000000000002",
+        )
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
+        let streamStarted = expectation(description: "Gateway observation stream started")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(folderPath)
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        } withDependencies: {
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    eventContinuation.setValue(continuation)
+                    streamStarted.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: delivery token forwarding만 검증하고 navigation 내부 action은 기존 테스트가 소유한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(.folder(folderPath))))
+        await fulfillment(of: [streamStarted], timeout: 1)
+        await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive { action in
+            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+            return true
+        }
+
+        eventContinuation.value?.yield(firstBatch)
+        eventContinuation.value?.yield(secondBatch)
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == firstBatch.events && deliveryChainToken == firstBatch.deliveryChainToken
+        }
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == secondBatch.events && deliveryChainToken == secondBatch.deliveryChainToken
+        }
+        eventContinuation.value?.finish()
+        await store.finish()
     }
 
     /// EVM-001-reload_directory_page_on_external_change: exact gateway batch retransmission is not forwarded twice.
@@ -502,7 +573,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 기대 결과: 첫 batch만 `externalFileSystemChanged`로 전달되고 exact retransmission은 무시된다.
     func testExactGatewayBatchRetransmissionForwardsOnlyOnce() async {
         let folderPath = "/tmp/voyager"
-        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         let streamStarted = expectation(description: "Gateway observation stream started")
         let observedChangeCount = LockIsolated(0)
         let event = FileChangeGatewayEvent(
@@ -529,12 +600,17 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
         await fulfillment(of: [streamStarted], timeout: 1)
 
-        eventContinuation.value?.yield([event])
-        await store.receive(\.content.externalFileSystemChanged, [event]) {
+        eventContinuation.value?.yield(.init(events: [event]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [event] && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 1
-        }
+        })
 
-        eventContinuation.value?.yield([event])
+        eventContinuation.value?.yield(.init(events: [event]))
         try? await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(observedChangeCount.value, 1)
         eventContinuation.value?.finish()
@@ -548,7 +624,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 기대 결과: exact retransmission은 무시되고 emittedAt/path/count 변경 batch는 각각 전달된다.
     func testChangedGatewayBatchesRemainAcceptedAfterExactDeduplication() async {
         let folderPath = "/tmp/voyager"
-        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         let streamStarted = expectation(description: "Gateway observation stream started")
         let firstEvent = FileChangeGatewayEvent(
             path: "\(folderPath)/created.txt",
@@ -587,23 +663,43 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
         await fulfillment(of: [streamStarted], timeout: 1)
 
-        eventContinuation.value?.yield([firstEvent])
-        await store.receive(\.content.externalFileSystemChanged, [firstEvent]) {
+        eventContinuation.value?.yield(.init(events: [firstEvent]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [firstEvent] && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 1
-        }
-        eventContinuation.value?.yield([firstEvent])
-        eventContinuation.value?.yield([emittedAtChanged])
-        await store.receive(\.content.externalFileSystemChanged, [emittedAtChanged]) {
+        })
+        eventContinuation.value?.yield(.init(events: [firstEvent]))
+        eventContinuation.value?.yield(.init(events: [emittedAtChanged]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [emittedAtChanged] && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 2
-        }
-        eventContinuation.value?.yield([pathChanged])
-        await store.receive(\.content.externalFileSystemChanged, [pathChanged]) {
+        })
+        eventContinuation.value?.yield(.init(events: [pathChanged]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [pathChanged] && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 3
-        }
-        eventContinuation.value?.yield(countChanged)
-        await store.receive(\.content.externalFileSystemChanged, countChanged) {
+        })
+        eventContinuation.value?.yield(.init(events: countChanged))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == countChanged && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 4
-        }
+        })
         eventContinuation.value?.finish()
         await store.finish()
     }
@@ -620,7 +716,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             flags: UInt32(kFSEventStreamEventFlagItemCreated),
             emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
         )
-        let continuations = LockIsolated<[AsyncStream<[FileChangeGatewayEvent]>.Continuation]>([])
+        let continuations = LockIsolated<[AsyncStream<FileChangeGatewayEventBatch>.Continuation]>([])
         let firstStreamStarted = expectation(description: "First gateway observation stream started")
         let secondStreamStarted = expectation(description: "Second gateway observation stream started")
         let streamCount = LockIsolated(0)
@@ -643,19 +739,29 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
         await fulfillment(of: [firstStreamStarted], timeout: 1)
-        continuations.value[0].yield([event])
-        await store.receive(\.content.externalFileSystemChanged, [event]) {
+        continuations.value[0].yield(.init(events: [event]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [event] && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 1
-        }
+        })
 
         await store.send(.content(.internal(.applyNavigationState(.home))))
         continuations.value[0].finish()
         await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
         await fulfillment(of: [secondStreamStarted], timeout: 1)
-        continuations.value[1].yield([event])
-        await store.receive(\.content.externalFileSystemChanged, [event]) {
+        continuations.value[1].yield(.init(events: [event]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [event] && deliveryChainToken == nil
+        }, assert: {
             $0.externalChangeCount = 2
-        }
+        })
         continuations.value[1].finish()
         await store.finish()
     }
@@ -771,7 +877,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield(changedEvents)
+                    continuation.yield(.init(events: changedEvents))
                     continuation.finish()
                 }
             }
@@ -781,7 +887,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.internal(.applyNavigationState(navigationState))) {
             $0.entryViewLayout.currentPath = "collection:\(collectionURL.standardizedFileURL.path)"
         }
-        await store.receive(\.externalFileSystemChanged, changedEvents)
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == changedEvents && deliveryChainToken == nil
+        }
     }
 
     func testCollectionNavigationIgnoresMetadataOnlyScopeEvents() async {
@@ -808,12 +919,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield([
+                    continuation.yield(.init(events: [
                         FileChangeGatewayEvent(
                             path: changedPath,
                             flags: UInt32(kFSEventStreamEventFlagItemXattrMod),
                         ),
-                    ])
+                    ]))
                     continuation.finish()
                 }
             }
@@ -1141,7 +1252,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 FileManagerContentNavigationBridgeReducer()
             }
             Reduce { state, action in
-                guard case let .content(.externalFileSystemChanged(events)) = action else {
+                guard case let .content(.externalFileSystemChanged(events, _)) = action else {
                     return .none
                 }
                 state.externalChangeCount += events.isEmpty ? 0 : 1
