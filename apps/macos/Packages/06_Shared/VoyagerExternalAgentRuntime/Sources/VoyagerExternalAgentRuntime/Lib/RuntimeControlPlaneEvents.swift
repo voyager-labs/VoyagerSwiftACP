@@ -45,12 +45,15 @@ extension RuntimeControlPlane {
             return nil
         }
         if event.sequence <= cursor.lastSequence {
+            let projection = session.stored.projection == .launching
+                ? RuntimeProjection.launching
+                : .eventOutOfOrder
             session.stored = session.stored
                 .withEvidence(.staleSequence(
                     lastAccepted: cursor.lastSequence,
                     received: event.sequence,
                 ))
-                .withProjection(.eventOutOfOrder)
+                .withProjection(projection)
             sessions[host] = session
             return nil
         }
@@ -187,11 +190,13 @@ extension RuntimeControlPlane {
         from current: RuntimeProjection,
         hasGap: Bool,
     ) -> RuntimeProjection {
+        if current == .launching,
+           hasGap || ![.completed, .failed, .interrupted].contains(kind)
+        {
+            return .launching
+        }
         if hasGap {
             return .eventOutOfOrder
-        }
-        if current == .launching, ![.completed, .failed, .interrupted].contains(kind) {
-            return .launching
         }
         return switch kind {
         case .policyReady:

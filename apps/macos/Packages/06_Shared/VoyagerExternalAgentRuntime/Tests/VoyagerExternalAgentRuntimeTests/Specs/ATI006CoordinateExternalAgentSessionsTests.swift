@@ -1169,13 +1169,19 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     func `terminal gap records out of order without terminalizing`() async throws {
         let host: ExternalAgentSessionReference = "host-gap"
         let run = RuntimeRunReference("run-gap")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
             transport: .sdkAsyncStream,
             eventsByLaunch: [[]],
+            launchDelay: .milliseconds(100),
             eventStreamDelay: .milliseconds(500),
         )
-        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(
+            fileURL: root.appendingPathComponent("runtime-state.json"),
+        ))
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
         try await Task.sleep(for: .milliseconds(20))
@@ -1187,8 +1193,12 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         ))
 
         #expect(result == nil)
-        #expect(await plane.projection(for: host) == .eventOutOfOrder)
+        #expect(await plane.projection(for: host) == .launching)
         #expect(try await task.value.outcome == .completed)
+        let persisted = try #require(try await RuntimeFileStateStore(
+            fileURL: root.appendingPathComponent("runtime-state.json"),
+        ).load()?.sessions.first)
+        #expect(persisted.eventEvidence.contains(.sequenceGap(expected: 1, received: 2)))
     }
 
     /// ATI-006-project_external_agent_run_events: host terminal during launch cannot be overwritten by binding.
