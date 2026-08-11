@@ -978,6 +978,69 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(items.map(\.fullPath), ["/tmp/Tagged.txt"])
         XCTAssertEqual(items.first?.facets.tags, [Tag(name: "Green", colorCode: 2)])
     }
+
+    /// EVM-001-reload_directory_page_on_external_change: gateway observer registration does not miss an event at setup.
+    /// Interest registration and observer teardown must leave one lifecycle-owned event stream ready before delivery
+    /// begins.
+    /// - 검증 내용: observer를 생성하기 직전에 도착한 gateway event의 registration 경계
+    /// - 사전 조건: live FileChangeGatewayClient의 distributed event payload가 observer 생성 직전에 게시된다.
+    /// - 기대 결과: setup 경계의 event가 observer stream에서 전달되고 stream cancellation 뒤 observer가 teardown된다.
+    func testGatewayObserverRegistrationAndTeardownAreLifecycleOwned() async {
+        let event = FileChangeGatewayEvent(
+            path: "/tmp/voyager/registration.txt",
+            flags: 1,
+            emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+        let observerStarted = expectation(description: "Gateway observer task started")
+        let receivedCount = LockIsolated(0)
+        let gateway = FileChangeGatewayClient.liveValue
+        let eventsStream = gateway.observeEvents()
+        let task = Task {
+            observerStarted.fulfill()
+            DistributedNotificationCenter.default().post(
+                name: .voyagerFileChangeGatewayEvents,
+                object: nil,
+                userInfo: FileChangeGatewayPayload.userInfo(forEvents: [event]),
+            )
+            for await events in eventsStream {
+                if events == [event] {
+                    receivedCount.withValue { $0 += 1 }
+                }
+            }
+        }
+        await fulfillment(of: [observerStarted], timeout: 1)
+        try? await Task.sleep(for: .milliseconds(100))
+        guard receivedCount.value == 1 else {
+            XCTFail("Expected the setup event to be observed before cancellation")
+            task.cancel()
+            await task.value
+            return
+        }
+        task.cancel()
+        await task.value
+
+        DistributedNotificationCenter.default().post(
+            name: .voyagerFileChangeGatewayEvents,
+            object: nil,
+            userInfo: FileChangeGatewayPayload.userInfo(forEvents: [event]),
+        )
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(receivedCount.value, 1)
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: fixed delivery token crosses notification decoding intact.
+    /// 분산 알림 userInfo의 private delivery token이 raw event schema와 분리된 채 observer 경계로 전달되는지 검증한다.
+    /// - 검증 내용: 고정 UUID token extraction
+    /// - 사전 조건: notification userInfo에 UUID 형식 deliveryChainToken 하나가 존재한다.
+    /// - 기대 결과: extraction 결과가 입력 token과 동일하다.
+    func testGatewayDeliveryChainTokenPreservesFixedToken() {
+        let fixedToken = "00000000-0000-0000-0000-000000000001"
+
+        XCTAssertEqual(
+            fileChangeGatewayDeliveryChainToken(from: ["deliveryChainToken": fixedToken]),
+            fixedToken,
+        )
+    }
 }
 
 private extension EVM001NavigatePagesEntryLoadingAdapterTests {

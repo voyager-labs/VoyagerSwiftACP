@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import CoreServices
 import Foundation
+import os
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -15,7 +16,7 @@ struct FileManagerContentSyncReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .externalFileSystemChanged(events):
+            case let .externalFileSystemChanged(events, deliveryChainToken):
                 let paths = events.map(\.path)
                 switch state.navigation.navigationState {
                 case .collection:
@@ -23,12 +24,14 @@ struct FileManagerContentSyncReducer {
                     guard affectsCollection else {
                         return .none
                     }
+                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
                     return .send(.collection(.externalPathsChanged(paths)))
 
                 case let .folder(path):
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
+                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
                     let normalizedPaths = paths.map(normalizedPath(for:))
                     let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
                     let removedPrefixes = removedPrefixes(for: events)
@@ -45,6 +48,7 @@ struct FileManagerContentSyncReducer {
                     )
 
                 case .recents, .tags, .computer:
+                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
                     return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
 
                 case .home, .aiChat, .aiChatSessions:
@@ -55,6 +59,19 @@ struct FileManagerContentSyncReducer {
                 return .none
             }
         }
+    }
+
+    private func logFileManagerReloadRequest(
+        _ events: [FileChangeGatewayEvent],
+        deliveryChainToken: String?,
+    ) {
+        guard let deliveryChainToken else { return }
+        logFileManagerDeliveryMarker(
+            "fs_reload_requested",
+            events: events,
+            chainToken: deliveryChainToken,
+            latencyFrom: events.map(\.emittedAt).min(),
+        )
     }
 
     private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String) -> Bool {
@@ -148,4 +165,24 @@ struct FileManagerContentSyncReducer {
         let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
         return candidatePath.hasPrefix(packagePrefix)
     }
+}
+
+private let fileManagerSyncDeliveryLogger = os.Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager",
+    category: "FileChangeGateway",
+)
+
+private func logFileManagerDeliveryMarker(
+    _ marker: String,
+    events: [FileChangeGatewayEvent],
+    chainToken: String,
+    latencyFrom: Date?,
+    timestamp: Date = Date(),
+) {
+    let flags = events.reduce(UInt32(0)) { $0 | $1.flags }
+    var message = "voyager.fs.delivery marker=\(marker) ts=\(timestamp.timeIntervalSince1970)"
+    message += " eventCount=\(events.count) flagsSummary=\(String(format: "0x%llx", UInt64(flags)))"
+    let latencyMs = max(0, timestamp.timeIntervalSince(latencyFrom ?? timestamp) * 1000)
+    message += " latencyMs=\(latencyMs) chainToken=\(chainToken)"
+    fileManagerSyncDeliveryLogger.info("\(message, privacy: .public)")
 }

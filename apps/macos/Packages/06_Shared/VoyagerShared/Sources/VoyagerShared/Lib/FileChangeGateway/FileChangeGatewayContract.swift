@@ -56,6 +56,19 @@ public struct FileChangeGatewayEvent: Sendable, Codable, Equatable {
     }
 }
 
+public struct FileChangeGatewayEventBatch: Sendable, Equatable {
+    public let events: [FileChangeGatewayEvent]
+    public let deliveryChainToken: String?
+
+    nonisolated public init(
+        events: [FileChangeGatewayEvent],
+        deliveryChainToken: String? = nil,
+    ) {
+        self.events = events
+        self.deliveryChainToken = deliveryChainToken
+    }
+}
+
 public enum FileChangeGatewayLimits {
     public static let maxActiveWatchRoots = 64
     public static let maxEventsPerBatch = 256

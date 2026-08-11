@@ -287,6 +287,62 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: Finder file create는 canonical affected path와 parent를 한 번
+    /// reload한다.
+    /// 현재 folder의 route와 history를 유지하면서 새 파일과 그 parent hierarchy를 invalidate하는지 검증한다.
+    /// - 검증 내용: created file의 canonical path와 parent, 단일 loadItems transaction
+    /// - 사전 조건: folder route에 back/forward history가 있고 Finder file create event가 도착함
+    /// - 기대 결과: removed prefix 없이 affected path와 parent를 전달하고 route/history는 유지됨
+    func testExternalFinderFileCreateInvalidatesAffectedPathAndParentOnce() async {
+        await assertExternalFinderMutation(
+            path: "/tmp/voyager/current/../current/new-file.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemIsFile),
+            removesSource: false,
+        )
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: Finder delete는 canonical affected path와 removed prefix를 한 번
+    /// reload한다.
+    /// 삭제된 entry의 원래 subtree cache를 제거하면서 현재 folder route와 history를 유지하는지 검증한다.
+    /// - 검증 내용: removed file의 canonical path, parent, removed prefix, 단일 loadItems transaction
+    /// - 사전 조건: folder route에 back/forward history가 있고 Finder file delete event가 도착함
+    /// - 기대 결과: affected path와 parent 및 removed prefix를 전달하고 route/history는 유지됨
+    func testExternalFinderFileDeleteInvalidatesAffectedPathAndRemovedPrefixOnce() async {
+        await assertExternalFinderMutation(
+            path: "/tmp/voyager/current/../current/deleted-file.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemIsFile),
+            removesSource: true,
+        )
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: Finder rename은 canonical affected path와 removed prefix를 한 번
+    /// reload한다.
+    /// rename 이전 entry의 stale subtree cache를 제거하면서 현재 folder route와 history를 유지하는지 검증한다.
+    /// - 검증 내용: renamed file의 canonical path, parent, removed prefix, 단일 loadItems transaction
+    /// - 사전 조건: folder route에 back/forward history가 있고 Finder file rename event가 도착함
+    /// - 기대 결과: affected path와 parent 및 removed prefix를 전달하고 route/history는 유지됨
+    func testExternalFinderFileRenameInvalidatesAffectedPathAndRemovedPrefixOnce() async {
+        await assertExternalFinderMutation(
+            path: "/tmp/voyager/current/../current/renamed-file.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemIsFile),
+            removesSource: true,
+        )
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: Finder subfolder create는 canonical affected path와 parent를 한 번
+    /// reload한다.
+    /// 새 하위 폴더의 hierarchy와 현재 folder parent를 invalidate하면서 route와 history를 유지하는지 검증한다.
+    /// - 검증 내용: created subfolder의 canonical path와 parent, 단일 loadItems transaction
+    /// - 사전 조건: folder route에 back/forward history가 있고 Finder directory create event가 도착함
+    /// - 기대 결과: removed prefix 없이 affected path와 parent를 전달하고 route/history는 유지됨
+    func testExternalFinderSubfolderCreateInvalidatesAffectedPathAndParentOnce() async {
+        await assertExternalFinderMutation(
+            path: "/tmp/voyager/current/../current/new-folder",
+            flags: UInt32(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemIsDir),
+            removesSource: false,
+        )
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: 관련 없는 folder 외부 변경 시 reload 안 함
     /// 현재 폴더와 관련 없는 경로의 외부 변경은 reload를 트리거하지 않는지 검증.
     /// - 검증 내용: sibling 경로 변경 시 어떤 load 액션도 수신하지 않음
@@ -300,6 +356,27 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([unrelatedPath])))
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: metadata-only event는 folder reload로 전달되지 않는다.
+    /// filesystem metadata 변화가 stale-worthy path event가 아니므로 current folder reload를 만들지 않는지 검증한다.
+    /// - 검증 내용: metadata-only gateway event의 FileManager relevance 결과
+    /// - 사전 조건: visible folder interest와 xattr-only event가 존재함
+    /// - 기대 결과: gateway event가 제거되어 hierarchy invalidation과 reload가 발생하지 않음
+    func testMetadataOnlyFolderEventDoesNotReloadCurrentFolder() {
+        let interest = FileChangeWatchInterest(
+            id: "visible-folder",
+            owner: .fileManager,
+            purpose: .visibleFolderReload,
+            roots: ["/tmp/voyager/current"],
+            includeSubfolders: true,
+        )
+        let event = FileChangeGatewayEvent(
+            path: "/tmp/voyager/current/metadata-only.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemXattrMod),
+        )
+
+        XCTAssertTrue(gatewayRelevantChangedEvents([event], interest: interest, openedURL: nil).isEmpty)
     }
 
     /// EVM-001-reload_directory_page_on_external_change: Recents route에서 route loader refresh
@@ -383,31 +460,310 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             [changedPath],
             flags: UInt32(kFSEventStreamEventFlagItemCreated),
         )
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(currentPath)
+        let interestUpdated = expectation(description: "Folder interest forwarded promptly")
+        let effectOrder = LockIsolated<[String]>([])
         let store = TestStore(initialState: state) {
             FileManagerContentNavigationBridgeReducer()
         } withDependencies: {
             $0.fileChangeGatewayClient.updateInterests = { interests in
+                effectOrder.withValue { $0.append("interest") }
                 XCTAssertEqual(interests.map(\.roots), [[currentPath]])
                 XCTAssertEqual(interests.map(\.purpose), [.visibleFolderReload])
+                interestUpdated.fulfill()
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield(changedEvents)
-                    continuation.finish()
+                    eventContinuation.setValue(continuation)
                 }
             }
         }
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(.folder(currentPath))))
+        await fulfillment(of: [interestUpdated], timeout: 1)
+        await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive { action in
+            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+            XCTAssertEqual(effectOrder.value, ["interest"])
+            return true
+        }
+        eventContinuation.value?.yield(.init(events: changedEvents))
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == changedEvents && deliveryChainToken == nil
+        }
+        eventContinuation.value?.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: queued batches retain their own delivery-chain token.
+    /// observer가 두 batch를 먼저 enqueue해도 bridge action이 batch별 token을 그대로 전달하는지 검증한다.
+    /// - 검증 내용: first와 second externalFileSystemChanged action이 각각 원래 batch token을 보존한다.
+    /// - 사전 조건: 같은 folder observer에 서로 다른 token의 relevant event batch 두 개가 queue된다.
+    /// - 기대 결과: 첫 action에는 first token, 둘째 action에는 second token이 전달된다.
+    func testGatewayDeliveryChainTokensRemainBoundToBatches() async {
+        let folderPath = "/tmp/voyager"
+        let firstBatch = FileChangeGatewayEventBatch(
+            events: [FileChangeGatewayEvent(
+                path: "\(folderPath)/first.txt",
+                flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            )],
+            deliveryChainToken: "00000000-0000-0000-0000-000000000001",
+        )
+        let secondBatch = FileChangeGatewayEventBatch(
+            events: [FileChangeGatewayEvent(
+                path: "\(folderPath)/second.txt",
+                flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                emittedAt: Date(timeIntervalSince1970: 1_700_000_001),
+            )],
+            deliveryChainToken: "00000000-0000-0000-0000-000000000002",
+        )
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
+        let streamStarted = expectation(description: "Gateway observation stream started")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(folderPath)
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        } withDependencies: {
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    eventContinuation.setValue(continuation)
+                    streamStarted.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: delivery token forwarding만 검증하고 navigation 내부 action은 기존 테스트가 소유한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(.folder(folderPath))))
+        await fulfillment(of: [streamStarted], timeout: 1)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive { action in
             guard case .entryOperations(.loading(.loadItems)) = action else { return false }
             return true
         }
-        await store.receive(\.externalFileSystemChanged, changedEvents)
+
+        eventContinuation.value?.yield(firstBatch)
+        eventContinuation.value?.yield(secondBatch)
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == firstBatch.events && deliveryChainToken == firstBatch.deliveryChainToken
+        }
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == secondBatch.events && deliveryChainToken == secondBatch.deliveryChainToken
+        }
+        eventContinuation.value?.finish()
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: exact gateway batch retransmission is not forwarded twice.
+    /// 동일 observer lifetime에서 직전 accepted batch의 exact retransmission이 중복 invalidation을 만들지 않는지 검증한다.
+    /// - 검증 내용: 동일 event count, normalized path set, flags, emittedAt set을 가진 두 번째 batch의 외부 변경 전달 여부
+    /// - 사전 조건: folder watcher가 실제 observation effect를 실행하고 하나의 batch를 수신한다.
+    /// - 기대 결과: 첫 batch만 `externalFileSystemChanged`로 전달되고 exact retransmission은 무시된다.
+    func testExactGatewayBatchRetransmissionForwardsOnlyOnce() async {
+        let folderPath = "/tmp/voyager"
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
+        let streamStarted = expectation(description: "Gateway observation stream started")
+        let observedChangeCount = LockIsolated(0)
+        let event = FileChangeGatewayEvent(
+            path: "\(folderPath)/created.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+            emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+        var state = GatewayObservationHarness.State()
+        state.content.navigation.navigationState = .folder(folderPath)
+        let store = TestStore(initialState: state) {
+            GatewayObservationHarness { count in
+                observedChangeCount.setValue(count)
+            }
+        } withDependencies: {
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    eventContinuation.setValue(continuation)
+                    streamStarted.fulfill()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
+        await fulfillment(of: [streamStarted], timeout: 1)
+
+        eventContinuation.value?.yield(.init(events: [event]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [event] && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 1
+        })
+
+        eventContinuation.value?.yield(.init(events: [event]))
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(observedChangeCount.value, 1)
+        eventContinuation.value?.finish()
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: changed gateway batches remain accepted after dedup.
+    /// exact retransmission만 억제하고 emittedAt, path, count가 달라진 batch는 계속 전달하는지 검증한다.
+    /// - 검증 내용: previous accepted batch와 fingerprint가 다른 세 batch의 전달 횟수
+    /// - 사전 조건: folder watcher가 실제 observation effect를 실행하고 첫 batch를 수신한다.
+    /// - 기대 결과: exact retransmission은 무시되고 emittedAt/path/count 변경 batch는 각각 전달된다.
+    func testChangedGatewayBatchesRemainAcceptedAfterExactDeduplication() async {
+        let folderPath = "/tmp/voyager"
+        let eventContinuation = LockIsolated<AsyncStream<FileChangeGatewayEventBatch>.Continuation?>(nil)
+        let streamStarted = expectation(description: "Gateway observation stream started")
+        let firstEvent = FileChangeGatewayEvent(
+            path: "\(folderPath)/created.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+            emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+        let emittedAtChanged = FileChangeGatewayEvent(
+            path: firstEvent.path,
+            flags: firstEvent.flags,
+            emittedAt: firstEvent.emittedAt.addingTimeInterval(1),
+        )
+        let pathChanged = FileChangeGatewayEvent(
+            path: "\(folderPath)/renamed.txt",
+            flags: firstEvent.flags,
+            emittedAt: emittedAtChanged.emittedAt,
+        )
+        let countChanged = [pathChanged, FileChangeGatewayEvent(
+            path: "\(folderPath)/second.txt",
+            flags: firstEvent.flags,
+            emittedAt: pathChanged.emittedAt.addingTimeInterval(1),
+        )]
+        var state = GatewayObservationHarness.State()
+        state.content.navigation.navigationState = .folder(folderPath)
+        let store = TestStore(initialState: state) {
+            GatewayObservationHarness { _ in }
+        } withDependencies: {
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    eventContinuation.setValue(continuation)
+                    streamStarted.fulfill()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
+        await fulfillment(of: [streamStarted], timeout: 1)
+
+        eventContinuation.value?.yield(.init(events: [firstEvent]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [firstEvent] && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 1
+        })
+        eventContinuation.value?.yield(.init(events: [firstEvent]))
+        eventContinuation.value?.yield(.init(events: [emittedAtChanged]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [emittedAtChanged] && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 2
+        })
+        eventContinuation.value?.yield(.init(events: [pathChanged]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [pathChanged] && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 3
+        })
+        eventContinuation.value?.yield(.init(events: countChanged))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == countChanged && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 4
+        })
+        eventContinuation.value?.finish()
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: cancellation and restart clear the previous batch fingerprint.
+    /// watcher cancellation 뒤 새 observer lifetime에서 같은 batch가 다시 전달되는지 검증한다.
+    /// - 검증 내용: folder watcher cancel/restart 이후 동일 event의 전달 횟수
+    /// - 사전 조건: 첫 folder observer가 batch를 수신한 뒤 home route로 cancellation된다.
+    /// - 기대 결과: 재시작된 observer는 이전 lifetime의 fingerprint에 영향받지 않는다.
+    func testGatewayBatchDeduplicationResetsAfterWatcherRestart() async {
+        let folderPath = "/tmp/voyager"
+        let event = FileChangeGatewayEvent(
+            path: "\(folderPath)/created.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+            emittedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+        let continuations = LockIsolated<[AsyncStream<FileChangeGatewayEventBatch>.Continuation]>([])
+        let firstStreamStarted = expectation(description: "First gateway observation stream started")
+        let secondStreamStarted = expectation(description: "Second gateway observation stream started")
+        let streamCount = LockIsolated(0)
+        var state = GatewayObservationHarness.State()
+        state.content.navigation.navigationState = .folder(folderPath)
+        let store = TestStore(initialState: state) {
+            GatewayObservationHarness { _ in }
+        } withDependencies: {
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    continuations.withValue { $0.append(continuation) }
+                    streamCount.withValue { count in
+                        count += 1
+                        (count == 1 ? firstStreamStarted : secondStreamStarted).fulfill()
+                    }
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
+        await fulfillment(of: [firstStreamStarted], timeout: 1)
+        continuations.value[0].yield(.init(events: [event]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [event] && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 1
+        })
+
+        await store.send(.content(.internal(.applyNavigationState(.home))))
+        continuations.value[0].finish()
+        await store.send(.content(.internal(.applyNavigationState(.folder(folderPath)))))
+        await fulfillment(of: [secondStreamStarted], timeout: 1)
+        continuations.value[1].yield(.init(events: [event]))
+        await store.receive({ action in
+            guard case let .content(.externalFileSystemChanged(events, deliveryChainToken)) = action else {
+                return false
+            }
+            return events == [event] && deliveryChainToken == nil
+        }, assert: {
+            $0.externalChangeCount = 2
+        })
+        continuations.value[1].finish()
+        await store.finish()
     }
 
     /// EVM-001-reload_directory_page_on_external_change: symlink-resolved gateway event 보존
@@ -521,7 +877,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield(changedEvents)
+                    continuation.yield(.init(events: changedEvents))
                     continuation.finish()
                 }
             }
@@ -531,7 +887,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.internal(.applyNavigationState(navigationState))) {
             $0.entryViewLayout.currentPath = "collection:\(collectionURL.standardizedFileURL.path)"
         }
-        await store.receive(\.externalFileSystemChanged, changedEvents)
+        await store.receive { action in
+            guard case let .externalFileSystemChanged(events, deliveryChainToken) = action else {
+                return false
+            }
+            return events == changedEvents && deliveryChainToken == nil
+        }
     }
 
     func testCollectionNavigationIgnoresMetadataOnlyScopeEvents() async {
@@ -558,12 +919,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield([
+                    continuation.yield(.init(events: [
                         FileChangeGatewayEvent(
                             path: changedPath,
                             flags: UInt32(kFSEventStreamEventFlagItemXattrMod),
                         ),
-                    ])
+                    ]))
                     continuation.finish()
                 }
             }
@@ -750,6 +1111,48 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    private func assertExternalFinderMutation(
+        path: String,
+        flags: UInt32,
+        removesSource: Bool,
+    ) async {
+        let currentPath = "/tmp/voyager/current"
+        let backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
+        let forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/forward"))]
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(currentPath)
+        state.navigation.backHistory = backHistory
+        state.navigation.forwardHistory = forwardHistory
+        let store = makeStore(initialState: state)
+
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([path], flags: flags)))
+        await store.receive { action in
+            guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            ))) = action else { return false }
+            let canonicalPath = Self.canonicalPath(path)
+            let expectedParent = URL(fileURLWithPath: canonicalPath).deletingLastPathComponent().path
+            let expectedRemovedPrefixes = removesSource ? [canonicalPath] : []
+            return affectedPaths == [canonicalPath, expectedParent]
+                && removedPrefixes == expectedRemovedPrefixes
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadItems(path, showHidden, priority))) = action else {
+                return false
+            }
+            return path == currentPath && !showHidden && priority == .none
+        }
+
+        XCTAssertEqual(store.state.navigation.navigationState, .folder(currentPath))
+        XCTAssertEqual(store.state.navigation.backHistory, backHistory)
+        XCTAssertEqual(store.state.navigation.forwardHistory, forwardHistory)
+    }
+
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     // Fixture path helpers
 
     /// `fixtures/fixtures/` 하위 디렉토리의 절대 경로를 반환.
@@ -831,6 +1234,34 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    @Reducer
+    struct GatewayObservationHarness {
+        let onExternalChange: @Sendable (Int) -> Void
+
+        struct State: Equatable {
+            var content = FileManagerContentState()
+            var externalChangeCount = 0
+        }
+
+        enum Action {
+            case content(FileManagerContentAction)
+        }
+
+        var body: some Reducer<State, Action> {
+            Scope(state: \.content, action: \.content) {
+                FileManagerContentNavigationBridgeReducer()
+            }
+            Reduce { state, action in
+                guard case let .content(.externalFileSystemChanged(events, _)) = action else {
+                    return .none
+                }
+                state.externalChangeCount += events.isEmpty ? 0 : 1
+                onExternalChange(state.externalChangeCount)
+                return .none
+            }
+        }
+    }
+
     private func makeInitialState() -> LifecycleBridgeHarness.State {
         LifecycleBridgeHarness.State(content: FileManagerContentState())
     }
@@ -867,7 +1298,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 priority,
             )))) =
                 action else { return false }
-            return path == folderPath && showHidden == false && priority == .active([])
+            return path == folderPath && showHidden == false && priority == .none
         }
         await store.finish()
     }
@@ -922,7 +1353,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case .forwarded(.entryOperations(.loading(.loadRecentItems(
                 showHidden: false,
-                priority: .active([]),
+                priority: .none,
             )))) =
                 action else { return false }
             return true
@@ -969,7 +1400,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 priority,
             )))) =
                 action else { return false }
-            return path == folderPath && showHidden == false && priority == .active([])
+            return path == folderPath && showHidden == false && priority == .none
         }
         await store.finish()
     }
@@ -1162,7 +1593,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                         showHidden,
                         priority,
                     )))) = action else { return false }
-                    return path == folderPath && showHidden == false && priority == .active([])
+                    return path == folderPath && showHidden == false && priority == .none
                 }
             }
             await store.finish()

@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import os
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
@@ -196,14 +197,16 @@ struct FileManagerContentNavigationBridgeReducer {
         .concatenate(
             rootContextChange,
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
-            sendEntryOperations(.loading(.loadItems(
-                path: path,
-                showHidden: state.entryViewLayout.showHiddenFiles,
-                priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                    for: state.entryArrangements,
-                ),
-            ))),
-            observeFolderChangesEffect(path: path),
+            .merge(
+                sendEntryOperations(.loading(.loadItems(
+                    path: path,
+                    showHidden: state.entryViewLayout.showHiddenFiles,
+                    priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                        for: state.entryArrangements,
+                    ),
+                ))),
+                observeFolderChangesEffect(path: path),
+            ),
         )
     }
 
@@ -366,15 +369,34 @@ struct FileManagerContentNavigationBridgeReducer {
         let collectionStalenessClient = collectionStalenessClient
         return .run { [fileChangeGatewayClient] send in
             fileChangeGatewayClient.updateInterests([interest])
+            var previousBatchFingerprint: GatewayBatchFingerprint?
             await withTaskCancellationHandler {
-                for await events in fileChangeGatewayClient.observeEvents() {
-                    let changedEvents = gatewayRelevantChangedEvents(events, interest: interest, openedURL: openedURL)
+                for await batch in fileChangeGatewayClient.observeEvents() {
+                    let changedEvents = gatewayRelevantChangedEvents(
+                        batch.events,
+                        interest: interest,
+                        openedURL: openedURL,
+                    )
                     guard !changedEvents.isEmpty else { continue }
+                    let batchFingerprint = GatewayBatchFingerprint(events: changedEvents)
+                    guard batchFingerprint != previousBatchFingerprint else { continue }
+                    previousBatchFingerprint = batchFingerprint
 
                     if interest.purpose == .collectionStale {
                         collectionStalenessClient.invalidateRecords(changedEvents.map(\.path))
                     }
-                    await send(.externalFileSystemChanged(changedEvents))
+                    if let chainToken = batch.deliveryChainToken {
+                        logFileManagerDeliveryMarker(
+                            "fs_bridge_sent",
+                            events: changedEvents,
+                            chainToken: chainToken,
+                            latencyFrom: changedEvents.map(\.emittedAt).min(),
+                        )
+                    }
+                    await send(.externalFileSystemChanged(
+                        changedEvents,
+                        deliveryChainToken: batch.deliveryChainToken,
+                    ))
                 }
                 fileChangeGatewayClient.removeInterests([interest.id])
             } onCancel: {
@@ -387,6 +409,40 @@ struct FileManagerContentNavigationBridgeReducer {
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
         .send(.entryOperations(action))
     }
+}
+
+private struct GatewayBatchFingerprint: Equatable {
+    let normalizedPaths: [String]
+    let flags: UInt32
+    let emittedAt: [Date]
+    let eventCount: Int
+
+    init(events: [FileChangeGatewayEvent]) {
+        normalizedPaths = Array(Set(events.map { FileChangeScopePolicy.normalizedPath($0.path) })).sorted()
+        flags = events.reduce(0) { $0 | $1.flags }
+        emittedAt = Array(Set(events.map(\.emittedAt))).sorted()
+        eventCount = events.count
+    }
+}
+
+private let fileManagerDeliveryLogger = os.Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager",
+    category: "FileChangeGateway",
+)
+
+private func logFileManagerDeliveryMarker(
+    _ marker: String,
+    events: [FileChangeGatewayEvent],
+    chainToken: String,
+    latencyFrom: Date?,
+    timestamp: Date = Date(),
+) {
+    let flags = events.reduce(UInt32(0)) { $0 | $1.flags }
+    var message = "voyager.fs.delivery marker=\(marker) ts=\(timestamp.timeIntervalSince1970)"
+    message += " eventCount=\(events.count) flagsSummary=\(String(format: "0x%llx", UInt64(flags)))"
+    let latencyMs = max(0, timestamp.timeIntervalSince(latencyFrom ?? timestamp) * 1000)
+    message += " latencyMs=\(latencyMs) chainToken=\(chainToken)"
+    fileManagerDeliveryLogger.info("\(message, privacy: .public)")
 }
 
 nonisolated func collectionScopeWatchRoots(from context: CollectionContext?) -> [String] {
