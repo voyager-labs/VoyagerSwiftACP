@@ -5,20 +5,10 @@ public extension RuntimeControlPlane {
         hostReference: ExternalAgentSessionReference,
     ) async throws -> RuntimeResult {
         try await hydrateIfNeeded()
-        guard var session = sessions[hostReference],
-              session.active,
-              session.awaitingResumption,
-              let providerReference = session.stored.providerInternalSessionReference,
-              let adapter = adapters[session.stored.adapterID]
-        else { throw RuntimeHostError.invalidEvent }
-        session.awaitingResumption = false
-        sessions[hostReference] = session
-        let receipt = RuntimeLaunchReceipt(
-            runReference: session.stored.runReference,
-            providerInternalSessionReference: providerReference,
-        )
+        let claim = try await claimRestoredRun(hostReference)
+        guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         do {
-            let result = try await consume(receipt, from: adapter, host: hostReference)
+            let result = try await consume(claim.receipt, from: adapter, host: hostReference)
             if sessions[hostReference]?.stored.projection.isTerminal == true {
                 return resultRespectingStoredTerminal(result, host: hostReference)
             }
@@ -35,6 +25,28 @@ public extension RuntimeControlPlane {
             let normalized = normalizeAdapterError(error)
             try await interruptResumedRunOrRestoreClaim(hostReference)
             throw normalized
+        }
+    }
+
+    private func claimRestoredRun(
+        _ hostReference: ExternalAgentSessionReference,
+    ) async throws -> RestoredRunClaim {
+        try await mutateAfterPersistedTransitions { plane in
+            guard var session = plane.sessions[hostReference],
+                  session.active,
+                  session.awaitingResumption,
+                  let providerReference = session.stored.providerInternalSessionReference,
+                  plane.adapters[session.stored.adapterID] != nil
+            else { throw RuntimeHostError.invalidEvent }
+            session.awaitingResumption = false
+            plane.sessions[hostReference] = session
+            return RestoredRunClaim(
+                receipt: RuntimeLaunchReceipt(
+                    runReference: session.stored.runReference,
+                    providerInternalSessionReference: providerReference,
+                ),
+                adapterID: session.stored.adapterID,
+            )
         }
     }
 
@@ -62,4 +74,9 @@ public extension RuntimeControlPlane {
         session.awaitingResumption = true
         sessions[hostReference] = session
     }
+}
+
+private struct RestoredRunClaim {
+    let receipt: RuntimeLaunchReceipt
+    let adapterID: RuntimeAdapterID
 }

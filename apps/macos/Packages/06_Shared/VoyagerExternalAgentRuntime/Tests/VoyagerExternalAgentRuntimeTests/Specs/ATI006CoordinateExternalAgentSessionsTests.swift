@@ -847,6 +847,54 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 2)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: persisted rollback cannot resurrect a consumed resume claim.
+    /// 다른 host 저장 실패가 진행 중인 복원 소비 claim을 되살려 중복 stream을 여는 경쟁을 차단한다.
+    /// - 검증 내용: persistence lock 대기, 실패 rollback 뒤 claim 상태, 두 번째 resume 거부, stream 호출 횟수.
+    /// - 사전 조건: 복원 claim을 가진 running session과 save 실패 gate, 소비 stream gate가 구성되어 있다.
+    /// - 기대 결과: claim은 persistence mutation과 직렬화되고 provider stream은 한 번만 열린다.
+    @Test
+    func `failed concurrent persistence cannot resurrect resume claim`() async throws {
+        let fixture = try await reviewerBlockerTestsMakeResumeClaimRace()
+
+        let competingSave = Task {
+            try await fixture.plane.projectPrelaunch(
+                makeLaunch(
+                    host: "host-competing-save",
+                    run: RuntimeRunReference("run-competing-save"),
+                    adapterID: "sdk",
+                ),
+                as: .policyReady,
+            )
+        }
+        await fixture.store.waitForSaveCount(1)
+        let firstResume = Task {
+            try await fixture.plane.resumeRestoredRun(hostReference: fixture.host)
+        }
+        let boundary = try await reviewerBlockerTestsWaitForResumeClaimBoundary(
+            host: fixture.host,
+            on: fixture.plane,
+        )
+
+        #expect(boundary.awaitingResumption)
+        #expect(boundary.persistenceWaiterCount == 1)
+        await fixture.saveGate.open()
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await competingSave.value
+        }
+        await fixture.adapter.waitForEventStreamCount(1)
+        let awaitingResumption = await fixture.plane.sessions[fixture.host]?.awaitingResumption
+        #expect(awaitingResumption == false)
+        if awaitingResumption == false {
+            await #expect(throws: RuntimeHostError.invalidEvent) {
+                try await fixture.plane.resumeRestoredRun(hostReference: fixture.host)
+            }
+        }
+        await fixture.streamGate.open()
+
+        #expect(try await firstResume.value.outcome == .completed)
+        #expect(await fixture.adapter.counts().stream == 1)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: only compatible restart binding is restored.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
@@ -2623,6 +2671,71 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             acceptedIdempotencyKeys: [],
             providerBranch: providerBranch,
         )
+    }
+
+    private func reviewerBlockerTestsWaitForResumeClaimBoundary(
+        host: ExternalAgentSessionReference,
+        on plane: RuntimeControlPlane,
+    ) async throws -> (awaitingResumption: Bool, persistenceWaiterCount: Int) {
+        for _ in 0 ..< 10000 {
+            let awaitingResumption = await plane.sessions[host]?.awaitingResumption == true
+            let persistenceWaiterCount = await plane.persistenceMutationWaiters.count
+            if !awaitingResumption || persistenceWaiterCount > 0 {
+                return (awaitingResumption, persistenceWaiterCount)
+            }
+            await Task.yield()
+        }
+        throw RuntimeHostError.invalidEvent
+    }
+
+    private func reviewerBlockerTestsMakeResumeClaimRace() async throws -> ResumeClaimRaceFixture {
+        let host = ExternalAgentSessionReference("host-resume-claim")
+        let run = RuntimeRunReference("run-resume-claim")
+        let context = finalReviewTestsMakeContext()
+        let saveGate = RuntimeTestGate()
+        let streamGate = RuntimeTestGate()
+        let stored = reviewerBlockerTestsMakeRunningSession(host: host, run: run, context: context)
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            failingSaveNumbers: [1],
+            saveGates: [1: saveGate],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [
+                [
+                    makeEvent(
+                        host: host,
+                        run: run,
+                        sequence: 1,
+                        idempotencyKey: "resume-claim-completed",
+                        kind: .completed,
+                    ),
+                ],
+            ],
+            eventStreamGate: streamGate,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        return ResumeClaimRaceFixture(
+            host: host,
+            saveGate: saveGate,
+            streamGate: streamGate,
+            store: store,
+            adapter: adapter,
+            plane: plane,
+        )
+    }
+
+    private struct ResumeClaimRaceFixture {
+        let host: ExternalAgentSessionReference
+        let saveGate: RuntimeTestGate
+        let streamGate: RuntimeTestGate
+        let store: InMemoryRuntimeStateStore
+        let adapter: DeterministicRuntimeAdapter
+        let plane: RuntimeControlPlane
     }
 
     private func finalReviewTestsMakeContext() -> RuntimeContextPolicy {
