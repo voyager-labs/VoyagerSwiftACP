@@ -299,17 +299,7 @@ struct WindowManagerFeature {
                         await fileManagerWindowClient.finalizeClose(id)
                     }
                 }
-                guard !state.invalidatingWindowIDs.contains(id) else { return .none }
-                state.closingWindowIDs.insert(id)
-                state.invalidatingWindowIDs.insert(id)
-                state.refreshContentTabMoveTargets()
-                return .run { [undoManagerClient, fileManagerWindowClient] send in
-                    let result = await undoManagerClient.invalidateWindow(id)
-                    if result.succeeded {
-                        await fileManagerWindowClient.finalizeClose(id)
-                    }
-                    await send(.windowInvalidationFinished(id: id, result: result))
-                }
+                return invalidateWindowBeforeFinalization(id, state: &state)
 
             case let .event(.focusWindow(path)):
                 return .run { _ in

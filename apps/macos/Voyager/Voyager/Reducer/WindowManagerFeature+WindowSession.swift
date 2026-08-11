@@ -289,9 +289,26 @@ extension WindowManagerFeature {
             .filter { !pendingParticipantWindowIDs.contains($0) }
         var effects: [Effect<Action>] = []
         for id in readyWindowIDs {
-            effects.append(finalizeWindowRemoval(id, state: &state))
+            effects.append(invalidateWindowBeforeFinalization(id, state: &state))
         }
         return effects.isEmpty ? .none : .merge(effects)
+    }
+
+    func invalidateWindowBeforeFinalization(
+        _ id: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard !state.invalidatingWindowIDs.contains(id) else { return .none }
+        state.closingWindowIDs.insert(id)
+        state.invalidatingWindowIDs.insert(id)
+        state.refreshContentTabMoveTargets()
+        return .run { [undoManagerClient, fileManagerWindowClient] send in
+            let result = await undoManagerClient.invalidateWindow(id)
+            if result.succeeded {
+                await fileManagerWindowClient.finalizeClose(id)
+            }
+            await send(.windowInvalidationFinished(id: id, result: result))
+        }
     }
 
     func topNavigationPersistenceParticipantWindowIDs(in state: State) -> Set<State.WindowID> {

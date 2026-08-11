@@ -980,6 +980,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 }
                 return .init(order: .init(), revision: 2)
             }
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { _ in }
         }
         store.exhaustivity = .off
 
@@ -989,6 +993,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             authoritativePinnedContentTabs: nil,
         )))
         await fulfillment(of: [activationStarted, persistenceStarted], timeout: 5)
+        await store.skipReceivedActions()
 
         XCTAssertFalse(store.state.closingWindowIDs.contains(sourceID))
         XCTAssertEqual(store.state.topNavigationPersistenceQueue, [peerRequest])
@@ -5575,7 +5580,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
     /// CTM-001-move_content_tab_to_another_window: source close after enqueue는 app-owned persistence를 취소하지 않는다.
     /// completion 뒤 source는 재생성되지 않고 target/peer만 authoritative snapshot으로 수렴해야 한다.
-    /// - 검증 내용: deferred close 유지, completion 뒤 source 제거, target/peer converge, source snapshot 0회
+    /// - 검증 내용: deferred close 유지, completion 뒤 undo/native teardown과 source 제거, target/peer converge
     /// - 사전 조건: empty-source explicit Pin과 persistence gate, live peer 존재
     /// - 기대 결과: close 전 source 유지, gate 후 source 제거, target/peer pinned state converge, source recreation 없음
     func testContentTabMoveSourceCloseAfterEnqueueDoesNotCancelCorrelatedPersistence() async throws {
@@ -5616,6 +5621,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         target.window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(targetPinnedID)])
         let peer = FileManagerWindowFeature.State.makeInitial(path: "/close-after-enqueue/peer")
         let writeGate = PinnedRecordMutationGate()
+        let teardownCalls = LockIsolated<[String]>([])
         let pinnedRecord = try XCTUnwrap(target.window.contentTabs.pinnedRecords[targetPinnedID])
         var initialState = WindowManagerFeature.State()
         initialState.windows = [source, target, .init(id: peerID, window: peer)]
@@ -5645,6 +5651,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileManagerWindowClient.close = { _ in }
+            $0.fileManagerWindowClient.finalizeClose = { id in
+                teardownCalls.withValue { $0.append("finalize:\(id)") }
+            }
+            $0.undoManagerClient.invalidateWindow = { id in
+                teardownCalls.withValue { $0.append("invalidate:\(id)") }
+                return .init(succeeded: true, availability: .init())
+            }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
         }
         store.exhaustivity = .off
@@ -5667,6 +5680,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
 
         XCTAssertNil(store.state.windows[id: sourceID])
+        XCTAssertEqual(teardownCalls.value, ["invalidate:\(sourceID)", "finalize:\(sourceID)"])
         XCTAssertNotNil(store.state.windows[id: targetID]?.window.contentTabs.tabs[id: movedID])
         XCTAssertEqual(
             store.state.windows[id: peerID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id),
@@ -5980,7 +5994,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         var initialState = WindowManagerFeature.State()
         initialState.windows = [source, target]
         initialState.contentTabMoveTransactions[request.requestID] = .init(request: request)
-        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { _ in }
+        }
         // store.exhaustivity = .off: commit-to-lifecycle participant와 deferred removal 경계만 검증
         store.exhaustivity = .off
 
@@ -5992,6 +6011,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabMoveTransactions[request.requestID]?.request, request)
 
         await store.send(.contentTabMoveLifecycleCompleted(request: request))
+        await store.skipReceivedActions()
         await store.finish()
 
         XCTAssertNil(store.state.contentTabMoveTransactions[request.requestID])
@@ -10716,6 +10736,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     await persistenceGate.wait()
                     return commit
                 }
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { _ in }
         }
         // store.exhaustivity = .off: child optimistic 세부 state보다 parent effect의 source 수명 독립성을 검증한다.
         store.exhaustivity = .off
@@ -10761,6 +10785,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             )) = action else { return false }
             return id == peerID && order == committedOrder && revision == commit.revision
         }
+        await store.skipReceivedActions()
 
         XCTAssertNil(store.state.windows[id: sourceID])
         XCTAssertEqual(Array(store.state.windows.ids), [peerID])
