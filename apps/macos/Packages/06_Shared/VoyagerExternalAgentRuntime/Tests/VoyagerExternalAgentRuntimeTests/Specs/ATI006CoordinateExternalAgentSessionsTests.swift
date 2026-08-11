@@ -1750,6 +1750,52 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await plane.projection(for: host) == .interrupted)
     }
 
+    /// ATI-006-project_external_agent_run_events: pending host terminal wins over a late provider event.
+    /// provider event admission이 persistence lock 뒤에서 재개되어도 같은 run의 durable host terminal을 우선하는지 검증한다.
+    /// - 검증 내용: host terminal 저장 중 도착한 provider event 이후의 run outcome과 durable projection.
+    /// - 사전 조건: host terminal save가 gate에서 대기하는 동안 provider progress event가 persistence queue에 진입한다.
+    /// - 기대 결과: run은 admission 오류 대신 stored completed 결과를 반환한다.
+    @Test
+    func `pending host terminal wins over a late provider event`() async throws {
+        let host: ExternalAgentSessionReference = "host-pending-terminal-provider-event"
+        let run = RuntimeRunReference("run-pending-terminal-provider-event")
+        let streamGate = RuntimeTestGate()
+        let saveGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "late-provider-progress",
+                kind: .progress,
+            )]],
+            eventStreamGate: streamGate,
+        )
+        let store = InMemoryRuntimeStateStore(saveGates: [4: saveGate])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let runTask = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForEventStreamCount(1)
+        let hostTerminalTask = Task {
+            try await plane.ingestHostEvent(
+                reviewerBlockerTestsMakeHostTerminal(host: host, run: run, sequence: 1),
+            )
+        }
+        await store.waitForSaveCount(4)
+
+        await streamGate.open()
+        try await reviewerBlockerTestsWaitForPendingPersistenceMutations(2, host: host, on: plane)
+        await saveGate.open()
+
+        #expect(try await hostTerminalTask.value?.outcome == .completed)
+        #expect(try await runTask.value.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
     /// ATI-006-project_external_agent_run_events: bind persistence failure interrupts before event projection.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
