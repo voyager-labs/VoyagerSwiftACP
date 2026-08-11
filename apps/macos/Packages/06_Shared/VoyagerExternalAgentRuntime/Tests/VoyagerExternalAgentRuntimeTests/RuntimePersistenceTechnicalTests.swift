@@ -101,6 +101,19 @@ struct RuntimePersistenceTechnicalTests {
     }
 
     @Test
+    func `persisted sessions reject duplicate run references across hosts`() {
+        let run = RuntimeRunReference("run-shared")
+        let state = makeState([
+            makeStored(host: "host-a", run: run),
+            makeStored(host: "host-b", run: run),
+        ])
+
+        #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try state.validatedForRuntime()
+        }
+    }
+
+    @Test
     func `future schema fails closed without overwriting original bytes`() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

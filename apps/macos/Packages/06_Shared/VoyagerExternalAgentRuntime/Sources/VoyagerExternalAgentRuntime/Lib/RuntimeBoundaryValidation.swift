@@ -36,6 +36,15 @@ extension RuntimeControlPlane {
               context.requestContext?.unicodeScalars.count ?? 0 <= RuntimeBoundaryLimits.requestContextScalars
         else { throw RuntimeHostError.malformedAdapterResponse }
     }
+
+    func requireAvailableRunReference(
+        _ runReference: RuntimeRunReference,
+        excluding host: ExternalAgentSessionReference,
+    ) throws {
+        guard !sessions.contains(where: { candidateHost, session in
+            candidateHost != host && session.stored.runReference == runReference
+        }) else { throw RuntimeHostError.duplicateRunReference }
+    }
 }
 
 extension RuntimeStoredSession {
@@ -100,8 +109,10 @@ extension RuntimeStoredState {
             throw RuntimeHostError.migrationUnavailable(schemaVersion)
         }
         let hosts = Set(sessions.map(\.externalAgentSessionReference))
+        let runs = Set(sessions.map(\.runReference))
         guard sessions.count <= RuntimeBoundaryLimits.persistedSessions,
               hosts.count == sessions.count,
+              runs.count == sessions.count,
               sessions.allSatisfy(\.isWithinRuntimeBounds)
         else { throw RuntimeHostError.malformedAdapterResponse }
         return self
