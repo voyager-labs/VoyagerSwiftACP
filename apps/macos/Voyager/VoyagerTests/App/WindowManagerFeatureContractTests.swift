@@ -402,10 +402,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// VOY-470: schema-v2 재시작은 persisted cross-kind mixed order를 정확히 복원한다.
-    /// bootstrap payload가 pinned tabs와 durable order를 함께 전달하는 실제 restart 경계를 검증한다.
-    /// - 검증 내용: ContentTab A → Location L1 → ContentTab B 순서의 confirmed/visible 적용
-    /// - 사전 조건: 유효한 pinned record A/B와 schema-v2 mixed `topNavigationOrder`
+    /// VOY-470: icon cache 준비 실패와 무관하게 persisted cross-kind mixed order를 정확히 복원한다.
+    /// bootstrap payload가 display-quality icon 결과와 분리되어 pinned tabs와 durable order를 함께 전달하는지 검증한다.
+    /// - 검증 내용: icon 준비 false에서도 ContentTab A → Location L1 → ContentTab B 순서의 confirmed/visible 적용
+    /// - 사전 조건: 유효한 pinned record A/B, schema-v2 mixed `topNavigationOrder`, icon cache 준비 실패
     /// - 기대 결과: default window의 confirmed/optimistic order가 persisted order와 동일함
     func testDefaultWindowBootstrapRestoresPersistedCrossKindTopNavigationOrder() async throws {
         let windowID = UUID(47061)
@@ -457,6 +457,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return true
             }
             $0.fileManagerBuiltInCollectionClient.ensureAll = { .init(recents: .failed, allTags: .failed) }
+            $0.workspaceClient.prepareFileIcons = { _ in false }
             $0.userDefaultsClient.bool = { _ in true }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }

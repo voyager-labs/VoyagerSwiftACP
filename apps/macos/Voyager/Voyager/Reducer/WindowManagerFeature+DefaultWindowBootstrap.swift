@@ -32,9 +32,7 @@ enum DefaultWindowBootstrap {
         let fixedLocationItems = FileManagerHomeDashboardProjection.makeFixedLocations(
             from: dependencies.locationsClient.loadLocations(dependencies.loadingClient),
         )
-        guard await dependencies.workspaceClient.prepareFileIcons(fixedLocationItems.map(\.path)) else {
-            return nil
-        }
+        _ = await dependencies.workspaceClient.prepareFileIcons(fixedLocationItems.map(\.path))
         guard !Task.isCancelled else { return nil }
         let discoveredLocationIDs = fixedLocationItems.map(\.id)
         guard let initialOutcome = loadStoreOutcome(
