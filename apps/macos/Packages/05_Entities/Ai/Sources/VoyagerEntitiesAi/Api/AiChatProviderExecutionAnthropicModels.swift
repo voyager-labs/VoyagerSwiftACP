@@ -267,7 +267,7 @@ struct AnthropicOutputConfig: Encodable {
         case let .some(.adaptive(defaultEffort)):
             guard let defaultEffort else { return nil }
             effort = defaultEffort.rawValue
-        case .some(.disabled), .some(.tokenBudget), .some(.none), nil:
+        case .some(.disabled), .some(.tokenBudget), .some(AiChatProviderThinkingPayload.none), nil:
             return nil
         }
     }
