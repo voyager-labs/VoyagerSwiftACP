@@ -48,10 +48,13 @@ final class FMW003PendingSelectionTests: XCTestCase {
     // MARK: - Tests
 
     /// FMW-003: pendingSelectEntryID와 매칭되는 엔트리가 itemsLoaded에 포함된 경우 selection state 즉시 반영 검증.
-    /// - 사전 조건: pendingSelectEntryID == "/test/doc.txt", entries에 동일 fullPath 보유
     /// - 기대 결과: pendingSelectEntryID nil clear + selectedIds/lastSelectedId/rangeAnchorId = targetID, scroll = true
-    func test_handleItemsLoaded_matchingEntry_appliesSelectionImmediately() async {
-        let targetID = "/test/doc.txt"
+    func test_handleItemsLoaded_matchingEntry_appliesSelectionImmediately() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+        let targetID = sandbox.fileURL.path
         let entries = [Self.makeEntry(fullPath: targetID)]
 
         let store = TestStore(initialState: makeBridgeState(pendingSelectEntryID: targetID)) {
@@ -143,9 +146,17 @@ final class FMW003PendingSelectionTests: XCTestCase {
     /// FMW-003: 첫 로드에서 매칭되지 않아도 이후 로드에서 대상 엔트리를 선택한다.
     /// - 사전 조건: 첫 itemsLoaded에는 대상 없음, 다음 itemsLoaded에는 대상 포함
     /// - 기대 결과: 첫 로드 후 pending 유지 + 다음 로드에서 selection 반영 후 pending clear
-    func test_handleItemsLoaded_nonMatchingThenMatchingEntry_selectsOnRetry() async {
-        let targetID = "/test/other.txt"
-        let firstEntries = [Self.makeEntry(fullPath: "/test/doc.txt")]
+    func test_handleItemsLoaded_nonMatchingThenMatchingEntry_selectsOnRetry() async throws {
+        let firstSandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { firstSandbox.cleanup() }
+        let targetSandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/98.txt",
+        )
+        defer { targetSandbox.cleanup() }
+        let targetID = targetSandbox.fileURL.path
+        let firstEntries = [Self.makeEntry(fullPath: firstSandbox.fileURL.path)]
         let secondEntries = [Self.makeEntry(fullPath: targetID)]
 
         let store = TestStore(
@@ -174,8 +185,12 @@ final class FMW003PendingSelectionTests: XCTestCase {
 
     /// FMW-003: 전체 FileManagerContentFeature에서 itemsLoaded action pass 안에 pending selection이 반영된다.
     /// - 기대 결과: EntryViewLayoutFeature.updateEntriesAndReapply가 빈 selection으로 되돌리지 않음
-    func test_contentFeature_itemsLoaded_appliesPendingSelectionBeforeEntryLayoutReconcile() async {
-        let targetID = "/test/doc.txt"
+    func test_contentFeature_itemsLoaded_appliesPendingSelectionBeforeEntryLayoutReconcile() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+        let targetID = sandbox.fileURL.path
         let entries = [Self.makeEntry(fullPath: targetID)]
         var state = FileManagerContentState()
         state.pendingSelectEntryID = targetID

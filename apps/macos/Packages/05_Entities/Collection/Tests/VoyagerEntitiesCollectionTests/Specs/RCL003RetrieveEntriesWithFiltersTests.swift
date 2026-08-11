@@ -13,12 +13,17 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
     /// - 검증 내용: 관련 path 변경이 `CollectionSessionPhase.BaseStatus.stale`로 전환되는지 확인
     /// - 사전 조건: `/VoyagerFixtures/Documents` scope를 가진 열린 collection session
     /// - 기대 결과: session phase가 stale이 되고 refresh blocking reason이 nil이 됨
-    func testExternalPathsChanged_withIncludedScope_marksCollectionStale() async {
-        let store = TestStore(initialState: makeOpenedReadyState()) {
+    func testExternalPathsChanged_withIncludedScope_marksCollectionStale() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingDirectory(
+            from: "fixtures/fixtures/collections/basic_collection.voycoll",
+        )
+        defer { try? sandbox.cleanup() }
+        let scope = sandbox.root.path
+        let store = TestStore(initialState: makeOpenedReadyState(scope: scope)) {
             CollectionFeature()
         }
 
-        await store.send(.externalPathsChanged(["/VoyagerFixtures/Documents/report.md"])) {
+        await store.send(.externalPathsChanged([sandbox.fileURL.appendingPathComponent("collection.plist").path])) {
             $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
         }
 
@@ -34,13 +39,18 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
     /// - 검증 내용: excludedScopes에 포함된 path 변경이 phase를 유지하는지 확인
     /// - 사전 조건: `/VoyagerFixtures/Documents/Archive`가 excludedScopes인 열린 collection session
     /// - 기대 결과: phase가 ready로 유지되고 refresh blocking reason은 `notStale`임
-    func testExternalPathsChanged_withExcludedScope_keepsCollectionReady() async {
-        let initialState = makeOpenedReadyState()
+    func testExternalPathsChanged_withExcludedScope_keepsCollectionReady() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingDirectory(
+            from: "fixtures/fixtures/collections/basic_collection.voycoll",
+        )
+        defer { try? sandbox.cleanup() }
+        let scope = sandbox.root.path
+        let initialState = makeOpenedReadyState(scope: scope, excludedScope: sandbox.fileURL.path)
         let store = TestStore(initialState: initialState) {
             CollectionFeature()
         }
 
-        await store.send(.externalPathsChanged(["/VoyagerFixtures/Documents/Archive/old.md"]))
+        await store.send(.externalPathsChanged([sandbox.fileURL.appendingPathComponent("collection.plist").path]))
 
         XCTAssertEqual(store.state.collectionSession.phase, initialState.collectionSession.phase)
         XCTAssertEqual(
@@ -303,18 +313,21 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
         )
     }
 
-    private func makeOpenedReadyState() -> CollectionState {
+    private func makeOpenedReadyState(
+        scope: String = "/VoyagerFixtures/Documents",
+        excludedScope: String = "/VoyagerFixtures/Documents/Archive",
+    ) -> CollectionState {
         let context = CollectionContext(
             query: "report",
-            scopes: ["/VoyagerFixtures/Documents"],
-            excludedScopes: ["/VoyagerFixtures/Documents/Archive"],
+            scopes: [scope],
+            excludedScopes: [excludedScope],
             conditions: [],
         )
         var state = CollectionState()
         state.collectionContext = context
         state.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
         state.collectionSession.document = .init(
-            url: URL(fileURLWithPath: "/VoyagerFixtures/Collections/report.voycoll"),
+            url: URL(fileURLWithPath: scope).appendingPathComponent("report.voycoll"),
             name: "report",
             compatibility: makeWriteBackBlockedCompatibility(),
         )
