@@ -15,6 +15,7 @@ extension RuntimeControlPlane {
         let descriptor = adapter.descriptor
         try requireExecutionOutput(in: descriptor.capabilities)
         let host = request.externalAgentSessionReference
+        try requireAvailableRunReference(request.runReference, excluding: host)
         guard let current = sessions[host] else { throw RuntimeHostError.invalidEvent }
         let sameRun = current.stored.runReference == request.runReference
         let mayLaunch = sameRun && [.policyReady, .launchFailed].contains(current.stored.projection)
