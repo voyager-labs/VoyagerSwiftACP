@@ -12,18 +12,20 @@ public extension RuntimeControlPlane {
             if sessions[hostReference]?.stored.projection.isTerminal == true {
                 return resultRespectingStoredTerminal(result, host: hostReference)
             }
-            beginTerminalTransition(hostReference)
-            defer { endTerminalTransition(hostReference) }
-            try await commit(host: hostReference) { plane in
-                plane.finish(result, host: hostReference)
+            return try await commit(host: hostReference) { plane, registry in
+                try plane.finishTransition(
+                    result,
+                    host: hostReference,
+                    lease: claim.lease,
+                    in: &registry,
+                )
             }
-            return resultRespectingStoredTerminal(result, host: hostReference)
         } catch let error as RuntimeHostError {
-            try await interruptResumedRunOrRestoreClaim(hostReference)
+            try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw error
         } catch {
             let normalized = normalizeAdapterError(error)
-            try await interruptResumedRunOrRestoreClaim(hostReference)
+            try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw normalized
         }
     }
@@ -33,12 +35,11 @@ public extension RuntimeControlPlane {
     ) async throws -> RestoredRunClaim {
         try await mutateAfterPersistedTransitions { plane in
             guard var session = plane.sessions[hostReference],
-                  session.active,
-                  session.awaitingResumption,
+                  case let .restored(lease) = session.lease,
                   let providerReference = session.stored.providerInternalSessionReference,
                   plane.adapters[session.stored.adapterID] != nil
             else { throw RuntimeHostError.invalidEvent }
-            session.awaitingResumption = false
+            session.lease = .resuming(lease)
             plane.sessions[hostReference] = session
             return RestoredRunClaim(
                 receipt: RuntimeLaunchReceipt(
@@ -46,37 +47,47 @@ public extension RuntimeControlPlane {
                     providerInternalSessionReference: providerReference,
                 ),
                 adapterID: session.stored.adapterID,
+                lease: lease,
             )
         }
     }
 
     private func interruptResumedRunOrRestoreClaim(
         _ hostReference: ExternalAgentSessionReference,
+        lease: UInt64,
     ) async throws {
         do {
-            try await markInterrupted(hostReference)
-        } catch let error as RuntimeHostError {
-            restoreResumptionClaimIfNeeded(hostReference)
-            throw error
+            try await commit(host: hostReference) { plane, registry in
+                try plane.interruptTransition(
+                    host: hostReference,
+                    lease: lease,
+                    in: &registry,
+                )
+            }
         } catch {
-            restoreResumptionClaimIfNeeded(hostReference)
+            try await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
+            if let hostError = error as? RuntimeHostError { throw hostError }
             throw RuntimeHostError.persistenceFailure
         }
     }
 
     private func restoreResumptionClaimIfNeeded(
         _ hostReference: ExternalAgentSessionReference,
-    ) {
-        guard var session = sessions[hostReference],
-              session.active,
-              !session.stored.projection.isTerminal
-        else { return }
-        session.awaitingResumption = true
-        sessions[hostReference] = session
+        lease: UInt64,
+    ) async throws {
+        try await mutateAfterPersistedTransitions { plane in
+            guard var session = plane.sessions[hostReference],
+                  session.lease == .resuming(lease),
+                  !session.stored.projection.isTerminal
+            else { return }
+            session.lease = .restored(lease)
+            plane.sessions[hostReference] = session
+        }
     }
 }
 
 private struct RestoredRunClaim {
     let receipt: RuntimeLaunchReceipt
     let adapterID: RuntimeAdapterID
+    let lease: UInt64
 }

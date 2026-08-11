@@ -11,6 +11,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
     public let capabilitySnapshot: RuntimeCapabilities
     public let contextPolicy: RuntimeContextPolicy
     public let projection: RuntimeProjection
+    public let providerLaunchAttempted: Bool?
     public let lastSequence: UInt64
     public let acceptedEventCount: Int
     public let processedEventCount: Int
@@ -32,6 +33,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         case capabilitySnapshot = "capability_snapshot"
         case contextPolicy = "context_policy"
         case projection
+        case providerLaunchAttempted = "provider_launch_attempted"
         case lastSequence = "last_sequence"
         case acceptedEventCount = "accepted_event_count"
         case processedEventCount = "processed_event_count"
@@ -52,7 +54,8 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         capabilitySnapshot: RuntimeCapabilities,
         contextPolicy: RuntimeContextPolicy,
         projection: RuntimeProjection,
-        lastSequence: UInt64,
+        providerLaunchAttempted: Bool? = nil,
+        lastSequence: UInt64 = 0,
         acceptedEventCount: Int = 0,
         processedEventCount: Int? = nil,
         acceptedIdempotencyKeys: [RuntimeIdempotencyKey] = [],
@@ -74,6 +77,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         self.capabilitySnapshot = capabilitySnapshot
         self.contextPolicy = contextPolicy
         self.projection = projection
+        self.providerLaunchAttempted = providerLaunchAttempted
         self.lastSequence = lastSequence
         self.acceptedEventCount = acceptedEventCount
         self.processedEventCount = processedEventCount ?? acceptedEventCount

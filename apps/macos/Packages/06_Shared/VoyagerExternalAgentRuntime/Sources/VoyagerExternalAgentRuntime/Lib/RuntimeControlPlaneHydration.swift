@@ -21,14 +21,21 @@ extension RuntimeControlPlane {
             hydrationTask = nil
             throw RuntimeHostError.persistenceFailure
         }
-        guard !hydrated else { return }
-        let storedSessions = try state?.validatedForRuntime().sessions ?? []
-        for stored in storedSessions {
-            guard sessions[stored.externalAgentSessionReference] == nil else { continue }
-            sessions[stored.externalAgentSessionReference] = Session(stored: stored)
+        do {
+            try await mutateAfterPersistedTransitions { plane in
+                guard !plane.hydrated else { return }
+                let storedSessions = try state?.validatedForRuntime().sessions ?? []
+                for stored in storedSessions {
+                    guard plane.sessions[stored.externalAgentSessionReference] == nil else { continue }
+                    plane.sessions[stored.externalAgentSessionReference] = Session(stored: stored)
+                }
+                plane.hydrated = true
+                plane.hydrationTask = nil
+            }
+        } catch {
+            hydrationTask = nil
+            throw error
         }
-        hydrated = true
-        hydrationTask = nil
     }
 }
 
@@ -43,6 +50,7 @@ extension RuntimeStoredSession {
             capabilitySnapshot: capabilitySnapshot,
             contextPolicy: contextPolicy,
             projection: projection,
+            providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
             acceptedEventCount: acceptedEventCount,
             processedEventCount: processedEventCount,
@@ -69,6 +77,7 @@ extension RuntimeStoredSession {
             capabilitySnapshot: capabilitySnapshot,
             contextPolicy: contextPolicy,
             projection: projection,
+            providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
             acceptedEventCount: acceptedEventCount,
             processedEventCount: count,
@@ -93,6 +102,7 @@ extension RuntimeStoredSession {
             capabilitySnapshot: capabilitySnapshot,
             contextPolicy: contextPolicy,
             projection: projection,
+            providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
             acceptedEventCount: acceptedEventCount,
             processedEventCount: processedEventCount,

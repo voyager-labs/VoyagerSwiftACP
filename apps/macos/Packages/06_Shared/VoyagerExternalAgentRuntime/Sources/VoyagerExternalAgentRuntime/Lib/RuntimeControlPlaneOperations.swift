@@ -9,11 +9,12 @@ public extension RuntimeControlPlane {
         guard requestID.isWithinRuntimeBounds, operationID.isWithinRuntimeBounds else {
             throw RuntimeHostError.malformedAdapterResponse
         }
-        let (adapter, session) = try beginOperation(for: hostReference, requiring: .approval)
+        let claim = try beginOperation(for: hostReference, requiring: .approval)
+        let session = claim.session
+        guard let providerReference = session.providerInternalSessionReference
+        else { throw RuntimeHostError.malformedAdapterResponse }
         do {
-            guard let providerReference = session.providerInternalSessionReference
-            else { throw RuntimeHostError.malformedAdapterResponse }
-            try await adapter.respondToApproval(RuntimeApprovalRequest(
+            try await claim.adapter.respondToApproval(RuntimeApprovalRequest(
                 externalAgentSessionReference: hostReference,
                 providerInternalSessionReference: providerReference,
                 requestID: requestID,
@@ -24,6 +25,7 @@ public extension RuntimeControlPlane {
         } catch {
             throw normalizeAdapterError(error)
         }
+        try validateOperationClaim(claim, at: hostReference)
     }
 
     func enqueueInput(
@@ -34,16 +36,17 @@ public extension RuntimeControlPlane {
         guard operationID.isWithinRuntimeBounds,
               input.rawValue.unicodeScalars.count <= RuntimeBoundaryLimits.sensitiveInputScalars
         else { throw RuntimeHostError.malformedAdapterResponse }
-        let (adapter, session) = try beginOperation(for: hostReference, requiring: .queuedInput)
+        let claim = try beginOperation(for: hostReference, requiring: .queuedInput)
         do {
-            try await adapter.enqueueInput(RuntimeQueuedInputRequest(
+            try await claim.adapter.enqueueInput(RuntimeQueuedInputRequest(
                 operationID: operationID,
-                runReference: session.runReference,
+                runReference: claim.session.runReference,
                 input: input,
             ))
         } catch {
             throw normalizeAdapterError(error)
         }
+        try validateOperationClaim(claim, at: hostReference)
     }
 
     func requestCancellation(
@@ -51,15 +54,16 @@ public extension RuntimeControlPlane {
         operationID: RuntimeOperationID,
     ) async throws {
         guard operationID.isWithinRuntimeBounds else { throw RuntimeHostError.malformedAdapterResponse }
-        let (adapter, session) = try beginOperation(for: hostReference, requiring: .cancellation)
+        let claim = try beginOperation(for: hostReference, requiring: .cancellation)
         do {
-            try await adapter.requestCancellation(RuntimeCancellationRequest(
+            try await claim.adapter.requestCancellation(RuntimeCancellationRequest(
                 operationID: operationID,
-                runReference: session.runReference,
+                runReference: claim.session.runReference,
             ))
         } catch {
             throw normalizeAdapterError(error)
         }
+        try validateOperationClaim(claim, at: hostReference)
     }
 
     func restore(
@@ -68,7 +72,7 @@ public extension RuntimeControlPlane {
     ) async throws -> RuntimeRestoreResult {
         try await hydrateIfNeeded()
         guard let original = sessions[hostReference] else { return .stale }
-        guard !original.active else { throw RuntimeHostError.activeRunExists }
+        guard !original.lease.isActive else { throw RuntimeHostError.activeRunExists }
         let stored = original.stored
         guard !stored.projection.isTerminal else { return .stale }
         guard let providerInternalSessionReference = stored.providerInternalSessionReference,
@@ -101,12 +105,11 @@ public extension RuntimeControlPlane {
         switch compatibility {
         case .compatible:
             return try await mutateAfterPersistedTransitions { plane in
-                guard plane.sessionUnchanged(original, at: hostReference) else { return .stale }
-                plane.sessions[hostReference] = Session(
-                    stored: stored,
-                    active: true,
-                    awaitingResumption: true,
-                )
+                guard plane.sessionUnchanged(original, at: hostReference),
+                      var current = plane.sessions[hostReference]
+                else { return .stale }
+                _ = current.issueLease(RuntimeLease.restored)
+                plane.sessions[hostReference] = current
                 return .restored
             }
         case .stale, .incompatible:
@@ -130,28 +133,33 @@ public extension RuntimeControlPlane {
         _ original: Session,
         at host: ExternalAgentSessionReference,
     ) async throws -> RuntimeRestoreResult {
-        try await commit(host: host) { plane in
-            guard plane.sessionUnchanged(original, at: host),
-                  var current = plane.sessions[host],
+        try await commit(host: host) { plane, registry in
+            guard plane.sessionUnchanged(original, at: host, in: registry),
+                  var current = registry[host],
                   !current.stored.projection.isTerminal
             else { return .stale }
             current.stored = current.stored.withProjection(.interrupted)
-            current.active = false
-            current.awaitingResumption = false
-            plane.sessions[host] = current
+            current.lease = .none
+            current.revision += 1
+            registry[host] = current
             return .stale
         }
     }
 
-    private func sessionUnchanged(_ original: Session?, at host: ExternalAgentSessionReference) -> Bool {
-        guard sessions[host]?.active != true else { return false }
-        return sessions[host]?.stored == original?.stored
+    internal func sessionUnchanged(
+        _ original: Session?,
+        at host: ExternalAgentSessionReference,
+        in registry: SessionRegistry? = nil,
+    ) -> Bool {
+        let current = registry?[host] ?? sessions[host]
+        guard current?.lease.isActive != true else { return false }
+        return current == original
     }
 
     internal func activeAdapter(
         for hostReference: ExternalAgentSessionReference,
     ) throws -> (any ExternalAgentRuntimeAdapter, RuntimeStoredSession) {
-        guard let session = sessions[hostReference], session.active else {
+        guard let session = sessions[hostReference], session.lease.isActive else {
             throw RuntimeHostError.invalidEvent
         }
         guard let adapter = adapters[session.stored.adapterID] else {
@@ -163,25 +171,31 @@ public extension RuntimeControlPlane {
     internal func beginOperation(
         for hostReference: ExternalAgentSessionReference,
         requiring capability: RuntimeCapability,
-    ) throws -> (any ExternalAgentRuntimeAdapter, RuntimeStoredSession) {
-        guard terminalPending[hostReference, default: 0] == 0 else { throw RuntimeHostError.invalidEvent }
-        guard !persistingHosts.contains(hostReference) else { throw RuntimeHostError.invalidEvent }
+    ) throws -> OperationClaim {
+        guard pendingPersistenceMutations[hostReference, default: 0] == 0 else {
+            throw RuntimeHostError.invalidEvent
+        }
         let binding = try activeAdapter(for: hostReference)
         try require(capability, in: binding.1.capabilitySnapshot)
-        return binding
+        guard let current = sessions[hostReference] else { throw RuntimeHostError.invalidEvent }
+        return OperationClaim(
+            adapter: binding.0,
+            session: binding.1,
+            lease: current.lease,
+            revision: current.revision,
+        )
     }
 
-    internal func beginTerminalTransition(_ hostReference: ExternalAgentSessionReference) {
-        terminalPending[hostReference, default: 0] += 1
-    }
-
-    internal func endTerminalTransition(_ hostReference: ExternalAgentSessionReference) {
-        let remaining = terminalPending[hostReference, default: 0] - 1
-        if remaining <= 0 {
-            terminalPending[hostReference] = nil
-        } else {
-            terminalPending[hostReference] = remaining
-        }
+    internal func validateOperationClaim(
+        _ claim: OperationClaim,
+        at hostReference: ExternalAgentSessionReference,
+    ) throws {
+        guard pendingPersistenceMutations[hostReference, default: 0] == 0,
+              let current = sessions[hostReference],
+              current.lease == claim.lease,
+              current.revision == claim.revision,
+              current.stored.runReference == claim.session.runReference
+        else { throw RuntimeHostError.invalidEvent }
     }
 
     internal func require(_ capability: RuntimeCapability, in capabilities: RuntimeCapabilities) throws {
@@ -194,6 +208,13 @@ public extension RuntimeControlPlane {
             throw RuntimeHostError.capabilityUnsupported(capability)
         }
     }
+}
+
+struct OperationClaim {
+    let adapter: any ExternalAgentRuntimeAdapter
+    let session: RuntimeStoredSession
+    let lease: RuntimeControlPlane.RuntimeLease
+    let revision: UInt64
 }
 
 extension RuntimeProjection {

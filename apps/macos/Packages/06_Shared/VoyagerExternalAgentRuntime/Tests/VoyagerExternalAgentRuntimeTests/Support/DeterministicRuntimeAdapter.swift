@@ -6,6 +6,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         case launch
         case restart
         case eventStream
+        case terminalResult
     }
 
     enum EventStreamFailure: Equatable {
@@ -19,19 +20,26 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let clock: DeterministicRuntimeClock
     private let IDs: DeterministicRuntimeIDs
     private let launchDelay: Duration
+    private let launchGate: RuntimeTestGate?
     private let eventStreamDelay: Duration
     private let eventStreamGate: RuntimeTestGate?
     private let eventStreamFailure: EventStreamFailure?
     private let operationDelay: Duration
+    private let operationGate: RuntimeTestGate?
     private let restartDelay: Duration
     private let terminalResultOverride: RuntimeResult?
+    private let terminalResultGate: RuntimeTestGate?
+    private let failsTerminalResult: Bool
     private let launchFailure: RuntimeAdapterFailure?
     private let failsRestart: Bool
     private var remainingLaunchFailures: Int
     private var launchCount = 0
+    private var launchCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var eventStreamCount = 0
     private var eventStreamCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var cancellationCount = 0
+    private var terminalResultCount = 0
+    private var terminalResultCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var approvalCount = 0
     private var queuedInputCount = 0
     private var restartBindings: [RuntimeRestartBinding] = []
@@ -46,15 +54,19 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         clock: DeterministicRuntimeClock = .live,
         IDs: DeterministicRuntimeIDs = .sequential,
         launchDelay: Duration = .zero,
+        launchGate: RuntimeTestGate? = nil,
         eventStreamDelay: Duration = .zero,
         eventStreamGate: RuntimeTestGate? = nil,
         eventStreamFailure: EventStreamFailure? = nil,
         operationDelay: Duration = .zero,
+        operationGate: RuntimeTestGate? = nil,
         failsLaunch: Bool = false,
         launchFailures: Int = 0,
         restartDelay: Duration = .zero,
         failsRestart: Bool = false,
         terminalResultOverride: RuntimeResult? = nil,
+        terminalResultGate: RuntimeTestGate? = nil,
+        failsTerminalResult: Bool = false,
         launchFailure: RuntimeAdapterFailure? = nil,
         providerBranch: RuntimeProviderBranch = .unknown,
     ) {
@@ -70,13 +82,17 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.clock = clock
         self.IDs = IDs
         self.launchDelay = launchDelay
+        self.launchGate = launchGate
         self.eventStreamDelay = eventStreamDelay
         self.eventStreamGate = eventStreamGate
         self.eventStreamFailure = eventStreamFailure
         self.operationDelay = operationDelay
+        self.operationGate = operationGate
         self.restartDelay = restartDelay
         self.failsRestart = failsRestart
         self.terminalResultOverride = terminalResultOverride
+        self.terminalResultGate = terminalResultGate
+        self.failsTerminalResult = failsTerminalResult
         self.launchFailure = launchFailure
         remainingLaunchFailures = failsLaunch ? .max : launchFailures
     }
@@ -87,6 +103,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
 
     func launch(_ request: RuntimeLaunchRequest) async throws -> RuntimeLaunchReceipt {
         launchCount += 1
+        resumeLaunchCountWaiters()
         if let launchFailure {
             throw launchFailure
         }
@@ -97,6 +114,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         if launchDelay != .zero {
             try await clock.sleep(launchDelay)
         }
+        await launchGate?.wait()
         return RuntimeLaunchReceipt(
             runReference: request.runReference,
             providerInternalSessionReference: IDs.providerSession(launchCount),
@@ -136,21 +154,30 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     func respondToApproval(_ request: RuntimeApprovalRequest) async throws {
         approvalCount += 1
         approvalRequests.append(request)
+        await operationGate?.wait()
         try await clock.sleep(operationDelay)
     }
 
     func requestCancellation(_: RuntimeCancellationRequest) async throws {
         cancellationCount += 1
+        await operationGate?.wait()
         try await clock.sleep(operationDelay)
     }
 
     func enqueueInput(_: RuntimeQueuedInputRequest) async throws {
         queuedInputCount += 1
+        await operationGate?.wait()
         try await clock.sleep(operationDelay)
     }
 
     func terminalResult(for runReference: RuntimeRunReference) async throws -> RuntimeResult {
-        terminalResultOverride ?? RuntimeResult(
+        terminalResultCount += 1
+        resumeTerminalResultCountWaiters()
+        await terminalResultGate?.wait()
+        if failsTerminalResult {
+            throw InjectedFailure.terminalResult
+        }
+        return terminalResultOverride ?? RuntimeResult(
             runReference: runReference,
             outcome: .completed,
             artifactReferences: [],
@@ -195,9 +222,39 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         }
     }
 
+    func waitForLaunchCount(_ minimumCount: Int) async {
+        guard launchCount < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            launchCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
+    func waitForTerminalResultCount(_ minimumCount: Int) async {
+        guard terminalResultCount < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            terminalResultCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
+    private func resumeLaunchCountWaiters() {
+        let ready = launchCountWaiters.filter { $0.0 <= launchCount }
+        launchCountWaiters.removeAll { $0.0 <= launchCount }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
+
     private func resumeEventStreamCountWaiters() {
         let ready = eventStreamCountWaiters.filter { $0.0 <= eventStreamCount }
         eventStreamCountWaiters.removeAll { $0.0 <= eventStreamCount }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
+
+    private func resumeTerminalResultCountWaiters() {
+        let ready = terminalResultCountWaiters.filter { $0.0 <= terminalResultCount }
+        terminalResultCountWaiters.removeAll { $0.0 <= terminalResultCount }
         for (_, continuation) in ready {
             continuation.resume()
         }

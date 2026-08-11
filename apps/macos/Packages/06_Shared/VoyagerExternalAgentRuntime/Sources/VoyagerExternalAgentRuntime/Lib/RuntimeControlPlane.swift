@@ -1,39 +1,63 @@
 import Foundation
 
 public actor RuntimeControlPlane {
-    struct Session {
+    typealias SessionRegistry = [ExternalAgentSessionReference: Session]
+
+    enum RuntimeLease: Equatable {
+        case none
+        case launching(UInt64)
+        case consuming(UInt64)
+        case restored(UInt64)
+        case resuming(UInt64)
+
+        var isActive: Bool {
+            self != .none
+        }
+
+        var isAwaitingResumption: Bool {
+            if case .restored = self { return true }
+            return false
+        }
+    }
+
+    struct Session: Equatable {
         var stored: RuntimeStoredSession
         var acceptedCount: Int
         var processedCount: Int
         var hostAcceptedCount: Int
         var hostProcessedCount: Int
-        var active: Bool
-        var awaitingResumption: Bool
+        var lease: RuntimeLease
+        var revision: UInt64
 
         init(
             stored: RuntimeStoredSession,
-            active: Bool = false,
-            awaitingResumption: Bool = false,
+            lease: RuntimeLease = .none,
+            revision: UInt64 = 0,
         ) {
             self.stored = stored
             acceptedCount = stored.acceptedEventCount
             processedCount = stored.processedEventCount
             hostAcceptedCount = stored.hostAcceptedEventCount
             hostProcessedCount = stored.hostProcessedEventCount
-            self.active = active
-            self.awaitingResumption = awaitingResumption
+            self.lease = lease
+            self.revision = revision
+        }
+
+        mutating func issueLease(_ makeLease: (UInt64) -> RuntimeLease) -> UInt64 {
+            revision += 1
+            lease = makeLease(revision)
+            return revision
         }
     }
 
     let store: any RuntimeStateStore
     var adapters: [RuntimeAdapterID: any ExternalAgentRuntimeAdapter] = [:]
-    var sessions: [ExternalAgentSessionReference: Session] = [:]
+    var sessions: SessionRegistry = [:]
     var hydrationTask: Task<RuntimeStoredState?, Error>?
     var hydrated = false
-    var terminalPending: [ExternalAgentSessionReference: Int] = [:]
     var persistenceMutationLocked = false
     var persistenceMutationWaiters: [CheckedContinuation<Void, Never>] = []
-    var persistingHosts: Set<ExternalAgentSessionReference> = []
+    var pendingPersistenceMutations: [ExternalAgentSessionReference: Int] = [:]
 
     public init(store: any RuntimeStateStore) {
         self.store = store
@@ -55,76 +79,93 @@ public actor RuntimeControlPlane {
 
     public func run(_ request: RuntimeLaunchRequest) async throws -> RuntimeResult {
         try await hydrateIfNeeded()
-        let reservation = try await commit(host: request.externalAgentSessionReference) { plane in
-            try plane.reserve(request)
+        if try await retireOrphanedDirectRunIfNeeded(request) {
+            throw RuntimeHostError.duplicateRunReference
         }
-        var providerStarted = false
+        let reservation = try await commit(host: request.externalAgentSessionReference) { plane, registry in
+            try plane.reserveTransition(request, in: &registry)
+        }
+        let receipt: RuntimeLaunchReceipt
         do {
-            let receipt = try await reservation.adapter.launch(request)
-            providerStarted = true
-            do {
-                try await commit(host: reservation.host) { plane in
-                    try plane.bind(receipt, to: request, descriptor: reservation.descriptor)
-                }
-            } catch {
-                if sessions[reservation.host]?.stored.projection == .launching {
-                    try await markInterrupted(reservation.host)
-                }
-                throw error
+            receipt = try await reservation.adapter.launch(request)
+        } catch {
+            let primary = normalizeAdapterError(error)
+            try? await commit(host: reservation.host) { plane, registry in
+                plane.failLaunchTransition(
+                    host: reservation.host,
+                    lease: reservation.lease,
+                    in: &registry,
+                )
             }
+            throw primary
+        }
+        let receiptTransition: ReceiptTransition
+        do {
+            receiptTransition = try await commit(host: reservation.host) { plane, registry in
+                try plane.recordReceiptTransition(
+                    receipt,
+                    request: request,
+                    descriptor: reservation.descriptor,
+                    lease: reservation.lease,
+                    in: &registry,
+                )
+            }
+        } catch {
+            try? await reconcileStartedProviderFailure(reservation: reservation)
+            throw error
+        }
+        switch receiptTransition {
+        case let .terminal(result):
+            return result
+        case let .consuming(lease):
+            return try await consumeAndFinish(
+                receipt,
+                reservation: reservation,
+                lease: lease,
+            )
+        }
+    }
+
+    private func consumeAndFinish(
+        _ receipt: RuntimeLaunchReceipt,
+        reservation: RunReservation,
+        lease: UInt64,
+    ) async throws -> RuntimeResult {
+        do {
             let result = try await consume(receipt, from: reservation.adapter, host: reservation.host)
             if sessions[reservation.host]?.stored.projection.isTerminal == true {
                 return resultRespectingStoredTerminal(result, host: reservation.host)
             }
-            beginTerminalTransition(reservation.host)
-            defer { endTerminalTransition(reservation.host) }
-            try await commit(host: reservation.host) { plane in
-                plane.finish(result, host: reservation.host)
+            return try await commit(host: reservation.host) { plane, registry in
+                try plane.finishTransition(
+                    result,
+                    host: reservation.host,
+                    lease: lease,
+                    in: &registry,
+                )
             }
-            return resultRespectingStoredTerminal(result, host: reservation.host)
-        } catch let error as RuntimeHostError {
-            try await markFailedRun(reservation.host, providerStarted: providerStarted)
-            throw error
         } catch {
-            try await markFailedRun(reservation.host, providerStarted: providerStarted)
-            throw normalizeAdapterError(error)
+            let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
+            try? await commit(host: reservation.host) { plane, registry in
+                try plane.interruptTransition(
+                    host: reservation.host,
+                    lease: lease,
+                    in: &registry,
+                )
+            }
+            throw primary
         }
     }
 
-    private func markFailedRun(
-        _ host: ExternalAgentSessionReference,
-        providerStarted: Bool,
+    private func reconcileStartedProviderFailure(
+        reservation: RunReservation,
     ) async throws {
-        guard sessions[host]?.stored.projection == .launching else {
-            if sessions[host]?.active == true {
-                try await markInterrupted(host)
-            }
-            return
-        }
-        if providerStarted {
-            try await markInterrupted(host)
-        } else {
-            try await markLaunchFailed(host)
-        }
-    }
-
-    private func markLaunchFailed(_ host: ExternalAgentSessionReference) async throws {
-        try await commit(host: host) { plane in
-            plane.update(host) { session in
-                guard session.stored.projection == .launching else { return }
-                session.stored = session.stored.withProjection(.launchFailed)
-                session.active = false
-            }
-        }
-    }
-
-    func markInterrupted(_ host: ExternalAgentSessionReference) async throws {
-        try await commit(host: host) { plane in
-            plane.update(host) { session in
-                guard session.active, !session.stored.projection.isTerminal else { return }
-                session.stored = session.stored.withProjection(.interrupted)
-                session.active = false
-            }
+        try await commit(host: reservation.host) { plane, registry in
+            try plane.interruptTransition(
+                host: reservation.host,
+                lease: reservation.lease,
+                in: &registry,
+            )
         }
     }
 
@@ -159,6 +200,7 @@ extension RuntimeStoredSession {
             capabilitySnapshot: capabilitySnapshot,
             contextPolicy: contextPolicy,
             projection: projection,
+            providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
             acceptedEventCount: acceptedEventCount,
             processedEventCount: processedEventCount,

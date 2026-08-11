@@ -10,6 +10,7 @@ enum RuntimeBoundaryLimits {
     static let persistedEventEntries = 256
     static let acceptedEventsPerRun = 10000
     static let persistedSessions = 512
+    static let persistenceMutationWaiters = 512
     static let snapshotBytes = 4 * 1024 * 1024
 }
 
@@ -40,8 +41,9 @@ extension RuntimeControlPlane {
     func requireAvailableRunReference(
         _ runReference: RuntimeRunReference,
         excluding host: ExternalAgentSessionReference,
+        in registry: SessionRegistry,
     ) throws {
-        guard !sessions.contains(where: { candidateHost, session in
+        guard !registry.contains(where: { candidateHost, session in
             candidateHost != host && session.stored.runReference == runReference
         }) else { throw RuntimeHostError.duplicateRunReference }
     }

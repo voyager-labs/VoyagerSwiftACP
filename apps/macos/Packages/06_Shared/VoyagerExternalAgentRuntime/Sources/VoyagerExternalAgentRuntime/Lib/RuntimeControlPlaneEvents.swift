@@ -12,19 +12,32 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
     ) async throws -> RuntimeResult? {
-        try validate(event, host: host, expectedSource: expectedSource)
+        try validateEventAdmission(event, host: host, expectedSource: expectedSource)
         let terminal = terminalResult(for: event)
-        if terminal != nil {
-            beginTerminalTransition(host)
+        return try await commit(host: host) { plane, registry in
+            try plane.apply(
+                event,
+                host: host,
+                expectedSource: expectedSource,
+                terminal: terminal,
+                in: &registry,
+            )
         }
-        defer {
-            if terminal != nil {
-                endTerminalTransition(host)
-            }
-        }
-        return try await commit(host: host) { plane in
-            try plane.apply(event, host: host, expectedSource: expectedSource, terminal: terminal)
-        }
+    }
+
+    private func validateEventAdmission(
+        _ event: RuntimeEventEnvelope,
+        host: ExternalAgentSessionReference,
+        expectedSource: RuntimeEventSource,
+    ) throws {
+        guard host.rawValue.isRuntimeBounded,
+              event.externalAgentSessionReference == host,
+              event.source == expectedSource,
+              event.providerEventID.rawValue.isRuntimeBounded,
+              event.idempotencyKey.rawValue.isRuntimeBounded,
+              let session = sessions[host],
+              event.runReference == session.stored.runReference
+        else { throw RuntimeHostError.malformedAdapterResponse }
     }
 
     private func apply(
@@ -32,16 +45,18 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
         terminal: RuntimeResult?,
+        in registry: inout SessionRegistry,
     ) throws -> RuntimeResult? {
-        try validate(event, host: host, expectedSource: expectedSource)
-        guard var session = sessions[host] else { throw RuntimeHostError.malformedAdapterResponse }
+        try validate(event, host: host, expectedSource: expectedSource, in: registry)
+        guard var session = registry[host] else { throw RuntimeHostError.malformedAdapterResponse }
         let isProvider = expectedSource == .provider
         try advanceProcessedCount(in: &session, isProvider: isProvider)
         let cursor = eventCursor(for: session, isProvider: isProvider)
         if cursor.acceptedKeys.contains(event.idempotencyKey) {
             session.stored = session.stored
                 .withEvidence(.ignoredDuplicate(event.idempotencyKey))
-            sessions[host] = session
+            session.revision += 1
+            registry[host] = session
             return nil
         }
         if event.sequence <= cursor.lastSequence {
@@ -54,7 +69,8 @@ extension RuntimeControlPlane {
                     received: event.sequence,
                 ))
                 .withProjection(projection)
-            sessions[host] = session
+            session.revision += 1
+            registry[host] = session
             return nil
         }
         guard cursor.acceptedCount < RuntimeBoundaryLimits.acceptedEventsPerRun else {
@@ -68,12 +84,17 @@ extension RuntimeControlPlane {
             )
         }
         let acceptedTerminal = hasGap ? nil : terminal
+        let acceptedProjection = projection(
+            after: event.kind,
+            from: session.stored.projection,
+            hasGap: hasGap,
+        )
         persistAccepted(
             event,
             source: expectedSource,
             session: &session,
-            terminal: acceptedTerminal,
-            hasGap: hasGap,
+            projection: acceptedProjection,
+            registry: &registry,
         )
         return acceptedTerminal
     }
@@ -111,12 +132,13 @@ extension RuntimeControlPlane {
         _ event: RuntimeEventEnvelope,
         host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
+        in registry: SessionRegistry,
     ) throws {
-        guard let session = sessions[host] else { throw RuntimeHostError.malformedAdapterResponse }
+        guard let session = registry[host] else { throw RuntimeHostError.malformedAdapterResponse }
         let acceptsInactiveHostTerminal = expectedSource == .host
             && terminalResult(for: event) != nil
             && !session.stored.projection.isTerminal
-        guard session.active || acceptsInactiveHostTerminal,
+        guard session.lease.isActive || acceptsInactiveHostTerminal,
               event.source == expectedSource,
               event.runReference == session.stored.runReference,
               event.externalAgentSessionReference == host,
@@ -130,8 +152,8 @@ extension RuntimeControlPlane {
         _ event: RuntimeEventEnvelope,
         source: RuntimeEventSource,
         session: inout Session,
-        terminal: RuntimeResult?,
-        hasGap: Bool,
+        projection: RuntimeProjection,
+        registry: inout SessionRegistry,
     ) {
         let host = event.externalAgentSessionReference
         let isProvider = source == .provider
@@ -140,8 +162,8 @@ extension RuntimeControlPlane {
         } else {
             session.hostAcceptedCount += 1
         }
-        if terminal != nil {
-            session.active = false
+        if projection.isTerminal {
+            session.lease = .none
         }
         let providerKeys = isProvider
             ? Array((session.stored.acceptedIdempotencyKeys + [event.idempotencyKey])
@@ -159,11 +181,8 @@ extension RuntimeControlPlane {
             adapterVersion: session.stored.adapterVersion,
             capabilitySnapshot: session.stored.capabilitySnapshot,
             contextPolicy: session.stored.contextPolicy,
-            projection: projection(
-                after: event.kind,
-                from: session.stored.projection,
-                hasGap: hasGap,
-            ),
+            projection: projection,
+            providerLaunchAttempted: session.stored.providerLaunchAttempted,
             lastSequence: isProvider ? event.sequence : session.stored.lastSequence,
             acceptedEventCount: session.acceptedCount,
             processedEventCount: session.processedCount,
@@ -176,13 +195,8 @@ extension RuntimeControlPlane {
             providerBranch: session.stored.providerBranch,
             eventEvidence: session.stored.eventEvidence,
         )
-        sessions[host] = session
-    }
-
-    func update(_ host: ExternalAgentSessionReference, _ body: (inout Session) -> Void) {
-        guard var session = sessions[host] else { return }
-        body(&session)
-        sessions[host] = session
+        session.revision += 1
+        registry[host] = session
     }
 
     private func projection(
