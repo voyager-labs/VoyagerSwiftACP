@@ -321,6 +321,35 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: same run reference is rejected across different hosts.
+    /// provider correlation에 host가 포함되지 않아도 하나의 run이 둘 이상의 host에 예약되지 않는지 검증한다.
+    /// - 검증 내용: control plane 전역 run reference uniqueness와 provider 미호출 경계.
+    /// - 사전 조건: 첫 host가 shared run을 policy-ready 상태로 예약했다.
+    /// - 기대 결과: 다른 host의 같은 run 예약은 duplicateRunReference로 거부되고 첫 예약만 유지된다.
+    @Test
+    func `same run reference is rejected across different hosts`() async throws {
+        let sharedRun = RuntimeRunReference("run-shared")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let first = makeLaunch(host: "host-a", run: sharedRun, adapterID: "sdk")
+        let duplicate = makeLaunch(host: "host-b", run: sharedRun, adapterID: "sdk")
+
+        try await plane.projectPrelaunch(first, as: .policyReady)
+
+        await #expect(throws: RuntimeHostError.duplicateRunReference) {
+            try await plane.projectPrelaunch(duplicate, as: .policyReady)
+        }
+        #expect(await plane.projection(for: first.externalAgentSessionReference) == .policyReady)
+        #expect(await plane.projection(for: duplicate.externalAgentSessionReference) == nil)
+        #expect(await adapter.counts().launch == 0)
+    }
+
     /// ATI-006-coordinate_external_agent_launch: duplicate adapter registration never replaces the first adapter.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

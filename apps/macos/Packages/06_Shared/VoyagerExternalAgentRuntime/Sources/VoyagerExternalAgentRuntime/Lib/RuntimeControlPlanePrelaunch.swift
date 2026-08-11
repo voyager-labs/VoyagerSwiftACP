@@ -12,6 +12,7 @@ public extension RuntimeControlPlane {
                 throw RuntimeHostError.adapterNotFound(request.adapterID)
             }
             let host = request.externalAgentSessionReference
+            try plane.requireAvailableRunReference(request.runReference, excluding: host)
             if let current = plane.sessions[host] {
                 guard !current.active else { throw RuntimeHostError.activeRunExists }
                 let sameRun = current.stored.runReference == request.runReference
