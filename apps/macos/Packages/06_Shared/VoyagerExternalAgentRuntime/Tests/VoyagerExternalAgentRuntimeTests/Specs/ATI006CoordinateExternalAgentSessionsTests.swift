@@ -1587,6 +1587,44 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         }
     }
 
+    /// ATI-006-project_external_agent_run_events: streaming terminal result outcome must match the terminal event.
+    /// provider terminal event와 terminalResult의 outcome 불일치를 저장 projection으로 숨기지 않는지 검증한다.
+    /// - 검증 내용: 같은 run의 completed event 뒤 failed terminalResult가 반환될 때의 semantic 오류 전파.
+    /// - 사전 조건: event stream은 completed를 지속하고 terminalResult는 artifact를 포함한 failed를 반환한다.
+    /// - 기대 결과: malformedAdapterResponse가 반환되고 durable completed projection은 유지된다.
+    @Test
+    func `streaming terminal result outcome must match the terminal event`() async throws {
+        let host: ExternalAgentSessionReference = "host-stream-outcome-correlation"
+        let run = RuntimeRunReference("run-stream-outcome-correlation")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "completed",
+                kind: .completed,
+            )]],
+            terminalResultOverride: RuntimeResult(
+                runReference: run,
+                outcome: .failed,
+                artifactReferences: ["artifact://failure.json"],
+                failure: RuntimeAdapterFailure(
+                    kind: .sdkException,
+                    diagnosticCode: RuntimeDiagnosticCode("provider_failed"),
+                ),
+            ),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            _ = try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
     /// ATI-006-project_external_agent_run_events: late provider event cannot reuse a replacement terminal.
     /// 이전 run의 지연된 stream이 replacement run의 terminal 결과를 자신의 결과로 반환하지 않는지 검증한다.
     /// - 검증 내용: late event의 run 상관관계 오류와 replacement terminal projection 보존.

@@ -101,6 +101,9 @@ extension RuntimeControlPlane {
         guard result.runReference == receipt.runReference else {
             throw RuntimeHostError.malformedAdapterResponse
         }
+        guard result.outcome == terminal.outcome else {
+            throw RuntimeHostError.malformedAdapterResponse
+        }
         return resultRespectingStoredTerminal(result, host: host)
     }
 
