@@ -36,7 +36,7 @@ struct ContentTabDuplicatePresentation: Equatable {
         isEnabled = tabCount < ContentTabConstants.maxTabs
     }
 
-    var delegateAction: FileManagerSidebarAction.Delegate {
+    var viewAction: FileManagerSidebarAction.View {
         switch command {
         case let .duplicateContentTab(tabID):
             .duplicateContentTab(tabID)
@@ -150,7 +150,7 @@ struct ContentTabClosePresentation: Equatable {
         return false
     }
 
-    var delegateAction: FileManagerSidebarAction.Delegate {
+    var viewAction: FileManagerSidebarAction.View {
         switch command {
         case let .closeContentTab(tabID):
             .closeContentTab(tabID)
@@ -518,7 +518,7 @@ enum ContentTabSidebarTrailingCommand: Equatable {
         self = isPinned ? .unpin : .close
     }
 
-    func delegateAction(tabID: ContentTabID) -> FileManagerSidebarAction.Delegate {
+    func viewAction(tabID: ContentTabID) -> FileManagerSidebarAction.View {
         switch self {
         case .unpin:
             .unpinContentTab(tabID)

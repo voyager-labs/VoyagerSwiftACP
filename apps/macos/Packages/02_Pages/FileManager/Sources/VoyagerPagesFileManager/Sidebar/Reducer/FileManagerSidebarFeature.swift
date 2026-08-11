@@ -10,10 +10,38 @@ public struct FileManagerSidebarFeature {
         FileManagerSidebarContentTabMoveReducer()
         FileManagerSidebarContentTabSyncReducer()
         FileManagerSidebarContentTabSelectionRoutingReducer()
+        FileManagerSidebarContentTabDuplicateCloseRoutingReducer()
         FileManagerSidebarContentTabPinRoutingReducer()
         FileManagerSidebarEntryDropRoutingReducer()
         FileManagerSidebarTopNavigationReorderRoutingReducer()
         FileManagerSidebarPresentationRoutingReducer()
+    }
+}
+
+@Reducer
+struct FileManagerSidebarContentTabDuplicateCloseRoutingReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            switch action {
+            case let .view(.duplicateContentTab(id)):
+                .send(.delegate(.duplicateContentTab(id)))
+
+            case .view(.duplicateSelectedContentTabs):
+                .send(.delegate(.duplicateSelectedContentTabs))
+
+            case let .view(.closeContentTab(id)):
+                .send(.delegate(.closeContentTab(id)))
+
+            case .view(.closeSelectedContentTabs):
+                .send(.delegate(.closeSelectedContentTabs))
+
+            default:
+                .none
+            }
+        }
     }
 }
 

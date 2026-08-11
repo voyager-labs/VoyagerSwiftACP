@@ -420,7 +420,7 @@ struct SidebarView: View {
                 sidebarStore.send(.view(.selectContentTabRange(to: item.id)))
             },
             onDuplicate: duplicatePresentation.isEnabled ? {
-                sidebarStore.send(.delegate(duplicatePresentation.delegateAction))
+                sidebarStore.send(.view(duplicatePresentation.viewAction))
             } : nil,
             onPin: pinPresentation.isEnabled ? {
                 sidebarStore.send(.view(pinPresentation.viewAction))
@@ -429,13 +429,13 @@ struct SidebarView: View {
                 sidebarStore.send(.view(pinPresentation.viewAction))
             } : nil,
             onClose: {
-                sidebarStore.send(.delegate(.closeContentTab(item.id)))
+                sidebarStore.send(.view(.closeContentTab(item.id)))
             },
             onTrailingAction: {
-                sidebarStore.send(.delegate(trailingAction.delegateAction(tabID: item.id)))
+                sidebarStore.send(.view(trailingAction.viewAction(tabID: item.id)))
             },
             onContextMenuClose: {
-                sidebarStore.send(.delegate(closePresentation.delegateAction))
+                sidebarStore.send(.view(closePresentation.viewAction))
             },
             onMove: { targetWindowID in
                 sidebarStore.send(.view(movePresentation.viewAction(targetWindowID: targetWindowID)))

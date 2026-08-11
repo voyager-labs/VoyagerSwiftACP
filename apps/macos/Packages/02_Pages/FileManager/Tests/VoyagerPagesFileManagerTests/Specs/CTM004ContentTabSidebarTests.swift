@@ -6477,8 +6477,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         guard case .closeSelectedContentTabs = presentation.command else {
             return XCTFail("selected clicked row should project bulk close", file: file, line: line)
         }
-        guard case .closeSelectedContentTabs = presentation.delegateAction else {
-            return XCTFail("bulk close should map to the semantic Sidebar delegate", file: file, line: line)
+        guard case .closeSelectedContentTabs = presentation.viewAction else {
+            return XCTFail("bulk close should map to the semantic Sidebar view action", file: file, line: line)
         }
 
         let button = ContentTabSidebarButton(frame: .zero)
@@ -6661,11 +6661,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(pinnedAction.systemName, "minus")
         XCTAssertEqual(ordinaryAction, .close)
         XCTAssertEqual(ordinaryAction.systemName, "xmark")
-        guard case let .unpinContentTab(pinnedTabID) = pinnedAction.delegateAction(tabID: tabID) else {
+        guard case let .unpinContentTab(pinnedTabID) = pinnedAction.viewAction(tabID: tabID) else {
             return XCTFail("Pinned trailing action must preserve the tab and unpin it")
         }
         XCTAssertEqual(pinnedTabID, tabID)
-        guard case let .closeContentTab(ordinaryTabID) = ordinaryAction.delegateAction(tabID: tabID) else {
+        guard case let .closeContentTab(ordinaryTabID) = ordinaryAction.viewAction(tabID: tabID) else {
             return XCTFail("Ordinary trailing action must close the tab")
         }
         XCTAssertEqual(ordinaryTabID, tabID)
@@ -6918,14 +6918,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
     // MARK: - CTM-004-sidebar_duplicate_routing
 
-    /// CTM-004-sidebar_duplicate_routing: Sidebar clicked ID duplicateContentTab delegate가 request로 전달됨
-    /// FileManagerWindowRoutingReducer가 sidebar delegate를 .request(.duplicateContentTab(sourceID))로 변환하고,
+    /// CTM-004-sidebar_duplicate_routing: Sidebar duplicate intent는 typed View boundary를 거쳐 새 tab으로 수렴한다.
     /// FileManagerWindowCommandRoutingReducer.handleDuplicateContentTabRequested를 통해
     /// .contentTabs(.duplicate) child action으로 이어져 새 tab row가 생성된다.
-    /// - 검증 내용: sidebar delegate 전송 후 content tab row에 duplicateID가 추가됨
+    /// - 검증 내용: typed Sidebar intent부터 duplicate tab row 생성까지의 end-to-end 결과
     /// - 사전 조건: Directory tab이 sidebar에 있는 상태
     /// - 기대 결과: 새 tab row가 추가되고 active가 duplicate로 전환됨
-    func testSidebarDelegate_duplicateContentTab_routesToRequest() async {
+    func testSidebarView_duplicateContentTab_routesToRequest() async {
         let directoryID = ContentTabID()
         let directoryPath = "/Users/test/Desktop"
         var state = FileManagerFeature.State()
@@ -6964,7 +6963,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.sidebar(.delegate(.duplicateContentTab(directoryID))))
+        await store.send(.sidebar(.view(.duplicateContentTab(directoryID))))
         await store.skipReceivedActions()
 
         // Tab row가 생성되어 2개가 됨
@@ -6972,6 +6971,29 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         // Duplicate가 active로 전환
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, directoryID)
         await store.finish()
+    }
+
+    /// CTM-004-sidebar_duplicate_routing: duplicate와 close intent는 typed View boundary에서 semantic identity를 보존한다.
+    /// single/bulk command가 같은 Sidebar state에서 서로 혼동되지 않는지 검증한다.
+    /// - 검증 내용: single/bulk duplicate와 close View action의 Delegate mapping, Sidebar state 불변
+    /// - 사전 조건: 기본 Sidebar state와 deterministic clicked tab ID
+    /// - 기대 결과: 각 View action은 대응 Delegate를 정확히 한 번 방출하고 state를 변경하지 않음
+    func testSidebarDuplicateCloseRouting_relaysViewActionsWithoutLocalState() async {
+        let tabID = ContentTabID(rawValue: "sidebar-view-routing")
+        let initialState = FileManagerSidebarState()
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        }
+
+        await store.send(.view(.duplicateContentTab(tabID)))
+        await store.receive(\.delegate.duplicateContentTab)
+        await store.send(.view(.duplicateSelectedContentTabs))
+        await store.receive(\.delegate.duplicateSelectedContentTabs)
+        await store.send(.view(.closeContentTab(tabID)))
+        await store.receive(\.delegate.closeContentTab)
+        await store.send(.view(.closeSelectedContentTabs))
+        await store.receive(\.delegate.closeSelectedContentTabs)
+        XCTAssertEqual(store.state, initialState)
     }
 
     private func makeMouseEvent(

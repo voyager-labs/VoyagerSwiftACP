@@ -1391,8 +1391,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         guard case .duplicateSelectedContentTabs = presentation.command else {
             return XCTFail("selected clicked row should project the bulk command")
         }
-        guard case .duplicateSelectedContentTabs = presentation.delegateAction else {
-            return XCTFail("bulk projection should map to the Sidebar bulk delegate")
+        guard case .duplicateSelectedContentTabs = presentation.viewAction else {
+            return XCTFail("bulk projection should map to the Sidebar bulk view action")
         }
 
         _ = NSApplication.shared
@@ -1462,8 +1462,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 return XCTFail("unselected clicked row should project the single command")
             }
             XCTAssertEqual(projectedID, clickedID)
-            guard case let .duplicateContentTab(delegateID) = presentation.delegateAction else {
-                return XCTFail("single projection should map to the clicked-row Sidebar delegate")
+            guard case let .duplicateContentTab(delegateID) = presentation.viewAction else {
+                return XCTFail("single projection should map to the clicked-row Sidebar view action")
             }
             XCTAssertEqual(delegateID, clickedID)
         }

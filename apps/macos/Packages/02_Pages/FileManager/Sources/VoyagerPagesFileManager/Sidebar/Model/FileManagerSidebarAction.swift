@@ -18,6 +18,10 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive
         case dismissTopNavigationPresentation
+        case duplicateContentTab(ContentTabID)
+        case duplicateSelectedContentTabs
+        case closeContentTab(ContentTabID)
+        case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
         case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
