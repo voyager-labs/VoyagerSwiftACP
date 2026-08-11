@@ -79,7 +79,7 @@ public extension RuntimeControlPlane {
               stored.providerBranch == adapter.descriptor.providerBranch,
               stored.capabilitySnapshot == adapter.descriptor.capabilities
         else { return try await releaseStaleRestoreReservation(original, at: hostReference) }
-        try require(.sameIdentityResume, in: stored.capabilitySnapshot)
+        try await requireSameIdentityResumeOrRelease(original, at: hostReference)
         let binding = RuntimeRestartBinding(
             externalAgentSessionReference: stored.externalAgentSessionReference,
             providerInternalSessionReference: providerInternalSessionReference,
@@ -111,6 +111,18 @@ public extension RuntimeControlPlane {
             }
         case .stale, .incompatible:
             return try await releaseStaleRestoreReservation(original, at: hostReference)
+        }
+    }
+
+    private func requireSameIdentityResumeOrRelease(
+        _ original: Session,
+        at host: ExternalAgentSessionReference,
+    ) async throws {
+        do {
+            try require(.sameIdentityResume, in: original.stored.capabilitySnapshot)
+        } catch {
+            _ = try await releaseStaleRestoreReservation(original, at: host)
+            throw error
         }
     }
 

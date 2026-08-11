@@ -1005,47 +1005,59 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(result == .stale)
     }
 
-    /// ATI-006-coordinate_external_agent_run_continuity: unknown same identity resume capability fails closed.
-    /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
-    /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
-    /// - 사전 조건: 결정적 adapter와 isolated runtime state store가 구성되어 있다.
-    /// - 기대 결과: 해당 interaction의 관찰 가능한 결과와 오류 경계가 유지된다.
-    @Test
-    func `unknown same identity resume capability fails closed`() async throws {
-        let stored = RuntimeStoredSession(
-            externalAgentSessionReference: "host-resume-unknown",
-            providerInternalSessionReference: ProviderInternalSessionReference("opaque-provider-handle"),
-            runReference: RuntimeRunReference("run-resume-unknown"),
-            adapterID: RuntimeAdapterID("sdk"),
-            adapterVersion: "1.0.0",
-            capabilitySnapshot: .terminalOnly,
-            contextPolicy: RuntimeContextPolicy(
-                branchReference: "feat/voy-696",
-                authorizationGeneration: 1,
-                localCorrelation: "local-a",
-            ),
-            projection: .running,
-            lastSequence: 0,
+    /// ATI-006-coordinate_external_agent_run_continuity: unavailable resume capability releases its host.
+    /// 복원 capability가 불가한 file-hydrated 세션이 같은 host의 새 실행을 영구 차단하지 않는지 검증한다.
+    /// - 검증 내용: typed capability 오류, interrupted persistence, same-host relaunch 완료.
+    /// - 사전 조건: sameIdentityResume가 unknown 또는 unsupported인 running snapshot이 저장되어 있다.
+    /// - 기대 결과: capability 오류 뒤 stale 예약이 정리되고 새 run이 같은 host에서 완료된다.
+    @Test(arguments: [RuntimeCapabilityStatus.unknown, .unsupported])
+    func `unavailable resume capability releases its host`(status: RuntimeCapabilityStatus) async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capabilities = reviewRegressionTestsMakeResumeCapabilities(status)
+        let stored = reviewerBlockerTestsMakeRunningSession(
+            host: "host-resume-unknown",
+            run: RuntimeRunReference("run-resume-unknown"),
+            context: reviewRegressionTestsMakeContext(),
+            capabilities: capabilities,
         )
-        let store = InMemoryRuntimeStateStore(state: RuntimeStoredState(
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        try await store.save(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [stored],
         ))
+        let replacementRun = RuntimeRunReference("run-resume-replacement")
+        let completed = makeEvent(
+            host: stored.externalAgentSessionReference,
+            run: replacementRun,
+            sequence: 1,
+            idempotencyKey: "resume-replacement-completed",
+            kind: .completed,
+        )
         let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
             transport: .sdkAsyncStream,
-            capabilities: .terminalOnly,
-            eventsByLaunch: [[]],
+            capabilities: capabilities,
+            eventsByLaunch: [[completed]],
         )
         let plane = RuntimeControlPlane(store: store)
         try await plane.register(adapter)
 
-        await #expect(throws: RuntimeHostError.capabilityUnknown(.sameIdentityResume)) {
-            try await plane.restore(
-                hostReference: stored.externalAgentSessionReference,
-                expectedContext: stored.contextPolicy,
-            )
-        }
+        try await reviewRegressionTestsExpectUnavailableResume(status, plane: plane, stored: stored)
+        let released = try #require(try await store.load()?.sessions.first)
+        let replacement = makeLaunch(
+            host: stored.externalAgentSessionReference,
+            run: replacementRun,
+            adapterID: "sdk",
+        )
+
+        #expect(released.projection == .interrupted)
+        try await plane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await plane.run(replacement).outcome == .completed)
+        #expect(await adapter.counts().launch == 1)
+        #expect(await plane.projection(for: stored.externalAgentSessionReference) == .completed)
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: provider branch mismatch cannot restore.
@@ -1233,7 +1245,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         ))
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        try await waitForProjection(.launching, host: host, on: plane)
 
         let result = try await plane.ingestHostEvent(reviewerBlockerTestsMakeHostTerminal(
             host: host,
@@ -2368,6 +2380,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         host: ExternalAgentSessionReference,
         run: RuntimeRunReference,
         context: RuntimeContextPolicy,
+        capabilities: RuntimeCapabilities = .allSupported,
     ) -> RuntimeStoredSession {
         RuntimeStoredSession(
             externalAgentSessionReference: host,
@@ -2375,7 +2388,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             runReference: run,
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
-            capabilitySnapshot: .allSupported,
+            capabilitySnapshot: capabilities,
             contextPolicy: context,
             projection: .running,
             lastSequence: 0,
@@ -2402,6 +2415,51 @@ struct ATI006CoordinateExternalAgentSessionsTests {
 
     private func reviewRegressionTestsMakeRunningState() -> RuntimeStoredState {
         reviewRegressionTestsMakeState(projection: .running)
+    }
+
+    private func reviewRegressionTestsMakeResumeCapabilities(
+        _ status: RuntimeCapabilityStatus,
+    ) -> RuntimeCapabilities {
+        RuntimeCapabilities(
+            discovery: .supported,
+            eventStream: .supported,
+            approval: .supported,
+            cancellation: .supported,
+            queuedInput: .supported,
+            terminalResult: .supported,
+            timeout: .supported,
+            sameIdentityResume: status,
+            reconstruction: .supported,
+            explicitArtifact: .supported,
+            workingDirectory: .supported,
+            additionalRoots: .supported,
+            authStatusProbe: .supported,
+        )
+    }
+
+    private func reviewRegressionTestsExpectUnavailableResume(
+        _ status: RuntimeCapabilityStatus,
+        plane: RuntimeControlPlane,
+        stored: RuntimeStoredSession,
+    ) async throws {
+        switch status {
+        case .unknown:
+            await #expect(throws: RuntimeHostError.capabilityUnknown(.sameIdentityResume)) {
+                try await plane.restore(
+                    hostReference: stored.externalAgentSessionReference,
+                    expectedContext: stored.contextPolicy,
+                )
+            }
+        case .unsupported:
+            await #expect(throws: RuntimeHostError.capabilityUnsupported(.sameIdentityResume)) {
+                try await plane.restore(
+                    hostReference: stored.externalAgentSessionReference,
+                    expectedContext: stored.contextPolicy,
+                )
+            }
+        case .supported:
+            throw RuntimeHostError.invalidEvent
+        }
     }
 
     private func reviewRegressionTestsMakeState(projection: RuntimeProjection) -> RuntimeStoredState {
