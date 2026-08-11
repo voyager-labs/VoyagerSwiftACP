@@ -5,6 +5,12 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     enum InjectedFailure: Error {
         case launch
         case restart
+        case eventStream
+    }
+
+    enum EventStreamFailure: Equatable {
+        case creation
+        case iteration
     }
 
     nonisolated let descriptor: RuntimeAdapterDescriptor
@@ -14,6 +20,8 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let IDs: DeterministicRuntimeIDs
     private let launchDelay: Duration
     private let eventStreamDelay: Duration
+    private let eventStreamGate: RuntimeTestGate?
+    private let eventStreamFailure: EventStreamFailure?
     private let operationDelay: Duration
     private let restartDelay: Duration
     private let terminalResultOverride: RuntimeResult?
@@ -22,6 +30,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private var remainingLaunchFailures: Int
     private var launchCount = 0
     private var eventStreamCount = 0
+    private var eventStreamCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var cancellationCount = 0
     private var approvalCount = 0
     private var queuedInputCount = 0
@@ -38,6 +47,8 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         IDs: DeterministicRuntimeIDs = .sequential,
         launchDelay: Duration = .zero,
         eventStreamDelay: Duration = .zero,
+        eventStreamGate: RuntimeTestGate? = nil,
+        eventStreamFailure: EventStreamFailure? = nil,
         operationDelay: Duration = .zero,
         failsLaunch: Bool = false,
         launchFailures: Int = 0,
@@ -60,6 +71,8 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.IDs = IDs
         self.launchDelay = launchDelay
         self.eventStreamDelay = eventStreamDelay
+        self.eventStreamGate = eventStreamGate
+        self.eventStreamFailure = eventStreamFailure
         self.operationDelay = operationDelay
         self.restartDelay = restartDelay
         self.failsRestart = failsRestart
@@ -94,17 +107,29 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         for runReference: RuntimeRunReference,
     ) async throws -> AsyncThrowingStream<RuntimeEventEnvelope, any Error> {
         eventStreamCount += 1
+        resumeEventStreamCountWaiters()
         if eventStreamDelay != .zero {
             try await clock.sleep(eventStreamDelay)
+        }
+        if eventStreamFailure == .creation {
+            await eventStreamGate?.wait()
+            throw InjectedFailure.eventStream
         }
         let index = max(0, launchCount - 1)
         let events = eventsByLaunch.first(where: { $0.first?.runReference == runReference })
             ?? eventsByLaunch[min(index, eventsByLaunch.count - 1)]
         return AsyncThrowingStream { continuation in
-            for event in events {
-                continuation.yield(event)
+            Task {
+                await eventStreamGate?.wait()
+                if eventStreamFailure == .iteration {
+                    continuation.finish(throwing: InjectedFailure.eventStream)
+                    return
+                }
+                for event in events {
+                    continuation.yield(event)
+                }
+                continuation.finish()
             }
-            continuation.finish()
         }
     }
 
@@ -162,6 +187,21 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     func receivedApprovalRequests() -> [RuntimeApprovalRequest] {
         approvalRequests
     }
+
+    func waitForEventStreamCount(_ minimumCount: Int) async {
+        guard eventStreamCount < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            eventStreamCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
+    private func resumeEventStreamCountWaiters() {
+        let ready = eventStreamCountWaiters.filter { $0.0 <= eventStreamCount }
+        eventStreamCountWaiters.removeAll { $0.0 <= eventStreamCount }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
 }
 
 struct RuntimeAdapterInvocationCounts {
@@ -170,6 +210,27 @@ struct RuntimeAdapterInvocationCounts {
     let cancellation: Int
     let approval: Int
     let input: Int
+}
+
+actor RuntimeTestGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
 }
 
 struct DeterministicRuntimeClock {
