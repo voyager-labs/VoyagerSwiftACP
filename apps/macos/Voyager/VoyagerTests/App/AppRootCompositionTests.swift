@@ -17,6 +17,78 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testSignedOutLaunchDefersInitialWindowUntilRuntimeAndWindowCompletion() async {
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        XCTAssertFalse(store.state.lifecycle.isShellReady)
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+        XCTAssertFalse(store.state.lifecycle.didCreateInitialWindow)
+
+        await store.receive { action in
+            guard case .windowManager(.file(.newWindow)) = action else { return false }
+            return true
+        }
+        await store.receive(\.lifecycle.accountAccess.onAppear)
+
+        XCTAssertTrue(store.state.lifecycle.didCreateInitialWindow)
+        XCTAssertTrue(store.state.lifecycle.isShellReady)
+        XCTAssertEqual(store.state.windowManager.windows.count, 1)
+        await store.skipInFlightEffects()
+    }
+
+    func testExternalRouteStaysDeferredUntilActualInitialWindowCompletion() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalURL(url))
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
+        XCTAssertTrue(store.state.isExternalURLRouteInFlightWithoutWindow)
+        XCTAssertFalse(store.state.lifecycle.isShellReady)
+
+        await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+
+        await store.receive { action in
+            guard case .windowManager(.file(.newWindow)) = action else { return false }
+            return true
+        }
+        await store.receive(\.lifecycle.accountAccess.onAppear)
+        XCTAssertTrue(store.state.lifecycle.didCreateInitialWindow)
+        XCTAssertTrue(store.state.lifecycle.isShellReady)
+        XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
+        await store.skipInFlightEffects()
+    }
+
     // MARK: - Entry Core direct health probe
 
     func testEntryCoreHealthProbeRunsExactlyOnceAndPreservesHelperMonitoring() async {
@@ -43,26 +115,15 @@ final class AppRootCompositionTests: XCTestCase {
             $0.helperAppClient = helperAppClient(startCount: helperStartCount)
             $0.helperStateClient = readyHelperStateClient
             $0.onboardingWindowClient.isRequired = { false }
+            $0.onboardingWindowClient.showIfNeeded = { false }
         }
         store.exhaustivity = .off
-        let initialState = store.state
-
-        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
-            $0.accessGatePhase = .granted
+        await store.send(.launch(.didFinishLaunching)) {
+            $0.didFinishLaunching = true
             $0.didStartHelper = true
             $0.didStartEntryCoreHealthProbe = true
         }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
         await fulfillment(of: [probeStarted], timeout: 1)
-
-        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired)))) {
-            $0.accessGatePhase = .recoveryRequired
-        }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
-            $0.accessGatePhase = .granted
-        }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
         XCTAssertEqual(healthCalls.value.map(\.path), ["/tmp/voyager-entry-core.sock"])
 
         gate.continuation.yield(())
@@ -74,8 +135,8 @@ final class AppRootCompositionTests: XCTestCase {
 
         XCTAssertEqual(healthCalls.value.map(\.path), ["/tmp/voyager-entry-core.sock"])
         XCTAssertGreaterThanOrEqual(helperStartCount.value, 1)
-        XCTAssertEqual(store.state.didFinishLaunching, initialState.didFinishLaunching)
-        XCTAssertEqual(store.state.accessGatePhase, .granted)
+        XCTAssertTrue(store.state.didFinishLaunching)
+        XCTAssertTrue(store.state.didCompleteEntryCoreHealthProbe)
         await store.finish()
     }
 
@@ -88,6 +149,7 @@ final class AppRootCompositionTests: XCTestCase {
 
         for environment in environments {
             var initialState = AppLifecycleFeature.State()
+            initialState.didFinishLaunching = true
             initialState.didStartHelper = true
             let store = TestStore(initialState: initialState) {
                 AppLifecycleFeature()
@@ -99,14 +161,15 @@ final class AppRootCompositionTests: XCTestCase {
                     healthCallCount.withValue { $0 += 1 }
                     return EntryCoreHealthResult()
                 }
+                $0.onboardingWindowClient.showIfNeeded = { false }
             }
             store.exhaustivity = .off
 
-            await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
-                $0.accessGatePhase = .granted
+            await store.send(.launch(.didFinishLaunching)) {
+                $0.didFinishLaunching = true
+                $0.didStartHelper = true
                 $0.didStartEntryCoreHealthProbe = true
             }
-            await store.receive(\.delegate.openInitialWindowIfNeeded)
             await store.receive { action in
                 guard case let .entryCoreHealthProbeCompleted(result) = action else { return false }
                 return result.outcome == .unavailable
@@ -140,20 +203,18 @@ final class AppRootCompositionTests: XCTestCase {
             }
             $0.helperAppClient = helperAppClient()
             $0.helperStateClient = readyHelperStateClient
+            $0.onboardingWindowClient.showIfNeeded = { false }
         }
         store.exhaustivity = .off
 
-        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
-            $0.accessGatePhase = .granted
+        await store.send(.launch(.didFinishLaunching)) {
+            $0.didFinishLaunching = true
             $0.didStartHelper = true
             $0.didStartEntryCoreHealthProbe = true
         }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
         await fulfillment(of: [probeStarted], timeout: 1)
 
-        await store.send(.termination(.willTerminate)) {
-            $0.accessGatePhase = .terminating
-        }
+        await store.send(.termination(.willTerminate))
         await store.receive(\.accountAccess.appWillTerminate)
         await fulfillment(of: [probeCancelled], timeout: 1)
         await store.finish()
@@ -194,33 +255,6 @@ final class AppRootCompositionTests: XCTestCase {
         )
     }
 
-    /// Task 3: terminating 상태에서는 unlocked delegate를 거부한다.
-    func testLifecycleUnlockedRejectedWhenTerminating() async {
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
-        )
-        var initialState = AppLifecycleFeature.State()
-        initialState.terminationAttemptID = UUID(0)
-        initialState.accessGatePhase = .terminating
-
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccess(.delegate(.unlocked(snapshot))))
-
-        XCTAssertEqual(store.state.accessGatePhase, .terminating)
-        XCTAssertFalse(store.state.didStartHelper)
-        await store.finish()
-    }
-
-    // MARK: - Task 4: session-end and termination child routing
-
-    /// Task 4: termination(.willTerminate)는 child appWillTerminate를 보낸다.
-    /// RED: 현재 코드는 보내지 않으므로 이 receive가 실패한다.
     func testTerminationWillTerminateSendsChildAppWillTerminate() async {
         var initialState = AppLifecycleFeature.State()
         initialState.terminationAttemptID = UUID(0)
@@ -235,88 +269,60 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.termination(.willTerminate)) {
-            $0.accessGatePhase = .terminating
-        }
+        await store.send(.termination(.willTerminate))
 
         // Task 4가 적용되면 child가 appWillTerminate를 수신한다.
         await store.receive(\.accountAccess.appWillTerminate)
         await store.finish()
     }
 
-    /// Task 4: terminating 상태에서는 recoveryRequired delegate를 거부한다.
-    func testLifecycleRecoveryRequiredRejectedWhenTerminating() async {
-        var initialState = AppLifecycleFeature.State()
-        initialState.terminationAttemptID = UUID(0)
-        initialState.accessGatePhase = .terminating
+    // MARK: - App host lifecycle
 
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
+    func testAppDelegateSuppressesAutomaticLifecycleDispatchDuringXCTestHosting() {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
         }
-        store.exhaustivity = .off
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.shouldSuppressAutomaticLifecycle = { true }
 
-        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired))))
-
-        XCTAssertEqual(store.state.accessGatePhase, .terminating)
-        XCTAssertFalse(store.state.didStartHelper)
-        await store.finish()
-    }
-
-    /// Task 4 QA: terminating phase는 nil attemptID에서도 unlocked delegate를 거부한다.
-    func testLifecycleUnlockedRejectedWhenTerminatingPhaseOnly() async {
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        appDelegate.applicationWillFinishLaunching(
+            Notification(name: NSApplication.willFinishLaunchingNotification),
         )
-        var initialState = AppLifecycleFeature.State()
-        initialState.accessGatePhase = .terminating
-        // terminationAttemptID는 nil — completeTerminationAttempt 이후 상태 시뮬레이션
+        appDelegate.applicationDidFinishLaunching(
+            Notification(name: NSApplication.didFinishLaunchingNotification),
+        )
+        let shouldHandleReopen = appDelegate.applicationShouldHandleReopen(
+            NSApp,
+            hasVisibleWindows: false,
+        )
+        let terminationReply = appDelegate.applicationShouldTerminate(NSApp)
 
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccess(.delegate(.unlocked(snapshot))))
-
-        XCTAssertEqual(store.state.accessGatePhase, .terminating)
-        XCTAssertFalse(store.state.didStartHelper)
-        await store.finish()
+        XCTAssertTrue(box.actions.isEmpty)
+        XCTAssertTrue(shouldHandleReopen)
+        XCTAssertEqual(terminationReply, .terminateNow)
     }
 
-    /// Task 4 QA: terminating phase는 nil attemptID에서도 recoveryRequired delegate를 거부한다.
-    func testLifecycleRecoveryRequiredRejectedWhenTerminatingPhaseOnly() async {
-        var initialState = AppLifecycleFeature.State()
-        initialState.accessGatePhase = .terminating
-
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
+    func testAppDelegateDispatchesDidFinishLaunchingOutsideXCTestHosting() {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
         }
-        store.exhaustivity = .off
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.shouldSuppressAutomaticLifecycle = { false }
 
-        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired))))
+        appDelegate.applicationDidFinishLaunching(
+            Notification(name: NSApplication.didFinishLaunchingNotification),
+        )
 
-        XCTAssertEqual(store.state.accessGatePhase, .terminating)
-        XCTAssertFalse(store.state.didStartHelper)
-        await store.finish()
-    }
-
-    /// Task 4 QA: terminating phase는 nil attemptID에서도 signedOut delegate를 거부한다.
-    func testLifecycleSignedOutRejectedWhenTerminatingPhaseOnly() async {
-        var initialState = AppLifecycleFeature.State()
-        initialState.accessGatePhase = .terminating
-
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccess(.delegate(.signedOut)))
-
-        XCTAssertEqual(store.state.accessGatePhase, .terminating)
-        XCTAssertFalse(store.state.didStartHelper)
-        await store.finish()
+        XCTAssertTrue(box.actions.contains { action in
+            if case .lifecycle(.launch(.didFinishLaunching)) = action {
+                return true
+            }
+            return false
+        })
     }
 
     // MARK: - VOY-521 Auth callback canonical routing
@@ -570,7 +576,10 @@ final class AppRootCompositionTests: XCTestCase {
             ],
         )
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: firstRequest, requiresInitialWindowFallback: false),
             preferredWindowIDs: [],
@@ -581,7 +590,12 @@ final class AppRootCompositionTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
         }
+        // store.exhaustivity = .off: fallback window bootstrap보다 active/queued batch FIFO ownership을 검증함.
+        store.exhaustivity = .off
 
         await store.send(.receiveExternalFileBatch(
             [secondURL],
@@ -605,6 +619,7 @@ final class AppRootCompositionTests: XCTestCase {
             )]
             $0.isInitialWindowFallbackPending = true
             $0.isExternalURLRouteInFlightWithoutWindow = true
+            $0.isExternalURLFlushDelegateScheduled = true
         }
 
         XCTAssertEqual(store.state.activeExternalOpenBatch?.batch.request, firstRequest)
@@ -659,7 +674,10 @@ final class AppRootCompositionTests: XCTestCase {
         let events = LockIsolated<[String]>([])
         let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: request, requiresInitialWindowFallback: false),
             preferredWindowIDs: [],
@@ -746,7 +764,10 @@ final class AppRootCompositionTests: XCTestCase {
         ] + (0 ..< 18).map { .directory(path: "/tmp/overflow/\($0)") }
         let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: request, requiresInitialWindowFallback: false),
             preferredWindowIDs: [],
@@ -781,9 +802,9 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// access gate가 닫히면 normalizing batch를 새 identity로 queue front에 되돌리고 Router batch를 취소한다.
+    /// termination이 시작되면 normalizing batch를 새 identity로 queue front에 되돌리고 Router batch를 취소한다.
     /// duplicate 항목의 identity와 FIFO 순서를 그대로 보존하는지 함께 검증한다.
-    func testGateClosureRequeuesActiveNormalizationAtFront() async throws {
+    func testTerminationRequeuesActiveNormalizationAtFront() async throws {
         let batchID = UUID(200)
         let retryBatchID = UUID(205)
         let url = try XCTUnwrap(URL(string: "file:///tmp/retry"))
@@ -811,7 +832,10 @@ final class AppRootCompositionTests: XCTestCase {
             ],
         )
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.externalFileRouter.activeBatchID = batchID
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: request, requiresInitialWindowFallback: true),
@@ -829,7 +853,7 @@ final class AppRootCompositionTests: XCTestCase {
         // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [
             .init(batchID: retryBatchID, items: items),
@@ -840,8 +864,8 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertNil(store.state.externalFileRouter.activeBatchID)
     }
 
-    /// planning 중 gate가 닫히면 입력 identity를 보존한 새 batch로 재큐하고 old placement completion을 무시한다.
-    func testGateClosureRequeuesPlanningWithFreshIdentityAndIgnoresOldCompletion() async throws {
+    /// planning 중 termination이 시작되면 입력 identity를 보존한 새 batch로 재큐하고 old placement completion을 무시한다.
+    func testTerminationRequeuesPlanningWithFreshIdentityAndIgnoresOldCompletion() async throws {
         let batchID = UUID(210)
         let retryBatchID = UUID(211)
         let duplicateURL = try XCTUnwrap(URL(string: "file:///tmp/planning-duplicate"))
@@ -890,7 +914,10 @@ final class AppRootCompositionTests: XCTestCase {
         }
         active.phase = .planning
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
             .init(request: laterRequest, requiresInitialWindowFallback: false),
@@ -904,7 +931,7 @@ final class AppRootCompositionTests: XCTestCase {
         // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [
             .init(batchID: retryBatchID, items: items),
@@ -921,8 +948,8 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [retryBatchID, laterRequest.batchID])
     }
 
-    /// placement completion 직후 gate가 닫히면 이미 예약된 apply가 window를 변경하지 않고 다음 batch를 동결한다.
-    func testGateClosureRevokesQueuedPlacementApplication() async throws {
+    /// placement completion 직후 termination이 시작되면 이미 예약된 apply가 window를 변경하지 않고 다음 batch를 동결한다.
+    func testTerminationRevokesQueuedPlacementApplication() async throws {
         let batchID = UUID(217)
         let itemID = UUID(218)
         let windowID = UUID(219)
@@ -974,7 +1001,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
@@ -990,10 +1020,10 @@ final class AppRootCompositionTests: XCTestCase {
                 openedWindowIDs.withValue { $0.append(id) }
             }
         }
-        // store.exhaustivity = .off: gate action을 queued apply보다 먼저 보내는 composition race만 검증함.
+        // store.exhaustivity = .off: termination action을 queued apply보다 먼저 보내는 composition race만 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
 
@@ -1010,8 +1040,8 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(openedWindowIDs.value.isEmpty)
     }
 
-    /// apply가 commit한 새 window의 native open은 gate 종료 시 batch cancellation으로 중단된다.
-    func testGateClosureCancelsDelayedPlacementNativeOpen() async {
+    /// apply가 commit한 새 window의 native open은 termination 시 batch cancellation으로 중단된다.
+    func testTerminationCancelsDelayedPlacementNativeOpen() async {
         let batchID = UUID(222)
         let itemID = UUID(223)
         let windowID = UUID(224)
@@ -1050,7 +1080,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
         let openStarted = expectation(description: "placement native open started")
@@ -1089,7 +1122,7 @@ final class AppRootCompositionTests: XCTestCase {
         ))))
         await fulfillment(of: [openStarted], timeout: 1)
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [openCancelled, nativeCloseCalled], timeout: 1)
         await store.skipReceivedActions()
 
@@ -1104,8 +1137,8 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// applying 중 gate가 닫히면 committed batch를 재큐하지 않고 old completion을 무시하며 다음 FIFO를 동결한다.
-    func testGateClosureDropsApplyingBatchAndFreezesNextQueue() async throws {
+    /// applying 중 termination이 시작되면 committed batch를 재큐하지 않고 old completion을 무시하며 다음 FIFO를 동결한다.
+    func testTerminationDropsApplyingBatchAndFreezesNextQueue() async throws {
         let batchID = UUID(220)
         let nextBatchID = UUID(221)
         let itemID = UUID(222)
@@ -1132,7 +1165,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
             .init(request: nextRequest, requiresInitialWindowFallback: true),
@@ -1147,7 +1183,7 @@ final class AppRootCompositionTests: XCTestCase {
         // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [nextRequest])
@@ -1164,8 +1200,8 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
     }
 
-    /// terminal phase의 마지막 batch를 drop하면 no-window bookkeeping만 정리하고 gate 뒤 창을 열지 않는다.
-    func testGateClosureDropsLastApplyingBatchWithoutOpeningFallbackWindow() async throws {
+    /// terminal phase의 마지막 batch를 drop하면 no-window bookkeeping만 정리하고 종료 중 창을 열지 않는다.
+    func testTerminationDropsLastApplyingBatchWithoutOpeningFallbackWindow() async throws {
         let batchID = UUID(230)
         let itemID = UUID(231)
         let url = try XCTUnwrap(URL(string: "file:///tmp/applying-last"))
@@ -1182,7 +1218,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = .init(batchID: batchID, windows: [])
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
         initialState.isInitialWindowFallbackPending = true
@@ -1191,11 +1230,14 @@ final class AppRootCompositionTests: XCTestCase {
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.onboardingWindowClient.showIfNeeded = { false }
         }
         // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
 
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
@@ -1205,8 +1247,6 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertFalse(store.state.isExternalURLFlushDelegateScheduled)
         XCTAssertTrue(store.state.windowManager.windows.isEmpty)
 
-        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
-        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
         await store.finish()
     }
 
@@ -1237,7 +1277,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.orderedFailures = [failure]
         active.phase = .alerting
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = active
 
         let store = TestStore(initialState: initialState) {
@@ -1292,7 +1335,10 @@ final class AppRootCompositionTests: XCTestCase {
         ]
         active.phase = .planning
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.authorizedExternalOpenBatchID = currentBatchID
         initialState.activeExternalOpenBatch = active
         let store = TestStore(initialState: initialState) {
@@ -1335,7 +1381,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.authorizedExternalOpenBatchID = firstBatchID
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
@@ -1382,7 +1431,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = active
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -1430,7 +1482,10 @@ final class AppRootCompositionTests: XCTestCase {
         )
         active.phase = .advancing
         var state = AppRootFeature.State()
-        state.lifecycle.accessGatePhase = .granted
+        state.lifecycle.didFinishLaunching = true
+        state.lifecycle.didStartHelper = true
+        state.lifecycle.didCompleteEntryCoreHealthProbe = true
+        state.lifecycle.didCreateInitialWindow = true
         state.windowManager.windows = [.init(id: windowID, window: window)]
         state.pendingExternalURLs = [pendingURL]
         state.externalOpenBatchQueue = [
@@ -1494,7 +1549,10 @@ final class AppRootCompositionTests: XCTestCase {
         )
         active.phase = .advancing
         var state = AppRootFeature.State()
-        state.lifecycle.accessGatePhase = .granted
+        state.lifecycle.didFinishLaunching = true
+        state.lifecycle.didStartHelper = true
+        state.lifecycle.didCompleteEntryCoreHealthProbe = true
+        state.lifecycle.didCreateInitialWindow = true
         state.activeExternalOpenBatch = active
         state.pendingExternalURLs = [pendingURL]
         state.externalOpenBatchQueue = [
@@ -1571,7 +1629,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.pendingExternalURLs = [pendingURL]
         initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
@@ -1659,7 +1720,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .activating
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = active
         initialState.windowManager.windows = [.init(id: windowID, window: window)]
         initialState.windowManager.externalWindowBatchIDs = [windowID: batchID]
@@ -1747,7 +1811,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.windows = [.init(id: windowID, window: window)]
         initialState.windowManager.authorizedExternalOpenBatchID = firstBatchID
         initialState.activeExternalOpenBatch = active
@@ -1797,8 +1864,8 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// activating native effect가 지연된 동안 gate가 닫히면 late completion이 다음 batch를 시작하지 않는다.
-    func testGateClosureDuringDelayedActivationDropsBatchAndFreezesNextQueue() async throws {
+    /// activating native effect가 지연된 동안 termination이 시작되면 late completion이 다음 batch를 시작하지 않는다.
+    func testTerminationDuringDelayedActivationDropsBatchAndFreezesNextQueue() async throws {
         let batchID = UUID(710)
         let nextBatchID = UUID(711)
         let itemID = UUID(712)
@@ -1853,7 +1920,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .applying
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.windows = [.init(id: windowID, window: window)]
         initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
@@ -1892,7 +1962,7 @@ final class AppRootCompositionTests: XCTestCase {
         await fulfillment(of: [activationStarted], timeout: 1)
         XCTAssertNotNil(store.state.windowManager.externalOpenActivationAttempt)
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [activationCancelled], timeout: 1)
         await store.skipReceivedActions()
         XCTAssertNil(store.state.activeExternalOpenBatch)
@@ -1906,8 +1976,8 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// final target discard 뒤 시작한 retry activation도 gate 종료 시 같은 batch cancellation으로 중단된다.
-    func testGateClosureCancelsDelayedRetryActivation() async throws {
+    /// final target discard 뒤 시작한 retry activation도 termination 시 같은 batch cancellation으로 중단된다.
+    func testTerminationCancelsDelayedRetryActivation() async throws {
         let batchID = UUID(715)
         let firstWindowID = UUID(716)
         let finalWindowID = UUID(717)
@@ -1953,7 +2023,10 @@ final class AppRootCompositionTests: XCTestCase {
         active.placementPlan = plan
         active.phase = .activating
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.windows = [
             .init(id: firstWindowID, window: firstWindow),
             .init(id: finalWindowID, window: finalWindow),
@@ -1991,7 +2064,7 @@ final class AppRootCompositionTests: XCTestCase {
         await fulfillment(of: [retryStarted], timeout: 1)
         XCTAssertEqual(activatedWindowIDs.value, [finalWindowID, firstWindowID])
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [retryCancelled], timeout: 1)
         await store.skipReceivedActions()
 
@@ -2037,7 +2110,10 @@ final class AppRootCompositionTests: XCTestCase {
         )
         let alerts = LockIsolated<[String]>([])
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: request, requiresInitialWindowFallback: false),
             preferredWindowIDs: [],
@@ -2095,7 +2171,10 @@ final class AppRootCompositionTests: XCTestCase {
             ],
         )
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.isInitialWindowFallbackPending = true
         initialState.isExternalURLRouteInFlightWithoutWindow = true
         initialState.activeExternalOpenBatch = .init(
@@ -2108,6 +2187,7 @@ final class AppRootCompositionTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
@@ -2143,13 +2223,20 @@ final class AppRootCompositionTests: XCTestCase {
         )
         active.phase = .alerting
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activeExternalOpenBatch = active
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: generated queue identity는 URL order로 검증함.
         store.exhaustivity = .off
@@ -2171,7 +2258,10 @@ final class AppRootCompositionTests: XCTestCase {
         let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fpending"))
         let batchURL = URL(fileURLWithPath: "/tmp/batch-after-singleton")
         var state = AppRootFeature.State()
-        state.lifecycle.accessGatePhase = .granted
+        state.lifecycle.didFinishLaunching = true
+        state.lifecycle.didStartHelper = true
+        state.lifecycle.didCompleteEntryCoreHealthProbe = true
+        state.lifecycle.didCreateInitialWindow = true
         state.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
         let feature = AppRootFeature()
 
@@ -2212,7 +2302,10 @@ final class AppRootCompositionTests: XCTestCase {
             items: [.init(itemID: UUID(811), index: 0, url: batchURL, source: .systemOpenEvent, mode: .open)],
         )
         var state = AppRootFeature.State()
-        state.lifecycle.accessGatePhase = .granted
+        state.lifecycle.didFinishLaunching = true
+        state.lifecycle.didStartHelper = true
+        state.lifecycle.didCompleteEntryCoreHealthProbe = true
+        state.lifecycle.didCreateInitialWindow = true
         state.pendingExternalURLs = [pendingURL]
         state.activeExternalOpenBatch = .init(
             batch: .init(request: batch, requiresInitialWindowFallback: false),
@@ -2236,12 +2329,16 @@ final class AppRootCompositionTests: XCTestCase {
         let firstURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fwarm-first"))
         let secondURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fwarm-second"))
         var state = AppRootFeature.State()
-        state.lifecycle.accessGatePhase = .granted
+        state.lifecycle.didFinishLaunching = true
+        state.lifecycle.didStartHelper = true
+        state.lifecycle.didCompleteEntryCoreHealthProbe = true
+        state.lifecycle.didCreateInitialWindow = true
         state.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
         let feature = AppRootFeature()
 
         withDependencies {
             $0.uuid = .incrementing
+            $0.onboardingWindowClient.isRequired = { false }
         } operation: {
             _ = feature.enqueueExternalURL(firstURL, state: &state)
             _ = feature.enqueueExternalURL(secondURL, state: &state)
@@ -2258,7 +2355,10 @@ final class AppRootCompositionTests: XCTestCase {
         let activeURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Factive"))
         let nextURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fnext"))
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
         initialState.activePendingExternalURL = .init(requestID: requestID, url: activeURL)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
@@ -2283,7 +2383,10 @@ final class AppRootCompositionTests: XCTestCase {
             items: [.init(itemID: UUID(811), index: 0, url: batchURL, source: .systemOpenEvent, mode: .open)],
         )
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: batch, requiresInitialWindowFallback: false),
@@ -2300,24 +2403,30 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// gate closure는 active occurrence를 front에 보존하고 stale route를 거부하며 retry identity를 갱신한다.
-    func testGateClosureRequeuesTrackedSingletonWithFreshIdentityAndRejectsStaleRoute() async throws {
+    /// termination은 active occurrence를 front에 보존하고 stale route를 거부하며 retry identity를 갱신한다.
+    func testTerminationRequeuesTrackedSingletonWithFreshIdentityAndRejectsStaleRoute() async throws {
         let oldRequestID = UUID(812)
         let freshRequestID = UUID(813)
         let duplicateURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fduplicate"))
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: oldRequestID, url: duplicateURL)
         initialState.pendingExternalURLs = [duplicateURL]
         initialState.externalFileRouter.activeTrackedRequestID = oldRequestID
         initialState.windowManager.authorizedTrackedSingletonRequestID = oldRequestID
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.onboardingWindowClient.showIfNeeded = { false }
         }
         // store.exhaustivity = .off: lifecycle presentation effect보다 singleton cancellation/requeue 경계를 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         XCTAssertNil(store.state.activePendingExternalURL)
         XCTAssertEqual(store.state.pendingExternalURLs, [duplicateURL, duplicateURL])
         XCTAssertNil(store.state.windowManager.authorizedTrackedSingletonRequestID)
@@ -2332,9 +2441,13 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertNil(store.state.windowManager.authorizedTrackedSingletonRequestID)
 
         var retryState = store.state
-        retryState.lifecycle.accessGatePhase = .granted
+        retryState.lifecycle.didFinishLaunching = true
+        retryState.lifecycle.didStartHelper = true
+        retryState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        retryState.lifecycle.didCreateInitialWindow = true
         withDependencies {
             $0.uuid = .constant(freshRequestID)
+            $0.onboardingWindowClient.isRequired = { false }
         } operation: {
             _ = AppRootFeature().startNextPendingExternalURLIfPossible(state: &retryState)
         }
@@ -2347,8 +2460,8 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// delayed native open 중 gate closure는 생성 session을 rollback하고 native window를 close한다.
-    func testGateClosureDuringDelayedTrackedNativeOpenRollsBackWindowAndRequeues() async throws {
+    /// delayed native open 중 termination은 생성 session을 rollback하고 native window를 close한다.
+    func testTerminationDuringDelayedTrackedNativeOpenRollsBackWindowAndRequeues() async throws {
         let requestID = UUID(818)
         let windowID = UUID(819)
         let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fdelayed-gate"))
@@ -2357,7 +2470,10 @@ final class AppRootCompositionTests: XCTestCase {
         let openGate = AsyncStream<Void>.makeStream()
         let closedIDs = LockIsolated<[UUID]>([])
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
         let store = TestStore(initialState: initialState) {
@@ -2365,6 +2481,7 @@ final class AppRootCompositionTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .constant(windowID)
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in
                 openStarted.fulfill()
@@ -2394,7 +2511,7 @@ final class AppRootCompositionTests: XCTestCase {
         )
         XCTAssertEqual(store.state.windowManager.windows.ids.count, 1)
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [closeCompleted], timeout: 1)
         await store.skipReceivedActions()
 
@@ -2410,7 +2527,7 @@ final class AppRootCompositionTests: XCTestCase {
     }
 
     /// delayed fallback revoke는 native open뿐 아니라 후속 default bootstrap도 취소한다.
-    func testGateClosureDuringDelayedTrackedFallbackCancelsBootstrapAndRollsBack() async throws {
+    func testTerminationDuringDelayedTrackedFallbackCancelsBootstrapAndRollsBack() async throws {
         let requestID = UUID(820)
         let windowID = UUID(821)
         let url = try XCTUnwrap(URL(string: "voyager://open"))
@@ -2419,7 +2536,10 @@ final class AppRootCompositionTests: XCTestCase {
         let openGate = AsyncStream<Void>.makeStream()
         let ensureCount = LockIsolated(0)
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
         let store = TestStore(initialState: initialState) {
@@ -2427,6 +2547,7 @@ final class AppRootCompositionTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .constant(windowID)
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerBuiltInCollectionClient.ensureAll = {
                 ensureCount.withValue { $0 += 1 }
@@ -2448,7 +2569,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         await store.receive(\.windowManager.trackedSingleton)
         await fulfillment(of: [openStarted], timeout: 1)
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [closeCompleted], timeout: 1)
         await store.skipReceivedActions()
 
@@ -2459,14 +2580,17 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// native open completion 뒤 parent terminal 전 gate closure도 retained ownership으로 rollback한다.
-    func testGateClosureAfterNativeOpenBeforeParentTerminalRollsBackWindow() async throws {
+    /// native open completion 뒤 parent terminal 전 termination도 retained ownership으로 rollback한다.
+    func testTerminationAfterNativeOpenBeforeParentTerminalRollsBackWindow() async throws {
         let requestID = UUID(822)
         let windowID = UUID(823)
         let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fterminal-gap"))
         let closeCompleted = expectation(description: "terminal-gap native close completed")
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
         initialState.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/tmp/terminal-gap"))]
@@ -2486,7 +2610,7 @@ final class AppRootCompositionTests: XCTestCase {
         // store.exhaustivity = .off: native completion과 queued parent terminal 사이 revoke ownership만 검증함.
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [closeCompleted], timeout: 1)
         await store.skipReceivedActions()
         XCTAssertNotNil(store.state.windowManager.windows[id: windowID])
@@ -2505,7 +2629,10 @@ final class AppRootCompositionTests: XCTestCase {
         let requestID = UUID(814)
         let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Ftermination"))
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
         initialState.windowManager.authorizedTrackedSingletonRequestID = requestID
@@ -2539,7 +2666,10 @@ final class AppRootCompositionTests: XCTestCase {
         let staleRequestID = UUID(816)
         let pendingURL = try XCTUnwrap(URL(string: "voyager://auth/callback?code=tracked"))
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
         let store = TestStore(initialState: initialState) {
@@ -2571,7 +2701,10 @@ final class AppRootCompositionTests: XCTestCase {
         let alertStarted = expectation(description: "tracked alert started")
         let alertGate = AsyncStream<Void>.makeStream()
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
         initialState.externalFileRouter.activeTrackedRequestID = requestID
         let store = TestStore(initialState: initialState) {
@@ -2630,7 +2763,10 @@ final class AppRootCompositionTests: XCTestCase {
         let openGate = AsyncStream<Void>.makeStream()
         let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
         initialState.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
         let store = TestStore(initialState: initialState) {
             AppRootFeature()

@@ -365,10 +365,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let fixture = makeBackgroundContentStatusFixture()
         let store = fixture.store
 
-        await store.send(.content(.aiChat(.executionEvent(.status(
+        await store.send(.backgroundAiChat(.executionEvent(.status(
             context: fixture.ownerLock.context,
             signal: fixture.signal,
-        )))))
+        ))))
 
         XCTAssertEqual(
             store.state.backgroundAiChatStates[fixture.ownerSessionID]?.aiChat.executionPhase,
@@ -383,10 +383,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let afterMatchingStatus = store.state
         for context in mismatchedStatusContexts(for: fixture.ownerLock) {
-            await store.send(.content(.aiChat(.executionEvent(.status(
+            await store.send(.backgroundAiChat(.executionEvent(.status(
                 context: context,
                 signal: fixture.signal,
-            )))))
+            ))))
             XCTAssertEqual(store.state, afterMatchingStatus)
         }
 

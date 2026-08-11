@@ -250,17 +250,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(request.context.currentContext, userContext)
         XCTAssertEqual(request.context.requestContext.addedAttachments.count, 1)
         XCTAssertEqual(request.context.selectedThinking, .effort(.high))
-        XCTAssertEqual(request.messages.last, AiChatMessage(
+        let submittedMessage = AiChatMessage(
             role: .user,
             content: "User question",
             createdAtMs: 1_700_000_000_000,
-        ))
+        )
+        XCTAssertEqual(request.messages.last, submittedMessage)
         XCTAssertEqual(snapshot.sessionID, sessionID)
-        XCTAssertEqual(snapshot.transcriptHistory.last, AiChatMessage(
-            role: .user,
-            content: "User question",
-            createdAtMs: 1_700_000_000_000,
-        ))
+        XCTAssertEqual(snapshot.transcriptHistory.last, submittedMessage)
 
         await store.send(.inspector(.aiChat(.cancelTapped)))
         await store.finish()

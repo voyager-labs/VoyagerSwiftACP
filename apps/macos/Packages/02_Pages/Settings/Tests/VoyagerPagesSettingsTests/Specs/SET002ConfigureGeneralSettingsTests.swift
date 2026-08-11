@@ -32,16 +32,11 @@ import XCTest
 
 @MainActor
 final class SET002ConfigureGeneralSettingsTests: XCTestCase {
-    nonisolated(unsafe) private var storage: InMemoryStorage!
+    nonisolated(unsafe) private var storage = InMemoryStorage()
 
     override func setUp() {
         super.setUp()
         storage = InMemoryStorage()
-    }
-
-    override func tearDown() {
-        storage = nil
-        super.tearDown()
     }
 
     private func makeStore(
@@ -52,8 +47,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         pathExists: @escaping @Sendable (String) -> Bool = { _ in false },
         isDirectory: @escaping @Sendable (String) -> Bool = { _ in false },
     ) -> TestStore<GeneralSettingsFeature.State, GeneralSettingsFeature.Action> {
-        // swiftlint:disable:next force_unwrapping
-        let storage = storage!
+        let storage = storage
         let userDefaultsClient = UserDefaultsClient(
             bool: { key in storage.getBool(key) ?? false },
             setBool: { value, key in storage.setBool(value, forKey: key) },

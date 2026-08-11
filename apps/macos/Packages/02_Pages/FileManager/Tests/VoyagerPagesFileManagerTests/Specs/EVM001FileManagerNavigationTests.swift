@@ -83,7 +83,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 사전 조건: navigationState == .collection, collectionSession.document 설정됨
     /// - 기대 결과: externalFileSystemChanged 전송 후 수신 액션 없음
     func testExternalChangeIgnoresOpenedCollectionDocumentPath() async {
-        let collectionURL = URL(fileURLWithPath: Self.fixturePath("data/sample-config.yaml"))
+        let collectionURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sample-config-\(UUID().uuidString).voycoll", isDirectory: true)
         var state = FileManagerContentState()
         state.navigation.navigationState = .collection(.init(
             kind: .file(url: collectionURL, name: "sample-config"),
@@ -110,8 +111,25 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     func testFolderNavigationStartsWatcherAndForwardsExternalChanges() async {
         let currentPath = Self.fixtureDir("texts/plain")
         let changedPath = "\(currentPath)/11.txt"
+        let normalizedChangedPath = FileChangeScopePolicy.normalizedPath(changedPath)
+        let changedEvent = FileChangeGatewayEvent(
+            path: changedPath,
+            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+        )
+        let matchingInterest = FileChangeWatchInterest(
+            id: "test-visible-folder",
+            owner: .fileManager,
+            purpose: .visibleFolderReload,
+            roots: [currentPath],
+            includeSubfolders: true,
+        )
+        XCTAssertEqual(
+            gatewayRelevantChangedPaths([changedEvent], interest: matchingInterest, openedURL: nil),
+            [normalizedChangedPath],
+        )
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(currentPath)
+        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
         let store = TestStore(initialState: state) {
             FileManagerContentNavigationBridgeReducer()
         } withDependencies: {
@@ -120,15 +138,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 XCTAssertEqual(interests.map(\.purpose), [.visibleFolderReload])
             }
             $0.fileChangeGatewayClient.observeEvents = {
-                AsyncStream { continuation in
-                    continuation.yield([
-                        FileChangeGatewayEvent(
-                            path: changedPath,
-                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
-                        ),
-                    ])
-                    continuation.finish()
-                }
+                AsyncStream { continuation in eventContinuation.setValue(continuation) }
             }
         }
         store.exhaustivity = .off
@@ -136,7 +146,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.internal(.applyNavigationState(.folder(currentPath))))
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.externalFileSystemChanged, [changedPath])
+        while eventContinuation.value == nil {
+            await Task.yield()
+        }
+        eventContinuation.value?.yield([changedEvent])
+        await store.receive(\.externalFileSystemChanged, [normalizedChangedPath])
+        eventContinuation.value?.finish()
+        await store.finish()
     }
 
     /// EVM-001-reload_directory_page_on_external_change: collection 이동 시 scope watcher 시작 및 외부 변경 전달

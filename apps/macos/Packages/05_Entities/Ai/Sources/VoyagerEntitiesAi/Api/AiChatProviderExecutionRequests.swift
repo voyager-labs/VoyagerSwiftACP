@@ -283,7 +283,7 @@ extension AiChatProviderExecutionClient {
 
     static func codexReasoningEffort(from thinking: AiChatProviderThinkingPayload?) -> String? {
         switch thinking {
-        case .some(.none):
+        case .some(AiChatProviderThinkingPayload.none):
             "none"
         case let .some(.effort(value)), let .some(.adaptive(.some(value))):
             value.rawValue

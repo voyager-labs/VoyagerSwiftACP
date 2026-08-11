@@ -1,14 +1,10 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccountAccess
 
 @Reducer
 public struct AccountSettingsFeature {
     public typealias State = AccountSettingsState
     public typealias Action = AccountSettingsAction
-
-    @Dependency(\.checkoutURLClient)
-    var checkoutURLClient
 
     public init() {}
 
@@ -29,13 +25,6 @@ public struct AccountSettingsFeature {
             case .signOutCancelled:
                 state.isShowingSignOutConfirmation = false
                 return .none
-            case .retryTapped:
-                return .send(.delegate(.retryRequested))
-            case .manageAccountTapped:
-                return .run { [checkoutURLClient] _ in
-                    guard let url = try? checkoutURLClient.accountURL() else { return }
-                    checkoutURLClient.openURL(url)
-                }
             }
         }
     }

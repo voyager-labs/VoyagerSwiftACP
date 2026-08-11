@@ -2,27 +2,12 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import VoyagerEntitiesCollection
-import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @MainActor
 public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
-    @MainActor
-    private struct SessionLapseGuardContext {
-        let store: Store<AccountAccessFeature.State?, AccountAccessAction>
-        let resolveState: @MainActor () -> AccountAccessFeature.State?
-
-        init(
-            store: Store<AccountAccessFeature.State?, AccountAccessAction>,
-            resolveState: (@MainActor () -> AccountAccessFeature.State?)?,
-        ) {
-            self.store = store
-            self.resolveState = resolveState ?? { store.withState(\.self) }
-        }
-    }
-
     public let windowID: UUID
     public let store: StoreOf<FileManagerFeature>
     private let fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
@@ -39,8 +24,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         path: String? = nil,
         workspaceClient: WorkspaceClient = .liveValue,
-        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
-        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -64,9 +47,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             store: store,
             path: path,
             workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
             materialOverride: nil,
@@ -85,8 +65,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         path: String? = nil,
         workspaceClient: WorkspaceClient = .liveValue,
-        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
-        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -111,9 +89,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             store: store,
             path: path,
             workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
             materialOverride: materialOverride,
@@ -132,8 +107,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         path: String? = nil,
         workspaceClient: WorkspaceClient = .liveValue,
         duplicateState: FileManagerFeature.State? = nil,
-        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
-        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -174,9 +147,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             store: store,
             path: path,
             workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
             materialOverride: nil,
@@ -263,7 +233,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         store: StoreOf<FileManagerFeature>,
         path: String?,
         workspaceClient: WorkspaceClient,
-        sessionLapseGuard: SessionLapseGuardContext?,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
         materialOverride: FileManagerWindowMaterialOverride?,
@@ -275,8 +244,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
                 store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
                 workspaceClient: workspaceClient,
-                sessionLapseGuardStore: sessionLapseGuard?.store,
-                sessionLapseGuardState: sessionLapseGuard?.resolveState,
                 materialOverride: materialOverride,
             )
         }

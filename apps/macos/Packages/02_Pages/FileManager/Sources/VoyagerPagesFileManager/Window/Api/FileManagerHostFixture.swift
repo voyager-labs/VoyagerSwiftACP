@@ -5,7 +5,6 @@ import IdentifiedCollections
 import UniformTypeIdentifiers
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
-import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -70,7 +69,7 @@ public enum FileManagerHostFixture {
     }
 
     public static func makeWindowController(
-        preset: FileManagerHostPreset = .default,
+        preset _: FileManagerHostPreset = .default,
         oneDriveIcon: @escaping @Sendable () -> NSImage? = { nil },
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -98,9 +97,6 @@ public enum FileManagerHostFixture {
             store: store,
             fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
             workspaceClient: workspaceClient,
-            sessionLapseGuardStore: FileManagerHostFixture.makeSessionLapseGuardStore(
-                for: preset.scenario.sessionLapse,
-            ),
             onBecameKey: onBecameKey,
             onWillClose: onWillClose,
             materialOverride: materialConfiguration?.materialOverride,
@@ -112,25 +108,6 @@ public enum FileManagerHostFixture {
         in coordinator: FileManagerWindowCoordinator,
     ) {
         coordinator.updateMaterialOverride(materialConfiguration?.materialOverride)
-    }
-
-    static func makeSessionLapseGuardStore(
-        for scenario: FileManagerHostSessionLapseScenario,
-    ) -> Store<AccountAccessFeature.State?, AccountAccessAction>? {
-        switch scenario {
-        case .none:
-            return nil
-        case .active, .signInFailed:
-            var guardState: AccountAccessFeature.State? = AccountAccessFeature.State()
-            if scenario == .signInFailed {
-                guardState?.didSignInFail = true
-            }
-            return Store<AccountAccessFeature.State?, AccountAccessAction>(
-                initialState: guardState,
-            ) {
-                EmptyReducer()
-            }
-        }
     }
 }
 

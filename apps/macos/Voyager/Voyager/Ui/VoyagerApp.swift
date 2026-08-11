@@ -3,9 +3,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
-import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
-import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -17,11 +15,11 @@ import VoyagerShared
 private final class AppRootStoreReference {
     var store: StoreOf<AppRootFeature>?
 
-    func accountAccessStore() -> StoreOf<AccountAccessFeature> {
+    func openInitialWindowIfNeeded() async {
         guard let store else {
-            preconditionFailure("AppRoot store must be configured before presenting onboarding.")
+            preconditionFailure("AppRoot store must be configured before opening the initial window.")
         }
-        return store.scope(state: \.lifecycle.accountAccess, action: \.lifecycle.accountAccess)
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))).finish()
     }
 }
 
@@ -48,21 +46,9 @@ struct VoyagerApp: App {
             $0.composerMetricClient = Self.makeComposerMetricClient()
             $0.collectionMetricClient = Self.makeCollectionMetricClient()
             $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
-                openMainWindow: { request in
-                    await MainActor.run {
-                        let resolvedPath: String = switch request {
-                        case .defaultTabPath:
-                            SettingsDefaults.defaultTabPath()
-                        case let .explicitPath(path):
-                            path
-                        }
-                        requestFileManagerNewWindow(path: resolvedPath)
-                    }
-                    await Task.yield()
+                openMainWindow: { _ in
+                    await appRootStoreReference.openInitialWindowIfNeeded()
                     return true
-                },
-                resolveAccountAccessStore: {
-                    appRootStoreReference.accountAccessStore()
                 },
             )
             $0.fileManagerWindowClient = fileManagerWindowClient
@@ -71,7 +57,6 @@ struct VoyagerApp: App {
             $0.workspaceClient = workspaceClient
         }
         appRootStoreReference.store = appRootStore
-
         configureFileManagerWindowCallbacks()
         appDelegate.configure(appRootStore: appRootStore)
         configureLogging()
@@ -176,17 +161,6 @@ struct VoyagerApp: App {
                 },
                 onClosed: { [appRootStore] id in
                     appRootStore.send(.windowManager(.event(.windowClosed(id))))
-                },
-            ),
-            sessionLapseGuardProvider: FileManagerSessionLapseGuardProvider(
-                resolveStore: { [appRootStore] in
-                    appRootStore.scope(
-                        state: \.lifecycle.presentedAccountAccess,
-                        action: \.lifecycle.accountAccess,
-                    )
-                },
-                resolveState: { [appRootStore] in
-                    appRootStore.state.lifecycle.presentedAccountAccess
                 },
             ),
         )
