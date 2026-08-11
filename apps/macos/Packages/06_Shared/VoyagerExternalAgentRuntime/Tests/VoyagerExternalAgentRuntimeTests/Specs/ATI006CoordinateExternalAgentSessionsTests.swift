@@ -1519,6 +1519,88 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         }
     }
 
+    /// ATI-006-project_external_agent_run_events: streaming terminal result must correlate to the active run.
+    /// 저장된 terminal projection이 provider 상관관계 위반을 성공으로 숨기지 않는지 검증한다.
+    /// - 검증 내용: streaming terminal event 뒤 잘못된 runReference를 반환한 terminalResult 오류 전파.
+    /// - 사전 조건: event stream은 현재 run을 완료하고 terminalResult는 다른 run을 반환한다.
+    /// - 기대 결과: stored terminal fallback 대신 malformedAdapterResponse가 반환된다.
+    @Test
+    func `streaming terminal result must correlate to the active run`() async throws {
+        let host: ExternalAgentSessionReference = "host-stream-correlation"
+        let run = RuntimeRunReference("run-stream-correlation")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "completed",
+                kind: .completed,
+            )]],
+            terminalResultOverride: RuntimeResult(
+                runReference: RuntimeRunReference("wrong-run"),
+                outcome: .completed,
+                artifactReferences: [],
+            ),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            _ = try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+    }
+
+    /// ATI-006-project_external_agent_run_events: late provider event cannot reuse a replacement terminal.
+    /// 이전 run의 지연된 stream이 replacement run의 terminal 결과를 자신의 결과로 반환하지 않는지 검증한다.
+    /// - 검증 내용: late event의 run 상관관계 오류와 replacement terminal projection 보존.
+    /// - 사전 조건: replacement terminal이 복원된 coordinator에 이전 run의 stale consumer가 재진입한다.
+    /// - 기대 결과: 이전 run은 malformedAdapterResponse로 끝나고 새 run의 terminal 상태는 유지된다.
+    @Test
+    func `late provider event cannot reuse a replacement terminal`() async throws {
+        let host: ExternalAgentSessionReference = "host-stream-replacement"
+        let oldRun = RuntimeRunReference("run-stream-old")
+        let replacementRun = RuntimeRunReference("run-stream-replacement")
+        let oldAdapter = DeterministicRuntimeAdapter(
+            id: "old-sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: oldRun,
+                sequence: 1,
+                idempotencyKey: "old-completed",
+                kind: .completed,
+            )]],
+        )
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("replacement-handle"),
+            runReference: replacementRun,
+            adapterID: RuntimeAdapterID("replacement-terminal"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .terminalOnly,
+            contextPolicy: finalReviewTestsMakeContext(),
+            projection: .completed,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        )))
+        try await plane.register(oldAdapter)
+        try await plane.hydrateIfNeeded()
+        #expect(await plane.projection(for: host) == .completed)
+        let staleReceipt = RuntimeLaunchReceipt(
+            runReference: oldRun,
+            providerInternalSessionReference: ProviderInternalSessionReference("old-handle"),
+        )
+
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try await plane.consume(staleReceipt, from: oldAdapter, host: host)
+        }
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
     /// ATI-006-project_external_agent_run_events: terminal-only adapter completes without opening an event stream.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
@@ -2239,6 +2321,54 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         await operationGate.open()
 
         await #expect(throws: RuntimeHostError.invalidEvent) { try await cancellationTask.value }
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
+    /// ATI-006-project_external_agent_run_events: delayed operation survives a same-lease nonterminal event.
+    /// 같은 run의 progress projection이 성공한 operation acknowledgement를 stale 처리하지 않는지 검증한다.
+    /// - 검증 내용: operation await 중 provider progress 수용 뒤 lease와 operation 결과.
+    /// - 사전 조건: cancellation이 adapter gate에서 대기하고 동일 lease에서 progress event가 저장된다.
+    /// - 기대 결과: cancellation은 성공하고 이후 terminal 전환도 정상 완료된다.
+    @Test
+    func `delayed operation survives a same-lease nonterminal event`() async throws {
+        let host: ExternalAgentSessionReference = "host-operation-nonterminal"
+        let run = RuntimeRunReference("run-operation-nonterminal")
+        let operationGate = RuntimeTestGate()
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 2,
+                idempotencyKey: "completed",
+                kind: .completed,
+            )]],
+            eventStreamGate: streamGate,
+            operationGate: operationGate,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let runTask = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
+        await adapter.waitForEventStreamCount(1)
+        let cancellationTask = Task {
+            try await plane.requestCancellation(hostReference: host, operationID: RuntimeOperationID("cancel"))
+        }
+        while await adapter.counts().cancellation == 0 {
+            await Task.yield()
+        }
+
+        _ = try await plane.accept(
+            makeEvent(host: host, run: run, sequence: 1, idempotencyKey: "progress", kind: .progress),
+            host: host,
+            expectedSource: .provider,
+        )
+        await operationGate.open()
+
+        try await cancellationTask.value
+        await streamGate.open()
+        #expect(try await runTask.value.outcome == .completed)
         #expect(await plane.projection(for: host) == .completed)
     }
 

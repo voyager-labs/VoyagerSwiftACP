@@ -182,7 +182,6 @@ public extension RuntimeControlPlane {
             adapter: binding.0,
             session: binding.1,
             lease: current.lease,
-            revision: current.revision,
         )
     }
 
@@ -193,7 +192,6 @@ public extension RuntimeControlPlane {
         guard pendingPersistenceMutations[hostReference, default: 0] == 0,
               let current = sessions[hostReference],
               current.lease == claim.lease,
-              current.revision == claim.revision,
               current.stored.runReference == claim.session.runReference
         else { throw RuntimeHostError.invalidEvent }
     }
@@ -214,7 +212,6 @@ struct OperationClaim {
     let adapter: any ExternalAgentRuntimeAdapter
     let session: RuntimeStoredSession
     let lease: RuntimeControlPlane.RuntimeLease
-    let revision: UInt64
 }
 
 extension RuntimeProjection {
