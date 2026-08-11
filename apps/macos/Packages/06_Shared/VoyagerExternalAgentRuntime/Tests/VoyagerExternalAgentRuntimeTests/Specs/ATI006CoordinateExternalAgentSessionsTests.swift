@@ -1451,6 +1451,52 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await plane.projection(for: host) == .completed)
     }
 
+    /// ATI-006-project_external_agent_run_events: stored host terminal survives provider stream failure.
+    /// provider stream 생성 또는 iteration 실패보다 이미 지속된 host terminal 결과를 우선하는지 검증한다.
+    /// - 검증 내용: stream failure phase별 반환 outcome과 durable terminal projection.
+    /// - 사전 조건: provider stream이 gate 뒤 실패하고 그 전에 host interrupted event가 저장된다.
+    /// - 기대 결과: run은 adapter 오류 대신 stored interrupted 결과를 반환한다.
+    @Test(arguments: [
+        DeterministicRuntimeAdapter.EventStreamFailure.creation,
+        .iteration,
+    ])
+    func `stored host terminal survives provider stream failure`(
+        failure: DeterministicRuntimeAdapter.EventStreamFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-stream-failure-\(failure)")
+        let run = RuntimeRunReference("run-stream-failure-\(failure)")
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+            eventStreamFailure: failure,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForEventStreamCount(1)
+
+        let terminal = try await plane.ingestHostEvent(RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("host-stream-failure"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("host-stream-failure"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: host,
+            runReference: run,
+            kind: .interrupted,
+        ))
+        await streamGate.open()
+
+        #expect(terminal?.outcome == .interrupted)
+        #expect(try await task.value.outcome == .interrupted)
+        #expect(await plane.projection(for: host) == .interrupted)
+    }
+
     /// ATI-006-project_external_agent_run_events: bind persistence failure interrupts before event projection.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

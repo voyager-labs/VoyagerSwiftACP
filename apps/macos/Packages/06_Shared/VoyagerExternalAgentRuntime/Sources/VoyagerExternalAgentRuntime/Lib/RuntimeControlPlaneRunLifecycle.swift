@@ -90,9 +90,9 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
     ) async throws -> RuntimeResult {
         if adapter.descriptor.capabilities.eventStream == .supported {
-            let stream = try await adapter.eventStream(for: receipt.runReference)
-            for try await event in stream {
-                do {
+            do {
+                let stream = try await adapter.eventStream(for: receipt.runReference)
+                for try await event in stream {
                     if let terminal = try await accept(event, host: host, expectedSource: .provider) {
                         if adapter.descriptor.capabilities.terminalResult == .supported {
                             let result = try await adapter.terminalResult(for: receipt.runReference)
@@ -103,15 +103,15 @@ extension RuntimeControlPlane {
                         }
                         return terminal
                     }
-                } catch {
-                    if let terminal = storedTerminalResult(
-                        host: host,
-                        runReference: receipt.runReference,
-                    ) {
-                        return terminal
-                    }
-                    throw error
                 }
+            } catch {
+                if let terminal = storedTerminalResult(
+                    host: host,
+                    runReference: receipt.runReference,
+                ) {
+                    return terminal
+                }
+                throw error
             }
         }
         try require(.terminalResult, in: adapter.descriptor.capabilities)
