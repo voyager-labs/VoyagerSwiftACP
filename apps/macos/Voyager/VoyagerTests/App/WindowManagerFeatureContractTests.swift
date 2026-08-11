@@ -99,30 +99,9 @@ private actor PinnedRecordMutationSignal {
     }
 }
 
-private enum PinnedRecordTerminalOrder {
-    case staleAppliedFirst
-    case winnerAppliedFirst
-
-    var expectedSyncCount: Int {
-        switch self {
-        case .staleAppliedFirst: 1
-        case .winnerAppliedFirst: 2
-        }
-    }
-
-    var expectedSourceApplyCount: Int {
-        switch self {
-        case .staleAppliedFirst: 1
-        case .winnerAppliedFirst: 3
-        }
-    }
-
-    var expectedOtherApplyCount: Int {
-        switch self {
-        case .staleAppliedFirst: 1
-        case .winnerAppliedFirst: 2
-        }
-    }
+private enum PinnedRecordFirstMutationTerminal {
+    case applied
+    case superseded
 }
 
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
@@ -607,11 +586,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(storageWriteCount.value, 0)
     }
 
-    /// VOY-470: default window는 persisted top-navigation bootstrap을 한 번에 적용한 뒤 native open한다.
-    /// - 검증 내용: bootstrap 대기 중 open 미호출과 open 시점 order/pin/location/availability 완성 상태
+    /// VOY-470: default window는 native registration을 확인한 뒤 persisted top-navigation bootstrap을 적용한다.
+    /// - 검증 내용: native open 시점의 초기 상태와 bootstrap 이후 order/pin/location/availability 완성 상태
     /// - 사전 조건: schema-v2 mixed order, pinned tab 1개, fixed location 1개
-    /// - 기대 결과: bootstrap terminal 전 open 0회, 이후 첫 native open snapshot이 완전히 hydrated됨
-    func testDefaultWindowHydratesTopNavigationAtomicallyBeforeNativeOpen() async throws {
+    /// - 기대 결과: native open은 bootstrap 전에 1회 수행되고 등록된 window가 bootstrap 결과로 완전히 hydrated됨
+    func testDefaultWindowBootstrapsAfterNativeRegistration() async throws {
         let windowID = UUID(47081)
         let bootstrapGate = WindowBootstrapSuspensionGate()
         let pinnedTabID = ContentTabID(rawValue: "preopen-pinned-tab")
@@ -682,26 +661,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 hydrationObservedAtOpen.withValue { $0.append(isReady) }
             }
         }
-        // store.exhaustivity = .off: bootstrap 내부 action보다 native open 전 aggregate state 경계를 검증한다.
+        // store.exhaustivity = .off: bootstrap 내부 action보다 native registration 이후 aggregate state 경계를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
         await bootstrapGate.waitUntilWaiting()
 
-        XCTAssertTrue(hydrationObservedAtOpen.value.isEmpty)
+        XCTAssertEqual(hydrationObservedAtOpen.value, [false])
 
         await bootstrapGate.open()
         await store.skipReceivedActions()
         await store.finish()
 
-        XCTAssertEqual(hydrationObservedAtOpen.value, [true])
+        XCTAssertEqual(hydrationObservedAtOpen.value, [false])
+        XCTAssertTrue(currentWindowIsHydrated.value)
+        XCTAssertEqual(preparedIconPaths.value, [fixedLocation.path])
     }
 
-    /// VOY-470: 동시에 생성된 default window들은 하나의 bootstrap 결과를 공유한 뒤 native open한다.
-    /// - 검증 내용: bootstrap 실행 횟수와 두 window의 open 시점 hydration 상태
+    /// VOY-470: 동시에 등록된 default window들은 하나의 bootstrap 결과를 공유한다.
+    /// - 검증 내용: native registration과 bootstrap 실행 횟수 및 두 window의 최종 hydration 상태
     /// - 사전 조건: 첫 window bootstrap이 대기 중일 때 두 번째 default window 생성
-    /// - 기대 결과: bootstrap 1회, 대기 중 open 0회, 두 window 모두 hydrated 상태로 최초 open
-    func testConcurrentDefaultWindowsShareBootstrapBeforeNativeOpen() async throws {
+    /// - 기대 결과: 두 native open 이후 bootstrap 1회, 두 window 모두 같은 결과로 hydrated됨
+    func testConcurrentDefaultWindowsShareBootstrapAfterNativeRegistration() async throws {
         let bootstrapGate = WindowBootstrapSuspensionGate()
         let pinnedTabID = ContentTabID(rawValue: "shared-preopen-pinned-tab")
         let location = SidebarItems.LocationItem(
@@ -728,6 +709,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             topNavigationOrder: persistedOrder,
         )
         let bootstrapCallCount = LockIsolated(0)
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         let hydratedWindowIDs = LockIsolated<Set<UUID>>([])
         let hydrationObservedAtOpen = LockIsolated<[UUID: Bool]>([:])
         let store = TestStore(initialState: WindowManagerFeature.State()) {
@@ -768,12 +750,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
             $0.userDefaultsClient.bool = { _ in true }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.registeredWindowIDs = { hydratedWindowIDs.value }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.fileManagerWindowClient.open = { id in
+                registeredWindowIDs.withValue { _ = $0.insert(id) }
                 hydrationObservedAtOpen.withValue { $0[id] = hydratedWindowIDs.value.contains(id) }
             }
         }
-        // store.exhaustivity = .off: 공유 request 내부 action보다 두 native open의 hydration 경계를 검증한다.
+        // store.exhaustivity = .off: 공유 request 내부 action보다 native registration과 최종 hydration 경계를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
@@ -784,14 +767,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let secondWindowID = try XCTUnwrap(store.state.windows.ids.first(where: { $0 != firstWindowID }))
 
         XCTAssertEqual(bootstrapCallCount.value, 1)
-        XCTAssertTrue(hydrationObservedAtOpen.value.isEmpty)
+        XCTAssertEqual(hydrationObservedAtOpen.value, [firstWindowID: false, secondWindowID: false])
 
         await bootstrapGate.open()
         await store.skipReceivedActions()
         await store.finish()
 
         XCTAssertEqual(bootstrapCallCount.value, 1)
-        XCTAssertEqual(hydrationObservedAtOpen.value, [firstWindowID: true, secondWindowID: true])
+        XCTAssertEqual(registeredWindowIDs.value, [firstWindowID, secondWindowID])
+        XCTAssertEqual(hydratedWindowIDs.value, [firstWindowID, secondWindowID])
+        XCTAssertEqual(hydrationObservedAtOpen.value, [firstWindowID: false, secondWindowID: false])
     }
 
     /// VOY-470: bootstrap 대기 중 닫힌 window는 stale completion으로 다시 열리지 않는다.
@@ -1005,7 +990,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )))
         await fulfillment(of: [activationStarted, persistenceStarted], timeout: 5)
 
-        XCTAssertTrue(store.state.closingWindowIDs.contains(sourceID))
+        XCTAssertFalse(store.state.closingWindowIDs.contains(sourceID))
         XCTAssertEqual(store.state.topNavigationPersistenceQueue, [peerRequest])
         XCTAssertTrue(store.state.isTopNavigationPersistenceInFlight)
 
@@ -2209,26 +2194,25 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
-    /// 늦은 G1 applied success는 G2 generation 예약 뒤 authoritative fan-out이나 unpinned 완료를 만들지 않는다.
-    /// - 검증 내용: G1 terminal 시점 fan-out 0·batch cancelled, G2 success 뒤 fan-out 1과 window별 apply 1회
-    /// - 사전 조건: G1 durable unpin commit 뒤 terminal 정지, 같은 tab의 G2 pin generation 예약
-    /// - 기대 결과: persisted G2와 양 window G2 anchor 수렴, source coordinator/pending/deferred 정리, selection 보존
+    /// 늦은 G1 applied success는 parent FIFO에서 G2보다 먼저 terminal 처리되어도 stale fan-out을 만들지 않는다.
+    /// - 검증 내용: G1 unpin write 적용 뒤 G2 repin 예약, committed snapshot은 G2만 window별 1회 fan-out
+    /// - 사전 조건: 같은 global pinned tab을 source에서 unpin하는 동안 다른 window에서 repin
+    /// - 기대 결과: persisted G2와 양 window G2 anchor 수렴, pending intent 정리, selection 보존
     func testPinnedRecordTerminalOrder_staleAppliedSuccessThenWinnerConverges() async {
-        await verifyPinnedRecordTerminalOrder(.staleAppliedFirst)
+        await verifyPinnedRecordTerminalOrder(firstTerminal: .applied)
     }
 
-    /// G2 success fan-out 뒤 G1 superseded terminal은 rollback 후 authoritative reload를 한 번 더 수행한다.
-    /// - 검증 내용: G2 fan-out 완료 시 1회, G1 non-applied reconciliation 뒤 2회와 source/other apply 3/2회
-    /// - 사전 조건: G1 guarded mutation 정지 중 같은 tab의 G2 pin이 먼저 commit·success
-    /// - 기대 결과: persisted G2와 양 window G2 anchor 수렴, source coordinator/pending/deferred 정리, selection 보존
+    /// G1이 적용 전에 superseded되면 parent FIFO는 stale terminal 뒤 G2만 authoritative fan-out한다.
+    /// - 검증 내용: G1 superseded terminal fan-out 0회, 직렬화된 G2 success fan-out window별 1회
+    /// - 사전 조건: 같은 global pinned tab의 G1 unpin 적용 전 다른 window에서 G2 repin 예약
+    /// - 기대 결과: persisted G2와 양 window G2 anchor 수렴, pending intent 정리, selection 보존
     func testPinnedRecordTerminalOrder_winnerThenSupersededRollbackConverges() async {
-        await verifyPinnedRecordTerminalOrder(.winnerAppliedFirst)
+        await verifyPinnedRecordTerminalOrder(firstTerminal: .superseded)
     }
 
-    private func verifyPinnedRecordTerminalOrder(_ order: PinnedRecordTerminalOrder) async {
+    private func verifyPinnedRecordTerminalOrder(firstTerminal: PinnedRecordFirstMutationTerminal) async {
         let sourceWindowID = UUID()
         let otherWindowID = UUID()
-        let operationID = UUID()
         let sharedTabID = ContentTabID(rawValue: "shared-pinned-tab")
         let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/OldShared")
         let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/NewShared")
@@ -2261,17 +2245,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         sourceWindow.contentTabs.pinnedRecords[sharedTabID] = oldRecord
         sourceWindow.contentTabs.selectedTabIDs = [sharedTabID]
         sourceWindow.contentTabs.selectionAnchorID = sharedTabID
-        sourceWindow.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
-            operationID: operationID,
-            orderedTargetIDs: [sharedTabID],
-            currentTabID: sharedTabID,
-            originalActiveTabID: sourceWindow.contentTabs.activeTabID,
-            preferredFallbackIDs: sourceWindow.contentTabs.tabs.map(\.id),
-        )
-        sourceWindow.pendingContentTabClose = PendingContentTabClose(
-            tabID: sharedTabID,
-            batchOperationID: operationID,
-        )
+        let firstIntentID = sourceWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
+        _ = sourceWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
 
         var otherWindow = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Other")
         otherWindow.contentTabs.tabs.append(ContentTabItem(
@@ -2284,138 +2259,134 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         ))
         otherWindow.contentTabs.selectedTabIDs = [sharedTabID]
         otherWindow.contentTabs.selectionAnchorID = sharedTabID
+        let winnerIntentID = otherWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
+
+        let firstRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceWindowID,
+            token: .init(value: UUID()),
+            operation: .pinnedRecord(
+                source: .contentTab,
+                request: .init(
+                    tabID: sharedTabID,
+                    context: .init(
+                        intentID: firstIntentID,
+                        generation: .init(tabID: sharedTabID),
+                    ),
+                    rollback: .init(
+                        previousIsPinned: true,
+                        previousPinnedRecord: oldRecord,
+                        previousTabIndex: nil,
+                    ),
+                    mutation: .remove(recordID: sharedTabID.rawValue),
+                    persistenceScopeID: UUID(),
+                ),
+                discoveredLocationIDs: [],
+            ),
+        )
+        let winnerRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: otherWindowID,
+            token: .init(value: UUID()),
+            operation: .pinnedRecord(
+                source: .contentTab,
+                request: .init(
+                    tabID: sharedTabID,
+                    context: .init(
+                        intentID: winnerIntentID,
+                        generation: .init(tabID: sharedTabID),
+                    ),
+                    rollback: .init(
+                        previousIsPinned: false,
+                        previousPinnedRecord: nil,
+                        previousTabIndex: nil,
+                    ),
+                    mutation: .upsert(record: newRecord, dormantSlot: nil),
+                    persistenceScopeID: UUID(),
+                ),
+                discoveredLocationIDs: [],
+            ),
+        )
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
             WindowSessionState(id: sourceWindowID, window: sourceWindow),
             WindowSessionState(id: otherWindowID, window: otherWindow),
         ]
-        let syncCount = LockIsolated(0)
-        let applyCounts = LockIsolated<[UUID: Int]>([:])
-        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(records: [oldRecord]))
-        let latestGenerations = LockIsolated<[ContentTabID: UUID]>([:])
-        let sourceGeneration = LockIsolated<UUID?>(nil)
-        let sourceGate = PinnedRecordMutationGate()
-        let winnerGate = PinnedRecordMutationGate()
-        let sourceCommitted = PinnedRecordMutationSignal()
-        let winnerCommitted = PinnedRecordMutationSignal()
+        initialState.topNavigationPersistenceQueue = [firstRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
+        let firstPersistedStore = switch firstTerminal {
+        case .applied:
+            ContentTabPinnedRecordStore()
+        case .superseded:
+            ContentTabPinnedRecordStore(records: [oldRecord])
+        }
+        let persistedStore = LockIsolated(firstPersistedStore)
+        let mutationCount = LockIsolated(0)
+        let committedSnapshotCounts = LockIsolated<[UUID: Int]>([:])
         let store = Store(initialState: initialState) {
             CombineReducers {
                 WindowManagerFeature()
                 Reduce { _, action in
-                    Self.recordPinnedStoreTracking(
-                        action,
-                        syncCount: syncCount,
-                        applyCounts: applyCounts,
-                    )
+                    if case let .windows(.element(
+                        id: windowID,
+                        action: .window(.applyCommittedTopNavigationSnapshot),
+                    )) = action {
+                        committedSnapshotCounts.withValue { $0[windowID, default: 0] += 1 }
+                    }
                     return .none
                 }
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 453))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in persistedStore.value }
-            $0.contentTabPinnedRecordClient.reserveMutationGeneration = { tabID in
-                let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
-                latestGenerations.withValue { $0[tabID] = generation.value }
-                sourceGeneration.withValue {
-                    if $0 == nil { $0 = generation.value }
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
+                let revision = mutationCount.withValue { value in
+                    value += 1
+                    return UInt64(value + 1)
                 }
-                return generation
-            }
-            $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { generation in
-                latestGenerations.value[generation.tabID] == generation.value
-            }
-            $0.contentTabPinnedRecordClient.guardedUpdateStore = { generation, _, transform in
-                let isSource = generation.value == sourceGeneration.value
-                if isSource, order == .winnerAppliedFirst {
-                    await sourceGate.wait()
-                } else if !isSource {
-                    await winnerGate.wait()
+                let updated = try persistedStore.withValue { currentStore in
+                    currentStore = try applying(
+                        mutation,
+                        to: currentStore,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    )
+                    return currentStore
                 }
-                try Task.checkCancellation()
-                guard latestGenerations.value[generation.tabID] == generation.value else {
-                    return .superseded
-                }
-                try persistedStore.withValue { currentStore in
-                    currentStore = try transform(currentStore)
-                }
-                if isSource {
-                    await sourceCommitted.signal()
-                    if order == .staleAppliedFirst {
-                        await sourceGate.wait()
-                    }
-                } else {
-                    await winnerCommitted.signal()
-                }
-                return .applied
+                return .init(
+                    store: updated,
+                    topNavigation: .init(order: updated.topNavigationOrder, revision: revision),
+                )
             }
         }
 
-        let sourceTask = store.send(.windows(.element(
-            id: sourceWindowID,
-            action: .window(.performSelectedContentTabCloseMutation(
-                operationID: operationID,
-                tabID: sharedTabID,
-                action: .unpin(sharedTabID),
-            )),
-        )))
-        switch order {
-        case .staleAppliedFirst:
-            await sourceCommitted.wait()
-            await sourceGate.waitUntilWaiting()
-        case .winnerAppliedFirst:
-            await sourceGate.waitUntilWaiting()
+        let firstResult: WindowManagerTopNavigationPersistenceResult = switch firstTerminal {
+        case .applied:
+            .init(
+                request: firstRequest,
+                terminal: .committed(.init(order: firstPersistedStore.topNavigationOrder, revision: 1)),
+                authoritativePinnedContentTabs: ContentTabState.restoringPinnedRecords(from: firstPersistedStore).state,
+            )
+        case .superseded:
+            .init(
+                request: firstRequest,
+                terminal: .failed(.superseded),
+                authoritativePinnedContentTabs: nil,
+            )
         }
+        await store.send(.topNavigationPersistenceCompleted(firstResult)).finish()
+        XCTAssertEqual(committedSnapshotCounts.value[sourceWindowID, default: 0], 0)
+        XCTAssertEqual(committedSnapshotCounts.value[otherWindowID, default: 0], 0)
 
-        let otherTask = store.send(.windows(.element(
-            id: otherWindowID,
-            action: .window(.contentTabs(.pin(sharedTabID))),
-        )))
-        await winnerGate.waitUntilWaiting()
+        await store.send(.topNavigationPersistenceRequested(winnerRequest)).finish()
 
-        switch order {
-        case .staleAppliedFirst:
-            await sourceGate.open()
-            await sourceTask.finish()
-            XCTAssertEqual(syncCount.value, 0)
-            XCTAssertEqual(applyCounts.value[sourceWindowID, default: 0], 0)
-            XCTAssertEqual(applyCounts.value[otherWindowID, default: 0], 0)
-            store.withState { state in
-                XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose)
-                XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingContentTabClose)
-                XCTAssertFalse(state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: sharedTabID]?
-                    .isPinned ?? true)
-            }
-            await winnerGate.open()
-            await winnerCommitted.wait()
-            await otherTask.finish()
-        case .winnerAppliedFirst:
-            await winnerGate.open()
-            await winnerCommitted.wait()
-            await otherTask.finish()
-            XCTAssertEqual(syncCount.value, 1)
-            XCTAssertEqual(applyCounts.value[sourceWindowID, default: 0], 1)
-            XCTAssertEqual(applyCounts.value[otherWindowID, default: 0], 1)
-            await sourceGate.open()
-            await sourceTask.finish()
-        }
-
-        XCTAssertEqual(persistedStore.value, ContentTabPinnedRecordStore(records: [newRecord]))
-        XCTAssertEqual(syncCount.value, order.expectedSyncCount)
-        XCTAssertEqual(
-            applyCounts.value[sourceWindowID, default: 0],
-            order.expectedSourceApplyCount,
-        )
-        XCTAssertEqual(
-            applyCounts.value[otherWindowID, default: 0],
-            order.expectedOtherApplyCount,
-        )
+        XCTAssertEqual(persistedStore.value, ContentTabPinnedRecordStore(
+            records: [newRecord],
+            topNavigationOrder: .init(items: [.contentTab(sharedTabID)]),
+        ))
+        XCTAssertEqual(mutationCount.value, 1)
+        XCTAssertEqual(committedSnapshotCounts.value[sourceWindowID, default: 0], 1)
+        XCTAssertEqual(committedSnapshotCounts.value[otherWindowID, default: 0], 1)
         store.withState { state in
             let source = state.windows[id: sourceWindowID]?.window
             let other = state.windows[id: otherWindowID]?.window
-            XCTAssertNil(source?.pendingSelectedContentTabClose)
-            XCTAssertNil(source?.pendingContentTabClose)
-            XCTAssertNil(source?.deferredPinnedContentTabs)
             XCTAssertEqual(source?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
             XCTAssertEqual(other?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
             XCTAssertEqual(source?.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
@@ -2426,22 +2397,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             XCTAssertEqual(source?.contentTabs.selectionAnchorID, sharedTabID)
             XCTAssertEqual(other?.contentTabs.selectedTabIDs, [sharedTabID])
             XCTAssertEqual(other?.contentTabs.selectionAnchorID, sharedTabID)
-        }
-    }
-
-    private static func recordPinnedStoreTracking(
-        _ action: WindowManagerFeature.Action,
-        syncCount: LockIsolated<Int>,
-        applyCounts: LockIsolated<[UUID: Int]>,
-    ) {
-        if case .pinnedContentTabsStoreChanged = action {
-            syncCount.withValue { $0 += 1 }
-        }
-        if case let .windows(.element(
-            id: windowID,
-            action: .window(.applyAuthoritativePinnedContentTabs),
-        )) = action {
-            applyCounts.withValue { $0[windowID, default: 0] += 1 }
         }
     }
 
@@ -2469,11 +2424,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
-    /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
-    /// - 검증 내용: deleted directory record가 store에 있어도 sync fan-out state에는 유지되고 saveStore compaction이 호출되지 않음
+    /// parent pinned commit은 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
+    /// - 검증 내용: deleted directory record가 committed snapshot에 있어도 fan-out state에는 유지되고 saveStore compaction이 호출되지 않음
     /// - 사전 조건: 열린 window 1개, global pinned store에 현재 존재하지 않는 directory record 1개
-    /// - 기대 결과: applyPinnedContentTabs가 deleted-pin을 포함하고, live sync 중 saveStore 미호출
-    func testPinnedRecordSaveSucceededSyncPreservesDeletedDirectoryRecord() async throws {
+    /// - 기대 결과: parent commit fan-out이 deleted-pin을 포함하고 saveStore를 호출하지 않음
+    func testParentPinnedCommitSyncPreservesDeletedDirectoryRecord() async throws {
         let windowID = UUID()
         let saveStoreCalled = LockIsolated(false)
         let pinnedStore = ContentTabPinnedRecordStore(records: [
@@ -2493,6 +2448,34 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let deletedPinID = ContentTabID(rawValue: "deleted-pin")
         let persistenceIntentID = try XCTUnwrap(initialState.windows[id: windowID]?.window.contentTabs
             .markLatestPinnedRecordPersistenceIntent(for: deletedPinID))
+        let context = ContentTabPinnedRecordTerminalContext(
+            intentID: persistenceIntentID,
+            generation: ContentTabPinnedRecordMutationGeneration(tabID: deletedPinID),
+        )
+        let request = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: windowID,
+            token: .init(value: UUID()),
+            operation: .pinnedRecord(
+                source: .contentTab,
+                request: .init(
+                    tabID: deletedPinID,
+                    context: context,
+                    rollback: .init(
+                        previousIsPinned: false,
+                        previousPinnedRecord: nil,
+                        previousTabIndex: nil,
+                    ),
+                    mutation: .upsert(
+                        record: pinnedStore.records[0],
+                        dormantSlot: nil,
+                    ),
+                    persistenceScopeID: UUID(),
+                ),
+                discoveredLocationIDs: [],
+            ),
+        )
+        initialState.topNavigationPersistenceQueue = [request]
+        initialState.isTopNavigationPersistenceInFlight = true
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
@@ -2506,31 +2489,31 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
-        // live sync fan-out은 window-local handoff child action을 동반하므로,
+        // parent commit fan-out은 window-local handoff child action을 동반하므로,
         // 이 테스트는 broken record 보존 payload와 saveStore 미호출만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.windows(.element(
-            id: windowID,
-            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
-                tabID: deletedPinID,
-                context: ContentTabPinnedRecordTerminalContext(
-                    intentID: persistenceIntentID,
-                    generation: ContentTabPinnedRecordMutationGeneration(tabID: deletedPinID),
-                ),
-            ))),
+        await store.send(.topNavigationPersistenceCompleted(.init(
+            request: request,
+            terminal: .committed(.init(order: pinnedStore.topNavigationOrder, revision: 1)),
+            authoritativePinnedContentTabs: ContentTabState.restoringPinnedRecords(from: pinnedStore).state,
         )))
-        await store.receive(\.pinnedContentTabsStoreChanged)
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+                action: .window(.applyCommittedTopNavigationSnapshot(
+                    order: order,
+                    revision: revision,
+                    authoritativePinnedContentTabs: contentTabs,
+                )),
             )) = action
             else {
                 return false
             }
             return id == windowID
-                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["deleted-pin"]
+                && order == pinnedStore.topNavigationOrder
+                && revision == 1
+                && contentTabs?.tabs.filter(\.isPinned).map(\.id.rawValue) == ["deleted-pin"]
         }
 
         XCTAssertFalse(saveStoreCalled.value)
@@ -2653,6 +2636,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     func testPinnedStoreChangeInvalidatesStaleDefaultBootstrapCompletion() async {
         let windowID = UUID()
         let requestID = UUID()
+        let freshRequestID = UUID()
+        let gate = WindowBootstrapSuspensionGate()
         let latestStore = ContentTabPinnedRecordStore(records: [
             ContentTabPinnedRecord(
                 id: "latest-pin",
@@ -2682,15 +2667,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.uuid = .constant(freshRequestID)
             $0.contentTabPinnedRecordClient.loadStore = { _ in latestStore }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ImmediateClock()
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                await gate.wait()
+                return .init(recents: .failed, allTags: .failed)
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == "/Users/test/Latest" else { return false }
+                isDirectory?.pointee = ObjCBool(true)
+                return true
+            }
+            $0.userDefaultsClient.bool = { _ in true }
         }
+        // store.exhaustivity = .off: fresh bootstrap 내부 action보다 stale request 무효화와 최신 store 보존을 검증한다.
         store.exhaustivity = .off
 
         await store.send(.pinnedContentTabsStoreChanged) {
-            $0.defaultWindowBootstrapRequestID = nil
-            $0.defaultWindowBootstrapWindowIDs = []
+            $0.defaultWindowBootstrapRequestID = freshRequestID
         }
+        await gate.waitUntilWaiting()
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
@@ -2709,6 +2707,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 arrangementAvailability: .available,
             ),
         ))
+        await gate.open()
+        await store.skipReceivedActions()
+        await store.finish()
 
         XCTAssertEqual(
             store.state.windows[id: windowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
@@ -3060,6 +3061,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .constant(windowID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ImmediateClock()
             $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
                 loadStore: { _ in persistedStore.value },
                 saveStore: { value, _ in persistedStore.withValue { $0 = value } },
@@ -3088,6 +3090,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
         }
         store.exhaustivity = .off
 
@@ -3555,7 +3558,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// 기본 부트스트랩은 Finder → ensure → Recents → All Tags → reload → restore 순서를 보장한다.
     /// - 검증 내용: dependency 호출 순서와 최종 persisted/restored record 순서
     /// - 사전 조건: 빈 store, Finder favorite 1개, 두 built-in descriptor ready
-    /// - 기대 결과: Finder → Recents → All Tags append 순서로 저장·복원되고 세 완료 플래그가 true
+    /// - 기대 결과: Recents → Finder → All Tags canonical 순서로 저장·복원되고 세 완료 플래그가 true
     func testDefaultBootstrapRunsFinderEnsureBuiltInSeedsReloadAndRestoreInOrder() async {
         let windowID = UUID()
         let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support")
@@ -3667,7 +3670,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         XCTAssertEqual(
             persistedStore.value.records.map(\.id),
-            ["favorite-file----Users-test-Projects", "built-in-collection-recents", "built-in-collection-all-tags"],
+            ["built-in-collection-recents", "favorite-file----Users-test-Projects", "built-in-collection-all-tags"],
         )
         XCTAssertEqual(
             store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
@@ -3690,9 +3693,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// Finder 저장 실패 뒤 built-in residue만 남아도 다음 부트스트랩이 Finder를 재시도한다.
-    /// - 검증 내용: 첫 Finder transaction 실패, built-in 성공, 두 번째 Finder retry와 residue ordering
+    /// - 검증 내용: 첫 Finder transaction 실패, built-in 성공, 두 번째 Finder retry와 canonical ordering
     /// - 사전 조건: 첫 update만 throw, 두 번째 실행은 All Tags → Recents residue, duplicate Finder favorite 입력
-    /// - 기대 결과: 두 번째 실행은 기존 All Tags → Recents 순서를 보존하고 Finder ID 하나를 끝에 추가
+    /// - 기대 결과: 두 번째 실행은 Recents → Finder → All Tags canonical 순서로 정규화
     func testFinderSeedRetriesAfterWriteFailureWhenOnlyBuiltInResidueExists() async {
         struct FinderWriteFailure: Error {}
 
@@ -3784,7 +3787,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(finderLoadCount.value, 2)
         XCTAssertEqual(
             persistedStore.value.records.map(\.id),
-            ["built-in-collection-all-tags", "built-in-collection-recents", "favorite-file----Users-test-Projects"],
+            ["built-in-collection-recents", "favorite-file----Users-test-Projects", "built-in-collection-all-tags"],
         )
     }
 
@@ -4181,9 +4184,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// load·Finder update·built-in ensure·reload이 모두 실패해도 default window는 Home으로 열린다.
-    /// - 검증 내용: typed bootstrap failure와 fallback native-open downstream 적용
+    /// - 검증 내용: native registration 뒤 typed bootstrap failure와 Home fallback 적용
     /// - 사전 조건: load/update throw, ensure failed
-    /// - 기대 결과: failed terminal 뒤 기본 Home state로 native open이 완료됨
+    /// - 기대 결과: native registration 뒤 failed terminal이 기본 Home state를 유지
     func testDefaultBootstrapAllFailuresStillCompletesWithHomeFallback() async {
         struct BootstrapFailure: Error {}
 
@@ -4210,9 +4213,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.windowOpenCompleted)
         await store.receive(\.defaultWindowBootstrapFailed)
         await store.receive(\.windowReadyToOpen)
-        await store.receive(\.windowOpenCompleted)
         await store.finish()
 
         let tabs = store.state.windows.first?.window.contentTabs.tabs
@@ -8624,6 +8627,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             Self.makeWindow(id: secondID, tabCount: 1),
         ]
         let newWindowID = UUID(100)
+        let finalizedWindowIDs = LockIsolated<[UUID]>([])
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
@@ -8631,6 +8635,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newWindowID] }
+            $0.fileManagerWindowClient.finalizeClose = { id in
+                finalizedWindowIDs.withValue { $0.append(id) }
+            }
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
         }
         // store.exhaustivity = .off: 새 창 bootstrap effect는 MRU lifecycle assertion 범위가 아니다.
         store.exhaustivity = .off
@@ -8647,14 +8658,26 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.focusedWindowID = nil
         }
         await store.send(.event(.windowClosed(secondID))) {
+            $0.closingWindowIDs.insert(secondID)
+            $0.invalidatingWindowIDs.insert(secondID)
+            $0.refreshContentTabMoveTargets()
+        }
+        await store.receive(\.windowInvalidationFinished) {
             $0.windows.remove(id: secondID)
+            $0.closingWindowIDs.remove(secondID)
+            $0.invalidatingWindowIDs.remove(secondID)
             $0.lastUsedWindowIDs = [firstID]
+            $0.refreshContentTabMoveTargets()
         }
-        await store.send(.file(.newWindow(path: "/new"))) {
-            $0.windows.append(.init(id: newWindowID, window: .makeInitial(path: "/new")))
-            $0.focusedWindowID = newWindowID
-            $0.lastUsedWindowIDs = [newWindowID, firstID]
-        }
+        await store.send(.file(.newWindow(path: "/new")))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(finalizedWindowIDs.value, [secondID])
+        XCTAssertEqual(store.state.windows.map(\.id), [firstID, newWindowID])
+        XCTAssertEqual(store.state.focusedWindowID, newWindowID)
+        XCTAssertEqual(store.state.lastUsedWindowIDs, [newWindowID, firstID])
+        XCTAssertTrue(store.state.pendingWindowOpenIDs.isEmpty)
     }
 
     /// preferred window가 commit 전에 닫히면 frozen MRU의 다음 생존 window만 선택한다.
@@ -9371,6 +9394,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 }
             }
         } withDependencies: {
+            $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.collectionFileClient.load = { url in
                 openedURLs.withValue { $0.append(url) }
@@ -9851,7 +9875,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(keyEventCount.value, 2)
     }
 
-    /// B activation request 전에 B가 닫히면 tombstone을 소비하고 최신 state의 A를 재시도한 뒤 terminal을 한 번 보낸다.
+    /// B activation request 전에 B가 닫히면 비동기 invalidation 뒤 최신 state의 A를 재시도하고 terminal을 한 번 보낸다.
     func testPlacementActivationRetriesPreviousSurvivorAfterDiscard() async throws {
         let batchID = UUID()
         let firstWindowID = UUID()
@@ -9914,6 +9938,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 }
             }
         } withDependencies: {
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { _ in }
             $0.fileManagerWindowClient.activate = { id in
                 activatedIDs.withValue { $0.append(id) }
                 if id == finalWindowID {
@@ -9932,19 +9960,25 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await finalRequestGate.waitUntilWaiting()
         await store.send(.event(.windowClosed(finalWindowID))) {
-            $0.windows.remove(id: finalWindowID)
-            $0.externalWindowBatchIDs[finalWindowID] = nil
+            $0.closingWindowIDs.insert(finalWindowID)
+            $0.invalidatingWindowIDs.insert(finalWindowID)
             $0.refreshContentTabMoveTargets()
         }
+        await store.receive(\.windowInvalidationFinished) {
+            $0.windows.remove(id: finalWindowID)
+            $0.closingWindowIDs.remove(finalWindowID)
+            $0.invalidatingWindowIDs.remove(finalWindowID)
+            $0.externalWindowBatchIDs[finalWindowID] = nil
+            $0.externalOpenActivationAttempt = firstAttempt
+            $0.refreshContentTabMoveTargets()
+        }
+        await fulfillment(of: [firstStarted], timeout: 1)
         tracker.discard(finalWindowID)
         await finalRequestGate.open()
 
         await store.receive { action in
             action.isActivationResult(finalAttempt, .discarded)
-        } assert: {
-            $0.externalOpenActivationAttempt = firstAttempt
         }
-        await fulfillment(of: [firstStarted], timeout: 1)
         XCTAssertEqual(completionCount.value, 0)
 
         tracker.complete(firstWindowID, result: .becameKey)
@@ -9961,7 +9995,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(completionCount.value, 1)
     }
 
-    /// becameKey 결과 도착 전에 target이 사라지면 missing window를 focus하지 않고 이전 survivor를 재시도한다.
+    /// becameKey 결과 도착 전에 target이 사라지면 비동기 invalidation 뒤 missing window를 건너뛰고 이전 survivor를 재시도한다.
     func testPlacementActivationRetriesWhenBecameKeyTargetVanishes() async throws {
         let batchID = UUID()
         let firstWindowID = UUID()
@@ -10013,6 +10047,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { _ in }
             $0.fileManagerWindowClient.activate = { id in
                 guard id == finalWindowID else { return .becameKey }
                 finalStarted.fulfill()
@@ -10028,16 +10066,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await fulfillment(of: [finalStarted], timeout: 1)
         await store.send(.event(.windowClosed(finalWindowID))) {
-            $0.windows.remove(id: finalWindowID)
-            $0.externalWindowBatchIDs[finalWindowID] = nil
+            $0.closingWindowIDs.insert(finalWindowID)
+            $0.invalidatingWindowIDs.insert(finalWindowID)
             $0.refreshContentTabMoveTargets()
         }
-        finalGate.continuation.yield(.becameKey)
-        finalGate.continuation.finish()
-        await store.receive { action in
-            action.isActivationResult(finalAttempt, .becameKey)
-        } assert: {
+        await store.receive(\.windowInvalidationFinished) {
+            $0.windows.remove(id: finalWindowID)
+            $0.closingWindowIDs.remove(finalWindowID)
+            $0.invalidatingWindowIDs.remove(finalWindowID)
+            $0.externalWindowBatchIDs[finalWindowID] = nil
             $0.externalOpenActivationAttempt = firstAttempt
+            $0.refreshContentTabMoveTargets()
         }
         await store.receive { action in
             action.isActivationResult(firstAttempt, .becameKey)
@@ -10046,6 +10085,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+        finalGate.continuation.yield(.becameKey)
+        finalGate.continuation.finish()
+        await store.receive { action in
+            action.isActivationResult(finalAttempt, .becameKey)
+        }
     }
 
     /// 마지막 reserved tab만 닫히면 이전 successful candidate를 정확히 한 번 활성화한다.
@@ -10311,10 +10355,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let sourceID = UUID(47001)
         let peerID = UUID(47002)
         let pinnedTabID = ContentTabID(rawValue: "tab-b")
-        let generation = ContentTabPinnedRecordMutationGeneration(
-            tabID: pinnedTabID,
-            value: UUID(47003),
-        )
+        let token = FileManagerTopNavigationOperationToken(value: UUID(47003))
         let oldOrder = FileManagerTopNavigationOrder(items: [
             .location("location-a"),
             .contentTab(ContentTabID(rawValue: "tab-a")),
@@ -10325,7 +10366,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .contentTab(pinnedTabID),
         ])
         var source = FileManagerWindowFeature.State.makeInitial(path: "/source")
-        let intentID = source.contentTabs.markLatestPinnedRecordPersistenceIntent(for: pinnedTabID)
         source.lastConfirmedTopNavigationOrder = oldOrder
         source.optimisticTopNavigationOrder = oldOrder
         var peer = FileManagerWindowFeature.State.makeInitial(path: "/peer")
@@ -10336,23 +10376,26 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: sourceID, window: source),
             .init(id: peerID, window: peer),
         ]
+        let persistenceRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceID,
+            token: token,
+            operation: .move(
+                source: .contentTab(pinnedTabID),
+                destination: .after(.location("location-a")),
+                discoveredLocationIDs: [],
+            ),
+        )
+        initialState.topNavigationPersistenceQueue = [persistenceRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
         let commit = FileManagerTopNavigationCommit(order: committedOrder, revision: 10)
-        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
-            $0.contentTabPinnedRecordClient.loadTopNavigationCommit = { _, _ in commit }
-            $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { $0 == generation }
-            $0.contentTabPinnedRecordClient.loadStore = { _ in
-                ContentTabPinnedRecordStore(topNavigationOrder: committedOrder)
-            }
-        }
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
         // store.exhaustivity = .off: lifecycle success의 pinned sync 내부 action보다 committed order fan-out만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.windows(.element(
-            id: sourceID,
-            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
-                tabID: pinnedTabID,
-                context: .init(intentID: intentID, generation: generation),
-            ))),
+        await store.send(.topNavigationPersistenceCompleted(.init(
+            request: persistenceRequest,
+            terminal: .committed(commit),
+            authoritativePinnedContentTabs: nil,
         )))
         await store.receive { action in
             guard case let .windows(.element(
@@ -10776,16 +10819,35 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: sourceID, window: .makeInitial(path: "/source")),
             .init(id: peerID, window: peer),
         ]
+        let persistenceRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceID,
+            token: token,
+            operation: .move(
+                source: .contentTab(sharedID),
+                destination: .after(.location("location-l")),
+                discoveredLocationIDs: ["location-l"],
+            ),
+        )
+        initialState.topNavigationPersistenceQueue = [persistenceRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
         let commit = FileManagerTopNavigationCommit(order: committedOrder, revision: 41)
         let store = TestStore(initialState: initialState) { WindowManagerFeature() }
         // store.exhaustivity = .off: order 외 runtime/selection 전체 snapshot 불변성을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(Self.committedTopNavigationAction(sourceID: sourceID, token: token, commit: commit))
+        await store.send(.topNavigationPersistenceCompleted(.init(
+            request: persistenceRequest,
+            terminal: .committed(commit),
+            authoritativePinnedContentTabs: nil,
+        )))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.applyExternalCommittedTopNavigationOrder(order, revision)),
+                action: .window(.applyCommittedTopNavigationSnapshot(
+                    order: order,
+                    revision: revision,
+                    authoritativePinnedContentTabs: nil,
+                )),
             )) = action else { return false }
             return id == peerID && order == committedOrder && revision == commit.revision
         }
@@ -10819,6 +10881,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: sourceID, window: .makeInitial(path: "/source")),
             .init(id: peerID, window: peer),
         ]
+        let persistenceRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: sourceID,
+            token: token,
+            operation: .move(
+                source: .location("location-recovered"),
+                destination: .after(.contentTab(ContentTabID(rawValue: "tab-recovered"))),
+                discoveredLocationIDs: ["location-recovered"],
+            ),
+        )
+        initialState.topNavigationPersistenceQueue = [persistenceRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
         let commit = FileManagerTopNavigationCommit(order: committedOrder, revision: 51)
         let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
             $0.userDefaultsClient.setObject = { _, _ in writeCount.withValue { $0 += 1 } }
@@ -10826,11 +10899,19 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         // store.exhaustivity = .off: parent/receiver state 복구와 persistence write 부재만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(Self.committedTopNavigationAction(sourceID: sourceID, token: token, commit: commit))
+        await store.send(.topNavigationPersistenceCompleted(.init(
+            request: persistenceRequest,
+            terminal: .committed(commit),
+            authoritativePinnedContentTabs: nil,
+        )))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.applyExternalCommittedTopNavigationOrder(order, revision)),
+                action: .window(.applyCommittedTopNavigationSnapshot(
+                    order: order,
+                    revision: revision,
+                    authoritativePinnedContentTabs: nil,
+                )),
             )) = action else { return false }
             return id == peerID && order == committedOrder && revision == commit.revision
         }

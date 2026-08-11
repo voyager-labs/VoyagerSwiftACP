@@ -683,8 +683,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
 
     /// CTM-001-move_content_tab_to_another_file_manager_window: Content/Inspector AI의 표시 의미 상태가 있는 pinned
     /// projection은 passive로 간주하지 않는다.
-    /// source 이동이 target의 session 검색 또는 model selector presentation을 덮어쓰지 않는지 검증한다.
-    /// - 검증 내용: Content session-list query와 Inspector model-selector presentation의 atomic rejection
+    /// source 이동이 target의 session 검색 또는 Inspector draft를 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: Content session-list query와 Inspector draft의 atomic rejection
     /// - 사전 조건: 양 window에 같은 pinned ID가 있고 target의 Content 또는 Inspector AI에 의미 상태가 있음
     /// - 기대 결과: 두 경우 모두 targetTabCollision이며 source/target snapshot은 불변
     func testTransferRejectsPinnedProjectionWithContentOrInspectorAiStateWithoutMutation() throws {
@@ -702,7 +702,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
 
         var inspectorAiTarget = Fixture.window(windowID: Fixture.targetWindowID, tabs: [tab], active: tabID)
         inspectorAiTarget.contentTabs.pinnedRecords[tabID] = record
-        inspectorAiTarget.inspector.aiChat.isModelSelectorPresented = true
+        inspectorAiTarget.inspector.aiChat.draftText = "preserve inspector draft"
         inspectorAiTarget.tabInspectorStates[tabID] = inspectorAiTarget.inspector.tabSnapshot()
         try assertRejected(.targetTabCollision, source: source, target: inspectorAiTarget, tabID: tabID)
     }

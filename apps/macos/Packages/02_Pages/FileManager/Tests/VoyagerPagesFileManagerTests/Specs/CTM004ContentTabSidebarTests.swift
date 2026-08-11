@@ -975,6 +975,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        XCTAssertTrue(store.state.sidebar.shouldShowFixedLocationSection)
+
         await store.send(.sidebar(.view(.setAllFixedLocationVisibility(false)))) {
             $0.sidebar.setAllFixedLocationVisibility(false)
             $0.syncHomeLocationItems()
@@ -982,6 +984,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(Set(persistedValues.value.last ?? []), allIDs)
         XCTAssertEqual(store.state.sidebar.allFixedLocationItems.count, 5)
         XCTAssertTrue(store.state.sidebar.fixedLocationItems.isEmpty)
+        XCTAssertFalse(store.state.sidebar.shouldShowFixedLocationSection)
         XCTAssertEqual(store.state.content.homeLocationItems.count, 5)
 
         await store.send(.sidebar(.view(.setAllFixedLocationVisibility(true)))) {
@@ -989,6 +992,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             $0.syncHomeLocationItems()
         }
         XCTAssertEqual(persistedValues.value.last, [])
+        XCTAssertTrue(store.state.sidebar.shouldShowFixedLocationSection)
         XCTAssertEqual(store.state.sidebar.fixedLocationItems.map(\.title), [
             "iCloud Drive",
             "OneDrive",

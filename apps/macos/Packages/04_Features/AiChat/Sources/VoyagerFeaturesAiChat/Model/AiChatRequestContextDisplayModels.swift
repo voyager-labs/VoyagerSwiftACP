@@ -6,6 +6,26 @@ public enum AiChatRequestContextDisplaySource: Equatable, Sendable {
     case locked
 }
 
+public struct AiChatRequestContextSectionDisplayModel: Equatable, Sendable {
+    public var source: AiChatRequestContextDisplaySource
+    public var currentContext: AiChatCurrentContextChipDisplayModel?
+    public var addedAttachments: [AiChatAddedAttachmentChipDisplayModel]
+
+    public init(
+        source: AiChatRequestContextDisplaySource,
+        currentContext: AiChatCurrentContextChipDisplayModel?,
+        addedAttachments: [AiChatAddedAttachmentChipDisplayModel],
+    ) {
+        self.source = source
+        self.currentContext = currentContext
+        self.addedAttachments = addedAttachments
+    }
+
+    public var isEmpty: Bool {
+        currentContext == nil && addedAttachments.isEmpty
+    }
+}
+
 public struct AiChatCurrentContextChipDisplayModel: Equatable, Sendable {
     public var title: String
     public var detail: String?
@@ -31,6 +51,44 @@ public struct AiChatCurrentContextChipDisplayModel: Equatable, Sendable {
         self.iconFilePath = iconFilePath
         self.folderStructureMode = folderStructureMode
         self.supportsFolderStructureMode = supportsFolderStructureMode
+    }
+}
+
+struct AiChatFolderStructureMenuItemDisplayModel: Identifiable, Equatable {
+    var id: AiChatFolderStructureMode {
+        mode
+    }
+
+    var mode: AiChatFolderStructureMode
+    var title: String
+    var isSelected: Bool
+    var isEnabled: Bool
+    var accessibilityLabel: String
+    var accessibilityValue: String
+
+    static func items(
+        selectedMode: AiChatFolderStructureMode,
+    ) -> [AiChatFolderStructureMenuItemDisplayModel] {
+        [
+            item(title: "Current folder only", mode: .currentFolderOnly, selectedMode: selectedMode),
+            item(title: "Include subfolders", mode: .includeSubfolders, selectedMode: selectedMode),
+        ]
+    }
+
+    private static func item(
+        title: String,
+        mode: AiChatFolderStructureMode,
+        selectedMode: AiChatFolderStructureMode,
+    ) -> AiChatFolderStructureMenuItemDisplayModel {
+        let isSelected = mode == selectedMode
+        return AiChatFolderStructureMenuItemDisplayModel(
+            mode: mode,
+            title: title,
+            isSelected: isSelected,
+            isEnabled: true,
+            accessibilityLabel: title,
+            accessibilityValue: isSelected ? "Selected" : "Not selected",
+        )
     }
 }
 
@@ -82,18 +140,21 @@ public struct AiChatRequestContextDisplayModel: Equatable, Sendable {
     public var source: AiChatRequestContextDisplaySource
     public var currentContext: AiChatCurrentContextChipDisplayModel?
     public var addedAttachments: [AiChatAddedAttachmentChipDisplayModel]
+    public var currentResponse: AiChatRequestContextSectionDisplayModel?
 
     public init(
         source: AiChatRequestContextDisplaySource,
         currentContext: AiChatCurrentContextChipDisplayModel?,
         addedAttachments: [AiChatAddedAttachmentChipDisplayModel],
+        currentResponse: AiChatRequestContextSectionDisplayModel? = nil,
     ) {
         self.source = source
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
+        self.currentResponse = currentResponse
     }
 
     public var isEmpty: Bool {
-        currentContext == nil && addedAttachments.isEmpty
+        currentResponse == nil && currentContext == nil && addedAttachments.isEmpty
     }
 }

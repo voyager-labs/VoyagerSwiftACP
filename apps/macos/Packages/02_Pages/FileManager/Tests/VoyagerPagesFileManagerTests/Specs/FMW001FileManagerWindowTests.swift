@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import PerceptionCore
 import SwiftUI
 import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
@@ -1406,6 +1407,70 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - VOY-637-transcript_search_command
+
+    /// VOY-637-transcript_search_command: `.chat` mode의 focused AiChat이 transcript search action을 단독 처리한다.
+    /// FileManager window command router가 empty New Chat에도 session/history 조건 없이 local search를 연다.
+    /// - 검증 내용: `.request(.find)`가 AiChat `.transcriptSearchOpened` 하나만 방출하는지 확인
+    /// - 사전 조건: inspector AiChat이 표시 중이고 mode가 `.chat`이며 transcript는 비어 있음
+    /// - 기대 결과: local transcript search action 1회, composer fallback action 0회
+    func testFindRequestInChatRoutesTranscriptSearchWithoutFallback() async {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.mode = .chat
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.find))
+        await store.receive(\.inspector.aiChat.transcriptSearchOpened)
+        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: active AiChat content tab의 `.chat` mode가 transcript search를 단독 처리한다.
+    /// inspector가 표시되지 않을 때 active content-tab command route가 local search action을 전달한다.
+    /// - 검증 내용: `.request(.find)`가 active tab ID의 `.tabContent(... .transcriptSearchOpened)` 하나만 방출하는지 확인
+    /// - 사전 조건: active content tab anchor가 `.aiChat`이고 content AiChat mode가 `.chat`임
+    /// - 기대 결과: content-tab transcript search action 1회, composer fallback action 0회
+    func testFindRequestInActiveAiChatContentTabRoutesTranscriptSearchWithoutFallback() async {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = state.contentTabs.activeTabID else {
+            XCTFail("Expected an active content tab")
+            return
+        }
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(
+            sessionID: "00000000-0000-0000-0000-000000000637",
+        )
+        state.content.aiChat.mode = .chat
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.find))
+        await store.receive { action in
+            guard case let .tabContent(tabID: tabID, action: .aiChat(.transcriptSearchOpened)) = action else {
+                return false
+            }
+            return tabID == activeTabID
+        }
+        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: `.sessions` mode의 AiChat은 기존 Collection Filter Composer로 fallback한다.
+    /// transcript가 표시되지 않는 session list에서는 FileManager의 기존 composer route를 그대로 재사용한다.
+    /// - 검증 내용: `.request(.find)`가 `.request(.toggleComposer)`와 composer presentation action을 각 1회 방출
+    /// - 사전 조건: inspector AiChat이 표시 중이고 mode가 `.sessions`임
+    /// - 기대 결과: transcript open 없이 composer fallback이 정확히 한 번 실행됨
+    func testFindRequestInSessionsRoutesComposerFallbackOnce() async {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.mode = .sessions
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.find))
+        await store.receive(\.request.toggleComposer)
+        await store.receive(\.content.composer.view.setPresented)
+        await store.finish()
+    }
+
     // MARK: - FMW-001-open_new_file_manager_window
 
     /// FMW-001-open_new_file_manager_window: makeInitial 기본 상태의 windowID 없음
@@ -1729,6 +1794,211 @@ extension FMW001FileManagerWindowTests {
 
         // GREEN: root and nested builders share an explicit non-auto-enabling container.
         XCTAssertFalse(menu.autoenablesItems)
+    }
+}
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-key_command_focus
+
+    /// FMW-001-key_command_focus: 비동기 focus 복원이 편집 중인 NSTextView를 교체하지 않는다.
+    /// Inspector 등에서 직접 NSTextView를 편집하는 동안 background focus 요청이 입력 대상을 빼앗지 않는지 검증한다.
+    /// - 검증 내용: requestFocus 이후 main queue drain 시 firstResponder identity
+    /// - 사전 조건: editable NSTextView가 File Manager window의 first responder
+    /// - 기대 결과: NSTextView가 first responder로 유지됨
+    func testRequestFocusPreservesActiveEditableTextView() async {
+        let keyCommandView = KeyCommandHostingView()
+        let textView = NSTextView()
+        textView.isEditable = true
+        let window = makeFocusWindow(containing: [keyCommandView, textView])
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        coordinator.register(keyCommandView)
+        XCTAssertTrue(window.makeFirstResponder(textView))
+
+        coordinator.requestFocus()
+        await drainMainQueue()
+
+        XCTAssertTrue(window.firstResponder === textView)
+    }
+
+    /// FMW-001-key_command_focus: 비동기 focus 복원이 활성 field editor를 교체하지 않는다.
+    /// NSTextField가 사용하는 field-editor NSTextView도 일반 편집 responder와 동일하게 보호되는지 검증한다.
+    /// - 검증 내용: requestFocus 이후 main queue drain 시 field editor firstResponder identity
+    /// - 사전 조건: isFieldEditor와 isEditable이 true인 NSTextView가 first responder
+    /// - 기대 결과: field editor가 first responder로 유지됨
+    func testRequestFocusPreservesActiveFieldEditorTextView() async {
+        let keyCommandView = KeyCommandHostingView()
+        let fieldEditor = NSTextView()
+        fieldEditor.isFieldEditor = true
+        fieldEditor.isEditable = true
+        let window = makeFocusWindow(containing: [keyCommandView, fieldEditor])
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        coordinator.register(keyCommandView)
+        XCTAssertTrue(window.makeFirstResponder(fieldEditor))
+
+        coordinator.requestFocus()
+        await drainMainQueue()
+
+        XCTAssertTrue(window.firstResponder === fieldEditor)
+    }
+
+    /// FMW-001-key_command_focus: 비텍스트 responder에서는 key command focus를 복원한다.
+    /// 텍스트 편집이 아닌 기존 responder가 있을 때 File Manager 키 명령 target 복원 동작을 보존한다.
+    /// - 검증 내용: requestFocus 이후 KeyCommandHostingView로의 firstResponder 전환
+    /// - 사전 조건: 다른 KeyCommandHostingView가 first responder
+    /// - 기대 결과: 등록된 KeyCommandHostingView가 first responder가 됨
+    func testRequestFocusReplacesNonTextResponderWithRegisteredKeyCommandView() async {
+        let keyCommandView = KeyCommandHostingView()
+        let nonTextResponder = KeyCommandHostingView()
+        let window = makeFocusWindow(containing: [keyCommandView, nonTextResponder])
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        coordinator.register(keyCommandView)
+        XCTAssertTrue(window.makeFirstResponder(nonTextResponder))
+
+        coordinator.requestFocus()
+        await drainMainQueue()
+
+        XCTAssertTrue(window.firstResponder === keyCommandView)
+    }
+
+    /// FMW-001-key_command_focus: first responder가 없어도 key command focus를 복원한다.
+    /// 텍스트 입력이 활성화되지 않은 background 상태의 기존 키 명령 복원 동작을 검증한다.
+    /// - 검증 내용: nil firstResponder에서 requestFocus 이후 등록 view로의 전환
+    /// - 사전 조건: window에 first responder가 없음
+    /// - 기대 결과: 등록된 KeyCommandHostingView가 first responder가 됨
+    func testRequestFocusRestoresRegisteredKeyCommandViewWhenResponderIsNil() async {
+        let keyCommandView = KeyCommandHostingView()
+        let window = makeFocusWindow(containing: [keyCommandView])
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        coordinator.register(keyCommandView)
+        XCTAssertTrue(window.makeFirstResponder(nil))
+
+        coordinator.requestFocus()
+        await drainMainQueue()
+
+        XCTAssertTrue(window.firstResponder === keyCommandView)
+    }
+
+    /// FMW-001-key_command_focus: mounted ContentPage restore가 편집 중인 NSTextView를 교체하지 않는다.
+    /// selectedIds 변경으로 실제 ContentPage restore caller가 실행되어도 Inspector 텍스트 입력이 유지되는지 검증한다.
+    /// - 검증 내용: mounted ContentPage의 selectedIds onChange 이후 firstResponder identity
+    /// - 사전 조건: editable NSTextView가 hosting window의 first responder
+    /// - 기대 결과: editable NSTextView가 first responder로 유지됨
+    func testMountedContentPageRestorePreservesEditableTextView() async {
+        let perceptionCheckingWasEnabled = disablePerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let fixture = await makeMountedContentPageFixture()
+        let textView = NSTextView()
+        textView.isEditable = true
+        fixture.window.contentView?.addSubview(textView)
+        XCTAssertTrue(fixture.window.makeFirstResponder(textView))
+
+        fixture.store.send(.view(.selectAllEntries))
+        await drainMountedFocusUpdates()
+
+        XCTAssertTrue(fixture.window.firstResponder === textView)
+    }
+
+    /// FMW-001-key_command_focus: mounted ContentPage restore가 활성 field editor를 교체하지 않는다.
+    /// NSTextField 계열의 field-editor responder도 실제 selectedIds restore caller에서 보호되는지 검증한다.
+    /// - 검증 내용: mounted ContentPage의 selectedIds onChange 이후 field editor firstResponder identity
+    /// - 사전 조건: editable field-editor NSTextView가 hosting window의 first responder
+    /// - 기대 결과: field editor가 first responder로 유지됨
+    func testMountedContentPageRestorePreservesFieldEditor() async {
+        let perceptionCheckingWasEnabled = disablePerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let fixture = await makeMountedContentPageFixture()
+        let fieldEditor = NSTextView()
+        fieldEditor.isFieldEditor = true
+        fieldEditor.isEditable = true
+        fixture.window.contentView?.addSubview(fieldEditor)
+        XCTAssertTrue(fixture.window.makeFirstResponder(fieldEditor))
+
+        fixture.store.send(.view(.selectAllEntries))
+        await drainMountedFocusUpdates()
+
+        XCTAssertTrue(fixture.window.firstResponder === fieldEditor)
+    }
+
+    /// FMW-001-key_command_focus: mounted ContentPage restore가 비텍스트 responder에서 key command focus를 복원한다.
+    /// selectedIds 변경으로 실행되는 실제 caller가 텍스트 편집 외 상황의 기존 키 명령 capture를 유지하는지 검증한다.
+    /// - 검증 내용: mounted ContentPage의 selectedIds onChange 이후 KeyCommandHostingView firstResponder 전환
+    /// - 사전 조건: 비텍스트 responder가 hosting window의 first responder
+    /// - 기대 결과: ContentPage의 KeyCommandHostingView가 first responder가 됨
+    func testMountedContentPageRestoreReclaimsNonTextResponder() async {
+        let perceptionCheckingWasEnabled = disablePerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let fixture = await makeMountedContentPageFixture()
+        let nonTextResponder = KeyCommandHostingView()
+        fixture.window.contentView?.addSubview(nonTextResponder)
+        XCTAssertTrue(fixture.window.makeFirstResponder(nonTextResponder))
+
+        fixture.store.send(.view(.selectAllEntries))
+        await drainMountedFocusUpdates()
+
+        XCTAssertTrue(fixture.window.firstResponder is KeyCommandHostingView)
+        XCTAssertFalse(fixture.window.firstResponder === nonTextResponder)
+    }
+
+    private func disablePerceptionChecking() -> Bool {
+        let wasEnabled = PerceptionCore.isPerceptionCheckingEnabled
+        PerceptionCore.isPerceptionCheckingEnabled = false
+        return wasEnabled
+    }
+
+    private func makeMountedContentPageFixture() async -> (
+        window: NSWindow,
+        store: Store<FileManagerContentState, FileManagerContentAction>,
+    ) {
+        var initialState = FileManagerContentState()
+        initialState.entryViewLayout.isCollectionContentLoading = true
+        let store: Store<FileManagerContentState, FileManagerContentAction> = Store(
+            initialState: initialState,
+        ) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                guard case .view(.selectAllEntries) = action else { return .none }
+                state.entryViewLayout.selectedIds = ["mounted-focus-trigger"]
+                return .none
+            }
+        }
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        let hostingController = NSHostingController(
+            rootView: ContentPageView(store: store)
+                .environment(\.fileManagerKeyCommandFocusCoordinator, coordinator),
+        )
+        let containerController = NSViewController()
+        containerController.view = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        containerController.addChild(hostingController)
+        hostingController.view.frame = containerController.view.bounds
+        containerController.view.addSubview(hostingController.view)
+        let window = NSWindow(contentViewController: containerController)
+        window.makeKey()
+        await drainMountedFocusUpdates()
+        return (window, store)
+    }
+
+    private func drainMountedFocusUpdates() async {
+        for _ in 0 ..< 8 {
+            await drainMainQueue()
+            await Task.yield()
+        }
+    }
+
+    private func makeFocusWindow(containing views: [NSView]) -> NSWindow {
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        for view in views {
+            contentView.addSubview(view)
+        }
+        let window = NSWindow(contentViewController: NSViewController(nibName: nil, bundle: nil))
+        window.contentView = contentView
+        return window
+    }
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
     }
 }
 

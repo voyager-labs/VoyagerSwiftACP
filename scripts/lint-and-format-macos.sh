@@ -10,7 +10,7 @@ SWIFT_ROOT="$1"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS_ROOT="$REPO_ROOT/apps/macos"
 
-# .swiftformat의 `--exclude build`는 절대 경로 타겟에서 무시되므로 절대 경로로 제외.
+# .swiftformat의 상대 경로 exclude는 절대 경로 타겟에서 무시되므로 두 build 경로를 절대 경로로 제외.
 BUILD_EXCLUDE="$SWIFT_ROOT/build,$SWIFT_ROOT/Build"
 
 echo "================================"
@@ -44,7 +44,7 @@ if mise exec -- swiftlint version >/dev/null 2>&1; then
         else
             source_files+=("$file")
         fi
-    done < <(find "$SWIFT_ROOT" -name '*.swift' -not -path '*/[Bb]uild/*' -print0)
+    done < <(find "$SWIFT_ROOT" -name '*.swift' -not -path '*/build/*' -not -path '*/Build/*' -print0)
 
     if [[ ${#source_files[@]} -gt 0 ]]; then
         if ! mise exec -- swiftlint --config "$MACOS_ROOT/.swiftlint.yml" --reporter xcode --no-cache "${source_files[@]}"; then

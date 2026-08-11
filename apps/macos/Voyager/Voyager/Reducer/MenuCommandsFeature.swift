@@ -131,6 +131,7 @@ struct MenuCommandsFeature {
         switch command {
         case .requestUndo: .send(.delegate(.windowManager(.edit(.requestUndo))))
         case .requestRedo: .send(.delegate(.windowManager(.edit(.requestRedo))))
+        case .find: .send(.delegate(.windowManager(.edit(.find))))
         case .toggleComposer: .send(.delegate(.windowManager(.edit(.toggleComposer))))
         case .cut: .send(.delegate(.windowManager(.edit(.cut))))
         case .copy: .send(.delegate(.windowManager(.edit(.copy))))
@@ -141,7 +142,7 @@ struct MenuCommandsFeature {
 
     private func routeAiChatEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action>? {
         switch command {
-        case .newChat: .send(.delegate(.windowManager(.edit(.newChat))))
+        case .openChat: .send(.delegate(.windowManager(.edit(.openChat))))
         case .showChatHistory: .send(.delegate(.windowManager(.edit(.showChatHistory))))
         default: nil
         }

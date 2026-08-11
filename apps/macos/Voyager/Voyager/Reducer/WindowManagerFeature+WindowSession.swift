@@ -122,16 +122,12 @@ extension WindowManagerFeature {
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
         ]
-        if path == nil {
-            effects.append(.send(.defaultWindowBootstrapRequested(id: windowSession.id)))
-        } else {
-            effects.append(trackedWindowOpenEffect(
-                for: windowSession.id,
-                requestID: requestID,
-            ))
-        }
+        effects.append(trackedWindowOpenEffect(
+            for: windowSession.id,
+            requestID: requestID,
+            shouldBootstrapDefaultWindow: path == nil,
+        ))
         return .concatenate(effects)
-            .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true)
     }
 
     private func revokeTrackedSingleton(
@@ -189,7 +185,11 @@ extension WindowManagerFeature {
            trackedWindow.windowID == id
         {
             guard state.authorizedTrackedSingletonRequestID == trackedWindow.requestID else { return .none }
-            return trackedWindowOpenEffect(for: id, requestID: trackedWindow.requestID)
+            return trackedWindowOpenEffect(
+                for: id,
+                requestID: trackedWindow.requestID,
+                shouldBootstrapDefaultWindow: false,
+            )
         }
         return windowOpenEffect(for: id, shouldBootstrapDefaultWindow: false)
     }
@@ -197,6 +197,7 @@ extension WindowManagerFeature {
     private func trackedWindowOpenEffect(
         for id: State.WindowID,
         requestID: UUID,
+        shouldBootstrapDefaultWindow: Bool,
     ) -> Effect<Action> {
         .run { [fileManagerWindowClient] send in
             await fileManagerWindowClient.open(id)
@@ -205,7 +206,7 @@ extension WindowManagerFeature {
             guard !Task.isCancelled else { return }
             await send(.windowOpenCompleted(
                 id: id,
-                shouldBootstrapDefaultWindow: false,
+                shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
                 isRegistered: registeredWindowIDs.contains(id),
             ))
             guard !Task.isCancelled else { return }
@@ -375,11 +376,10 @@ extension WindowManagerFeature {
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
         ]
-        if path == nil {
-            effects.append(.send(.defaultWindowBootstrapRequested(id: windowSession.id)))
-        } else {
-            effects.append(windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: false))
-        }
+        effects.append(windowOpenEffect(
+            for: windowSession.id,
+            shouldBootstrapDefaultWindow: path == nil,
+        ))
         return .concatenate(effects)
     }
 
@@ -398,7 +398,7 @@ extension WindowManagerFeature {
                 action: .window(.navigation(.view(.openCollectionFile(url)))),
             ))),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .send(.defaultWindowBootstrapRequested(id: windowSession.id)),
+            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: true),
         )
     }
 

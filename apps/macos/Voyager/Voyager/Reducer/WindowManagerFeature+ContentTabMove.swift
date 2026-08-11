@@ -22,6 +22,13 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         guard state.contentTabMoveTerminalRecords[request.requestID] == nil else { return .none }
         guard let sourceWindow = state.windows[id: request.sourceWindowID]?.window else { return .none }
+        if sourceWindow.pendingContentTabMove?.lifecycle == .inFlight,
+           let pendingRequest = sourceWindow.pendingContentTabMove?.request,
+           pendingRequest.requestID == request.requestID,
+           pendingRequest != request
+        {
+            return .none
+        }
         guard isMatchingContentTabMoveSourceWindow(request, sourceWindow: sourceWindow) else {
             return rejectContentTabMove(request, category: .unavailable, state: &state)
         }

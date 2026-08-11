@@ -125,6 +125,9 @@ extension AiChatFeature {
             targetSessionID: targetSessionID,
         )
         applySetupSession(setup, to: &state)
+        if let sessionID = setup.sessionID {
+            state.resetInspectorReopenMutationBaseline(for: sessionID)
+        }
         applySetupModelState(setup, to: &state)
         clearSetupRuntimeState(&state)
     }
@@ -144,6 +147,7 @@ extension AiChatFeature {
         state.restoreSessionID = setup.restoreSessionID
         state.restoreOutcome = nil
         state.restoreFailure = nil
+        state.resetTranscriptSearchIfSessionChanges(to: setup.sessionID)
         state.sessionID = setup.sessionID
         if let mode = setup.mode {
             state.mode = mode
@@ -214,6 +218,7 @@ extension AiChatFeature {
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
+        state.resetTranscriptSearchIfSessionChanges(to: snapshot.sessionID)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -229,6 +234,7 @@ extension AiChatFeature {
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+        state.resetInspectorReopenMutationBaseline(for: snapshot.sessionID)
     }
 
     func promotedNavigationExecutionPhase(
@@ -241,6 +247,7 @@ extension AiChatFeature {
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
+        state.resetTranscriptSearchIfSessionChanges(to: snapshot.sessionID)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -256,6 +263,7 @@ extension AiChatFeature {
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+        state.resetInspectorReopenMutationBaseline(for: snapshot.sessionID)
     }
 
     func applyPromotedExecutionTranscript(_ phase: AiChatExecutionPhase?, state: inout State) {
@@ -275,6 +283,7 @@ extension AiChatFeature {
     }
 
     func applyPromotedFinalSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.resetTranscriptSearchIfSessionChanges(to: snapshot.sessionID)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = snapshot.status
         state.currentSessionCustomTitle = snapshot.customTitle

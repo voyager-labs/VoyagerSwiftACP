@@ -57,12 +57,16 @@ enum FileManagerFixedLocationsLoadPhase: Equatable {
 enum FileManagerAiChatInspectorDestination: Equatable {
     case newChat
     case chatHistory
+    case reopenChat
 }
 
 struct FileManagerPendingAiChatInspectorOpen: Equatable {
     var requestID: UUID
     var tabID: ContentTabID
     var destination: FileManagerAiChatInspectorDestination
+    var resumeSessionID: AiChatSessionID?
+    var resumeProvenance: AiChatNewChatPreparationProvenance?
+    var preservesLiveRuntime: Bool
 }
 
 struct FileManagerPendingAiChatNewChat: Equatable {
@@ -1303,7 +1307,7 @@ private extension AiChatExecutionPhase {
     }
 }
 
-private extension AiChatFeature.State {
+extension AiChatFeature.State {
     var lifecycleSessionIDsToPreserve: [AiChatSessionID] {
         var sessionIDs: [AiChatSessionID] = []
         let shouldPreserveOwner = switch executionPhase {

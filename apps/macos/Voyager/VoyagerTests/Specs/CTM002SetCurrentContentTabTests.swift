@@ -327,6 +327,7 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(focusedID)
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
         XCTAssertEqual(store.state.lastUsedWindowIDs, [focusedID, backgroundID])
         XCTAssertEqual(closedIDs.value, [focusedID])

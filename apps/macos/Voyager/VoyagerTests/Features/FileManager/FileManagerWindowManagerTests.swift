@@ -242,6 +242,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(firstID))) {
             $0.closingWindowIDs.insert(firstID)
             $0.invalidatingWindowIDs.insert(firstID)
+            $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
             $0.windows.remove(id: firstID)
@@ -286,6 +287,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(focusedID)
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
 
         XCTAssertEqual(closedIDs.value.count, 1, "fileManagerWindowClient.close는 정확히 한 번 호출되어야 한다")
@@ -314,6 +316,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             action: .window(.delegate(.closeWindow)),
         ))) {
             $0.closingWindowIDs.insert(backgroundID)
+            $0.refreshContentTabMoveTargets()
         }
 
         XCTAssertEqual(store.state.focusedWindowID, focusedID)
@@ -359,6 +362,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(windowID)
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.pendingWindowCloseFinalized) {
             $0.windows.remove(id: windowID)
@@ -411,6 +415,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(windowID)
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
         await store.send(.windowOpenCompleted(
             id: windowID,
@@ -422,6 +427,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         await store.send(.event(.windowClosed(windowID))) {
             $0.invalidatingWindowIDs.insert(windowID)
+            $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
             $0.windows.remove(id: windowID)
@@ -451,6 +457,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(otherID))) {
             $0.closingWindowIDs.insert(otherID)
             $0.invalidatingWindowIDs.insert(otherID)
+            $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
             $0.windows.remove(id: otherID)
@@ -487,6 +494,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(windowID))) {
             $0.closingWindowIDs.insert(windowID)
             $0.invalidatingWindowIDs.insert(windowID)
+            $0.refreshContentTabMoveTargets()
         }
         await gate.waitUntilSuspended()
         XCTAssertNotNil(store.state.windows[id: windowID])
@@ -532,7 +540,9 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(closingID))) {
             $0.invalidatingWindowIDs.insert(closingID)
         }
-        await store.receive(\.windowInvalidationFinished)
+        await store.receive(\.windowInvalidationFinished) {
+            $0.invalidatingWindowIDs.remove(closingID)
+        }
         let focusBeforeLateBecameKey = store.state.focusedWindowID
         let mruBeforeLateBecameKey = store.state.lastUsedWindowIDs
         await store.send(.event(.windowBecameKey(closingID)))
@@ -568,6 +578,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
         XCTAssertEqual(store.state.lastUsedWindowIDs, [closingID, otherID])
         XCTAssertEqual(closedIDs.value, [closingID])
@@ -608,6 +619,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeAllWindows)) {
             $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
 
         XCTAssertEqual(store.state.windows.ids, [firstID, secondID])
@@ -840,7 +852,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             FileManagerAiChatSelection(modelHandle: anthropicModel.id, thinking: AiThinkingSelection.none),
         )
 
-        await store.send(.edit(.newChat))
+        await store.send(.edit(.openChat))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
@@ -866,7 +878,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         )
 
         await store.send(.event(.windowBecameKey(secondID)))
-        await store.send(.edit(.newChat))
+        await store.send(.edit(.openChat))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
@@ -939,7 +951,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         XCTAssertNil(store.state.windows[id: recreatedID]?.window.lastExplicitAiChatSelection)
 
-        await store.send(.edit(.newChat))
+        await store.send(.edit(.openChat))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,

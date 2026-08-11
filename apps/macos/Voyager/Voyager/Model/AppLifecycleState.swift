@@ -6,6 +6,7 @@ import VoyagerFeaturesAccountAccess
 struct AppLifecycleState: Equatable {
     var accountAccess: AccountAccessFeature.State = Self.makeAccountAccessState()
     var didStartHelper = false
+    var didStartEntryCoreHealthProbe = false
     var didFinishLaunching = false
     var terminationAttemptID: UUID?
     var accessGatePhase = AppLifecycleAccessGatePhase.unresolved

@@ -8,6 +8,7 @@ let kPackage = Package(
     ],
     products: [
         .library(name: "VoyagerShared", targets: ["VoyagerShared"]),
+        .executable(name: "VoyagerDesignTokenExporter", targets: ["VoyagerDesignTokenExporter"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-log", exact: "1.8.0"),
@@ -26,6 +27,9 @@ let kPackage = Package(
                 .product(name: "Sentry", package: "sentry-cocoa"),
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
             ],
+        ),
+        .executableTarget(
+            name: "VoyagerDesignTokenExporter",
         ),
         .testTarget(
             name: "VoyagerSharedTests",

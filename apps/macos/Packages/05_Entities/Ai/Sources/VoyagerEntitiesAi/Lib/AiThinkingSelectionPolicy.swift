@@ -19,6 +19,7 @@ public enum AiThinkingSelectionPolicy {
         supportsNone: Bool,
     ) -> AiThinkingSelection? {
         guard let selection else { return nil }
+        if case let .tokenBudget(min, max, _) = capability, min > max { return nil }
 
         switch (selection, capability) {
         case (.none, .effort), (.none, .adaptive), (.none, .tokenBudget), (.none, .unknown):
@@ -28,7 +29,7 @@ public enum AiThinkingSelectionPolicy {
         case let (.effort(value), .adaptive(values, _)):
             return values.contains(value) ? selection : nil
         case let (.tokenBudget(value), .tokenBudget(min, max, _)):
-            return (min ... max).contains(value) ? selection : nil
+            return min <= value && value <= max ? selection : nil
         case (.effort, .unknown), (.tokenBudget, .unknown):
             return selection
         case (.none, .unsupported), (.effort, .tokenBudget), (.tokenBudget, .effort), (.tokenBudget, .adaptive),
@@ -48,6 +49,7 @@ public enum AiThinkingSelectionPolicy {
         case let .adaptive(effortValues, _):
             return defaults + effortValues.map { effortOption($0) }
         case let .tokenBudget(min, max, defaultValue):
+            guard min <= max else { return [] }
             return defaults + budgetValues(min: min, max: max, defaultValue: defaultValue).map { tokenBudgetOption($0) }
         case .unsupported, .unknown:
             return []
@@ -105,7 +107,7 @@ public enum AiThinkingSelectionPolicy {
 
     private static func budgetValues(min: Int, max: Int, defaultValue: Int?) -> [Int] {
         var values = [min]
-        if let defaultValue, defaultValue != min, defaultValue != max {
+        if let defaultValue, min <= defaultValue, defaultValue <= max, defaultValue != min, defaultValue != max {
             values.append(defaultValue)
         }
         if max != min {

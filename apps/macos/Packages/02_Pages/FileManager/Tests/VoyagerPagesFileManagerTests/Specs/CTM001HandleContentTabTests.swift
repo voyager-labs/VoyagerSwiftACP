@@ -6113,7 +6113,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
 
         let attachmentURL = URL(fileURLWithPath: "/tmp/home-pending.txt")
-        await store.sendTabContent(.aiChat(.attachmentPickerSelection([attachmentURL])))
+        let sessionID = try XCTUnwrap(store.state.content.aiChat.sessionID)
+        await store.sendTabContent(.aiChat(.attachmentPickerSelection(sessionID, [attachmentURL])))
         XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
 
         await fixture.modelLoadGate.resume(returning: [fixture.defaultModel])

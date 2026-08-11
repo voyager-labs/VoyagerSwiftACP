@@ -23,7 +23,6 @@ struct EditMenuCommands: Commands {
     let store: StoreOf<MenuCommandsFeature>
 
     @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
-
     init(appRootStore: StoreOf<AppRootFeature>) {
         let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
         store = menuStore
@@ -95,21 +94,14 @@ struct EditMenuCommands: Commands {
         }
 
         CommandGroup(after: .undoRedo) {
-            let isComposerPresented = viewStore.isComposerPresented
-            let composerTitle = isComposerPresented
-                ? "Close Collection Filter Composer"
-                : "Open Collection Filter Composer"
-            Button(composerTitle) {
-                sendEditCommand(.toggleComposer)
+            Button(Self.collectionFilterComposerTitle(isPresented: viewStore.isComposerPresented)) {
+                sendEditCommand(.find)
             }
             .keyboardShortcut("f", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
 
-            let contextualAiChatTitle = viewStore.isContextualAiChatPresented
-                ? "Close Contextual AI Chat"
-                : "Open Contextual AI Chat"
-            Button(contextualAiChatTitle) {
-                sendEditCommand(.newChat)
+            Button(viewStore.openChatTitle) {
+                sendEditCommand(.openChat)
             }
             .keyboardShortcut("l", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
@@ -165,6 +157,12 @@ struct EditMenuCommands: Commands {
             .keyboardShortcut("a", modifiers: .command)
             .disabled(!canSelectAll)
         }
+    }
+
+    static func collectionFilterComposerTitle(isPresented: Bool) -> String {
+        isPresented
+            ? "Close Collection Filter Composer"
+            : "Open Collection Filter Composer"
     }
 
     static func canPerformTextOrEntryCommand(

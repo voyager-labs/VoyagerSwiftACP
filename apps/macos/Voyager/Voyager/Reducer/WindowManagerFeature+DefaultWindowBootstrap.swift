@@ -439,7 +439,7 @@ extension WindowManagerFeature {
     func invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(
         state: inout State,
     ) -> (cancel: Effect<Action>, restart: Effect<Action>) {
-        let pendingBootstrapWindowIDs = livePendingDefaultBootstrapWindowIDs(state)
+        let pendingBootstrapWindowIDs = liveDefaultBootstrapWindowIDs(state)
         state.defaultWindowBootstrapRequestID = nil
         state.defaultWindowBootstrapWindowIDs.removeAll()
         let restartEffect: Effect<Action>
@@ -462,7 +462,7 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         guard state.defaultWindowBootstrapRequestID == requestID else { return .none }
         state.defaultWindowBootstrapRequestID = nil
-        let targetWindowIDs = livePendingDefaultBootstrapWindowIDs(state)
+        let targetWindowIDs = liveDefaultBootstrapWindowIDs(state)
         state.defaultWindowBootstrapWindowIDs.removeAll()
         return .merge(
             targetWindowIDs.map { id in
@@ -486,7 +486,7 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         guard state.defaultWindowBootstrapRequestID == requestID else { return .none }
         state.defaultWindowBootstrapRequestID = nil
-        let targetWindowIDs = livePendingDefaultBootstrapWindowIDs(state)
+        let targetWindowIDs = liveDefaultBootstrapWindowIDs(state)
         state.defaultWindowBootstrapWindowIDs.removeAll()
         return .merge(
             targetWindowIDs.map { id in
@@ -509,7 +509,7 @@ extension WindowManagerFeature {
                 fixedLocationItems: result.fixedLocationItems,
             ))),
         )))
-        guard hasLiveSiblingWindow, !result.contentTabs.tabs.filter(\.isPinned).isEmpty else {
+        guard hasLiveSiblingWindow, result.contentTabs.tabs.contains(where: \.isPinned) else {
             return bootstrapEffect
         }
         return .concatenate(
@@ -521,10 +521,9 @@ extension WindowManagerFeature {
         )
     }
 
-    private func livePendingDefaultBootstrapWindowIDs(_ state: State) -> [State.WindowID] {
+    private func liveDefaultBootstrapWindowIDs(_ state: State) -> [State.WindowID] {
         state.windows.ids.filter { id in
             state.defaultWindowBootstrapWindowIDs.contains(id)
-                && state.pendingWindowOpenIDs.contains(id)
                 && !state.closingWindowIDs.contains(id)
                 && state.externalWindowBatchIDs[id] == nil
                 && state.retainedExternalOpenPlacementOwnership?.newWindowIDs.contains(id) != true

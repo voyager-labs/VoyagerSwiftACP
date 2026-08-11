@@ -8,7 +8,7 @@ import VoyagerFeaturesUpdateVersion
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
-    private let keyboardShortcutMonitor = AppKeyboardShortcutMonitor()
+    private lazy var keyboardShortcutMonitor = AppKeyboardShortcutMonitor()
 
     /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
     /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.

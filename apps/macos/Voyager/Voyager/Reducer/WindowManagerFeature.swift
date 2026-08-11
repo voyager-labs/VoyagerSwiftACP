@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
@@ -60,6 +61,8 @@ struct WindowManagerFeature {
     private var entryLoadingClient
     @Dependency(\.fileOperationUndoManagerClient)
     var fileOperationUndoManagerClient
+    @Dependency(\.undoManagerClient)
+    var undoManagerClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
     @Dependency(\.metricsClient)
@@ -198,11 +201,14 @@ struct WindowManagerFeature {
             case .edit(.requestRedo):
                 return sendCommandToFocusedWindow(state, .requestRedo)
 
+            case .edit(.find):
+                return routeFindCommand(state)
+
             case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
-            case .edit(.newChat):
-                return sendCommandToFocusedWindow(state, .newChat)
+            case .edit(.openChat):
+                return sendCommandToFocusedWindow(state, .reopenChat)
 
             case .edit(.showChatHistory):
                 return sendCommandToFocusedWindow(state, .showChatHistory)
@@ -275,7 +281,10 @@ struct WindowManagerFeature {
 
             case let .windowInvalidationFinished(id, result):
                 guard state.closingWindowIDs.contains(id) else { return .none }
-                guard result.succeeded else { return .none }
+                guard result.succeeded else {
+                    state.invalidatingWindowIDs.remove(id)
+                    return .none
+                }
                 return finalizeWindowRemoval(id, state: &state)
 
             case .finalizeDeferredWindowClosures:
@@ -285,23 +294,22 @@ struct WindowManagerFeature {
                 if topNavigationPersistenceParticipantWindowIDs(in: state).contains(id) {
                     return deferWindowRemovalUntilTopNavigationPersistenceCompletes(id, state: &state)
                 }
-                let wasFocused = state.focusedWindowID == id
-                state.windows.remove(id: id)
-                state.pendingWindowOpenIDs.remove(id)
-                state.closingWindowIDs.remove(id)
-                state.invalidatingWindowIDs.remove(id)
-                state.lastUsedWindowIDs.removeAll { $0 == id }
-                state.defaultWindowBootstrapWindowIDs.remove(id)
-                state.externalWindowBatchIDs[id] = nil
-                if wasFocused {
-                    state.focusedWindowID = state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
+                guard state.windows[id: id] != nil else {
+                    return .run { [fileManagerWindowClient] _ in
+                        await fileManagerWindowClient.finalizeClose(id)
+                    }
                 }
+                guard !state.invalidatingWindowIDs.contains(id) else { return .none }
+                state.closingWindowIDs.insert(id)
+                state.invalidatingWindowIDs.insert(id)
                 state.refreshContentTabMoveTargets()
-                guard state.defaultWindowBootstrapWindowIDs.isEmpty,
-                      state.defaultWindowBootstrapRequestID != nil
-                else { return .none }
-                state.defaultWindowBootstrapRequestID = nil
-                return .cancel(id: CancelID.defaultWindowBootstrap)
+                return .run { [undoManagerClient, fileManagerWindowClient] send in
+                    let result = await undoManagerClient.invalidateWindow(id)
+                    if result.succeeded {
+                        await fileManagerWindowClient.finalizeClose(id)
+                    }
+                    await send(.windowInvalidationFinished(id: id, result: result))
+                }
 
             case let .event(.focusWindow(path)):
                 return .run { _ in
@@ -443,6 +451,9 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.file(.newWindow(path: path)))
 
+            case let .windows(.element(id: id, action: .window(.delegate(.closeWindow)))):
+                return closeWindow(id, state: &state)
+
             case let .windows(.element(
                 id: sourceWindowID,
                 action: .window(.delegate(.fixedLocationVisibilityChanged(hiddenIDs))),
@@ -542,8 +553,11 @@ struct WindowManagerFeature {
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
                 return .none
 
-            case let .windows(.element(id: id, action: .window(.delegate(.requestAttachmentPicker)))):
-                return requestAttachmentPicker(for: id)
+            case let .windows(.element(
+                id: id,
+                action: .window(.delegate(.requestAttachmentPicker(originSessionID))),
+            )):
+                return requestAttachmentPicker(for: id, originSessionID: originSessionID)
 
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
@@ -631,6 +645,13 @@ extension WindowManagerFeature {
             result: .success(plan),
         )))))
         return .concatenate(effects)
+    }
+
+    private func routeFindCommand(_ state: State) -> Effect<Action> {
+        guard let id = state.focusedWindowID, state.windows[id: id] != nil else {
+            return .none
+        }
+        return .send(.windows(.element(id: id, action: .window(.request(.find)))))
     }
 
     func sendCommandToFocusedWindow(
@@ -830,14 +851,17 @@ extension WindowManagerFeature {
 }
 
 private extension WindowManagerFeature {
-    func requestAttachmentPicker(for windowID: WindowManagerState.WindowID) -> Effect<Action> {
+    func requestAttachmentPicker(
+        for windowID: WindowManagerState.WindowID,
+        originSessionID: AiChatSessionID,
+    ) -> Effect<Action> {
         .run { [attachmentPickerClient] send in
             let urls = await attachmentPickerClient.pickAttachments()
             guard !urls.isEmpty else { return }
             let action = await MainActor.run {
                 Action.windows(.element(
                     id: windowID,
-                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(urls)))),
+                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(originSessionID, urls)))),
                 ))
             }
             await send(action)
@@ -1026,8 +1050,9 @@ extension WindowManagerFeature {
             return completeCorrelatedContentTabMovePersistence(result, state: &state)
         }
 
+        let shouldPublishCommit = shouldPublishTopNavigationCommit(result, state: state)
         let bootstrapLifecycle: (cancel: Effect<Action>, restart: Effect<Action>) = if case .committed = result
-            .terminal
+            .terminal, shouldPublishCommit
         {
             invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(state: &state)
         } else {
@@ -1036,7 +1061,7 @@ extension WindowManagerFeature {
 
         var effects: [Effect<Action>] = []
         effects.append(bootstrapLifecycle.cancel)
-        if case let .committed(commit) = result.terminal {
+        if case let .committed(commit) = result.terminal, shouldPublishCommit {
             effects.append(fanOutCommittedTopNavigationSnapshot(
                 commit,
                 authoritativePinnedContentTabs: result.authoritativePinnedContentTabs,
@@ -1052,6 +1077,19 @@ extension WindowManagerFeature {
             bootstrapLifecycle.restart,
         ))
         return .concatenate(effects)
+    }
+
+    private func shouldPublishTopNavigationCommit(
+        _ result: WindowManagerTopNavigationPersistenceResult,
+        state: State,
+    ) -> Bool {
+        guard case let .pinnedRecord(_, request, _) = result.request.operation,
+              let source = state.windows[id: result.request.sourceWindowID]?.window
+        else { return true }
+        return source.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+            tabID: request.tabID,
+            intentID: request.context.intentID,
+        )
     }
 
     func fanOutCommittedTopNavigationSnapshot(

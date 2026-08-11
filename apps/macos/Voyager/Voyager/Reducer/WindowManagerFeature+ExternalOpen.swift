@@ -76,7 +76,12 @@ extension WindowManagerFeature {
         state.retainedExternalOpenPlacementOwnership = nil
         let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
         for windowID in ownedWindowIDs {
-            effects.append(closeWindow(windowID, state: &state))
+            state.closingWindowIDs.insert(windowID)
+            effects.append(.run { [fileManagerWindowClient] _ in
+                await fileManagerWindowClient.close(windowID)
+                await fileManagerWindowClient.finalizeClose(windowID)
+            })
+            effects.append(finalizeWindowRemoval(windowID, state: &state))
         }
         state.refreshContentTabMoveTargets()
         return .concatenate(effects)

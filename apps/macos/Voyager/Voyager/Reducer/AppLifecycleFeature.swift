@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import VoyagerEntitiesAppPreferences
+import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
 import VoyagerShared
@@ -30,11 +31,18 @@ struct AppLifecycleFeature {
     var uuid
     @Dependency(\.continuousClock)
     var clock
+    @Dependency(\.date)
+    var date
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
+    @Dependency(\.entryCoreEndpointClient)
+    var entryCoreEndpointClient
+    @Dependency(\.entryCoreClient)
+    var entryCoreClient
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
+        static let entryCoreHealthProbe = "entryCoreHealthProbe"
         static let terminationCleanupTimeout = "terminationCleanupTimeout"
         static let sessionExpirationObserver = "sessionExpirationObserver"
     }
@@ -101,6 +109,54 @@ struct AppLifecycleFeature {
                         helperClient: helperAppClient,
                         stateClient: helperStateClient,
                     ))
+                }
+                if !state.didStartEntryCoreHealthProbe {
+                    state.didStartEntryCoreHealthProbe = true
+                    let endpointClient = entryCoreEndpointClient
+                    let entryCoreClient = entryCoreClient
+                    let date = date
+                    effects.append(
+                        .run { send in
+                            let startedAt = date.now
+                            let endpoint: EntryCoreEndpoint
+                            do {
+                                endpoint = try endpointClient.resolve()
+                            } catch {
+                                await send(.entryCoreHealthProbeCompleted(.init(
+                                    outcome: .unavailable,
+                                    phase: .endpointResolution,
+                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                )))
+                                return
+                            }
+
+                            do {
+                                _ = try await entryCoreClient.health(endpoint)
+                                await send(.entryCoreHealthProbeCompleted(.init(
+                                    outcome: .healthy,
+                                    phase: .response,
+                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                )))
+                            } catch is CancellationError {
+                                return
+                            } catch let error as EntryCoreClientError {
+                                guard error != .cancelled else { return }
+                                await send(.entryCoreHealthProbeCompleted(
+                                    entryCoreHealthProbeResult(
+                                        for: error,
+                                        duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                    ),
+                                ))
+                            } catch {
+                                await send(.entryCoreHealthProbeCompleted(.init(
+                                    outcome: .failed,
+                                    phase: .response,
+                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                )))
+                            }
+                        }
+                        .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true),
+                    )
                 }
                 return .merge(effects)
 
@@ -216,9 +272,21 @@ struct AppLifecycleFeature {
                 state.accessGatePhase = .terminating
                 return .merge(
                     .cancel(id: CancelID.helperMonitor),
+                    .cancel(id: CancelID.entryCoreHealthProbe),
                     .cancel(id: CancelID.sessionExpirationObserver),
                     .send(.accountAccess(.appWillTerminate)),
                 )
+
+            case let .entryCoreHealthProbeCompleted(result):
+                appLifecycleLogger.info(
+                    "Entry Core health probe completed",
+                    metadata: [
+                        "outcome": .string(result.outcome.rawValue),
+                        "phase": .string(result.phase.rawValue),
+                        "duration": .string(String(describing: result.duration)),
+                    ],
+                )
+                return .none
 
             case .delegate(.openInitialWindowIfNeeded):
                 return .none
@@ -345,4 +413,41 @@ actor VoyagerTerminationCoordinator {
     func isTerminating() -> Bool {
         reason != nil
     }
+}
+
+private let appLifecycleLogger = Logger(label: "Voyager.AppLifecycle")
+
+private func entryCoreHealthProbeResult(
+    for error: EntryCoreClientError,
+    duration: Duration,
+) -> EntryCoreHealthProbeResult {
+    switch error {
+    case .invalidEndpoint:
+        .init(outcome: .unavailable, phase: .endpointResolution, duration: duration)
+    case .daemonUnavailable:
+        .init(outcome: .unavailable, phase: .connect, duration: duration)
+    case let .timedOut(phase), let .transport(phase):
+        .init(outcome: .failed, phase: entryCoreHealthProbePhase(phase), duration: duration)
+    case .cancelled:
+        .init(outcome: .failed, phase: .response, duration: duration)
+    case .responseTooLarge, .malformedResponse, .protocolMismatch, .requestIDMismatch, .server:
+        .init(outcome: .failed, phase: .response, duration: duration)
+    }
+}
+
+private func entryCoreHealthProbePhase(
+    _ phase: EntryCoreTransportPhase,
+) -> EntryCoreHealthProbeResult.Phase {
+    switch phase {
+    case .connect:
+        .connect
+    case .write:
+        .write
+    case .read:
+        .read
+    }
+}
+
+private func entryCoreHealthProbeDuration(from start: Date, to end: Date) -> Duration {
+    .seconds(max(0, end.timeIntervalSince(start)))
 }

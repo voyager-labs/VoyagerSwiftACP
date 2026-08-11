@@ -37,12 +37,21 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !sidebarStore.allFixedLocationItems.isEmpty {
+            Spacer()
+                .frame(height: windowControlsTopInset)
+
+            if sidebarStore.shouldShowFixedLocationSection {
                 fixedLocationsGrid
-                    .padding(.top, 50)
             }
 
             contentTabsViewport
+                .contextMenu {
+                    if !sidebarStore.shouldShowFixedLocationSection,
+                       !sidebarStore.allFixedLocationItems.isEmpty
+                    {
+                        fixedLocationsVisibilityMenu
+                    }
+                }
         }
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
@@ -233,6 +242,10 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+
+    private var windowControlsTopInset: CGFloat {
+        50
     }
 
     private var contentTabSectionDivider: some View {

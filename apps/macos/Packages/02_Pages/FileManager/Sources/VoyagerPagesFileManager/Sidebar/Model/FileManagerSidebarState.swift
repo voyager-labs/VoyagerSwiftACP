@@ -12,6 +12,10 @@ public struct FileManagerSidebarState: Equatable {
     var topNavigationItems: [FileManagerSidebarTopNavigationItem] = []
     var unpinnedContentTabItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
+    var shouldShowFixedLocationSection: Bool {
+        !fixedLocationItems.isEmpty
+    }
+
     var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
     var topNavigationArrangementPresentation: FileManagerTopNavigationArrangementPresentation?
