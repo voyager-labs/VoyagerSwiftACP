@@ -30,6 +30,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let terminalResultOverride: RuntimeResult?
     private let terminalResultGate: RuntimeTestGate?
     private let failsTerminalResult: Bool
+    private let failsLaunchAfterGate: Bool
     private let launchFailure: RuntimeAdapterFailure?
     private let failsRestart: Bool
     private var remainingLaunchFailures: Int
@@ -67,6 +68,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         terminalResultOverride: RuntimeResult? = nil,
         terminalResultGate: RuntimeTestGate? = nil,
         failsTerminalResult: Bool = false,
+        failsLaunchAfterGate: Bool = false,
         launchFailure: RuntimeAdapterFailure? = nil,
         providerBranch: RuntimeProviderBranch = .unknown,
     ) {
@@ -93,6 +95,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.terminalResultOverride = terminalResultOverride
         self.terminalResultGate = terminalResultGate
         self.failsTerminalResult = failsTerminalResult
+        self.failsLaunchAfterGate = failsLaunchAfterGate
         self.launchFailure = launchFailure
         remainingLaunchFailures = failsLaunch ? .max : launchFailures
     }
@@ -115,6 +118,9 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
             try await clock.sleep(launchDelay)
         }
         await launchGate?.wait()
+        if failsLaunchAfterGate {
+            throw InjectedFailure.launch
+        }
         return RuntimeLaunchReceipt(
             runReference: request.runReference,
             providerInternalSessionReference: IDs.providerSession(launchCount),

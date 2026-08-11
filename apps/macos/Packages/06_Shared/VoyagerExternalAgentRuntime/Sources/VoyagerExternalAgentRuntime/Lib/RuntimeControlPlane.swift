@@ -89,15 +89,11 @@ public actor RuntimeControlPlane {
         do {
             receipt = try await reservation.adapter.launch(request)
         } catch {
-            let primary = normalizeAdapterError(error)
-            try? await commit(host: reservation.host) { plane, registry in
-                plane.failLaunchTransition(
-                    host: reservation.host,
-                    lease: reservation.lease,
-                    in: &registry,
-                )
-            }
-            throw primary
+            return try await resolveLaunchFailure(
+                error,
+                reservation: reservation,
+                runReference: request.runReference,
+            )
         }
         let receiptTransition: ReceiptTransition
         do {
@@ -124,6 +120,27 @@ public actor RuntimeControlPlane {
                 lease: lease,
             )
         }
+    }
+
+    private func resolveLaunchFailure(
+        _ error: any Error,
+        reservation: RunReservation,
+        runReference: RuntimeRunReference,
+    ) async throws -> RuntimeResult {
+        let primary = normalizeAdapterError(error)
+        let cleanupApplied = try? await commit(host: reservation.host) { plane, registry in
+            plane.failLaunchTransition(
+                host: reservation.host,
+                lease: reservation.lease,
+                in: &registry,
+            )
+        }
+        if cleanupApplied != true,
+           let terminal = storedTerminalResult(host: reservation.host, runReference: runReference)
+        {
+            return terminal
+        }
+        throw primary
     }
 
     private func consumeAndFinish(

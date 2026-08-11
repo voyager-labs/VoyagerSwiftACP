@@ -1465,6 +1465,41 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 0)
     }
 
+    /// ATI-006-project_external_agent_run_events: stored host terminal survives a late launch failure.
+    /// launch 대기 중 지속된 같은 run의 host terminal이 뒤늦은 adapter 오류보다 우선하는지 검증한다.
+    /// - 검증 내용: launch 실패 이후 반환 outcome과 durable terminal projection.
+    /// - 사전 조건: launch가 gate에서 대기하고 host terminal 저장 뒤 adapter가 실패한다.
+    /// - 기대 결과: run은 adapter 오류 대신 stored completed 결과를 반환한다.
+    @Test
+    func `stored host terminal survives a late launch failure`() async throws {
+        let host: ExternalAgentSessionReference = "host-launch-failure-terminal"
+        let run = RuntimeRunReference("run-launch-failure-terminal")
+        let launchGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+            failsLaunchAfterGate: true,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForLaunchCount(1)
+
+        let terminal = try await plane.ingestHostEvent(
+            reviewerBlockerTestsMakeHostTerminal(host: host, run: run, sequence: 1),
+        )
+        await launchGate.open()
+
+        #expect(terminal?.outcome == .completed)
+        #expect(try await task.value.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// ATI-006-project_external_agent_run_events: restored nonterminal session reserves its host.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
@@ -1701,6 +1736,36 @@ struct ATI006CoordinateExternalAgentSessionsTests {
 
         #expect(result.outcome == .completed)
         #expect(result.artifactReferences == ["artifact://result.json"])
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
+    /// ATI-006-project_external_agent_run_events: stored provider terminal survives terminal-result failure.
+    /// stream terminal event가 지속된 뒤 provider 결과 조회 오류가 terminal 상태를 뒤집지 않는지 검증한다.
+    /// - 검증 내용: streaming terminalResult 오류 이후 반환 outcome과 durable terminal projection.
+    /// - 사전 조건: provider completed event 저장 뒤 terminalResult 조회가 실패한다.
+    /// - 기대 결과: run은 adapter 오류 대신 stored completed 결과를 반환한다.
+    @Test
+    func `stored provider terminal survives terminal-result failure`() async throws {
+        let host = ExternalAgentSessionReference("host-stream-result-failure")
+        let run = RuntimeRunReference("run-stream-result-failure")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "completed",
+                kind: .completed,
+            )]],
+            failsTerminalResult: true,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+
+        let result = try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+
+        #expect(result.outcome == .completed)
         #expect(await plane.projection(for: host) == .completed)
     }
 

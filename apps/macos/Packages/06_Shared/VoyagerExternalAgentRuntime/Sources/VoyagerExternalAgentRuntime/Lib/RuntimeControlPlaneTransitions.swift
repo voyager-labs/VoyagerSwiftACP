@@ -145,12 +145,13 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         lease: UInt64,
         in registry: inout SessionRegistry,
-    ) {
-        guard var session = registry[host], session.lease == .launching(lease) else { return }
+    ) -> Bool {
+        guard var session = registry[host], session.lease == .launching(lease) else { return false }
         session.stored = session.stored.withProjection(.interrupted)
         session.lease = .none
         session.revision += 1
         registry[host] = session
+        return true
     }
 
     func interruptTransition(

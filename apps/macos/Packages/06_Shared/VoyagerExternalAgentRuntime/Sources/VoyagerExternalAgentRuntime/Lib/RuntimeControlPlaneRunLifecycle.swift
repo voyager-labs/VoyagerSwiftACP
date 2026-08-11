@@ -89,7 +89,15 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
     ) async throws -> RuntimeResult {
         guard adapter.descriptor.capabilities.terminalResult == .supported else { return terminal }
-        let result = try await adapter.terminalResult(for: receipt.runReference)
+        let result: RuntimeResult
+        do {
+            result = try await adapter.terminalResult(for: receipt.runReference)
+        } catch {
+            if let terminal = storedTerminalResult(host: host, runReference: receipt.runReference) {
+                return terminal
+            }
+            throw error
+        }
         guard result.runReference == receipt.runReference else {
             throw RuntimeHostError.malformedAdapterResponse
         }
@@ -164,7 +172,7 @@ extension RuntimeControlPlane {
         )
     }
 
-    private func storedTerminalResult(
+    func storedTerminalResult(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
     ) -> RuntimeResult? {
