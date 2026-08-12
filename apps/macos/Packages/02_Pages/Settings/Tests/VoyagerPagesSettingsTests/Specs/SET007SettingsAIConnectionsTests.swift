@@ -5,8 +5,184 @@ import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 
+private actor SavedConnectionsFile {
+    private var file: AIConnectionsFile?
+
+    func record(_ file: AIConnectionsFile) {
+        self.file = file
+    }
+
+    func value() -> AIConnectionsFile? {
+        file
+    }
+}
+
 @MainActor
 final class SET007SettingsAIConnectionsTests: XCTestCase {
+    // MARK: - SET-007-codex_oauth_runtime
+
+    /// SET-007-codex_oauth_runtime: bootstrap result carries effective OAuth metadata.
+    /// Bootstrap must retain the credential actually verified so rotated refresh credentials can be persisted.
+    /// - 검증 내용: result exposes source/effective credential metadata.
+    /// - 사전 조건: a connected Codex bootstrap result is created.
+    /// - 기대 결과: result contains the effective credential field required for CAS persistence.
+    func testBootstrapResult_exposesEffectiveCredentialForPersistence() {
+        let result = AIProviderBootstrapResult(
+            provider: .chatgptCodex,
+            connectionState: .connected,
+        )
+
+        let labels = Set(Mirror(reflecting: result).children.compactMap(\.label))
+
+        XCTAssertTrue(labels.contains("sourceCredential"))
+        XCTAssertTrue(labels.contains("effectiveCredential"))
+    }
+
+    /// SET-007-codex_oauth_runtime: bootstrap persistence preserves a competing credential write.
+    /// Verification persistence must compare and replace credentials inside one atomic mutation.
+    /// - 검증 내용: a competitor write after source capture is not overwritten by stale verification output.
+    /// - 사전 조건: the file client returns the source file, then a save boundary observes a competing credential.
+    /// - 기대 결과: the persisted result retains the competing credential and skips stale snapshot replacement.
+    func testBootstrapPersistence_competingCredentialWriteSurvivesVerification() async {
+        let sourceCredential = OAuthCredentialFile(
+            accessToken: "source-access",
+            refreshToken: "source-refresh",
+            expiresAtMs: 1,
+        )
+        let competingCredential = OAuthCredentialFile(
+            accessToken: "competing-access",
+            refreshToken: "competing-refresh",
+            expiresAtMs: 2,
+        )
+        let sourceFile = AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(sourceCredential),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectionFailed),
+                ),
+            ],
+        )
+        let competingFile = AIConnectionsFile(
+            updatedAtMs: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(competingCredential),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        let savedConnectionsFile = SavedConnectionsFile()
+        let client = AIConnectionsFileClient(
+            load: { sourceFile },
+            save: { file in
+                await savedConnectionsFile.record(file)
+                return .success(file)
+            },
+            deleteCredential: { _ in .success(competingFile) },
+            atomicUpdate: { (transform: AIConnectionsFileClient.AtomicUpdateTransform) in
+                let updated = try transform(competingFile)
+                await savedConnectionsFile.record(updated)
+                return .success(updated)
+            },
+        )
+        let result = AIProviderBootstrapResult(
+            provider: .chatgptCodex,
+            connectionState: .connected,
+            sourceCredential: .oauth(sourceCredential),
+            effectiveCredential: .oauth(OAuthCredentialFile(
+                accessToken: "effective-access",
+                refreshToken: "effective-refresh",
+                expiresAtMs: 3,
+            )),
+        )
+
+        _ = await AIProviderConnectionBootstrap.persistVerificationResults(
+            [result],
+            file: sourceFile,
+            connectionsFileClient: client,
+        )
+
+        let savedFile = await savedConnectionsFile.value()
+        XCTAssertEqual(
+            savedFile?.providers[AiProvider.chatgptCodex.rawValue]?.credential,
+            .oauth(competingCredential),
+        )
+        XCTAssertEqual(
+            savedFile?.providers[AiProvider.chatgptCodex.rawValue]?.snapshot.lastKnownStatus,
+            .connected,
+        )
+        XCTAssertEqual(savedFile?.updatedAtMs, competingFile.updatedAtMs)
+    }
+
+    /// SET-007-codex_oauth_runtime: unchanged connected snapshot still persists a refreshed credential.
+    /// Credential rotation and snapshot transitions are independent bootstrap mutations.
+    /// - 검증 내용: connected snapshot이 이미 동일한 경우에도 effective OAuth credential 저장 여부를 확인한다.
+    /// - 사전 조건: source/latest snapshot은 connected이고 verification 결과만 갱신된 credential을 포함한다.
+    /// - 기대 결과: snapshot은 보존되고 credential은 refreshed value로 교체된다.
+    func testBootstrapPersistence_credentialOnlyRotationPersistsEffectiveCredential() async {
+        let sourceCredential = OAuthCredentialFile(
+            accessToken: "expired-access",
+            refreshToken: "source-refresh",
+            expiresAtMs: 1,
+        )
+        let effectiveCredential = OAuthCredentialFile(
+            accessToken: "refreshed-access",
+            refreshToken: "rotated-refresh",
+            expiresAtMs: 3,
+        )
+        let snapshot = ProviderSnapshotFile(
+            lastKnownStatus: .connected,
+            lastVerifiedAtMs: 2,
+            lastErrorCode: .none,
+        )
+        let sourceFile = AIConnectionsFile(
+            updatedAtMs: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(sourceCredential),
+                    snapshot: snapshot,
+                ),
+            ],
+        )
+        let savedConnectionsFile = SavedConnectionsFile()
+        let client = AIConnectionsFileClient(
+            load: { sourceFile },
+            save: { file in
+                await savedConnectionsFile.record(file)
+                return .success(file)
+            },
+            deleteCredential: { _ in .success(sourceFile) },
+            atomicUpdate: { (transform: AIConnectionsFileClient.AtomicUpdateTransform) in
+                let updated = try transform(sourceFile)
+                await savedConnectionsFile.record(updated)
+                return .success(updated)
+            },
+        )
+        let result = AIProviderBootstrapResult(
+            provider: .chatgptCodex,
+            connectionState: .connected,
+            sourceCredential: .oauth(sourceCredential),
+            effectiveCredential: .oauth(effectiveCredential),
+        )
+
+        _ = await AIProviderConnectionBootstrap.persistVerificationResults(
+            [result],
+            file: sourceFile,
+            connectionsFileClient: client,
+        )
+
+        let savedRecord = await savedConnectionsFile.value()?.providers[AiProvider.chatgptCodex.rawValue]
+        XCTAssertEqual(savedRecord?.credential, .oauth(effectiveCredential))
+        XCTAssertEqual(savedRecord?.snapshot, snapshot)
+    }
+
     // MARK: - SET-007-show_ai_provider_list
 
     /// SET-007-show_ai_provider_list: 지원 provider row는 연결 방식과 primary action을 노출하고 기본/최근 사용 UI를 만들지 않는다.

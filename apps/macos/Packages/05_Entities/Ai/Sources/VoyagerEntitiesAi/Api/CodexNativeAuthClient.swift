@@ -36,6 +36,20 @@ struct CodexTokenResponse: Decodable {
     let token_type: String
 }
 
+private struct OAuthErrorResponse: Decodable {
+    let error: String
+}
+
+public enum CodexCredentialRefreshError: Error, Equatable, Sendable {
+    case missingRefreshToken
+    case invalidGrant
+    case unauthorized(statusCode: Int)
+    case transport
+    case server(statusCode: Int)
+    case invalidResponse
+    case cancelled
+}
+
 private final class CodexBrowserLoginFlow: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
@@ -103,21 +117,43 @@ private final class CodexBrowserLoginFlow: @unchecked Sendable {
 // MARK: - Client
 
 public struct CodexNativeAuthClient: Sendable {
+    public static func classifyRefreshHTTPFailure(
+        statusCode: Int,
+        body: Data,
+    ) -> CodexCredentialRefreshError {
+        guard statusCode == 400,
+              let payload = try? JSONDecoder().decode(OAuthErrorResponse.self, from: body),
+              payload.error == "invalid_grant"
+        else {
+            return .transport
+        }
+        return .invalidGrant
+    }
+
+    public static func live() -> CodexNativeAuthClient {
+        .liveValue
+    }
+
     public var startBrowserLogin: @Sendable () -> AsyncThrowingStream<BrowserLoginState, Error>
     public var startDeviceAuth: @Sendable () async throws -> DeviceAuthChallenge
     public var completeDeviceAuth: @Sendable (_ challenge: DeviceAuthChallenge) async throws -> OAuthCredentialFile
     public var cancelCurrentFlow: @Sendable () async -> Void
+    public var refreshCredential: @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile
 
     nonisolated public init(
         startBrowserLogin: @escaping @Sendable () -> AsyncThrowingStream<BrowserLoginState, Error>,
         startDeviceAuth: @escaping @Sendable () async throws -> DeviceAuthChallenge,
         completeDeviceAuth: @escaping @Sendable (_ challenge: DeviceAuthChallenge) async throws -> OAuthCredentialFile,
         cancelCurrentFlow: @escaping @Sendable () async -> Void,
+        refreshCredential: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile = { _ in
+            throw CodexNativeAuthError.loginUnavailable
+        },
     ) {
         self.startBrowserLogin = startBrowserLogin
         self.startDeviceAuth = startDeviceAuth
         self.completeDeviceAuth = completeDeviceAuth
         self.cancelCurrentFlow = cancelCurrentFlow
+        self.refreshCredential = refreshCredential
     }
 }
 
@@ -211,6 +247,18 @@ extension CodexNativeAuthClient: DependencyKey {
             cancelCurrentFlow: {
                 browserLoginFlow.cancel()
             },
+            refreshCredential: { credential in
+                let response = try await refreshToken(config: .default, refreshToken: credential.refreshToken)
+                return OAuthCredentialFile(
+                    accessToken: response.access_token,
+                    refreshToken: response.refresh_token ?? credential.refreshToken,
+                    idToken: response.id_token ?? credential.idToken,
+                    tokenType: response.token_type,
+                    scopes: CodexOAuthConfig.default.scopes,
+                    expiresAtMs: Int64(Date().timeIntervalSince1970 * 1000) + Int64(response.expires_in ?? 3600) * 1000,
+                    chatGPTAccountId: Self.chatGPTAccountId(from: response.id_token) ?? credential.chatGPTAccountId,
+                )
+            },
         )
     }
 
@@ -229,6 +277,7 @@ extension CodexNativeAuthClient: DependencyKey {
                 throw CodexNativeAuthError.loginUnavailable
             },
             cancelCurrentFlow: {},
+            refreshCredential: { _ in throw CodexNativeAuthError.loginUnavailable },
         )
     }
 
@@ -274,6 +323,7 @@ extension CodexNativeAuthClient: DependencyKey {
                 )
             },
             cancelCurrentFlow: {},
+            refreshCredential: { credential in credential },
         )
     }
 }
@@ -315,6 +365,54 @@ extension CodexNativeAuthClient {
         }
 
         return try JSONDecoder().decode(CodexTokenResponse.self, from: data)
+    }
+
+    private static func refreshToken(
+        config: CodexOAuthConfig,
+        refreshToken: String?,
+    ) async throws -> CodexTokenResponse {
+        guard let refreshToken, !refreshToken.isEmpty else {
+            throw CodexCredentialRefreshError.missingRefreshToken
+        }
+        var request = URLRequest(url: config.tokenEndpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "grant_type", value: "refresh_token"),
+            URLQueryItem(name: "refresh_token", value: refreshToken),
+            URLQueryItem(name: "client_id", value: config.clientId),
+        ]
+        request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch is CancellationError {
+            throw CodexCredentialRefreshError.cancelled
+        } catch {
+            throw CodexCredentialRefreshError.transport
+        }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CodexCredentialRefreshError.transport
+        }
+        switch httpResponse.statusCode {
+        case 200:
+            break
+        case 401, 403:
+            throw CodexCredentialRefreshError.unauthorized(statusCode: httpResponse.statusCode)
+        case 400:
+            throw Self.classifyRefreshHTTPFailure(statusCode: 400, body: data)
+        case 500 ... 599:
+            throw CodexCredentialRefreshError.server(statusCode: httpResponse.statusCode)
+        default:
+            throw CodexCredentialRefreshError.transport
+        }
+        do {
+            return try JSONDecoder().decode(CodexTokenResponse.self, from: data)
+        } catch {
+            throw CodexCredentialRefreshError.invalidResponse
+        }
     }
 
     static func chatGPTAccountId(from idToken: String?) -> String? {

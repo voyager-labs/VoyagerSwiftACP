@@ -5,15 +5,21 @@ public struct AIProviderBootstrapResult: Equatable, Sendable {
     public let provider: AiProvider
     public let connectionState: ProviderConnectionState
     public let statusReason: ProviderStatusReason
+    public let sourceCredential: StoredCredentialPayload?
+    public let effectiveCredential: StoredCredentialPayload?
 
     public init(
         provider: AiProvider,
         connectionState: ProviderConnectionState,
         statusReason: ProviderStatusReason = .none,
+        sourceCredential: StoredCredentialPayload? = nil,
+        effectiveCredential: StoredCredentialPayload? = nil,
     ) {
         self.provider = provider
         self.connectionState = connectionState
         self.statusReason = statusReason
+        self.sourceCredential = sourceCredential
+        self.effectiveCredential = effectiveCredential
     }
 }
 
@@ -102,8 +108,23 @@ public enum AIProviderConnectionBootstrap {
         ) { group in
             for entry in verifiable {
                 group.addTask {
-                    let verification = await verificationClient.verify(entry.provider, entry.credential)
-                    let result = verifiedResult(for: entry.provider, verification: verification)
+                    let outcome: AiProviderVerificationOutcome = if let verifyWithCredential = verificationClient
+                        .verifyWithCredential
+                    {
+                        await verifyWithCredential(entry.provider, entry.credential)
+                    } else {
+                        await AiProviderVerificationOutcome(
+                            result: verificationClient.verify(entry.provider, entry.credential),
+                            sourceCredential: entry.credential,
+                            effectiveCredential: entry.credential,
+                        )
+                    }
+                    let result = verifiedResult(
+                        for: entry.provider,
+                        verification: outcome.result,
+                        sourceCredential: outcome.sourceCredential,
+                        effectiveCredential: outcome.effectiveCredential,
+                    )
                     return (entry.catalogIndex, result)
                 }
             }
@@ -124,15 +145,25 @@ public enum AIProviderConnectionBootstrap {
         file: AIConnectionsFile,
         connectionsFileClient: AIConnectionsFileClient,
     ) async -> AIConnectionsFile? {
-        guard let latestFile = try? await connectionsFileClient.load(),
-              let updatedFile = updatedConnectionsFile(
-                  verificationSourceFile: file,
-                  latestFile: latestFile,
-                  applying: results,
-              )
-        else { return nil }
-
-        let mutationResult = await (try? connectionsFileClient.save(updatedFile))
+        let mutationResult: AiConnectionMutationResult?
+        if let atomicUpdate = connectionsFileClient.atomicUpdate {
+            mutationResult = try? await atomicUpdate { latestFile in
+                updatedConnectionsFile(
+                    verificationSourceFile: file,
+                    latestFile: latestFile,
+                    applying: results,
+                ) ?? latestFile
+            }
+        } else {
+            guard let latestFile = try? await connectionsFileClient.load(),
+                  let updatedFile = updatedConnectionsFile(
+                      verificationSourceFile: file,
+                      latestFile: latestFile,
+                      applying: results,
+                  )
+            else { return nil }
+            mutationResult = try? await connectionsFileClient.save(updatedFile)
+        }
         switch mutationResult {
         case let .success(savedFile), let .partialSuccess(savedFile, _):
             return savedFile
@@ -202,6 +233,8 @@ public enum AIProviderConnectionBootstrap {
     public static func verifiedResult(
         for provider: AiProvider,
         verification: AiProviderVerificationResult,
+        sourceCredential: StoredCredentialPayload? = nil,
+        effectiveCredential: StoredCredentialPayload? = nil,
     ) -> AIProviderBootstrapResult {
         switch verification {
         case .valid:
@@ -209,24 +242,32 @@ public enum AIProviderConnectionBootstrap {
                 provider: provider,
                 connectionState: .connected,
                 statusReason: .none,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         case let .invalid(reason):
             AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: reason == .providerUnsupportedInBuild ? .unavailable : .connectionFailed,
                 statusReason: reason,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         case .networkError:
             AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: .connectionFailed,
                 statusReason: .networkUnavailable,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         case .unsupportedProvider:
             AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: .unavailable,
                 statusReason: .providerUnsupportedInBuild,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         }
     }
@@ -244,24 +285,30 @@ public enum AIProviderConnectionBootstrap {
             guard let sourceRecord = verificationSourceFile.providers[providerKey],
                   var record = providers[providerKey],
                   record.credential != nil,
-                  record.credential == sourceRecord.credential
+                  record.credential == result.sourceCredential ?? sourceRecord.credential
             else { continue }
 
             let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
-            guard record.snapshot.lastKnownStatus != result.connectionState
+            let credential = result.effectiveCredential ?? record.credential
+            let credentialDidChange = record.credential != credential
+            let snapshotDidChange = record.snapshot.lastKnownStatus != result.connectionState
                 || record.snapshot.lastErrorCode != lastErrorCode
-            else { continue }
+            guard credentialDidChange || snapshotDidChange else { continue }
 
-            let snapshot = ProviderSnapshotFile(
-                lastKnownStatus: result.connectionState,
-                lastVerifiedAtMs: result.connectionState == .connected ? latestFile.updatedAtMs : nil,
-                lastErrorCode: lastErrorCode,
-            )
+            let snapshot = if snapshotDidChange {
+                ProviderSnapshotFile(
+                    lastKnownStatus: result.connectionState,
+                    lastVerifiedAtMs: result.connectionState == .connected ? latestFile.updatedAtMs : nil,
+                    lastErrorCode: lastErrorCode,
+                )
+            } else {
+                record.snapshot
+            }
 
             record = ProviderRecordFile(
                 providerId: record.providerId,
                 authMethod: record.authMethod,
-                credential: record.credential,
+                credential: credential,
                 snapshot: snapshot,
                 provenance: record.provenance,
             )

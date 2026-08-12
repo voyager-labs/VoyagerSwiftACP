@@ -7,6 +7,22 @@ public enum AiProviderVerificationResult: Equatable, Sendable {
     case networkError
 }
 
+public struct AiProviderVerificationOutcome: Equatable, Sendable {
+    public let result: AiProviderVerificationResult
+    public let sourceCredential: StoredCredentialPayload?
+    public let effectiveCredential: StoredCredentialPayload?
+
+    public init(
+        result: AiProviderVerificationResult,
+        sourceCredential: StoredCredentialPayload?,
+        effectiveCredential: StoredCredentialPayload?,
+    ) {
+        self.result = result
+        self.sourceCredential = sourceCredential
+        self.effectiveCredential = effectiveCredential
+    }
+}
+
 public struct AiAdapterDescriptor: Equatable, Sendable {
     public let provider: AiProvider
     public let adapterName: String
@@ -23,14 +39,19 @@ public struct AiAdapterDescriptor: Equatable, Sendable {
 public struct AiConnectionRuntimeClient: Sendable {
     public var verifyProvider: @Sendable (AiProvider, StoredCredentialPayload?) async
         -> AiProviderVerificationResult
+    public var verifyProviderWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async
+        -> AiProviderVerificationOutcome)?
     public var resolveAdapter: @Sendable (AiProvider, StoredCredentialPayload?) -> AiAdapterDescriptor?
 
     public init(
         verifyProvider: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async
             -> AiProviderVerificationResult,
+        verifyProviderWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async
+            -> AiProviderVerificationOutcome)? = nil,
         resolveAdapter: @escaping @Sendable (AiProvider, StoredCredentialPayload?) -> AiAdapterDescriptor?,
     ) {
         self.verifyProvider = verifyProvider
+        self.verifyProviderWithCredential = verifyProviderWithCredential
         self.resolveAdapter = resolveAdapter
     }
 }
@@ -39,28 +60,10 @@ extension AiConnectionRuntimeClient {
     public static func live(session: URLSession = .shared) -> AiConnectionRuntimeClient {
         AiConnectionRuntimeClient(
             verifyProvider: { provider, credential in
-                guard let credential else {
-                    return .invalid(.missingCredential)
-                }
-
-                let secret: String = switch credential {
-                case let .apiKey(payload): payload.secret
-                case let .oauth(payload): payload.accessToken
-                }
-
-                guard !secret.isEmpty else {
-                    return .invalid(.invalidAPIKey)
-                }
-
-                if provider == .chatgptCodex {
-                    return .valid
-                }
-
-                return await Self.performSmokeRequest(
-                    provider: provider,
-                    secret: secret,
-                    session: session,
-                )
+                await Self.verifyStatus(provider: provider, credential: credential, session: session)
+            },
+            verifyProviderWithCredential: { provider, credential in
+                await Self.verifyWithEffectiveCredential(provider: provider, credential: credential, session: session)
             },
             resolveAdapter: { provider, credential in
                 guard credential != nil else { return nil }
@@ -74,6 +77,135 @@ extension AiConnectionRuntimeClient {
                 }
             },
         )
+    }
+
+    private static func verifyWithEffectiveCredential(
+        provider: AiProvider,
+        credential: StoredCredentialPayload?,
+        session: URLSession,
+    ) async -> AiProviderVerificationOutcome {
+        guard let credential else {
+            return AiProviderVerificationOutcome(
+                result: .invalid(.missingCredential),
+                sourceCredential: nil,
+                effectiveCredential: nil,
+            )
+        }
+        guard provider == .chatgptCodex else {
+            return await AiProviderVerificationOutcome(
+                result: verifyStatus(provider: provider, credential: credential, session: session),
+                sourceCredential: credential,
+                effectiveCredential: credential,
+            )
+        }
+        guard case let .oauth(oauth) = credential, !oauth.accessToken.isEmpty else {
+            return AiProviderVerificationOutcome(
+                result: .invalid(.credentialKindMismatch),
+                sourceCredential: credential,
+                effectiveCredential: credential,
+            )
+        }
+        let effectiveCredential = await refreshedCredential(oauth, source: credential)
+        guard case let .success(effective) = effectiveCredential else {
+            return effectiveCredential.failure
+        }
+        do {
+            let models = try await AiProviderModelListClient.live(session: session).loadModels(provider, effective)
+            return AiProviderVerificationOutcome(
+                result: models.isEmpty ? .invalid(.verificationFailed) : .valid,
+                sourceCredential: credential,
+                effectiveCredential: effective,
+            )
+        } catch let error as AiProviderModelListError {
+            return AiProviderVerificationOutcome(
+                result: mapModelListError(error),
+                sourceCredential: credential,
+                effectiveCredential: effective,
+            )
+        } catch {
+            return AiProviderVerificationOutcome(
+                result: .networkError,
+                sourceCredential: credential,
+                effectiveCredential: effective,
+            )
+        }
+    }
+
+    private enum RefreshResult {
+        case success(StoredCredentialPayload)
+        case failure(AiProviderVerificationOutcome)
+        var failure: AiProviderVerificationOutcome {
+            guard case let .failure(value) = self else { fatalError("Unexpected refresh success") }
+            return value
+        }
+    }
+
+    private static func refreshedCredential(
+        _ oauth: OAuthCredentialFile,
+        source: StoredCredentialPayload,
+    ) async -> RefreshResult {
+        guard isExpired(oauth) else { return .success(source) }
+        do {
+            return try await .success(.oauth(CodexNativeAuthClient.live().refreshCredential(oauth)))
+        } catch let error as CodexCredentialRefreshError {
+            return .failure(AiProviderVerificationOutcome(
+                result: mapRefreshError(error),
+                sourceCredential: source,
+                effectiveCredential: source,
+            ))
+        } catch {
+            return .failure(AiProviderVerificationOutcome(
+                result: .networkError,
+                sourceCredential: source,
+                effectiveCredential: source,
+            ))
+        }
+    }
+
+    private static func verifyStatus(
+        provider: AiProvider,
+        credential: StoredCredentialPayload?,
+        session: URLSession,
+    ) async -> AiProviderVerificationResult {
+        guard let credential else { return .invalid(.missingCredential) }
+        let secret: String = switch credential {
+        case let .apiKey(payload): payload.secret
+        case let .oauth(payload): payload.accessToken
+        }
+        guard !secret.isEmpty else { return .invalid(.invalidAPIKey) }
+        if provider == .chatgptCodex { return .valid }
+        return await performSmokeRequest(provider: provider, secret: secret, session: session)
+    }
+
+    private static func mapModelListError(_ error: AiProviderModelListError) -> AiProviderVerificationResult {
+        switch error {
+        case .missingCredential: .invalid(.missingCredential)
+        case .invalidCredential: .invalid(.credentialKindMismatch)
+        case .unsupportedProvider: .unsupportedProvider
+        case .invalidResponse: .invalid(.verificationFailed)
+        case let .httpError(_, statusCode, _):
+            switch statusCode {
+            case 401: .invalid(.invalidAPIKey)
+            case 403: .invalid(.invalidAPIKey)
+            case 500 ... 599: .networkError
+            default: .invalid(.verificationFailed)
+            }
+        case .networkError: .networkError
+        }
+    }
+
+    public static func mapRefreshError(_ error: CodexCredentialRefreshError) -> AiProviderVerificationResult {
+        switch error {
+        case .missingRefreshToken, .invalidGrant, .unauthorized:
+            .invalid(.expired)
+        case .transport, .server, .invalidResponse, .cancelled:
+            .networkError
+        }
+    }
+
+    private static func isExpired(_ credential: OAuthCredentialFile) -> Bool {
+        guard let expiresAtMs = credential.expiresAtMs else { return true }
+        return expiresAtMs <= Int64(Date().timeIntervalSince1970 * 1000)
     }
 
     private static func performSmokeRequest(

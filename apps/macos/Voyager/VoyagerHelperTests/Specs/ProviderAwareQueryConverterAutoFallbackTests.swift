@@ -134,6 +134,140 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         XCTAssertEqual(result.reason, "invalidProvider")
     }
 
+    func testExplicitProviderSelectionMapsExpiredCredentialToExpiredSessionGuidance() async {
+        let file = Self.makeConnectionsFile(
+            updatedAtMs: 1,
+            openAIState: .connectionFailed,
+            openAIReason: .expired,
+        )
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [:])
+        let converter = Self.makeConverter(fileBox: fileBox, modelLoader: modelLoader)
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .invalidCredential)
+        XCTAssertEqual(result.providerId, AiProvider.openai.rawValue)
+        XCTAssertEqual(result.errorCode, "AI_PROVIDER_INVALID_CREDENTIAL")
+        XCTAssertEqual(result.reason, ProviderStatusReason.expired.rawValue)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("expired"), true)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("reconnect"), true)
+    }
+
+    func testExplicitProviderSelectionMapsNetworkUnavailableToNetworkGuidance() async {
+        let file = Self.makeConnectionsFile(
+            updatedAtMs: 1,
+            openAIState: .connectionFailed,
+            openAIReason: .networkUnavailable,
+        )
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [:])
+        let converter = Self.makeConverter(fileBox: fileBox, modelLoader: modelLoader)
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .networkFailure)
+        XCTAssertEqual(result.providerId, AiProvider.openai.rawValue)
+        XCTAssertEqual(result.errorCode, "AI_PROVIDER_NETWORK_FAILURE")
+        XCTAssertEqual(result.reason, ProviderStatusReason.networkUnavailable.rawValue)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("network"), true)
+    }
+
+    func testExecutionAuthenticationMapsToReconnectGuidance() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini")],
+        ])
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeFailureExecutionClient(.authentication),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .invalidCredential)
+        XCTAssertEqual(result.providerId, AiProvider.openai.rawValue)
+        XCTAssertEqual(result.errorCode, "AI_PROVIDER_INVALID_CREDENTIAL")
+        XCTAssertEqual(result.reason, AiChatExecutionFailure.authentication.rawValue)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("authentication"), true)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("reconnect"), true)
+    }
+
+    func testExecutionNetworkMapsToNetworkGuidance() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini")],
+        ])
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeFailureExecutionClient(.network),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .networkFailure)
+        XCTAssertEqual(result.providerId, AiProvider.openai.rawValue)
+        XCTAssertEqual(result.errorCode, "AI_PROVIDER_NETWORK_FAILURE")
+        XCTAssertEqual(result.reason, AiChatExecutionFailure.network.rawValue)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("network"), true)
+    }
+
+    func testExecutionCLIUnavailableMapsToCodexCLIAvailabilityGuidance() async {
+        let file = Self.makeCodexConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .chatgptCodex: [Self.makeModel(provider: .chatgptCodex, rawModelID: "gpt-5")],
+        ])
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeFailureExecutionClient(.cliUnavailable),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.chatgptCodex.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .providerUnavailable)
+        XCTAssertEqual(result.providerId, AiProvider.chatgptCodex.rawValue)
+        XCTAssertEqual(result.errorCode, "AI_PROVIDER_UNAVAILABLE")
+        XCTAssertEqual(result.reason, AiChatExecutionFailure.cliUnavailable.rawValue)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("codex cli"), true)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("installed"), true)
+    }
+
     func testExplicitModelSelectionReturnsCollectionSearchModelUnavailableWhenPreferredModelIsMissing() async {
         let file = Self.makeConnectionsFile(updatedAtMs: 1)
         let fileBox = ConnectionFileBox(file)
@@ -214,6 +348,14 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         })
     }
 
+    private static func makeFailureExecutionClient(
+        _ failure: AiChatExecutionFailure,
+    ) -> AiChatProviderExecutionClient {
+        AiChatProviderExecutionClient(execute: { _, _ in
+            throw failure
+        })
+    }
+
     private static func makeStatusThenFinalExecutionClient() -> AiChatProviderExecutionClient {
         AiChatProviderExecutionClient(execute: { request, _ in
             AsyncThrowingStream { continuation in
@@ -233,7 +375,7 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
                     context: request.context,
                     assistantMessage: AiChatMessage(
                         role: .assistant,
-                        content: #"{"conditions":[],"scopes":null,"error":null}"#,
+                        content: #"{"outcome":"generated_change_set","conditions":[],"scopes":null,"error":null}"#,
                     ),
                     completedAtMs: 2,
                 )
@@ -307,7 +449,11 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         )
     }
 
-    private static func makeConnectionsFile(updatedAtMs: Int64) -> AIConnectionsFile {
+    private static func makeConnectionsFile(
+        updatedAtMs: Int64,
+        openAIState: ProviderConnectionState = .connected,
+        openAIReason: ProviderStatusReason = .none,
+    ) -> AIConnectionsFile {
         AIConnectionsFile(
             updatedAtMs: updatedAtMs,
             lastUsedProviderId: .openai,
@@ -316,12 +462,30 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
                     providerId: .openai,
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: openAIState,
+                        lastErrorCode: openAIReason,
+                    ),
                 ),
                 AiProvider.anthropic.rawValue: ProviderRecordFile(
                     providerId: .anthropic,
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-anthropic")),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+    }
+
+    private static func makeCodexConnectionsFile(updatedAtMs: Int64) -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: updatedAtMs,
+            lastUsedProviderId: .chatgptCodex,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(OAuthCredentialFile(accessToken: "test-access-token")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
             ],
