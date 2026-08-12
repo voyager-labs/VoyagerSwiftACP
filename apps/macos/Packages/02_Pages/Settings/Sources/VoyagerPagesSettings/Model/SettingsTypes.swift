@@ -67,25 +67,6 @@ public enum DirectoryOption: Equatable, Hashable, Identifiable, Sendable {
         }
     }
 
-    public var displayName: String {
-        switch self {
-        case .home:
-            FileManager.default.homeDirectoryForCurrentUser.lastPathComponent
-        case .root:
-            "Macintosh HD"
-        case .desktop:
-            "Desktop"
-        case .documents:
-            "Documents"
-        case .downloads:
-            "Downloads"
-        case let .custom(path):
-            URL(fileURLWithPath: path).lastPathComponent
-        case .other:
-            "Other..."
-        }
-    }
-
     public var iconName: String {
         switch self {
         case .home:
@@ -103,53 +84,57 @@ public enum DirectoryOption: Equatable, Hashable, Identifiable, Sendable {
         }
     }
 
-    public var path: String? {
+    public static func from(path: String, using directories: StandardDirectories) -> DirectoryOption {
+        if path == directories.homePath {
+            .home
+        } else if path == "/" {
+            .root
+        } else if path == directories.desktopPath {
+            .desktop
+        } else if path == directories.documentsPath {
+            .documents
+        } else if path == directories.downloadsPath {
+            .downloads
+        } else {
+            .custom(path)
+        }
+    }
+
+    public func displayName(using directories: StandardDirectories) -> String {
         switch self {
         case .home:
-            FileManager.default.homeDirectoryForCurrentUser.path
+            directories.homeDisplayName
+        case .root:
+            "Macintosh HD"
+        case .desktop:
+            "Desktop"
+        case .documents:
+            "Documents"
+        case .downloads:
+            "Downloads"
+        case let .custom(path):
+            URL(fileURLWithPath: path).lastPathComponent
+        case .other:
+            "Other..."
+        }
+    }
+
+    public func path(using directories: StandardDirectories) -> String? {
+        switch self {
+        case .home:
+            directories.homePath
         case .root:
             "/"
         case .desktop:
-            FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first?.path
+            directories.desktopPath
         case .documents:
-            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path
+            directories.documentsPath
         case .downloads:
-            FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path
+            directories.downloadsPath
         case let .custom(path):
             path
         case .other:
             nil
-        }
-    }
-
-    public static func from(path: String) -> DirectoryOption {
-        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
-        let rootPath = "/"
-
-        if path == homePath {
-            return .home
-        } else if path == rootPath {
-            return .root
-        } else if let desktopPath = FileManager.default
-            .urls(for: .desktopDirectory, in: .userDomainMask)
-            .first?.path,
-            path == desktopPath
-        {
-            return .desktop
-        } else if let documentsPath = FileManager.default
-            .urls(for: .documentDirectory, in: .userDomainMask)
-            .first?.path,
-            path == documentsPath
-        {
-            return .documents
-        } else if let downloadsPath = FileManager.default
-            .urls(for: .downloadsDirectory, in: .userDomainMask)
-            .first?.path,
-            path == downloadsPath
-        {
-            return .downloads
-        } else {
-            return .custom(path)
         }
     }
 }
