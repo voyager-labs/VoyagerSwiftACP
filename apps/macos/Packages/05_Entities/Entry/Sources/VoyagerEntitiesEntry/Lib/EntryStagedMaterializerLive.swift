@@ -58,7 +58,8 @@ public enum EntryStagedMaterializerLive {
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
-        @Dependency(\.finderFavoritesTagClient) var finderFavoritesTagClient
+        @Dependency(\.finderFavoritesTagClient)
+        var finderFavoritesTagClient
         return materializeURLs(
             urls,
             showHidden: showHidden,
@@ -108,6 +109,54 @@ public enum EntryStagedMaterializerLive {
         return stream(for: sequence)
     }
 
+    static func materializeCandidates(
+        _ candidates: [EntryDirectoryURLCandidate],
+        showHidden: Bool,
+        configuration: URLMaterializationConfiguration,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let sequence = URLMaterializationSequence(
+            candidates: candidates,
+            showHidden: showHidden,
+            priority: configuration.priority,
+            entryLoadingClient: configuration.entryLoadingClient,
+            workspaceClient: configuration.workspaceClient,
+            favoriteTags: configuration.favoriteTags,
+            context: .init(
+                sourceKind: configuration.sourceKind,
+                correlationID: UUID(),
+                inputCount: candidates.count,
+                priority: configuration.priority.instrumentationValue,
+            ),
+            instrumentation: configuration.instrumentation,
+        )
+        return stream(for: sequence)
+    }
+
+    static func materializeURLBatches(
+        _ urlBatches: AsyncThrowingStream<[URL], Error>,
+        lexicalRoot: URL,
+        showHidden: Bool,
+        configuration: URLMaterializationConfiguration,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let sequence = URLMaterializationSequence(
+            urlBatches: urlBatches,
+            lexicalRoot: lexicalRoot,
+            showHidden: showHidden,
+            priority: configuration.priority,
+            entryLoadingClient: configuration.entryLoadingClient,
+            workspaceClient: configuration.workspaceClient,
+            favoriteTags: configuration.favoriteTags,
+            context: .init(
+                sourceKind: configuration.sourceKind,
+                correlationID: UUID(),
+                inputCount: 0,
+                priority: configuration.priority.instrumentationValue,
+            ),
+            instrumentation: configuration.instrumentation,
+        )
+        return stream(for: sequence)
+    }
+
     static func materializeURLBatches(
         _ urlBatches: AsyncThrowingStream<[URL], Error>,
         showHidden: Bool,
@@ -115,6 +164,7 @@ public enum EntryStagedMaterializerLive {
     ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
         let sequence = URLMaterializationSequence(
             urlBatches: urlBatches,
+            lexicalRoot: nil,
             showHidden: showHidden,
             priority: configuration.priority,
             entryLoadingClient: configuration.entryLoadingClient,
@@ -189,12 +239,15 @@ private final class EntryLoadStreamLifetime: @unchecked Sendable {
 
 private enum CoreSourceBatch {
     case urls([URL])
+    case candidates([EntryDirectoryURLCandidate])
     case entries([EntryModel])
     case finished
 }
 
 private actor URLMaterializationSequence {
     private let urls: [URL]?
+    private let candidates: [EntryDirectoryURLCandidate]?
+    private let lexicalRoot: URL?
     private let nextURLBatch: (@Sendable () async throws -> [URL]?)?
     private let sourceEntries: [EntryModel]
     private let showHidden: Bool
@@ -205,6 +258,7 @@ private actor URLMaterializationSequence {
     private let context: EntryLoadingInstrumentation.Context
     private let instrumentation: EntryLoadingInstrumentation
     private var entries: [EntryModel] = []
+    private var sourceURLsByID: [EntryModel.ID: URL] = [:]
     private var sourceIndex = 0
     private var batchIndex = 0
     private var probeIndex = 0
@@ -219,6 +273,8 @@ private actor URLMaterializationSequence {
 
     init(
         urls: [URL]?,
+        candidates: [EntryDirectoryURLCandidate]?,
+        lexicalRoot: URL?,
         nextURLBatch: (@Sendable () async throws -> [URL]?)?,
         sourceEntries: [EntryModel],
         showHidden: Bool,
@@ -230,6 +286,8 @@ private actor URLMaterializationSequence {
         instrumentation: EntryLoadingInstrumentation,
     ) {
         self.urls = urls
+        self.candidates = candidates
+        self.lexicalRoot = lexicalRoot
         self.nextURLBatch = nextURLBatch
         self.sourceEntries = sourceEntries
         self.showHidden = showHidden
@@ -256,6 +314,8 @@ private actor URLMaterializationSequence {
     ) {
         self.init(
             urls: nil,
+            candidates: nil,
+            lexicalRoot: nil,
             nextURLBatch: nil,
             sourceEntries: entries,
             showHidden: true,
@@ -280,6 +340,8 @@ private actor URLMaterializationSequence {
     ) {
         self.init(
             urls: urls,
+            candidates: nil,
+            lexicalRoot: nil,
             nextURLBatch: nil,
             sourceEntries: [],
             showHidden: showHidden,
@@ -294,6 +356,7 @@ private actor URLMaterializationSequence {
 
     init(
         urlBatches: AsyncThrowingStream<[URL], Error>,
+        lexicalRoot: URL?,
         showHidden: Bool,
         priority: EntryMetadataPriority,
         entryLoadingClient: EntryLoadingClient,
@@ -305,7 +368,35 @@ private actor URLMaterializationSequence {
         let iterator = URLBatchIteratorBox(urlBatches.makeAsyncIterator())
         self.init(
             urls: nil,
+            candidates: nil,
+            lexicalRoot: lexicalRoot,
             nextURLBatch: { try await iterator.next() },
+            sourceEntries: [],
+            showHidden: showHidden,
+            priority: priority,
+            entryLoadingClient: entryLoadingClient,
+            workspaceClient: workspaceClient,
+            favoriteTags: favoriteTags,
+            context: context,
+            instrumentation: instrumentation,
+        )
+    }
+
+    init(
+        candidates: [EntryDirectoryURLCandidate],
+        showHidden: Bool,
+        priority: EntryMetadataPriority,
+        entryLoadingClient: EntryLoadingClient,
+        workspaceClient: WorkspaceClient,
+        favoriteTags: [Tag],
+        context: EntryLoadingInstrumentation.Context,
+        instrumentation: EntryLoadingInstrumentation,
+    ) {
+        self.init(
+            urls: nil,
+            candidates: candidates,
+            lexicalRoot: nil,
+            nextURLBatch: nil,
             sourceEntries: [],
             showHidden: showHidden,
             priority: priority,
@@ -368,6 +459,7 @@ private actor URLMaterializationSequence {
                     entryLoadingClient: entryLoadingClient,
                     workspaceClient: workspaceClient,
                     favoriteTags: favoriteTags,
+                    sourceURL: sourceURLsByID[entry.id],
                 ) {
                     patches.append(patch)
                 }
@@ -396,6 +488,8 @@ private actor URLMaterializationSequence {
             switch try await nextCoreSourceBatch() {
             case let .urls(urls):
                 batch = coreEntries(for: urls)
+            case let .candidates(candidates):
+                batch = coreEntries(for: candidates)
             case let .entries(sourceEntries):
                 batch = sourceEntries
             case .finished:
@@ -416,8 +510,17 @@ private actor URLMaterializationSequence {
     }
 
     private func nextCoreSourceBatch() async throws -> CoreSourceBatch {
+        if let candidates {
+            guard sourceIndex < candidates.count else { return .finished }
+            let endIndex = min(sourceIndex + EntryStagedMaterializerLive.batchSize, candidates.count)
+            defer { sourceIndex = endIndex }
+            return .candidates(Array(candidates[sourceIndex ..< endIndex]))
+        }
         if let nextURLBatch {
             guard let urls = try await nextURLBatch() else { return .finished }
+            if let lexicalRoot {
+                return .candidates(EntryDirectorySymlinkTraversal.candidates(urls, lexicalRoot: lexicalRoot))
+            }
             return .urls(urls)
         }
         if let urls {
@@ -439,6 +542,19 @@ private actor URLMaterializationSequence {
                 entryLoadingClient: entryLoadingClient,
             ) else { return nil }
             guard showHidden || !entry.isHidden, seenIDs.insert(entry.id).inserted else { return nil }
+            return entry
+        }
+    }
+
+    private func coreEntries(for candidates: [EntryDirectoryURLCandidate]) -> [EntryModel] {
+        candidates.compactMap { candidate in
+            guard let entry = EntryModelConverterLive.convertURLToCoreEntry(
+                candidate.sourceURL,
+                lexicalURL: candidate.lexicalURL,
+                entryLoadingClient: entryLoadingClient,
+            ) else { return nil }
+            guard showHidden || !entry.isHidden, seenIDs.insert(entry.id).inserted else { return nil }
+            sourceURLsByID[entry.id] = candidate.sourceURL
             return entry
         }
     }
