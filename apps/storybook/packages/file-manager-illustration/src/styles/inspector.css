@@ -519,22 +519,6 @@
   gap: 8px;
 }
 
-[data-file-manager-illustration] .fm-ai-chat-attachment {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--fm-text-secondary);
-  box-shadow: none;
-}
-
-[data-file-manager-illustration] .fm-ai-chat-attachment.vc-icon-button:hover:not(:disabled) {
-  background: var(--fm-chat-control-hover-fill);
-  color: var(--fm-text-primary);
-}
-
 [data-file-manager-illustration] .fm-ai-chat-native-attachment {
   height: 24px;
   flex: none;
@@ -560,10 +544,6 @@
 
 [data-file-manager-illustration] .fm-ai-chat-native-attachment:disabled {
   color: var(--macos-disabled-control-text-color);
-}
-
-[data-file-manager-illustration] .fm-ai-chat-menu-selector {
-  min-width: 0;
 }
 
 [data-file-manager-illustration] .fm-ai-chat-model-selector {
@@ -621,39 +601,6 @@
   color: var(--macos-disabled-control-text-color);
 }
 
-[data-file-manager-illustration] .fm-ai-chat-menu-selector .vc-popup-trigger {
-  height: 24px;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--fm-text-secondary);
-  font-family: var(--fm-font-ui);
-  font-size: 12px;
-  font-weight: var(--fm-weight-medium);
-  box-shadow: none;
-}
-
-[data-file-manager-illustration] .fm-ai-chat-menu-selector .vc-popup-trigger:hover:not(:disabled) {
-  background: transparent;
-  color: var(--fm-text-primary);
-}
-
-[data-file-manager-illustration] .fm-ai-chat-menu-selector .vc-popup-trigger:focus-visible {
-  box-shadow: 0 0 0 2px var(--fm-focus-ring);
-}
-
-[data-file-manager-illustration] .fm-ai-chat-menu-selector .vc-popup-trigger-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-[data-file-manager-illustration] .fm-ai-chat-menu-selector .vc-popup-menu {
-  top: auto;
-  bottom: calc(100% + var(--fm-space-2));
-  min-width: 176px;
-}
-
 [data-file-manager-illustration] .fm-ai-chat-input-action {
   display: grid;
   width: 24px;
@@ -676,45 +623,6 @@
 
 [data-file-manager-illustration] .fm-ai-chat-input-action:disabled {
   opacity: 0.45;
-}
-
-[data-file-manager-illustration][data-design-version="candidate-material-controls"] {
-  --fm-chat-candidate-input-background: var(--macos-material-content-background);
-}
-
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-input {
-  background: var(--fm-chat-candidate-input-background);
-}
-
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-attachment,
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-menu-selector
-  .vc-popup-trigger,
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-input-action {
-  border: 1px solid var(--fm-control-outline);
-  background: var(--fm-control);
-  color: var(--fm-text-primary);
-  box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
-}
-
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-menu-selector
-  .vc-popup-trigger {
-  padding: 0 var(--fm-space-4);
-}
-
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-attachment.vc-icon-button:hover:not(:disabled),
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-menu-selector
-  .vc-popup-trigger:hover:not(:disabled),
-[data-file-manager-illustration][data-design-version="candidate-material-controls"]
-  .fm-ai-chat-input-action.vc-icon-button:hover:not(:disabled) {
-  background: var(--fm-control-hover);
-  color: var(--fm-text-primary);
 }
 
 [data-file-manager-illustration] .fm-ai-chat-input-story-canvas {
@@ -1176,6 +1084,31 @@
   font-weight: var(--fm-weight-medium);
   line-height: var(--fm-chat-line-caption);
   overflow-wrap: anywhere;
+}
+
+[data-file-manager-illustration] .chat-failure-recovery {
+  flex: none;
+  border: 1px solid var(--fm-red);
+  border-radius: var(--fm-radius-md);
+  background: transparent;
+  padding: 2px var(--fm-space-4);
+  color: var(--fm-red);
+  font: inherit;
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-failure-recovery:hover:not(:disabled) {
+  background: var(--fm-chat-control-hover-fill);
+}
+
+[data-file-manager-illustration] .chat-failure-recovery:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .chat-failure-recovery:disabled {
+  opacity: 0.5;
 }
 
 /* regenerateAction: 28x28 circle, arrow.clockwise 12pt semibold secondary; controlHoverFill+inputBorder on hover */
