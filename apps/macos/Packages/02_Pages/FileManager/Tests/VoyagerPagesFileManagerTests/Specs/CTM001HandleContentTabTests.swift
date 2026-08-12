@@ -6387,9 +6387,13 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 사전 조건: seed Directory tab이 active이고 caller가 tab ID, parent Directory anchor, file selection ID를 제공한다.
     /// - 기대 결과: 새 tab은 caller ID로 active가 되고 파일 selection은 첫 load 전에 content snapshot에 존재한다.
     func testExternalTabReservation_usesCallerIdentityAndPendingSelection() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
         let callerTabID = ContentTabID(rawValue: "external-file-tab")
         let selectedSiblingID = ContentTabID(rawValue: "external-selected-sibling")
-        let pendingSelection = "/tmp/report.txt"
+        let pendingSelection = sandbox.fileURL.path
         var state = FileManagerWindowState.makeInitial(path: "/seed")
         let originalActiveID = try XCTUnwrap(state.contentTabs.activeTabID)
         state.contentTabs.tabs.append(ContentTabItem(
@@ -6413,7 +6417,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.send(.reserveExternalContentTabs([
             ExternalContentTabReservation(
                 id: callerTabID,
-                anchor: .directory(path: "/tmp"),
+                anchor: .directory(path: sandbox.fileURL.deletingLastPathComponent().path),
                 pendingSelectEntryID: pendingSelection,
             ),
         ]))
@@ -6438,6 +6442,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 기존 metadata는 유지되고 모든 snapshot이 생성되며 regular-file pending selection은 active load 전에 존재한다.
     func testExternalTabReservation_appliesOrderedSnapshotsAtomically() async throws {
         let scenario = try ExternalTabReservationTestFixture.makeAtomicScenario()
+        defer { scenario.sandbox.cleanup() }
         let store = TestStore(initialState: scenario.initialState) {
             FileManagerFeature()
         } withDependencies: {
@@ -6516,6 +6521,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 사전 조건: 같은 window의 A와 B Directory tab이 있고 B load effect가 continuation gate에서 대기 중이다.
     /// - 기대 결과: A reload가 시작되며 B load는 독립적으로 계속 실행된다.
     func testInactiveTabReloadDoesNotCancelActiveTabLoad() async throws {
+        let sandbox = try ExternalTabReservationTestFixture.copyingPlainTextFixture()
+        defer { sandbox.cleanup() }
         let tabB = ContentTabID(rawValue: "B")
         let initialState = FileManagerWindowState.makeInitial(path: "/a")
         let tabA = try XCTUnwrap(initialState.contentTabs.activeTabID)
@@ -6559,7 +6566,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.receive(\.contentTabs.setCurrent, tabB)
         await fulfillment(of: [activeLoadStarted], timeout: 1)
 
-        await store.send(ExternalTabReservationTestFixture.inactiveReloadAction(tabID: tabA))
+        await store.send(ExternalTabReservationTestFixture.inactiveReloadAction(
+            tabID: tabA,
+            operationPath: sandbox.fileURL.path,
+        ))
         await fulfillment(of: [inactiveReloadStarted], timeout: 1)
 
         XCTAssertEqual(activeLoadCancellationCount.value, 0)
@@ -6699,6 +6709,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 사전 조건: Directory regular-file reservation과 Collection reservation 두 개다.
     /// - 기대 결과: 정확히 두 reservation tab만 존재하고 마지막 Collection이 active이며 load effect 없이 snapshot만 생성된다.
     func testExternalTabReservation_makeInitialContainsReservationsWithoutHome() throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
         let fileID = ContentTabID(rawValue: "overflow-file")
         let collectionID = ContentTabID(rawValue: "overflow-collection")
         let collectionURL = URL(fileURLWithPath: "/tmp/overflow.voycoll")
@@ -6706,8 +6720,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             reservations: [
                 ExternalContentTabReservation(
                     id: fileID,
-                    anchor: .directory(path: "/tmp"),
-                    pendingSelectEntryID: "/tmp/file.txt",
+                    anchor: .directory(path: sandbox.fileURL.deletingLastPathComponent().path),
+                    pendingSelectEntryID: sandbox.fileURL.path,
                 ),
                 ExternalContentTabReservation(id: collectionID, anchor: .collectionFile(url: collectionURL)),
             ],
@@ -6717,7 +6731,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertFalse(state.contentTabs.tabs.contains(where: { $0.anchor == .homeDefault }))
         XCTAssertEqual(state.contentTabs.activeTabID, collectionID)
         XCTAssertEqual(state.contentTabs.previousActiveTabID, fileID)
-        XCTAssertEqual(state.tabContentStates[fileID]?.pendingSelectEntryID, "/tmp/file.txt")
+        XCTAssertEqual(state.tabContentStates[fileID]?.pendingSelectEntryID, sandbox.fileURL.path)
         XCTAssertEqual(state.content, state.tabContentStates[collectionID])
         XCTAssertEqual(Set(state.tabContentStates.keys), Set([fileID, collectionID]))
         XCTAssertEqual(Set(state.tabInspectorStates.keys), Set([fileID, collectionID]))
@@ -7339,6 +7353,7 @@ private enum ExternalTabReservationTestFixture {
         let fileID: ContentTabID
         let collectionURL: URL
         let pendingSelection: String
+        let sandbox: FileManagerFixtureSandbox
         let expectedOriginalContent: FileManagerContentState
         let expectedOriginalInspector: FileManagerInspectorFeature.State
 
@@ -7356,7 +7371,7 @@ private enum ExternalTabReservationTestFixture {
             XCTAssertEqual(state.tabContentStates[pinnedID], pinnedContent)
             XCTAssertEqual(state.tabContentStates[fileID]?.pendingSelectEntryID, pendingSelection)
             XCTAssertEqual(state.content.pendingSelectEntryID, pendingSelection)
-            XCTAssertEqual(state.content.navigation.currentPath, "/tmp")
+            XCTAssertEqual(state.content.navigation.currentPath, sandbox.fileURL.deletingLastPathComponent().path)
             XCTAssertNotNil(state.tabInspectorStates[directoryID])
             XCTAssertNotNil(state.tabInspectorStates[collectionID])
             XCTAssertNotNil(state.tabInspectorStates[fileID])
@@ -7379,11 +7394,17 @@ private enum ExternalTabReservationTestFixture {
         let record: ContentTabPinnedRecord
     }
 
-    static func inactiveReloadAction(tabID: ContentTabID) -> FileManagerWindowAction {
+    static func copyingPlainTextFixture() throws -> FileManagerFixtureSandbox {
+        try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+    }
+
+    static func inactiveReloadAction(tabID: ContentTabID, operationPath: String) -> FileManagerWindowAction {
         .tabContent(
             tabID: tabID,
             action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
-                "/a/file.txt",
+                operationPath,
                 .rename,
                 .success(()),
             )))),
@@ -7404,6 +7425,9 @@ private enum ExternalTabReservationTestFixture {
     }
 
     static func makeAtomicScenario() throws -> AtomicScenario {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/98.txt",
+        )
         var initialState = FileManagerWindowState.makeInitial(path: "/seed")
         let originalActiveID = try XCTUnwrap(initialState.contentTabs.activeTabID)
         initialState.content.pendingSelectEntryID = "/seed/current.txt"
@@ -7422,13 +7446,13 @@ private enum ExternalTabReservationTestFixture {
         let collectionID = ContentTabID(rawValue: "external-collection")
         let fileID = ContentTabID(rawValue: "external-file")
         let collectionURL = URL(fileURLWithPath: "/tmp/ordered.voycoll")
-        let pendingSelection = "/tmp/report.txt"
+        let pendingSelection = sandbox.fileURL.path
         let reservations = [
             ExternalContentTabReservation(id: directoryID, anchor: .directory(path: "/external")),
             ExternalContentTabReservation(id: collectionID, anchor: .collectionFile(url: collectionURL)),
             ExternalContentTabReservation(
                 id: fileID,
-                anchor: .directory(path: "/tmp"),
+                anchor: .directory(path: sandbox.fileURL.deletingLastPathComponent().path),
                 pendingSelectEntryID: pendingSelection,
             ),
         ]
@@ -7445,6 +7469,7 @@ private enum ExternalTabReservationTestFixture {
             fileID: fileID,
             collectionURL: collectionURL,
             pendingSelection: pendingSelection,
+            sandbox: sandbox,
             expectedOriginalContent: expectedOriginalContent,
             expectedOriginalInspector: expectedOriginalInspector,
         )

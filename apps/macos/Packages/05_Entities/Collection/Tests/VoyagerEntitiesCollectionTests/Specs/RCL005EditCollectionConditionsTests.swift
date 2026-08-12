@@ -13,8 +13,11 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 검증 내용: saveRequested 후 pending snapshot에 encoded condition이 포함되는지 확인
     /// - 사전 조건: `kind equals pdf` condition을 가진 collection context
     /// - 기대 결과: save가 시작되고 pending snapshot condition 값이 `.string("pdf")`로 저장됨
-    func testSaveRequested_withCompleteCondition_preparesPendingSnapshot() async {
-        let payload = makePayload(conditions: [makeCompleteKindCondition()])
+    func testSaveRequested_withCompleteCondition_preparesPendingSnapshot() async throws {
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let scopePath = sandbox.fileURL.path
+        let payload = makePayload(conditions: [makeCompleteKindCondition()], scopePath: scopePath)
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
@@ -27,7 +30,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             $0.pendingSaveContext = payload.context
             $0.pendingSave = CollectionSaveSnapshot(
                 query: "invoice",
-                scopes: ["/VoyagerFixtures/Documents"],
+                scopes: [scopePath],
                 excludedScopes: [],
                 includeSubfolders: true,
                 includeDirectories: false,
@@ -37,7 +40,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
                 snapshotItems: nil,
                 definitionFingerprint: "condition-fingerprint",
                 capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
-                relevanceRoots: ["/VoyagerFixtures/Documents"],
+                relevanceRoots: [scopePath],
             )
         }
         await store.receive(\.savePanelResponse) {
@@ -52,8 +55,14 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 검증 내용: inactive condition filtering과 pending save condition count
     /// - 사전 조건: active condition 1개와 inactive placeholder condition 1개가 공존함
     /// - 기대 결과: pending snapshot에는 active condition만 포함됨
-    func testSaveRequested_withInactivePlaceholderCondition_excludesPlaceholderFromSnapshot() async {
-        let payload = makePayload(conditions: [makeCompleteKindCondition(), makeInactivePlaceholderCondition()])
+    func testSaveRequested_withInactivePlaceholderCondition_excludesPlaceholderFromSnapshot() async throws {
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let scopePath = sandbox.fileURL.path
+        let payload = makePayload(
+            conditions: [makeCompleteKindCondition(), makeInactivePlaceholderCondition()],
+            scopePath: scopePath,
+        )
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
@@ -66,7 +75,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             $0.pendingSaveContext = payload.context
             $0.pendingSave = self.makeExpectedSnapshot(conditions: [
                 CollectionCondition(propertyKey: "kind", operatorCode: "eq", value: .string("pdf")),
-            ])
+            ], scopePath: scopePath)
         }
         await store.receive(\.savePanelResponse) {
             $0.isSaving = false
@@ -82,8 +91,11 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 검증 내용: pending save snapshot의 propertyKey와 encoded value
     /// - 사전 조건: `Name` property condition에 `contains report` 값이 입력됨
     /// - 기대 결과: snapshot condition은 `name` property와 `.string("report")` 값을 가짐
-    func testSaveRequested_withChangedPropertyCondition_persistsNewPropertyKey() async {
-        let payload = makePayload(conditions: [makeNameContainsCondition()])
+    func testSaveRequested_withChangedPropertyCondition_persistsNewPropertyKey() async throws {
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let scopePath = sandbox.fileURL.path
+        let payload = makePayload(conditions: [makeNameContainsCondition()], scopePath: scopePath)
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
@@ -96,7 +108,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             $0.pendingSaveContext = payload.context
             $0.pendingSave = self.makeExpectedSnapshot(conditions: [
                 CollectionCondition(propertyKey: "name", operatorCode: "contains", value: .string("report")),
-            ])
+            ], scopePath: scopePath)
         }
         await store.receive(\.savePanelResponse) {
             $0.isSaving = false
@@ -112,8 +124,11 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 검증 내용: operatorCode와 nil encoded value
     /// - 사전 조건: `Has Tags` 조건이 값 없는 operator로 구성됨
     /// - 기대 결과: snapshot condition은 `operatorCode`만 가지고 value는 nil임
-    func testSaveRequested_withZeroArityOperator_persistsNilConditionValue() async {
-        let payload = makePayload(conditions: [makeHasTagCondition()])
+    func testSaveRequested_withZeroArityOperator_persistsNilConditionValue() async throws {
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let scopePath = sandbox.fileURL.path
+        let payload = makePayload(conditions: [makeHasTagCondition()], scopePath: scopePath)
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
@@ -126,7 +141,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             $0.pendingSaveContext = payload.context
             $0.pendingSave = self.makeExpectedSnapshot(conditions: [
                 CollectionCondition(propertyKey: "tag", operatorCode: "exists", value: nil),
-            ])
+            ], scopePath: scopePath)
         }
         await store.receive(\.savePanelResponse) {
             $0.isSaving = false
@@ -142,8 +157,11 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 검증 내용: deleted condition 부재와 남은 condition 보존
     /// - 사전 조건: 삭제 후 남은 `kind equals pdf` condition만 payload에 포함됨
     /// - 기대 결과: pending snapshot에는 삭제된 `name` condition 없이 kind condition만 저장됨
-    func testSaveRequested_afterConditionDeletion_persistsRemainingConditionsOnly() async {
-        let payload = makePayload(conditions: [makeCompleteKindCondition()])
+    func testSaveRequested_afterConditionDeletion_persistsRemainingConditionsOnly() async throws {
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let scopePath = sandbox.fileURL.path
+        let payload = makePayload(conditions: [makeCompleteKindCondition()], scopePath: scopePath)
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
@@ -156,7 +174,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             $0.pendingSaveContext = payload.context
             $0.pendingSave = self.makeExpectedSnapshot(conditions: [
                 CollectionCondition(propertyKey: "kind", operatorCode: "eq", value: .string("pdf")),
-            ])
+            ], scopePath: scopePath)
         }
         await store.receive(\.savePanelResponse) {
             $0.isSaving = false
@@ -173,7 +191,9 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 사전 조건: `Kind` condition의 operator는 선택됐지만 values가 비어 있음
     /// - 기대 결과: pending save 없이 `.saveBlocked/.incompleteCondition` feedback이 전달됨
     func testSaveRequested_withMissingConditionValue_emitsIncompleteConditionFeedback() async throws {
-        let payload = makePayload(conditions: [makeMissingValueCondition()])
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let payload = makePayload(conditions: [makeMissingValueCondition()], scopePath: sandbox.fileURL.path)
         var state = CollectionState()
 
         let actions = await reduce(&state, action: .saveRequested(payload))
@@ -194,7 +214,9 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
     /// - 사전 조건: `Modified` range date condition에 relative literal과 absolute date가 함께 입력됨
     /// - 기대 결과: `.saveBlocked/.invalidConditionValue` feedback이 전달됨
     func testSaveRequested_withInvalidConditionValue_emitsInvalidConditionFeedback() async throws {
-        let payload = makePayload(conditions: [makeInvalidDateRangeCondition()])
+        let sandbox = try makeFixtureSandbox()
+        defer { try? sandbox.cleanup() }
+        let payload = makePayload(conditions: [makeInvalidDateRangeCondition()], scopePath: sandbox.fileURL.path)
         var state = CollectionState()
 
         let actions = await reduce(&state, action: .saveRequested(payload))
@@ -373,11 +395,11 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
         return nil
     }
 
-    private func makePayload(conditions: [Condition]) -> SaveRequestPayload {
+    private func makePayload(conditions: [Condition], scopePath: String) -> SaveRequestPayload {
         SaveRequestPayload(
             context: CollectionContext(
                 query: "invoice",
-                scopes: ["/VoyagerFixtures/Documents"],
+                scopes: [scopePath],
                 excludedScopes: [],
                 includeSubfolders: true,
                 includeDirectories: false,
@@ -388,7 +410,7 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             snapshotItems: nil,
             definitionFingerprint: "condition-fingerprint",
             capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            relevanceRoots: ["/VoyagerFixtures/Documents"],
+            relevanceRoots: [scopePath],
             openedCompatibility: nil,
         )
     }
@@ -407,10 +429,13 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
         )
     }
 
-    private func makeExpectedSnapshot(conditions: [CollectionCondition]) -> CollectionSaveSnapshot {
+    private func makeExpectedSnapshot(
+        conditions: [CollectionCondition],
+        scopePath: String,
+    ) -> CollectionSaveSnapshot {
         CollectionSaveSnapshot(
             query: "invoice",
-            scopes: ["/VoyagerFixtures/Documents"],
+            scopes: [scopePath],
             excludedScopes: [],
             includeSubfolders: true,
             includeDirectories: false,
@@ -418,8 +443,12 @@ final class RCL005EditCollectionConditionsTests: XCTestCase {
             snapshotItems: nil,
             definitionFingerprint: "condition-fingerprint",
             capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            relevanceRoots: ["/VoyagerFixtures/Documents"],
+            relevanceRoots: [scopePath],
         )
+    }
+
+    private func makeFixtureSandbox() throws -> CollectionFixtureSandbox {
+        try CollectionFixtureSandbox.copyingDirectory(from: "fixtures/fixtures/texts")
     }
 
     private func makeInactivePlaceholderCondition() -> Condition {
