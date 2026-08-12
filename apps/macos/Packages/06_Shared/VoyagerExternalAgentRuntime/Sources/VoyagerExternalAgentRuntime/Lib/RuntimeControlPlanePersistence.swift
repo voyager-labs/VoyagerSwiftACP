@@ -23,11 +23,20 @@ extension RuntimeControlPlane {
                 },
             )
             do {
-                try await store.save(state)
+                if let store = store as? any RuntimeStateStoreHostMutation {
+                    let committed = try await store.updateHost(
+                        host,
+                        expected: sessions[host]?.stored,
+                        replacement: candidate[host]?.stored,
+                    )
+                    sessions = reconciledRegistry(from: committed, preferring: candidate)
+                } else {
+                    try await store.save(state)
+                    sessions = candidate
+                }
             } catch {
                 throw RuntimeHostError.persistenceFailure
             }
-            sessions = candidate
             releasePersistenceMutation()
             return result
         } catch {
@@ -68,5 +77,18 @@ extension RuntimeControlPlane {
     private func finishPendingPersistenceMutation(_ host: ExternalAgentSessionReference) {
         let remaining = pendingPersistenceMutations[host, default: 0] - 1
         pendingPersistenceMutations[host] = remaining > 0 ? remaining : nil
+    }
+
+    private func reconciledRegistry(
+        from state: RuntimeStoredState,
+        preferring candidate: SessionRegistry,
+    ) -> SessionRegistry {
+        Dictionary(uniqueKeysWithValues: state.sessions.map { stored in
+            let host = stored.externalAgentSessionReference
+            if let preferred = candidate[host], preferred.stored == stored {
+                return (host, preferred)
+            }
+            return (host, Session(stored: stored))
+        })
     }
 }

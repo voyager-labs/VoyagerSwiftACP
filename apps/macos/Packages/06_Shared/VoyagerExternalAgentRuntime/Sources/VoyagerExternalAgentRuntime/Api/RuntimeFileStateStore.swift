@@ -1,19 +1,22 @@
+@preconcurrency import Darwin
 import Foundation
 
 public typealias RuntimeStateMigrator = @Sendable (Data, Int) throws -> RuntimeStoredState
 
-public actor RuntimeFileStateStore: RuntimeStateStore {
+public actor RuntimeFileStateStore: RuntimeStateStore, RuntimeStateStoreHostMutation {
     private enum SnapshotReadError: Error {
         case oversized
     }
 
     private let fileURL: URL
+    private let lockURL: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let migrator: RuntimeStateMigrator?
 
     public init(fileURL: URL, migrator: RuntimeStateMigrator? = nil) {
         self.fileURL = fileURL
+        lockURL = fileURL.appendingPathExtension("lock")
         self.migrator = migrator
         encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -21,6 +24,12 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
     }
 
     public func load() async throws -> RuntimeStoredState? {
+        try await withExclusiveLock {
+            try loadUnlocked()
+        }
+    }
+
+    private func loadUnlocked() throws -> RuntimeStoredState? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data: Data
         do {
@@ -109,6 +118,41 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
     }
 
     public func save(_ state: RuntimeStoredState) async throws {
+        try await withExclusiveLock {
+            try saveUnlocked(state)
+        }
+    }
+
+    func updateHost(
+        _ host: ExternalAgentSessionReference,
+        expected: RuntimeStoredSession?,
+        replacement: RuntimeStoredSession?,
+    ) async throws -> RuntimeStoredState {
+        try await withExclusiveLock {
+            let current = try loadUnlocked() ?? RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion,
+                sessions: [],
+            )
+            guard current.sessions.first(where: {
+                $0.externalAgentSessionReference == host
+            }) == expected else { throw RuntimeHostError.persistenceFailure }
+            var sessions = Dictionary(uniqueKeysWithValues: current.sessions.map {
+                ($0.externalAgentSessionReference, $0)
+            })
+            sessions[host] = replacement
+            let updated = RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion,
+                sessions: sessions.values.sorted {
+                    $0.externalAgentSessionReference.rawValue
+                        < $1.externalAgentSessionReference.rawValue
+                },
+            )
+            try saveUnlocked(updated)
+            return updated
+        }
+    }
+
+    private func saveUnlocked(_ state: RuntimeStoredState) throws {
         do {
             let data = try encoder.encode(state.validatedForRuntime())
             guard data.count <= RuntimeBoundaryLimits.snapshotBytes else {
@@ -159,5 +203,22 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
             [.posixPermissions: NSNumber(value: permissions)],
             ofItemAtPath: url.path,
         )
+    }
+
+    private func withExclusiveLock<T>(_ operation: () throws -> T) async throws -> T {
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try setPermissions(0o700, at: directory)
+        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw RuntimeHostError.persistenceFailure }
+        defer { close(descriptor) }
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EWOULDBLOCK else { throw RuntimeHostError.persistenceFailure }
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        try Task.checkCancellation()
+        return try operation()
     }
 }

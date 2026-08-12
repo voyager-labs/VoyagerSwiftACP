@@ -1,3 +1,4 @@
+@preconcurrency import Darwin
 import Foundation
 import Testing
 @testable import VoyagerExternalAgentRuntime
@@ -21,6 +22,108 @@ struct RuntimePersistenceTechnicalTests {
         let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         #expect((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
         #expect((fileAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+    }
+
+    @Test
+    func `control planes sharing a file preserve independent hosts`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await firstPlane.register(makeAdapter())
+        try await secondPlane.register(makeAdapter())
+        let first = makeLaunch(
+            host: ExternalAgentSessionReference("host-a"),
+            run: RuntimeRunReference("run-a"),
+            adapterID: "sdk",
+        )
+        let second = makeLaunch(
+            host: ExternalAgentSessionReference("host-b"),
+            run: RuntimeRunReference("run-b"),
+            adapterID: "sdk",
+        )
+
+        #expect(try await firstPlane.restore(
+            hostReference: first.externalAgentSessionReference,
+            expectedContext: first.contextPolicy,
+        ) == .stale)
+        #expect(try await secondPlane.restore(
+            hostReference: second.externalAgentSessionReference,
+            expectedContext: second.contextPolicy,
+        ) == .stale)
+        try await firstPlane.projectPrelaunch(first, as: .policyReady)
+        try await secondPlane.projectPrelaunch(second, as: .policyReady)
+
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(Set(persisted.sessions.map(\.externalAgentSessionReference)) == [
+            first.externalAgentSessionReference,
+            second.externalAgentSessionReference,
+        ])
+    }
+
+    @Test
+    func `control planes sharing a file reject stale same host mutation`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await firstPlane.register(makeAdapter())
+        try await secondPlane.register(makeAdapter())
+        let first = makeLaunch(
+            host: ExternalAgentSessionReference("host-a"),
+            run: RuntimeRunReference("run-a"),
+            adapterID: "sdk",
+        )
+        let stale = makeLaunch(
+            host: first.externalAgentSessionReference,
+            run: RuntimeRunReference("run-stale"),
+            adapterID: "sdk",
+        )
+
+        #expect(try await firstPlane.restore(
+            hostReference: first.externalAgentSessionReference,
+            expectedContext: first.contextPolicy,
+        ) == .stale)
+        #expect(try await secondPlane.restore(
+            hostReference: stale.externalAgentSessionReference,
+            expectedContext: stale.contextPolicy,
+        ) == .stale)
+        try await firstPlane.projectPrelaunch(first, as: .policyReady)
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await secondPlane.projectPrelaunch(stale, as: .policyReady)
+        }
+
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(persisted.sessions.count == 1)
+        #expect(persisted.sessions.first?.runReference == first.runReference)
+    }
+
+    @Test
+    func `cancelled file lock waiter cannot save after lock release`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        let lockURL = fileURL.appendingPathExtension("lock")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw RuntimeHostError.persistenceFailure }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else { throw RuntimeHostError.persistenceFailure }
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        let state = RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
+        let save = Task { try await store.save(state) }
+
+        try await Task.sleep(for: .milliseconds(20))
+        save.cancel()
+        flock(descriptor, LOCK_UN)
+
+        await #expect(throws: CancellationError.self) { try await save.value }
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
     }
 
     @Test

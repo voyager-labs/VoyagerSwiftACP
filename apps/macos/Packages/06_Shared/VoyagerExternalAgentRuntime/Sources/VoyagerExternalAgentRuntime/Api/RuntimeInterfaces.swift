@@ -18,6 +18,14 @@ public protocol RuntimeStateStore: Sendable {
     func save(_ state: RuntimeStoredState) async throws
 }
 
+protocol RuntimeStateStoreHostMutation: RuntimeStateStore {
+    func updateHost(
+        _ host: ExternalAgentSessionReference,
+        expected: RuntimeStoredSession?,
+        replacement: RuntimeStoredSession?,
+    ) async throws -> RuntimeStoredState
+}
+
 public struct RuntimeSerializationKey: Hashable, Sendable, Codable, RawRepresentable {
     public let rawValue: String
     public init(rawValue: String) {
