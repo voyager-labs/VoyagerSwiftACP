@@ -39,7 +39,13 @@ public struct EntryOperationsFolderLoadingReducer {
                 return .run { [entryLoadingClient] send in
                     do {
                         let url = URL(fileURLWithPath: request.path)
-                        for try await event in entryLoadingClient.loadItems(url, request.showHidden, request.priority) {
+                        let ancestors = request.ancestorPaths.map(URL.init(fileURLWithPath:))
+                        for try await event in entryLoadingClient.loadItems(
+                            url,
+                            request.showHidden,
+                            request.priority,
+                            ancestors,
+                        ) {
                             await send(.loading(.folderStreamEvent(request: request, event: event)))
                         }
                         try Task.checkCancellation()
