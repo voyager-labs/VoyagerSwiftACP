@@ -229,6 +229,46 @@ final class EOP003UndoScopeMoveReconciliationTests: XCTestCase {
         XCTAssertFalse(managerB.canUndo)
     }
 
+    /// EOP-003-undo_entry_action: compatibility metadata는 cross-window 이동 뒤 canonical record의 현재 scope를 따른다.
+    /// 지연 등록이 과거 source window를 기준으로 새 history를 만들지 않고 moved entry에 결합되는지 검증한다.
+    /// - 검증 내용: 이동 뒤 registration 결과, source/target availability, native Undo event를 비교한다.
+    /// - 사전 조건: source scope에 canonical record를 등록하고 target window scope로 이동한 뒤 source resolver로 등록한다.
+    /// - 기대 결과: target만 owner/record target을 노출하고 동일 native history가 한 번 Undo된다.
+    func testCompatibilityRegistrationFindsCanonicalScopeAfterCrossWindowMove() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let ownerID = UUID()
+        let source = UndoManagerScope(windowID: sourceWindowID, contentTabID: "moved")
+        let target = UndoManagerScope(windowID: targetWindowID, contentTabID: "moved")
+        let manager = registry.activate(source)
+        let generation = try XCTUnwrap(registry.generation(for: source))
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        var events = registry.compatibilityEvents(windowID: targetWindowID).makeAsyncIterator()
+
+        XCTAssertTrue(registry.registerUndo(source, expectedGeneration: generation, record: record))
+        XCTAssertEqual(
+            registry.moveScopes([.init(source: source, target: target)]),
+            .moved,
+        )
+        let didRegister = registry.registerCompatibilityUndo(source, ownerID: ownerID, record: record)
+        let identity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        let undo = registry.performCompatibilityUndoRedo(
+            target,
+            expectedTarget: identity,
+            direction: .undo,
+        )
+        let event = undo.didInvoke ? await events.next() : nil
+
+        XCTAssertTrue(didRegister)
+        XCTAssertEqual(registry.compatibilityAvailability(source), .init())
+        XCTAssertEqual(undo.availability.redoTarget, identity)
+        XCTAssertEqual(event, .init(ownerID: ownerID, record: record, direction: .undo))
+        XCTAssertFalse(manager.canUndo)
+        XCTAssertTrue(manager.canRedo)
+        XCTAssertEqual(registry.generation(for: target), generation)
+    }
+
     /// EOP-003-undo_entry_action: 역방향 scope 이동 실패 뒤 동일 generation의 moved history를 source로 복원한다.
     /// durable Content Tab 이동 실패가 target에 남은 native history를 원래 scope로 되돌리는지 검증한다.
     /// - 검증 내용: reconciliation outcome, manager identity, generation, source scope의 Undo 성공을 비교한다.

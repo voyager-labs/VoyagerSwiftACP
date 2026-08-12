@@ -561,21 +561,19 @@ public extension FileOperationUndoManagerRegistry {
         ownerID: UUID,
         record: EntryActionRecord,
     ) -> Bool {
-        let ownerIdentity = CompatibilityOwnerIdentity(windowID: scope.windowID, ownerID: ownerID)
-        guard !invalidatedCompatibilityWindows.contains(scope.windowID),
-              !invalidatedCompatibilityOwners.contains(ownerIdentity)
-        else { return false }
-
         let canonicalScopes: [UndoManagerScope] = entries.compactMap { candidate in
             let (candidateScope, candidateEntry) = candidate
-            guard candidateScope.windowID == scope.windowID,
-                  candidateEntry.undoRecordIDs.contains(record.id)
-                  || candidateEntry.redoRecordIDs.contains(record.id)
+            guard candidateEntry.undoRecordIDs.contains(record.id)
+                || candidateEntry.redoRecordIDs.contains(record.id)
             else { return nil }
             return candidateScope
         }
         guard canonicalScopes.count <= 1 else { return false }
         let registrationScope = canonicalScopes.first ?? scope
+        let ownerIdentity = CompatibilityOwnerIdentity(windowID: registrationScope.windowID, ownerID: ownerID)
+        guard !invalidatedCompatibilityWindows.contains(registrationScope.windowID),
+              !invalidatedCompatibilityOwners.contains(ownerIdentity)
+        else { return false }
         guard let entry = entries[registrationScope], entry.pendingTransition == nil else { return false }
         let isCanonicalRecord = entry.undoRecordIDs.contains(record.id)
             || entry.redoRecordIDs.contains(record.id)
