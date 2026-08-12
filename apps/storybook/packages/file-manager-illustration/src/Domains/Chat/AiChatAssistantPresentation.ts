@@ -1,3 +1,5 @@
+import type { ChatFailure } from "../../model/types"
+
 export type AiChatAssistantHeaderPresentation = {
   readonly title: string
   readonly thinkingLabel?: string
@@ -8,13 +10,13 @@ type CompletedAssistantPresentation =
   | {
       readonly kind: "completed"
       readonly content: string
-      readonly failure?: string
+      readonly failure?: ChatFailure
       readonly header?: never
     }
   | {
       readonly kind: "completed"
       readonly content?: never
-      readonly failure: string
+      readonly failure: ChatFailure
       readonly header?: never
     }
   | {
@@ -42,11 +44,11 @@ export type AiChatAssistantPresentation =
   | {
       readonly kind: "partial-failure"
       readonly content: string
-      readonly failure: string
+      readonly failure: ChatFailure
     }
   | {
       readonly kind: "terminal-failure"
-      readonly failure: string
+      readonly failure: ChatFailure
     }
   | CompletedAssistantPresentation
 
@@ -56,7 +58,7 @@ export type AiChatAssistantPresentationSource = {
   readonly activityStatusLabel?: string | undefined
   readonly content?: string | undefined
   readonly isProcessing?: boolean | undefined
-  readonly failure?: string | undefined
+  readonly failure?: string | ChatFailure | undefined
   readonly headerPresentation?: "full" | "completedHistorical" | undefined
 }
 
@@ -64,7 +66,7 @@ export function resolveAiChatAssistantPresentation(
   source: AiChatAssistantPresentationSource,
 ): AiChatAssistantPresentation {
   const content = nonEmpty(source.content)
-  const failure = nonEmpty(source.failure)
+  const failure = normalizeFailure(source.failure)
 
   if (source.headerPresentation === "completedHistorical") {
     if (content != null) {
@@ -102,6 +104,25 @@ function makeHeader(source: AiChatAssistantPresentationSource): AiChatAssistantH
       ? {}
       : { activityStatusLabel: source.activityStatusLabel }),
   }
+}
+
+function normalizeFailure(value: string | ChatFailure | undefined): ChatFailure | undefined {
+  if (value == null) return undefined
+
+  if (typeof value === "string") {
+    const message = nonEmpty(value)
+    return message == null ? undefined : { message }
+  }
+
+  const message = nonEmpty(value.message)
+  return message == null
+    ? undefined
+    : {
+        message,
+        ...(value.recoveryLabel == null || value.recoveryLabel.trim() === ""
+          ? {}
+          : { recoveryLabel: value.recoveryLabel }),
+      }
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

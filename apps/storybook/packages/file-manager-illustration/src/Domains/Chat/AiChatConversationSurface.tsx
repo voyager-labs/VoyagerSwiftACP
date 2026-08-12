@@ -38,6 +38,7 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
   onRequestTextChange,
   inputPresentation,
   inputActions,
+  onErrorRecovery,
   onRegenerate,
 }) => {
   const lastAssistantIndex = (() => {
@@ -68,8 +69,9 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
                 activityStatusLabel: streamingAssistant.activityStatusLabel,
                 content: streamingAssistant.content,
                 isProcessing,
-                failure: streamingAssistant.failure?.message,
+                failure: streamingAssistant.failure,
               })}
+              onErrorRecovery={onErrorRecovery}
             />
           </div>
         ) : isProcessing === true ? (

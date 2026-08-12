@@ -115,12 +115,17 @@ export type ChatMessage = {
   }
 }
 
+export type ChatFailure = {
+  readonly message: string
+  readonly recoveryLabel?: string
+}
+
 export type ChatStreamingAssistant = {
   readonly title: string
   readonly thinkingLabel?: string
   readonly activityStatusLabel?: string
   readonly content?: string
-  readonly failure?: { readonly message: string; readonly recoveryLabel?: string }
+  readonly failure?: ChatFailure
 }
 
 export type ChatSessionRow = {
@@ -261,4 +266,5 @@ export type FileManagerIllustrationProps = {
   // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/streaming/error/recovery)을 root에서 재현한다.
   readonly chatSurface?: ChatSurfaceState
   readonly chatInputActions?: AiChatInputBarActions
+  readonly chatOnErrorRecovery?: () => void
 }

@@ -1,5 +1,6 @@
 import type { FC, ReactNode } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
+import type { ChatFailure } from "../../model/types"
 import { AiChatAssistantMarkdownText } from "./AiChatAssistantMarkdownText"
 import type {
   AiChatAssistantHeaderPresentation,
@@ -11,19 +12,26 @@ import { AiChatWaitingIndicator } from "./AiChatWaitingIndicator"
 
 export interface AiChatAssistantCardProps {
   readonly presentation: AiChatAssistantPresentation
+  readonly onErrorRecovery?: () => void
 }
 
-export const AiChatAssistantCard: FC<AiChatAssistantCardProps> = ({ presentation }) => {
+export const AiChatAssistantCard: FC<AiChatAssistantCardProps> = ({
+  presentation,
+  onErrorRecovery,
+}) => {
   return (
     <article className="chat-assistant-card" data-chat-state={presentation.kind}>
-      {renderPresentation(presentation)}
+      {renderPresentation(presentation, onErrorRecovery)}
     </article>
   )
 }
 
 AiChatAssistantCard.displayName = "AiChatAssistantCard"
 
-function renderPresentation(presentation: AiChatAssistantPresentation): ReactNode {
+function renderPresentation(
+  presentation: AiChatAssistantPresentation,
+  onErrorRecovery?: () => void,
+): ReactNode {
   switch (presentation.kind) {
     case "waiting":
       return (
@@ -38,11 +46,11 @@ function renderPresentation(presentation: AiChatAssistantPresentation): ReactNod
       return (
         <>
           <AiChatAssistantMarkdownText content={presentation.content} />
-          <AssistantFailure failure={presentation.failure} />
+          <AssistantFailure failure={presentation.failure} onRecovery={onErrorRecovery} />
         </>
       )
     case "terminal-failure":
-      return <AssistantFailure failure={presentation.failure} />
+      return <AssistantFailure failure={presentation.failure} onRecovery={onErrorRecovery} />
     case "completed":
       return (
         <>
@@ -53,7 +61,7 @@ function renderPresentation(presentation: AiChatAssistantPresentation): ReactNod
             <AiChatAssistantMarkdownText content={presentation.content} />
           )}
           {presentation.failure == null ? null : (
-            <AssistantFailure failure={presentation.failure} />
+            <AssistantFailure failure={presentation.failure} onRecovery={onErrorRecovery} />
           )}
         </>
       )
@@ -76,12 +84,26 @@ const AssistantHeader: FC<{ readonly presentation: AiChatAssistantHeaderPresenta
   </header>
 )
 
-const AssistantFailure: FC<{ readonly failure: string }> = ({ failure }) => (
+const AssistantFailure: FC<{
+  readonly failure: ChatFailure
+  readonly onRecovery?: () => void
+}> = ({ failure, onRecovery }) => (
   <div className="chat-failure" role="alert">
     <span className="chat-failure-icon">
       <SFSymbol name="exclamationmark.triangle.fill" size={10} />
     </span>
-    <span className="chat-failure-message">{failure}</span>
+    <span className="chat-failure-message">{failure.message}</span>
+    {failure.recoveryLabel == null ? null : (
+      <button
+        type="button"
+        className="chat-failure-recovery"
+        disabled={onRecovery == null}
+        aria-label={failure.recoveryLabel}
+        onClick={onRecovery}
+      >
+        {failure.recoveryLabel}
+      </button>
+    )}
   </div>
 )
 
