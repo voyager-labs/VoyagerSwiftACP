@@ -510,6 +510,54 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: cancelled persistence waiter never launches a provider.
+    /// provider 호출 전 persistence lock 대기에서 취소된 작업이 mutation과 외부 실행을 진행하지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, cancelled host 저장 차단, provider launch 미호출.
+    /// - 사전 조건: 다른 host의 prelaunch 저장이 persistence lock을 보유하고 run 작업이 waiter로 대기한다.
+    /// - 기대 결과: lock 해제 뒤 취소된 waiter는 mutation 전에 중단되고 provider side effect가 발생하지 않는다.
+    @Test
+    func `cancelled persistence waiter does not launch a provider`() async throws {
+        let saveGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(saveGates: [1: saveGate])
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let lockHolder = makeLaunch(
+            host: "host-persistence-lock-holder",
+            run: RuntimeRunReference("run-persistence-lock-holder"),
+            adapterID: "sdk",
+        )
+        let cancelled = makeLaunch(
+            host: "host-persistence-waiter-cancelled",
+            run: RuntimeRunReference("run-persistence-waiter-cancelled"),
+            adapterID: "sdk",
+        )
+        let lockHolderTask = Task {
+            try await plane.projectPrelaunch(lockHolder, as: .policyPending)
+        }
+        await store.waitForSaveCount(1)
+
+        let cancelledTask = Task { try await runPolicyReady(plane, cancelled) }
+        try await reviewerBlockerTestsWaitForPersistenceWaiters(1, on: plane)
+        cancelledTask.cancel()
+        await saveGate.open()
+
+        try await lockHolderTask.value
+        await #expect(throws: CancellationError.self) { try await cancelledTask.value }
+        #expect(await adapter.counts().launch == 0)
+        #expect(await plane.projection(for: cancelled.externalAgentSessionReference) == nil)
+        #expect(
+            await store.currentState()?.sessions.contains {
+                $0.externalAgentSessionReference == cancelled.externalAgentSessionReference
+            } == false,
+        )
+    }
+
     /// ATI-006-coordinate_external_agent_launch: ambiguous launch cleanup failure remains fail-closed.
     /// provider 호출 오류 뒤 cleanup 저장도 실패하면 durable reservation을 재실행하지 않는지 검증한다.
     /// - 검증 내용: 최초 adapter 오류 보존, restart 후 같은 run prelaunch 차단, launch 횟수.
@@ -3637,6 +3685,17 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     ) async throws {
         for _ in 0 ..< 10000 {
             if await plane.pendingPersistenceMutations[host, default: 0] >= count { return }
+            await Task.yield()
+        }
+        throw RuntimeHostError.invalidEvent
+    }
+
+    private func reviewerBlockerTestsWaitForPersistenceWaiters(
+        _ count: Int,
+        on plane: RuntimeControlPlane,
+    ) async throws {
+        for _ in 0 ..< 10000 {
+            if await plane.persistenceMutationWaiters.count >= count { return }
             await Task.yield()
         }
         throw RuntimeHostError.invalidEvent

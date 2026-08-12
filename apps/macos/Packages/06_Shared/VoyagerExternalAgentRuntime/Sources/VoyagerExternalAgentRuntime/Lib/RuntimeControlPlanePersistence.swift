@@ -12,8 +12,9 @@ extension RuntimeControlPlane {
         pendingPersistenceMutations[host, default: 0] += 1
         defer { finishPendingPersistenceMutation(host) }
         try await acquirePersistenceMutation()
-        var candidate = sessions
         do {
+            try Task.checkCancellation()
+            var candidate = sessions
             let result = try mutation(self, &candidate)
             let state = RuntimeStoredState(
                 schemaVersion: RuntimeStoredState.currentSchemaVersion,
