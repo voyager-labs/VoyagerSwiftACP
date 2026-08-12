@@ -388,7 +388,7 @@ public final class FileOperationUndoManagerRegistry {
         return .applied
     }
 
-    fileprivate func completeNativeTransition(
+    func completeNativeTransition(
         scope: UndoManagerScope,
         generation: Generation,
         direction: FileOperationUndoDirection,
@@ -555,7 +555,9 @@ public extension FileOperationUndoManagerRegistry {
         record: EntryActionRecord,
     ) -> Bool {
         guard let entry = entries[scope], entry.pendingTransition == nil else { return false }
-        if entry.undoRecordIDs.last != record.id {
+        let isCanonicalRecord = entry.undoRecordIDs.contains(record.id)
+            || entry.redoRecordIDs.contains(record.id)
+        if !isCanonicalRecord {
             guard registerUndo(scope, expectedGeneration: entry.generation, record: record) else { return false }
         }
         entry.compatibilityRecords[record.id] = CompatibilityRecord(ownerID: ownerID, record: record)
@@ -622,8 +624,29 @@ public extension FileOperationUndoManagerRegistry {
         guard let scope, let entry = entries[scope] else {
             return .init(succeeded: false, availability: .init())
         }
-        if entry.compatibilityRecords.values.contains(where: { $0.ownerID == ownerID }) {
+        let matchingRecordIDs = Set(entry.compatibilityRecords.compactMap { recordID, compatibilityRecord in
+            compatibilityRecord.ownerID == ownerID ? recordID : nil
+        })
+        guard !matchingRecordIDs.isEmpty else {
+            return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
+        }
+        guard entry.pendingTransition == nil else {
             invalidate(entry)
+            return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
+        }
+
+        let handlerStore = FileOperationUndoManagerHandlerStore.store(for: entry.manager)
+        guard let handlers = handlerStore.removeHandlers(recordIDs: matchingRecordIDs) else {
+            invalidate(entry)
+            return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
+        }
+        for handler in handlers {
+            entry.manager.removeAllActions(withTarget: handler)
+        }
+        entry.undoRecordIDs.removeAll { matchingRecordIDs.contains($0) }
+        entry.redoRecordIDs.removeAll { matchingRecordIDs.contains($0) }
+        for recordID in matchingRecordIDs {
+            entry.compatibilityRecords[recordID] = nil
         }
         return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
     }
@@ -797,91 +820,6 @@ public extension DependencyValues {
     nonisolated var fileOperationUndoManagerClient: FileOperationUndoManagerClient {
         get { self[FileOperationUndoManagerClient.self] }
         set { self[FileOperationUndoManagerClient.self] = newValue }
-    }
-}
-
-@MainActor
-private final class FileOperationUndoManagerHandler {
-    private weak var registry: FileOperationUndoManagerRegistry?
-    private weak var undoManager: UndoManager?
-    private var scope: UndoManagerScope
-    private let generation: FileOperationUndoManagerRegistry.Generation
-    private let recordID: UUID
-
-    init(
-        registry: FileOperationUndoManagerRegistry,
-        scope: UndoManagerScope,
-        generation: FileOperationUndoManagerRegistry.Generation,
-        undoManager: UndoManager,
-        recordID: UUID,
-    ) {
-        self.registry = registry
-        self.scope = scope
-        self.generation = generation
-        self.undoManager = undoManager
-        self.recordID = recordID
-    }
-
-    func handleUndo() {
-        complete(.undo)
-    }
-
-    func handleRedo() {
-        complete(.redo)
-    }
-
-    func rebind(to scope: UndoManagerScope) {
-        self.scope = scope
-    }
-
-    private func complete(_ direction: FileOperationUndoDirection) {
-        guard let registry, undoManager != nil else { return }
-        registry.completeNativeTransition(
-            scope: scope,
-            generation: generation,
-            direction: direction,
-            recordID: recordID,
-            handler: self,
-        )
-    }
-}
-
-private enum FileOperationUndoManagerHandlerStoreKey {
-    nonisolated(unsafe) static var value = 0
-}
-
-@MainActor
-private final class FileOperationUndoManagerHandlerStore {
-    private var handlers: [FileOperationUndoManagerHandler] = []
-
-    static func store(for undoManager: UndoManager) -> FileOperationUndoManagerHandlerStore {
-        if let store = objc_getAssociatedObject(undoManager, &FileOperationUndoManagerHandlerStoreKey.value)
-            as? FileOperationUndoManagerHandlerStore
-        {
-            return store
-        }
-        let store = FileOperationUndoManagerHandlerStore()
-        objc_setAssociatedObject(
-            undoManager,
-            &FileOperationUndoManagerHandlerStoreKey.value,
-            store,
-            .OBJC_ASSOCIATION_RETAIN_NONATOMIC,
-        )
-        return store
-    }
-
-    func add(_ handler: FileOperationUndoManagerHandler) {
-        handlers.append(handler)
-    }
-
-    func clear() {
-        handlers.removeAll()
-    }
-
-    func rebind(to scope: UndoManagerScope) {
-        for handler in handlers {
-            handler.rebind(to: scope)
-        }
     }
 }
 
