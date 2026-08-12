@@ -54,6 +54,51 @@ final class CTM001LoadingCancellationOwnerTransferTests: XCTestCase {
         )
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: bulk move 후 Composer scope는 tab별로 격리한다.
+    /// target window context를 적용해도 각 moved tab의 Composer cancellation owner가 유지되는지 검증한다.
+    /// - 검증 내용: target window rebinding과 tab별 Composer cancellation owner identity 보존
+    /// - 사전 조건: 서로 다른 Composer owner를 가진 두 tab을 같은 target window로 함께 이동한다.
+    /// - 기대 결과: 두 tab은 target window를 공유하지만 Composer cancellation key는 서로 다르다.
+    func testBatchMovePreservesDistinctComposerCancellationOwnersInTargetWindow() throws {
+        let firstID = ContentTabID(rawValue: "batch-composer-first")
+        let secondID = ContentTabID(rawValue: "batch-composer-second")
+        let firstOwnerID = UUID(uuid: (19, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+        let secondOwnerID = UUID(uuid: (19, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2))
+        var source = Self.window(
+            windowID: Self.sourceWindowID,
+            tabs: [
+                Self.tab(firstID, path: "/batch/composer-first"),
+                Self.tab(secondID, path: "/batch/composer-second"),
+            ],
+            active: firstID,
+        )
+        source.content.composer.cancellationOwnerID = firstOwnerID
+        source.tabContentStates[firstID] = source.content
+        source.tabContentStates[secondID]?.composer.cancellationOwnerID = secondOwnerID
+        let target = Self.window(windowID: Self.targetWindowID, tabs: [], active: nil)
+
+        let preflight = ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            orderedTabIDs: [firstID, secondID],
+            primaryTabID: firstID,
+        )
+        guard case let .success(token) = preflight else {
+            return XCTFail("Expected Content Tab transfer preflight success: \(preflight)")
+        }
+        let firstContent = try XCTUnwrap(token.projectedTarget.tabContentStates[firstID])
+        let secondContent = try XCTUnwrap(token.projectedTarget.tabContentStates[secondID])
+
+        XCTAssertEqual(firstContent.entryViewLayout.entryOperations.windowID, Self.targetWindowID)
+        XCTAssertEqual(secondContent.entryViewLayout.entryOperations.windowID, Self.targetWindowID)
+        XCTAssertEqual(firstContent.composer.cancellationOwnerID, firstOwnerID)
+        XCTAssertEqual(secondContent.composer.cancellationOwnerID, secondOwnerID)
+        XCTAssertNotEqual(
+            firstContent.composer.cancellationOwnerID,
+            secondContent.composer.cancellationOwnerID,
+        )
+    }
+
     private static let sourceWindowID = UUID(
         uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17),
     )
