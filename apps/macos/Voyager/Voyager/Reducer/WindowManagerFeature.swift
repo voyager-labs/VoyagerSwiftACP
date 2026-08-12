@@ -369,6 +369,9 @@ struct WindowManagerFeature {
                 guard state.contentTabMoveTransactions[request.requestID]?.request == request else {
                     return .none
                 }
+                guard state.contentTabMoveActivationAttempts[request.requestID]?.request != request else {
+                    return .none
+                }
                 state.contentTabMoveTransactions[request.requestID] = nil
                 clearContentTabMoveParticipant(request, state: &state)
                 return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
@@ -387,7 +390,9 @@ struct WindowManagerFeature {
                     return .none
                 }
                 state.contentTabMoveActivationAttempts[attempt.requestID] = nil
-                return .none
+                state.contentTabMoveTransactions[attempt.requestID] = nil
+                clearContentTabMoveParticipant(attempt.request, state: &state)
+                return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
 
             case .refreshContentTabMoveTargets:
                 state.refreshContentTabMoveTargets()

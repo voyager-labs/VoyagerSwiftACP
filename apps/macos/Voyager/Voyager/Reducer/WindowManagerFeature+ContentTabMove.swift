@@ -129,7 +129,9 @@ extension WindowManagerFeature {
         state.contentTabMoveNativeEffectsPlans[request.requestID] = nil
         guard isWindowReady(request.targetWindowID, state: state) else {
             state.contentTabMoveActivationAttempts[request.requestID] = nil
-            return .none
+            state.contentTabMoveTransactions[request.requestID] = nil
+            clearContentTabMoveParticipant(request, state: &state)
+            return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
         }
 
         let activationAttempt = ContentTabMoveActivationAttempt(request: request)
@@ -637,6 +639,7 @@ extension WindowManagerFeature {
         state: State,
     ) -> Bool {
         contentTabMoveOverlapsActiveTransaction(request, state: state)
+            || !state.contentTabMoveActivationAttempts.isEmpty
             || state.topNavigationPersistenceQueue.contains(where: { queued in
                 guard case let .pinnedRecord(_, persistenceRequest, _) = queued.operation else { return false }
                 return request.orderedTabIDs.contains(persistenceRequest.tabID)

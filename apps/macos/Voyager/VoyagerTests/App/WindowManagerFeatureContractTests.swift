@@ -66,6 +66,35 @@ private actor PinnedRecordMutationGate {
     }
 }
 
+private actor ContentTabMoveActivationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var isWaiting = false
+
+    func wait() async {
+        await withTaskCancellationHandler {
+            guard !Task.isCancelled else { return }
+            isWaiting = true
+            let waiters = entryWaiters
+            entryWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            await withCheckedContinuation { continuation = $0 }
+        } onCancel: {
+            Task { await self.release() }
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard !isWaiting else { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private struct ContentTabMovePersistenceActionCounts: Equatable {
     var queuedRequests = 0
     var sourceSucceeded = 0
@@ -8809,6 +8838,86 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         XCTAssertNil(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedTabID])
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[requestID]?.outcome, .succeeded)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: native activation 중에는 후속 move transaction을 시작하지 않는다.
+    /// 이전 AppKit focus side effect가 끝나기 전 transaction ownership을 유지하는 직렬화 경계를 검증한다.
+    /// - 검증 내용: 첫 activation 대기 중 후속 request no-op과 activation ledger를 비교한다.
+    /// - 사전 조건: 성공 terminal/native plan을 가진 A가 activation gate에서 대기하고 B source/target이 준비된다.
+    /// - 기대 결과: A target만 활성화되고 B는 semantic state를 변경하지 않은 채 A transaction 종료 뒤 허용된다.
+    func testContentTabMoveActivationSerializesSubsequentMoveRequest() async throws {
+        let firstRequest = ContentTabMoveRequest(
+            operationID: UUID(51001),
+            requestID: UUID(51002),
+            sourceWindowID: UUID(51003),
+            initiatingTabID: ContentTabID(rawValue: "activation-first"),
+            orderedTabIDs: [ContentTabID(rawValue: "activation-first")],
+            targetWindowID: UUID(51004),
+        )
+        let secondRequest = ContentTabMoveRequest(
+            operationID: UUID(51005),
+            requestID: UUID(51006),
+            sourceWindowID: UUID(51007),
+            initiatingTabID: ContentTabID(rawValue: "activation-second"),
+            orderedTabIDs: [ContentTabID(rawValue: "activation-second")],
+            targetWindowID: UUID(51008),
+        )
+        let firstGate = ContentTabMoveActivationGate()
+        let nativeActivationTargets = LockIsolated<[UUID]>([])
+        var initialState = WindowManagerFeature.State()
+        var secondSource = try Self.makeContentTabMoveWindow(
+            id: secondRequest.sourceWindowID,
+            tabs: [(secondRequest.initiatingTabID, "/activation/second-source")],
+        )
+        Self.prepareContentTabMoveRequest(secondRequest, in: &secondSource)
+        initialState.windows = [
+            .init(
+                id: firstRequest.targetWindowID,
+                window: .makeInitial(path: "/activation/first"),
+            ),
+            .init(
+                id: secondRequest.targetWindowID,
+                window: .makeInitial(path: "/activation/second"),
+            ),
+            secondSource,
+        ]
+        initialState.recordContentTabMoveTerminal(.init(request: firstRequest, outcome: .succeeded))
+        initialState.contentTabMoveTransactions[firstRequest.requestID] = .init(request: firstRequest)
+        initialState.contentTabMoveNativeEffectsPlans[firstRequest.requestID] = .init(
+            request: firstRequest,
+            closesSourceWindow: false,
+        )
+        initialState.contentTabMoveActivationAttempts[firstRequest.requestID] = .init(request: firstRequest)
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                if id == firstRequest.targetWindowID {
+                    await firstGate.wait()
+                    guard !Task.isCancelled else { return .discarded }
+                }
+                nativeActivationTargets.withValue { $0.append(id) }
+                return .discarded
+            }
+        }
+        // store.exhaustivity = .off: concurrent activation result 정리는 최종 state와 native call ledger로 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveNativeEffectsRequested(request: firstRequest))
+        await firstGate.waitUntilWaiting()
+        await store.send(.contentTabMoveRequest(secondRequest))
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[secondRequest.requestID]?.outcome,
+            .rejected(.busy),
+        )
+        XCTAssertNotNil(store.state.windows[id: secondRequest.sourceWindowID]?.window.contentTabs.tabs[
+            id: secondRequest.initiatingTabID,
+        ])
+        await firstGate.release()
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(nativeActivationTargets.value, [firstRequest.targetWindowID])
+        XCTAssertNil(store.state.contentTabMoveActivationAttempts[firstRequest.requestID])
+        XCTAssertNil(store.state.contentTabMoveTransactions[firstRequest.requestID])
     }
 
     // MARK: - External Open Placement
