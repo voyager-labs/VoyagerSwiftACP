@@ -17,6 +17,25 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testLiveUndoManagerClientResolvesActiveContentTabRegistryScope() async throws {
+        let windowID = UUID()
+        let registry = FileOperationUndoManagerRegistry()
+        let window = FileManagerWindowState.makeInitial(path: "/active")
+        let activeTabID = try XCTUnwrap(window.contentTabs.activeTabID)
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: activeTabID.rawValue)
+        let nativeUndoManager = registry.activate(scope)
+        let client = VoyagerApp.makeUndoManagerClient(
+            fileOperationUndoManagerRegistry: registry,
+            resolveScope: { requestedWindowID in
+                requestedWindowID == windowID ? scope : nil
+            },
+        )
+
+        XCTAssertIdentical(registry.undoManager(for: scope), nativeUndoManager)
+        let availability = await client.availability(windowID)
+        XCTAssertEqual(availability, UndoManagerAvailability())
+    }
+
     func testSignedOutLaunchDefersInitialWindowUntilRuntimeAndWindowCompletion() async {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
