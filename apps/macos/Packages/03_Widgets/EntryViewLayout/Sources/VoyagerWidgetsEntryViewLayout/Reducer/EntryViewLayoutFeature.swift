@@ -16,6 +16,8 @@ public struct EntryViewLayoutFeature {
     private var entryLoadingClient
     @Dependency(\.workspaceClient)
     private var workspaceClient
+    @Dependency(\.finderFavoritesTagClient)
+    private var finderFavoritesTagClient
 
     public init() {}
 
@@ -223,6 +225,7 @@ public struct EntryViewLayoutFeature {
                     showHidden: showHidden,
                     entryLoadingClient: entryLoadingClient,
                     workspaceClient: workspaceClient,
+                    favoriteTags: finderFavoritesTagClient.favoriteTags(),
                 )
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
                 state.isCollectionContentLoading = false
@@ -235,6 +238,7 @@ public struct EntryViewLayoutFeature {
                     showHidden: state.showHiddenFiles,
                     entryLoadingClient: entryLoadingClient,
                     workspaceClient: workspaceClient,
+                    favoriteTags: finderFavoritesTagClient.favoriteTags(),
                 )
                 guard !restoredItems.isEmpty else { return .none }
 

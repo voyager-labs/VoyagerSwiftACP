@@ -21,7 +21,15 @@ final class SettingsGeneralFlowTests: XCTestCase {
                 pickDirectory: { nil },
                 pathExists: { _ in false },
                 isDirectory: { _ in false },
-                defaultHomePath: { "/flow-home" },
+                standardDirectories: {
+                    StandardDirectories(
+                        homePath: "/flow-home",
+                        homeDisplayName: "flow-home",
+                        desktopPath: nil,
+                        documentsPath: nil,
+                        downloadsPath: nil,
+                    )
+                },
             )
             $0.launchAtLoginClient.isEnabled = { false }
             $0.launchAtLoginClient.setEnabled = { _ in }
@@ -44,7 +52,7 @@ final class SettingsGeneralFlowTests: XCTestCase {
         await store.receive(\.settings.ai.onAppear)
         await store.receive(\.settings.general.loadSettings) {
             $0.settings.generalSettings.startingDirectory = "/flow-home"
-            $0.settings.generalSettings.selectedDirectoryOption = .custom("/flow-home")
+            $0.settings.generalSettings.selectedDirectoryOption = .home
         }
     }
 

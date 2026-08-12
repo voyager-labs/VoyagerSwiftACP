@@ -15,7 +15,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 showHiddenFiles == false
     /// - 기대 결과: 상태가 true로 전환됨
     func testToggleShowHiddenFilesFlipsState() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -50,7 +51,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 showHiddenFiles == false
     /// - 기대 결과: true 설정 후 false로 복원 가능
     func testSetShowHiddenFilesDirectly() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -69,7 +71,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 (기본값)
     /// - 기대 결과: preferences에 지정한 값들이 상태에 반영됨
     func testApplyPreferencesSetsShowHiddenFiles() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -98,7 +101,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 (기본 컬럼)
     /// - 기대 결과: 새 컬럼 목록이 normalize되어 상태에 반영됨
     func testSetListVisibleColumnsUpdatesState() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -133,7 +137,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태
     /// - 기대 결과: 상태 변화 없음 (name은 requiredColumns에 포함)
     func testNameColumnIsRequired() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        var initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -1182,9 +1187,12 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             resultingEntries: [keptItem],
         )
     }
+}
 
-    private func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+private extension EVM002ManageEntriesViewPresentationTests {
+    func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
+        var initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
@@ -1253,5 +1261,67 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
                 return sortedItems == applyItems && mode == isCollectionMode
             }
         }
+    }
+}
+
+extension EVM002ManageEntriesViewPresentationTests {
+    /// EVM-002-set_entries_view_as_icon_grid: collection path conversion uses injected Finder favorite colors.
+    /// Collection presentation must resolve favorite tags through the reducer dependency override.
+    /// - 검증 내용: applyCollectionSearchPaths가 주입된 favorite tag 색상으로 collection item을 정규화하는지 확인
+    /// - 사전 조건: fixture 파일에 주입된 favorite tag와 같은 이름의 다른 색상 태그가 저장되어 있음
+    /// - 기대 결과: collectionItems와 entries의 태그 색상이 주입된 favorite tag 색상으로 변경됨
+    func testCollectionPathConversionUsesInjectedFavoriteTagColor() async throws {
+        let sandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let rawTag = Tag(name: "InjectedFavorite", colorCode: 0)
+        let favoriteTag = Tag(name: rawTag.name, colorCode: 6)
+        try TagMetadataClient.setTags([rawTag], for: sandbox.fileURL)
+        var entryLoadingClient = EntryLoadingClient.testValue
+        entryLoadingClient.fileExistsAtPath = { path, isDirectory in
+            var resolvedIsDirectory = ObjCBool(false)
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &resolvedIsDirectory) else {
+                return false
+            }
+            isDirectory?.pointee = resolvedIsDirectory
+            return true
+        }
+        entryLoadingClient.getItemMetadata = { _, _, _ in
+            EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil)
+        }
+        entryLoadingClient.isPackageDirectory = { _ in false }
+        var initialState = EntryViewLayoutState()
+        initialState.isCollectionMode = true
+        let store = TestStore(initialState: initialState) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient = entryLoadingClient
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [favoriteTag.name] },
+                favoriteTags: { [favoriteTag] },
+            )
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyCollectionSearchPaths(
+            paths: [sandbox.fileURL.path],
+            showHidden: true,
+        )))
+
+        await store.receive(\.entryArrangements.reapply)
+        await store.receive(\.entryArrangements.delegate.requestApply)
+        await store.receive { action in
+            guard case .entryArrangements(.apply) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryArrangements(.delegate(.applied)) = action else { return false }
+            return true
+        }
+
+        XCTAssertEqual(store.state.collectionItems.count, 1)
+        XCTAssertEqual(store.state.collectionItems.first?.facets.tags, [favoriteTag])
+        XCTAssertEqual(store.state.entries.count, 1)
+        XCTAssertEqual(store.state.entries.first?.facets.tags, [favoriteTag])
     }
 }
