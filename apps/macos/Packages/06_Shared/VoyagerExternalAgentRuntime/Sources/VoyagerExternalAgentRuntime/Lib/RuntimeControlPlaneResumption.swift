@@ -13,6 +13,9 @@ public extension RuntimeControlPlane {
         } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
             try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
             throw RuntimeHostError.persistenceFailure
+        } catch is CancellationError {
+            try? await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
+            throw CancellationError()
         } catch let error as RuntimeHostError {
             try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw error

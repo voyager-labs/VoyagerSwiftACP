@@ -1056,6 +1056,52 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await store.saveCount == 2)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: cancelling restored consumption preserves its claim.
+    /// caller task 취소가 provider interruption으로 저장되지 않고 동일 run의 재개 가능성을 유지하는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, running projection 보존, 두 번째 resume의 stream 재개.
+    /// - 사전 조건: compatible running snapshot과 지연된 provider event stream이 있다.
+    /// - 기대 결과: 두 번의 caller cancellation 모두 durable interruption 없이 원래 취소로 종료된다.
+    @Test
+    func `cancelled restored consumption preserves its claim`() async throws {
+        let host = ExternalAgentSessionReference("host-resume-cancelled")
+        let run = RuntimeRunReference("run-resume-cancelled")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume-cancelled"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: context,
+            projection: .running,
+            lastSequence: 0,
+        )
+        let store = InMemoryRuntimeStateStore(state: RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        for expectedStreamCount in 1 ... 2 {
+            let task = Task { try await plane.resumeRestoredRun(hostReference: host) }
+            await adapter.waitForEventStreamCount(expectedStreamCount)
+            task.cancel()
+
+            await #expect(throws: CancellationError.self) { try await task.value }
+            #expect(await plane.projection(for: host) == .running)
+            #expect(await store.currentState()?.sessions.first?.projection == .running)
+        }
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: failed restored-run cleanup remains retryable.
     /// 복원 소비의 terminal 저장과 interruption 저장이 연속 실패해도 lease를 다시 소비할 수 있는지 검증한다.
     /// - 검증 내용: 두 번의 persistence failure 뒤 동일 restored run의 provider stream 재개.
@@ -2604,6 +2650,39 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("corrupt").path))
         #expect(try await runPolicyReady(plane, launch).outcome == .completed)
         #expect(await adapter.counts().launch == 1)
+    }
+
+    /// ATI-006-project_external_agent_run_events: cancelling consumer task preserves the active run.
+    /// caller task 취소가 명시적 provider interruption 없이 durable terminal 상태를 만들지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, running projection과 persisted nonterminal 상태, adapter 호출 횟수.
+    /// - 사전 조건: launch 뒤 terminal event 없이 지연된 provider event stream이 대기한다.
+    /// - 기대 결과: run은 interrupted로 저장되지 않고 restore/resume 가능한 active 상태로 남는다.
+    @Test
+    func `cancelled run does not persist interruption`() async throws {
+        let host: ExternalAgentSessionReference = "host-consumer-cancelled"
+        let run = RuntimeRunReference("run-consumer-cancelled")
+        let store = InMemoryRuntimeStateStore()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForEventStreamCount(1)
+
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await store.currentState()?.sessions.first?.projection == .running)
+        #expect(await adapter.counts().launch == 1)
+        #expect(await adapter.counts().stream == 1)
+        #expect(await adapter.counts().cancellation == 0)
     }
 
     /// ATI-006-project_external_agent_run_events: terminal transition does not wait for a delayed operation.
