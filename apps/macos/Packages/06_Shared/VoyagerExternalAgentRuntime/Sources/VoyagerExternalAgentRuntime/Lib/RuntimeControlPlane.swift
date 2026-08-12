@@ -168,7 +168,7 @@ public actor RuntimeControlPlane {
         return try await persistTerminalResult(result, host: reservation.host, lease: lease)
     }
 
-    private func persistTerminalResult(
+    func persistTerminalResult(
         _ result: RuntimeResult,
         host: ExternalAgentSessionReference,
         lease: UInt64,

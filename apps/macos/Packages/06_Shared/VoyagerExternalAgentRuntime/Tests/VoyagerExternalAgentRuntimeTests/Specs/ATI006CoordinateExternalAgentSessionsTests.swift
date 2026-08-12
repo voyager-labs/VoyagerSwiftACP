@@ -998,6 +998,64 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: restored terminal result retries transient persistence
+    /// failure.
+    /// 복원 소비가 얻은 terminal 결과를 interruption으로 바꾸지 않고 동일 결과 저장만 재시도하는지 검증한다.
+    /// - 검증 내용: 첫 finish save 실패 뒤 반환 결과, durable projection, artifact와 save 횟수.
+    /// - 사전 조건: terminal-only restored run과 첫 save만 실패하는 state store가 있다.
+    /// - 기대 결과: resume은 provider 결과를 반환하고 두 번째 save로 completed 상태를 지속한다.
+    @Test
+    func `restored terminal result retries transient persistence failure`() async throws {
+        let host = ExternalAgentSessionReference("host-resume-finish-retry")
+        let run = RuntimeRunReference("run-resume-finish-retry")
+        let context = finalReviewTestsMakeContext()
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://restored-finish-retry.json"],
+        )
+        let capabilities = RuntimeCapabilities(
+            discovery: .unsupported,
+            eventStream: .unsupported,
+            approval: .unsupported,
+            cancellation: .unsupported,
+            queuedInput: .unsupported,
+            terminalResult: .supported,
+            sameIdentityResume: .supported,
+        )
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume-finish-retry"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("terminal"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: capabilities,
+            contextPolicy: context,
+            projection: .running,
+            lastSequence: 0,
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            failingSaveNumbers: [1],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: capabilities,
+            eventsByLaunch: [[]],
+            terminalResultOverride: expected,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        let resumed = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(resumed == expected)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.saveCount == 2)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: failed restored-run cleanup remains retryable.
     /// 복원 소비의 terminal 저장과 interruption 저장이 연속 실패해도 lease를 다시 소비할 수 있는지 검증한다.
     /// - 검증 내용: 두 번의 persistence failure 뒤 동일 restored run의 provider stream 재개.

@@ -7,19 +7,9 @@ public extension RuntimeControlPlane {
         try await hydrateIfNeeded()
         let claim = try await claimRestoredRun(hostReference)
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
+        let result: RuntimeResult
         do {
-            let result = try await consume(claim.receipt, from: adapter, host: hostReference)
-            if sessions[hostReference]?.stored.projection.isTerminal == true {
-                return resultRespectingStoredTerminal(result, host: hostReference)
-            }
-            return try await commit(host: hostReference) { plane, registry in
-                try plane.finishTransition(
-                    result,
-                    host: hostReference,
-                    lease: claim.lease,
-                    in: &registry,
-                )
-            }
+            result = try await consume(claim.receipt, from: adapter, host: hostReference)
         } catch let error as RuntimeHostError {
             try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw error
@@ -28,6 +18,10 @@ public extension RuntimeControlPlane {
             try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw normalized
         }
+        if sessions[hostReference]?.stored.projection.isTerminal == true {
+            return resultRespectingStoredTerminal(result, host: hostReference)
+        }
+        return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
     }
 
     private func claimRestoredRun(
