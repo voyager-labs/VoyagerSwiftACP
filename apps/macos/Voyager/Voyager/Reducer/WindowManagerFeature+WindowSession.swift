@@ -384,38 +384,47 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }
         let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
-        state.windows.append(windowSession)
-        state.focusedWindowID = windowSession.id
-        state.moveWindowToMRUFront(windowSession.id)
-        state.pendingWindowOpenIDs.insert(windowSession.id)
-        state.refreshContentTabMoveTargets()
-        var effects: [Effect<Action>] = [
-            windowIDChangedEffect(for: windowSession.id),
-            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-        ]
-        effects.append(windowOpenEffect(
-            for: windowSession.id,
-            shouldBootstrapDefaultWindow: path == nil,
-        ))
-        return .concatenate(effects)
+        return openWindowSession(
+            windowSession,
+            startsDefaultBootstrap: path == nil,
+            state: &state,
+        )
     }
 
     private func openCollectionWindowSession(url: URL, state: inout State) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }
         let windowSession = makeWindowSession(path: nil)
+        return openWindowSession(
+            windowSession,
+            startsDefaultBootstrap: true,
+            state: &state,
+            beforePreferences: .send(.windows(.element(
+                id: windowSession.id,
+                action: .window(.navigation(.view(.openCollectionFile(url)))),
+            ))),
+        )
+    }
+
+    private func openWindowSession(
+        _ windowSession: WindowSessionState,
+        startsDefaultBootstrap: Bool,
+        state: inout State,
+        beforePreferences: Effect<Action> = .none,
+    ) -> Effect<Action> {
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
         state.moveWindowToMRUFront(windowSession.id)
         state.pendingWindowOpenIDs.insert(windowSession.id)
         state.refreshContentTabMoveTargets()
+
         return .concatenate(
             windowIDChangedEffect(for: windowSession.id),
-            .send(.windows(.element(
-                id: windowSession.id,
-                action: .window(.navigation(.view(.openCollectionFile(url)))),
-            ))),
+            beforePreferences,
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: true),
+            windowOpenEffect(
+                for: windowSession.id,
+                shouldBootstrapDefaultWindow: startsDefaultBootstrap,
+            ),
         )
     }
 

@@ -1190,6 +1190,35 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             store.state.windows.first?.window.contentTabs.tabs.contains(where: \.isPinned) ?? true,
         )
 
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(receivedID)))))),
+            )) = action else {
+                return false
+            }
+            return id == newID && receivedID == newID
+        }
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.navigation(.view(.openCollectionFile(url)))),
+            )) = action else {
+                return false
+            }
+            return id == newID && url == collectionURL
+        }
+        let defaultPreferences = AppPreferencesState().toPackageState()
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAppPreferences(preferences)),
+            )) = action else {
+                return false
+            }
+            return id == newID && preferences == defaultPreferences
+        }
+
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
             guard case let .windows(.element(id: id, action: .window(.applyBootstrap(bootstrap)))) = action
