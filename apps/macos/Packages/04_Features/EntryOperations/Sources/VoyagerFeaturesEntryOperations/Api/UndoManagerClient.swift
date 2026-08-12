@@ -173,6 +173,11 @@ public final class FileOperationUndoManagerRegistry {
         let record: EntryActionRecord
     }
 
+    private struct CompatibilityOwnerIdentity: Hashable {
+        let windowID: UUID
+        let ownerID: UUID
+    }
+
     private struct PlannedScopeMove {
         let descriptor: FileOperationUndoScopeMoveDescriptor
         let entry: Entry
@@ -181,6 +186,8 @@ public final class FileOperationUndoManagerRegistry {
 
     private var entries: [UndoManagerScope: Entry] = [:]
     private var generation: Generation = 0
+    private var invalidatedCompatibilityOwners: Set<CompatibilityOwnerIdentity> = []
+    private var invalidatedCompatibilityWindows: Set<UUID> = []
     nonisolated private let compatibilityEventBridge = UndoManagerEventBridge()
 
     public init() {}
@@ -554,11 +561,28 @@ public extension FileOperationUndoManagerRegistry {
         ownerID: UUID,
         record: EntryActionRecord,
     ) -> Bool {
-        guard let entry = entries[scope], entry.pendingTransition == nil else { return false }
+        let ownerIdentity = CompatibilityOwnerIdentity(windowID: scope.windowID, ownerID: ownerID)
+        guard !invalidatedCompatibilityWindows.contains(scope.windowID),
+              !invalidatedCompatibilityOwners.contains(ownerIdentity)
+        else { return false }
+
+        let canonicalScopes: [UndoManagerScope] = entries.compactMap { candidate in
+            let (candidateScope, candidateEntry) = candidate
+            guard candidateScope.windowID == scope.windowID,
+                  candidateEntry.undoRecordIDs.contains(record.id)
+                  || candidateEntry.redoRecordIDs.contains(record.id)
+            else { return nil }
+            return candidateScope
+        }
+        guard canonicalScopes.count <= 1 else { return false }
+        let registrationScope = canonicalScopes.first ?? scope
+        guard let entry = entries[registrationScope], entry.pendingTransition == nil else { return false }
         let isCanonicalRecord = entry.undoRecordIDs.contains(record.id)
             || entry.redoRecordIDs.contains(record.id)
         if !isCanonicalRecord {
-            guard registerUndo(scope, expectedGeneration: entry.generation, record: record) else { return false }
+            guard registerUndo(registrationScope, expectedGeneration: entry.generation, record: record) else {
+                return false
+            }
         }
         entry.compatibilityRecords[record.id] = CompatibilityRecord(ownerID: ownerID, record: record)
         return true
@@ -620,7 +644,13 @@ public extension FileOperationUndoManagerRegistry {
     func invalidateCompatibilityOwner(
         _ scope: UndoManagerScope?,
         ownerID: UUID,
+        windowID: UUID? = nil,
     ) -> UndoManagerInvalidationResult {
+        if let invalidatedWindowID = scope?.windowID ?? windowID {
+            invalidatedCompatibilityOwners.insert(
+                CompatibilityOwnerIdentity(windowID: invalidatedWindowID, ownerID: ownerID),
+            )
+        }
         guard let scope, let entry = entries[scope] else {
             return .init(succeeded: false, availability: .init())
         }
@@ -652,6 +682,7 @@ public extension FileOperationUndoManagerRegistry {
     }
 
     func invalidateCompatibilityWindow(_ windowID: UUID) -> UndoManagerInvalidationResult {
+        invalidatedCompatibilityWindows.insert(windowID)
         let matchingEntries = entries
             .filter { $0.key.windowID == windowID }
             .map(\.value)
@@ -1186,13 +1217,21 @@ private func makeAvailability(
 private final class UndoManagerEventBridge: @unchecked Sendable {
     private let lock = NSLock()
     private var continuations: [UUID: [UUID: AsyncStream<UndoManagerEvent>.Continuation]] = [:]
+    private var finishedWindowIDs: Set<UUID> = []
 
     func stream(windowID: UUID) -> AsyncStream<UndoManagerEvent> {
         let continuationID = UUID()
         return AsyncStream { continuation in
             lock.lock()
-            continuations[windowID, default: [:]][continuationID] = continuation
+            let isFinished = finishedWindowIDs.contains(windowID)
+            if !isFinished {
+                continuations[windowID, default: [:]][continuationID] = continuation
+            }
             lock.unlock()
+            if isFinished {
+                continuation.finish()
+                return
+            }
             continuation.onTermination = { [weak self] _ in
                 self?.removeContinuation(windowID: windowID, continuationID: continuationID)
             }
@@ -1201,6 +1240,10 @@ private final class UndoManagerEventBridge: @unchecked Sendable {
 
     func yield(_ event: UndoManagerEvent, windowID: UUID) {
         lock.lock()
+        guard !finishedWindowIDs.contains(windowID) else {
+            lock.unlock()
+            return
+        }
         let currentContinuations = Array(continuations[windowID]?.values ?? [:].values)
         lock.unlock()
         for continuation in currentContinuations {
@@ -1210,6 +1253,7 @@ private final class UndoManagerEventBridge: @unchecked Sendable {
 
     func finish(windowID: UUID) {
         lock.lock()
+        finishedWindowIDs.insert(windowID)
         let currentContinuations = Array(continuations.removeValue(forKey: windowID)?.values ?? [:].values)
         lock.unlock()
         for continuation in currentContinuations {

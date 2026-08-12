@@ -128,6 +128,107 @@ final class EOP003UndoScopeMoveReconciliationTests: XCTestCase {
         XCTAssertEqual(registry.generation(for: scope), generation)
     }
 
+    /// EOP-003-undo_entry_action: owner 무효화 뒤 늦은 compatibility 등록은 history를 부활시키지 않는다.
+    /// recovery가 폐기한 owner의 지연 completion을 tombstone으로 차단하는지 검증한다.
+    /// - 검증 내용: invalidation 결과, late registration 결과, native availability를 비교한다.
+    /// - 사전 조건: 활성 scope의 owner를 history 등록 전에 먼저 무효화한다.
+    /// - 기대 결과: 같은 owner의 늦은 등록은 거부되고 native Undo history는 비어 있다.
+    func testCompatibilityOwnerInvalidationRejectsDelayedRegistration() {
+        let registry = FileOperationUndoManagerRegistry()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "active")
+        let manager = registry.activate(scope)
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+
+        let invalidation = registry.invalidateCompatibilityOwner(scope, ownerID: ownerID)
+        let didRegister = registry.registerCompatibilityUndo(scope, ownerID: ownerID, record: record)
+
+        XCTAssertTrue(invalidation.succeeded)
+        XCTAssertFalse(didRegister)
+        XCTAssertEqual(registry.compatibilityAvailability(scope), .init())
+        XCTAssertFalse(manager.canUndo)
+    }
+
+    /// EOP-003-undo_entry_action: active scope가 사라진 owner 무효화도 늦은 compatibility 등록을 차단한다.
+    /// close/recovery 사이 resolver가 nil인 구간에도 window-owner tombstone을 유지하는지 검증한다.
+    /// - 검증 내용: nil-scope invalidation 결과와 이후 registration 결과를 비교한다.
+    /// - 사전 조건: window와 owner는 알려져 있지만 invalidation 시점 active scope resolver는 nil이다.
+    /// - 기대 결과: invalidation은 fail-closed 결과를 반환해도 같은 owner의 늦은 등록은 거부된다.
+    func testCompatibilityOwnerInvalidationWithoutActiveScopeStillRejectsDelayedRegistration() {
+        let registry = FileOperationUndoManagerRegistry()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "closed")
+        let manager = registry.activate(scope)
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+
+        let invalidation = registry.invalidateCompatibilityOwner(nil, ownerID: ownerID, windowID: windowID)
+        let didRegister = registry.registerCompatibilityUndo(scope, ownerID: ownerID, record: record)
+
+        XCTAssertFalse(invalidation.succeeded)
+        XCTAssertFalse(didRegister)
+        XCTAssertFalse(manager.canUndo)
+    }
+
+    /// EOP-003-undo_entry_action: window 무효화 뒤 늦은 compatibility 등록과 새 event stream은 닫힌다.
+    /// close가 끝난 window lifecycle을 지연 completion과 재구독이 다시 열지 못하는지 검증한다.
+    /// - 검증 내용: late registration 결과, native availability, post-close stream 종료를 비교한다.
+    /// - 사전 조건: 활성 scope가 있는 window를 먼저 무효화한 뒤 등록과 stream 생성을 시도한다.
+    /// - 기대 결과: 등록은 거부되고 native history는 비며 새 stream은 즉시 종료된다.
+    func testCompatibilityWindowInvalidationRejectsDelayedRegistrationAndClosesNewStreams() async {
+        let registry = FileOperationUndoManagerRegistry()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "active")
+        let manager = registry.activate(scope)
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+
+        let invalidation = registry.invalidateCompatibilityWindow(windowID)
+        let didRegister = registry.registerCompatibilityUndo(scope, ownerID: ownerID, record: record)
+        let streamFinished = expectation(description: "post-close stream finishes")
+        let streamTask = Task {
+            var events = registry.compatibilityEvents(windowID: windowID).makeAsyncIterator()
+            if await events.next() == nil {
+                streamFinished.fulfill()
+            }
+        }
+
+        await fulfillment(of: [streamFinished], timeout: 0.2)
+        streamTask.cancel()
+        XCTAssertTrue(invalidation.succeeded)
+        XCTAssertFalse(didRegister)
+        XCTAssertEqual(registry.compatibilityAvailability(scope), .init())
+        XCTAssertFalse(manager.canUndo)
+    }
+
+    /// EOP-003-undo_entry_action: compatibility metadata는 callback 시점 active tab이 아니라 canonical origin scope를 따른다.
+    /// A completion 뒤 active resolver가 B를 반환해도 동일 record를 B에 재등록하지 않는지 검증한다.
+    /// - 검증 내용: A와 B scope의 availability와 native history를 비교한다.
+    /// - 사전 조건: A scope에 canonical record가 있고 compatibility client resolver는 B를 반환한다.
+    /// - 기대 결과: A만 owner/record target을 노출하고 B native history는 비어 있다.
+    func testCompatibilityRegistrationFindsCanonicalOriginScopeAfterActiveTabSwitch() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let scopeA = UndoManagerScope(windowID: windowID, contentTabID: "A")
+        let scopeB = UndoManagerScope(windowID: windowID, contentTabID: "B")
+        let managerA = registry.activate(scopeA)
+        let managerB = registry.activate(scopeB)
+        let generationA = try XCTUnwrap(registry.generation(for: scopeA))
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        let client = UndoManagerClient.live(registry: registry, resolveScope: { _ in scopeB })
+
+        XCTAssertTrue(registry.registerUndo(scopeA, expectedGeneration: generationA, record: record))
+        await client.registerUndo(windowID, ownerID, record)
+
+        let identity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        XCTAssertEqual(registry.compatibilityAvailability(scopeA).undoTarget, identity)
+        XCTAssertEqual(registry.compatibilityAvailability(scopeB), .init())
+        XCTAssertTrue(managerA.canUndo)
+        XCTAssertFalse(managerB.canUndo)
+    }
+
     /// EOP-003-undo_entry_action: 역방향 scope 이동 실패 뒤 동일 generation의 moved history를 source로 복원한다.
     /// durable Content Tab 이동 실패가 target에 남은 native history를 원래 scope로 되돌리는지 검증한다.
     /// - 검증 내용: reconciliation outcome, manager identity, generation, source scope의 Undo 성공을 비교한다.

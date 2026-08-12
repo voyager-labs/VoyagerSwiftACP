@@ -130,7 +130,11 @@ public extension UndoManagerClient {
             },
             invalidateOwner: { windowID, ownerID in
                 await MainActor.run {
-                    registry.invalidateCompatibilityOwner(resolveScope(windowID), ownerID: ownerID)
+                    registry.invalidateCompatibilityOwner(
+                        resolveScope(windowID),
+                        ownerID: ownerID,
+                        windowID: windowID,
+                    )
                 }
             },
             invalidateWindow: { windowID in
