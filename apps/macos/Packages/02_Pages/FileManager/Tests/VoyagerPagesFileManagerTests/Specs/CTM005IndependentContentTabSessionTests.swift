@@ -5,6 +5,7 @@ import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -824,8 +825,17 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         homeContent.composer.isFilteringInFlight = true
         homeContent.composer.activeSearchRequestID = searchID
         homeContent.composer.activeFiltersRequestID = filtersID
+        homeContent.composer.lastAcceptedSearchRequestID = searchID
+        homeContent.composer.lastAcceptedFiltersRequestID = filtersID
         homeContent.composer.pendingSearchQuery = "tag:important"
         homeContent.composer.queryRenderPhase = .searching
+        homeContent.composer.searchStartedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        homeContent.composer.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_001)
+        homeContent.composer.transientFeedback = ComposerTransientFeedback(
+            id: UUID(),
+            kind: .error,
+            message: "failure",
+        )
         var directoryContent = FileManagerContentFeature.State()
         directoryContent.navigation.seedInitialFolderPath(directoryPath)
         var state = FileManagerFeature.State()
@@ -878,9 +888,63 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertFalse(savedHomeComposer.isFilteringInFlight)
         XCTAssertNil(savedHomeComposer.activeSearchRequestID)
         XCTAssertNil(savedHomeComposer.activeFiltersRequestID)
+        XCTAssertNil(savedHomeComposer.lastAcceptedSearchRequestID)
+        XCTAssertNil(savedHomeComposer.lastAcceptedFiltersRequestID)
         XCTAssertNil(savedHomeComposer.pendingSearchQuery)
+        XCTAssertNil(savedHomeComposer.searchStartedAt)
+        XCTAssertNil(savedHomeComposer.filtersStartedAt)
+        XCTAssertNil(savedHomeComposer.transientFeedback)
         XCTAssertEqual(savedHomeComposer.queryRenderPhase, .idle)
         await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session: dirty collection discard는 Composer feedback timer를 취소함
+    /// discard 시 page-owned search/filter lifecycle을 보존하면서 Composer semantic action으로 feedback timer 정리를 위임하는지 검증한다.
+    /// - 검증 내용: live feedback timer 취소, clearTransientFeedback action 전달 및 활성 search/filter 상태 보존
+    /// - 사전 조건: dirty collection content에 search/filter process와 transient feedback이 남아 있음
+    /// - 기대 결과: FileManager가 raw cancellation ID 없이 Composer clearTransientFeedback을 실행하고 process 상태를 유지함
+    func testDiscardCollectionChangesRoutesComposerTransientFeedbackCleanup() async {
+        var initialState = makeDirtyCollectionContent()
+        let searchID = UUID()
+        let filtersID = UUID()
+        initialState.composer.isLoadingSearch = true
+        initialState.composer.isLoadingFilters = true
+        initialState.composer.isFilteringInFlight = true
+        initialState.composer.activeSearchRequestID = searchID
+        initialState.composer.activeFiltersRequestID = filtersID
+        initialState.composer.lastAcceptedSearchRequestID = searchID
+        initialState.composer.lastAcceptedFiltersRequestID = filtersID
+        initialState.composer.pendingSearchQuery = "pending query"
+        initialState.composer.searchStartedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        initialState.composer.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_001)
+        let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "failure")
+        let clock = TestClock()
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = clock
+        }
+        // store.exhaustivity = .off: collection teardown의 Composer 경계 action만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.internal(.presentTransientFeedback(feedback))))
+        await store.send(.view(.discardCollectionChanges))
+        await store.receive(\.composer.internal.clearTransientFeedback)
+        await clock.advance(by: .seconds(4))
+        await store.finish()
+
+        XCTAssertNil(store.state.composer.transientFeedback)
+        XCTAssertTrue(store.state.composer.isLoadingSearch)
+        XCTAssertTrue(store.state.composer.isLoadingFilters)
+        XCTAssertTrue(store.state.composer.isFilteringInFlight)
+        XCTAssertEqual(store.state.composer.activeSearchRequestID, searchID)
+        XCTAssertEqual(store.state.composer.activeFiltersRequestID, filtersID)
+        XCTAssertEqual(store.state.composer.lastAcceptedSearchRequestID, searchID)
+        XCTAssertEqual(store.state.composer.lastAcceptedFiltersRequestID, filtersID)
+        XCTAssertEqual(store.state.composer.pendingSearchQuery, "pending query")
+        XCTAssertEqual(store.state.composer.searchStartedAt, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(store.state.composer.filtersStartedAt, Date(timeIntervalSince1970: 1_700_000_001))
     }
 
     func testSwitchingTagTabNamedRecentsPreservesTagRouteKind() async {
@@ -1970,6 +2034,13 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             isRetryable: true,
         )
         await store.sendTabContent(.collection(.delegate(.saveFeedback(feedback))))
+        await store.receive { action in
+            guard case let .tabContent(
+                receivedTabID,
+                .composer(.internal(.presentTransientFeedback(receivedFeedback))),
+            ) = action else { return false }
+            return receivedTabID == tabID && receivedFeedback.category == .saveFailed
+        }
 
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
@@ -11443,6 +11514,7 @@ private extension CTM005IndependentContentTabSessionTests {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ContinuousClock()
             $0.collectionAlertClient = .init(
                 showUnsavedNavigationAlert: { alertChoice ?? .save },
                 showCollectionOpenErrorAlert: { _, _ in },
