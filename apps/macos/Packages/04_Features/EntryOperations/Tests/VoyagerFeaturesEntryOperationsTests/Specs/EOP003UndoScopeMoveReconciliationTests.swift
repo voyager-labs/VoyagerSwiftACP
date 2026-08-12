@@ -50,6 +50,84 @@ final class EOP003UndoScopeMoveReconciliationTests: XCTestCase {
         XCTAssertEqual(registry.generation(for: scope), generation)
     }
 
+    /// EOP-003-undo_entry_action: delayed compatibility binding은 canonical history 순서를 바꾸지 않는다.
+    /// A와 B가 먼저 canonical 등록된 뒤 A metadata가 늦게 도착해도 A를 native stack에 재등록하지 않는지 검증한다.
+    /// - 검증 내용: delayed binding 뒤 Undo target과 두 event 순서, native stack 최종 상태를 비교한다.
+    /// - 사전 조건: A canonical, B canonical 순으로 등록한 뒤 A, B compatibility metadata를 연결한다.
+    /// - 기대 결과: B 다음 A가 한 번씩 Undo되고 추가 A action은 남지 않는다.
+    func testDelayedCompatibilityBindingDoesNotDuplicateCanonicalRecord() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "active")
+        let manager = registry.activate(scope)
+        let generation = try XCTUnwrap(registry.generation(for: scope))
+        let firstRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        let secondRecord = EntryActionRecord(operationKind: .createFolder, targets: [])
+        let client = UndoManagerClient.live(registry: registry, resolveScope: { _ in scope })
+        var events = client.events(windowID).makeAsyncIterator()
+
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: firstRecord))
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: secondRecord))
+        await client.registerUndo(windowID, ownerID, firstRecord)
+        await client.registerUndo(windowID, ownerID, secondRecord)
+
+        let secondUndo = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: ownerID, recordID: secondRecord.id),
+        )
+        let secondEvent = await events.next()
+        let firstUndo = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: ownerID, recordID: firstRecord.id),
+        )
+        let firstEvent = await events.next()
+
+        XCTAssertTrue(secondUndo.didInvoke)
+        XCTAssertTrue(firstUndo.didInvoke)
+        XCTAssertEqual(secondEvent, .init(ownerID: ownerID, record: secondRecord, direction: .undo))
+        XCTAssertEqual(firstEvent, .init(ownerID: ownerID, record: firstRecord, direction: .undo))
+        XCTAssertFalse(firstUndo.availability.canUndo)
+        XCTAssertFalse(manager.canUndo)
+    }
+
+    /// EOP-003-undo_entry_action: compatibility owner 무효화는 같은 scope의 다른 owner history를 보존한다.
+    /// sidebar owner를 제거해도 content owner의 canonical/native Undo가 유지되는지 검증한다.
+    /// - 검증 내용: owner invalidation 결과, 남은 target identity, unaffected owner Undo event를 비교한다.
+    /// - 사전 조건: 같은 scope에 content owner A와 sidebar owner B record가 순서대로 등록된다.
+    /// - 기대 결과: B만 제거되고 A가 다음 Undo target으로 남아 정상 replay된다.
+    func testCompatibilityOwnerInvalidationPreservesOtherOwnerHistory() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let windowID = UUID()
+        let contentOwnerID = UUID()
+        let sidebarOwnerID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "active")
+        let manager = registry.activate(scope)
+        let generation = try XCTUnwrap(registry.generation(for: scope))
+        let contentRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        let sidebarRecord = EntryActionRecord(operationKind: .createFolder, targets: [])
+        let client = UndoManagerClient.live(registry: registry, resolveScope: { _ in scope })
+        var events = client.events(windowID).makeAsyncIterator()
+
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: contentRecord))
+        await client.registerUndo(windowID, contentOwnerID, contentRecord)
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: sidebarRecord))
+        await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
+
+        let invalidation = await client.invalidateOwner(windowID, sidebarOwnerID)
+        let contentIdentity = UndoManagerRecordIdentity(ownerID: contentOwnerID, recordID: contentRecord.id)
+        let undo = await client.undo(windowID, expectedTarget: contentIdentity)
+        let event = undo.didInvoke ? await events.next() : nil
+
+        XCTAssertTrue(invalidation.succeeded)
+        XCTAssertEqual(invalidation.availability.undoTarget, contentIdentity)
+        XCTAssertTrue(undo.didInvoke)
+        XCTAssertEqual(event, .init(ownerID: contentOwnerID, record: contentRecord, direction: .undo))
+        XCTAssertFalse(manager.canUndo)
+        XCTAssertTrue(manager.canRedo)
+        XCTAssertEqual(registry.generation(for: scope), generation)
+    }
+
     /// EOP-003-undo_entry_action: 역방향 scope 이동 실패 뒤 동일 generation의 moved history를 source로 복원한다.
     /// durable Content Tab 이동 실패가 target에 남은 native history를 원래 scope로 되돌리는지 검증한다.
     /// - 검증 내용: reconciliation outcome, manager identity, generation, source scope의 Undo 성공을 비교한다.
