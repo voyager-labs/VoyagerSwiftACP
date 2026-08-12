@@ -75,7 +75,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(postCommit.target.contentTabs.previousActiveTabID, scenario.targetID)
         XCTAssertEqual(postCommit.target.contentTabs.pinnedRecords[scenario.movedID], scenario.pinRecord)
         var expectedContent = scenario.movedContent
-        expectedContent.applyWindowContext(windowID: Fixture.targetWindowID)
+        expectedContent.entryViewLayout.entryOperations.windowID = Fixture.targetWindowID
         XCTAssertEqual(postCommit.target.tabContentStates[scenario.movedID], expectedContent)
         XCTAssertEqual(postCommit.target.content, expectedContent)
         XCTAssertTrue(scenario.movedContent.collection.isDirty)
@@ -108,7 +108,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         let scenario = CompleteTransferScenario()
         let postCommit = try scenario.postCommit()
         var expectedContent = scenario.movedContent
-        expectedContent.applyWindowContext(windowID: Fixture.targetWindowID)
+        expectedContent.entryViewLayout.entryOperations.windowID = Fixture.targetWindowID
 
         XCTAssertEqual(postCommit.target.backgroundAiChatStates[scenario.sessionID], expectedContent)
         XCTAssertEqual(postCommit.target.backgroundInspectorAiChatStates[scenario.sessionID], scenario.movedInspector)
@@ -121,7 +121,10 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             scenario.targetUnrelatedInspectorBackground,
         )
         XCTAssertEqual(postCommit.target.content.entryViewLayout.entryOperations.windowID, Fixture.targetWindowID)
-        XCTAssertEqual(postCommit.target.content.composer.cancellationOwnerID, Fixture.targetWindowID)
+        XCTAssertEqual(
+            postCommit.target.content.composer.cancellationOwnerID,
+            scenario.movedContent.composer.cancellationOwnerID,
+        )
         XCTAssertEqual(postCommit.source.contentTabs.recentlyClosed, scenario.source.contentTabs.recentlyClosed)
         XCTAssertEqual(postCommit.source.recentlyClosedNavigationRoute, scenario.source.recentlyClosedNavigationRoute)
         XCTAssertEqual(postCommit.target.contentTabs.recentlyClosed, scenario.target.contentTabs.recentlyClosed)

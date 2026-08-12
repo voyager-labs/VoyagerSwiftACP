@@ -1451,7 +1451,7 @@ private extension FileManagerContentFeature.State {
     }
 
     mutating func applyTransferWindowContext(windowID: UUID) {
-        applyWindowContext(windowID: windowID)
+        entryViewLayout.entryOperations.windowID = windowID
     }
 }
 
