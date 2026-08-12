@@ -87,8 +87,10 @@ enum FileManagerContentEntryOpsCoordinator {
         state: inout FileManagerContentState,
     ) -> Bool {
         guard let selectID = state.pendingSelectEntryID else { return false }
-        let normalizedSelectID = normalizedPath(selectID)
-        guard let matchedID = entries.first(where: { normalizedPath($0.id) == normalizedSelectID })?.id else {
+        let standardizedSelectID = standardizedPath(selectID)
+        let matchedID = entries.first(where: { standardizedPath($0.id) == standardizedSelectID })?.id
+            ?? entries.first(where: { resolvedPath($0.id) == resolvedPath(selectID) })?.id
+        guard let matchedID else {
             return false
         }
 
@@ -254,7 +256,11 @@ enum FileManagerContentEntryOpsCoordinator {
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
-    private static func normalizedPath(_ path: String) -> String {
+    private static func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private static func resolvedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 

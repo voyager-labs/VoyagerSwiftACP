@@ -115,6 +115,7 @@ public struct EntryFolderLoadRequest: Equatable, Sendable {
     public let path: String
     public let showHidden: Bool
     public let priority: EntryMetadataPriority
+    public let ancestorPaths: [String]
 
     public init(
         rootContextGeneration: Int,
@@ -123,12 +124,14 @@ public struct EntryFolderLoadRequest: Equatable, Sendable {
         path: String,
         showHidden: Bool,
         priority: EntryMetadataPriority,
+        ancestorPaths: [String] = [],
     ) {
         id = .init(rootContextGeneration: rootContextGeneration, folderID: folderID)
         self.folderGeneration = folderGeneration
         self.path = path
         self.showHidden = showHidden
         self.priority = priority
+        self.ancestorPaths = ancestorPaths
     }
 }
 

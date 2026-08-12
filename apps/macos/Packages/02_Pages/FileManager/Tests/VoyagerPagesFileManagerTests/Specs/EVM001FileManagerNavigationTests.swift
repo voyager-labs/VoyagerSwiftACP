@@ -133,6 +133,31 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    /// EVM-001-route_entry_selection_commands: directory symlink Open preserves lexical navigation identity.
+    /// The open delegate must route the requested alias string without resolving it to its destination path.
+    /// - 검증 내용: navigateToPath bridge payload가 lexical alias path와 동일하다.
+    /// - 사전 조건: directory symlink fixture와 alias folder entry가 준비돼 있다.
+    /// - 기대 결과: internal requestNavigation이 alias path를 그대로 전달한다.
+    func testDirectorySymlinkOpenRoutesLexicalPath() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain",
+        )
+        defer { sandbox.cleanup() }
+
+        let aliasPath = sandbox.symlinkedFileURL.deletingLastPathComponent().path
+        let store = TestStore(initialState: FileManagerContentState()) {
+            FileManagerContentEntryOperationsBridgeReducer()
+        }
+
+        await store.send(.entryOperations(.delegate(.navigateToPath(aliasPath))))
+        await store.receive { action in
+            guard case let .internal(.requestNavigation(.view(.navigateToPath(path)))) = action else {
+                return false
+            }
+            return path == aliasPath
+        }
+    }
+
     // MARK: - EVM-001-route_empty_trash_command
 
     /// EVM-001-route_empty_trash_command: Empty Trash는 hierarchy descendant 없이 root entry만 command context로 전달한다.

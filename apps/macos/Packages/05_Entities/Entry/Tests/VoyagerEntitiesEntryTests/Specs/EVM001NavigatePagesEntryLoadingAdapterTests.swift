@@ -656,15 +656,11 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
             return .init(kind: "Injected Package", creatorApplication: "Injected App", lastUsedDate: nil)
         }
 
+        client.resolvedDirectoryLoadItems = EntryLoadingLive.resolvedDirectoryLoadItems
         let events = try await withDependencies {
-            $0.entryLoadingClient = client
             $0.workspaceClient = .testValue
         } operation: {
-            try await collect(EntryLoadingClient.liveValue.loadItems(
-                directoryURL,
-                false,
-                .active([.spotlight]),
-            ))
+            try await collect(client.loadItems(directoryURL, false, .active([.spotlight])))
         }
 
         XCTAssertEqual(events.coreBatches.flatMap(\.items).map(\.id), [packageURL.path])
@@ -677,6 +673,62 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         )))
         XCTAssertEqual(fileExistenceCalls.value, 1)
         XCTAssertGreaterThanOrEqual(packageClassifierCalls.value, 1)
+        XCTAssertEqual(metadataCalls.value, 1)
+    }
+
+    /// EVM-001-progressive_entry_materialization: A configured client owns resolved-directory probes.
+    /// ambient dependency 값이 달라도 loadItems 호출 client의 enumeration과 metadata closure를 유지하는지 검증한다.
+    /// - 검증 내용: direct client load와 ambient default client의 source/probe 분리
+    /// - 사전 조건: custom client는 sentinel child를 반환하고 ambient client는 다른 결과를 반환한다.
+    /// - 기대 결과: custom client의 lexical child와 metadata만 전달된다.
+    func testResolvedDirectoryLoadingUsesConfiguredClientWithoutAmbientCoupling() async throws {
+        let directoryURL = URL(fileURLWithPath: "/fixture")
+        let childURL = directoryURL.appendingPathComponent("configured.txt")
+        let metadataCalls = LockedCounter()
+        var client = EntryLoadingClient.testValue
+        client.resolveDirectoryURL = { _ in directoryURL }
+        client.directoryURLBatches = { requestedURL, _, _ in
+            XCTAssertEqual(requestedURL, directoryURL)
+            return AsyncThrowingStream { continuation in
+                continuation.yield([childURL])
+                continuation.finish()
+            }
+        }
+        client.fileExistsAtPath = { path, isDirectory in
+            XCTAssertEqual(path, childURL.path)
+            isDirectory?.pointee = false
+            return true
+        }
+        client.getItemMetadata = { url, _, _ in
+            XCTAssertEqual(url, childURL)
+            metadataCalls.increment()
+            return .init(kind: "Configured File", creatorApplication: nil, lastUsedDate: nil)
+        }
+        client.resolvedDirectoryLoadItems = EntryLoadingLive.resolvedDirectoryLoadItems
+
+        let ambientChildURL = directoryURL.appendingPathComponent("ambient.txt")
+        var ambientClient = EntryLoadingClient.testValue
+        ambientClient.directoryURLBatches = { _, _, _ in
+            AsyncThrowingStream { continuation in
+                continuation.yield([ambientChildURL])
+                continuation.finish()
+            }
+        }
+
+        let events = try await withDependencies {
+            $0.entryLoadingClient = ambientClient
+            $0.workspaceClient = .testValue
+        } operation: {
+            try await collect(client.loadItems(directoryURL, false, .active([.spotlight])))
+        }
+        let childID = childURL.path
+        XCTAssertEqual(events.coreBatches.flatMap(\.items).map(\.id), [childID])
+        XCTAssertTrue(events.metadataPatches.contains(.spotlight(
+            id: childID,
+            kind: "Configured File",
+            creatorApplication: nil,
+            lastOpenedDate: nil,
+        )))
         XCTAssertEqual(metadataCalls.value, 1)
     }
 
@@ -715,12 +767,12 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
             enumerationCalls.increment()
             return []
         }
+        client.resolvedDirectoryLoadItems = EntryLoadingLive.resolvedDirectoryLoadItems
 
         let stream = withDependencies {
-            $0.entryLoadingClient = client
             $0.workspaceClient = .testValue
         } operation: {
-            EntryLoadingClient.liveValue.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+            client.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
         }
 
         XCTAssertEqual(enumerationCalls.value, 0)
@@ -753,12 +805,12 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
                 return batches[index]
             })
         }
+        client.resolvedDirectoryLoadItems = EntryLoadingLive.resolvedDirectoryLoadItems
 
         let stream = withDependencies {
-            $0.entryLoadingClient = client
             $0.workspaceClient = .testValue
         } operation: {
-            EntryLoadingClient.liveValue.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+            client.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
         }
         var iterator = stream.makeAsyncIterator()
         let firstEvent = try await iterator.next()
@@ -769,6 +821,353 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(items.count, 32)
         XCTAssertEqual(batchIndex, 0)
         XCTAssertEqual(batchRequests.value, 1)
+    }
+
+    // MARK: - EVM-001-directory_symlink_loading
+
+    /// EVM-001-directory_symlink_loading: relative and absolute directory aliases enumerate target children under
+    /// their lexical roots.
+    /// 실제 임시 파일시스템의 두 symlink 표기가 같은 target을 읽되 사용자에게 보이는 child ID를 보존하는지 검증한다.
+    /// - 검증 내용: directory root resolution, lexical child fullPath/ID, lexical metadata patch ID
+    /// - 사전 조건: 임시 target 디렉터리와 relative/absolute directory symlink를 사용한다.
+    /// - 기대 결과: 두 alias 모두 target child를 표시하고 core 및 metadata patch ID가 alias prefix를 사용한다.
+    func testDirectorySymlinkLoadingPreservesRelativeAndAbsoluteLexicalChildIDs() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        let client = fixture.liveClient()
+        for aliasURL in [fixture.relativeAliasURL, fixture.absoluteAliasURL] {
+            let events = try await collectDirectory(aliasURL, client: client, priority: .active([.spotlight]))
+            let childID = aliasURL.appendingPathComponent("child.txt").path
+
+            XCTAssertEqual(events.coreBatches.flatMap(\.items).map(\.id), [childID])
+            XCTAssertTrue(events.metadataPatches.contains(.spotlight(
+                id: childID,
+                kind: "Fixture File",
+                creatorApplication: nil,
+                lastOpenedDate: nil,
+            )))
+        }
+    }
+
+    /// EVM-001-directory_symlink_loading: non-batched enumeration remaps source children to lexical aliases.
+    /// 배치 열거를 사용할 수 없는 fallback에서도 source URL과 visible lexical URL이 분리되는지 검증한다.
+    /// - 검증 내용: contentsOfDirectory fallback과 lexical child materialization
+    /// - 사전 조건: injected fallback enumeration은 resolved target child URL 하나를 반환한다.
+    /// - 기대 결과: 반환된 target URL이 아니라 요청 alias 아래의 child ID가 core event에 기록된다.
+    func testDirectorySymlinkFallbackPreservesLexicalChildIDs() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        var client = fixture.liveClient()
+        client.directoryURLBatches = nil
+        client.contentsOfDirectory = { requestedURL, _, _ in
+            XCTAssertEqual(requestedURL, fixture.targetURL)
+            return [fixture.targetChildURL]
+        }
+
+        let events = try await collectDirectory(fixture.relativeAliasURL, client: client, priority: .none)
+        XCTAssertEqual(
+            events.coreBatches.flatMap(\.items).map(\.id),
+            [fixture.relativeAliasURL.appendingPathComponent("child.txt").path],
+        )
+    }
+
+    /// EVM-001-directory_symlink_loading: root resolution is demand-lazy and cached for one load.
+    /// stream 생성은 resolver/enumerator를 건드리지 않고 첫 demand에서 root snapshot을 한 번만 만든다.
+    /// - 검증 내용: resolver 호출 시점과 exact-once dispatch
+    /// - 사전 조건: resolver와 resolved-directory closure 호출 recorder를 주입한다.
+    /// - 기대 결과: 생성 시 호출 0회, 첫 demand 후 resolver/dispatch 각 1회다.
+    func testDirectoryRootResolutionIsDemandLazyAndCached() async throws {
+        let resolverCalls = LockedCounter()
+        let dispatchCalls = LockedCounter()
+        var client = EntryLoadingClient.testValue
+        client.resolveDirectoryURL = { url in
+            resolverCalls.increment()
+            return url
+        }
+        client.resolvedDirectoryLoadItems = { _, _, _, _ in
+            dispatchCalls.increment()
+            return EntryStagedMaterializerLive.materializeURLs(
+                [],
+                showHidden: false,
+                priority: .none,
+                entryLoadingClient: .testValue,
+                workspaceClient: .testValue,
+            )
+        }
+
+        let stream = client.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+        XCTAssertEqual(resolverCalls.value, 0)
+        XCTAssertEqual(dispatchCalls.value, 0)
+
+        var iterator = stream.makeAsyncIterator()
+        _ = try await iterator.next()
+        XCTAssertEqual(resolverCalls.value, 1)
+        XCTAssertEqual(dispatchCalls.value, 1)
+
+        _ = try await iterator.next()
+        XCTAssertEqual(resolverCalls.value, 1)
+        XCTAssertEqual(dispatchCalls.value, 1)
+    }
+
+    /// EVM-001-directory_symlink_loading: resolved ancestor equality fails before directory dispatch.
+    /// 성공적으로 해석된 root가 ancestor와 같으면 열거 closure를 호출하지 않는 preflight 경계를 검증한다.
+    /// - 검증 내용: root/ancestor resolver 호출 횟수와 resolved loader 미호출
+    /// - 사전 조건: root와 ancestor가 같은 resolved URL을 반환하는 client를 주입한다.
+    /// - 기대 결과: 첫 demand에서 cycle error가 발생하고 각 resolver는 한 번, dispatch는 0회다.
+    func testDirectoryRootResolutionRejectsResolvedAncestorBeforeDispatch() async throws {
+        let resolverCalls = LockedCounter()
+        let dispatchCalls = LockedCounter()
+        let resolvedURL = URL(fileURLWithPath: "/fixture/target")
+        var client = EntryLoadingClient.testValue
+        client.resolveDirectoryURL = { _ in
+            resolverCalls.increment()
+            return resolvedURL
+        }
+        client.resolvedDirectoryLoadItems = { _, _, _, _ in
+            dispatchCalls.increment()
+            return EntryStagedMaterializerLive.materializeURLs(
+                [],
+                showHidden: false,
+                priority: .none,
+                entryLoadingClient: .testValue,
+                workspaceClient: .testValue,
+            )
+        }
+
+        let stream = client.loadItems(
+            URL(fileURLWithPath: "/fixture/alias"),
+            false,
+            .none,
+            [URL(fileURLWithPath: "/fixture/ancestor")],
+        )
+        var iterator = stream.makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            XCTFail("Expected resolved ancestor cycle")
+        } catch is EntryDirectorySymlinkTraversalError {
+            XCTAssertEqual(resolverCalls.value, 2)
+            XCTAssertEqual(dispatchCalls.value, 0)
+        }
+    }
+
+    /// EVM-001-directory_symlink_loading: sibling aliases keep independent lexical child identity sets.
+    /// 같은 target을 가리키는 두 sibling alias가 materializer dedupe에서 서로 충돌하지 않는지 검증한다.
+    /// - 검증 내용: lexical-ID dedupe와 alias independence
+    /// - 사전 조건: alias-a와 alias-b가 하나의 target child를 각각 열거한다.
+    /// - 기대 결과: 두 load의 child IDs가 서로 다르고 각 alias prefix를 유지한다.
+    func testSiblingDirectoryAliasesKeepIndependentLexicalChildIDs() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        var client = fixture.liveClient()
+        client.directoryURLBatches = nil
+        client.contentsOfDirectory = { _, _, _ in [fixture.targetChildURL] }
+
+        let aliasAEvents = try await collectDirectory(fixture.aliasAURL, client: client, priority: .none)
+        let aliasBEvents = try await collectDirectory(fixture.aliasBURL, client: client, priority: .none)
+        let aliasAID = fixture.aliasAURL.appendingPathComponent("child.txt").path
+        let aliasBID = fixture.aliasBURL.appendingPathComponent("child.txt").path
+
+        XCTAssertEqual(aliasAEvents.coreBatches.flatMap(\.items).map(\.id), [aliasAID])
+        XCTAssertEqual(aliasBEvents.coreBatches.flatMap(\.items).map(\.id), [aliasBID])
+        XCTAssertNotEqual(aliasAID, aliasBID)
+    }
+
+    /// EVM-001-directory_symlink_loading: ordinary directories retain their existing lexical child IDs.
+    /// symlink 전용 경로 변경이 일반 디렉터리의 기존 materialization 결과를 바꾸지 않는지 검증한다.
+    /// - 검증 내용: ordinary directory enumeration and lexical identity parity
+    /// - 사전 조건: 실제 ordinary directory와 child.txt를 사용한다.
+    /// - 기대 결과: ordinary/child.txt가 기존 경로 그대로 core event에 기록된다.
+    func testOrdinaryDirectoryPreservesExistingLexicalChildIDs() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        let events = try await collectDirectory(fixture.ordinaryURL, client: fixture.liveClient(), priority: .none)
+        XCTAssertEqual(
+            events.coreBatches.flatMap(\.items).map(\.id),
+            [fixture.ordinaryURL.appendingPathComponent("child.txt").path],
+        )
+    }
+
+    /// EVM-001-directory_symlink_loading: broken directory aliases terminate with the existing source error.
+    /// broken symlink가 성공적인 빈 directory load로 바뀌지 않고 기존 throwing boundary를 유지하는지 검증한다.
+    /// - 검증 내용: broken-link stream error completion
+    /// - 사전 조건: 존재하지 않는 target을 가리키는 directory symlink를 사용한다.
+    /// - 기대 결과: load가 성공적인 coreFinished가 아니라 오류로 종료된다.
+    func testBrokenDirectorySymlinkTerminatesWithSourceError() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        do {
+            _ = try await collectDirectory(fixture.brokenAliasURL, client: fixture.liveClient(), priority: .none)
+            XCTFail("Expected broken directory symlink to terminate with an error")
+        } catch {
+            XCTAssertFalse(error is CancellationError)
+        }
+    }
+
+    /// EVM-001-directory_symlink_loading: self and A↔B loop roots terminate within a bounded load.
+    /// Foundation이 loop root를 resolve하지 못하는 경우에도 batch enumerator가 hang하지 않는지 검증한다.
+    /// - 검증 내용: self-loop/A↔B-loop bounded termination for the batched path
+    /// - 사전 조건: 실제 self-loop와 두 방향 loop symlink root를 사용한다.
+    /// - 기대 결과: 각 load가 제한 시간 내 오류 또는 종료를 반환하고 child row를 만들지 않는다.
+    func testDirectorySymlinkLoopsTerminateForBatchedEnumeration() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        for loopURL in [fixture.selfLoopURL, fixture.loopAURL, fixture.loopBURL] {
+            do {
+                let events = try await collectDirectoryWithTimeout(
+                    loopURL,
+                    client: fixture.liveClient(),
+                    priority: .none,
+                )
+                XCTAssertTrue(events.coreBatches.isEmpty)
+            } catch is DirectoryLoadTimeoutError {
+                XCTFail("Loop enumeration exceeded the bounded timeout: \(loopURL.path)")
+            } catch {
+                XCTAssertFalse(error is CancellationError)
+            }
+        }
+    }
+
+    /// EVM-001-directory_symlink_loading: self and A↔B loop roots terminate in the non-batched fallback.
+    /// fallback contentsOfDirectory 경계도 filesystem loop에서 bounded error completion을 유지하는지 검증한다.
+    /// - 검증 내용: self-loop/A↔B-loop bounded termination for contentsOfDirectory
+    /// - 사전 조건: directoryURLBatches를 끄고 실제 loop root를 contentsOfDirectory에 전달한다.
+    /// - 기대 결과: 각 fallback load가 제한 시간 내 오류 또는 빈 종료를 반환한다.
+    func testDirectorySymlinkLoopsTerminateForContentsFallback() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        var client = fixture.liveClient()
+        client.directoryURLBatches = nil
+        client.contentsOfDirectory = { url, keys, options in
+            try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: keys,
+                options: options,
+            )
+        }
+
+        for loopURL in [fixture.selfLoopURL, fixture.loopAURL, fixture.loopBURL] {
+            do {
+                let events = try await collectDirectoryWithTimeout(loopURL, client: client, priority: .none)
+                XCTAssertTrue(events.coreBatches.isEmpty)
+            } catch is DirectoryLoadTimeoutError {
+                XCTFail("Loop fallback exceeded the bounded timeout: \(loopURL.path)")
+            } catch {
+                XCTAssertFalse(error is CancellationError)
+            }
+        }
+    }
+
+    /// EVM-001-directory_symlink_loading: root resolution snapshots the source before a lexical alias retarget.
+    /// root resolution 뒤 alias를 다른 target으로 바꿔도 core와 deferred metadata가 같은 source snapshot을 쓰는지 검증한다.
+    /// - 검증 내용: captured source URL probe, lexical core ID, lexical metadata patch ID
+    /// - 사전 조건: target-a child를 source로 열거한 뒤 alias를 target-b로 retarget한다.
+    /// - 기대 결과: metadata probe는 target-a를 읽고 core/patch ID는 alias child ID로 유지된다.
+    func testDirectorySymlinkRetargetKeepsCapturedSourceAndLexicalIDs() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        let probePaths = LockedPaths()
+        let enumerationPaths = LockedPaths()
+        let resolverGate = ResolverInterleavingGate()
+        var client = fixture.liveClient()
+        client.resolveDirectoryURL = { lexicalURL in
+            let resolvedURL = lexicalURL.standardizedFileURL.resolvingSymlinksInPath()
+            resolverGate.markResolverReturned()
+            return resolvedURL
+        }
+        client.directoryURLBatches = { requestedURL, _, _ in
+            DirectorySymlinkBatchSource.stream {
+                enumerationPaths.append(requestedURL.path)
+                return try FileManager.default.contentsOfDirectory(
+                    at: requestedURL,
+                    includingPropertiesForKeys: [],
+                    options: [],
+                )
+            }
+        }
+        let resolvedDirectoryLoadItems = try XCTUnwrap(client.resolvedDirectoryLoadItems)
+        client.resolvedDirectoryLoadItems = { lexicalURL, resolvedURL, showHidden, priority in
+            resolverGate.waitForResolverReturn()
+            resolverGate.retarget(using: fixture)
+            return resolvedDirectoryLoadItems(lexicalURL, resolvedURL, showHidden, priority)
+        }
+        client.getItemMetadata = { url, _, _ in
+            probePaths.append(url.path)
+            return .init(
+                kind: url.standardizedFileURL.path == fixture.targetChildURL.standardizedFileURL
+                    .path ? "Target A" : "Target B",
+                creatorApplication: nil,
+                lastUsedDate: nil,
+            )
+        }
+
+        let stream = makeDirectoryStream(fixture.relativeAliasURL, client: client, priority: .active([.spotlight]))
+        var iterator = stream.makeAsyncIterator()
+        guard case let .coreBatch(items, _) = try await iterator.next() else {
+            return XCTFail("Expected captured source core batch")
+        }
+
+        guard case .coreFinished = try await iterator.next() else {
+            return XCTFail("Expected core completion before metadata")
+        }
+        guard case let .metadataPatches(patches) = try await iterator.next() else {
+            return XCTFail("Expected deferred metadata patch")
+        }
+
+        let lexicalID = fixture.relativeAliasURL.appendingPathComponent("child.txt").path
+        XCTAssertEqual(items.map(\.id), [lexicalID])
+        XCTAssertTrue(patches.contains(.spotlight(
+            id: lexicalID,
+            kind: "Target A",
+            creatorApplication: nil,
+            lastOpenedDate: nil,
+        )))
+        XCTAssertEqual(enumerationPaths.values.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }, [
+            fixture.targetURL.resolvingSymlinksInPath().path,
+        ])
+        XCTAssertEqual(probePaths.values.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }, [
+            fixture.targetChildURL.resolvingSymlinksInPath().path,
+        ])
+        XCTAssertNil(resolverGate.error)
+    }
+
+    /// EVM-001-directory_symlink_loading: dropping a mapped stream terminates its upstream producer once.
+    /// 부분 소비 후 mapped stream을 버리면 upstream batch producer가 중복 종료되지 않는지 검증한다.
+    /// - 검증 내용: upstream AsyncThrowingStream termination propagation and exact-once cleanup
+    /// - 사전 조건: 첫 batch를 내보낸 뒤 열린 상태로 남는 upstream stream을 사용한다.
+    /// - 기대 결과: mapped stream drop 뒤 upstream termination callback이 정확히 한 번 호출된다.
+    func testMappedDirectoryStreamDropTerminatesUpstreamExactlyOnce() async throws {
+        let fixture = try DirectorySymlinkFixture.make()
+        defer { fixture.remove() }
+
+        let termination = expectation(description: "Upstream directory stream terminated")
+        let terminationCount = LockedCounter()
+        var client = fixture.liveClient()
+        client.directoryURLBatches = { _, _, _ in
+            AsyncThrowingStream { continuation in
+                continuation.yield([fixture.targetChildURL])
+                continuation.onTermination = { _ in
+                    terminationCount.increment()
+                    termination.fulfill()
+                }
+            }
+        }
+
+        do {
+            let stream = makeDirectoryStream(fixture.targetURL, client: client, priority: .none)
+            var iterator = stream.makeAsyncIterator()
+            _ = try await iterator.next()
+        }
+
+        await fulfillment(of: [termination], timeout: 1)
+        XCTAssertEqual(terminationCount.value, 1)
     }
 
     // MARK: - EVM-001-entry_loading_performance
@@ -1003,7 +1402,7 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
                 userInfo: FileChangeGatewayPayload.userInfo(forEvents: [event]),
             )
             for await events in eventsStream {
-                if events == [event] {
+                if events.events == [event] {
                     receivedCount.withValue { $0 += 1 }
                 }
             }
@@ -1052,6 +1451,53 @@ private extension EVM001NavigatePagesEntryLoadingAdapterTests {
         return events
     }
 
+    func collectDirectory(
+        _ directoryURL: URL,
+        client: EntryLoadingClient,
+        priority: EntryMetadataPriority,
+    ) async throws -> [EntryLoadEvent] {
+        try await withDependencies {
+            $0.workspaceClient = .testValue
+        } operation: {
+            try await collect(client.loadItems(directoryURL, false, priority))
+        }
+    }
+
+    func makeDirectoryStream(
+        _ directoryURL: URL,
+        client: EntryLoadingClient,
+        priority: EntryMetadataPriority,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        withDependencies {
+            $0.workspaceClient = .testValue
+        } operation: {
+            client.loadItems(directoryURL, false, priority)
+        }
+    }
+
+    func collectDirectoryWithTimeout(
+        _ directoryURL: URL,
+        client: EntryLoadingClient,
+        priority: EntryMetadataPriority,
+    ) async throws -> [EntryLoadEvent] {
+        let stream = makeDirectoryStream(directoryURL, client: client, priority: priority)
+        return try await withThrowingTaskGroup(of: [EntryLoadEvent].self) { group in
+            group.addTask {
+                var events: [EntryLoadEvent] = []
+                for try await event in stream {
+                    events.append(event)
+                }
+                return events
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(1))
+                throw DirectoryLoadTimeoutError()
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
+    }
+
     func visibleEntryClient() -> EntryLoadingClient {
         var client = EntryLoadingClient.testValue
         client.fileExistsAtPath = { path, isDirectory in
@@ -1088,6 +1534,142 @@ private extension EVM001NavigatePagesEntryLoadingAdapterTests {
         )
     }
 }
+
+private struct DirectorySymlinkFixture {
+    let rootURL: URL
+    let targetURL: URL
+    let targetBURL: URL
+    let targetChildURL: URL
+    let ordinaryURL: URL
+    let relativeAliasURL: URL
+    let absoluteAliasURL: URL
+    let aliasAURL: URL
+    let aliasBURL: URL
+    let brokenAliasURL: URL
+    let selfLoopURL: URL
+    let loopAURL: URL
+    let loopBURL: URL
+
+    static func make() throws -> DirectorySymlinkFixture {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voy-717-entry-\(UUID().uuidString)", isDirectory: true)
+        let targetURL = rootURL.appendingPathComponent("target", isDirectory: true)
+        let targetBURL = rootURL.appendingPathComponent("target-b", isDirectory: true)
+        let ordinaryURL = rootURL.appendingPathComponent("ordinary", isDirectory: true)
+        try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: targetBURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: ordinaryURL, withIntermediateDirectories: true)
+
+        let targetChildURL = targetURL.appendingPathComponent("child.txt")
+        try Data("target-a".utf8).write(to: targetChildURL)
+        try Data("target-b".utf8).write(to: targetBURL.appendingPathComponent("child.txt"))
+        try Data("ordinary".utf8).write(to: ordinaryURL.appendingPathComponent("child.txt"))
+
+        let relativeAliasURL = rootURL.appendingPathComponent("alias-relative", isDirectory: true)
+        let absoluteAliasURL = rootURL.appendingPathComponent("alias-absolute", isDirectory: true)
+        let aliasAURL = rootURL.appendingPathComponent("alias-a", isDirectory: true)
+        let aliasBURL = rootURL.appendingPathComponent("alias-b", isDirectory: true)
+        try FileManager.default.createSymbolicLink(atPath: relativeAliasURL.path, withDestinationPath: "target")
+        try FileManager.default.createSymbolicLink(at: absoluteAliasURL, withDestinationURL: targetURL)
+        try FileManager.default.createSymbolicLink(atPath: aliasAURL.path, withDestinationPath: "target")
+        try FileManager.default.createSymbolicLink(atPath: aliasBURL.path, withDestinationPath: "target")
+
+        let brokenAliasURL = rootURL.appendingPathComponent("broken", isDirectory: true)
+        try FileManager.default.createSymbolicLink(atPath: brokenAliasURL.path, withDestinationPath: "missing-target")
+        let selfLoopURL = rootURL.appendingPathComponent("self-loop", isDirectory: true)
+        try FileManager.default.createSymbolicLink(atPath: selfLoopURL.path, withDestinationPath: "self-loop")
+        let loopAURL = rootURL.appendingPathComponent("loop-a", isDirectory: true)
+        let loopBURL = rootURL.appendingPathComponent("loop-b", isDirectory: true)
+        try FileManager.default.createSymbolicLink(atPath: loopAURL.path, withDestinationPath: "loop-b")
+        try FileManager.default.createSymbolicLink(atPath: loopBURL.path, withDestinationPath: "loop-a")
+
+        return DirectorySymlinkFixture(
+            rootURL: rootURL,
+            targetURL: targetURL,
+            targetBURL: targetBURL,
+            targetChildURL: targetChildURL,
+            ordinaryURL: ordinaryURL,
+            relativeAliasURL: relativeAliasURL,
+            absoluteAliasURL: absoluteAliasURL,
+            aliasAURL: aliasAURL,
+            aliasBURL: aliasBURL,
+            brokenAliasURL: brokenAliasURL,
+            selfLoopURL: selfLoopURL,
+            loopAURL: loopAURL,
+            loopBURL: loopBURL,
+        )
+    }
+
+    func liveClient() -> EntryLoadingClient {
+        var client = EntryLoadingClient.liveValue
+        client.getItemMetadata = { url, _, _ in
+            EntryItemMetadata(
+                kind: url.standardizedFileURL.path == targetChildURL.standardizedFileURL
+                    .path ? "Fixture File" : "Other File",
+                creatorApplication: nil,
+                lastUsedDate: nil,
+            )
+        }
+        client.directoryURLBatches = { requestedURL, _, _ in
+            DirectorySymlinkBatchSource.stream {
+                try FileManager.default.contentsOfDirectory(
+                    at: requestedURL,
+                    includingPropertiesForKeys: [],
+                    options: [],
+                )
+            }
+        }
+        return client
+    }
+
+    func retargetRelativeAliasToTargetB() throws {
+        try FileManager.default.removeItem(at: relativeAliasURL)
+        try FileManager.default.createSymbolicLink(atPath: relativeAliasURL.path, withDestinationPath: "target-b")
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: rootURL)
+    }
+}
+
+private final class DirectorySymlinkBatchSource: @unchecked Sendable {
+    private let load: () throws -> [URL]
+    private let lock = NSLock()
+    private var didLoad = false
+
+    init(load: @escaping () throws -> [URL]) {
+        self.load = load
+    }
+
+    static func stream(load: @escaping () throws -> [URL]) -> AsyncThrowingStream<[URL], Error> {
+        let source = DirectorySymlinkBatchSource(load: load)
+        return AsyncThrowingStream(unfolding: { try source.next() })
+    }
+
+    private func next() throws -> [URL]? {
+        try lock.withLock {
+            guard !didLoad else { return nil }
+            didLoad = true
+            let urls = try load()
+            return urls.isEmpty ? nil : urls
+        }
+    }
+}
+
+private final class LockedPaths: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    var values: [String] {
+        lock.withLock { storage }
+    }
+
+    func append(_ path: String) {
+        lock.withLock { storage.append(path) }
+    }
+}
+
+private struct DirectoryLoadTimeoutError: Error {}
 
 private extension [EntryLoadEvent] {
     var coreBatches: [(items: [EntryModel], batchIndex: Int)] {
@@ -1192,5 +1774,42 @@ private final class ProbeGate: @unchecked Sendable {
         isOpen = true
         condition.broadcast()
         condition.unlock()
+    }
+}
+
+private final class ResolverInterleavingGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var didResolve = false
+    private var storedError: Error?
+
+    func markResolverReturned() {
+        condition.lock()
+        didResolve = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func waitForResolverReturn() {
+        condition.lock()
+        while !didResolve {
+            condition.wait()
+        }
+        condition.unlock()
+    }
+
+    func retarget(using fixture: DirectorySymlinkFixture) {
+        do {
+            try fixture.retargetRelativeAliasToTargetB()
+        } catch {
+            condition.lock()
+            storedError = error
+            condition.unlock()
+        }
+    }
+
+    var error: Error? {
+        condition.lock()
+        defer { condition.unlock() }
+        return storedError
     }
 }

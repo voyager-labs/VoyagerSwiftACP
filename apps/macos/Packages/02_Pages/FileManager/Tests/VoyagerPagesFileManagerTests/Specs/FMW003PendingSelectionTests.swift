@@ -119,6 +119,50 @@ final class FMW003PendingSelectionTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-003-handle_external_file_open_requests: exact lexical alias selection wins over earlier resolved equivalent.
+    /// Two lexical aliases may resolve to one file; the requested alias must remain the selected identity.
+    /// - 검증 내용: standardized lexical ID match가 resolvingSymlinks fallback보다 우선한다.
+    /// - 사전 조건: alias-A가 alias-B와 같은 파일을 가리키고 pendingSelectEntryID는 alias-B다.
+    /// - 기대 결과: entries 순서와 무관하게 alias-B entry ID가 선택된다.
+    func test_handleItemsLoaded_exactLexicalAliasBeatsEarlierResolvedAlias() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/98.txt",
+        )
+        defer { sandbox.cleanup() }
+
+        let aliasA = sandbox.symlinkedFileURL.path
+        let aliasB = sandbox.symlinkedFileURL.deletingLastPathComponent()
+            .appendingPathComponent("alias-b")
+            .appendingPathComponent(sandbox.fileURL.lastPathComponent)
+        try FileManager.default.createDirectory(
+            at: aliasB.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try FileManager.default.createSymbolicLink(
+            at: aliasB,
+            withDestinationURL: sandbox.fileURL,
+        )
+
+        let entries = [Self.makeEntry(fullPath: aliasA), Self.makeEntry(fullPath: aliasB.path)]
+        let store = TestStore(initialState: makeBridgeState(pendingSelectEntryID: aliasB.path)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.loading(.itemsLoaded(entries)))) {
+            $0.content.pendingSelectEntryID = nil
+            $0.content.entryViewLayout.selectedIds = [aliasB.path]
+            $0.content.entryViewLayout.lastSelectedId = aliasB.path
+            $0.content.entryViewLayout.rangeAnchorId = aliasB.path
+            $0.content.entryViewLayout.shouldScrollToSelection = true
+        }
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
     /// FMW-003: pendingSelectEntryID가 로드된 entries와 매칭되지 않는 경우 pending을 유지한다.
     /// - 사전 조건: pendingSelectEntryID == "/test/other.txt", entries는 "/test/doc.txt"만 보유
     /// - 기대 결과: selection 발행 없음 + 다음 itemsLoaded 재시도를 위해 pendingSelectEntryID 유지

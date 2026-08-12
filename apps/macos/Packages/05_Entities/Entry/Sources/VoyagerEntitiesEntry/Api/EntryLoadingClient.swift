@@ -42,6 +42,12 @@ public struct EntryLoadingClient: Sendable {
         EntryLoadEvent,
         Error,
     >)?
+    var resolveDirectoryURL: @Sendable (URL) -> URL
+    var resolvedDirectoryLoadItems: (@Sendable (URL, URL, Bool, EntryMetadataPriority)
+        -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >)?
     public var stagedLoadRecentItems: (@Sendable (Bool, EntryMetadataPriority) -> AsyncThrowingStream<
         EntryLoadEvent,
         Error,
@@ -82,6 +88,14 @@ public struct EntryLoadingClient: Sendable {
             EntryLoadEvent,
             Error,
         >)? = nil,
+        resolveDirectoryURL: @escaping @Sendable (URL) -> URL = {
+            $0.standardizedFileURL.resolvingSymlinksInPath()
+        },
+        resolvedDirectoryLoadItems: (@Sendable (URL, URL, Bool, EntryMetadataPriority)
+            -> AsyncThrowingStream<
+                EntryLoadEvent,
+                Error,
+            >)? = nil,
         stagedLoadRecentItems: (@Sendable (Bool, EntryMetadataPriority) -> AsyncThrowingStream<
             EntryLoadEvent,
             Error,
@@ -109,6 +123,8 @@ public struct EntryLoadingClient: Sendable {
         self.isPackageDirectory = isPackageDirectory
         self.displayName = displayName
         self.stagedLoadItems = stagedLoadItems
+        self.resolveDirectoryURL = resolveDirectoryURL
+        self.resolvedDirectoryLoadItems = resolvedDirectoryLoadItems
         self.stagedLoadRecentItems = stagedLoadRecentItems
         self.stagedLoadFilesWithTag = stagedLoadFilesWithTag
     }
@@ -138,7 +154,8 @@ extension EntryLoadingClient: DependencyKey {
             getFolderItemCount: EntryLoadingLive.getFolderItemCount,
             isPackageDirectory: EntryLoadingLive.isPackageDirectory,
             displayName: EntryLoadingLive.displayName,
-            stagedLoadItems: EntryLoadingLive.stagedLoadItems,
+            resolveDirectoryURL: EntryLoadingLive.resolveDirectoryURL,
+            resolvedDirectoryLoadItems: EntryLoadingLive.resolvedDirectoryLoadItems,
         )
     }
 
@@ -198,14 +215,30 @@ public extension EntryLoadingClient {
         _ directoryURL: URL,
         _ showHidden: Bool,
         _ priority: EntryMetadataPriority,
+        _ ancestorURLs: [URL] = [],
     ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
-        if let stagedLoadItems {
-            return stagedLoadItems(directoryURL, showHidden, priority)
-        }
         let client = self
-        return payloadStream(showHidden: showHidden, sourceKind: .directory) {
-            try await client.loadItems(directoryURL, showHidden)
+        let sequence = DeferredEntryLoadSequence {
+            let resolvedURL = try EntryDirectorySymlinkTraversal.resolveRoot(
+                directoryURL,
+                ancestors: ancestorURLs,
+                resolver: client.resolveDirectoryURL,
+            )
+            if let stagedLoadItems = client.stagedLoadItems {
+                return stagedLoadItems(directoryURL, showHidden, priority)
+            }
+            if let resolvedDirectoryLoadItems = client.resolvedDirectoryLoadItems {
+                return withDependencies {
+                    $0.entryLoadingClient = client
+                } operation: {
+                    resolvedDirectoryLoadItems(directoryURL, resolvedURL, showHidden, priority)
+                }
+            }
+            return client.payloadStream(showHidden: showHidden, sourceKind: .directory) {
+                try await client.loadItems(directoryURL, showHidden)
+            }
         }
+        return AsyncThrowingStream(unfolding: { try await sequence.next() })
     }
 
     func materializePaths(
@@ -294,11 +327,22 @@ public extension EntryLoadingClient {
 }
 
 enum EntryLoadingLive {
-    nonisolated static var stagedLoadItems: @Sendable (URL, Bool, EntryMetadataPriority) -> AsyncThrowingStream<
-        EntryLoadEvent,
-        Error,
-    > {
-        { directoryURL, showHidden, priority in
+    nonisolated static var resolveDirectoryURL: @Sendable (URL) -> URL {
+        EntryDirectorySymlinkTraversal.resolve
+    }
+
+    nonisolated static var resolvedDirectoryLoadItems: @Sendable (
+        URL,
+        URL,
+        Bool,
+        EntryMetadataPriority,
+    )
+        -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >
+    {
+        { lexicalURL, resolvedURL, showHidden, priority in
             @Dependency(\.workspaceClient)
             var workspaceClient
             @Dependency(\.finderFavoritesTagClient)
@@ -316,15 +360,16 @@ enum EntryLoadingLive {
             )
             if let directoryURLBatches = entryLoadingClient.directoryURLBatches {
                 return EntryStagedMaterializerLive.materializeURLBatches(
-                    directoryURLBatches(directoryURL, options, EntryStagedMaterializerLive.batchSize),
+                    directoryURLBatches(resolvedURL, options, EntryStagedMaterializerLive.batchSize),
+                    lexicalRoot: lexicalURL,
                     showHidden: showHidden,
                     configuration: configuration,
                 )
             }
             let sequence = DeferredEntryLoadSequence {
-                let urls = try entryLoadingClient.contentsOfDirectory(directoryURL, [], options)
-                return EntryStagedMaterializerLive.materializeURLs(
-                    urls,
+                let urls = try entryLoadingClient.contentsOfDirectory(resolvedURL, [], options)
+                return EntryStagedMaterializerLive.materializeCandidates(
+                    EntryDirectorySymlinkTraversal.candidates(urls, lexicalRoot: lexicalURL),
                     showHidden: showHidden,
                     configuration: configuration,
                 )

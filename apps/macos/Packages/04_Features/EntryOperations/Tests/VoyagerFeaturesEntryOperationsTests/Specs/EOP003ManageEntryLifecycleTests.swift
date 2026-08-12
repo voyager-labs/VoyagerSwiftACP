@@ -818,6 +818,148 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
     // MARK: - EOP-003-load_folder_items
 
+    /// EOP-003-load_folder_items: canonical ancestor 재방문은 enumeration 없이 unavailable failure로 종료된다.
+    /// - 검증 내용: ancestor URL과 request path의 canonical target match가 한 번의 terminal failure로 매핑된다.
+    /// - 사전 조건: resolver가 request와 ancestor를 같은 canonical directory로 해석하고 staged loader가 설치되어 있다.
+    /// - 기대 결과: `.unavailable(description:)` delegate가 한 번 전달되고 staged loader는 호출되지 않는다.
+    func testFolderLoadAncestorCycleEmitsOneUnavailableFailureWithoutEnumeration() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("eop003-ancestor-cycle-\(UUID().uuidString)")
+        let child = root.appendingPathComponent("child")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: alias.appendingPathComponent("child").path,
+            folderGeneration: 2,
+            path: alias.appendingPathComponent("child").path,
+            showHidden: false,
+            priority: .active([]),
+            ancestorPaths: [child.path],
+        )
+        let enumerationCount = LockIsolated(0)
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                enumerationCount.withValue { $0 += 1 }
+                return AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamFailed(receivedRequest, failure)) = action else { return false }
+            guard receivedRequest == request else { return false }
+            if case let .unavailable(description) = failure {
+                return !description.isEmpty
+            }
+            return false
+        } assert: {
+            $0.folderLoadingContexts[request.id]?.terminal = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadFailed(receivedRequest, failure)) = action else { return false }
+            guard receivedRequest == request else { return false }
+            if case let .unavailable(description) = failure {
+                return !description.isEmpty
+            }
+            return false
+        }
+        await store.finish()
+
+        XCTAssertEqual(enumerationCount.value, 0)
+    }
+
+    /// EOP-003-load_folder_items: canonical ancestor가 아니면 lexical sibling alias도 정상 load된다.
+    /// - 검증 내용: non-cycle request가 staged stream을 완료하고 request path의 lexical URL을 유지한다.
+    /// - 사전 조건: ancestor와 sibling alias가 서로 다른 canonical target이며 loader가 core completion을 방출한다.
+    /// - 기대 결과: sibling alias는 failure 없이 folder load delegate를 완료한다.
+    func testFolderLoadNonCycleSiblingAliasCompletesWithoutAncestorFailure() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("eop003-sibling-alias-\(UUID().uuidString)")
+        let ancestor = root.appendingPathComponent("ancestor")
+        let sibling = root.appendingPathComponent("sibling")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: ancestor, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: sibling)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: alias.path,
+            folderGeneration: 2,
+            path: alias.path,
+            showHidden: false,
+            priority: .active([]),
+            ancestorPaths: [ancestor.path],
+        )
+        let loadedURLs = LockIsolated<[URL]>([])
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: alias.appendingPathComponent("file.txt").path,
+            name: "file.txt",
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { url, _, _ in
+                loadedURLs.withValue { $0.append(url) }
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.coreBatch(items: [entry], batchIndex: 0))
+                    continuation.yield(.coreFinished(batchCount: 1))
+                    continuation.finish()
+                }
+            }
+        }
+        // store.exhaustivity = .off: streamed action 순서와 lexical URL만 검증하고 incidental context counter는 검증하지 않는다.
+        store.exhaustivity = .off
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamEvent(receivedRequest, .coreBatch(items, batchIndex))) = action else {
+                return false
+            }
+            return receivedRequest == request && items == [entry] && batchIndex == 0
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadEvent(receivedRequest, .coreBatch(items, batchIndex))) = action else {
+                return false
+            }
+            return receivedRequest == request && items == [entry] && batchIndex == 0
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamEvent(receivedRequest, .coreFinished(batchCount))) = action else {
+                return false
+            }
+            return receivedRequest == request && batchCount == 1
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadEvent(receivedRequest, .coreFinished(batchCount))) = action else {
+                return false
+            }
+            return receivedRequest == request && batchCount == 1
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamFinished(receivedRequest)) = action else { return false }
+            return receivedRequest == request
+        } assert: {
+            $0.folderLoadingContexts[request.id]?.terminal = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadFinished(receivedRequest)) = action else { return false }
+            return receivedRequest == request
+        }
+        await store.finish()
+
+        XCTAssertEqual(loadedURLs.value, [URL(fileURLWithPath: request.path)])
+    }
+
     /// EOP-003-load_folder_items: folder stream은 Feature가 request identity와 staged 순서를 검증한 뒤 delegate로 전달한다.
     /// 중첩 directory 로드가 Widget의 client effect가 아니라 EntryOperations의 취소 가능한 수명주기에서 처리되는지 검증한다.
     /// - 검증 내용: request별 context가 core order를 기록하고 stale request 및 core 이전 metadata를 거부한다.
