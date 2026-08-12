@@ -280,8 +280,6 @@ export type ChatSurfaceState =
       readonly statusText?: string
     }
 
-export type FileManagerIllustrationProps = {
-  readonly files: readonly FileEntry[]
 export type FileManagerInitialPresentation = {
   readonly selectedEntryIds: readonly string[]
   readonly viewMode: "grid" | "list"
@@ -289,10 +287,12 @@ export type FileManagerInitialPresentation = {
   readonly inspectorOpen: boolean
 }
 
+export type FileManagerIllustrationProps = {
+  readonly files: readonly FileEntry[]
   readonly contentContext: ContentContext
+  readonly initialPresentation?: FileManagerInitialPresentation
   // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/unconnected/streaming/error/recovery)을 root에서 재현한다.
   readonly chatSurface?: ChatSurfaceState
-  readonly initialPresentation?: FileManagerInitialPresentation
   readonly chatInputActions?: AiChatInputBarActions
   readonly chatOnErrorRecovery?: () => void
   readonly chatOnRebindContext?: () => void

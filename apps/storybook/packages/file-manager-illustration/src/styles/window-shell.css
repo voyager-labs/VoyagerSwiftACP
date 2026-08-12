@@ -112,7 +112,9 @@
   margin: 0 auto;
 }
 
-[data-file-manager-illustration].content-browser-narrow-review [data-file-manager-illustration] .stage {
+[data-file-manager-illustration].content-browser-narrow-review
+  [data-file-manager-illustration]
+  .stage {
   padding: 0;
 }
 
