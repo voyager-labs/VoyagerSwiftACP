@@ -97,6 +97,8 @@ export type Entry = {
   readonly id: string
   readonly name: string
   readonly kind: EntryKind
+  readonly dateModified?: string
+  readonly size?: string
   readonly meta?: string
   readonly count?: string
   readonly thumbnailSrc?: string
