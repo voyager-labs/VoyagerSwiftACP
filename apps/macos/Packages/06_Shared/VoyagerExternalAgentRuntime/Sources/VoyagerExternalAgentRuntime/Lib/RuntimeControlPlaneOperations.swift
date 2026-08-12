@@ -105,6 +105,7 @@ public extension RuntimeControlPlane {
         switch compatibility {
         case .compatible:
             return try await mutateAfterPersistedTransitions { plane in
+                try Task.checkCancellation()
                 guard plane.sessionUnchanged(original, at: hostReference),
                       var current = plane.sessions[hostReference]
                 else { return .stale }

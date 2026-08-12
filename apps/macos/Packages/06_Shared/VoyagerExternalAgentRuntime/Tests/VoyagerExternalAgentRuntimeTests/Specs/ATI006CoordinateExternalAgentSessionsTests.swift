@@ -1390,6 +1390,50 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await fixture.adapter.counts().stream == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: cancelled restore waiter cannot mint a claim.
+    /// persistence lock을 기다리다 취소된 restore가 소유자 없는 restored lease를 발급하지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, inactive lease 보존, 같은 control plane의 restore 재시도.
+    /// - 사전 조건: compatible running snapshot과 다른 host의 지연된 persistence mutation이 있다.
+    /// - 기대 결과: 취소된 waiter는 claim을 만들지 않고 후속 restore가 restored 결과를 반환한다.
+    @Test
+    func `cancelled restore persistence waiter cannot mint a claim`() async throws {
+        let host = ExternalAgentSessionReference("host-restore-waiter-cancelled")
+        let run = RuntimeRunReference("run-restore-waiter-cancelled")
+        let context = finalReviewTestsMakeContext()
+        let saveGate = RuntimeTestGate()
+        let stored = reviewerBlockerTestsMakeRunningSession(host: host, run: run, context: context)
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            saveGates: [1: saveGate],
+        )
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let competingSave = Task {
+            try await plane.projectPrelaunch(
+                makeLaunch(
+                    host: "host-restore-waiter-competing-save",
+                    run: RuntimeRunReference("run-restore-waiter-competing-save"),
+                    adapterID: "sdk",
+                ),
+                as: .policyReady,
+            )
+        }
+        await store.waitForSaveCount(1)
+        let restore = Task {
+            try await plane.restore(hostReference: host, expectedContext: context)
+        }
+        try await reviewerBlockerTestsWaitForPersistenceWaiters(1, on: plane)
+
+        restore.cancel()
+        await saveGate.open()
+
+        _ = try await competingSave.value
+        await #expect(throws: CancellationError.self) { try await restore.value }
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: only compatible restart binding is restored.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
