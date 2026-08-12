@@ -1434,6 +1434,49 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: cancelled resume waiter cannot mint a claim.
+    /// persistence lock을 기다리다 취소된 resume이 소유자 없는 resuming lease나 provider stream을 만들지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, restored lease 보존, stream 미호출, 같은 control plane의 resume 재시도.
+    /// - 사전 조건: restored claim과 다른 host의 지연된 persistence mutation, 소비 stream gate가 있다.
+    /// - 기대 결과: 취소된 waiter는 claim을 전환하지 않고 후속 resume만 provider stream을 한 번 연다.
+    @Test
+    func `cancelled resume persistence waiter cannot mint a claim`() async throws {
+        let fixture = try await reviewerBlockerTestsMakeResumeClaimRace()
+        let restoredLease = await fixture.plane.sessions[fixture.host]?.lease
+        let competingSave = Task {
+            try await fixture.plane.projectPrelaunch(
+                makeLaunch(
+                    host: "host-resume-waiter-competing-save",
+                    run: RuntimeRunReference("run-resume-waiter-competing-save"),
+                    adapterID: "sdk",
+                ),
+                as: .policyReady,
+            )
+        }
+        await fixture.store.waitForSaveCount(1)
+        let resume = Task {
+            try await fixture.plane.resumeRestoredRun(hostReference: fixture.host)
+        }
+        try await reviewerBlockerTestsWaitForPersistenceWaiters(1, on: fixture.plane)
+
+        resume.cancel()
+        await fixture.saveGate.open()
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) { try await competingSave.value }
+        await #expect(throws: CancellationError.self) { try await resume.value }
+        #expect(await fixture.adapter.counts().stream == 0)
+        #expect(await fixture.plane.sessions[fixture.host]?.lease == restoredLease)
+
+        let retry = Task {
+            try await fixture.plane.resumeRestoredRun(hostReference: fixture.host)
+        }
+        await fixture.adapter.waitForEventStreamCount(1)
+        await fixture.streamGate.open()
+
+        #expect(try await retry.value.outcome == .completed)
+        #expect(await fixture.adapter.counts().stream == 1)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: only compatible restart binding is restored.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

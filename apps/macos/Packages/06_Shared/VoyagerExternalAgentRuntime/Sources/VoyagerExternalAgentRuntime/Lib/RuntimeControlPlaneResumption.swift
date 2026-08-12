@@ -43,6 +43,7 @@ public extension RuntimeControlPlane {
         _ hostReference: ExternalAgentSessionReference,
     ) async throws -> RestoredRunClaim {
         try await mutateAfterPersistedTransitions { plane in
+            try Task.checkCancellation()
             guard var session = plane.sessions[hostReference],
                   case let .restored(lease) = session.lease,
                   let providerReference = session.stored.providerInternalSessionReference,
