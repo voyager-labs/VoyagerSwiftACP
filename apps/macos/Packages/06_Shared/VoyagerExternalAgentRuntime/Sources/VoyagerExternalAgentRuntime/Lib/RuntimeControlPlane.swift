@@ -181,6 +181,7 @@ public actor RuntimeControlPlane {
         do {
             result = try await consume(receipt, from: reservation.adapter, host: reservation.host)
         } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
+            try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
             throw RuntimeHostError.persistenceFailure
         } catch is CancellationError {
             _ = try? await releaseTerminalLeaseIfNeeded(host: reservation.host, lease: lease)

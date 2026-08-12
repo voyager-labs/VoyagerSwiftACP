@@ -2588,6 +2588,57 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await store.saveCount == 5)
     }
 
+    /// ATI-006-project_external_agent_run_events: failed terminal event persistence releases its active claim.
+    /// provider terminal event 저장이 두 번 실패해도 같은 control plane에서 persisted run을 복원하는지 검증한다.
+    /// - 검증 내용: persistenceFailure 전파, running projection 보존, restore와 resume 결과.
+    /// - 사전 조건: resumable SDK adapter와 terminal event save #4, #5를 실패시키는 state store가 있다.
+    /// - 기대 결과: consuming lease가 복구되어 restore가 성공하고 resume이 동일 completed 결과를 저장한다.
+    @Test
+    func `failed terminal event persistence releases its active claim`() async throws {
+        let host: ExternalAgentSessionReference = "host-terminal-event-double-persistence"
+        let run = RuntimeRunReference("run-terminal-event-double-persistence")
+        let context = finalReviewTestsMakeContext()
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://terminal-event-double-persistence.json"],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "terminal-event-double-persistence",
+                kind: .completed,
+            )]],
+            terminalResultOverride: expected,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [4, 5])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: host,
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            contextPolicy: context,
+            input: RuntimeSensitiveInput("not persisted"),
+        )
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await runPolicyReady(plane, request)
+        }
+        #expect(await plane.projection(for: host) == .running)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resumed = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(resumed == expected)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.saveCount == 6)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// ATI-006-project_external_agent_run_events: bind persistence failure interrupts before event projection.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
