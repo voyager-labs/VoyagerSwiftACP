@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -180,6 +181,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 path: id,
                 showHidden: state.entryViewLayout.showHiddenFiles,
                 priority: priority,
+                ancestorPaths: lexicalAncestorPaths(for: id, state: state),
             ))))
 
         case let .collapseRequested(id):
@@ -202,6 +204,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 path: id,
                 showHidden: state.entryViewLayout.showHiddenFiles,
                 priority: priority,
+                ancestorPaths: lexicalAncestorPaths(for: id, state: state),
             ))))
 
         default:
@@ -353,5 +356,24 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         return displayItems
             .filter { state.entryViewLayout.selectedIds.contains($0.id) }
             .map(\.fullPath)
+    }
+
+    private func lexicalAncestorPaths(for id: EntryModel.ID, state: State) -> [String] {
+        var ancestors: [String] = []
+        var visitedIDs: Set<EntryModel.ID> = [id]
+        var currentID = id
+
+        while let parentID = state.entryViewLayout.hierarchy.nodesByID[currentID]?.parentID,
+              visitedIDs.insert(parentID).inserted
+        {
+            ancestors.append(parentID)
+            currentID = parentID
+        }
+
+        let rootPath = state.entryViewLayout.hierarchy.rootPath
+        if !rootPath.isEmpty, visitedIDs.insert(rootPath).inserted {
+            ancestors.append(rootPath)
+        }
+        return ancestors.reversed()
     }
 }
