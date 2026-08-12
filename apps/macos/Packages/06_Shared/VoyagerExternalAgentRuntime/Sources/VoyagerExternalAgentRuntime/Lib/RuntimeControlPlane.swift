@@ -106,6 +106,12 @@ public actor RuntimeControlPlane {
                     in: &registry,
                 )
             }
+        } catch RuntimeHostError.persistenceFailure {
+            try? await reconcileStartedProviderFailure(
+                reservation: reservation,
+                receipt: receipt,
+            )
+            throw RuntimeHostError.persistenceFailure
         } catch {
             try? await reconcileStartedProviderFailure(reservation: reservation)
             throw error
@@ -194,12 +200,14 @@ public actor RuntimeControlPlane {
 
     private func reconcileStartedProviderFailure(
         reservation: RunReservation,
+        receipt: RuntimeLaunchReceipt? = nil,
     ) async throws {
         try await commit(host: reservation.host) { plane, registry in
             try plane.interruptTransition(
                 host: reservation.host,
                 lease: reservation.lease,
                 in: &registry,
+                receipt: receipt,
             )
         }
     }

@@ -598,9 +598,9 @@ struct ATI006CoordinateExternalAgentSessionsTests {
 
     /// ATI-006-coordinate_external_agent_launch: bind persistence failure cannot relaunch a started provider run.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
-    /// - 검증 내용: provider receipt 이후 bind 저장 실패를 pre-provider launch 실패와 구분한다.
+    /// - 검증 내용: provider receipt 이후 bind 저장 실패를 pre-provider launch 실패와 구분하고 provider handle을 보존한다.
     /// - 사전 조건: provider launch는 성공하고 bind snapshot 저장만 실패한다.
-    /// - 기대 결과: run은 interrupted로 보존되고 동일 run 재시도가 provider를 다시 시작하지 않는다.
+    /// - 기대 결과: run은 provider handle을 포함한 interrupted로 보존되고 동일 run 재시도가 provider를 다시 시작하지 않는다.
     @Test
     func `bind persistence failure cannot relaunch a started provider run`() async throws {
         let host: ExternalAgentSessionReference = "host-bind-failure"
@@ -619,6 +619,9 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         await #expect(throws: RuntimeHostError.persistenceFailure) {
             _ = try await firstPlane.run(request)
         }
+        let interrupted = try #require(await store.currentState()?.sessions.first)
+        #expect(interrupted.projection == .interrupted)
+        #expect(interrupted.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
 
         let recoveredPlane = RuntimeControlPlane(store: store)
         try await recoveredPlane.register(adapter)
