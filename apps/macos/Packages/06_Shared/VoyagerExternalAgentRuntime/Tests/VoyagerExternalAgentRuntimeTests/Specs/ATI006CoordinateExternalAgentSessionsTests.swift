@@ -473,6 +473,43 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: cancelling launch wait preserves the attempted reservation.
+    /// receipt 전 caller task 취소를 adapter 실패나 명시적 interruption으로 저장하지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, launching projection 보존, provider 재호출 차단.
+    /// - 사전 조건: adapter launch가 receipt 반환 전 cancellation-aware delay에서 대기한다.
+    /// - 기대 결과: attempted reservation은 fail-closed로 남고 같은 run은 duplicate로 거부된다.
+    @Test
+    func `cancelled launch wait preserves the attempted reservation`() async throws {
+        let host: ExternalAgentSessionReference = "host-launch-cancelled"
+        let run = RuntimeRunReference("run-launch-cancelled")
+        let store = InMemoryRuntimeStateStore()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchDelay: .seconds(2),
+        )
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let task = Task { try await runPolicyReady(plane, request) }
+        await adapter.waitForLaunchCount(1)
+
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.projection(for: host) == .launching)
+        #expect(await store.currentState()?.sessions.first?.projection == .launching)
+        #expect(await adapter.counts().launch == 1)
+
+        let recoveredPlane = RuntimeControlPlane(store: store)
+        try await recoveredPlane.register(adapter)
+        await #expect(throws: RuntimeHostError.duplicateRunReference) {
+            try await recoveredPlane.projectPrelaunch(request, as: .policyReady)
+        }
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// ATI-006-coordinate_external_agent_launch: ambiguous launch cleanup failure remains fail-closed.
     /// provider 호출 오류 뒤 cleanup 저장도 실패하면 durable reservation을 재실행하지 않는지 검증한다.
     /// - 검증 내용: 최초 adapter 오류 보존, restart 후 같은 run prelaunch 차단, launch 횟수.

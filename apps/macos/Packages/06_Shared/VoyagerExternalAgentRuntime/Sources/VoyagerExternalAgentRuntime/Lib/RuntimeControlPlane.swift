@@ -88,6 +88,8 @@ public actor RuntimeControlPlane {
         let receipt: RuntimeLaunchReceipt
         do {
             receipt = try await reservation.adapter.launch(request)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return try await resolveLaunchFailure(
                 error,
