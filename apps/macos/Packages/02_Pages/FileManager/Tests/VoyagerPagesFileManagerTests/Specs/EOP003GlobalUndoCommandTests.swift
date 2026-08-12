@@ -6,6 +6,51 @@ import XCTest
 
 @MainActor
 final class EOP003GlobalUndoCommandTests: XCTestCase {
+    /// EOP-003-undo_entry_action: parent completion은 active B가 아니라 captured origin A scope에 compatibility metadata를
+    /// 연결한다.
+    /// canonical 등록 뒤 child effect가 active scope를 재해석해 다른 tab history를 만드는 race를 검증한다.
+    /// - 검증 내용: A/B registry availability와 native manager history를 비교한다.
+    /// - 사전 조건: W1/A와 W1/B가 활성화되어 있고 B가 active인 상태에서 A completion이 도착한다.
+    /// - 기대 결과: A만 owner/record target과 native Undo를 보유하고 B history는 비어 있다.
+    func testOriginTabCompletionBindsCompatibilityMetadataToCapturedScope() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let fileOperationClient = FileOperationUndoManagerClient.live(registry: registry)
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let scopeA = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
+        let scopeB = UndoManagerScope(windowID: windowID, contentTabID: tabB.rawValue)
+        let managerA = try XCTUnwrap(fileOperationClient.activate(scopeA))
+        let managerB = try XCTUnwrap(fileOperationClient.activate(scopeB))
+        let generationA = try XCTUnwrap(fileOperationClient.generation(scopeA))
+        let state = makeState(windowID: windowID, tabIDs: [tabA, tabB], activeTabID: tabB)
+        let ownerA = try XCTUnwrap(
+            state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoOwnerID,
+        )
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileOperationUndoManagerClient = fileOperationClient
+            $0.undoManagerClient = .live(registry: registry, resolveScope: { _ in scopeB })
+        }
+        // store.exhaustivity = .off: child availability action보다 captured origin scope의 native identity를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: record,
+            undoManagerGeneration: generationA,
+        )))
+        await store.skipReceivedActions()
+
+        let identity = UndoManagerRecordIdentity(ownerID: ownerA, recordID: record.id)
+        XCTAssertEqual(registry.compatibilityAvailability(scopeA).undoTarget, identity)
+        XCTAssertEqual(registry.compatibilityAvailability(scopeB), .init())
+        XCTAssertTrue(managerA.canUndo)
+        XCTAssertFalse(managerB.canUndo)
+    }
+
     /// EOP-003-undo_entry_action: global Undo command는 canonical native stack의 record를 최신순으로 한 번씩 소비한다.
     /// 두 completion 뒤 연속 Cmd+Z가 duplicate native handler에 막히지 않고 각각 replay를 완료하는지 검증한다.
     /// - 검증 내용: B 다음 A replay, phase idle 복귀, logical/native stack projection을 비교한다.
@@ -28,7 +73,7 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
         let replayCompleted = expectation(description: "두 global Undo replay 완료")
         replayCompleted.expectedFulfillmentCount = 2
         let store = makeStore(
-            state: makeState(windowID: windowID, tabID: tabID),
+            state: makeState(windowID: windowID, tabIDs: [tabID], activeTabID: tabID),
             fileOperationClient: fileOperationClient,
             undoManagerClient: .live(
                 registry: registry,
@@ -94,13 +139,20 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
         }
     }
 
-    private func makeState(windowID: UUID, tabID: ContentTabID) -> FileManagerWindowState {
-        var content = FileManagerContentFeature.State()
-        content.navigation.seedInitialFolderPath("/tmp/\(tabID.rawValue)")
-        content.entryViewLayout.entryOperations.windowID = windowID
+    private func makeState(
+        windowID: UUID,
+        tabIDs: [ContentTabID],
+        activeTabID: ContentTabID,
+    ) -> FileManagerWindowState {
+        let contents = Dictionary(uniqueKeysWithValues: tabIDs.map { tabID in
+            var content = FileManagerContentFeature.State()
+            content.navigation.seedInitialFolderPath("/tmp/\(tabID.rawValue)")
+            content.entryViewLayout.entryOperations.windowID = windowID
+            return (tabID, content)
+        })
         var state = FileManagerWindowState()
         state.contentTabs = ContentTabState(
-            tabs: [
+            tabs: .init(uniqueElements: tabIDs.map { tabID in
                 ContentTabItem(
                     id: tabID,
                     page: .directory,
@@ -108,12 +160,12 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
                     isPinned: false,
                     title: tabID.rawValue,
                     iconName: "folder",
-                ),
-            ],
-            activeTabID: tabID,
+                )
+            }),
+            activeTabID: activeTabID,
         )
-        state.content = content
-        state.tabContentStates = [tabID: content]
+        state.content = contents[activeTabID] ?? FileManagerContentFeature.State()
+        state.tabContentStates = contents
         state.syncContentTabSidebarItems()
         return state
     }
