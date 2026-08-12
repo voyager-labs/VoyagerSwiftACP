@@ -81,14 +81,10 @@ struct VoyagerApp: App {
         fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         resolveScope: @escaping @MainActor @Sendable (UUID) -> UndoManagerScope?,
     ) -> UndoManagerClient {
-        .live { windowID in
-            await MainActor.run {
-                guard let windowID,
-                      let scope = resolveScope(windowID)
-                else { return nil }
-                return fileOperationUndoManagerRegistry.undoManager(for: scope)
-            }
-        }
+        .live(
+            registry: fileOperationUndoManagerRegistry,
+            resolveScope: resolveScope,
+        )
     }
 
     private static func makeComposerMetricClient() -> ComposerMetricClient {

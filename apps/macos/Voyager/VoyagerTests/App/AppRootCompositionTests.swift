@@ -17,23 +17,53 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
-    func testLiveUndoManagerClientResolvesActiveContentTabRegistryScope() async throws {
+    func testLiveUndoManagerClientUsesCanonicalRegistryStackForSequentialUndo() async throws {
         let windowID = UUID()
+        let ownerID = UUID()
         let registry = FileOperationUndoManagerRegistry()
         let window = FileManagerWindowState.makeInitial(path: "/active")
         let activeTabID = try XCTUnwrap(window.contentTabs.activeTabID)
         let scope = UndoManagerScope(windowID: windowID, contentTabID: activeTabID.rawValue)
         let nativeUndoManager = registry.activate(scope)
+        let generation = try XCTUnwrap(registry.generation(for: scope))
         let client = VoyagerApp.makeUndoManagerClient(
             fileOperationUndoManagerRegistry: registry,
             resolveScope: { requestedWindowID in
                 requestedWindowID == windowID ? scope : nil
             },
         )
+        let firstRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/first-old", afterPath: "/first-new")],
+        )
+        let secondRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/second-old", afterPath: "/second-new")],
+        )
+        var events = client.events(windowID).makeAsyncIterator()
+
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: firstRecord))
+        await client.registerUndo(windowID, ownerID, firstRecord)
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: secondRecord))
+        await client.registerUndo(windowID, ownerID, secondRecord)
+
+        let secondIdentity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: secondRecord.id)
+        let firstUndo = await client.undo(windowID, expectedTarget: secondIdentity)
+        let firstEvent = await events.next()
+        let firstIdentity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: firstRecord.id)
+        let secondUndo = await client.undo(windowID, expectedTarget: firstIdentity)
+        let secondEvent = await events.next()
 
         XCTAssertIdentical(registry.undoManager(for: scope), nativeUndoManager)
-        let availability = await client.availability(windowID)
-        XCTAssertEqual(availability, UndoManagerAvailability())
+        XCTAssertTrue(firstUndo.didInvoke)
+        XCTAssertTrue(secondUndo.didInvoke)
+        XCTAssertEqual(firstEvent, UndoManagerEvent(ownerID: ownerID, record: secondRecord, direction: .undo))
+        XCTAssertEqual(secondEvent, UndoManagerEvent(ownerID: ownerID, record: firstRecord, direction: .undo))
+        XCTAssertFalse(secondUndo.availability.canUndo)
+        XCTAssertTrue(secondUndo.availability.canRedo)
+        XCTAssertFalse(nativeUndoManager.canUndo)
+        XCTAssertTrue(nativeUndoManager.canRedo)
+        XCTAssertEqual(registry.generation(for: scope), generation)
     }
 
     func testSignedOutLaunchDefersInitialWindowUntilRuntimeAndWindowCompletion() async {
