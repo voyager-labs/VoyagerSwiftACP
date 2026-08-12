@@ -14,6 +14,8 @@ import { FileManagerIllustration } from "../FileManagerIllustration"
 import { publicFiles } from "../data/mock-data"
 import type { AiChatInputBarActions } from "../model/types"
 
+const representativeFiles = publicFiles.slice(0, 10)
+
 const defaultTabs = [
   { id: "recents", label: "Recents" },
   { id: "downloads", label: "Downloads" },
@@ -47,29 +49,27 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
   args: {
-    files: publicFiles,
+    files: representativeFiles,
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
-  },
-  play: async ({ canvasElement }) => {
-    const gridBtn = within(canvasElement).getByRole("button", { name: "Grid view" })
-    gridBtn.focus()
-    await userEvent.click(gridBtn)
-    const listBtn = within(canvasElement).getByRole("button", { name: "List view" })
-    await userEvent.click(listBtn)
+    initialPresentation: {
+      selectedEntryIds: [],
+      viewMode: "grid",
+      sidebarOpen: true,
+      inspectorOpen: false,
+    },
   },
 }
 
 export const ListView: Story = {
   args: {
-    files: publicFiles,
+    files: representativeFiles,
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
-  },
-  play: async ({ canvasElement }) => {
-    const listBtn = within(canvasElement).getByRole("button", { name: "List view" })
-    listBtn.focus()
-    await userEvent.click(listBtn)
-    const entry = canvasElement.querySelector(".entry-list-row")
-    if (entry instanceof HTMLElement) await userEvent.click(entry)
+    initialPresentation: {
+      selectedEntryIds: [],
+      viewMode: "list",
+      sidebarOpen: true,
+      inspectorOpen: false,
+    },
   },
 }
 

@@ -1375,7 +1375,7 @@
   display: grid;
   min-height: 0;
   align-content: start;
-  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  grid-template-columns: repeat(auto-fill, 120px);
   column-gap: var(--fm-space-8);
   row-gap: var(--fm-space-8);
   overflow: auto;
@@ -1426,10 +1426,6 @@
   text-align: left;
   transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
     color var(--fm-motion-fast) ease;
-}
-
-[data-file-manager-illustration] .entry-list-row:nth-child(odd) {
-  background: var(--macos-control-alternating-row-background-color-odd);
 }
 
 [data-file-manager-illustration] .entry-list-row.selected {
