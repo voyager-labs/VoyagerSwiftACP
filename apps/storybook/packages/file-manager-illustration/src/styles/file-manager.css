@@ -1389,54 +1389,52 @@
   grid-auto-rows: min-content;
   overflow: auto;
   background: var(--fm-content);
-  padding: var(--fm-space-5) var(--fm-space-7) var(--fm-space-9);
+  padding: 0 0 var(--fm-space-9);
 }
 
 [data-file-manager-illustration] .entry-list-header,
 [data-file-manager-illustration] .entry-list-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 112px 128px 180px;
+  grid-template-columns: minmax(220px, 1fr) 150px 90px 120px;
   align-items: center;
-  column-gap: var(--fm-space-7);
+  column-gap: var(--fm-space-2);
 }
 
 [data-file-manager-illustration] .entry-list-header {
   position: sticky;
   z-index: 1;
   top: 0;
-  height: 26px;
+  height: 24px;
   border-bottom: 1px solid var(--fm-separator);
   background: var(--fm-content);
   color: var(--fm-text-tertiary);
   font-size: var(--fm-font-size-caption-2);
-  font-weight: var(--fm-weight-bold);
+  font-weight: var(--fm-weight-regular);
+}
+
+[data-file-manager-illustration] .entry-list-header > span {
+  padding: 0 var(--fm-space-2);
 }
 
 [data-file-manager-illustration] .entry-list-row {
   min-width: 0;
-  height: 34px;
+  height: 24px;
   border: 0;
-  border-radius: var(--fm-radius-md);
   background: transparent;
-  padding: 0 var(--fm-space-4);
+  padding: 0 var(--fm-space-2);
   color: var(--fm-text-primary);
   text-align: left;
-  transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms
-    ease;
+  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
+    color var(--fm-motion-fast) ease;
 }
 
-[data-file-manager-illustration] .entry-list-row:hover {
-  background: var(--fm-control-hover);
+[data-file-manager-illustration] .entry-list-row:nth-child(odd) {
+  background: var(--macos-control-alternating-row-background-color-odd);
 }
 
 [data-file-manager-illustration] .entry-list-row.selected {
   background: var(--fm-selection-strong);
   color: var(--fm-text-on-accent);
-}
-
-[data-file-manager-illustration] .entry-list-row:active {
-  background: var(--fm-control-pressed);
-  transform: translateY(1px);
 }
 
 [data-file-manager-illustration] .entry-list-row:focus-visible {
@@ -1448,11 +1446,11 @@
   display: grid;
   min-width: 0;
   align-items: center;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: var(--fm-space-4);
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: var(--fm-space-3);
   overflow: hidden;
   font-size: var(--fm-font-size-body);
-  font-weight: var(--fm-weight-semibold);
+  font-weight: var(--fm-weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1470,12 +1468,12 @@
 [data-file-manager-illustration] .entry-list-row > .entry-list-name {
   grid-column: 1;
   grid-row: 1;
-  padding-left: 34px;
+  padding-left: 26px;
 }
 
 [data-file-manager-illustration] .entry-kind,
-[data-file-manager-illustration] .entry-detail,
-[data-file-manager-illustration] .entry-location {
+[data-file-manager-illustration] .entry-date-modified,
+[data-file-manager-illustration] .entry-size {
   overflow: hidden;
   color: var(--fm-text-secondary);
   font-size: var(--fm-font-size-caption);
@@ -1484,8 +1482,8 @@
 }
 
 [data-file-manager-illustration] .entry-list-row.selected .entry-kind,
-[data-file-manager-illustration] .entry-list-row.selected .entry-detail,
-[data-file-manager-illustration] .entry-list-row.selected .entry-location {
+[data-file-manager-illustration] .entry-list-row.selected .entry-date-modified,
+[data-file-manager-illustration] .entry-list-row.selected .entry-size {
   color: var(--fm-text-on-accent);
 }
 
@@ -1536,15 +1534,15 @@
 }
 
 [data-file-manager-illustration] .thumb-small {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   align-self: center;
   border-radius: var(--fm-entry-radius-small);
 }
 
 [data-file-manager-illustration] .thumb-small .entry-svg-icon {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   filter: var(--fm-entry-shadow-small);
 }
 
@@ -1556,8 +1554,8 @@
 }
 
 [data-file-manager-illustration] .thumb-small .entry-thumbnail-image {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   object-fit: contain;
   filter: var(--fm-entry-shadow-small);
 }

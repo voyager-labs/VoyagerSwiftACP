@@ -21,9 +21,9 @@ export const EntryList: FC<EntryListProps> = ({ entries, selectedEntryIds, onTog
     <div className="entry-list">
       <div className="entry-list-header" aria-hidden="true">
         <span>Name</span>
+        <span>Date Modified</span>
+        <span>Size</span>
         <span>Kind</span>
-        <span>Info</span>
-        <span>Location</span>
       </div>
       {entries.map((entry) => (
         <EntryListRow

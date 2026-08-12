@@ -6,6 +6,8 @@ import type { EntryThumbnailEntry } from "./EntryThumbnail"
 export interface EntryListRowEntry extends EntryThumbnailEntry {
   readonly name: string
   readonly kind: EntryKind
+  readonly dateModified?: string
+  readonly size?: string
   readonly meta?: string
   readonly count?: string
 }
@@ -27,8 +29,6 @@ const kindLabels: Record<EntryKind, string> = {
 }
 
 export const EntryListRow: FC<EntryListRowProps> = ({ entry, selected, onToggle }) => {
-  const detail = entry.meta ?? entry.count ?? kindLabels[entry.kind]
-
   function handleClick(event: MouseEvent) {
     onToggle(entry.id, event.metaKey || event.shiftKey)
   }
@@ -42,9 +42,9 @@ export const EntryListRow: FC<EntryListRowProps> = ({ entry, selected, onToggle 
     >
       <EntryThumbnail entry={entry} size="small" />
       <span className="entry-list-name">{entry.name}</span>
+      <span className="entry-date-modified">{entry.dateModified ?? "—"}</span>
+      <span className="entry-size">{entry.size ?? "—"}</span>
       <span className="entry-kind">{kindLabels[entry.kind]}</span>
-      <span className="entry-detail">{detail}</span>
-      <span className="entry-location">~/Desktop/Voyager</span>
     </button>
   )
 }

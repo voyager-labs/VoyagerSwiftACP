@@ -23,6 +23,8 @@ function toListEntry(e: Entry): EntryListEntry {
     id: e.id,
     name: e.name,
     kind: e.kind,
+    dateModified: e.dateModified,
+    size: e.size,
     meta: e.meta,
     count: e.count,
     thumbnailSrc: e.thumbnailSrc,
