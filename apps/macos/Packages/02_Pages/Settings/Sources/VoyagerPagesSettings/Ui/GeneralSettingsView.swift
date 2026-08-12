@@ -72,7 +72,7 @@ struct GeneralSettingsView: View {
                                         Image(systemName: selected.iconName)
                                             .frame(width: 14, height: 14)
                                             .accessibilityHidden(true)
-                                        Text("\(selected.displayName) (default)")
+                                        Text("\(selected.displayName(using: store.standardDirectories)) (default)")
                                     }
                                 },
                             )
@@ -90,7 +90,7 @@ struct GeneralSettingsView: View {
                                         Image(systemName: option.iconName)
                                             .frame(width: 14, height: 14)
                                             .accessibilityHidden(true)
-                                        Text(option.displayName)
+                                        Text(option.displayName(using: store.standardDirectories))
                                     }
                                 },
                             )
@@ -106,7 +106,7 @@ struct GeneralSettingsView: View {
                             Image(systemName: store.selectedDirectoryOption.iconName)
                                 .frame(width: 14, height: 14)
                                 .accessibilityHidden(true)
-                            Text(store.selectedDirectoryOption.displayName)
+                            Text(store.selectedDirectoryOption.displayName(using: store.standardDirectories))
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)

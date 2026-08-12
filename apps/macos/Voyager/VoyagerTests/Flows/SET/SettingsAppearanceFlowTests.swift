@@ -86,7 +86,15 @@ final class SettingsAppearanceFlowTests: XCTestCase {
                 pickDirectory: { nil },
                 pathExists: { _ in false },
                 isDirectory: { _ in false },
-                defaultHomePath: { "/flow-home" },
+                standardDirectories: {
+                    StandardDirectories(
+                        homePath: "/flow-home",
+                        homeDisplayName: "flow-home",
+                        desktopPath: nil,
+                        documentsPath: nil,
+                        downloadsPath: nil,
+                    )
+                },
             )
             $0.launchAtLoginClient.isEnabled = { false }
             $0.launchAtLoginClient.setEnabled = { _ in }

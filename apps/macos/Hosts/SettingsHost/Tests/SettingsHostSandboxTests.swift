@@ -103,7 +103,7 @@ final class SettingsHostSandboxTests: XCTestCase {
     func testConfigureAppliesScenarioToInoutValues() {
         var values = DependencyValues()
         SettingsHostSandbox.configure(&values, for: scenario(permissions: .denied))
-        let path = values.directorySelectionClient.defaultHomePath()
+        let path = values.directorySelectionClient.standardDirectories().homePath
         XCTAssertNotNil(path, "configure should install a functioning directorySelectionClient")
     }
 }

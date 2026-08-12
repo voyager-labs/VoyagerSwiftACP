@@ -144,15 +144,25 @@ public enum SettingsHostSandbox {
                 pickDirectory: { "/tmp/voyager-settingshost-sandbox" },
                 pathExists: { _ in true },
                 isDirectory: { _ in true },
-                defaultHomePath: { "/tmp/voyager-settingshost-sandbox" },
+                standardDirectories: { .settingsHostSandbox },
             )
         case .denied:
             DirectorySelectionClient(
                 pickDirectory: { nil },
                 pathExists: { _ in false },
                 isDirectory: { _ in false },
-                defaultHomePath: { "/tmp/voyager-settingshost-sandbox" },
+                standardDirectories: { .settingsHostSandbox },
             )
         }
     }
+}
+
+private extension StandardDirectories {
+    nonisolated static let settingsHostSandbox = StandardDirectories(
+        homePath: "/tmp/voyager-settingshost-sandbox",
+        homeDisplayName: "voyager-settingshost-sandbox",
+        desktopPath: nil,
+        documentsPath: nil,
+        downloadsPath: nil,
+    )
 }
