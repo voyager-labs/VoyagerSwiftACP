@@ -174,8 +174,8 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 229)
-assert.equal(fileManagerPaths.size, 50)
+assert.equal(fileManagerStories.length, 231)
+assert.equal(fileManagerPaths.size, 51)
 assert.equal(nonFileManagerStories.length, 0)
 
 /* ── RED→GREEN contract: thumbnailSrc data path + asset verification ── */

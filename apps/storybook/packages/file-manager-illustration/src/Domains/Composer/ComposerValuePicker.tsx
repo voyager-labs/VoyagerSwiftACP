@@ -1,4 +1,5 @@
 import { type FC, useState } from "react"
+import { ComposerDateValuePicker } from "./ComposerDateValuePicker"
 import { ComposerTokenValuePicker } from "./ComposerTokenValuePicker"
 import type { ComposerValueEditor } from "./composer-condition-options"
 import type { ComposerValuePicker as ComposerValuePickerFixture } from "./composer-fixtures"
@@ -7,16 +8,6 @@ export type ComposerValuePickerProps = {
   readonly picker: ComposerValuePickerFixture
   readonly onCommit?: (value: string) => void
 }
-
-const relativePresets = [
-  "Custom",
-  "Today",
-  "Yesterday",
-  "7 days ago",
-  "30 days ago",
-  "3 months ago",
-  "1 year ago",
-] as const
 
 const editorError = (
   editor: ComposerValueEditor,
@@ -35,18 +26,13 @@ const editorError = (
 
 export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCommit }) => {
   const editor = picker.editor
-  const fieldCount = editor.kind === "numberRange" || editor.kind === "dateRange" ? 2 : 1
+  const fieldCount = editor.kind === "numberRange" ? 2 : 1
   const [values, setValues] = useState<readonly string[]>(
     Array.from({ length: fieldCount }, () => ""),
   )
   const [unit, setUnit] = useState(
     editor.kind === "number" || editor.kind === "numberRange" ? editor.units?.[0] : undefined,
   )
-  const [dateMode, setDateMode] = useState<"absolute" | "relative">("absolute")
-  const [relativePreset, setRelativePreset] =
-    useState<(typeof relativePresets)[number]>("7 days ago")
-  const [relativeAmount, setRelativeAmount] = useState("1")
-  const [relativeUnit, setRelativeUnit] = useState("Day")
   const [error, setError] = useState<string | undefined>(picker.error)
 
   const setValue = (index: number, value: string) =>
@@ -104,11 +90,14 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
     )
   }
 
-  const isDate = editor.kind === "date" || editor.kind === "dateRange"
-  const isRange = editor.kind === "numberRange" || editor.kind === "dateRange"
+  if (editor.kind === "date" || editor.kind === "dateRange") {
+    return <ComposerDateValuePicker kind={editor.kind} error={error} onCommit={onCommit} />
+  }
+
+  const isRange = editor.kind === "numberRange"
   return (
     <dialog
-      className={`collection-composer-value-picker form ${isDate ? "date" : ""}`}
+      className="collection-composer-value-picker form"
       open
       aria-label="Condition value picker"
     >
@@ -116,96 +105,32 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
         className="collection-composer-value-form"
         onSubmit={(event) => {
           event.preventDefault()
-          commit(
-            editor.kind === "date" && dateMode === "relative"
-              ? [
-                  relativePreset === "Custom"
-                    ? `${relativeAmount} ${relativeUnit.toLowerCase()}${relativeAmount === "1" ? "" : "s"} ago`
-                    : relativePreset,
-                ]
-              : values,
-          )
+          commit(values)
         }}
       >
-        {editor.kind === "date" && (
-          <label>
-            <span>Date Type</span>
-            <select
-              value={dateMode}
-              onChange={(event) =>
-                setDateMode(event.currentTarget.value === "relative" ? "relative" : "absolute")
-              }
-            >
-              <option value="absolute">On date</option>
-              <option value="relative">Relative</option>
-            </select>
-          </label>
-        )}
-        {editor.kind === "date" && dateMode === "relative" ? (
-          <>
-            <label>
-              <span>Preset</span>
-              <select
-                value={relativePreset}
-                onChange={(event) =>
-                  setRelativePreset(event.currentTarget.value as (typeof relativePresets)[number])
-                }
-              >
-                {relativePresets.map((preset) => (
-                  <option key={preset}>{preset}</option>
-                ))}
-              </select>
-            </label>
-            {relativePreset === "Custom" && (
-              <div className="collection-composer-relative-custom">
+        <div className="collection-composer-value-fields">
+          {values.map((value, index) => {
+            const label = isRange
+              ? index === 0
+                ? "From"
+                : "To"
+              : editor.kind === "text"
+                ? "Text"
+                : "Number"
+            return (
+              <label key={label}>
+                <span>{label}</span>
                 <input
-                  aria-label="Amount"
-                  inputMode="numeric"
-                  placeholder="1"
-                  value={relativeAmount}
-                  onChange={(event) => setRelativeAmount(event.currentTarget.value)}
+                  type="text"
+                  inputMode={editor.kind === "text" ? "text" : "decimal"}
+                  aria-label={isRange ? label : "Value"}
+                  value={value}
+                  onChange={(event) => setValue(index, event.currentTarget.value)}
                 />
-                <select
-                  aria-label="Relative unit"
-                  value={relativeUnit}
-                  onChange={(event) => setRelativeUnit(event.currentTarget.value)}
-                >
-                  <option>Day</option>
-                  <option>Week</option>
-                  <option>Month</option>
-                  <option>Year</option>
-                </select>
-              </div>
-            )}
-            <small>Preview based on today</small>
-          </>
-        ) : (
-          <div className="collection-composer-value-fields">
-            {values.map((value, index) => {
-              const label = isRange
-                ? index === 0
-                  ? "From"
-                  : "To"
-                : isDate
-                  ? "Date"
-                  : editor.kind === "text"
-                    ? "Text"
-                    : "Number"
-              return (
-                <label key={label}>
-                  <span>{label}</span>
-                  <input
-                    type={isDate ? "date" : "text"}
-                    inputMode={editor.kind === "text" ? "text" : "decimal"}
-                    aria-label={isRange ? label : "Value"}
-                    value={value}
-                    onChange={(event) => setValue(index, event.currentTarget.value)}
-                  />
-                </label>
-              )
-            })}
-          </div>
-        )}
+              </label>
+            )
+          })}
+        </div>
         {(editor.kind === "number" || editor.kind === "numberRange") && editor.units != null && (
           <label>
             <span>Unit</span>
