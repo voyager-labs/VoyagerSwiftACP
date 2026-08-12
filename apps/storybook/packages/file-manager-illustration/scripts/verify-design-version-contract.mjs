@@ -61,5 +61,20 @@ export function verifyDesignVersionContract(packageRoot, storybookRoot, css) {
     /\.fm-ai-chat-input-story-canvas\s*{[^}]*place-items:\s*start;/s,
     "AiChatInputBar specimen must stay at the canvas origin instead of floating in the center",
   )
+  assert.match(
+    css,
+    /\.fm-ai-chat-input-story-frame\s*{[^}]*max-width:\s*100%;/s,
+    "AiChatInputBar specimen must not widen the Storybook canvas below 300px",
+  )
+  assert.match(
+    css,
+    /\.fm-ai-chat-input\s*{[^}]*box-sizing:\s*border-box;[^}]*width:\s*100%;/s,
+    "AiChatInputBar border and padding must remain inside the specimen width",
+  )
+  assert.match(
+    css,
+    /\.fm-ai-chat-context-groups\s*{[^}]*flex:\s*1 1 0;[^}]*overscroll-behavior-inline:\s*contain;/s,
+    "Request-context scrolling must stay inside the remaining row width",
+  )
   assert.doesNotMatch(css, /--fm-chat-candidate-control-material/)
 }
