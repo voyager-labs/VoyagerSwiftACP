@@ -171,6 +171,47 @@ struct RuntimePersistenceTechnicalTests {
     }
 
     @Test
+    func `failed older schema migration quarantines original bytes`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("runtime.json")
+        let quarantineURL = fileURL.appendingPathExtension("corrupt")
+        let original = Data(#"{"schema_version":0,"sentinel":"keep"}"#.utf8)
+        try original.write(to: fileURL)
+        let store = RuntimeFileStateStore(fileURL: fileURL) { _, _ in
+            throw CocoaError(.coderInvalidValue)
+        }
+
+        await #expect(throws: RuntimeHostError.migrationFailed) {
+            _ = try await store.load()
+        }
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+        #expect(try Data(contentsOf: quarantineURL) == original)
+        #expect(try await store.load() == nil)
+    }
+
+    @Test
+    func `missing older schema migrator preserves original bytes`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("runtime.json")
+        let quarantineURL = fileURL.appendingPathExtension("corrupt")
+        let original = Data(#"{"schema_version":0,"sentinel":"keep"}"#.utf8)
+        try original.write(to: fileURL)
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+
+        await #expect(throws: RuntimeHostError.migrationUnavailable(0)) {
+            _ = try await store.load()
+        }
+        #expect(try Data(contentsOf: fileURL) == original)
+        #expect(!FileManager.default.fileExists(atPath: quarantineURL.path))
+    }
+
+    @Test
     func `persistence failures expose only bounded host error`() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

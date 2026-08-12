@@ -40,7 +40,14 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
             throw RuntimeHostError.unsupportedSchemaVersion(version)
         }
         if version < RuntimeStoredState.currentSchemaVersion {
-            return try migrate(data, from: version)
+            do {
+                return try migrate(data, from: version)
+            } catch let error as RuntimeHostError where error == .migrationUnavailable(version) {
+                throw error
+            } catch {
+                try quarantineCorruptedSnapshot()
+                throw error
+            }
         }
         do {
             return try decode(data)
