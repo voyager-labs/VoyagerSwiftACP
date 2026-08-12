@@ -203,7 +203,12 @@ public actor RuntimeControlPlane {
         ) {
             return terminal
         }
-        return try await persistTerminalResult(result, host: reservation.host, lease: lease)
+        do {
+            return try await persistTerminalResult(result, host: reservation.host, lease: lease)
+        } catch {
+            try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
+            throw error
+        }
     }
 
     func reconcileConsumedResult(
@@ -230,6 +235,15 @@ public actor RuntimeControlPlane {
     ) async throws -> Bool {
         try await mutateAfterPersistedTransitions { plane in
             plane.releaseTerminalLeaseTransition(host: host, lease: lease, in: &plane.sessions)
+        }
+    }
+
+    func recoverTerminalPersistenceClaim(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws {
+        try await mutateAfterPersistedTransitions { plane in
+            plane.recoverTerminalPersistenceClaimTransition(host: host, lease: lease)
         }
     }
 

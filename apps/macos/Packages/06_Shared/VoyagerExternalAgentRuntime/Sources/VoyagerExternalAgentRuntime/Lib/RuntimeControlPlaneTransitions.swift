@@ -228,6 +228,23 @@ extension RuntimeControlPlane {
         return true
     }
 
+    func recoverTerminalPersistenceClaimTransition(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) {
+        guard var session = sessions[host] else { return }
+        switch session.lease {
+        case .consuming(lease):
+            session.lease = .none
+        case .resuming(lease):
+            session.lease = .restored(lease)
+        default:
+            return
+        }
+        session.revision += 1
+        sessions[host] = session
+    }
+
     func terminalResult(for stored: RuntimeStoredSession) -> RuntimeResult? {
         guard let outcome = outcome(for: stored.projection) else { return nil }
         return RuntimeResult(runReference: stored.runReference, outcome: outcome, artifactReferences: [])

@@ -31,7 +31,12 @@ public extension RuntimeControlPlane {
         ) {
             return terminal
         }
-        return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
+        do {
+            return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
+        } catch {
+            try? await recoverTerminalPersistenceClaim(host: hostReference, lease: claim.lease)
+            throw error
+        }
     }
 
     private func claimRestoredRun(

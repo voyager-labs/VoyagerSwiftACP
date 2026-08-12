@@ -1185,6 +1185,66 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await store.saveCount == 2)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: failed restored terminal persistence restores its claim.
+    /// terminal 결과 저장이 두 번 실패해도 복원 claim을 잃지 않고 같은 control plane에서 다시 재개하는지 검증한다.
+    /// - 검증 내용: persistenceFailure 전파, running projection 보존, 두 번째 resume 결과와 save 횟수.
+    /// - 사전 조건: terminal-only restored run과 첫 두 save를 실패시키는 state store가 있다.
+    /// - 기대 결과: 첫 resume 뒤 claim이 복구되고 두 번째 resume은 동일 completed 결과를 저장한다.
+    @Test
+    func `failed restored terminal persistence restores its claim`() async throws {
+        let host = ExternalAgentSessionReference("host-resume-finish-double-failure")
+        let run = RuntimeRunReference("run-resume-finish-double-failure")
+        let context = finalReviewTestsMakeContext()
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://restored-finish-double-failure.json"],
+        )
+        let capabilities = RuntimeCapabilities(
+            discovery: .unsupported,
+            eventStream: .unsupported,
+            approval: .unsupported,
+            cancellation: .unsupported,
+            queuedInput: .unsupported,
+            terminalResult: .supported,
+            sameIdentityResume: .supported,
+        )
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume-finish-double-failure"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("terminal"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: capabilities,
+            contextPolicy: context,
+            projection: .running,
+            lastSequence: 0,
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            failingSaveNumbers: [1, 2],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: capabilities,
+            eventsByLaunch: [[]],
+            terminalResultOverride: expected,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await plane.resumeRestoredRun(hostReference: host)
+        }
+        let resumed = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(resumed == expected)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.saveCount == 3)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: cancelling restored consumption preserves its claim.
     /// caller task 취소가 provider interruption으로 저장되지 않고 동일 run의 재개 가능성을 유지하는지 검증한다.
     /// - 검증 내용: CancellationError 전파, running projection 보존, 두 번째 resume의 stream 재개.
@@ -2345,6 +2405,60 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(result == expected)
         #expect(await plane.projection(for: host) == .completed)
         #expect(await store.saveCount == 5)
+    }
+
+    /// ATI-006-project_external_agent_run_events: failed finish persistence releases its active claim.
+    /// provider terminal 결과 저장이 두 번 실패해도 같은 control plane에서 persisted run을 복원하는지 검증한다.
+    /// - 검증 내용: persistenceFailure 전파, running projection 보존, restore와 resume 결과.
+    /// - 사전 조건: resumable terminal-only adapter와 finish save #4, #5를 실패시키는 state store가 있다.
+    /// - 기대 결과: active lease가 복구되어 restore가 성공하고 resume이 동일 completed 결과를 저장한다.
+    @Test
+    func `failed finish persistence releases its active claim`() async throws {
+        let host: ExternalAgentSessionReference = "host-finish-double-persistence"
+        let run = RuntimeRunReference("run-finish-double-persistence")
+        let context = finalReviewTestsMakeContext()
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://finish-double-persistence.json"],
+        )
+        let capabilities = RuntimeCapabilities(
+            discovery: .unsupported,
+            eventStream: .unsupported,
+            approval: .unsupported,
+            cancellation: .unsupported,
+            queuedInput: .unsupported,
+            terminalResult: .supported,
+            sameIdentityResume: .supported,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: capabilities,
+            eventsByLaunch: [[]],
+            terminalResultOverride: expected,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [4, 5])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: host,
+            runReference: run,
+            adapterID: RuntimeAdapterID("terminal"),
+            contextPolicy: context,
+            input: RuntimeSensitiveInput("not persisted"),
+        )
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await runPolicyReady(plane, request)
+        }
+        #expect(await plane.projection(for: host) == .running)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resumed = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(resumed == expected)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.saveCount == 6)
     }
 
     /// ATI-006-project_external_agent_run_events: transient terminal event persistence failure retries the event.
