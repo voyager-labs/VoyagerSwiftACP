@@ -1,6 +1,7 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import { IconButton } from "../../UI/Controls/IconButton"
+import { ToolbarNavigation } from "./ToolbarNavigation"
 
 export type EntryViewMode = "grid" | "list"
 
@@ -30,17 +31,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
 }) => {
   return (
     <header className="toolbar">
-      <div className="toolbar-left">
-        <IconButton className="subtle" aria-label="Back">
-          <SFSymbol name="chevron.left" size={13} weight={500} />
-        </IconButton>
-        <IconButton className="subtle" aria-label="Forward">
-          <SFSymbol name="chevron.right" size={13} weight={500} />
-        </IconButton>
-        <IconButton className="subtle" aria-label="Go to Enclosing Folder">
-          <SFSymbol name="chevron.up" size={13} weight={500} />
-        </IconButton>
-      </div>
+      <ToolbarNavigation />
 
       <div className="toolbar-title-area">
         <span className="toolbar-title-content">
