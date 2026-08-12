@@ -2498,6 +2498,64 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         _ = await runTask.result
     }
 
+    /// ATI-006-project_external_agent_run_events: persisted terminal session rejects new operations during
+    /// reconciliation.
+    /// terminal projection과 reconciliation lease를 분리해 종료된 run에 새 provider operation을 보내지 않는지 검증한다.
+    /// - 검증 내용: approval, queued input, cancellation의 invalidEvent 및 adapter 미호출.
+    /// - 사전 조건: host terminal event가 저장됐지만 consuming lease reconciliation은 대기 중이다.
+    /// - 기대 결과: 세 operation은 adapter 호출 전에 거부되고 terminal projection은 유지된다.
+    @Test
+    func `persisted terminal session rejects new operations during reconciliation`() async throws {
+        let host: ExternalAgentSessionReference = "host-terminal-operations"
+        let run = RuntimeRunReference("run-terminal-operations")
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let runTask = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForEventStreamCount(1)
+
+        _ = try await plane.ingestHostEvent(reviewerBlockerTestsMakeHostTerminal(host: host, run: run, sequence: 1))
+        #expect(await plane.projection(for: host) == .completed)
+
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.respondToApproval(
+                hostReference: host,
+                requestID: RuntimeApprovalRequestID("approval"),
+                operationID: RuntimeOperationID("approve"),
+            )
+        }
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.enqueueInput(
+                hostReference: host,
+                operationID: RuntimeOperationID("input"),
+                input: RuntimeSensitiveInput("not persisted"),
+            )
+        }
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.requestCancellation(
+                hostReference: host,
+                operationID: RuntimeOperationID("cancel"),
+            )
+        }
+
+        let counts = await adapter.counts()
+        #expect(counts.approval == 0)
+        #expect(counts.input == 0)
+        #expect(counts.cancellation == 0)
+        #expect(await plane.projection(for: host) == .completed)
+
+        await streamGate.open()
+        #expect(try await runTask.value.outcome == .completed)
+    }
+
     /// ATI-006-project_external_agent_run_events: stale sequence is evidence and cannot move projection backward.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

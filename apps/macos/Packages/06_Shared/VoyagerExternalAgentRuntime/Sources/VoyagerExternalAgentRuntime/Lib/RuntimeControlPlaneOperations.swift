@@ -159,7 +159,10 @@ public extension RuntimeControlPlane {
     internal func activeAdapter(
         for hostReference: ExternalAgentSessionReference,
     ) throws -> (any ExternalAgentRuntimeAdapter, RuntimeStoredSession) {
-        guard let session = sessions[hostReference], session.lease.isActive else {
+        guard let session = sessions[hostReference],
+              session.lease.isActive,
+              !session.stored.projection.isTerminal
+        else {
             throw RuntimeHostError.invalidEvent
         }
         guard let adapter = adapters[session.stored.adapterID] else {
@@ -192,7 +195,8 @@ public extension RuntimeControlPlane {
         guard pendingPersistenceMutations[hostReference, default: 0] == 0,
               let current = sessions[hostReference],
               current.lease == claim.lease,
-              current.stored.runReference == claim.session.runReference
+              current.stored.runReference == claim.session.runReference,
+              !current.stored.projection.isTerminal
         else { throw RuntimeHostError.invalidEvent }
     }
 
