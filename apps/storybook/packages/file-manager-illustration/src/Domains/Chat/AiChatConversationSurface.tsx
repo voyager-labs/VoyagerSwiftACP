@@ -7,6 +7,7 @@ import type {
   ChatStreamingAssistant,
 } from "../../model/types"
 import { AiChatAssistantCard } from "./AiChatAssistantCard"
+import { resolveAiChatAssistantPresentation } from "./AiChatAssistantPresentation"
 import { AiChatInputBar } from "./AiChatInputBar"
 import { AiChatUserMessageBubble } from "./AiChatUserMessageBubble"
 
@@ -59,19 +60,26 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
         ))}
 
         {streamingAssistant != null ? (
-          <div className="chat-message-assistant">
+          <div className="chat-message-assistant" data-chat-role="assistant">
             <AiChatAssistantCard
-              title={streamingAssistant.title}
-              thinkingLabel={streamingAssistant.thinkingLabel}
-              activityStatusLabel={streamingAssistant.activityStatusLabel}
-              content={streamingAssistant.content}
-              isProcessing={isProcessing}
-              failure={streamingAssistant.failure?.message}
+              presentation={resolveAiChatAssistantPresentation({
+                title: streamingAssistant.title,
+                thinkingLabel: streamingAssistant.thinkingLabel,
+                activityStatusLabel: streamingAssistant.activityStatusLabel,
+                content: streamingAssistant.content,
+                isProcessing,
+                failure: streamingAssistant.failure?.message,
+              })}
             />
           </div>
         ) : isProcessing === true ? (
-          <div className="chat-message-assistant">
-            <AiChatAssistantCard title="Assistant" isProcessing={true} />
+          <div className="chat-message-assistant" data-chat-role="assistant">
+            <AiChatAssistantCard
+              presentation={resolveAiChatAssistantPresentation({
+                title: "Assistant",
+                isProcessing: true,
+              })}
+            />
           </div>
         ) : statusText != null && statusText !== "" ? (
           <p className="chat-status-row">{statusText}</p>
@@ -104,31 +112,62 @@ const AiChatMessageRow: FC<AiChatMessageRowProps> = ({
   showsRegenerate,
   onRegenerate,
 }) => {
+  const timestamp = message.timestamp
+  const showsTimestampAffordance =
+    timestamp != null && timestamp.isTimestampVisuallySuppressed !== true
+
   if (message.role === "user") {
     return (
-      <div className="chat-message-user">
-        <AiChatUserMessageBubble>{message.content}</AiChatUserMessageBubble>
+      <div className="chat-message-user" data-chat-role="user">
+        <div className="chat-user-bubble-frame">
+          {showsTimestampAffordance ? (
+            <span
+              className="chat-timestamp chat-timestamp-user"
+              aria-label={`Sent ${timestamp.label}`}
+              title={timestamp.label}
+            >
+              <SFSymbol name="clock" size={11} />
+            </span>
+          ) : null}
+          <AiChatUserMessageBubble>{message.content}</AiChatUserMessageBubble>
+        </div>
       </div>
     )
   }
 
   if (message.role === "assistant") {
     return (
-      <div className="chat-message-assistant">
-        <AiChatAssistantCard
-          title="Assistant"
-          content={message.content}
-          headerPresentation="completedHistorical"
-        />
+      <div className="chat-message-assistant" data-chat-role="assistant">
+        <div className="chat-assistant-card-frame">
+          <AiChatAssistantCard
+            presentation={resolveAiChatAssistantPresentation({
+              title: "Assistant",
+              content: message.content,
+              headerPresentation: "completedHistorical",
+            })}
+          />
+          {showsTimestampAffordance ? (
+            <span
+              className="chat-timestamp chat-timestamp-assistant"
+              aria-label={`Received ${timestamp.label}`}
+              title={timestamp.label}
+            >
+              <SFSymbol name="clock" size={11} />
+            </span>
+          ) : null}
+        </div>
         {showsRegenerate ? (
-          <button
-            type="button"
-            className="chat-regenerate"
-            onClick={onRegenerate}
-            aria-label="Regenerate response"
-          >
-            <SFSymbol name="arrow.clockwise" size={12} />
-          </button>
+          <div className="chat-regenerate-action">
+            <button
+              type="button"
+              className="chat-regenerate"
+              onClick={onRegenerate}
+              aria-label="Regenerate response"
+            >
+              <SFSymbol name="arrow.clockwise" size={12} />
+            </button>
+            <span className="chat-regenerate-label">Regenerate response</span>
+          </div>
         ) : null}
       </div>
     )

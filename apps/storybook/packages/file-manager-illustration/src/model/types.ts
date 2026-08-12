@@ -109,7 +109,10 @@ export type ChatMessage = {
   readonly id: string
   readonly role: "user" | "assistant"
   readonly content: string
-  readonly timestamp?: string
+  readonly timestamp?: {
+    readonly label: string
+    readonly isTimestampVisuallySuppressed?: boolean
+  }
 }
 
 export type ChatStreamingAssistant = {
