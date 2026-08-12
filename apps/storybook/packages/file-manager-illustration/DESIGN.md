@@ -112,6 +112,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Checked:** typed initial presentation, SSR pane/list/selection markup, Storybook catalog state IDs, package check, static build, and contract verifier.
 - **Unknown/deviation:** runtime column count, list intrinsic row geometry, and dynamic material rendering remain runtime-dependent. Browser/Playwright visual review is excluded by the current user instruction.
 - **Follow-up:** Revisit only when native runtime captures are in scope or a new content state changes layout ownership.
+- **List view:** reflects the native `NSOutlineView` default with `Name`, `Date Modified`, `Size`, and `Kind` columns; 24px entry rows, 20px thumbnails, 13px regular name text, 12px secondary text, 4px inter-column spacing, and alternating unselected row backgrounds.
 
 ### Domains: Chat and Composer
 
