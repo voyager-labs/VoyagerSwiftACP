@@ -136,16 +136,23 @@ public actor RuntimeControlPlane {
         runReference: RuntimeRunReference,
     ) async throws -> RuntimeResult {
         let primary = normalizeAdapterError(error)
-        let storedTerminal = storedTerminalResult(host: reservation.host, runReference: runReference)
-        _ = try? await commit(host: reservation.host) { plane, registry in
-            plane.failLaunchTransition(
+        do {
+            if let terminal = try await commit(host: reservation.host, { plane, registry in
+                plane.failLaunchTransition(
+                    host: reservation.host,
+                    lease: reservation.lease,
+                    in: &registry,
+                )
+            }) {
+                return terminal
+            }
+        } catch {
+            if let terminal = try? await persistedTerminalResult(
                 host: reservation.host,
-                lease: reservation.lease,
-                in: &registry,
-            )
-        }
-        if let storedTerminal {
-            return storedTerminal
+                runReference: runReference,
+            ) {
+                return terminal
+            }
         }
         throw primary
     }
@@ -165,7 +172,7 @@ public actor RuntimeControlPlane {
             throw CancellationError()
         } catch {
             let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
-            try? await commit(host: reservation.host) { plane, registry in
+            _ = try? await commit(host: reservation.host) { plane, registry in
                 try plane.interruptTransition(
                     host: reservation.host,
                     lease: lease,
@@ -174,13 +181,32 @@ public actor RuntimeControlPlane {
             }
             throw primary
         }
-        if sessions[reservation.host]?.stored.projection.isTerminal == true {
-            guard try await releaseTerminalLeaseIfNeeded(host: reservation.host, lease: lease) else {
-                throw RuntimeHostError.invalidEvent
-            }
-            return resultRespectingStoredTerminal(result, host: reservation.host)
+        if let terminal = try await reconcileConsumedResult(
+            result,
+            host: reservation.host,
+            lease: lease,
+        ) {
+            return terminal
         }
         return try await persistTerminalResult(result, host: reservation.host, lease: lease)
+    }
+
+    func reconcileConsumedResult(
+        _ result: RuntimeResult,
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> RuntimeResult? {
+        try await mutateAfterPersistedTransitions { plane in
+            guard var session = plane.sessions[host],
+                  session.stored.runReference == result.runReference,
+                  session.lease == .consuming(lease) || session.lease == .resuming(lease),
+                  let terminal = plane.terminalResult(for: session.stored)
+            else { return nil }
+            session.lease = .none
+            session.revision += 1
+            plane.sessions[host] = session
+            return terminal.outcome == result.outcome ? result : terminal
+        }
     }
 
     func releaseTerminalLeaseIfNeeded(
@@ -216,7 +242,7 @@ public actor RuntimeControlPlane {
         reservation: RunReservation,
         receipt: RuntimeLaunchReceipt? = nil,
     ) async throws {
-        try await commit(host: reservation.host) { plane, registry in
+        _ = try await commit(host: reservation.host) { plane, registry in
             try plane.interruptTransition(
                 host: reservation.host,
                 lease: reservation.lease,

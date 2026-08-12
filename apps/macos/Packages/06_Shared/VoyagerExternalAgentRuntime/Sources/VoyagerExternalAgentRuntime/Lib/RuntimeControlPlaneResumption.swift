@@ -24,11 +24,12 @@ public extension RuntimeControlPlane {
             try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw normalized
         }
-        if sessions[hostReference]?.stored.projection.isTerminal == true {
-            guard try await releaseTerminalLeaseIfNeeded(host: hostReference, lease: claim.lease) else {
-                throw RuntimeHostError.invalidEvent
-            }
-            return resultRespectingStoredTerminal(result, host: hostReference)
+        if let terminal = try await reconcileConsumedResult(
+            result,
+            host: hostReference,
+            lease: claim.lease,
+        ) {
+            return terminal
         }
         return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
     }
@@ -60,7 +61,7 @@ public extension RuntimeControlPlane {
         lease: UInt64,
     ) async throws {
         do {
-            try await commit(host: hostReference) { plane, registry in
+            _ = try await commit(host: hostReference) { plane, registry in
                 try plane.interruptTransition(
                     host: hostReference,
                     lease: lease,

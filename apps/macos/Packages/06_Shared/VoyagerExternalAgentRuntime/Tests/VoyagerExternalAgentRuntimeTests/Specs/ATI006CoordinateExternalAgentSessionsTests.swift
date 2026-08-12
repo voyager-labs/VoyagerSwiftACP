@@ -1829,6 +1829,49 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-project_external_agent_run_events: pending host terminal save wins over launch failure cleanup.
+    /// persistence lock에서 저장 중인 host terminal을 뒤늦은 launch 오류 정리보다 우선한다.
+    /// - 검증 내용: terminal save와 launch failure cleanup의 직렬화 이후 public·durable outcome 일치.
+    /// - 사전 조건: host terminal save가 gate에서 대기하는 동안 adapter launch가 실패하고 cleanup이 대기한다.
+    /// - 기대 결과: run은 adapter 오류 대신 저장된 completed 결과를 반환하고 projection도 completed를 유지한다.
+    @Test
+    func `pending host terminal save wins over queued launch failure cleanup`() async throws {
+        let host: ExternalAgentSessionReference = "host-pending-terminal-launch-failure"
+        let run = RuntimeRunReference("run-pending-terminal-launch-failure")
+        let launchGate = RuntimeTestGate()
+        let terminalSaveGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+            failsLaunchAfterGate: true,
+        )
+        let store = InMemoryRuntimeStateStore(saveGates: [3: terminalSaveGate])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let runTask = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForLaunchCount(1)
+        let hostTerminalTask = Task {
+            try await plane.ingestHostEvent(
+                reviewerBlockerTestsMakeHostTerminal(host: host, run: run, sequence: 1),
+            )
+        }
+        await store.waitForSaveCount(3)
+
+        await launchGate.open()
+        try await reviewerBlockerTestsWaitForPersistenceWaiters(1, on: plane)
+        await terminalSaveGate.open()
+
+        #expect(try await hostTerminalTask.value?.outcome == .completed)
+        #expect(try await runTask.value.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.currentState()?.sessions.first?.projection == .completed)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// ATI-006-project_external_agent_run_events: restored nonterminal session reserves its host.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

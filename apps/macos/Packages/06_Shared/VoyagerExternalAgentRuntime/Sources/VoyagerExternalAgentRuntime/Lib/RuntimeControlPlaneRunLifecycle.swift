@@ -45,15 +45,12 @@ extension RuntimeControlPlane {
             do {
                 event = try await iterator.next()
             } catch {
-                if let terminal = storedTerminalResult(host: host, runReference: receipt.runReference) {
+                if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                     return terminal
                 }
                 throw error
             }
             guard let event else { break }
-            if let terminal = storedTerminalResult(host: host, runReference: receipt.runReference) {
-                return terminal
-            }
             switch try await acceptProviderEvent(event, receipt: receipt, host: host) {
             case .nonterminal:
                 continue
@@ -79,7 +76,7 @@ extension RuntimeControlPlane {
         do {
             return try await .stream(adapter.eventStream(for: receipt.runReference))
         } catch {
-            if let terminal = storedTerminalResult(host: host, runReference: receipt.runReference) {
+            if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                 return .storedTerminal(terminal)
             }
             throw error
@@ -97,7 +94,7 @@ extension RuntimeControlPlane {
         do {
             result = try await adapter.terminalResult(for: receipt.runReference)
         } catch {
-            if let terminal = storedTerminalResult(host: host, runReference: receipt.runReference) {
+            if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                 return terminal
             }
             throw error
@@ -108,7 +105,7 @@ extension RuntimeControlPlane {
         guard result.outcome == terminal.outcome else {
             throw RuntimeHostError.malformedAdapterResponse
         }
-        return resultRespectingStoredTerminal(result, host: host)
+        return result
     }
 
     private func acceptProviderEvent(
@@ -127,7 +124,7 @@ extension RuntimeControlPlane {
         } catch let error as RuntimeHostError {
             guard error == .malformedAdapterResponse,
                   isSameRunProviderEvent(event, receipt: receipt, host: host),
-                  let terminal = storedTerminalResult(host: host, runReference: receipt.runReference)
+                  let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference)
             else { throw error }
             return .storedTerminal(terminal)
         }
@@ -174,7 +171,7 @@ extension RuntimeControlPlane {
         do {
             result = try await adapter.terminalResult(for: receipt.runReference)
         } catch {
-            if let terminal = storedTerminalResult(host: host, runReference: receipt.runReference) {
+            if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                 return terminal
             }
             throw error
@@ -182,23 +179,16 @@ extension RuntimeControlPlane {
         guard result.runReference == receipt.runReference else {
             throw RuntimeHostError.malformedAdapterResponse
         }
-        return resultRespectingStoredTerminal(result, host: host)
+        return result
     }
 
-    func resultRespectingStoredTerminal(
-        _ result: RuntimeResult,
+    func persistedTerminalResult(
         host: ExternalAgentSessionReference,
-    ) -> RuntimeResult {
-        guard let stored = sessions[host]?.stored,
-              stored.runReference == result.runReference,
-              let storedOutcome = outcome(for: stored.projection),
-              storedOutcome != result.outcome
-        else { return result }
-        return RuntimeResult(
-            runReference: result.runReference,
-            outcome: storedOutcome,
-            artifactReferences: [],
-        )
+        runReference: RuntimeRunReference,
+    ) async throws -> RuntimeResult? {
+        try await mutateAfterPersistedTransitions { plane in
+            plane.storedTerminalResult(host: host, runReference: runReference)
+        }
     }
 
     func storedTerminalResult(
