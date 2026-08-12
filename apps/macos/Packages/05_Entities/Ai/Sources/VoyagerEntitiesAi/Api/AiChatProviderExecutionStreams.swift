@@ -284,32 +284,29 @@ extension AiChatProviderExecutionClient {
         context: AiChatRequestContextSnapshot,
         preflight: AiChatProviderPreflightResult,
         now: @escaping @Sendable () -> Int64,
-        executor: @escaping @Sendable (
-            _ model: String,
-            _ prompt: String,
-            _ thinking: AiChatProviderThinkingPayload?,
-            _ credential: OAuthCredentialFile,
-            _ onDelta: @escaping @Sendable (String) -> Void,
-        ) async throws -> String,
+        executor: @escaping AiChatProviderCodexExecutor,
     ) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 continuation.yield(.started(context: context))
+                let activityState = CodexActivityStateBox(context: context)
 
                 do {
                     let prompt = makeCodexPrompt(payload: preflight.payload)
+                    let readablePaths = codexReadablePaths(payload: preflight.payload)
                     let credential = try codexCredential(from: preflight.credential)
-                    let finalText = try await executor(
-                        preflight.payload.rawModelID,
-                        prompt,
-                        preflight.payload.thinking,
-                        credential,
-                    ) { delta in
-                        guard !delta.isEmpty else { return }
-                        continuation.yield(.delta(context: context, text: delta))
+                    let finalText = try await executor(CodexExecutionRequest(
+                        model: preflight.payload.rawModelID,
+                        prompt: prompt,
+                        thinking: preflight.payload.thinking,
+                        readablePaths: readablePaths,
+                        credential: credential,
+                    )) { event in
+                        for emission in activityState.consume(event) {
+                            emitProviderPayload(emission, context: context, continuation: continuation)
+                        }
                     }
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-
                     yieldCodexFinal(
                         context: context,
                         finalText: finalText,
@@ -321,10 +318,11 @@ extension AiChatProviderExecutionClient {
                     return
                 } catch let error as CodexCLIExecutionError {
                     yieldCodexError(context: context, error: error, continuation: continuation)
+                } catch is CodexAppServerParsingError {
+                    continuation.yield(.failed(context: context, reason: .invalidRequest))
                 } catch {
                     yieldCodexUnknownError(context: context, error: error, continuation: continuation)
                 }
-
                 continuation.finish()
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
@@ -412,5 +410,7 @@ private func codexLogReason(_ error: CodexCLIExecutionError) -> String {
         "outputMissing(\(redactedProviderErrorBody(message)))"
     case let .nonZeroExit(message):
         "nonZeroExit(\(redactedProviderErrorBody(message)))"
+    case let .protocolFailure(reason):
+        "protocolFailure(\(reason.rawValue))"
     }
 }

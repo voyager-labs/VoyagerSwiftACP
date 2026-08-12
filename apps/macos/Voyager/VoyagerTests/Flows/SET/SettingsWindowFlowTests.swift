@@ -15,11 +15,11 @@ final class SettingsWindowFlowTests: XCTestCase {
 
     /// SET-001-open_settings_window: 기본 Settings 진입은 General에서 시작하고 현재 지원 section으로 전환한다.
     /// 사용자가 열린 Settings 창에서 section을 전환해도 reducer가 선택 상태를 결정적으로 바꾸는지 검증한다.
-    /// - 검증 내용: `.selectSection`이 General, Appearance, AI, Account의 현재 지원 section만 선택 상태로 반영한다.
+    /// - 검증 내용: `.selectSection`이 visible section을 반영하고 dormant Account 요청은 General로 정규화한다.
     /// - 사전 조건: 기본 `SettingsFeature.State`는 General section에서 시작한다.
-    /// - 기대 결과: 각 section action 뒤 selectedSection이 요청한 현재 section과 일치한다.
+    /// - 기대 결과: visible section은 요청대로 선택되고 Account 요청은 General로 정규화된다.
     func testSettingsEntryDefaultsToGeneralAndAllowsSectionSwitching() async {
-        XCTAssertEqual(SettingsSection.allCases, [.general, .appearance, .ai, .account])
+        XCTAssertEqual(SettingsSection.visibleCases, [.general, .appearance, .ai])
 
         let store = TestStore(initialState: SettingsFeature.State()) {
             SettingsFeature()
@@ -34,51 +34,38 @@ final class SettingsWindowFlowTests: XCTestCase {
             $0.selectedSection = .ai
         }
         await store.send(.selectSection(.account)) {
-            $0.selectedSection = .account
-        }
-        await store.send(.selectSection(.general)) {
             $0.selectedSection = .general
         }
+        await store.send(.selectSection(.general))
     }
 
-    // FLOW-PATH: ai_settings_access
+    // FLOW-PATH: ai_settings_deep_link
 
-    /// SET-001-switch_setting_tabs: access 상태가 허용할 때만 AppRoot의 AI deep link가 AI section을 선택한다.
-    /// 활성 및 비활성 access 상태에서 같은 open-AI command가 서로 다른 Settings section 결과를 만드는지 검증한다.
-    /// - 검증 내용: active access는 `.settings.selectSection(.ai)`를 받고 inactive access는 기존 허용 section을 유지한다.
-    /// - 사전 조건: active store는 core license access, inactive store는 Appearance section과 저장된 설정값을 가진다.
-    /// - 기대 결과: active는 AI를 선택하고 inactive는 Appearance 및 저장된 설정값을 보존한다.
-    func testOpenAISettingsSelectsAIOnlyWhenAccessAllowsIt() async {
-        var activeState = AppRootFeature.State()
-        activeState.settings.accessStatus = .coreLicenseActive
-        let activeStore = TestStore(initialState: activeState) {
+    /// SET-001-switch_setting_tabs: AppRoot의 AI deep link는 optional account 상태와 무관하게 AI section을 선택한다.
+    /// Free Plan runtime에서 open-AI command가 기존 Settings 값을 보존하면서 AI section으로 라우팅하는지 검증한다.
+    /// - 검증 내용: `.openAISettings`가 `.settings.selectSection(.ai)`를 보내고 저장된 General/Appearance 값을 유지한다.
+    /// - 사전 조건: Settings는 Appearance section과 저장된 directory 및 theme 값을 가진다.
+    /// - 기대 결과: AI section을 선택하며 기존 설정값은 바뀌지 않는다.
+    func testOpenAISettingsSelectsAIWithoutAccessGate() async {
+        var initialState = AppRootFeature.State()
+        initialState.settings.selectedSection = .appearance
+        initialState.settings.generalSettings.startingDirectory = "/flow/preserved"
+        initialState.settings.appearanceSettings.theme = .dark
+        let store = TestStore(initialState: initialState) {
             AppRootFeature()
         }
         // store.exhaustivity = .off: AppRoot native scene effect의 내부 순서 대신 AI section routing 결과를 검증한다.
-        activeStore.exhaustivity = .off
+        store.exhaustivity = .off
 
-        await activeStore.send(.openAISettings)
-        await activeStore.receive(\.settings.selectSection) {
+        await store.send(.openAISettings)
+        await store.receive(\.settings.selectSection) {
             $0.settings.selectedSection = .ai
         }
-        await activeStore.finish()
+        await store.finish()
 
-        var inactiveState = AppRootFeature.State()
-        inactiveState.settings.selectedSection = .appearance
-        inactiveState.settings.generalSettings.startingDirectory = "/flow/preserved"
-        inactiveState.settings.appearanceSettings.theme = .dark
-        let inactiveStore = TestStore(initialState: inactiveState) {
-            AppRootFeature()
-        }
-        // store.exhaustivity = .off: native scene effect는 외부 수동 경계이며 inactive AI routing 부재만 검증한다.
-        inactiveStore.exhaustivity = .off
-
-        await inactiveStore.send(.openAISettings)
-        await inactiveStore.finish()
-
-        XCTAssertEqual(inactiveStore.state.settings.selectedSection, .appearance)
-        XCTAssertEqual(inactiveStore.state.settings.generalSettings.startingDirectory, "/flow/preserved")
-        XCTAssertEqual(inactiveStore.state.settings.appearanceSettings.theme, .dark)
+        XCTAssertEqual(store.state.settings.selectedSection, .ai)
+        XCTAssertEqual(store.state.settings.generalSettings.startingDirectory, "/flow/preserved")
+        XCTAssertEqual(store.state.settings.appearanceSettings.theme, .dark)
     }
 
     // FLOW-PATH: reopen_existing
@@ -87,7 +74,7 @@ final class SettingsWindowFlowTests: XCTestCase {
     /// 기존 window의 native reopen은 수동 경계로 두고 reducer가 보존하는 상태를 검증한다.
     /// - 검증 내용: `.selectSection` 뒤 existing surface state는 selected section과 General/Appearance 저장값을 유지한다.
     /// - 사전 조건: Settings는 Appearance section과 저장된 directory 및 theme 값을 가진다.
-    /// - 기대 결과: Account section으로 전환한 뒤에도 두 저장값은 바뀌지 않는다.
+    /// - 기대 결과: AI section으로 전환한 뒤에도 두 저장값은 바뀌지 않는다.
     func testReopenExistingSettingsPreservesCurrentSectionAndValues() async {
         var initialState = SettingsFeature.State(appearanceTheme: .dark)
         initialState.selectedSection = .appearance
@@ -96,11 +83,11 @@ final class SettingsWindowFlowTests: XCTestCase {
             SettingsFeature()
         }
 
-        await store.send(.selectSection(.account)) {
-            $0.selectedSection = .account
+        await store.send(.selectSection(.ai)) {
+            $0.selectedSection = .ai
         }
 
-        XCTAssertEqual(store.state.selectedSection, .account)
+        XCTAssertEqual(store.state.selectedSection, .ai)
         XCTAssertEqual(store.state.generalSettings.startingDirectory, "/flow/preserved")
         XCTAssertEqual(store.state.appearanceSettings.theme, .dark)
     }

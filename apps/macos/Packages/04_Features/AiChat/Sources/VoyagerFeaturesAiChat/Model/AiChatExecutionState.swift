@@ -41,9 +41,9 @@ public struct AiChatPreparedRequest: Equatable, Sendable {
     public init(
         prompt: String,
         messages: [AiChatMessage],
-        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         assistantReplacementIndex: Int?,
         historyTruncation: AiChatHistoryTruncationMetadata,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         requestContextOverride: AiChatLockedRequestContextSnapshot? = nil,
         requestContextSource: AiChatLockedRequestContextSnapshot? = nil,
     ) {
@@ -88,6 +88,42 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
     }
 }
 
+public struct AiChatExecutionActivityState: Equatable, Sendable {
+    public private(set) var activeActivities: [AiChatExecutionActivityID: AiChatExecutionActivitySignal]
+    public private(set) var beginOrder: [AiChatExecutionActivityID]
+    public private(set) var latestTransition: AiChatExecutionActivitySignal?
+
+    public var selectedActivity: AiChatExecutionActivitySignal? {
+        beginOrder.reversed().lazy.compactMap { activeActivities[$0] }.first
+    }
+
+    public init(
+        activeActivities: [AiChatExecutionActivityID: AiChatExecutionActivitySignal] = [:],
+        beginOrder: [AiChatExecutionActivityID] = [],
+        latestTransition: AiChatExecutionActivitySignal? = nil,
+    ) {
+        self.activeActivities = activeActivities
+        self.beginOrder = beginOrder.filter { activeActivities[$0] != nil }
+        self.latestTransition = latestTransition
+    }
+
+    public func recording(_ signal: AiChatExecutionActivitySignal) -> Self {
+        var result = self
+        switch signal.phase {
+        case .began:
+            result.activeActivities[signal.activityID] = signal
+            result.beginOrder.removeAll { $0 == signal.activityID }
+            result.beginOrder.append(signal.activityID)
+            result.latestTransition = signal
+        case .ended:
+            guard result.activeActivities.removeValue(forKey: signal.activityID) != nil else { return self }
+            result.beginOrder.removeAll { $0 == signal.activityID }
+            result.latestTransition = signal
+        }
+        return result
+    }
+}
+
 public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
     public let submittedAtMs: Int64
     public let firstDeltaAtMs: Int64?
@@ -95,6 +131,7 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
     public let chunkCount: Int
     public let terminalFailure: AiChatExecutionFailure?
     public let wasCancelled: Bool
+    public let activityState: AiChatExecutionActivityState
 
     public var requestDurationMs: Int64? {
         guard let terminalAtMs else { return nil }
@@ -113,6 +150,7 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
         chunkCount: Int = 0,
         terminalFailure: AiChatExecutionFailure? = nil,
         wasCancelled: Bool = false,
+        activityState: AiChatExecutionActivityState = .init(),
     ) {
         self.submittedAtMs = submittedAtMs
         self.firstDeltaAtMs = firstDeltaAtMs
@@ -120,6 +158,7 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
         self.chunkCount = chunkCount
         self.terminalFailure = terminalFailure
         self.wasCancelled = wasCancelled
+        self.activityState = activityState
     }
 
     public func recordingDelta(at timestampMs: Int64) -> Self {
@@ -130,6 +169,19 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
             chunkCount: chunkCount + 1,
             terminalFailure: terminalFailure,
             wasCancelled: wasCancelled,
+            activityState: activityState,
+        )
+    }
+
+    public func recordingActivity(_ signal: AiChatExecutionActivitySignal) -> Self {
+        Self(
+            submittedAtMs: submittedAtMs,
+            firstDeltaAtMs: firstDeltaAtMs,
+            terminalAtMs: terminalAtMs,
+            chunkCount: chunkCount,
+            terminalFailure: terminalFailure,
+            wasCancelled: wasCancelled,
+            activityState: activityState.recording(signal),
         )
     }
 
@@ -164,6 +216,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
     public let historyTruncation: AiChatHistoryTruncationMetadata
     public let observabilitySummary: AiChatRequestObservabilitySummary
 
+    public var activityState: AiChatExecutionActivityState {
+        observabilitySummary.activityState
+    }
+
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.kind == rhs.kind
             && lhs.requestID == rhs.requestID
@@ -185,10 +241,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
         runID: AiChatRunID,
         context: AiChatRequestContextSnapshot,
         request: AiChatRequest,
-        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         selectedModelHandle: AiModelHandle,
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         customTitle: String? = nil,
         finalSnapshot: AiChatSessionSnapshot? = nil,
         historyTruncation: AiChatHistoryTruncationMetadata = .init(
@@ -220,10 +276,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
         runID: AiChatRunID,
         context: AiChatRequestContextSnapshot,
         request: AiChatRequest,
-        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         selectedModelHandle: AiModelHandle,
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         historyTruncation: AiChatHistoryTruncationMetadata = .init(
             includedMessageCount: 0,
             excludedMessageCount: 0,
@@ -254,14 +310,32 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: customTitle,
             finalSnapshot: finalSnapshot,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingDelta(at: timestampMs),
+        )
+    }
+
+    public func recordingActivity(_ signal: AiChatExecutionActivitySignal) -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
+            customTitle: customTitle,
+            finalSnapshot: finalSnapshot,
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary.recordingActivity(signal),
         )
     }
 
@@ -276,10 +350,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: customTitle,
             finalSnapshot: finalSnapshot,
             historyTruncation: historyTruncation,
@@ -298,10 +372,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: customTitle,
             finalSnapshot: snapshot,
             historyTruncation: historyTruncation,
@@ -316,10 +390,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: customTitle,
             finalSnapshot: nil,
             historyTruncation: historyTruncation,
@@ -334,10 +408,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: customTitle,
             finalSnapshot: finalSnapshot.map { Self.snapshot($0, customTitle: customTitle) },
             historyTruncation: historyTruncation,

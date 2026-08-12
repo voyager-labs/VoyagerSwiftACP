@@ -5,12 +5,13 @@ import { fileURLToPath } from "node:url"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import * as runtime from "../dist/index.js"
+import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
 const macosTokens = readFileSync(resolve(packageRoot, "src/styles/macos-tokens.css"), "utf8")
 const generatedMaterialMetadata = readFileSync(
-  resolve(packageRoot, "src/foundations/swiftui-material-metadata.generated.ts"),
+  resolve(packageRoot, "src/Foundations/swiftui-material-metadata.generated.ts"),
   "utf8",
 )
 const styleSheets = [
@@ -19,7 +20,6 @@ const styleSheets = [
   "src/styles/window-shell.css",
   "src/styles/sidebar.css",
   "src/styles/inspector.css",
-  "src/styles/workflows.css",
 ]
 const fileManagerCss = readFileSync(resolve(packageRoot, styleSheets[0]), "utf8")
 const css = [
@@ -28,7 +28,7 @@ const css = [
 ].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
 const designTokensStorySource = readFileSync(
-  resolve(packageRoot, "src/foundations/DesignTokens.stories.tsx"),
+  resolve(packageRoot, "src/Foundations/DesignTokens.stories.tsx"),
   "utf8",
 )
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
@@ -39,7 +39,6 @@ const index = JSON.parse(
 const tabs = [
   { id: "home", label: "Home" },
   { id: "directory", label: "Directory" },
-  { id: "ai-chat", label: "AI Chat" },
 ]
 
 const files = [
@@ -56,7 +55,6 @@ function render(activeTabId) {
   return renderToStaticMarkup(
     createElement(runtime.FileManagerIllustration, {
       files,
-      chatMessages: [{ role: "user", paragraph: "Summarize this file" }],
       contentContext: { tabs, activeTabId },
     }),
   )
@@ -64,7 +62,6 @@ function render(activeTabId) {
 
 const directoryMarkup = render("directory")
 const homeMarkup = render("home")
-const aiChatMarkup = render("ai-chat")
 
 assert.match(directoryMarkup, /aria-label="Sidebar"/)
 assert.match(directoryMarkup, /aria-label="Entries"/)
@@ -76,8 +73,6 @@ assert.ok(
 )
 assert.match(homeMarkup, /aria-label="Home"/)
 assert.doesNotMatch(homeMarkup, /aria-label="Entries"/)
-assert.match(aiChatMarkup, /aria-label="AI Chat"/)
-assert.doesNotMatch(aiChatMarkup, /aria-label="Entries"|aria-label="Context Pane"/)
 
 assert.deepEqual(Object.keys(runtime).sort(), ["FileManagerIllustration"])
 assert.deepEqual(Object.keys(packageJson.exports).sort(), [".", "./styles.css"])
@@ -86,8 +81,6 @@ const expectedPublicTypes = [
   "FileManagerIllustrationProps",
   "FileEntry",
   "EntryKind",
-  "ChatRole",
-  "ChatMessage",
   "ContentTab",
   "ContentContext",
 ]
@@ -173,11 +166,57 @@ const designTokensStory = fileManagerStories.find(
 assert.ok(designTokensStory, "Missing File Manager design tokens overview story")
 assert.equal(
   designTokensStory.importPath,
-  "./packages/file-manager-illustration/src/foundations/DesignTokens.stories.tsx",
+  "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 99)
-assert.equal(fileManagerPaths.size, 29)
+assert.equal(fileManagerStories.length, 164)
+assert.equal(fileManagerPaths.size, 42)
 assert.equal(nonFileManagerStories.length, 0)
+
+/* ── RED→GREEN contract: thumbnailSrc data path + asset verification ── */
+
+const thumbnailFiles = [
+  {
+    id: "img-1",
+    displayName: "Photo.png",
+    kind: "image",
+    extension: "png",
+    secondaryLabel: null,
+    thumbnailSrc: "https://example.com/photo.png",
+  },
+  {
+    id: "folder-1",
+    displayName: "Folder",
+    kind: "folder",
+    extension: null,
+    secondaryLabel: null,
+  },
+  {
+    id: "pdf-1",
+    displayName: "Doc.pdf",
+    kind: "pdf",
+    extension: "pdf",
+    secondaryLabel: null,
+  },
+  {
+    id: "doc-1",
+    displayName: "Notes.doc",
+    kind: "doc",
+    extension: "doc",
+    secondaryLabel: null,
+  },
+]
+
+function renderWithFiles(files) {
+  return renderToStaticMarkup(
+    createElement(runtime.FileManagerIllustration, {
+      files,
+      contentContext: { tabs, activeTabId: "directory" },
+    }),
+  )
+}
+
+const thumbnailMarkup = renderWithFiles(thumbnailFiles)
+verifyThumbnailFixtures(packageRoot, thumbnailMarkup)
 
 console.log("native layout contract: pass")
 console.log(`catalog: ${fileManagerStories.length} stories / ${fileManagerPaths.size} paths`)

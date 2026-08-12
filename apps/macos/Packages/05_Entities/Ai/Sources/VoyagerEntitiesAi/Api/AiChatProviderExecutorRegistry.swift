@@ -1,11 +1,16 @@
 import Foundation
 
+struct CodexExecutionRequest {
+    var model: String
+    var prompt: String
+    var thinking: AiChatProviderThinkingPayload?
+    var readablePaths: [URL]
+    var credential: OAuthCredentialFile
+}
+
 typealias AiChatProviderCodexExecutor = @Sendable (
-    _ model: String,
-    _ prompt: String,
-    _ thinking: AiChatProviderThinkingPayload?,
-    _ credential: OAuthCredentialFile,
-    _ onDelta: @escaping @Sendable (String) -> Void,
+    _ request: CodexExecutionRequest,
+    _ onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void,
 ) async throws -> String
 
 struct AiChatProviderExecutionInput {

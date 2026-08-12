@@ -1164,6 +1164,33 @@ class CheckProcessInfoEnvironmentOwnershipTests(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("snapshot", errors[0])
 
+    def test_ignores_generated_uppercase_build_sources(self) -> None:
+        from scripts.validate_build_matrix import (
+            check_process_info_environment_ownership,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp)
+            source_path = source_root / "Sources/Config.swift"
+            generated_path = source_root / "Build/Generated.swift"
+            source_path.parent.mkdir(parents=True)
+            generated_path.parent.mkdir(parents=True)
+            source_path.write_text(
+                'let value = ProcessInfo.processInfo.environment["SOURCE_KEY"]\n'
+            )
+            generated_path.write_text(
+                'let value = ProcessInfo.processInfo.environment["GENERATED_KEY"]\n'
+            )
+            with mock.patch(
+                "scripts.validate_build_matrix.ALLOWED_PROCESS_INFO_LITERAL_KEYS",
+                {},
+            ):
+                errors: list[str] = []
+                check_process_info_environment_ownership(errors, [source_root])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("SOURCE_KEY", errors[0])
+            self.assertNotIn("GENERATED_KEY", errors[0])
+
     def test_passes_for_manifested_literal_and_snapshot_access(self) -> None:
         from scripts.validate_build_matrix import (
             check_process_info_environment_ownership,

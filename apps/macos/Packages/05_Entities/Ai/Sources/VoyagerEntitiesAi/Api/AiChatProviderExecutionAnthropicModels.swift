@@ -267,7 +267,7 @@ struct AnthropicOutputConfig: Encodable {
         case let .some(.adaptive(defaultEffort)):
             guard let defaultEffort else { return nil }
             effort = defaultEffort.rawValue
-        case .some(.disabled), .some(.tokenBudget), .some(.none), nil:
+        case .some(.disabled), .some(.tokenBudget), .some(AiChatProviderThinkingPayload.none), nil:
             return nil
         }
     }
@@ -332,6 +332,18 @@ struct AnthropicContentBlock: Decodable {
     let type: String
     let text: String?
     let input: JSONValue?
+    let id: String?
+    let name: String?
+    let toolUseID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case input
+        case id
+        case name
+        case toolUseID = "tool_use_id"
+    }
 }
 
 private extension JSONValue {
@@ -401,10 +413,12 @@ struct AnthropicStreamDelta: Decodable {
     let type: String?
     let text: String?
     let partialJSON: String?
+    let thinking: String?
 
     enum CodingKeys: String, CodingKey {
         case type
         case text
         case partialJSON = "partial_json"
+        case thinking
     }
 }

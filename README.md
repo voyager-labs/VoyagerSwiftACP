@@ -4,8 +4,8 @@
 
 ## Monorepo Layout
 
-- `apps/backend`: FastAPI 백엔드 (uv)
-- `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper
+- `apps/entry-core`: Go CLI와 foreground daemon runtime foundation
+- `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper/XPC
 - `docs/`: AI 에이전트용 PRD/아키텍처 문서 인덱스
 
 ## Environment Setup
@@ -31,12 +31,12 @@ VOY-580 승인 목표에서 런타임 환경(`APP_ENV=dev|prod`)과 컴파일 �
 - 운영 배포는 `Prod-Release`만 허용합니다.
 - 전체 계약과 Dotenv 소유권은 [canonical 환경 문서](docs/canonical/ENGINEERING/common/environment.md)를 따릅니다.
 
-### 백엔드 실행 방식
+### macOS 런타임 구성
 
-macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 프로세스를 앱 번들에서 직접 실행하지 않습니다.
+macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니다.
 
-- **Dev/Prod 공통**: Helper 및 XPC 서비스가 검색/인덱싱 런타임을 담당
-- 백엔드(`apps/backend`)는 별도 서버 런타임으로 독립 운영
+- **로컬 검색/인덱싱**: VoyagerHelper와 FilterSearchXPC가 폴더 접근, 파일 변경 감지, Spotlight 검색을 담당
+- **원격 계정/접근**: `PUBLIC_GATEWAY_URL`로 설정한 Gateway가 인증 및 접근 API를 담당
 
 ### 보안
 
@@ -46,10 +46,11 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 ## Quick Start
 
-- Backend
-    - Setup: `cd apps/backend && uv sync && uv run pre-commit install`
-    - Dev server: `uv run dev`
-    - Tests: `uv run pytest`
+- Entry Core
+    - Go runtime guide: [`apps/entry-core/README.md`](apps/entry-core/README.md)
+    - Swift client package: [`apps/macos/Packages/06_Shared/VoyagerEntryCoreClient`](apps/macos/Packages/06_Shared/VoyagerEntryCoreClient)
+    - Go-only check: `mise run entry-core-check`
+    - Go + Swift interoperability check: `mise run entry-core-interop-check`
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
@@ -98,6 +99,9 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - Build (CLI): `mise run macos-build`
     - Prod build/archive (CLI): `mise run macos-launch -- --scheme Voyager-Prod --configuration Prod-Release --no-launch`
     - Tests (CLI): `mise run macos-test`
+    - Helper focused test: `mise run macos-helper-test -- -only-testing:VoyagerHelperTests/XPCSearchServiceRecentTagDispatchTests`
+    - Helper full test: `mise run macos-helper-test`
+    - FilterSearchXPC build: `mise run macos-filter-search-xpc-build`
     - OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Dev-Debug --no-launch`
     - SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug --no-launch`
     - ComposerHost Launch (CLI): `mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug`
@@ -211,11 +215,10 @@ mise install
 
 - Conventional Commits
     - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
-    - Scope: 모노레포 명확성을 위해 `(backend)` 또는 `(macos)` 권장
+    - Scope: 모노레포 명확성을 위해 `(macos)` 또는 `(harness)` 권장
     - Types: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
     - Body: `- ` 불릿으로 WHAT/WHY, 현재형, 영향 범위/파일 필요 시 명시
     - 예시:
-        - `feat(backend): add asset ingestion endpoint`
         - `fix(macos): resolve crash on QuickLook preview`
         - `ui(macos): improve sidebar navigation layout`
         - `docs: consolidate API contract guidelines`

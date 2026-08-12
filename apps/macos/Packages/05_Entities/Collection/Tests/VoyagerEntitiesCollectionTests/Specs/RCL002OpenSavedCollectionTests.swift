@@ -47,11 +47,8 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 사전 조건: `fixtures/fixtures/collections/basic_collection.voycoll`을 sandbox로 복사해 사용
     /// - 기대 결과: 원본 fixture를 변경하지 않고 package payload가 definition-only collection으로 복원됨
     func testOpenSavedCollection_withBasicPackageFixture_restoresDefinition() async throws {
-        let sandbox = try CollectionFixtureSandbox.copyingDirectory(
-            from: "fixtures/fixtures/collections/basic_collection.voycoll",
-        )
+        let sandbox = try CollectionFixtureSandbox.copyingBasicCollection()
         defer { try? sandbox.cleanup() }
-
         let result = try await CollectionFileClient.liveValue.load(sandbox.fileURL)
 
         XCTAssertEqual(result.containerFormat, .package)
@@ -155,16 +152,18 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 사전 조건: query, scope, snapshot item을 가진 새 collection save payload
     /// - 기대 결과: 선택 경로는 `.voycoll`로 저장되고 completion은 동일한 context를 반환함
     func testSaveCurrentFilterAsNewCollection_withSelectedURL_savesVoycollPackage() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingBasicCollection()
+        defer { try? sandbox.cleanup() }
         let payload = makeSavePayload(
             query: "new report",
             snapshotItems: [.string("/VoyagerFixtures/Documents/report.md")],
         )
-        let selectedURL = URL(fileURLWithPath: "/tmp/RCL Saved Collection")
+        let selectedURL = sandbox.root.appendingPathComponent("RCL Saved Collection")
         let recorder = CollectionFileSaveRecorder()
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
-            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in URL(fileURLWithPath: "/tmp") }
+            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in sandbox.root }
             $0.collectionSavePanelClient.presentSavePanel = { _ in selectedURL }
             $0.collectionFileClient.save = recorder.save
         }
@@ -185,7 +184,7 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         }
 
         let saved = try XCTUnwrap(recorder.lastSave)
-        XCTAssertEqual(saved.url.path, "/tmp/RCL Saved Collection.voycoll")
+        XCTAssertEqual(saved.url.path, sandbox.root.appendingPathComponent("RCL Saved Collection.voycoll").path)
         XCTAssertEqual(saved.file.query, "new report")
         XCTAssertEqual(saved.file.snapshot?.items, [.string("/VoyagerFixtures/Documents/report.md")])
     }
@@ -424,8 +423,10 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 사전 조건: dirty context를 가진 opened collection payload와 기존 `.voycoll` URL
     /// - 기대 결과: 기존 URL에 저장되고 completion 후 저장 진행 상태가 해제됨
     func testSaveCollectionFilterChanges_withExistingURL_writesCurrentDefinition() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingBasicCollection()
+        defer { try? sandbox.cleanup() }
         let payload = makeSavePayload(query: "updated report", snapshotItems: nil)
-        let existingURL = URL(fileURLWithPath: "/tmp/existing_collection.voycoll")
+        let existingURL = sandbox.root.appendingPathComponent("existing_collection.voycoll")
         let recorder = CollectionFileSaveRecorder()
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()

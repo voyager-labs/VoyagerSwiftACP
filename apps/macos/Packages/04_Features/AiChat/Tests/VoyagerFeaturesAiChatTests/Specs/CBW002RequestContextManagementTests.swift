@@ -16,6 +16,7 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     /// - 기대 결과: draft source가 표시되고 current context와 added attachments는 서로 섞이지 않습니다.
     func testShowRequestContextSeparatesDraftCurrentContextAndAddedAttachments() {
         let state = AiChatFeature.State(
+            sessionID: makeCBW002AttachmentSessionID(),
             currentContext: makeCBW002CurrentContext(title: "ProjectPlan.md", path: "/tmp/ProjectPlan.md"),
             addedAttachments: [
                 makeCBW002DraftAttachment(
@@ -40,20 +41,149 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
     }
 
-    /// CBW-002-show_request_context: processing 중에는 live draft가 아니라 locked snapshot을 표시한다.
-    /// submit 이후 사용자가 current context나 attachment draft를 바꿔도 현재 요청의 snapshot chip이 고정되는지 검증합니다.
-    /// - 검증 내용: processing display source와 locked attachment chip, live-only attachment 제외를 확인합니다.
-    /// - 사전 조건: executionPhase는 locked context가 있는 processing 상태이고 live state에는 다른 attachment가 있습니다.
-    /// - 기대 결과: request context display는 locked source이며 live draft 변경을 현재 요청에 섞지 않습니다.
-    func testShowRequestContextUsesLockedSnapshotWhileProcessing() {
+    /// CBW-002-show_request_context: processing 중 locked snapshot과 live next context를 분리해 표시한다.
+    /// submit 이후 current response chip은 고정하고 다음 메시지의 current context와 attachment는 별도 편집면으로 유지하는지 검증합니다.
+    /// - 검증 내용: locked current-response section과 draft root section의 chip/removable 상태를 확인합니다.
+    /// - 사전 조건: executionPhase는 Locked.md context로 processing 중이고 live state에는 LiveOnly.md attachment가 있습니다.
+    /// - 기대 결과: current response는 non-removable locked 값이고 next message는 removable live 값입니다.
+    func testShowRequestContextUsesLockedSnapshotWhileProcessing() throws {
         let state = makeProcessingStateWithLockedContext()
 
         let displayModel = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
+        let currentResponse = try XCTUnwrap(displayModel.currentResponse)
 
-        XCTAssertEqual(displayModel.source, .locked)
-        XCTAssertEqual(displayModel.currentContext?.title, "Locked.md")
-        XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["LockedNotes.txt"])
-        XCTAssertEqual(displayModel.addedAttachments.map(\.isRemovable), [false])
+        XCTAssertEqual(currentResponse.source, .locked)
+        XCTAssertEqual(currentResponse.currentContext?.title, "Locked.md")
+        XCTAssertEqual(currentResponse.addedAttachments.map(\.title), ["LockedNotes.txt"])
+        XCTAssertEqual(currentResponse.addedAttachments.map(\.isRemovable), [false])
+        XCTAssertEqual(displayModel.source, .draft)
+        XCTAssertEqual(displayModel.currentContext?.title, "LiveOnly.md")
+        XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
+        XCTAssertEqual(displayModel.addedAttachments.map(\.isRemovable), [true])
+    }
+
+    /// CBW-002-show_request_context: processing 중 locked 응답 context와 editable next context를 동시에 투영한다.
+    /// 현재 응답 snapshot을 고정한 채 사용자가 다음 메시지의 current context와 attachment를 편집할 수 있는지 검증합니다.
+    /// - 검증 내용: root draft projection의 live current context, removable next attachment, processing lock 불변성을 확인합니다.
+    /// - 사전 조건: processing lock에는 Locked.md가 있고 live state에는 LiveOnly.md와 LiveOnly.txt가 있습니다.
+    /// - 기대 결과: editable projection은 live 값을 노출하고 active lock은 원 locked context를 그대로 유지합니다.
+    func testShowRequestContextProjectsEditableNextContextDuringProcessing() {
+        let state = makeProcessingStateWithLockedContext()
+        let originalLock = state.executionPhase.lock
+
+        let displayModel = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
+
+        XCTAssertEqual(displayModel.source, .draft)
+        XCTAssertEqual(displayModel.currentContext?.title, "LiveOnly.md")
+        XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
+        XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
+        XCTAssertEqual(displayModel.currentResponse?.source, .locked)
+        XCTAssertEqual(displayModel.currentResponse?.currentContext?.title, "Locked.md")
+        XCTAssertEqual(displayModel.currentResponse?.addedAttachments.map(\.title), ["LockedNotes.txt"])
+        XCTAssertEqual(displayModel.currentResponse?.addedAttachments.allSatisfy { !$0.isRemovable }, true)
+        XCTAssertEqual(state.executionPhase.lock, originalLock)
+    }
+
+    /// CBW-002-show_request_context: processing 중 next context는 add/remove/drop/current-context/folder mode를 편집한다.
+    /// 현재 response lock을 유지한 채 다음 메시지 context의 모든 composer 경로가 기존 live state만 갱신하는지 검증합니다.
+    /// - 검증 내용: picker/drop attachment 추가, 제거, current context 변경, folder mode 변경과 lock 불변성을 확인합니다.
+    /// - 사전 조건: Locked.md request가 processing 중이고 live next context에는 LiveOnly.txt attachment가 있습니다.
+    /// - 기대 결과: next projection만 편집되고 active request context/request/model identity는 원 lock과 동일합니다.
+    func testShowRequestContextEditsAllNextContextControlsDuringProcessing() async {
+        let initialState = makeProcessingStateWithLockedContext()
+        let originalLock = initialState.executionPhase.lock
+        guard let originSessionID = initialState.sessionID else {
+            return XCTFail("Expected processing session owner")
+        }
+        let pickerURL = URL(fileURLWithPath: "/tmp/NextPicker.txt")
+        let dropURL = URL(fileURLWithPath: "/tmp/NextDrop.txt")
+        let nextFolderContext = makeCBW002FolderContext(
+            summary: "Next folder",
+            folderPath: "/tmp/NextFolder",
+        )
+        let store = TestStore(initialState: initialState) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: processing lock 불변성과 next context 결과만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.attachmentPickerSelection(originSessionID, [pickerURL]))
+        await store.send(.attachmentDropSelection(originSessionID, [dropURL]))
+        await store.receive(.delegate(.clearCurrentContextSelection))
+        await store.send(.removeAddedAttachment(AiChatAttachmentID(rawValue: "live")))
+        await store.send(.currentContextChanged(nextFolderContext))
+        await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders))
+
+        let displayModel = AiChatStateDisplayModelBuilder(state: store.state).requestContextDisplayModel
+        XCTAssertEqual(displayModel.currentContext?.title, "Next folder")
+        XCTAssertEqual(displayModel.currentContext?.folderStructureMode, .includeSubfolders)
+        XCTAssertEqual(Set(displayModel.addedAttachments.map(\.title)), ["NextPicker.txt", "NextDrop.txt"])
+        XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
+        XCTAssertEqual(displayModel.currentResponse?.currentContext?.title, "Locked.md")
+        XCTAssertEqual(displayModel.currentResponse?.addedAttachments.map(\.title), ["LockedNotes.txt"])
+        XCTAssertEqual(store.state.executionPhase.lock, originalLock)
+    }
+
+    /// CBW-002-add_attachment_from_picker: 다른 session으로 전환된 뒤 도착한 picker/drop 결과를 무시한다.
+    /// 비동기 첨부 결과가 시작 session을 벗어나 현재 session의 draft에 local file을 추가하지 않는지 검증합니다.
+    /// - 검증 내용: picker delegate 시작 owner와 stale picker/drop result 이후 B attachment 불변성을 확인합니다.
+    /// - 사전 조건: session A에서 첨부 선택을 시작한 뒤 결과가 오기 전에 session B setup을 적용합니다.
+    /// - 기대 결과: A origin 결과는 B의 attachments, current context, new-chat preparation provenance를 변경하지 않습니다.
+    func testAttachmentResultsFromPreviousSessionDoNotMutateCurrentDraftOrPreparationProvenance() async {
+        let catalogRows = makeCatalogRows()
+        let models = makeProviderModels()
+        let sessionA = AiChatSessionID(rawValue: makeUUID("15151515-2222-3333-4444-000000000635"))
+        let sessionB = AiChatSessionID(rawValue: makeUUID("16161616-2222-3333-4444-000000000635"))
+        let setupB = AiChatSetupState(
+            restoreSessionID: nil,
+            sessionID: sessionB,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "B context"),
+            transcriptHistory: [],
+            draftText: "B draft",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+        let pickerStore = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionA,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: async attachment owner와 B draft 불변성만 선별 검증합니다.
+        pickerStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        await pickerStore.send(.attachmentPickerTapped)
+        await pickerStore.receive(.delegate(.requestAttachmentPicker(sessionA)))
+        await pickerStore.send(.setup(setupB))
+        let preparationProvenance = pickerStore.state.newChatPreparationProvenance
+        await pickerStore.send(.attachmentPickerSelection(sessionA, [URL(fileURLWithPath: "/tmp/A-picker.txt")]))
+
+        XCTAssertEqual(pickerStore.state.sessionID, sessionB)
+        XCTAssertEqual(pickerStore.state.draftText, "B draft")
+        XCTAssertTrue(pickerStore.state.addedAttachments.isEmpty)
+        XCTAssertEqual(pickerStore.state.currentContext.summary, "B context")
+        XCTAssertEqual(pickerStore.state.newChatPreparationProvenance, preparationProvenance)
+
+        let dropStore = TestStore(initialState: pickerStore.state) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: stale drop result가 B state와 preparation provenance를 변경하지 않는지 검증합니다.
+        dropStore.exhaustivity = .off(showSkippedAssertions: false)
+        let staleDropProvider = AiChatAttachmentDropProvider(provider: NSItemProvider())
+        await dropStore.send(.attachmentDrop(sessionA, [staleDropProvider]))
+        XCTAssertEqual(dropStore.state.newChatPreparationProvenance, preparationProvenance)
+
+        await dropStore.send(.attachmentDropSelection(sessionA, [URL(fileURLWithPath: "/tmp/A-drop.txt")]))
+
+        XCTAssertTrue(dropStore.state.addedAttachments.isEmpty)
+        XCTAssertEqual(dropStore.state.currentContext.summary, "B context")
+        XCTAssertEqual(dropStore.state.newChatPreparationProvenance, preparationProvenance)
     }
 
     // MARK: - CBW-002-add_attachment_from_picker
@@ -66,11 +196,11 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     func testAddAttachmentFromPickerCreatesFileDraft() async {
         let url = URL(fileURLWithPath: "/tmp/Notes.txt")
         let normalizedURL = url.standardizedFileURL
-        let store = TestStore(initialState: AiChatFeature.State()) {
+        let store = TestStore(initialState: AiChatFeature.State(sessionID: makeCBW002AttachmentSessionID())) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentPickerSelection([url])) { state in
+        await store.send(.attachmentPickerSelection(makeCBW002AttachmentSessionID(), [url])) { state in
             state.addedAttachments = [makeCBW002FileDraft(url: normalizedURL)]
         }
     }
@@ -84,15 +214,15 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         let originalURL = URL(fileURLWithPath: "/tmp/Folder/../Notes.txt")
         let duplicateURL = URL(fileURLWithPath: "/tmp/Notes.txt")
         let normalizedURL = duplicateURL.standardizedFileURL
-        let store = TestStore(initialState: AiChatFeature.State()) {
+        let store = TestStore(initialState: AiChatFeature.State(sessionID: makeCBW002AttachmentSessionID())) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentPickerSelection([originalURL])) { state in
+        await store.send(.attachmentPickerSelection(makeCBW002AttachmentSessionID(), [originalURL])) { state in
             state.addedAttachments = [makeCBW002FileDraft(url: normalizedURL)]
         }
 
-        await store.send(.attachmentPickerSelection([duplicateURL]))
+        await store.send(.attachmentPickerSelection(makeCBW002AttachmentSessionID(), [duplicateURL]))
         XCTAssertEqual(store.state.addedAttachments.map(\.id.rawValue), [normalizedURL.path(percentEncoded: false)])
     }
 
@@ -108,11 +238,14 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         let projectsURL = sandbox.appendingPathComponent("Projects", isDirectory: true)
         try FileManager.default.createDirectory(at: projectsURL, withIntermediateDirectories: false)
         let folderURL = projectsURL
-        let store = TestStore(initialState: AiChatFeature.State()) {
+        let store = TestStore(initialState: AiChatFeature.State(sessionID: makeCBW002AttachmentSessionID())) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentPickerSelection([collectionURL, folderURL])) { state in
+        await store.send(.attachmentPickerSelection(
+            makeCBW002AttachmentSessionID(),
+            [collectionURL, folderURL],
+        )) { state in
             state.addedAttachments = [
                 AiChatAttachmentDraft(
                     id: AiChatAttachmentID(rawValue: collectionURL.standardizedFileURL.path(percentEncoded: false)),
@@ -146,11 +279,14 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         let url = URL(fileURLWithPath: "/tmp/Notes.txt")
         let normalizedPath = url.standardizedFileURL.path(percentEncoded: false)
         let currentContext = makeCBW002CurrentContext(title: "Notes.txt", path: normalizedPath)
-        let store = TestStore(initialState: AiChatFeature.State(currentContext: currentContext)) {
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: makeCBW002AttachmentSessionID(),
+            currentContext: currentContext,
+        )) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentPickerSelection([url]))
+        await store.send(.attachmentPickerSelection(makeCBW002AttachmentSessionID(), [url]))
         XCTAssertEqual(store.state.currentContext, currentContext)
         XCTAssertTrue(store.state.addedAttachments.isEmpty)
     }
@@ -175,11 +311,14 @@ final class CBW002RequestContextManagementTests: XCTestCase {
             items: [],
             attachments: [],
         )
-        let store = TestStore(initialState: AiChatFeature.State(currentContext: currentContext)) {
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: makeCBW002AttachmentSessionID(),
+            currentContext: currentContext,
+        )) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentPickerSelection([url]))
+        await store.send(.attachmentPickerSelection(makeCBW002AttachmentSessionID(), [url]))
         XCTAssertEqual(store.state.currentContext, currentContext)
         XCTAssertTrue(store.state.addedAttachments.isEmpty)
     }
@@ -190,14 +329,14 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     /// - 사전 조건: attachment draft가 없는 idle chat state입니다.
     /// - 기대 결과: feature는 delegate만 방출하고 state를 직접 변경하지 않습니다.
     func testAttachmentPickerTappedDelegatesRequestAttachmentPicker() async {
-        let store = TestStore(initialState: AiChatFeature.State()) {
+        let store = TestStore(initialState: AiChatFeature.State(sessionID: makeCBW002AttachmentSessionID())) {
             AiChatFeature()
         }
         // delegate 방출만 검증하는 boundary test라 unrelated state exhaustivity를 낮춥니다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.attachmentPickerTapped)
-        await store.receive(.delegate(.requestAttachmentPicker))
+        await store.receive(.delegate(.requestAttachmentPicker(makeCBW002AttachmentSessionID())))
     }
 
     // MARK: - CBW-002-add_attachment_by_drop
@@ -213,12 +352,13 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         let normalizedPath = normalizedURL.path(percentEncoded: false)
         let folderKey = makeCBW002FolderKey(.reference, "/tmp")
         let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: makeCBW002AttachmentSessionID(),
             currentContext: makeCBW002CurrentContext(title: "Dropped.txt", path: normalizedPath),
         )) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentDropSelection([url])) { state in
+        await store.send(.attachmentDropSelection(makeCBW002AttachmentSessionID(), [url])) { state in
             state.addedAttachments = [makeCBW002FileDraft(url: normalizedURL)]
             state.currentContextFolderStructureModes = [folderKey: .currentFolderOnly]
             state.currentContext = makeCBW002CurrentContext(
@@ -242,11 +382,11 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         let normalizedDroppedURL = droppedURL.standardizedFileURL
         let droppedPath = normalizedDroppedURL.path(percentEncoded: false)
         let nextSelectionPath = nextSelectionURL.standardizedFileURL.path(percentEncoded: false)
-        let store = TestStore(initialState: AiChatFeature.State()) {
+        let store = TestStore(initialState: AiChatFeature.State(sessionID: makeCBW002AttachmentSessionID())) {
             AiChatFeature()
         }
 
-        await store.send(.attachmentDropSelection([droppedURL])) { state in
+        await store.send(.attachmentDropSelection(makeCBW002AttachmentSessionID(), [droppedURL])) { state in
             state.addedAttachments = [makeCBW002FileDraft(url: normalizedDroppedURL)]
         }
         await store.receive(.delegate(.clearCurrentContextSelection))
@@ -587,7 +727,8 @@ final class CBW002RequestContextManagementTests: XCTestCase {
             executionPhase: .processing(lock),
         )
 
-        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+        let currentContext = AiChatStateDisplayModelBuilder(state: state)
+            .requestContextDisplayModel.currentResponse?.currentContext
 
         XCTAssertEqual(currentContext?.title, "SCR-20260528-suth.png")
         XCTAssertEqual(currentContext?.iconSystemName, "doc")
@@ -617,7 +758,8 @@ final class CBW002RequestContextManagementTests: XCTestCase {
             executionPhase: .processing(lock),
         )
 
-        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+        let currentContext = AiChatStateDisplayModelBuilder(state: state)
+            .requestContextDisplayModel.currentResponse?.currentContext
 
         XCTAssertEqual(currentContext?.title, "Screenshot.png")
         XCTAssertEqual(currentContext?.iconSystemName, "paperclip")
@@ -709,7 +851,7 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
     func testLockedCurrentContextChipUsesResolvedFolderMetadataDuringProcessing() {
         let catalogRows = makeCatalogRows()
-        let (state, currentContext) = makeLockedFolderProcessingState(catalogRows: catalogRows)
+        let (_, currentContext) = makeLockedFolderProcessingState(catalogRows: catalogRows)
 
         XCTAssertEqual(currentContext?.title, "Desktop")
         XCTAssertEqual(currentContext?.iconSystemName, "folder")
@@ -869,7 +1011,8 @@ final class CBW002RequestContextManagementTests: XCTestCase {
             executionPhase: .processing(lock),
         )
 
-        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+        let currentContext = AiChatStateDisplayModelBuilder(state: state)
+            .requestContextDisplayModel.currentResponse?.currentContext
 
         XCTAssertEqual(currentContext?.title, "Desktop")
         XCTAssertEqual(currentContext?.iconSystemName, "folder")
@@ -989,8 +1132,295 @@ final class CBW002RequestContextManagementTests: XCTestCase {
 
         let completedDisplayModel = AiChatStateDisplayModelBuilder(state: completedState).requestContextDisplayModel
         XCTAssertEqual(completedDisplayModel.source, AiChatRequestContextDisplaySource.draft)
+        XCTAssertNil(completedDisplayModel.currentResponse)
         XCTAssertEqual(completedDisplayModel.currentContext?.title, "LiveOnly.txt")
         XCTAssertEqual(completedDisplayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
+    }
+
+    // MARK: - CBW-002-change_context_folder_structure_mode
+
+    /// CBW-002-change_context_folder_structure_mode: native menu folder projection은 두 mode를 고정 순서로 제공한다.
+    /// menu item이 display title이 아닌 mode enum을 identity로 사용하고 current-context/attachment target을 포함하지 않는지 검증합니다.
+    /// - 검증 내용: fixed option order, mode identity, single selection, accessibility value, target identity exclusion
+    /// - 사전 조건: includeSubfolders가 선택된 folder structure menu projection입니다.
+    /// - 기대 결과: 두 항목만 고정 순서로 생성되고 selected는 하나이며 item 저장 필드에 target identity가 없습니다.
+    func testNativeMenuFolderProjectionProvidesTwoTargetAgnosticOptions() {
+        let items = AiChatFolderStructureMenuItemDisplayModel.items(selectedMode: .includeSubfolders)
+
+        XCTAssertEqual(items.map(\.mode), [.currentFolderOnly, .includeSubfolders])
+        XCTAssertEqual(items.map(\.title), ["Current folder only", "Include subfolders"])
+        XCTAssertEqual(items.filter(\.isSelected).map(\.mode), [.includeSubfolders])
+        XCTAssertEqual(items.map(\.accessibilityLabel), ["Current folder only", "Include subfolders"])
+        XCTAssertEqual(items.map(\.accessibilityValue), ["Not selected", "Selected"])
+        XCTAssertTrue(items.allSatisfy(\.isEnabled))
+
+        let storedFieldNames = Set(items.flatMap { item in
+            Mirror(reflecting: item).children.compactMap(\.label)
+        })
+        XCTAssertEqual(storedFieldNames, Set([
+            "mode",
+            "title",
+            "isSelected",
+            "isEnabled",
+            "accessibilityLabel",
+            "accessibilityValue",
+        ]))
+    }
+}
+
+extension CBW002RequestContextManagementTests {
+    /// CBW-002-change_context_folder_structure_mode: current context mode 변경은 attachment mode를 변경하지 않는다.
+    /// current context aggregate target이 added attachment의 독립 metadata까지 확장되지 않는지 검증합니다.
+    /// - 검증 내용: current context folder mode 변경 후 두 attachment의 metadata 불변을 확인합니다.
+    /// - 사전 조건: current folder context와 서로 다른 mode를 가진 folder attachment 두 개가 있습니다.
+    /// - 기대 결과: current context만 includeSubfolders가 되고 attachment mode는 기존 값을 유지합니다.
+    func testFolderStructureModeCurrentContextPreservesAttachmentModes() async {
+        let folderPath = URL(filePath: "/tmp/Projects", directoryHint: .isDirectory).standardizedFileURL
+            .path(percentEncoded: false)
+        let folderKey = makeCBW002FolderKey(.reference, folderPath)
+        let firstAttachment = makeCBW002FolderDraftAttachment(
+            id: "first-folder",
+            title: "First",
+            path: "/tmp/First",
+            mode: .currentFolderOnly,
+        )
+        let secondAttachment = makeCBW002FolderDraftAttachment(
+            id: "second-folder",
+            title: "Second",
+            path: "/tmp/Second",
+            mode: .includeSubfolders,
+        )
+        let attachments = [firstAttachment, secondAttachment]
+        let store = TestStore(initialState: AiChatFeature.State(
+            currentContext: makeCBW002FolderContext(summary: "Projects", folderPath: folderPath),
+            addedAttachments: attachments,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders)) { state in
+            state.currentContextFolderStructureModes = [folderKey: .includeSubfolders]
+            state.currentContext = makeCBW002FolderContext(
+                summary: "Projects",
+                folderPath: folderPath,
+                mode: .includeSubfolders,
+            )
+        }
+
+        XCTAssertEqual(store.state.addedAttachments, attachments)
+    }
+
+    /// CBW-002-change_context_folder_structure_mode: attachment mode 변경은 exact attachment ID만 갱신한다.
+    /// attachment target action이 current context 또는 다른 attachment로 번지지 않는지 검증합니다.
+    /// - 검증 내용: matching ID metadata 변경과 current context/other attachment 불변을 확인합니다.
+    /// - 사전 조건: current folder context와 folder attachment 두 개가 모두 currentFolderOnly입니다.
+    /// - 기대 결과: 선택한 attachment만 includeSubfolders로 변경됩니다.
+    func testFolderStructureModeAttachmentTargetsExactID() async {
+        let currentContext = makeCBW002FolderContext(
+            summary: "Projects",
+            folderPath: "/tmp/Projects",
+            mode: .currentFolderOnly,
+        )
+        let target = makeCBW002FolderDraftAttachment(
+            id: "target-folder",
+            title: "Target",
+            path: "/tmp/Target",
+            mode: .currentFolderOnly,
+        )
+        let other = makeCBW002FolderDraftAttachment(
+            id: "other-folder",
+            title: "Other",
+            path: "/tmp/Other",
+            mode: .currentFolderOnly,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            currentContext: currentContext,
+            addedAttachments: [target, other],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.attachment(target.id), .includeSubfolders)) { state in
+            state.addedAttachments[0] = makeCBW002FolderDraftAttachment(
+                id: "target-folder",
+                title: "Target",
+                path: "/tmp/Target",
+                mode: .includeSubfolders,
+            )
+        }
+
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertEqual(store.state.addedAttachments[1], other)
+    }
+
+    /// CBW-002-change_context_folder_structure_mode: 제거된 attachment의 stale mode action은 no-op이다.
+    /// menu 생성 뒤 chip이 제거된 race에서 이전 ID가 다른 target으로 fallback되지 않는지 검증합니다.
+    /// - 검증 내용: stale attachment ID action 이후 current context와 remaining attachment 불변을 확인합니다.
+    /// - 사전 조건: current folder context와 removed/remaining folder attachment가 있고 removed를 먼저 삭제합니다.
+    /// - 기대 결과: stale mode action은 crash 없이 상태를 변경하지 않습니다.
+    func testFolderStructureModeRemovedAttachmentActionIsNoOp() async {
+        let currentContext = makeCBW002FolderContext(
+            summary: "Projects",
+            folderPath: "/tmp/Projects",
+            mode: .currentFolderOnly,
+        )
+        let removed = makeCBW002FolderDraftAttachment(
+            id: "removed-folder",
+            title: "Removed",
+            path: "/tmp/Removed",
+            mode: .currentFolderOnly,
+        )
+        let remaining = makeCBW002FolderDraftAttachment(
+            id: "remaining-folder",
+            title: "Remaining",
+            path: "/tmp/Remaining",
+            mode: .currentFolderOnly,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            currentContext: currentContext,
+            addedAttachments: [removed, remaining],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.removeAddedAttachment(removed.id)) { state in
+            state.addedAttachments = [remaining]
+        }
+        await store.send(.folderStructureModeChanged(.attachment(removed.id), .includeSubfolders))
+
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertEqual(store.state.addedAttachments, [remaining])
+    }
+
+    /// CBW-002-change_context_folder_structure_mode: 동일·중첩 path attachment도 ID별 mode를 유지한다.
+    /// path 관계가 attachment target identity를 합치거나 nested de-dup으로 오인되지 않는지 검증합니다.
+    /// - 검증 내용: 동일 path 두 target과 child path target의 metadata를 ID별로 확인합니다.
+    /// - 사전 조건: distinct ID의 same-path attachment 둘과 nested-path attachment 하나가 있습니다.
+    /// - 기대 결과: 각 action의 exact ID만 변경되고 동일·중첩 path의 다른 target은 유지됩니다.
+    func testFolderStructureModeSameAndNestedPathsRemainIndependent() async {
+        let sharedPath = "/tmp/Projects"
+        let firstSamePath = makeCBW002FolderDraftAttachment(
+            id: "same-path-first",
+            title: "Projects A",
+            path: sharedPath,
+            mode: .currentFolderOnly,
+        )
+        let secondSamePath = makeCBW002FolderDraftAttachment(
+            id: "same-path-second",
+            title: "Projects B",
+            path: sharedPath,
+            mode: .currentFolderOnly,
+        )
+        let nestedPath = makeCBW002FolderDraftAttachment(
+            id: "nested-path",
+            title: "Feature",
+            path: "\(sharedPath)/Feature",
+            mode: .currentFolderOnly,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            addedAttachments: [firstSamePath, secondSamePath, nestedPath],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.attachment(firstSamePath.id), .includeSubfolders)) { state in
+            state.addedAttachments[0] = makeCBW002FolderDraftAttachment(
+                id: "same-path-first",
+                title: "Projects A",
+                path: sharedPath,
+                mode: .includeSubfolders,
+            )
+        }
+        await store.send(.folderStructureModeChanged(.attachment(nestedPath.id), .includeSubfolders)) { state in
+            state.addedAttachments[2] = makeCBW002FolderDraftAttachment(
+                id: "nested-path",
+                title: "Feature",
+                path: "\(sharedPath)/Feature",
+                mode: .includeSubfolders,
+            )
+        }
+
+        XCTAssertEqual(
+            store.state.addedAttachments.map { $0.metadata["folderStructureMode"] },
+            [
+                AiChatFolderStructureMode.includeSubfolders.rawValue,
+                AiChatFolderStructureMode.currentFolderOnly.rawValue,
+                AiChatFolderStructureMode.includeSubfolders.rawValue,
+            ],
+        )
+    }
+}
+
+extension CBW002RequestContextManagementTests {
+    // MARK: - CBW-002-show_request_context
+
+    /// CBW-002-show_request_context: file icon 완료는 current path와 generation이 일치하고 취소되지 않을 때만 반영한다.
+    /// chip이 빠르게 재사용될 때 이전 detached 결과가 현재 icon state를 덮어쓰지 않는 경계를 검증합니다.
+    /// - 검증 내용: same path/generation 성공과 path mismatch, generation mismatch, cancellation 거부를 확인합니다.
+    /// - 사전 조건: captured file path와 current path/generation 조합을 직접 구성합니다.
+    /// - 기대 결과: 현재 uncancelled request만 true이고 stale 또는 cancelled request는 모두 false입니다.
+    func testShowRequestContextRejectsCancelledOrStaleFileIconResolution() {
+        XCTAssertTrue(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Current.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 3,
+            currentGeneration: 3,
+            isCancelled: false,
+        ))
+        XCTAssertFalse(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Old.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 3,
+            currentGeneration: 3,
+            isCancelled: false,
+        ))
+        XCTAssertFalse(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Current.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 2,
+            currentGeneration: 3,
+            isCancelled: false,
+        ))
+        XCTAssertFalse(AiChatRequestContextIconResolution.shouldApply(
+            capturedPath: "/tmp/Current.txt",
+            currentPath: "/tmp/Current.txt",
+            capturedGeneration: 3,
+            currentGeneration: 3,
+            isCancelled: true,
+        ))
+    }
+
+    /// CBW-002-show_request_context: file icon은 WorkspaceClient 비동기 task와 고정 placeholder를 사용한다.
+    /// chip body가 AppKit singleton을 동기 호출하지 않고 asset/system icon 경로는 즉시 렌더링하는지 검증합니다.
+    /// - 검증 내용: dependency, @State, task(id:), explicit cancellation, path guard, 11x11 placeholder source 계약을 확인합니다.
+    /// - 사전 조건: production AiChatInputBar source의 request-context chip subtree를 읽습니다.
+    /// - 기대 결과: NSWorkspace 직접 호출은 없고 file만 async이며 asset/system branch는 synchronous 상태로 남습니다.
+    func testShowRequestContextLoadsFileIconAsynchronouslyWithStablePlaceholder() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift"),
+            encoding: .utf8,
+        )
+        let chipStart = try XCTUnwrap(source.range(of: "private struct AiChatRemovableRequestContextChip: View"))
+        let resolutionStart = try XCTUnwrap(source.range(of: "enum AiChatRequestContextIconResolution"))
+        let chip = String(source[chipStart.lowerBound ..< resolutionStart.lowerBound])
+
+        XCTAssertTrue(chip.contains("@Dependency(\\.workspaceClient)\n    private var workspaceClient"))
+        XCTAssertTrue(chip.contains("@State private var resolvedFileIcon: NSImage?"))
+        XCTAssertTrue(chip.contains(".task(id: iconFilePath)"))
+        XCTAssertTrue(chip.contains("let icon = await workspaceClient.iconForFileAsync(path)"))
+        XCTAssertTrue(chip.contains("iconLoadTask?.cancel()"))
+        XCTAssertTrue(chip.contains("currentPath: currentIconFilePath"))
+        XCTAssertTrue(chip.contains("resolvedFileIcon = nil"))
+        XCTAssertTrue(chip.contains("Color.clear"))
+        XCTAssertTrue(chip.contains(".frame(width: 11, height: 11)"))
+        XCTAssertTrue(chip.contains("} else if let iconAssetName {"))
+        XCTAssertTrue(chip.contains("} else if let iconSystemName {"))
+        XCTAssertFalse(chip.contains("NSWorkspace.shared.icon(forFile:"))
     }
 }
 
@@ -1005,12 +1435,13 @@ private extension CBW002RequestContextManagementTests {
     func makeProcessingStateWithLockedContext() -> AiChatFeature.State {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: UUID())
         let lockedContext = AiChatLockedRequestContextSnapshot(
             currentContext: makeCBW002CurrentContext(title: "Locked.md", path: "/tmp/Locked.md"),
             addedAttachments: [makeCBW002LockedAttachment(id: "locked", title: "LockedNotes.txt")],
         )
         let requestContext = makeRequestContext(
-            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionID: sessionID,
             requestID: AiChatRequestID(rawValue: UUID()),
             runID: AiChatRunID(rawValue: UUID()),
             model: selectedHandle,
@@ -1030,6 +1461,7 @@ private extension CBW002RequestContextManagementTests {
         )
 
         return AiChatFeature.State(
+            sessionID: sessionID,
             sessionStatus: .active,
             currentContext: makeCBW002CurrentContext(title: "LiveOnly.md", path: "/tmp/LiveOnly.md"),
             addedAttachments: [makeCBW002DraftAttachment(id: "live", title: "LiveOnly.txt")],
@@ -1080,6 +1512,16 @@ private extension CBW002RequestContextManagementTests {
                 deleteCredential: { _ in .success(.empty()) },
             )
         }
+    }
+
+    func makeCBW002AttachmentSessionID() -> AiChatSessionID {
+        AiChatSessionID(rawValue: UUID(uuid: (
+            0x22, 0x22, 0x22, 0x22,
+            0x22, 0x22,
+            0x33, 0x33,
+            0x44, 0x44,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+        )))
     }
 
     func makeCBW002TemporaryDirectory() throws -> URL {
@@ -1178,6 +1620,25 @@ private func makeCBW002DraftAttachment(
         displayTitle: title,
         sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
         currentStatus: status,
+    )
+}
+
+private func makeCBW002FolderDraftAttachment(
+    id: String,
+    title: String,
+    path: String,
+    mode: AiChatFolderStructureMode,
+) -> AiChatAttachmentDraft {
+    let folderURL = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
+    return AiChatAttachmentDraft(
+        id: AiChatAttachmentID(rawValue: id),
+        source: .folder,
+        displayTitle: title,
+        sourceLocation: AiChatAttachmentSourceLocation(
+            fileURL: folderURL,
+            filePath: folderURL.path(percentEncoded: false),
+        ),
+        metadata: ["folderStructureMode": mode.rawValue],
     )
 }
 
@@ -1461,12 +1922,14 @@ private func makeLockedFolderProcessingState(
         assistantReplacementIndex: nil,
     )
     let state = AiChatFeature.State(
+        sessionID: lock.context.sessionID,
         sessionStatus: .active,
         catalogRows: catalogRows,
         selectedModelHandle: selectedHandle,
         executionPhase: .processing(lock),
     )
-    let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+    let currentContext = AiChatStateDisplayModelBuilder(state: state)
+        .requestContextDisplayModel.currentResponse?.currentContext
     return (state, currentContext)
 }
 
@@ -1815,7 +2278,7 @@ private func makeProcessingDisplayModelState(
     lock: AiChatRequestLock,
 ) -> AiChatFeature.State {
     AiChatFeature.State(
-        sessionID: AiChatSessionID(rawValue: UUID()),
+        sessionID: lock.context.sessionID,
         sessionStatus: .active,
         currentContext: makeContextSnapshot(summary: "Live context"),
         addedAttachments: [
@@ -1834,24 +2297,30 @@ private func makeProcessingDisplayModelState(
 }
 
 private func assertProcessingLockedDisplayModel(_ displayModel: AiChatRequestContextDisplayModel) {
-    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.locked)
-    XCTAssertEqual(displayModel.currentContext?.title, "VoyagerEntitiesAi.swift")
-    XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["Workspace", "Design.pdf", "Secret.txt"])
+    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.draft)
+    XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["DraftOnly.txt"])
+    XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
+    guard let currentResponse = displayModel.currentResponse else {
+        return XCTFail("Expected current response context section")
+    }
+    XCTAssertEqual(currentResponse.source, AiChatRequestContextDisplaySource.locked)
+    XCTAssertEqual(currentResponse.currentContext?.title, "VoyagerEntitiesAi.swift")
+    XCTAssertEqual(currentResponse.addedAttachments.map(\.title), ["Workspace", "Design.pdf", "Secret.txt"])
     XCTAssertEqual(
-        displayModel.addedAttachments.map(\.statusLabel),
+        currentResponse.addedAttachments.map(\.statusLabel),
         ["Collection paths", "Uploaded/native", "Failed"],
     )
-    XCTAssertEqual(displayModel.addedAttachments.map(\.statusDetail), [
+    XCTAssertEqual(currentResponse.addedAttachments.map(\.statusDetail), [
         "Collection paths only; contents not included",
         "Uploaded natively as application/pdf",
         "Not sent: permissionDenied",
     ])
-    XCTAssertEqual(displayModel.addedAttachments[0].iconFilePath, "/tmp/Workspace.voycoll")
-    XCTAssertEqual(displayModel.addedAttachments[0].iconAssetName, "voycollFileIcon")
-    XCTAssertTrue(displayModel.addedAttachments.allSatisfy { !$0.isRemovable })
-    XCTAssertNil(displayModel.currentContext?.folderStructureMode)
-    XCTAssertEqual(displayModel.currentContext?.supportsFolderStructureMode, false)
-    XCTAssertEqual(displayModel.addedAttachments[0].folderStructureMode, .includeSubfolders)
+    XCTAssertEqual(currentResponse.addedAttachments[0].iconFilePath, "/tmp/Workspace.voycoll")
+    XCTAssertEqual(currentResponse.addedAttachments[0].iconAssetName, "voycollFileIcon")
+    XCTAssertTrue(currentResponse.addedAttachments.allSatisfy { !$0.isRemovable })
+    XCTAssertNil(currentResponse.currentContext?.folderStructureMode)
+    XCTAssertEqual(currentResponse.currentContext?.supportsFolderStructureMode, false)
+    XCTAssertEqual(currentResponse.addedAttachments[0].folderStructureMode, .includeSubfolders)
 }
 
 private func makeCompletedDisplayModelState(

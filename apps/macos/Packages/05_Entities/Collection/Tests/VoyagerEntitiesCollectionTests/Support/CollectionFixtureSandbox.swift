@@ -13,6 +13,10 @@ struct CollectionFixtureSandbox {
         try copyFixture(from: relativeFixturePath, isDirectory: true)
     }
 
+    static func copyingBasicCollection() throws -> CollectionFixtureSandbox {
+        try copyingDirectory(from: "fixtures/fixtures/collections/basic_collection.voycoll")
+    }
+
     func cleanup() throws {
         if FileManager.default.fileExists(atPath: root.path) {
             try FileManager.default.removeItem(at: root)

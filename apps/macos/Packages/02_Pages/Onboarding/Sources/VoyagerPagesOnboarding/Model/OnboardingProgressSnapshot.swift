@@ -1,9 +1,7 @@
 import Foundation
-import VoyagerFeaturesAccountAccess
 
 nonisolated struct OnboardingStepState: Codable, Equatable {
     var welcomeComplete: Bool
-    var accessUnlockComplete: Bool
     var permissionsComplete: Bool
     var aiProviderSetupComplete: Bool
     var aiProviderSetupSkipped: Bool
@@ -13,7 +11,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
 
     init(
         welcomeComplete: Bool = true,
-        accessUnlockComplete: Bool = false,
         permissionsComplete: Bool = false,
         aiProviderSetupComplete: Bool = false,
         aiProviderSetupSkipped: Bool = false,
@@ -22,7 +19,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
         completeComplete: Bool = false,
     ) {
         self.welcomeComplete = welcomeComplete
-        self.accessUnlockComplete = accessUnlockComplete
         self.permissionsComplete = permissionsComplete
         self.aiProviderSetupComplete = aiProviderSetupComplete
         self.aiProviderSetupSkipped = aiProviderSetupSkipped
@@ -35,9 +31,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             welcomeComplete: container.decodeIfPresent(Bool.self, forKey: .welcomeComplete) ?? true,
-            accessUnlockComplete: container.decodeIfPresent(Bool.self, forKey: .accessUnlockComplete)
-                ?? container.decodeIfPresent(Bool.self, forKey: .betaAccessComplete)
-                ?? false,
             permissionsComplete: container.decodeIfPresent(Bool.self, forKey: .permissionsComplete) ?? false,
             aiProviderSetupComplete: container.decodeIfPresent(Bool.self, forKey: .aiProviderSetupComplete) ?? false,
             aiProviderSetupSkipped: container.decodeIfPresent(Bool.self, forKey: .aiProviderSetupSkipped) ?? false,
@@ -56,7 +49,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
     nonisolated func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(welcomeComplete, forKey: .welcomeComplete)
-        try container.encode(accessUnlockComplete, forKey: .accessUnlockComplete)
         try container.encode(permissionsComplete, forKey: .permissionsComplete)
         try container.encode(aiProviderSetupComplete, forKey: .aiProviderSetupComplete)
         try container.encode(aiProviderSetupSkipped, forKey: .aiProviderSetupSkipped)
@@ -82,15 +74,4 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
 nonisolated struct OnboardingProgressSnapshot: Equatable {
     var currentStep: OnboardingStep
     var stepState: OnboardingStepState
-    var accessSnapshot: AccessStatusSnapshot?
-
-    init(
-        currentStep: OnboardingStep,
-        stepState: OnboardingStepState,
-        accessSnapshot: AccessStatusSnapshot? = nil,
-    ) {
-        self.currentStep = currentStep
-        self.stepState = stepState
-        self.accessSnapshot = accessSnapshot
-    }
 }

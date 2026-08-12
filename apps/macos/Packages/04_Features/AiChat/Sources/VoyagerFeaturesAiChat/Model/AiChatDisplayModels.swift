@@ -56,38 +56,57 @@ public struct AiChatEmptyStateDisplayModel: Equatable, Sendable {
 
 public struct AiChatInputDisplayModel: Equatable, Sendable {
     public var placeholder: String
+    public var inputAccessibilityLabel: String
+    public var inputAccessibilityHint: String
     public var contextAffordanceLabel: String
     public var modelLabel: String?
     public var effortLabel: String
     public var submitAccessibilityLabel: String
     public var stopAccessibilityLabel: String
+    public var submitHelp: String
+    public var stopHelp: String
     public var isSubmitVisible: Bool
     public var isStopVisible: Bool
     public var canSubmit: Bool
     public var canStop: Bool
+    public var isComposerEditingDisabled: Bool
 
     public init(
         placeholder: String,
+        inputAccessibilityLabel: String,
+        inputAccessibilityHint: String,
         contextAffordanceLabel: String,
         modelLabel: String?,
         effortLabel: String,
         submitAccessibilityLabel: String,
         stopAccessibilityLabel: String,
+        submitHelp: String,
+        stopHelp: String,
         isSubmitVisible: Bool,
         isStopVisible: Bool,
         canSubmit: Bool,
         canStop: Bool,
+        isComposerEditingDisabled: Bool,
     ) {
         self.placeholder = placeholder
+        self.inputAccessibilityLabel = inputAccessibilityLabel
+        self.inputAccessibilityHint = inputAccessibilityHint
         self.contextAffordanceLabel = contextAffordanceLabel
         self.modelLabel = modelLabel
         self.effortLabel = effortLabel
         self.submitAccessibilityLabel = submitAccessibilityLabel
         self.stopAccessibilityLabel = stopAccessibilityLabel
+        self.submitHelp = submitHelp
+        self.stopHelp = stopHelp
         self.isSubmitVisible = isSubmitVisible
         self.isStopVisible = isStopVisible
         self.canSubmit = canSubmit
         self.canStop = canStop
+        self.isComposerEditingDisabled = isComposerEditingDisabled
+    }
+
+    public var actionHelp: String {
+        isStopVisible ? stopHelp : submitHelp
     }
 }
 
@@ -177,12 +196,153 @@ public struct AiChatProcessingState: Equatable, Sendable {
 }
 
 public struct AiChatStreamingAssistantDisplayModel: Equatable, Sendable {
-    public var content: String
+    public var requestID: AiChatRequestID
+    public var content: String?
+    public var title: String
+    public var thinkingLabel: String?
+    public var activityStatusLabel: String?
     public var failure: AiChatExecutionFailure?
+    public var acceptedChunkRevision: Int
 
-    public init(content: String, failure: AiChatExecutionFailure? = nil) {
+    public init(
+        requestID: AiChatRequestID,
+        content: String?,
+        title: String,
+        thinkingLabel: String?,
+        acceptedChunkRevision: Int,
+        failure: AiChatExecutionFailure? = nil,
+        activityStatusLabel: String? = nil,
+    ) {
+        self.requestID = requestID
         self.content = content
+        self.title = title
+        self.thinkingLabel = Self.nonEmptyTrimmed(thinkingLabel)
+        self.activityStatusLabel = Self.nonEmptyTrimmed(activityStatusLabel)
         self.failure = failure
+        self.acceptedChunkRevision = acceptedChunkRevision
+    }
+
+    private static func nonEmptyTrimmed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
+enum AiChatAssistantHeaderPresentation: Equatable {
+    case full, completedHistorical
+    var showsVisualHeader: Bool {
+        self == .full
+    }
+
+    var showsProgressIndicator: Bool {
+        false
+    }
+
+    var accessibilityRoleLabel: String? {
+        self == .completedHistorical ? "Assistant response" : nil
+    }
+}
+
+enum AiChatAssistantResponsePresentationState: Equatable {
+    case waiting
+    case activeProcessingBody
+    case partialFailureBody
+    case terminalContentlessFailure
+    case historical
+}
+
+struct AiChatAssistantBodyPresentation: Equatable {
+    static let chunkFadeDuration = 0.15
+    let state: AiChatAssistantResponsePresentationState
+    let content: String?
+    let metadataPanelLabel: String
+    let showsInlineHeader: Bool
+    let showsWaiting: Bool
+    let isMetadataPanelEligible: Bool
+
+    var accessibilityMetadataLabel: String? {
+        isMetadataPanelEligible ? metadataPanelLabel : nil
+    }
+
+    init(
+        content: String?,
+        isProcessing: Bool,
+        failure: AiChatExecutionFailure?,
+        title: String = "Assistant",
+        thinkingLabel: String? = nil,
+        headerPresentation: AiChatAssistantHeaderPresentation = .full,
+        requestID: AiChatRequestID? = nil,
+        foregroundRequestID: AiChatRequestID? = nil,
+    ) {
+        let normalizedContent = Self.nonEmptyContent(content)
+        self.content = normalizedContent
+        metadataPanelLabel = Self.metadataLabel(title: title, thinkingLabel: thinkingLabel)
+        showsInlineHeader = headerPresentation == .full && normalizedContent == nil && failure == nil
+        showsWaiting = isProcessing && failure == nil && normalizedContent == nil
+        isMetadataPanelEligible = headerPresentation == .full
+            && normalizedContent != nil
+            && isProcessing
+            && failure == nil
+            && requestID != nil
+            && requestID == foregroundRequestID
+        state = Self.resolveState(
+            hasContent: normalizedContent != nil,
+            isProcessing: isProcessing,
+            failure: failure,
+            headerPresentation: headerPresentation,
+        )
+    }
+
+    static func presentsMetadataPanel(_ isEligible: Bool, _ isHovered: Bool, _ isFocused: Bool) -> Bool {
+        isEligible && (isHovered || isFocused)
+    }
+
+    static func waitingText(step: Int, reduceMotion: Bool) -> String {
+        guard !reduceMotion else { return "..." }
+        let normalizedStep = ((step % 3) + 3) % 3
+        return String(repeating: ".", count: normalizedStep + 1)
+    }
+
+    private static func nonEmptyContent(_ content: String?) -> String? {
+        let trimmed = content?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.flatMap { $0.isEmpty ? nil : content }
+    }
+
+    private static func metadataLabel(title: String, thinkingLabel: String?) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelTitle = normalizedTitle.isEmpty ? "Assistant" : normalizedTitle
+        let trimmedThinking = thinkingLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedThinking, !trimmedThinking.isEmpty else { return modelTitle }
+        return "\(modelTitle) · \(trimmedThinking)"
+    }
+
+    private static func resolveState(
+        hasContent: Bool,
+        isProcessing: Bool,
+        failure: AiChatExecutionFailure?,
+        headerPresentation: AiChatAssistantHeaderPresentation,
+    ) -> AiChatAssistantResponsePresentationState {
+        if headerPresentation == .completedHistorical { return .historical }
+        if failure != nil { return hasContent ? .partialFailureBody : .terminalContentlessFailure }
+        if isProcessing { return hasContent ? .activeProcessingBody : .waiting }
+        return .historical
+    }
+}
+
+extension AiChatExecutionActivityKind {
+    var aiChatStatusLabel: String {
+        switch self {
+        case .thinking:
+            "Thinking…"
+        case .searching:
+            "Searching…"
+        case .toolExecution:
+            "Running a tool…"
+        case .retrying:
+            "Retrying…"
+        case .answerGeneration:
+            "Generating answer…"
+        }
     }
 }
 
@@ -198,6 +358,10 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
     public var isLocked: Bool
     public var isDefault: Bool
     public var isRecommended: Bool
+    var isEnabled: Bool
+    var disabledReason: String?
+    var accessibilityLabel: String
+    var accessibilityValue: String
 
     public var title: String {
         label.title
@@ -212,6 +376,34 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
         isDefault: Bool,
         isRecommended: Bool,
     ) {
+        self.init(
+            handle: handle,
+            label: label,
+            providerBadge: providerBadge,
+            isSelected: isSelected,
+            isLocked: isLocked,
+            isDefault: isDefault,
+            isRecommended: isRecommended,
+            isEnabled: true,
+            disabledReason: nil,
+            accessibilityLabel: label.title,
+            accessibilityValue: isSelected ? "Selected" : "Not selected",
+        )
+    }
+
+    init(
+        handle: AiModelHandle,
+        label: AiChatModelLabel,
+        providerBadge: String?,
+        isSelected: Bool,
+        isLocked: Bool,
+        isDefault: Bool,
+        isRecommended: Bool,
+        isEnabled: Bool,
+        disabledReason: String?,
+        accessibilityLabel: String,
+        accessibilityValue: String,
+    ) {
         self.handle = handle
         self.label = label
         self.providerBadge = providerBadge
@@ -219,7 +411,25 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
         self.isLocked = isLocked
         self.isDefault = isDefault
         self.isRecommended = isRecommended
+        self.isEnabled = isEnabled
+        self.disabledReason = disabledReason
+        self.accessibilityLabel = accessibilityLabel
+        self.accessibilityValue = accessibilityValue
     }
+}
+
+struct AiChatThinkingMenuItemDisplayModel: Identifiable, Equatable {
+    var id: AiThinkingSelection? {
+        selection
+    }
+
+    var selection: AiThinkingSelection?
+    var title: String
+    var isSelected: Bool
+    var isEnabled: Bool
+    var disabledReason: String?
+    var accessibilityLabel: String
+    var accessibilityValue: String
 }
 
 public struct AiChatModelCatalogSectionDisplayModel: Identifiable, Equatable, Sendable {
@@ -282,6 +492,26 @@ public struct AiChatModelCatalogState: Equatable, Sendable {
 public struct AiChatModelSelectorStatusDisplayModel: Equatable, Sendable {
     public var title: String
     public var detail: String
+
+    var isEnabled: Bool {
+        false
+    }
+
+    var isSelected: Bool {
+        false
+    }
+
+    var disabledReason: String {
+        detail
+    }
+
+    var accessibilityLabel: String {
+        title
+    }
+
+    var accessibilityValue: String {
+        detail
+    }
 
     public init(title: String, detail: String) {
         self.title = title

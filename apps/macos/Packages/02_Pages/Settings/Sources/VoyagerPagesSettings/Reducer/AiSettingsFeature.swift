@@ -529,7 +529,7 @@ private extension CollectionSearchAISettings {
         case .providerDefault:
             nil
         case .none:
-            .some(.none)
+            .some(AiThinkingSelection.none)
         case let .effort(raw):
             AiThinkingEffort(rawValue: raw).map { .effort($0) }
         case let .tokenBudget(value):

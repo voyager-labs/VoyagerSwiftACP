@@ -327,6 +327,9 @@ func providerExecutionOpenAIStreamingBody() -> String {
     event: response.output_text.delta
     data: {"type":"response.output_text.delta","delta":"lo"}
 
+    event: response.output_text.done
+    data: {"type":"response.output_text.done","text":"Hello"}
+
     event: response.completed
     data: {"type":"response.completed","response":{"output_text":"Hello"}}
 
@@ -364,6 +367,9 @@ func providerExecutionAnthropicStreamingBody() -> String {
     event: content_block_delta
     data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" there"}}
 
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":0}
+
     event: message_stop
     data: {"type":"message_stop"}
 
@@ -395,6 +401,9 @@ func providerExecutionAnthropicStreamingBodyWithThinkingAndMessageDelta() -> Str
 
     event: content_block_delta
     data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" answer"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":1}
 
     event: message_delta
     data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":861}}
@@ -458,4 +467,108 @@ func providerExecutionCollect(
 
     _ = XCTWaiter.wait(for: [expectation], timeout: 2.0)
     return try XCTUnwrap(result).get()
+}
+
+func providerExecutionStatus(
+    _ context: AiChatRequestContextSnapshot,
+    _ activityID: String,
+    _ kind: AiChatExecutionActivityKind,
+    _ phase: AiChatExecutionActivityPhase,
+    _ providerEventType: String,
+    origin: AiChatExecutionEvidenceOrigin = .providerWire,
+    boundaryEventTypes: [String] = [],
+) -> AiChatProviderExecutionEvent {
+    .status(
+        context: context,
+        signal: AiChatExecutionActivitySignal(
+            activityID: AiChatExecutionActivityID(rawValue: activityID),
+            kind: kind,
+            phase: phase,
+            evidence: AiChatExecutionActivityEvidence(
+                origin: origin,
+                providerEventType: providerEventType,
+                boundaryEventTypes: boundaryEventTypes,
+            ),
+        ),
+    )
+}
+
+func providerExecutionOpenAITypedActivityBody() -> String {
+    """
+    data: {"type":"response.reasoning_summary_text.delta","item_id":"reason-1","delta":"summary"}
+
+    data: {"type":"response.reasoning_summary_text.done","item_id":"reason-1","text":"summary"}
+
+    data: {"type":"response.web_search_call.in_progress","item_id":"search-a"}
+
+    data: {"type":"response.web_search_call.searching","item_id":"search-b"}
+
+    data: {"type":"response.web_search_call.completed","item_id":"search-b"}
+
+    data: {"type":"response.web_search_call.completed","item_id":"search-a"}
+
+    data: {"type":"response.file_search_call.in_progress","item_id":"file-1"}
+
+    data: {"type":"response.file_search_call.completed","item_id":"file-1"}
+
+    data: {"type":"response.code_interpreter_call.in_progress","item_id":"code-1"}
+
+    data: {"type":"response.code_interpreter_call.completed","item_id":"code-1"}
+
+    data: {"type":"response.mcp_call.in_progress","item_id":"mcp-1"}
+
+    data: {"type":"response.mcp_call.failed","item_id":"mcp-1"}
+
+    data: {"type":"response.output_text.delta","item_id":"message-1","delta":"Hello"}
+
+    data: {"type":"response.output_text.done","item_id":"message-1","text":"Hello"}
+
+    data: {"type":"response.completed","response":{"output_text":"Hello"}}
+
+    data: [DONE]
+
+    """
+}
+
+func providerExecutionAnthropicTypedActivityBody() -> String {
+    """
+    data: {"type":"message_start","message":{"content":[]}}
+
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
+
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reason"}}
+
+    data: {"type":"content_block_stop","index":0}
+
+    data: {"type":"content_block_start","index":1,"content_block":{"type":"server_tool_use","id":"srv-search","name":"web_search","input":{}}}
+
+    data: {"type":"content_block_stop","index":1}
+
+    data: {"type":"content_block_start","index":2,"content_block":{"type":"web_search_tool_result","tool_use_id":"srv-search","content":[]}}
+
+    data: {"type":"content_block_stop","index":2}
+
+    data: {"type":"content_block_start","index":3,"content_block":{"type":"tool_use","id":"client-tool","name":"local_tool","input":{}}}
+
+    data: {"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"{}"}}
+
+    data: {"type":"content_block_stop","index":3}
+
+    data: {"type":"content_block_start","index":4,"content_block":{"type":"server_tool_use","id":"srv-code","name":"code_execution","input":{}}}
+
+    data: {"type":"content_block_stop","index":4}
+
+    data: {"type":"content_block_start","index":5,"content_block":{"type":"code_execution_tool_result","tool_use_id":"srv-code","content":[]}}
+
+    data: {"type":"content_block_stop","index":5}
+
+    data: {"type":"content_block_start","index":7,"content_block":{"type":"text","text":""}}
+
+    data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"Answer"}}
+
+    data: {"type":"content_block_stop","index":7}
+
+    data: {"type":"message_stop"}
+
+    """
 }

@@ -2,6 +2,66 @@
 @testable import VoyagerEntitiesAi
 import XCTest
 
+final class ProviderExecutionResultRecorder<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<Value, Error>?
+
+    func record(_ result: Result<Value, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard self.result == nil else { return }
+        self.result = result
+    }
+
+    func snapshot() -> Result<Value, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+}
+
+func providerExecutionCodexAppServerFinalText(_ lines: [String]) throws -> String {
+    let recorder = ProviderExecutionResultRecorder<String>()
+    let driver = providerExecutionMakeCodexAppServerDriver(onComplete: recorder.record)
+    let jsonLines = lines.map { $0.split(whereSeparator: \.isNewline).joined() }
+
+    driver.append(Data((jsonLines.joined(separator: "\n") + "\n").utf8))
+
+    return try XCTUnwrap(recorder.snapshot()).get()
+}
+
+func providerExecutionMakeCodexAppServerDriver(
+    onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void = { _ in },
+    onComplete: @escaping @Sendable (Result<String, Error>) -> Void,
+) -> CodexAppServerProtocolDriver {
+    CodexAppServerProtocolDriver(
+        input: Pipe().fileHandleForWriting,
+        model: "gpt-5-codex",
+        prompt: "Hello",
+        thinking: nil,
+        workingDirectory: nil,
+        onEvent: onEvent,
+        onComplete: onComplete,
+    )
+}
+
+func providerExecutionCodexJSONLine(
+    method: String,
+    params: [String: Any],
+) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: [
+        "method": method,
+        "params": params,
+    ])
+    return try XCTUnwrap(String(data: data, encoding: .utf8))
+}
+
+func providerExecutionCodexTurnCompletedLine() throws -> String {
+    try providerExecutionCodexJSONLine(method: "turn/completed", params: [
+        "turn": ["id": "turn-1", "status": "completed"],
+    ])
+}
+
 func assertRegistryRoute(
     provider: AiProvider,
     credential: StoredCredentialPayload,
@@ -20,7 +80,7 @@ func assertRegistryRoute(
     let expectedNow: Int64 = 42424
     nonisolated(unsafe) var executedProviders: [AiProvider] = []
     nonisolated(unsafe) var observedInput: AiChatProviderExecutionInput?
-    let codexExecutor: AiChatProviderCodexExecutor = { _, _, _, _, _ in
+    let codexExecutor: AiChatProviderCodexExecutor = { _, _ in
         "registry-stub"
     }
     let executor = AiChatProviderExecutor { input in
@@ -63,17 +123,34 @@ func assertCodexProbe(
     XCTAssertTrue(prompt.contains("current_context:"))
 }
 
+func providerExecutionReadJSONRequests(
+    from handle: FileHandle,
+    expectedCount: Int,
+) throws -> [[String: Any]] {
+    var data = Data()
+    var lines: [Data.SubSequence] = []
+    while lines.count < expectedCount {
+        let chunk = handle.availableData
+        guard !chunk.isEmpty else { break }
+        data.append(chunk)
+        lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+    }
+    return try lines.map { line in
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line)) as? [String: Any])
+    }
+}
+
 func makeCancellableCodexClient(
     executorEntered: XCTestExpectation,
     executorCancelled: XCTestExpectation,
 ) -> AiChatProviderExecutionClient {
     AiChatProviderExecutionClient.live(
         now: { 30002 },
-        codexExecutor: { model, prompt, thinking, credential, _ in
-            XCTAssertEqual(model, "gpt-5-codex")
-            XCTAssertEqual(thinking, .effort(.high))
-            XCTAssertEqual(credential.accessToken, "codex-token")
-            XCTAssertTrue(prompt.contains("current_context:"))
+        codexExecutor: { request, _ in
+            XCTAssertEqual(request.model, "gpt-5-codex")
+            XCTAssertEqual(request.thinking, .effort(.high))
+            XCTAssertEqual(request.credential.accessToken, "codex-token")
+            XCTAssertTrue(request.prompt.contains("current_context:"))
             executorEntered.fulfill()
             return try await providerExecutionWaitForCancellation(onCancel: executorCancelled.fulfill)
         },
@@ -189,6 +266,38 @@ func providerExecutionAssertOpenAIThinkingLoweringMatrix() throws {
                 provider: .openai,
                 selection: .tokenBudget(1024),
                 reason: "The model capability does not advertise token-budget thinking.",
+            ),
+        ],
+    )
+
+    try providerExecutionAssertMalformedTokenBudgetIsOmitted(
+        provider: .openai,
+        credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+    )
+}
+
+func providerExecutionAssertMalformedTokenBudgetIsOmitted(
+    provider: AiProvider,
+    credential: StoredCredentialPayload,
+) throws {
+    let selection = AiThinkingSelection.tokenBudget(512)
+    let result = try AiChatProviderPreflight.prepare(
+        providerExecutionMakeRequest(
+            provider: provider,
+            selectedThinking: selection,
+            capability: .tokenBudget(min: 1024, max: 128, defaultValue: 512),
+        ),
+        credential: credential,
+    )
+
+    XCTAssertNil(result.payload.thinking)
+    XCTAssertEqual(
+        result.warnings,
+        [
+            .omittedThinkingSelection(
+                provider: provider,
+                selection: selection,
+                reason: "Selected token budget is outside the supported range.",
             ),
         ],
     )

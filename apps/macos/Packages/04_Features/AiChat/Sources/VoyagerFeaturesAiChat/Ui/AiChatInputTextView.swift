@@ -1,10 +1,78 @@
 import AppKit
 import SwiftUI
+import VoyagerEntitiesAi
+
+struct AiChatViewScope: Hashable {
+    let id: UUID
+
+    init(id: UUID = UUID()) {
+        self.id = id
+    }
+
+    func composerIdentity(displayedSessionID: AiChatSessionID?) -> AiChatComposerIdentity {
+        AiChatComposerIdentity(viewScopeID: id, displayedSessionID: displayedSessionID)
+    }
+}
+
+struct AiChatComposerIdentity: Hashable {
+    let viewScopeID: UUID
+    let displayedSessionID: AiChatSessionID?
+}
+
+@MainActor
+final class AiChatInputFocusOwner: ObservableObject {
+    private struct ActiveOwnership: Equatable {
+        let identity: AiChatComposerIdentity
+        let ownershipID: UUID
+    }
+
+    @Published private var focusedIdentities: Set<AiChatComposerIdentity> = []
+    private var activeOwnership: ActiveOwnership?
+
+    func activate(identity: AiChatComposerIdentity, ownershipID: UUID) {
+        activeOwnership = ActiveOwnership(identity: identity, ownershipID: ownershipID)
+    }
+
+    func deactivate(identity: AiChatComposerIdentity, ownershipID: UUID) {
+        guard activeOwnership == ActiveOwnership(identity: identity, ownershipID: ownershipID) else { return }
+        activeOwnership = nil
+    }
+
+    func requestFocus(for identity: AiChatComposerIdentity) {
+        guard activeOwnership?.identity == identity else { return }
+        focusedIdentities.insert(identity)
+    }
+
+    func setFocused(_ isFocused: Bool, for identity: AiChatComposerIdentity, ownershipID: UUID) {
+        guard activeOwnership == ActiveOwnership(identity: identity, ownershipID: ownershipID) else { return }
+        if isFocused {
+            focusedIdentities.insert(identity)
+        } else {
+            focusedIdentities.remove(identity)
+        }
+    }
+
+    func isFocused(for identity: AiChatComposerIdentity) -> Bool {
+        activeOwnership?.identity == identity && focusedIdentities.contains(identity)
+    }
+
+    func isFocused(for identity: AiChatComposerIdentity, ownershipID: UUID) -> Bool {
+        activeOwnership == ActiveOwnership(identity: identity, ownershipID: ownershipID)
+            && focusedIdentities.contains(identity)
+    }
+}
+
+enum AiChatInputNewlineCommand: Equatable {
+    case insertNewline
+    case submit
+}
 
 struct AiChatInputTextView: NSViewRepresentable {
     @Binding var text: String
-    @Binding var isFocused: Bool
     @Binding var measuredHeight: CGFloat
+
+    let composerIdentity: AiChatComposerIdentity
+    let focusOwner: AiChatInputFocusOwner
 
     let isDisabled: Bool
     let maxVisibleHeight: CGFloat
@@ -19,8 +87,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         configure(scrollView: scrollView)
         configure(textView: textView, coordinator: context.coordinator)
 
-        context.coordinator.textView = textView
-        context.coordinator.scrollView = scrollView
+        context.coordinator.activate(textView: textView, scrollView: scrollView, identity: composerIdentity)
         return scrollView
     }
 
@@ -28,6 +95,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         guard let textView = context.coordinator.textView else { return }
 
         context.coordinator.parent = self
+        context.coordinator.activate(textView: textView, scrollView: scrollView, identity: composerIdentity)
 
         if textView.string != text {
             textView.string = text
@@ -41,11 +109,13 @@ struct AiChatInputTextView: NSViewRepresentable {
         updateTextContainerWidth(for: textView, in: scrollView)
         updateMeasuredHeight(for: textView)
 
-        if isFocused, textView.window?.firstResponder !== textView {
-            DispatchQueue.main.async {
-                textView.window?.makeFirstResponder(textView)
-            }
+        if focusOwner.isFocused(for: composerIdentity), textView.window?.firstResponder !== textView {
+            context.coordinator.scheduleFocusAcquisition(for: textView)
         }
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        coordinator.invalidateOwnership(of: scrollView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -121,6 +191,7 @@ struct AiChatInputTextView: NSViewRepresentable {
     private static let trailingReservedWidth: CGFloat = 14
 
     final class AttachmentDroppingTextView: NSTextView {
+        var composerIdentity: AiChatComposerIdentity?
         var onAttachmentsDropped: (([URL]) -> Void)?
 
         override var acceptsFirstResponder: Bool {
@@ -180,13 +251,82 @@ struct AiChatInputTextView: NSViewRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: AiChatInputTextView
+        let focusOwnershipID = UUID()
         weak var textView: NSTextView?
         weak var scrollView: NSScrollView?
 
+        private var focusAcquisitionGeneration = 0
+        private var activeIdentity: AiChatComposerIdentity?
+        private var isActive = true
+
         init(parent: AiChatInputTextView) {
             self.parent = parent
+        }
+
+        func activate(
+            textView: NSTextView,
+            scrollView: NSScrollView,
+            identity: AiChatComposerIdentity,
+        ) {
+            if self.textView !== textView || self.scrollView !== scrollView || activeIdentity != identity {
+                focusAcquisitionGeneration += 1
+            }
+            self.textView = textView
+            self.scrollView = scrollView
+            activeIdentity = identity
+            (textView as? AttachmentDroppingTextView)?.composerIdentity = identity
+            isActive = true
+            parent.focusOwner.activate(identity: identity, ownershipID: focusOwnershipID)
+        }
+
+        func scheduleFocusAcquisition(for textView: NSTextView) {
+            focusAcquisitionGeneration += 1
+            let generation = focusAcquisitionGeneration
+            let identity = parent.composerIdentity
+
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self,
+                      let textView,
+                      isActive,
+                      focusAcquisitionGeneration == generation,
+                      activeIdentity == identity,
+                      parent.composerIdentity == identity,
+                      parent.focusOwner.isFocused(for: identity, ownershipID: focusOwnershipID),
+                      self.textView === textView,
+                      let scrollView,
+                      textView.enclosingScrollView === scrollView,
+                      let window = textView.window,
+                      (window.firstResponder as? AttachmentDroppingTextView)?.composerIdentity == nil
+                      || (window.firstResponder as? AttachmentDroppingTextView)?.composerIdentity == identity,
+                      !self.parent.isDisabled,
+                      textView.isEditable,
+                      textView.isSelectable,
+                      window.firstResponder !== textView,
+                      window.makeFirstResponder(textView),
+                      window.firstResponder === textView
+                else { return }
+            }
+        }
+
+        func invalidateOwnership(of scrollView: NSScrollView) {
+            guard self.scrollView === scrollView else { return }
+
+            focusAcquisitionGeneration += 1
+            isActive = false
+            if let activeIdentity {
+                parent.focusOwner.deactivate(identity: activeIdentity, ownershipID: focusOwnershipID)
+            }
+            activeIdentity = nil
+            if let textView = textView as? AttachmentDroppingTextView {
+                textView.composerIdentity = nil
+                textView.delegate = nil
+                textView.onAttachmentsDropped = nil
+            }
+            textView = nil
+            self.scrollView = nil
         }
 
         func textDidChange(_ notification: Notification) {
@@ -198,11 +338,31 @@ struct AiChatInputTextView: NSViewRepresentable {
         }
 
         func textDidBeginEditing(_: Notification) {
-            parent.isFocused = true
+            guard let activeIdentity else { return }
+            parent.focusOwner.setFocused(true, for: activeIdentity, ownershipID: focusOwnershipID)
         }
 
-        func textDidEndEditing(_: Notification) {
-            parent.isFocused = false
+        func textDidEndEditing(_ notification: Notification) {
+            guard let endedTextView = notification.object as? AttachmentDroppingTextView else { return }
+            if textView === endedTextView {
+                focusAcquisitionGeneration += 1
+            }
+            guard let identity = activeIdentity else { return }
+
+            DispatchQueue.main.async { [weak self, weak endedTextView] in
+                guard let self,
+                      let endedTextView,
+                      activeIdentity == identity,
+                      parent.composerIdentity == identity,
+                      parent.focusOwner.isFocused(for: identity, ownershipID: focusOwnershipID),
+                      textView === endedTextView,
+                      let window = endedTextView.window
+                else { return }
+
+                let currentComposerIdentity = (window.firstResponder as? AttachmentDroppingTextView)?.composerIdentity
+                guard currentComposerIdentity != identity else { return }
+                parent.focusOwner.setFocused(false, for: identity, ownershipID: focusOwnershipID)
+            }
         }
 
         @MainActor
@@ -230,15 +390,35 @@ struct AiChatInputTextView: NSViewRepresentable {
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
                 return false
             }
-
-            let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
-            if modifierFlags.contains(.shift) || modifierFlags.contains(.option) {
-                textView.insertNewline(nil)
+            guard !textView.hasMarkedText() else {
+                textView.unmarkText()
                 return true
             }
 
-            parent.onSubmit()
+            return handleNewlineCommand(
+                in: textView,
+                modifierFlags: NSApp.currentEvent?.modifierFlags ?? [],
+            )
+        }
+
+        func handleNewlineCommand(
+            in textView: NSTextView,
+            modifierFlags: NSEvent.ModifierFlags,
+        ) -> Bool {
+            switch Self.newlineCommand(for: modifierFlags) {
+            case .insertNewline:
+                textView.insertNewline(nil)
+            case .submit:
+                parent.onSubmit()
+            }
             return true
+        }
+
+        static func newlineCommand(for modifierFlags: NSEvent.ModifierFlags) -> AiChatInputNewlineCommand {
+            if modifierFlags.contains(.shift) || modifierFlags.contains(.option) {
+                return .insertNewline
+            }
+            return .submit
         }
 
         static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {

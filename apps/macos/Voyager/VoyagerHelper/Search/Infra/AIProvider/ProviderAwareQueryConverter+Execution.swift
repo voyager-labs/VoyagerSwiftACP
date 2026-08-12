@@ -198,7 +198,7 @@ private extension ProviderAwareQueryConverter {
     ) async throws -> String {
         for try await event in stream {
             switch event {
-            case .requestPrepared, .started, .delta:
+            case .requestPrepared, .started, .delta, .status:
                 continue
             case let .final(response):
                 return response.assistantMessage.content

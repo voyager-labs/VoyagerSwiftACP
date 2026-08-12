@@ -10,18 +10,31 @@ struct AiChatModelCatalogStateBuilder {
         let lockedModel = lockedModelDisplayModel
         let selectedHandle = selectedModel?.handle
         let lockedHandle = lockedModel?.handle
+        let modelsByHandle = Dictionary(uniqueKeysWithValues: availableModels.map { ($0.id, $0) })
         let rows: [AiChatModelCatalogRowDisplayModel] = switch state.modelListState {
         case .loaded:
             state.catalogRows.map { row in
                 let label = aiChatModelLabel(for: row)
+                let disabledReason = modelsByHandle[row.handle]?.unavailableReason?.message
+                let isEnabled = disabledReason == nil
+                let isSelected = isEnabled && row.handle == selectedHandle
+                let accessibilityValue = if let disabledReason {
+                    "Unavailable: \(disabledReason)"
+                } else {
+                    isSelected ? "Selected" : "Available"
+                }
                 return AiChatModelCatalogRowDisplayModel(
                     handle: row.handle,
                     label: label,
                     providerBadge: label.subtitle,
-                    isSelected: row.handle == selectedHandle,
+                    isSelected: isSelected,
                     isLocked: row.handle == lockedHandle,
                     isDefault: row.isDefault,
                     isRecommended: row.isRecommended,
+                    isEnabled: isEnabled,
+                    disabledReason: disabledReason,
+                    accessibilityLabel: label.title,
+                    accessibilityValue: accessibilityValue,
                 )
             }
         case .idle, .loading, .empty, .failed:
@@ -70,12 +83,10 @@ struct AiChatModelCatalogStateBuilder {
 
     var modelSelectorIsDisabled: Bool {
         switch modelSelectorContentState {
-        case .empty:
+        case .loading, .empty, .failed, .unsupported:
             true
         case let .loaded(sections):
-            sections.isEmpty
-        case .loading, .failed, .unsupported:
-            false
+            !sections.contains { section in section.rows.contains(where: \.isEnabled) }
         }
     }
 
@@ -95,13 +106,19 @@ struct AiChatModelCatalogStateBuilder {
     }
 
     func lockedModelDisplayModel(for lock: AiChatRequestLock) -> AiChatLockedModelDisplayModel {
-        if let row = lock.selectedModelRow ?? state.resolvedModelRow(for: lock.selectedModelHandle) {
-            return AiChatLockedModelDisplayModel(handle: row.handle, label: AiChatModelLabel(title: row.displayName))
-        }
-        return AiChatLockedModelDisplayModel(
+        AiChatLockedModelDisplayModel(
             handle: lock.selectedModelHandle,
-            label: AiChatModelLabel(title: lock.selectedModelHandle.rawValue),
+            label: AiChatModelLabel(title: lockedModelTitle(for: lock)),
         )
+    }
+
+    private func lockedModelTitle(for lock: AiChatRequestLock) -> String {
+        [lock.selectedModelRow?.displayName, lock.selectedModelHandle.rawValue]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.flatMap { $0.isEmpty ? nil : $0 }
+            }
+            .first ?? "Assistant"
     }
 
     private func modelCatalogSections(

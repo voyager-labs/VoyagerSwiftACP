@@ -148,6 +148,7 @@ SWIFT_SOURCE_ROOTS = [Path("apps/macos")]
 EXCLUDED_SWIFT_SOURCE_DIRS = {
     ".build",
     ".git",
+    "Build",
     "DerivedData",
     "SourcePackages",
     "Tests",
@@ -156,6 +157,9 @@ EXCLUDED_SWIFT_SOURCE_DIRS = {
 
 # Direct ProcessInfo environment access is closed by default.
 ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
+    "apps/macos/Voyager/Voyager/Lib/AppDelegate.swift": {
+        "XCTestConfigurationFilePath",
+    },
     "apps/macos/Voyager/Voyager/Reducer/AppRootFeature.swift": {
         "XCTestConfigurationFilePath",
     },
@@ -198,6 +202,7 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
 }
 ALLOWED_PROCESS_INFO_SNAPSHOT_FILES: set[str] = {
     "apps/macos/Hosts/ComposerHost/ComposerHostFixtureCore.swift",
+    "apps/macos/Voyager/Voyager/Api/EntryCoreEndpointClient.swift",
     "apps/macos/Voyager/Voyager/Api/HelperAppClient.swift",
     "apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Lib/EnvironmentLoader.swift",
     "apps/macos/Packages/05_Entities/Ai/Sources/VoyagerEntitiesAi/Lib/AiConnectionRootResolver.swift",

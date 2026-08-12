@@ -76,6 +76,12 @@ extension AiChatFeature {
            currentPendingRequest.resolutionID == resolutionID
         {
             state.pendingRequestStart = nil
+            guard AiChatStateSelection.modelCatalogAuthority(
+                for: currentPendingRequest.selectedModel.id,
+                state: state,
+            ) != .confirmedUnavailable else {
+                return .none
+            }
             return beginRequest(
                 currentPendingRequest,
                 lockedRequestContext: lockedRequestContext,
@@ -86,6 +92,12 @@ extension AiChatFeature {
         guard let backgroundPendingRequest = state.backgroundPendingRequestStarts
             .removeValue(forKey: resolutionID)
         else { return .none }
+        guard AiChatStateSelection.modelCatalogAuthority(
+            for: backgroundPendingRequest.selectedModel.id,
+            state: state,
+        ) != .confirmedUnavailable else {
+            return .none
+        }
 
         if backgroundPendingRequest.sessionID == state.sessionID,
            canBeginForegroundRequest(state: state)
@@ -281,9 +293,9 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: trimmed,
             messages: truncatedHistory.messages,
-            persistenceTranscriptHistory: fullMessages,
             assistantReplacementIndex: nil,
             historyTruncation: truncatedHistory.metadata,
+            persistenceTranscriptHistory: fullMessages,
         )
     }
 
@@ -312,9 +324,9 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: truncatedHistory.messages,
-            persistenceTranscriptHistory: messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
+            persistenceTranscriptHistory: messages,
             requestContextOverride: requestContextOverride,
             requestContextSource: requestContextOverride == nil ? lastSubmittedContext?.context : nil,
         )
@@ -344,7 +356,17 @@ extension AiChatFeature {
             promptSummary: input.preparedRequest.prompt,
             submittedAtMs: submittedAtMs,
         )
-        let request = AiChatRequest(context: context, messages: input.preparedRequest.messages)
+        let requestMessages = stampedSubmitMessages(
+            input.preparedRequest.messages,
+            kind: input.kind,
+            submittedAtMs: submittedAtMs,
+        )
+        let persistenceTranscriptHistory = stampedSubmitMessages(
+            input.preparedRequest.persistenceTranscriptHistory,
+            kind: input.kind,
+            submittedAtMs: submittedAtMs,
+        )
+        let request = AiChatRequest(context: context, messages: requestMessages)
 
         return AiChatRequestLock(
             kind: input.kind,
@@ -352,14 +374,33 @@ extension AiChatFeature {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: input.preparedRequest.persistenceTranscriptHistory,
             selectedModelHandle: selectedHandle,
             selectedModelRow: input.selectedRow,
             assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: input.customTitle,
             historyTruncation: input.preparedRequest.historyTruncation,
             observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: submittedAtMs),
         )
+    }
+
+    func stampedSubmitMessages(
+        _ messages: [AiChatMessage],
+        kind: AiChatRequestKind,
+        submittedAtMs: Int64,
+    ) -> [AiChatMessage] {
+        guard kind == .submit,
+              let userMessage = messages.last,
+              userMessage.role == .user
+        else { return messages }
+
+        var stampedMessages = messages
+        stampedMessages[stampedMessages.index(before: stampedMessages.endIndex)] = AiChatMessage(
+            role: userMessage.role,
+            content: userMessage.content,
+            createdAtMs: submittedAtMs,
+        )
+        return stampedMessages
     }
 
     private func applyRequestStart(
@@ -369,6 +410,7 @@ extension AiChatFeature {
         lock: AiChatRequestLock,
         state: inout State,
     ) {
+        let submittedDraftIsUnchanged = state.draftText.trimmingCharacters(in: .whitespacesAndNewlines) == prompt
         preserveFinalPersistenceOwnerBeforeRequestStart(newLock: lock, state: &state)
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
@@ -378,8 +420,12 @@ extension AiChatFeature {
         state.sessionStatus = .active
 
         if kind == .submit {
-            state.transcriptHistory.append(AiChatMessage(role: .user, content: prompt))
-            state.draftText = ""
+            if let stampedUserMessage = lock.request.messages.last, stampedUserMessage.role == .user {
+                state.transcriptHistory.append(stampedUserMessage)
+            }
+            if submittedDraftIsUnchanged {
+                state.draftText = ""
+            }
             state.emptyDraftSessionID = nil
             if let sessionID = lock.context.sessionID ?? state.sessionID {
                 state.sessionList.selectedSessionID = sessionID
@@ -495,7 +541,9 @@ extension AiChatFeature {
     }
 
     func matches(lock: AiChatRequestLock, context: AiChatRequestContextSnapshot) -> Bool {
-        lock.requestID == context.requestID && lock.runID == context.runID
+        lock.requestID == context.requestID
+            && lock.runID == context.runID
+            && lock.context.sessionID == context.sessionID
     }
 
     private static func executionCredential(
@@ -667,13 +715,17 @@ extension AiChatFeature {
             .cancel(id: CancelID.sessionList),
             .cancel(id: CancelID.sessionDelete),
             .cancel(id: CancelID.sessionRename),
-            .cancel(id: CancelID.attachmentDrop),
+            state.sessionID.map { .cancel(id: CancelID.attachmentDrop($0)) } ?? .none,
         )
     }
 
     func handleCancelTapped(state: inout State) -> Effect<Action> {
-        if let pendingRequestStart = state.pendingRequestStart {
-            state.pendingRequestStart = nil
+        if let pendingRequestStart = state.visiblePendingRequestStart {
+            if state.pendingRequestStart?.resolutionID == pendingRequestStart.resolutionID {
+                state.pendingRequestStart = nil
+            } else {
+                state.backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = nil
+            }
             return .cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID))
         }
         guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
@@ -711,6 +763,16 @@ extension AiChatFeature {
         state.lockedModelHandle = nil
         state.executionPhase = .idle
         return cancellationEffect
+    }
+}
+
+extension AiChatState {
+    var visiblePendingRequestStart: AiChatPendingRequestStart? {
+        guard let sessionID else { return nil }
+        if let pendingRequestStart, pendingRequestStart.sessionID == sessionID {
+            return pendingRequestStart
+        }
+        return backgroundPendingRequestStarts.values.first { $0.sessionID == sessionID }
     }
 }
 

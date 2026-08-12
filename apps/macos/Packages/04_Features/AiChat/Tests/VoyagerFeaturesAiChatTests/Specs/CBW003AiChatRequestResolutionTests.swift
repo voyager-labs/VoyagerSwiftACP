@@ -8,7 +8,6 @@ import XCTest
 
 @MainActor
 final class CBW003AiChatRequestResolutionTests: XCTestCase {
-    /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
     // MARK: - CBW-003-prepare_contextual_chat_request
 
     func testRequestContextResolutionCancelIDIsScopedByResolutionID() {
@@ -88,7 +87,99 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
     }
 
-    /// session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
+    /// CBW-003-prepare_contextual_chat_request: processing 중 다음 model/thinking 편집은 active lock이 아닌 두 번째 submit에만 반영한다.
+    /// 첫 요청의 resolver/lock payload와 다음 요청 selection이 같은 live state에서 서로 섞이지 않는 commit boundary를 검증합니다.
+    /// - 검증 내용: 첫 lock model/thinking/request, live selection, 두 번째 pending request 캡처를 확인합니다.
+    /// - 사전 조건: 첫 요청은 model 0/medium으로 processing이고 다음 draft는 model 1/minimal로 편집됩니다.
+    /// - 기대 결과: 첫 lock은 원 값을 유지하고 완료 뒤 두 번째 submit만 새 draft/model/thinking을 캡처합니다.
+    func testProcessingNextSelectionIsCapturedOnlyBySecondSubmit() {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("30303030-3030-3030-3030-303030303635"))
+        let resolutionID = makeUUID("40404040-4040-4040-4040-404040404635")
+        let feature = makeFeatureWithFrozenRequestDependencies()
+        let originalPrompt = "First prompt"
+        let pending = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: models[0],
+            selectedRow: catalogRows[0],
+            selectedThinking: .effort(.medium),
+            preparedRequest: AiChatPreparedRequest(
+                prompt: originalPrompt,
+                messages: [AiChatMessage(role: .user, content: originalPrompt)],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: kAiChatHistoryCharacterBudget,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "First context"),
+            draftText: originalPrompt,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            pendingRequestStart: pending,
+        )
+
+        _ = withDependencies {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_006_351))
+        } operation: {
+            feature.completeRequestContextResolution(
+                resolutionID: resolutionID,
+                resolvedContext: AiChatResolvedRequestContext(
+                    currentContext: makeContextSnapshot(summary: "First context"),
+                    addedAttachments: [],
+                    parts: [],
+                ),
+                state: &state,
+            )
+        }
+        guard case let .processing(firstLock) = state.executionPhase else {
+            return XCTFail("Expected first processing lock")
+        }
+
+        _ = feature.handleSelectedModelChanged(catalogRows[1].handle, state: &state)
+        _ = feature.handleSelectedThinkingChanged(.effort(.minimal), state: &state)
+        state.draftText = "Second prompt"
+
+        XCTAssertEqual(state.executionPhase.lock, firstLock)
+        XCTAssertEqual(firstLock.context.model, catalogRows[0].handle)
+        XCTAssertEqual(firstLock.context.selectedThinking, .effort(.medium))
+        XCTAssertEqual(firstLock.request.messages.last?.content, originalPrompt)
+        XCTAssertEqual(state.selectedModelHandle, catalogRows[1].handle)
+        XCTAssertEqual(state.selectedThinking, .effort(.minimal))
+
+        feature.applyFinal(
+            response: AiChatResponse(
+                context: firstLock.context,
+                assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+                completedAtMs: 1_700_000_006_351,
+            ),
+            lock: firstLock,
+            state: &state,
+        )
+        _ = feature.startRequest(kind: .submit, state: &state)
+
+        guard let secondPending = state.pendingRequestStart else {
+            return XCTFail("Expected second pending request")
+        }
+        XCTAssertEqual(secondPending.preparedRequest.prompt, "Second prompt")
+        XCTAssertEqual(secondPending.selectedModel.id, catalogRows[1].handle)
+        XCTAssertEqual(secondPending.selectedThinking, .effort(.minimal))
+        XCTAssertEqual(firstLock.context.model, catalogRows[0].handle)
+        XCTAssertEqual(firstLock.context.selectedThinking, .effort(.medium))
+    }
+
     // MARK: - CBW-003-prepare_contextual_chat_request
 
     /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Drops Provider Native Binary Payload Metadata
@@ -990,6 +1081,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: "Old answer"),
             ],
+            draftText: "Unsent next prompt",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             executionPhase: .completed(completedLock),
@@ -1018,6 +1110,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext, originalLockedContext)
         XCTAssertEqual(request.context.currentContext.summary, "Original selection")
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Original.txt"])
+        XCTAssertEqual(store.state.draftText, "Unsent next prompt")
+        XCTAssertFalse(store.state.canRegenerate)
     }
 
     /// CBW-003-build_contextual_request_payload: Codex Missing Attachment Does Not Become Path Scope Reference
@@ -1386,7 +1480,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         let request = try XCTUnwrap(stream.requests.first)
         XCTAssertEqual(savedSnapshots.value.first, expectedNewChatSnapshot)
         XCTAssertEqual(savedSnapshots.value.last?.transcriptHistory, [
-            AiChatMessage(role: .user, content: "Ask about the latest selection"),
+            AiChatMessage(role: .user, content: "Ask about the latest selection", createdAtMs: fixedMs),
         ])
         XCTAssertEqual(savedSnapshots.value.last?.lastRequestContext?.currentContext, updatedContext)
         XCTAssertEqual(request.context.requestContext.currentContext, updatedContext)

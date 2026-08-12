@@ -7,6 +7,10 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case ai
     case account
 
+    public static var visibleCases: [Self] {
+        allCases.filter { $0 != .account }
+    }
+
     public var id: String {
         rawValue
     }
