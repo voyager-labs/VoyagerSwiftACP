@@ -192,6 +192,9 @@ extension RuntimeControlPlane {
             providerBranch: session.stored.providerBranch,
             eventEvidence: session.stored.eventEvidence,
         )
+        if projection.isTerminal, case .detachedLaunching = session.lease {
+            session.lease = .none
+        }
         session.revision += 1
         registry[host] = session
     }

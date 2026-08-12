@@ -510,6 +510,47 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: terminal evidence releases a cancelled launch reservation.
+    /// caller가 사라진 launch의 terminal 증거가 남은 reservation을 회수해 host 재사용을 허용하는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, same-run terminal 수용, replacement provider 실행.
+    /// - 사전 조건: adapter launch가 cancellation-aware delay에서 대기하다 caller task가 취소된다.
+    /// - 기대 결과: terminal 저장 뒤 replacement가 activeRunExists 없이 완료되고 provider launch는 총 두 번이다.
+    @Test
+    func `terminal evidence releases a cancelled launch reservation`() async throws {
+        let host: ExternalAgentSessionReference = "host-cancelled-launch-terminal"
+        let cancelledRun = RuntimeRunReference("run-cancelled-launch-terminal")
+        let replacementRun = RuntimeRunReference("run-cancelled-launch-replacement")
+        let replacementCompleted = makeEvent(
+            host: host,
+            run: replacementRun,
+            sequence: 1,
+            idempotencyKey: "cancelled-launch-replacement-completed",
+            kind: .completed,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[], [replacementCompleted]],
+            launchDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let cancelledRequest = makeLaunch(host: host, run: cancelledRun, adapterID: "sdk")
+        let cancelledTask = Task { try await runPolicyReady(plane, cancelledRequest) }
+        await adapter.waitForLaunchCount(1)
+
+        cancelledTask.cancel()
+        await #expect(throws: CancellationError.self) { try await cancelledTask.value }
+        #expect(try await plane.ingestHostEvent(
+            reviewerBlockerTestsMakeHostTerminal(host: host, run: cancelledRun, sequence: 1),
+        )?.outcome == .completed)
+
+        let replacement = makeLaunch(host: host, run: replacementRun, adapterID: "sdk")
+        try await plane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await plane.run(replacement).outcome == .completed)
+        #expect(await adapter.counts().launch == 2)
+    }
+
     /// ATI-006-coordinate_external_agent_launch: cancelled persistence waiter never launches a provider.
     /// provider 호출 전 persistence lock 대기에서 취소된 작업이 mutation과 외부 실행을 진행하지 않는지 검증한다.
     /// - 검증 내용: CancellationError 전파, cancelled host 저장 차단, provider launch 미호출.

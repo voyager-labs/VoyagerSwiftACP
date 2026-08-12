@@ -162,6 +162,16 @@ extension RuntimeControlPlane {
         return terminal
     }
 
+    func detachLaunchOwnerTransition(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) {
+        guard var session = sessions[host], session.lease == .launching(lease) else { return }
+        session.lease = session.stored.projection.isTerminal ? .none : .detachedLaunching(lease)
+        session.revision += 1
+        sessions[host] = session
+    }
+
     func interruptTransition(
         host: ExternalAgentSessionReference,
         lease: UInt64?,

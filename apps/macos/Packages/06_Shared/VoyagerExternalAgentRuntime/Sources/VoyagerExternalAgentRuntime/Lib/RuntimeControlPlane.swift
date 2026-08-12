@@ -6,6 +6,7 @@ public actor RuntimeControlPlane {
     enum RuntimeLease: Equatable {
         case none
         case launching(UInt64)
+        case detachedLaunching(UInt64)
         case consuming(UInt64)
         case restored(UInt64)
         case resuming(UInt64)
@@ -89,7 +90,7 @@ public actor RuntimeControlPlane {
         do {
             receipt = try await reservation.adapter.launch(request)
         } catch is CancellationError {
-            throw CancellationError()
+            try await propagateLaunchCancellation(host: reservation.host, lease: reservation.lease)
         } catch {
             return try await resolveLaunchFailure(
                 error,
@@ -127,6 +128,20 @@ public actor RuntimeControlPlane {
                 reservation: reservation,
                 lease: lease,
             )
+        }
+    }
+
+    private func propagateLaunchCancellation(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> Never {
+        await detachLaunchOwner(host: host, lease: lease)
+        throw CancellationError()
+    }
+
+    private func detachLaunchOwner(host: ExternalAgentSessionReference, lease: UInt64) async {
+        try? await mutateAfterPersistedTransitions { plane in
+            plane.detachLaunchOwnerTransition(host: host, lease: lease)
         }
     }
 
