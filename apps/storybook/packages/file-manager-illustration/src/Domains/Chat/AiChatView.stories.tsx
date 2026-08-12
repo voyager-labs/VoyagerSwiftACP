@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { useState } from "react"
-import { fn } from "storybook/test"
+import { expect, fn } from "storybook/test"
 import { InspectorPane } from "../../Layouts/InspectorPane"
 import { files } from "../../data/mock-data"
 import type { AiChatInputBarActions } from "../../model/types"
@@ -9,6 +9,7 @@ import {
   chatSurfaceEmpty,
   chatSurfaceError,
   chatSurfaceHistory,
+  chatSurfaceRecovery,
   chatSurfaceStreaming,
 } from "./chat-fixtures"
 
@@ -95,5 +96,15 @@ export const Streaming: Story = {
 export const ErrorState: Story = {
   args: {
     chatSurface: chatSurfaceError,
+  },
+}
+
+export const Recovery: Story = {
+  args: {
+    chatSurface: chatSurfaceRecovery,
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }))
+    await expect(args.onErrorRecovery).toHaveBeenCalled()
   },
 }

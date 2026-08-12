@@ -132,6 +132,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
   const handleOpenNewChat = useCallback(() => dispatch({ type: "OPEN_NEW_CHAT" }), [])
   const handleCloseChat = useCallback(() => dispatch({ type: "CLOSE_CHAT" }), [])
   const handleNoop = useCallback(() => undefined, [])
+  const handleChatErrorRecovery = props.chatOnErrorRecovery ?? handleNoop
 
   const toolbarContent: FileToolbarContent = route.kind === "home" ? "home" : "directory"
   const controlledChat = props.chatSurface != null
@@ -212,7 +213,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onCloseChat={handleCloseChat}
                 onSessionSelected={handleNoop}
                 onOpenSettings={handleNoop}
-                onErrorRecovery={handleNoop}
+                onErrorRecovery={handleChatErrorRecovery}
                 onRegenerate={handleNoop}
                 chatInputActions={props.chatInputActions}
                 chatSurface={props.chatSurface}

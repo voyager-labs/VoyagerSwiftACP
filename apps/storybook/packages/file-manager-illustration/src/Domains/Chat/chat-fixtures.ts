@@ -104,6 +104,13 @@ export const chatStreamingFailure: ChatStreamingAssistant = {
   content:
     "I reviewed 6 PDFs. Three themes recur: citation networks around Fitchett 2014 and file-organization",
   failure: {
+    message: "Connection lost while generating the response.",
+  },
+}
+
+export const chatStreamingRecovery: ChatStreamingAssistant = {
+  ...chatStreamingFailure,
+  failure: {
     message: "Connection lost while generating the response. Retry to continue.",
     recoveryLabel: "Retry",
   },
@@ -141,6 +148,11 @@ export const chatSurfaceError: ChatSurfaceState = {
   inputBar: aiChatInputReadyEmpty,
   streamingAssistant: chatStreamingFailure,
   canRegenerate: true,
+}
+
+export const chatSurfaceRecovery: ChatSurfaceState = {
+  ...chatSurfaceError,
+  streamingAssistant: chatStreamingRecovery,
 }
 
 export const chatSurfaceEmpty: ChatSurfaceState = {
