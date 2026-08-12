@@ -153,6 +153,7 @@ public final class FileOperationUndoManagerRegistry {
         var generation: Generation
         var undoRecordIDs: [UUID] = []
         var redoRecordIDs: [UUID] = []
+        var compatibilityRecords: [UUID: CompatibilityRecord] = [:]
         var pendingTransition: PendingTransition?
 
         init(manager: UndoManager, generation: Generation) {
@@ -167,6 +168,11 @@ public final class FileOperationUndoManagerRegistry {
         var didComplete = false
     }
 
+    private struct CompatibilityRecord {
+        let ownerID: UUID
+        let record: EntryActionRecord
+    }
+
     private struct PlannedScopeMove {
         let descriptor: FileOperationUndoScopeMoveDescriptor
         let entry: Entry
@@ -175,6 +181,7 @@ public final class FileOperationUndoManagerRegistry {
 
     private var entries: [UndoManagerScope: Entry] = [:]
     private var generation: Generation = 0
+    nonisolated private let compatibilityEventBridge = UndoManagerEventBridge()
 
     public init() {}
 
@@ -331,6 +338,9 @@ public final class FileOperationUndoManagerRegistry {
         }
         entry.manager.endUndoGrouping()
         entry.undoRecordIDs.append(record.id)
+        for recordID in entry.redoRecordIDs {
+            entry.compatibilityRecords[recordID] = nil
+        }
         entry.redoRecordIDs.removeAll()
         return true
     }
@@ -500,6 +510,7 @@ public final class FileOperationUndoManagerRegistry {
         entry.manager.removeAllActions()
         entry.undoRecordIDs.removeAll()
         entry.redoRecordIDs.removeAll()
+        entry.compatibilityRecords.removeAll()
         entry.pendingTransition = nil
         FileOperationUndoManagerHandlerStore.store(for: entry.manager).clear()
         objc_setAssociatedObject(
@@ -514,6 +525,118 @@ public final class FileOperationUndoManagerRegistry {
         precondition(generation < .max, "Undo manager generation exhausted")
         generation += 1
         return generation
+    }
+
+    private func makeCompatibilityAvailability(_ entry: Entry) -> UndoManagerAvailability {
+        let undoTarget = entry.undoRecordIDs.last.flatMap { recordID in
+            entry.compatibilityRecords[recordID].map {
+                UndoManagerRecordIdentity(ownerID: $0.ownerID, recordID: recordID)
+            }
+        }
+        let redoTarget = entry.redoRecordIDs.last.flatMap { recordID in
+            entry.compatibilityRecords[recordID].map {
+                UndoManagerRecordIdentity(ownerID: $0.ownerID, recordID: recordID)
+            }
+        }
+        return UndoManagerAvailability(
+            canUndo: entry.manager.canUndo && undoTarget != nil,
+            canRedo: entry.manager.canRedo && redoTarget != nil,
+            undoTarget: undoTarget,
+            redoTarget: redoTarget,
+        )
+    }
+}
+
+public extension FileOperationUndoManagerRegistry {
+    @discardableResult
+    func registerCompatibilityUndo(
+        _ scope: UndoManagerScope,
+        ownerID: UUID,
+        record: EntryActionRecord,
+    ) -> Bool {
+        guard let entry = entries[scope], entry.pendingTransition == nil else { return false }
+        if entry.undoRecordIDs.last != record.id {
+            guard registerUndo(scope, expectedGeneration: entry.generation, record: record) else { return false }
+        }
+        entry.compatibilityRecords[record.id] = CompatibilityRecord(ownerID: ownerID, record: record)
+        return true
+    }
+
+    nonisolated func compatibilityEvents(windowID: UUID) -> AsyncStream<UndoManagerEvent> {
+        compatibilityEventBridge.stream(windowID: windowID)
+    }
+
+    func compatibilityAvailability(_ scope: UndoManagerScope?) -> UndoManagerAvailability {
+        guard let scope, let entry = entries[scope] else { return .init() }
+        return makeCompatibilityAvailability(entry)
+    }
+
+    func performCompatibilityUndoRedo(
+        _ scope: UndoManagerScope?,
+        expectedTarget: UndoManagerRecordIdentity?,
+        direction: FileOperationUndoDirection,
+    ) -> UndoManagerInvocationResult {
+        guard let scope, let entry = entries[scope] else {
+            return .init(didInvoke: false, availability: .init())
+        }
+        let recordID = switch direction {
+        case .undo:
+            entry.undoRecordIDs.last
+        case .redo:
+            entry.redoRecordIDs.last
+        }
+        guard let recordID,
+              let compatibilityRecord = entry.compatibilityRecords[recordID],
+              expectedTarget == UndoManagerRecordIdentity(
+                  ownerID: compatibilityRecord.ownerID,
+                  recordID: recordID,
+              )
+        else {
+            return .init(didInvoke: false, availability: makeCompatibilityAvailability(entry))
+        }
+
+        let outcome = performUndoRedo(
+            scope,
+            expectedGeneration: entry.generation,
+            direction: direction,
+            expectedRecordID: recordID,
+        )
+        guard outcome == .applied else {
+            return .init(didInvoke: false, availability: makeCompatibilityAvailability(entry))
+        }
+        compatibilityEventBridge.yield(
+            UndoManagerEvent(
+                ownerID: compatibilityRecord.ownerID,
+                record: compatibilityRecord.record,
+                direction: direction == .undo ? .undo : .redo,
+            ),
+            windowID: scope.windowID,
+        )
+        return .init(didInvoke: true, availability: makeCompatibilityAvailability(entry))
+    }
+
+    func invalidateCompatibilityOwner(
+        _ scope: UndoManagerScope?,
+        ownerID: UUID,
+    ) -> UndoManagerInvalidationResult {
+        guard let scope, let entry = entries[scope] else {
+            return .init(succeeded: false, availability: .init())
+        }
+        if entry.compatibilityRecords.values.contains(where: { $0.ownerID == ownerID }) {
+            invalidate(entry)
+        }
+        return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
+    }
+
+    func invalidateCompatibilityWindow(_ windowID: UUID) -> UndoManagerInvalidationResult {
+        let matchingEntries = entries
+            .filter { $0.key.windowID == windowID }
+            .map(\.value)
+        for entry in matchingEntries {
+            invalidate(entry)
+        }
+        compatibilityEventBridge.finish(windowID: windowID)
+        return .init(succeeded: true, availability: .init())
     }
 }
 
