@@ -136,17 +136,16 @@ public actor RuntimeControlPlane {
         runReference: RuntimeRunReference,
     ) async throws -> RuntimeResult {
         let primary = normalizeAdapterError(error)
-        let cleanupApplied = try? await commit(host: reservation.host) { plane, registry in
+        let storedTerminal = storedTerminalResult(host: reservation.host, runReference: runReference)
+        _ = try? await commit(host: reservation.host) { plane, registry in
             plane.failLaunchTransition(
                 host: reservation.host,
                 lease: reservation.lease,
                 in: &registry,
             )
         }
-        if cleanupApplied != true,
-           let terminal = storedTerminalResult(host: reservation.host, runReference: runReference)
-        {
-            return terminal
+        if let storedTerminal {
+            return storedTerminal
         }
         throw primary
     }
@@ -162,6 +161,7 @@ public actor RuntimeControlPlane {
         } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
             throw RuntimeHostError.persistenceFailure
         } catch is CancellationError {
+            _ = try? await releaseTerminalLeaseIfNeeded(host: reservation.host, lease: lease)
             throw CancellationError()
         } catch {
             let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
@@ -175,9 +175,21 @@ public actor RuntimeControlPlane {
             throw primary
         }
         if sessions[reservation.host]?.stored.projection.isTerminal == true {
+            guard try await releaseTerminalLeaseIfNeeded(host: reservation.host, lease: lease) else {
+                throw RuntimeHostError.invalidEvent
+            }
             return resultRespectingStoredTerminal(result, host: reservation.host)
         }
         return try await persistTerminalResult(result, host: reservation.host, lease: lease)
+    }
+
+    func releaseTerminalLeaseIfNeeded(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> Bool {
+        try await mutateAfterPersistedTransitions { plane in
+            plane.releaseTerminalLeaseTransition(host: host, lease: lease, in: &plane.sessions)
+        }
     }
 
     func persistTerminalResult(

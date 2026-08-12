@@ -97,6 +97,7 @@ extension RuntimeControlPlane {
         guard var session = registry[host], session.stored.runReference == request.runReference else {
             throw RuntimeHostError.invalidEvent
         }
+        guard session.lease == .launching(lease) else { throw RuntimeHostError.invalidEvent }
         if let existing = session.stored.providerInternalSessionReference,
            existing != receipt.providerInternalSessionReference
         {
@@ -112,7 +113,7 @@ extension RuntimeControlPlane {
             registry[host] = session
             return .terminal(terminal)
         }
-        guard session.lease == .launching(lease), session.stored.projection == .running else {
+        guard session.stored.projection == .running else {
             throw RuntimeHostError.invalidEvent
         }
         session.lease = .consuming(lease)
@@ -148,7 +149,9 @@ extension RuntimeControlPlane {
         in registry: inout SessionRegistry,
     ) -> Bool {
         guard var session = registry[host], session.lease == .launching(lease) else { return false }
-        session.stored = session.stored.withProjection(.interrupted)
+        if !session.stored.projection.isTerminal {
+            session.stored = session.stored.withProjection(.interrupted)
+        }
         session.lease = .none
         session.revision += 1
         registry[host] = session
@@ -162,6 +165,12 @@ extension RuntimeControlPlane {
         receipt: RuntimeLaunchReceipt? = nil,
     ) throws {
         guard var session = registry[host] else { return }
+        if let lease {
+            guard session.lease == .launching(lease)
+                || session.lease == .consuming(lease)
+                || session.lease == .resuming(lease)
+            else { return }
+        }
         if let receipt {
             guard receipt.runReference == session.stored.runReference else {
                 throw RuntimeHostError.invalidEvent
@@ -182,16 +191,25 @@ extension RuntimeControlPlane {
             registry[host] = session
             return
         }
-        if let lease {
-            guard session.lease == .launching(lease)
-                || session.lease == .consuming(lease)
-                || session.lease == .resuming(lease)
-            else { return }
-        }
         session.stored = session.stored.withProjection(.interrupted)
         session.lease = .none
         session.revision += 1
         registry[host] = session
+    }
+
+    func releaseTerminalLeaseTransition(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+        in registry: inout SessionRegistry,
+    ) -> Bool {
+        guard var session = registry[host],
+              session.stored.projection.isTerminal,
+              session.lease == .consuming(lease) || session.lease == .resuming(lease)
+        else { return false }
+        session.lease = .none
+        session.revision += 1
+        registry[host] = session
+        return true
     }
 
     func terminalResult(for stored: RuntimeStoredSession) -> RuntimeResult? {

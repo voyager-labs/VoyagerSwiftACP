@@ -1739,6 +1739,61 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 0)
     }
 
+    /// ATI-006-project_external_agent_run_events: late launch reconciliation reserves the terminal host.
+    /// host terminal 뒤 남은 launch receipt 조정이 끝날 때까지 같은 host의 replacement 실행을 차단한다.
+    /// - 검증 내용: pending receipt 중 replacement 차단, late provider binding, 조정 후 host 재사용.
+    /// - 사전 조건: 첫 launch가 receipt 반환 직전에 대기하고 host terminal이 먼저 저장된다.
+    /// - 기대 결과: replacement는 provider를 시작하지 않고 거부되며 receipt 조정 뒤 정상 실행된다.
+    @Test
+    func `late launch reconciliation reserves the terminal host`() async throws {
+        let host: ExternalAgentSessionReference = "host-launch-reconciliation"
+        let originalRun = RuntimeRunReference("run-launch-reconciliation-original")
+        let replacementRun = RuntimeRunReference("run-launch-reconciliation-replacement")
+        let launchGate = RuntimeTestGate()
+        let replacementCompleted = makeEvent(
+            host: host,
+            run: replacementRun,
+            sequence: 1,
+            idempotencyKey: "launch-reconciliation-replacement-completed",
+            kind: .completed,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[replacementCompleted]],
+            launchGate: launchGate,
+        )
+        let store = InMemoryRuntimeStateStore()
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let originalTask = Task {
+            try await runPolicyReady(
+                plane,
+                makeLaunch(host: host, run: originalRun, adapterID: "sdk"),
+            )
+        }
+        await adapter.waitForLaunchCount(1)
+        let replacement = makeLaunch(host: host, run: replacementRun, adapterID: "sdk")
+
+        #expect(try await plane.ingestHostEvent(
+            reviewerBlockerTestsMakeHostTerminal(host: host, run: originalRun, sequence: 1),
+        )?.outcome == .completed)
+        await #expect(throws: RuntimeHostError.activeRunExists) {
+            try await plane.projectPrelaunch(replacement, as: .policyReady)
+        }
+        #expect(await adapter.counts().launch == 1)
+
+        await launchGate.open()
+        #expect(try await originalTask.value.outcome == .completed)
+        let reconciled = try #require(await store.currentState()?.sessions.first)
+        #expect(reconciled.runReference == originalRun)
+        #expect(reconciled.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
+
+        try await plane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await plane.run(replacement).outcome == .completed)
+        #expect(await adapter.counts().launch == 2)
+    }
+
     /// ATI-006-project_external_agent_run_events: stored host terminal survives a late launch failure.
     /// launch 대기 중 지속된 같은 run의 host terminal이 뒤늦은 adapter 오류보다 우선하는지 검증한다.
     /// - 검증 내용: launch 실패 이후 반환 outcome과 durable terminal projection.

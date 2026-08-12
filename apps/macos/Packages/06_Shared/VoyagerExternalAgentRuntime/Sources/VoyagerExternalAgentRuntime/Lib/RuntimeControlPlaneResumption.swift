@@ -25,6 +25,9 @@ public extension RuntimeControlPlane {
             throw normalized
         }
         if sessions[hostReference]?.stored.projection.isTerminal == true {
+            guard try await releaseTerminalLeaseIfNeeded(host: hostReference, lease: claim.lease) else {
+                throw RuntimeHostError.invalidEvent
+            }
             return resultRespectingStoredTerminal(result, host: hostReference)
         }
         return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
@@ -77,10 +80,9 @@ public extension RuntimeControlPlane {
     ) async throws {
         try await mutateAfterPersistedTransitions { plane in
             guard var session = plane.sessions[hostReference],
-                  session.lease == .resuming(lease),
-                  !session.stored.projection.isTerminal
+                  session.lease == .resuming(lease)
             else { return }
-            session.lease = .restored(lease)
+            session.lease = session.stored.projection.isTerminal ? .none : .restored(lease)
             plane.sessions[hostReference] = session
         }
     }

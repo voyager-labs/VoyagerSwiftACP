@@ -162,9 +162,6 @@ extension RuntimeControlPlane {
         } else {
             session.hostAcceptedCount += 1
         }
-        if projection.isTerminal {
-            session.lease = .none
-        }
         let providerKeys = isProvider
             ? Array((session.stored.acceptedIdempotencyKeys + [event.idempotencyKey])
                 .suffix(RuntimeBoundaryLimits.persistedEventEntries))
