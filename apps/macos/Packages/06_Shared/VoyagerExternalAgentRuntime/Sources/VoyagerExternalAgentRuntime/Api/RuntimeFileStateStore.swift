@@ -3,6 +3,10 @@ import Foundation
 public typealias RuntimeStateMigrator = @Sendable (Data, Int) throws -> RuntimeStoredState
 
 public actor RuntimeFileStateStore: RuntimeStateStore {
+    private enum SnapshotReadError: Error {
+        case oversized
+    }
+
     private let fileURL: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -18,7 +22,13 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
 
     public func load() async throws -> RuntimeStoredState? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        let data = try readSnapshotData()
+        let data: Data
+        do {
+            data = try readSnapshotData()
+        } catch SnapshotReadError.oversized {
+            try quarantineCorruptedSnapshot()
+            throw RuntimeHostError.persistenceFailure
+        }
         let version: Int
         do {
             version = try schemaVersion(in: data)
@@ -41,9 +51,10 @@ public actor RuntimeFileStateStore: RuntimeStateStore {
     }
 
     private func readSnapshotData() throws -> Data {
-        guard let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= RuntimeBoundaryLimits.snapshotBytes
-        else { throw RuntimeHostError.persistenceFailure }
+        guard let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            throw RuntimeHostError.persistenceFailure
+        }
+        guard size <= RuntimeBoundaryLimits.snapshotBytes else { throw SnapshotReadError.oversized }
         do { return try Data(contentsOf: fileURL) } catch {
             throw RuntimeHostError.persistenceFailure
         }

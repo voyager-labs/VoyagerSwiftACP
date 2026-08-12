@@ -51,12 +51,17 @@ struct RuntimePersistenceTechnicalTests {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
         let file = directory.appending(path: "state.json")
+        let quarantine = file.appendingPathExtension("corrupt")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try Data(repeating: 0x20, count: RuntimeBoundaryLimits.snapshotBytes + 1).write(to: file)
+        let snapshot = Data(repeating: 0x20, count: RuntimeBoundaryLimits.snapshotBytes + 1)
+        try snapshot.write(to: file)
 
         let store = RuntimeFileStateStore(fileURL: file)
         await #expect(throws: RuntimeHostError.persistenceFailure) { try await store.load() }
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(try Data(contentsOf: quarantine) == snapshot)
+        #expect(try await store.load() == nil)
     }
 
     @Test
