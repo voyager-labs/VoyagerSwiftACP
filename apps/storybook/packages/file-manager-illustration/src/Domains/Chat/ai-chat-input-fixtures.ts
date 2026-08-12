@@ -6,7 +6,10 @@ const defaultModelSelector = {
   accessibilityValue: "GPT-5.2",
   isDisabled: false,
   value: "gpt-5.2",
-  options: [{ value: "gpt-5.2", label: "GPT-5.2", detail: "OpenAI" }],
+  options: [
+    { value: "gpt-5.2", label: "GPT-5.2", detail: "OpenAI" },
+    { value: "gpt-5.1", label: "GPT-5.1", detail: "OpenAI" },
+  ],
 } as const
 
 const defaultThinkingSelector = {
