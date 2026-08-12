@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import * as runtime from "../dist/index.js"
+import { verifyChatMessageContract } from "./verify-chat-message-contract.mjs"
 import { verifyDesignVersionContract } from "./verify-design-version-contract.mjs"
 import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
@@ -131,6 +132,7 @@ assert.doesNotMatch(
 )
 assert.doesNotMatch(designTokensStorySource, /swiftUIMaterialMetadata\.sourceBaseline/)
 assert.doesNotMatch(fileManagerCss, /--macos-[a-z0-9-]+\s*:/)
+verifyChatMessageContract(packageRoot, css)
 verifyDesignVersionContract(packageRoot, storybookRoot, css)
 
 for (const contract of [
@@ -170,7 +172,7 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 184)
+assert.equal(fileManagerStories.length, 189)
 assert.equal(fileManagerPaths.size, 43)
 assert.equal(nonFileManagerStories.length, 0)
 

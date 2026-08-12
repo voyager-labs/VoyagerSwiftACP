@@ -10,6 +10,28 @@ import { aiChatInputProcessing, aiChatInputReadyEmpty } from "./ai-chat-input-fi
 // 채팅 도메인 deterministic fixture — network·clock·random 미의존.
 // 원본: AiChatState (sessionList, transcriptHistory, streamingAssistantDisplayModel).
 
+export const chatRichMarkdownContent = [
+  "## Research summary",
+  "",
+  "The **citation group** contains *two likely duplicates* and one `survey.pdf` source.",
+  "",
+  "> Keep the longer survey and review the shorter duplicate before removing it.",
+  "",
+  "| File | Match | Action |",
+  "| :--- | ---: | :---: |",
+  "| Fitchett2014.pdf | 78% | Keep |",
+  "| IDC2020.pdf | 78% | Review |",
+  "",
+  "See the [collection guide](https://example.com/collections) for the grouping criteria.",
+  "",
+  "```json",
+  "{",
+  '  "collection": "Research methods",',
+  '  "duplicates": 2',
+  "}",
+  "```",
+].join("\n")
+
 export const chatSessionSections: readonly ChatSessionSection[] = [
   {
     id: "today",
@@ -42,27 +64,32 @@ export const chatTranscriptMessages: readonly ChatMessage[] = [
     id: "m1",
     role: "user",
     content: "Summarize the selected research PDFs and group recurring file organization themes.",
-    timestamp: "10:24",
+    timestamp: { label: "10:24" },
   },
   {
     id: "m2",
     role: "assistant",
-    content:
-      "I reviewed 6 PDFs. Three themes recur: citation networks around Fitchett 2014, file-organization taxonomies, and usability evaluation methods. Want me to create a collection for each theme?",
-    timestamp: "10:24",
+    content: chatRichMarkdownContent,
+    timestamp: { label: "10:24" },
   },
   {
     id: "m3",
     role: "user",
-    content: "Yes, and surface likely duplicates across the citation group.",
-    timestamp: "10:25",
+    content: "Yes, create a collection for each theme.",
+    timestamp: { label: "10:25" },
   },
   {
     id: "m4",
+    role: "user",
+    content: "Also surface likely duplicates across the citation group.",
+    timestamp: { label: "10:25", isTimestampVisuallySuppressed: true },
+  },
+  {
+    id: "m5",
     role: "assistant",
     content:
       "Created three collections. Two likely duplicates found in the citation group: IDC2020 and Fitchett2014 share 78% referenced works. I kept the longer survey and flagged the other.",
-    timestamp: "10:26",
+    timestamp: { label: "10:26" },
   },
 ]
 
