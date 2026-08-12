@@ -1,7 +1,7 @@
 import { contentTabs } from "../lib/navigation-data"
 import type { ContentRoute } from "./content-route"
 import { deriveContentRoute } from "./content-route"
-import type { Entry, SidebarTabItem } from "./types"
+import type { Entry, FileManagerInitialPresentation, SidebarTabItem } from "./types"
 
 export interface State {
   readonly tabs: readonly SidebarTabItem[]
@@ -39,6 +39,7 @@ export type Action =
       readonly files: readonly Entry[]
       readonly tabs: readonly SidebarTabItem[]
       readonly activeTabId: string | null
+      readonly initialPresentation: FileManagerInitialPresentation
     }
   /* Inspector chat header actions */
   | { readonly type: "OPEN_CHAT_HISTORY" }
@@ -49,6 +50,7 @@ export interface InitialStateParams {
   readonly files: readonly Entry[]
   readonly tabs: readonly SidebarTabItem[]
   readonly activeTabId: string | null
+  readonly initialPresentation: FileManagerInitialPresentation
 }
 
 export function createInitialState(params: InitialStateParams): State {
@@ -56,10 +58,10 @@ export function createInitialState(params: InitialStateParams): State {
     tabs: params.tabs.map((t) => ({ ...t })),
     activeTabId: params.activeTabId,
     files: params.files,
-    selectedEntryIds: [],
-    viewMode: "grid",
-    sidebarOpen: true,
-    inspectorOpen: false,
+    selectedEntryIds: params.initialPresentation.selectedEntryIds,
+    viewMode: params.initialPresentation.viewMode,
+    sidebarOpen: params.initialPresentation.sidebarOpen,
+    inspectorOpen: params.initialPresentation.inspectorOpen,
     inspectorChatHeader: "sessions",
     requestText: "",
     previousActiveTabId: null,
@@ -202,7 +204,10 @@ export function reducer(state: State, action: Action): State {
         files: action.files,
         tabs: action.tabs.map((t) => ({ ...t })),
         activeTabId: action.activeTabId,
-        inspectorOpen: false,
+        selectedEntryIds: action.initialPresentation.selectedEntryIds,
+        viewMode: action.initialPresentation.viewMode,
+        sidebarOpen: action.initialPresentation.sidebarOpen,
+        inspectorOpen: action.initialPresentation.inspectorOpen,
         inspectorChatHeader: "sessions",
       }
     case "OPEN_CHAT_HISTORY":

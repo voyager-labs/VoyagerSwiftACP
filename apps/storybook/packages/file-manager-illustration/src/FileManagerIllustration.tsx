@@ -32,24 +32,30 @@ import "./styles/sidebar.css"
 import "./styles/window-shell.css"
 
 export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props) => {
-  const { files, contentContext } = props
+  const { files, contentContext, initialPresentation } = props
   const initial = propsToInitialParams(props)
   const [state, dispatch] = useReducer(reducer, initial, createInitialState)
 
   const prevFilesRef = useRef(files)
   const prevCtxRef = useRef(contentContext)
+  const prevInitialPresentationRef = useRef(initialPresentation)
 
   useEffect(() => {
-    if (prevFilesRef.current !== files || prevCtxRef.current !== contentContext) {
-      const resetData = propsToInitialParams({ files, contentContext })
+    if (
+      prevFilesRef.current !== files ||
+      prevCtxRef.current !== contentContext ||
+      prevInitialPresentationRef.current !== initialPresentation
+    ) {
+      const resetData = propsToInitialParams({ files, contentContext, initialPresentation })
       dispatch({
         type: "RESET_DATA",
         ...resetData,
       })
       prevFilesRef.current = files
       prevCtxRef.current = contentContext
+      prevInitialPresentationRef.current = initialPresentation
     }
-  }, [files, contentContext])
+  }, [files, contentContext, initialPresentation])
 
   const selectedEntries = useMemo(
     () => state.files.filter((e) => state.selectedEntryIds.includes(e.id)),

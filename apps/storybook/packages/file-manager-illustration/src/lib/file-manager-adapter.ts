@@ -32,11 +32,18 @@ export function propsToInitialParams(props: FileManagerIllustrationProps): {
   files: readonly Entry[]
   tabs: readonly SidebarTabItem[]
   activeTabId: string | null
+  initialPresentation: NonNullable<FileManagerIllustrationProps["initialPresentation"]>
 } {
   return {
     files: props.files.map(toEntry),
     tabs: props.contentContext.tabs.map(toSidebarTabItem),
     activeTabId: props.contentContext.activeTabId,
+    initialPresentation: props.initialPresentation ?? {
+      selectedEntryIds: [],
+      viewMode: "grid",
+      sidebarOpen: true,
+      inspectorOpen: false,
+    },
   }
 }
 
