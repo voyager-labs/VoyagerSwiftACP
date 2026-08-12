@@ -151,6 +151,8 @@ public actor RuntimeControlPlane {
         let result: RuntimeResult
         do {
             result = try await consume(receipt, from: reservation.adapter, host: reservation.host)
+        } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
+            throw RuntimeHostError.persistenceFailure
         } catch {
             let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
             try? await commit(host: reservation.host) { plane, registry in

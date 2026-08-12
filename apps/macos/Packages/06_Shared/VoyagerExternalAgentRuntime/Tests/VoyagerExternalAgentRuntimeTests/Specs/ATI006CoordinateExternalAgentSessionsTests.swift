@@ -2074,6 +2074,46 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await store.saveCount == 5)
     }
 
+    /// ATI-006-project_external_agent_run_events: transient terminal event persistence failure retries the event.
+    /// provider terminal event의 첫 저장 실패가 실제 outcome을 interrupted로 덮지 않는지 검증한다.
+    /// - 검증 내용: 동일 terminal event의 persistence 재시도와 provider artifact metadata 보존.
+    /// - 사전 조건: SDK adapter가 completed event와 artifact result를 반환하고 event save #4만 실패한다.
+    /// - 기대 결과: event 저장 재시도가 성공하고 public run과 durable projection 모두 completed로 수렴한다.
+    @Test
+    func `transient terminal event persistence failure retries the event`() async throws {
+        let host: ExternalAgentSessionReference = "host-transient-terminal-event-persistence"
+        let run = RuntimeRunReference("run-transient-terminal-event-persistence")
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://terminal-event-retry.json"],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "terminal-event-retry",
+                kind: .completed,
+            )]],
+            terminalResultOverride: expected,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [4])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let result = try await runPolicyReady(
+            plane,
+            makeLaunch(host: host, run: run, adapterID: "sdk"),
+        )
+
+        #expect(result == expected)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await store.saveCount == 5)
+    }
+
     /// ATI-006-project_external_agent_run_events: bind persistence failure interrupts before event projection.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.

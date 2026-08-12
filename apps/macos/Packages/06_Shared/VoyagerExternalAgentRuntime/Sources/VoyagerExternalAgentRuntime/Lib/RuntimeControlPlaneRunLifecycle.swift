@@ -1,5 +1,9 @@
 import Foundation
 
+enum RuntimeTerminalEventPersistenceError: Error {
+    case persistenceFailure
+}
+
 extension RuntimeControlPlane {
     private enum ProviderEventDisposition {
         case nonterminal
@@ -113,16 +117,38 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
     ) async throws -> ProviderEventDisposition {
         do {
-            guard let terminal = try await accept(event, host: host, expectedSource: .provider) else {
-                return .nonterminal
+            return try await acceptProviderEvent(event, host: host)
+        } catch RuntimeHostError.persistenceFailure where providerTerminalOutcome(for: event) != nil {
+            do {
+                return try await acceptProviderEvent(event, host: host)
+            } catch RuntimeHostError.persistenceFailure {
+                throw RuntimeTerminalEventPersistenceError.persistenceFailure
             }
-            return .providerTerminal(terminal)
         } catch let error as RuntimeHostError {
             guard error == .malformedAdapterResponse,
                   isSameRunProviderEvent(event, receipt: receipt, host: host),
                   let terminal = storedTerminalResult(host: host, runReference: receipt.runReference)
             else { throw error }
             return .storedTerminal(terminal)
+        }
+    }
+
+    private func acceptProviderEvent(
+        _ event: RuntimeEventEnvelope,
+        host: ExternalAgentSessionReference,
+    ) async throws -> ProviderEventDisposition {
+        guard let terminal = try await accept(event, host: host, expectedSource: .provider) else {
+            return .nonterminal
+        }
+        return .providerTerminal(terminal)
+    }
+
+    private func providerTerminalOutcome(for event: RuntimeEventEnvelope) -> RuntimeOutcome? {
+        switch event.kind {
+        case .completed: .completed
+        case .failed: .failed
+        case .interrupted: .interrupted
+        default: nil
         }
     }
 

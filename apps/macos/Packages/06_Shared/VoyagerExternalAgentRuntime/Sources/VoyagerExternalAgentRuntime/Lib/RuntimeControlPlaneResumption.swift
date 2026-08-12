@@ -10,6 +10,9 @@ public extension RuntimeControlPlane {
         let result: RuntimeResult
         do {
             result = try await consume(claim.receipt, from: adapter, host: hostReference)
+        } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
+            try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
+            throw RuntimeHostError.persistenceFailure
         } catch let error as RuntimeHostError {
             try? await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
             throw error
