@@ -487,6 +487,6 @@ struct EntryListHierarchyReducer {
     }
 
     private func pathComponents(for path: String) -> [String] {
-        URL(fileURLWithPath: normalizedPath(path)).pathComponents
+        URL(fileURLWithPath: path).standardizedFileURL.pathComponents
     }
 }

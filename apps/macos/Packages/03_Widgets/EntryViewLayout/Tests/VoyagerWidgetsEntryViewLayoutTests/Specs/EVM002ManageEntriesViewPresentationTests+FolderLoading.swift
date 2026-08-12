@@ -654,6 +654,35 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.finish()
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: root 내부 directory symlink는 target 위치와 무관하게 확장을 시작한다.
+    ///
+    /// - 검증 내용: root 밖 target을 가리키는 lexical child의 expansion intent와 loading state를 확인한다.
+    /// - 사전 조건: root 내부 link가 root 밖 directory를 가리킨다.
+    /// - 기대 결과: hierarchy containment가 lexical path를 사용해 link 확장을 허용한다.
+    func testDirectorySymlinkToOutsideRootStartsHierarchyExpansion() throws {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = container.appendingPathComponent("root", isDirectory: true)
+        let target = container.appendingPathComponent("outside", isDirectory: true)
+        let link = root.appendingPathComponent("link", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let folder = hierarchyFolder(id: link.path, name: "link")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy = .init(rootPath: root.path)
+
+        _ = EntryListHierarchyReducer().reduce(
+            into: &state,
+            action: .hierarchy(.folderExpansionRequested(id: folder.id)),
+        )
+
+        XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folder.id))
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: depth-2 expansion과 완료된 child data가 3회의 parent collapse/re-expand
     /// cycle에서도 생존하며 outline projection revision이 안정적으로 유지된다.
     ///
