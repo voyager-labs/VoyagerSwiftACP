@@ -37,7 +37,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
         <IconButton className="subtle" aria-label="Forward">
           <SFSymbol name="chevron.right" size={13} weight={500} />
         </IconButton>
-        <IconButton className="subtle" aria-label="Parent">
+        <IconButton className="subtle" aria-label="Go to Enclosing Folder">
           <SFSymbol name="chevron.up" size={13} weight={500} />
         </IconButton>
       </div>

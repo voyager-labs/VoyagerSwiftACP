@@ -1281,7 +1281,7 @@
   gap: var(--fm-space-6);
   height: 40px;
   border-bottom: 1px solid var(--fm-separator);
-  padding: 0 var(--fm-space-7);
+  padding: 0 16px;
 }
 
 [data-file-manager-illustration] .toolbar-title-area {
@@ -1300,7 +1300,7 @@
 [data-file-manager-illustration] .toolbar-title-content {
   display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-3);
+  gap: var(--fm-space-2);
   min-width: 0;
 }
 
@@ -1611,7 +1611,7 @@
 [data-file-manager-illustration] .statusbar-breadcrumb-item {
   display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-1);
+  gap: 0;
   min-width: 0;
 }
 
