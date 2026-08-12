@@ -120,6 +120,16 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Surface boundary:** assistant responses do not introduce an independent card background, border, radius, or fixed max-width.
 - **Story harness:** isolated message stories render inside the 300px default inspector width. The user specimen retains the message-row alignment wrapper so its intrinsic bubble width and 16px minimum leading gutter remain observable. Integrated File Manager stories follow the window contract and may resize the inspector between its 230px minimum and 300px default when the viewport cannot fit the default 960px window plus stage insets.
 
+### Collection Composer
+
+- **Authority:** `VoyagerFeaturesComposer/Ui/ComposerView.swift`, `ComposerTopRowView.swift`, `ComposerBottomRowView.swift`, and their picker/chip views.
+- **Placement:** File Manager content-pane top overlay with 7px horizontal and 5px top inset; it is not an independent window or Chat surface.
+- **Structure:** 40px top row with undo, redo, query, submit/stop, Clear/Discard, and Save/Save As; 1px inset separator; wrapped 28px scope and condition rows.
+- **Geometry:** top row uses 8px spacing and 16px horizontal/6px vertical padding. Query field has a 30px minimum height and 8px radius. Scope and condition chips use 28px rows, 8px spacing, 16px outer padding, and 6px/4px container/item radii.
+- **Overlays:** scope picker is 420px wide with a 520px maximum height. Property picker is 200×320px. Operator picker is a flat, text-only 180px list. Generic text/number/range value forms are 240px; semantic date is 163px; Boolean is a 150px True/False list; categorical/list token entry is 260px with a 164px suggestion region. Transient feedback is 360px maximum width and appears 54px below the composer top.
+- **Tokens:** native `Interaction.composerBackground`, input, chip, popover, control-hover, brand accent, radius, and shadow roles map through `--macos-composer-*` to `--fm-composer-*`.
+- **States:** empty/populated draft, property/operator/value pickers, processing stop, applied/failed scope feedback, query recovery, and deterministic representative flows for string, number, unit-bearing size, single/range date, Boolean, string-list, categorical token, and arity-zero operators. Registry-inaccessible `rx`, Boolean `neq`, and unused `listNumber` are excluded. Storybook demonstrates browser-side presentation and selection only; it does not claim native material compositing, measured chip wrapping, or reducer/business-logic execution.
+
 ## 6. Motion & Interaction
 
 Use existing `--fm-motion-*` durations. Motion communicates hover, focus, selection, pane resizing, or pane visibility only. Animate transform and opacity for decorative transitions; split widths follow direct pointer input without ornamental animation. Respect `prefers-reduced-motion`.
