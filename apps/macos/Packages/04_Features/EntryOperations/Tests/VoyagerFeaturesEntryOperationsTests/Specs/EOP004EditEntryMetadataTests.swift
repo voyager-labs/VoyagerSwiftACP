@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
@@ -553,6 +554,60 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     /// - 기대 결과: 구현 시 이 XCTSkip을 실제 테스트로 교체한다.
     func testBatchRenameEntries_pendingImplementation() throws {
         throw XCTSkip("AC not yet implemented: batch_rename_entries (status: planned)")
+    }
+}
+
+extension EOP004EditEntryMetadataTests {
+    /// EOP-004-edit_entry_tags: injected favorite color reaches tag persistence.
+    /// Tag writes must resolve favorite tags through the operation dependency scope.
+    /// - 검증 내용: EntryFileOpsClient.liveValue.setTags가 주입된 favorite 색상으로 태그를 저장하는지 확인
+    /// - 사전 조건: FixtureSandbox 파일에 기존 태그가 없고 favorite client가 같은 이름의 색상을 반환함
+    /// - 기대 결과: 저장된 태그가 주입된 favorite 색상으로 복원됨
+    func testSetTagsUsesInjectedFavoriteTagColor() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+
+        try await withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            try await EntryFileOpsClient.liveValue.setTags(sandbox.fileURL, [tagName])
+        }
+
+        XCTAssertEqual(TagMetadataClient.loadTags(from: sandbox.fileURL), [favoriteTag])
+    }
+
+    /// EOP-004-edit_entry_tags: collection conversion uses injected favorite color.
+    /// Collection item normalization must resolve favorite tags through the operation dependency scope.
+    /// - 검증 내용: EntryCollectionItemsConverter가 주입된 favorite 색상으로 collection item을 정규화하는지 확인
+    /// - 사전 조건: FixtureSandbox 파일에 같은 이름의 색상 없는 태그와 inline EntryLoadingClient가 있음
+    /// - 기대 결과: 변환된 entry의 태그가 주입된 favorite 색상으로 정규화됨
+    func testCollectionItemsConverterUsesInjectedFavoriteTagColor() throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+        try TagMetadataClient.setTags([Tag(name: tagName, colorCode: 0)], for: sandbox.fileURL)
+
+        let entryLoadingClient = EntryLoadingClient.liveValue
+        withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            let items = EntryCollectionItemsConverter.convert(
+                [sandbox.fileURL.path],
+                showHidden: false,
+                entryLoadingClient: entryLoadingClient,
+                workspaceClient: .liveValue,
+            )
+            XCTAssertEqual(items.first?.facets.tags, [favoriteTag])
+        }
     }
 }
 

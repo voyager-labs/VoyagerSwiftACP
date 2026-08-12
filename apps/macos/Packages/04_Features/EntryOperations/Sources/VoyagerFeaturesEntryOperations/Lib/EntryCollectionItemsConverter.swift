@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
@@ -10,7 +11,8 @@ enum EntryCollectionItemsConverter {
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> [EntryModel] {
-        let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+        @Dependency(\.finderFavoritesTagClient)
+        var finderFavoritesTagClient: FinderFavoritesTagClient
         let converted: [EntryModel] = paths.compactMap { path -> EntryModel? in
             guard !path.isEmpty else { return nil }
 
@@ -21,7 +23,10 @@ enum EntryCollectionItemsConverter {
                 workspaceClient: workspaceClient,
             )
         }
-        let normalized = EntryModelTagColorNormalizer.normalize(converted, favoriteTags: favoriteTags)
+        let normalized = EntryModelTagColorNormalizer.normalize(
+            converted,
+            favoriteTags: finderFavoritesTagClient.favoriteTags(),
+        )
 
         guard !showHidden else { return normalized }
         return normalized.filter { !$0.isHidden }
