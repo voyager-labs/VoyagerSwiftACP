@@ -23,24 +23,16 @@ export function verifyDesignVersionContract(packageRoot, storybookRoot, css) {
 
   assert.match(
     designVersionSource,
-    /export const designVersionIDs = \{\s*current:\s*"current",\s*materialControls:\s*"candidate-material-controls",\s*}\s*as const/s,
+    /export const designVersionIDs = \{\s*current:\s*"current",\s*}\s*as const/s,
   )
   assert.match(previewSource, /designVersion:\s*designVersionIDs\.current/)
   assert.match(previewSource, /data-design-version=\{designVersion\}/)
-  assert.match(aiChatInputBarSource, /useDesignVersion\(\)/)
-  assert.match(aiChatInputBarSource, /designVersion === designVersionIDs\.materialControls/)
-  assert.doesNotMatch(aiChatInputBarSource, /"candidate-material-controls"/)
   assert.match(aiChatInputBarSource, /fm-ai-chat-native-attachment/)
   assert.match(aiChatNativeMenuSource, /fm-ai-chat-native-menu-selector/)
-  assert.match(css, /data-design-version="candidate-material-controls"/)
-  assert.match(
-    css,
-    /--fm-chat-candidate-input-background:\s*var\(--macos-material-content-background\)/,
-  )
-  assert.match(
-    css,
-    /\.fm-ai-chat-input\s*\{[^}]*background:\s*var\(--fm-chat-candidate-input-background\)/s,
-  )
+  assert.doesNotMatch(designVersionSource, /candidate-material-controls/)
+  assert.doesNotMatch(previewSource, /candidate-material-controls/)
+  assert.doesNotMatch(aiChatInputBarSource, /candidate-material-controls/)
+  assert.doesNotMatch(css, /candidate-material-controls|--fm-chat-candidate-input-background/)
   assert.match(
     aiChatInputStorySource,
     /parameters:\s*{\s*layout:\s*["']fullscreen["']\s*}/,

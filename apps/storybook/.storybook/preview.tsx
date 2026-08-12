@@ -14,7 +14,6 @@ import {
   DesignVersionProvider,
   designVersionIDs,
   designVersionToolbarItems,
-  parseDesignVersion,
 } from "../packages/file-manager-illustration/src/Foundations/DesignVersion"
 
 const colorSchemeAttribute = "data-voyager-color-scheme"
@@ -72,7 +71,7 @@ const preview: Preview = {
   },
   decorators: [
     (Story, context) => {
-      const designVersion = parseDesignVersion(context.globals.designVersion)
+      const designVersion = designVersionIDs.current
 
       if (typeof document !== "undefined") {
         const visualBaseline = context.globals.visualBaseline
