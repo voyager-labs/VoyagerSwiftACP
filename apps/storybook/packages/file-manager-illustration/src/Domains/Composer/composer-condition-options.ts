@@ -18,6 +18,8 @@ export type ComposerPropertyOption = {
   readonly key: string
   readonly label: string
   readonly symbol: string
+  readonly category: "common" | "date" | "filesystem" | "misc"
+  readonly pinned: boolean
   readonly operators: readonly ComposerOperatorOption[]
 }
 
@@ -84,38 +86,62 @@ const categoricalOperators = [
 ] as const satisfies readonly ComposerOperatorOption[]
 
 export const composerPropertyOptions = [
-  { key: "name_stem", label: "Name", symbol: "doc.text", operators: textOperators },
+  {
+    key: "name_stem",
+    label: "Name",
+    symbol: "doc.text",
+    category: "filesystem",
+    pinned: true,
+    operators: textOperators,
+  },
   {
     key: "size",
     label: "File size",
     symbol: "arrow.up.left.and.arrow.down.right",
+    category: "misc",
+    pinned: true,
     operators: numberOperators(["Byte", "KB", "MB", "GB"]),
   },
   {
     key: "number_of_pages",
     label: "Number of pages",
     symbol: "doc.richtext",
+    category: "common",
+    pinned: false,
     operators: numberOperators(),
   },
   {
     key: "modification_date",
-    label: "Modified",
+    label: "Content modification date",
     symbol: "calendar.badge.clock",
+    category: "date",
+    pinned: true,
     operators: dateOperators,
   },
   {
     key: "is_invisible",
     label: "Is hidden",
     symbol: "eye.slash",
+    category: "filesystem",
+    pinned: false,
     operators: [{ code: "eq", label: "Is", editor: { kind: "boolean" } }],
   },
   {
     key: "keywords",
     label: "Keywords",
     symbol: "text.badge.checkmark",
+    category: "common",
+    pinned: false,
     operators: stringListOperators,
   },
-  { key: "file_kind", label: "Kind", symbol: "tag", operators: categoricalOperators },
+  {
+    key: "file_kind",
+    label: "Kind",
+    symbol: "tag",
+    category: "common",
+    pinned: false,
+    operators: categoricalOperators,
+  },
 ] as const satisfies readonly ComposerPropertyOption[]
 
 export const composerPropertyOption = (key: string): ComposerPropertyOption | undefined =>
