@@ -648,12 +648,14 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case let .selectContentTab(position):
             guard state.pendingSelectedContentTabClose == nil,
+                  state.pendingContentTabTeardown == nil,
                   let targetID = ContentTabProjection.tabID(
                       atDisplayPosition: position,
                       in: state.contentTabs,
                   ),
                   targetID != state.contentTabs.activeTabID
             else { return .none }
+            if case .tearingDownTab = state.undoRedoPhase { return .none }
             return .send(.contentTabs(.setCurrent(targetID)))
 
         default:

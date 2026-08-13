@@ -353,6 +353,42 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         await store.send(.request(command))
         XCTAssertEqual(store.state, expectedState)
     }
+
+    /// CTM-002-set_current_content_tab_by_number: 단일 tab teardown 중 command는 전체 상태 no-op
+    /// Undo owner 무효화가 끝나기 전 숫자 shortcut이 active tab runtime handoff를 시작하지 않는지 검증한다.
+    /// - 검증 내용: pending teardown 또는 tearingDownTab phase에서 유효한 position request의 state/effect 완전 차단
+    /// - 사전 조건: A/B tabs, A active와 B target, 동일 request/owner identity를 가진 각 teardown lifecycle 상태
+    /// - 기대 결과: position 2 command 전후 FileManagerWindowState가 동일하고 수신 action이 없음
+    func testSelectContentTabByNumber_singleTabTeardownIsWholeStateNoOp() async throws {
+        let tabA = ContentTabID(rawValue: "teardown-A")
+        let tabB = ContentTabID(rawValue: "teardown-B")
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000635"))
+        let ownerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000636"))
+        var baseState = makePositionWindowState(
+            tabs: [makePositionTab(id: tabA), makePositionTab(id: tabB)],
+            activeTabID: tabA,
+        )
+        baseState.contentTabs.previousActiveTabID = tabB
+        baseState.contentTabs.selectedTabIDs = [tabA, tabB]
+        baseState.contentTabs.selectionAnchorID = tabB
+
+        var pendingTeardownState = baseState
+        pendingTeardownState.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: requestID,
+            tabID: tabA,
+            ownerID: ownerID,
+        )
+        var tearingDownPhaseState = baseState
+        tearingDownPhaseState.undoRedoPhase = .tearingDownTab(requestID: requestID, ownerID: ownerID)
+
+        for state in [pendingTeardownState, tearingDownPhaseState] {
+            let store = makePositionStore(initialState: state)
+
+            XCTAssertEqual(ContentTabProjection.tabID(atDisplayPosition: 2, in: state.contentTabs), tabB)
+            await store.send(.request(.selectContentTab(position: 2)))
+            XCTAssertEqual(store.state, state)
+        }
+    }
 }
 
 private func makeStaleTargetWindowState(
