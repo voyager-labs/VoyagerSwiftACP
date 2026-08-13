@@ -92,6 +92,74 @@ final class FileOperationUndoManagerHandlerStore {
     }
 }
 
+public extension FileOperationUndoManagerClient {
+    nonisolated static func live(
+        registry: FileOperationUndoManagerRegistry,
+    ) -> FileOperationUndoManagerClient {
+        .init(
+            activate: { scope in
+                withRegistry(registry) { $0.activate(scope) }
+            },
+            deactivate: { scope in
+                withRegistry(registry) { $0.deactivate(scope) }
+            },
+            moveScope: { source, target, targetPolicy in
+                withRegistry(registry) {
+                    $0.moveScope(from: source, to: target, targetPolicy: targetPolicy)
+                }
+            },
+            moveScopes: { descriptors in
+                withRegistry(registry) { $0.moveScopes(descriptors) }
+            },
+            reconcileFailedScopeMove: { receipts, reverseOutcome in
+                withRegistry(registry) {
+                    $0.reconcileFailedScopeMove(receipts, reverseOutcome: reverseOutcome)
+                }
+            },
+            deactivateAll: { registry.deactivateAll(windowID: $0) },
+            undoManager: { registry.undoManager(for: $0) },
+            registerUndo: { scope, expectedGeneration, record in
+                withRegistry(registry) {
+                    $0.registerUndo(scope, expectedGeneration: expectedGeneration, record: record)
+                }
+            },
+            performUndoRedo: { scope, expectedGeneration, direction, expectedRecordID in
+                withRegistry(registry) {
+                    $0.performUndoRedo(
+                        scope,
+                        expectedGeneration: expectedGeneration,
+                        direction: direction,
+                        expectedRecordID: expectedRecordID,
+                    )
+                }
+            },
+            generation: { scope in
+                withRegistry(registry) { $0.generation(for: scope) }
+            },
+            registerUndoWithOwner: { scope, expectedGeneration, ownerID, record in
+                withRegistry(registry) {
+                    $0.registerUndo(
+                        scope,
+                        expectedGeneration: expectedGeneration,
+                        ownerID: ownerID,
+                        record: record,
+                    )
+                }
+            },
+        )
+    }
+
+    nonisolated private static func withRegistry<Value: Sendable>(
+        _ registry: FileOperationUndoManagerRegistry,
+        operation: @MainActor @Sendable (FileOperationUndoManagerRegistry) -> Value,
+    ) -> Value {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { operation(registry) }
+        }
+        return DispatchQueue.main.sync { operation(registry) }
+    }
+}
+
 public extension UndoManagerClient {
     static func live(
         registry: FileOperationUndoManagerRegistry,

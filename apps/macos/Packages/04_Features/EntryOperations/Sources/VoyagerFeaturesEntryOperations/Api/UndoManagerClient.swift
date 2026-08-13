@@ -153,6 +153,7 @@ public final class FileOperationUndoManagerRegistry {
         var generation: Generation
         var undoRecordIDs: [UUID] = []
         var redoRecordIDs: [UUID] = []
+        var ownerIdentities: [UUID: CompatibilityOwnerIdentity] = [:]
         var compatibilityRecords: [UUID: CompatibilityRecord] = [:]
         var pendingTransition: PendingTransition?
 
@@ -327,6 +328,39 @@ public final class FileOperationUndoManagerRegistry {
         expectedGeneration: Generation,
         record: EntryActionRecord,
     ) -> Bool {
+        registerUndo(
+            scope,
+            expectedGeneration: expectedGeneration,
+            ownerIdentity: nil,
+            record: record,
+        )
+    }
+
+    @discardableResult
+    public func registerUndo(
+        _ scope: UndoManagerScope,
+        expectedGeneration: Generation,
+        ownerID: UUID,
+        record: EntryActionRecord,
+    ) -> Bool {
+        let ownerIdentity = CompatibilityOwnerIdentity(windowID: scope.windowID, ownerID: ownerID)
+        guard !invalidatedCompatibilityWindows.contains(scope.windowID),
+              !invalidatedCompatibilityOwners.contains(ownerIdentity)
+        else { return false }
+        return registerUndo(
+            scope,
+            expectedGeneration: expectedGeneration,
+            ownerIdentity: ownerIdentity,
+            record: record,
+        )
+    }
+
+    private func registerUndo(
+        _ scope: UndoManagerScope,
+        expectedGeneration: Generation,
+        ownerIdentity: CompatibilityOwnerIdentity?,
+        record: EntryActionRecord,
+    ) -> Bool {
         guard let entry = entries[scope], entry.generation == expectedGeneration,
               entry.pendingTransition == nil
         else { return false }
@@ -345,7 +379,9 @@ public final class FileOperationUndoManagerRegistry {
         }
         entry.manager.endUndoGrouping()
         entry.undoRecordIDs.append(record.id)
+        entry.ownerIdentities[record.id] = ownerIdentity
         for recordID in entry.redoRecordIDs {
+            entry.ownerIdentities[recordID] = nil
             entry.compatibilityRecords[recordID] = nil
         }
         entry.redoRecordIDs.removeAll()
@@ -517,6 +553,7 @@ public final class FileOperationUndoManagerRegistry {
         entry.manager.removeAllActions()
         entry.undoRecordIDs.removeAll()
         entry.redoRecordIDs.removeAll()
+        entry.ownerIdentities.removeAll()
         entry.compatibilityRecords.removeAll()
         entry.pendingTransition = nil
         FileOperationUndoManagerHandlerStore.store(for: entry.manager).clear()
@@ -570,18 +607,30 @@ public extension FileOperationUndoManagerRegistry {
         }
         guard canonicalScopes.count <= 1 else { return false }
         let registrationScope = canonicalScopes.first ?? scope
-        let ownerIdentity = CompatibilityOwnerIdentity(windowID: registrationScope.windowID, ownerID: ownerID)
+        guard let entry = entries[registrationScope], entry.pendingTransition == nil else { return false }
+        let recordedOwnerIdentity = entry.ownerIdentities[record.id]
+        guard recordedOwnerIdentity?.ownerID == nil || recordedOwnerIdentity?.ownerID == ownerID else {
+            return false
+        }
+        let ownerIdentity = recordedOwnerIdentity
+            ?? CompatibilityOwnerIdentity(windowID: scope.windowID, ownerID: ownerID)
         guard !invalidatedCompatibilityWindows.contains(registrationScope.windowID),
+              !invalidatedCompatibilityWindows.contains(ownerIdentity.windowID),
               !invalidatedCompatibilityOwners.contains(ownerIdentity)
         else { return false }
-        guard let entry = entries[registrationScope], entry.pendingTransition == nil else { return false }
         let isCanonicalRecord = entry.undoRecordIDs.contains(record.id)
             || entry.redoRecordIDs.contains(record.id)
         if !isCanonicalRecord {
-            guard registerUndo(registrationScope, expectedGeneration: entry.generation, record: record) else {
+            guard registerUndo(
+                registrationScope,
+                expectedGeneration: entry.generation,
+                ownerID: ownerID,
+                record: record,
+            ) else {
                 return false
             }
         }
+        entry.ownerIdentities[record.id] = ownerIdentity
         entry.compatibilityRecords[record.id] = CompatibilityRecord(ownerID: ownerID, record: record)
         return true
     }
@@ -644,37 +693,20 @@ public extension FileOperationUndoManagerRegistry {
         ownerID: UUID,
         windowID: UUID? = nil,
     ) -> UndoManagerInvalidationResult {
+        var ownerIdentities = Set(entries.values.flatMap { entry in
+            entry.ownerIdentities.values.filter { $0.ownerID == ownerID }
+        })
         if let invalidatedWindowID = scope?.windowID ?? windowID {
-            invalidatedCompatibilityOwners.insert(
+            ownerIdentities.insert(
                 CompatibilityOwnerIdentity(windowID: invalidatedWindowID, ownerID: ownerID),
             )
         }
+        for ownerIdentity in ownerIdentities {
+            invalidatedCompatibilityOwners.insert(ownerIdentity)
+            removeCompatibilityHistory(ownerIdentity: ownerIdentity)
+        }
         guard let scope, let entry = entries[scope] else {
             return .init(succeeded: false, availability: .init())
-        }
-        let matchingRecordIDs = Set(entry.compatibilityRecords.compactMap { recordID, compatibilityRecord in
-            compatibilityRecord.ownerID == ownerID ? recordID : nil
-        })
-        guard !matchingRecordIDs.isEmpty else {
-            return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
-        }
-        guard entry.pendingTransition == nil else {
-            invalidate(entry)
-            return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
-        }
-
-        let handlerStore = FileOperationUndoManagerHandlerStore.store(for: entry.manager)
-        guard let handlers = handlerStore.removeHandlers(recordIDs: matchingRecordIDs) else {
-            invalidate(entry)
-            return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
-        }
-        for handler in handlers {
-            entry.manager.removeAllActions(withTarget: handler)
-        }
-        entry.undoRecordIDs.removeAll { matchingRecordIDs.contains($0) }
-        entry.redoRecordIDs.removeAll { matchingRecordIDs.contains($0) }
-        for recordID in matchingRecordIDs {
-            entry.compatibilityRecords[recordID] = nil
         }
         return .init(succeeded: true, availability: makeCompatibilityAvailability(entry))
     }
@@ -689,6 +721,34 @@ public extension FileOperationUndoManagerRegistry {
         }
         compatibilityEventBridge.finish(windowID: windowID)
         return .init(succeeded: true, availability: .init())
+    }
+
+    private func removeCompatibilityHistory(ownerIdentity: CompatibilityOwnerIdentity) {
+        for entry in entries.values {
+            let matchingRecordIDs = Set(entry.ownerIdentities.compactMap { recordID, identity in
+                identity == ownerIdentity ? recordID : nil
+            })
+            guard !matchingRecordIDs.isEmpty else { continue }
+            guard entry.pendingTransition == nil else {
+                invalidate(entry)
+                continue
+            }
+
+            let handlerStore = FileOperationUndoManagerHandlerStore.store(for: entry.manager)
+            guard let handlers = handlerStore.removeHandlers(recordIDs: matchingRecordIDs) else {
+                invalidate(entry)
+                continue
+            }
+            for handler in handlers {
+                entry.manager.removeAllActions(withTarget: handler)
+            }
+            entry.undoRecordIDs.removeAll { matchingRecordIDs.contains($0) }
+            entry.redoRecordIDs.removeAll { matchingRecordIDs.contains($0) }
+            for recordID in matchingRecordIDs {
+                entry.ownerIdentities[recordID] = nil
+                entry.compatibilityRecords[recordID] = nil
+            }
+        }
     }
 }
 
@@ -712,6 +772,12 @@ public struct FileOperationUndoManagerClient: Sendable {
     public var deactivateAll: @MainActor @Sendable (UUID) async -> Void
     public var undoManager: @MainActor @Sendable (UndoManagerScope) async -> UndoManager?
     public var registerUndo: @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool
+    public var registerUndoWithOwner: @Sendable (
+        UndoManagerScope,
+        Generation,
+        UUID,
+        EntryActionRecord,
+    ) -> Bool
     public var performUndoRedo: @Sendable (
         UndoManagerScope,
         Generation,
@@ -745,6 +811,12 @@ public struct FileOperationUndoManagerClient: Sendable {
             UUID,
         ) -> FileOperationUndoTransitionOutcome,
         generation: @escaping @Sendable (UndoManagerScope) -> Generation?,
+        registerUndoWithOwner: (@Sendable (
+            UndoManagerScope,
+            Generation,
+            UUID,
+            EntryActionRecord,
+        ) -> Bool)? = nil,
     ) {
         self.activate = activate
         self.deactivate = deactivate
@@ -754,66 +826,11 @@ public struct FileOperationUndoManagerClient: Sendable {
         self.deactivateAll = deactivateAll
         self.undoManager = undoManager
         self.registerUndo = registerUndo
+        self.registerUndoWithOwner = registerUndoWithOwner ?? { scope, generation, _, record in
+            registerUndo(scope, generation, record)
+        }
         self.performUndoRedo = performUndoRedo
         self.generation = generation
-    }
-}
-
-public extension FileOperationUndoManagerClient {
-    nonisolated static func live(
-        registry: FileOperationUndoManagerRegistry,
-    ) -> FileOperationUndoManagerClient {
-        .init(
-            activate: { scope in
-                withRegistry(registry) { $0.activate(scope) }
-            },
-            deactivate: { scope in
-                withRegistry(registry) { $0.deactivate(scope) }
-            },
-            moveScope: { source, target, targetPolicy in
-                withRegistry(registry) {
-                    $0.moveScope(from: source, to: target, targetPolicy: targetPolicy)
-                }
-            },
-            moveScopes: { descriptors in
-                withRegistry(registry) { $0.moveScopes(descriptors) }
-            },
-            reconcileFailedScopeMove: { receipts, reverseOutcome in
-                withRegistry(registry) {
-                    $0.reconcileFailedScopeMove(receipts, reverseOutcome: reverseOutcome)
-                }
-            },
-            deactivateAll: { registry.deactivateAll(windowID: $0) },
-            undoManager: { registry.undoManager(for: $0) },
-            registerUndo: { scope, expectedGeneration, record in
-                withRegistry(registry) {
-                    $0.registerUndo(scope, expectedGeneration: expectedGeneration, record: record)
-                }
-            },
-            performUndoRedo: { scope, expectedGeneration, direction, expectedRecordID in
-                withRegistry(registry) {
-                    $0.performUndoRedo(
-                        scope,
-                        expectedGeneration: expectedGeneration,
-                        direction: direction,
-                        expectedRecordID: expectedRecordID,
-                    )
-                }
-            },
-            generation: { scope in
-                withRegistry(registry) { $0.generation(for: scope) }
-            },
-        )
-    }
-
-    nonisolated private static func withRegistry<Value: Sendable>(
-        _ registry: FileOperationUndoManagerRegistry,
-        operation: @MainActor @Sendable (FileOperationUndoManagerRegistry) -> Value,
-    ) -> Value {
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated { operation(registry) }
-        }
-        return DispatchQueue.main.sync { operation(registry) }
     }
 }
 
