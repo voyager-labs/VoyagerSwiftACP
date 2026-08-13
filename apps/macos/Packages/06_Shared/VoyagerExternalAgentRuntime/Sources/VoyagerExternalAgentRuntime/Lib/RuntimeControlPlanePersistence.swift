@@ -53,6 +53,36 @@ extension RuntimeControlPlane {
         return try mutation(self)
     }
 
+    func loadPersistedTerminalResult(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+    ) async throws -> RuntimeResult? {
+        try await acquirePersistenceMutation()
+        defer { releasePersistenceMutation() }
+        let state: RuntimeStoredState?
+        do {
+            state = try await store.load()?.validatedForRuntime()
+        } catch let error as RuntimeHostError {
+            throw error
+        } catch {
+            throw RuntimeHostError.persistenceFailure
+        }
+        guard let stored = state?.sessions.first(where: {
+            $0.externalAgentSessionReference == host && $0.runReference == runReference
+        }), outcome(for: stored.projection) != nil
+        else { return nil }
+        if let current = sessions[host] {
+            sessions[host] = Session(
+                stored: stored,
+                lease: current.lease,
+                revision: current.revision,
+            )
+        } else {
+            sessions[host] = Session(stored: stored)
+        }
+        return storedTerminalResult(host: host, runReference: runReference)
+    }
+
     private func acquirePersistenceMutation() async throws {
         guard persistenceMutationLocked else {
             persistenceMutationLocked = true
@@ -85,7 +115,7 @@ extension RuntimeControlPlane {
     ) -> SessionRegistry {
         Dictionary(uniqueKeysWithValues: state.sessions.map { stored in
             let host = stored.externalAgentSessionReference
-            if let preferred = candidate[host], preferred.stored == stored {
+            if let preferred = candidate[host], preferred.stored.hasSamePersistedState(as: stored) {
                 return (host, preferred)
             }
             return (host, Session(stored: stored))

@@ -1174,6 +1174,118 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: cross-plane host terminal wins over restoration heartbeat.
+    /// 복원 stream이 열린 동안 다른 control plane이 저장한 같은 run의 host terminal을 heartbeat claim 오류보다 우선한다.
+    /// - 검증 내용: stale resumer 반환 결과, 양쪽 terminal projection, durable claim 제거, provider stream 횟수.
+    /// - 사전 조건: 두 control plane이 공유하는 file-backed run에서 첫 plane의 provider stream이 gate에서 대기한다.
+    /// - 기대 결과: heartbeat는 store의 durable terminal로 수렴하고 stale resumer도 completed 결과를 반환한다.
+    @Test
+    func `cross-plane host terminal wins over restoration heartbeat`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = ExternalAgentSessionReference("host-heartbeat-terminal")
+        let run = RuntimeRunReference("run-heartbeat-terminal")
+        let context = finalReviewTestsMakeContext()
+        let streamGate = RuntimeTestGate()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-heartbeat-terminal"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: context,
+            projection: .running,
+        )
+        try await RuntimeFileStateStore(fileURL: fileURL).save(RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let resumingPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await resumingPlane.register(adapter)
+        #expect(try await resumingPlane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resume = Task { try await resumingPlane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(1)
+
+        let hostPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let terminal = try #require(try await hostPlane.ingestHostEvent(reviewerBlockerTestsMakeHostTerminal(
+            host: host,
+            run: run,
+            sequence: 1,
+        )))
+
+        #expect(terminal.outcome == .completed)
+        #expect(try await resume.value.outcome == .completed)
+        #expect(await resumingPlane.projection(for: host) == .completed)
+        #expect(await hostPlane.projection(for: host) == .completed)
+        #expect(try await RuntimeFileStateStore(fileURL: fileURL).load()?.sessions.first?.restorationClaim == nil)
+        #expect(await adapter.counts().stream == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: cancellation wins over a visible restored terminal.
+    /// resume caller 취소를 이미 보이는 terminal 결과의 성공으로 변환하지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파와 durable completed projection 보존.
+    /// - 사전 조건: 복원 provider stream이 대기하는 동안 같은 plane이 host terminal을 저장한다.
+    /// - 기대 결과: resume caller는 취소되고 terminal snapshot은 completed 상태로 남는다.
+    @Test
+    func `restoration heartbeat does not swallow cancellation when terminal is visible`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = ExternalAgentSessionReference("host-heartbeat-cancellation")
+        let run = RuntimeRunReference("run-heartbeat-cancellation")
+        let context = finalReviewTestsMakeContext()
+        let streamGate = RuntimeTestGate()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-heartbeat-cancellation"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: context,
+            projection: .running,
+        )
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        try await store.save(RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resume = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(1)
+        _ = try await plane.ingestHostEvent(reviewerBlockerTestsMakeHostTerminal(
+            host: host,
+            run: run,
+            sequence: 1,
+        ))
+
+        resume.cancel()
+
+        await #expect(throws: CancellationError.self) { try await resume.value }
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(try await store.load()?.sessions.first?.projection == .completed)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: restored terminal result retries transient persistence
     /// failure.
     /// 복원 소비가 얻은 terminal 결과를 interruption으로 바꾸지 않고 동일 결과 저장만 재시도하는지 검증한다.
