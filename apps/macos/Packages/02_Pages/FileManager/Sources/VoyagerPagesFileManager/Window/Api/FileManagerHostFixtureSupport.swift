@@ -25,16 +25,7 @@ extension EntryLoadingClient {
 
         return EntryLoadingClient(
             loadItems: { directoryURL, _ in
-                if scenario.largeFolder != .none,
-                   directoryURL.path == FileManagerHostFixtureSampleData.largeFolder.fullPath
-                {
-                    return FileManagerHostFixtureSampleData.largeFolderEntries
-                }
-                if directoryURL.path == FileManagerHostFixtureSampleData.projects.fullPath {
-                    return FileManagerHostFixtureSampleData.progressiveChildren
-                } else {
-                    return FileManagerHostFixtureSampleData.entries
-                }
+                fixtureEntries(for: directoryURL, scenario: scenario)
             },
             loadComputerItems: { FileManagerHostFixtureSampleData.entries },
             loadRecentItems: { _, _ in FileManagerHostFixtureSampleData.entries },
@@ -77,6 +68,9 @@ extension EntryLoadingClient {
             || scenario.largeFolder != .none
         else { return nil }
         return { directoryURL, _, _ in
+            guard isScenarioFolder(directoryURL, scenario: scenario) else {
+                return immediateStream(entries: fixtureEntries(for: directoryURL, scenario: scenario))
+            }
             let request = coordinator.beginRequest()
             let shouldDenyPermission = directoryURL.path == FileManagerHostFixtureSampleData.restrictedFolder.fullPath
                 && (scenario.permission == .denied || coordinator.beginPermissionAttempt() == 1)
@@ -88,6 +82,54 @@ extension EntryLoadingClient {
                 shouldDenyPermission: shouldDenyPermission,
                 isCurrent: { coordinator.isCurrent(request) },
             )
+        }
+    }
+
+    private static func fixtureEntries(
+        for directoryURL: URL,
+        scenario: FileManagerHostScenario,
+    ) -> [EntryModel] {
+        switch directoryURL.path {
+        case FileManagerHostFixtureSampleData.restrictedFolder.fullPath:
+            FileManagerHostFixtureSampleData.permissionChildren
+        case FileManagerHostFixtureSampleData.largeFolder.fullPath:
+            FileManagerHostFixtureSampleData.largeFolderEntries
+        case FileManagerHostFixtureSampleData.projects.fullPath:
+            FileManagerHostFixtureSampleData.progressiveChildren
+        case FileManagerHostFixtureSampleData.path:
+            if scenario.permission != .none {
+                FileManagerHostFixtureSampleData.permissionEntries
+            } else if scenario.largeFolder != .none {
+                FileManagerHostFixtureSampleData.largeFolderRootEntries
+            } else {
+                FileManagerHostFixtureSampleData.entries
+            }
+        default:
+            FileManagerHostFixtureSampleData.entries
+        }
+    }
+
+    private static func isScenarioFolder(_ directoryURL: URL, scenario: FileManagerHostScenario) -> Bool {
+        if scenario.permission != .none {
+            return directoryURL.path == FileManagerHostFixtureSampleData.restrictedFolder.fullPath
+        }
+        if scenario.largeFolder != .none {
+            return directoryURL.path == FileManagerHostFixtureSampleData.largeFolder.fullPath
+        }
+        if scenario.delayedNavigation != .none {
+            return true
+        }
+        if scenario.progressiveEntryLoading != .none {
+            return directoryURL.path == FileManagerHostFixtureSampleData.projects.fullPath
+        }
+        return false
+    }
+
+    private static func immediateStream(entries: [EntryModel]) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.coreBatch(items: entries, batchIndex: 0))
+            continuation.yield(.coreFinished(batchCount: 1))
+            continuation.finish()
         }
     }
 

@@ -82,6 +82,23 @@ extension FileManagerHostFixturePhaseNotificationTests {
         }, [32])
     }
 
+    func testPermissionAndLargeFolderPresetsPreserveRootExpansionEntries() async throws {
+        for (preset, expectedNames) in [
+            (FileManagerHostPreset.permissionDenied, ["Restricted", "Sibling"]),
+            (FileManagerHostPreset.largeFolder1000, ["Large Folder"]),
+        ] {
+            let client = FileManagerHostFixture.makeEntryLoadingClient(preset: preset, windowID: UUID())
+            let events = try await Self.collect(client.loadItems(
+                URL(fileURLWithPath: "/Fixture/FileManager"),
+                false,
+                .none,
+            ))
+
+            XCTAssertEqual(events.rowNames, expectedNames)
+            XCTAssertEqual(events.coreFinishedBatchCounts, [1])
+        }
+    }
+
     func testPermissionDeniedFixtureEmitsCocoaPermissionErrorAndRetrySucceeds() async throws {
         let client = FileManagerHostFixture.makeEntryLoadingClient(preset: .permissionRetry, windowID: UUID())
         let folderURL = URL(fileURLWithPath: "/Fixture/FileManager/Restricted")
@@ -301,6 +318,20 @@ private extension [EntryLoadEvent] {
         reduce(0) { total, event in
             guard case let .coreBatch(items, _) = event else { return total }
             return total + items.count
+        }
+    }
+
+    var rowNames: [String] {
+        flatMap { event -> [String] in
+            guard case let .coreBatch(items, _) = event else { return [] }
+            return items.map(\.name)
+        }
+    }
+
+    var coreFinishedBatchCounts: [Int] {
+        compactMap { event -> Int? in
+            guard case let .coreFinished(batchCount) = event else { return nil }
+            return batchCount
         }
     }
 }
