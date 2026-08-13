@@ -345,6 +345,19 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
     }
 
+    /// FMW-001-ai_chat_commands: AI Chat 메뉴 명령은 Inspector 지원 capability를 따른다.
+    /// - 검증 내용: Home/AiChat 비지원 상태와 Directory 지원 상태의 command-surface 활성화
+    /// - 사전 조건: canonical `canUseAiChatInspector`가 false 또는 true인 메뉴 상태
+    /// - 기대 결과: 비지원 탭에서는 Open Chat과 Chat History가 비활성화되고 지원 탭에서만 활성화
+    func testAiChatMenuCommandsRequireInspectorCapability() {
+        XCTAssertFalse(EditMenuCommands.canPerformAiChatInspectorCommand(
+            canUseAiChatInspector: false,
+        ))
+        XCTAssertTrue(EditMenuCommands.canPerformAiChatInspectorCommand(
+            canUseAiChatInspector: true,
+        ))
+    }
+
     /// testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState 테스트 동작을 검증한다.
     /// focused window의 contentTabs.recentlyClosed 상태에 따라
     /// canRestoreLastClosedTab이 올바르게 반영되는지 검증한다.

@@ -104,13 +104,17 @@ struct EditMenuCommands: Commands {
                 sendEditCommand(.openChat)
             }
             .keyboardShortcut("l", modifiers: .command)
-            .disabled(!viewStore.hasFocusedWindow)
+            .disabled(!Self.canPerformAiChatInspectorCommand(
+                canUseAiChatInspector: viewStore.canUseAiChatInspector,
+            ))
 
             Button(viewStore.chatHistoryTitle) {
                 sendEditCommand(.showChatHistory)
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
-            .disabled(!viewStore.canUseAiChatInspector)
+            .disabled(!Self.canPerformAiChatInspectorCommand(
+                canUseAiChatInspector: viewStore.canUseAiChatInspector,
+            ))
         }
 
         CommandGroup(replacing: .pasteboard) {
@@ -169,6 +173,10 @@ struct EditMenuCommands: Commands {
         isPresented
             ? "Close Collection Filter Composer"
             : "Open Collection Filter Composer"
+    }
+
+    static func canPerformAiChatInspectorCommand(canUseAiChatInspector: Bool) -> Bool {
+        canUseAiChatInspector
     }
 
     static func canPerformTextOrEntryCommand(
