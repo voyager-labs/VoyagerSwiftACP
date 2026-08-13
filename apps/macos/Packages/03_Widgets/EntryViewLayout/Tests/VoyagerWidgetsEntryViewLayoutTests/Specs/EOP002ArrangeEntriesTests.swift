@@ -128,8 +128,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, ["/source/file.txt"])
         XCTAssertEqual(recorder.emitted.first?.destinationPath, "/destination")
-        XCTAssertTrue(
-            recorder.emitted.first?.isOptionDrag == true,
+        XCTAssertEqual(
+            recorder.emitted.first?.isOptionDrag,
+            true,
             "copy-only source는 copy로 resolve되어 isOptionDrag=true여야 한다",
         )
     }
@@ -202,8 +203,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, ["/source/file.txt"])
-        XCTAssertFalse(
-            recorder.emitted.first?.isOptionDrag == true,
+        XCTAssertNotEqual(
+            recorder.emitted.first?.isOptionDrag,
+            true,
             "move-allowed source는 move로 resolve되어 isOptionDrag=false여야 한다",
         )
     }
