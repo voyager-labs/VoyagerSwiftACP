@@ -268,12 +268,20 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("installed"), true)
     }
 
-    func testModelListHTTP401MapsToReconnectGuidance() {
-        assertModelListHTTPFailure(statusCode: 401, expectedCode: "AI_PROVIDER_INVALID_CREDENTIAL")
+    func testCodexModelListHTTP401MapsToExpiredReconnectGuidance() {
+        assertCodexModelListAuthFailure(statusCode: 401)
     }
 
-    func testModelListHTTP403MapsToReconnectGuidance() {
-        assertModelListHTTPFailure(statusCode: 403, expectedCode: "AI_PROVIDER_INVALID_CREDENTIAL")
+    func testCodexModelListHTTP403MapsToExpiredReconnectGuidance() {
+        assertCodexModelListAuthFailure(statusCode: 403)
+    }
+
+    func testAPIKeyModelListHTTP401MapsToAuthenticationGuidance() {
+        assertAPIKeyModelListAuthFailure(statusCode: 401)
+    }
+
+    func testAPIKeyModelListHTTP403MapsToAuthenticationGuidance() {
+        assertAPIKeyModelListAuthFailure(statusCode: 403)
     }
 
     func testModelListHTTP500RemainsNetworkFailure() {
@@ -347,23 +355,46 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         )
     }
 
-    private func assertModelListHTTPFailure(statusCode: Int, expectedCode: String) {
+    private func assertCodexModelListAuthFailure(statusCode: Int) {
+        let result = mappedModelListFailure(statusCode: statusCode, provider: .chatgptCodex)
+
+        XCTAssertEqual(result.errorCode, "AI_PROVIDER_INVALID_CREDENTIAL")
+        XCTAssertEqual(result.outcome, .invalidCredential)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("expired"), true)
+        XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("reconnect"), true)
+    }
+
+    private func assertAPIKeyModelListAuthFailure(statusCode: Int) {
+        for provider in [AiProvider.openai, .anthropic] {
+            let result = mappedModelListFailure(statusCode: statusCode, provider: provider)
+
+            XCTAssertEqual(result.errorCode, "AI_PROVIDER_INVALID_CREDENTIAL")
+            XCTAssertEqual(result.outcome, .invalidCredential)
+            XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("authentication"), true)
+            XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("expired"), false)
+        }
+    }
+
+    private func mappedModelListFailure(
+        statusCode: Int,
+        provider: AiProvider = .openai,
+    ) -> QueryConversionResult {
         let fileBox = ConnectionFileBox(Self.makeConnectionsFile(updatedAtMs: 1))
         let converter = Self.makeConverter(
             fileBox: fileBox,
             modelLoader: ModelLoadRecorder(responses: [:]),
         )
 
-        let result = converter.mappedModelListFailure(
-            .httpError(provider: .openai, statusCode: statusCode, body: "test"),
-            provider: .openai,
+        return converter.mappedModelListFailure(
+            .httpError(provider: provider, statusCode: statusCode, body: "test"),
+            provider: provider,
         )
+    }
 
+    private func assertModelListHTTPFailure(statusCode: Int, expectedCode: String) {
+        let result = mappedModelListFailure(statusCode: statusCode)
         XCTAssertEqual(result.errorCode, expectedCode)
         XCTAssertEqual(result.outcome, statusCode == 500 ? .networkFailure : .invalidCredential)
-        if statusCode == 401 || statusCode == 403 {
-            XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("reconnect"), true)
-        }
     }
 
     private static func makeFallbackExecutionClient() -> AiChatProviderExecutionClient {

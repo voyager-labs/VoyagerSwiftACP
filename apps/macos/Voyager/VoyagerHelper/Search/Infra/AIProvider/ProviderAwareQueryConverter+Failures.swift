@@ -173,8 +173,12 @@ extension ProviderAwareQueryConverter {
             )
         case let .httpError(_, statusCode, _) where (500 ... 599).contains(statusCode):
             networkFailure(provider: provider, reason: String(describing: error))
-        case let .httpError(_, statusCode, _) where statusCode == 401 || statusCode == 403:
-            expiredCredentialFailure(provider: provider, reason: String(describing: error))
+        case let .httpError(errorProvider, statusCode, _) where statusCode == 401 || statusCode == 403:
+            if errorProvider == .chatgptCodex {
+                expiredCredentialFailure(provider: provider, reason: String(describing: error))
+            } else {
+                authenticationFailure(provider: provider, reason: String(describing: error))
+            }
         case .httpError:
             QueryConversionResult(
                 conditions: [],
