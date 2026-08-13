@@ -308,7 +308,7 @@ extension RuntimeStoredSession {
         _ providerReference: ProviderInternalSessionReference,
         projection: RuntimeProjection,
     ) -> Self {
-        Self(
+        var copy = Self(
             externalAgentSessionReference: externalAgentSessionReference,
             providerInternalSessionReference: providerReference,
             runReference: runReference,
@@ -330,5 +330,7 @@ extension RuntimeStoredSession {
             providerBranch: providerBranch,
             eventEvidence: eventEvidence,
         )
+        copy.restorationClaim = restorationClaim
+        return copy
     }
 }

@@ -157,6 +157,7 @@ extension RuntimeControlPlane {
     ) {
         let host = event.externalAgentSessionReference
         let isProvider = source == .provider
+        let restorationClaim = session.stored.restorationClaim
         if isProvider {
             session.acceptedCount += 1
         } else {
@@ -192,6 +193,9 @@ extension RuntimeControlPlane {
             providerBranch: session.stored.providerBranch,
             eventEvidence: session.stored.eventEvidence,
         )
+        session.stored.restorationClaim = projection.isTerminal
+            ? nil
+            : restorationClaim
         if projection.isTerminal, case .detachedLaunching = session.lease {
             session.lease = .none
         }

@@ -52,6 +52,7 @@ public actor RuntimeControlPlane {
     }
 
     let store: any RuntimeStateStore
+    let restorationOwnerToken = UUID().uuidString
     var adapters: [RuntimeAdapterID: any ExternalAgentRuntimeAdapter] = [:]
     var sessions: SessionRegistry = [:]
     var hydrationTask: Task<RuntimeStoredState?, Error>?
@@ -315,7 +316,7 @@ public actor RuntimeControlPlane {
 
 extension RuntimeStoredSession {
     func withProjection(_ projection: RuntimeProjection) -> Self {
-        Self(
+        var copy = Self(
             externalAgentSessionReference: externalAgentSessionReference,
             providerInternalSessionReference: providerInternalSessionReference,
             runReference: runReference,
@@ -337,5 +338,13 @@ extension RuntimeStoredSession {
             providerBranch: providerBranch,
             eventEvidence: eventEvidence,
         )
+        copy.restorationClaim = projection.isTerminal ? nil : restorationClaim
+        return copy
+    }
+
+    func withRestorationClaim(_ claim: RuntimeRestorationClaim?) -> Self {
+        var copy = self
+        copy.restorationClaim = claim
+        return copy
     }
 }
