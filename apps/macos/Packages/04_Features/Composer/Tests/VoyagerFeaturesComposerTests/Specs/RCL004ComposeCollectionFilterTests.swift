@@ -5,6 +5,41 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
+private actor SearchCancellationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var wasCancelled = false
+
+    func wait() async throws -> SearchResponsePayload {
+        try await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                let waiters = startWaiters
+                startWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+            throw CancellationError()
+        } onCancel: {
+            Task { await self.markCancelled() }
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func cancellationObserved() -> Bool {
+        wasCancelled
+    }
+
+    private func markCancelled() {
+        wasCancelled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 @MainActor
 final class RCL004ComposeCollectionFilterTests: XCTestCase {
     // MARK: - RCL-004-submit_collection_filter_query
@@ -194,6 +229,293 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.executionFailureMessage)
     }
 
+    /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 작업만 정리함
+    /// collection session 종료 시 query/filter/feedback process 상태를 비우고 작성 중인 filter 정의는 보존하는지 검증한다.
+    /// - 검증 내용: search/filter request와 timing, pending query, transient feedback 정리 및 durable draft 보존
+    /// - 사전 조건: search와 filter process 상태가 남아 있고 사용자가 작성한 query/scope/condition이 존재함
+    /// - 기대 결과: process 상태는 idle로 돌아가고 사용자 작성 filter 정의는 유지됨
+    func testCleanupCollectionWork_withInFlightProcessState_preservesDurableDraft() {
+        let searchID = UUID()
+        let filtersID = UUID()
+        var state = ComposerState()
+        state.text = "keep this query"
+        state.scopes = ["/VoyagerFixtures/Documents"]
+        state.conditions = [Condition(propertyKey: "kind", propertyLabel: "Kind", propertyType: "string")]
+        state.isLoadingSearch = true
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeSearchRequestID = searchID
+        state.activeFiltersRequestID = filtersID
+        state.lastAcceptedSearchRequestID = searchID
+        state.lastAcceptedFiltersRequestID = filtersID
+        state.pendingSearchQuery = "pending query"
+        state.queryRenderPhase = .searching
+        state.searchStartedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_001)
+        state.activeFiltersMetricSource = "manual"
+        state.transientFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "failure")
+
+        _ = ComposerFeature().reduce(into: &state, action: .internal(.cleanupCollectionWork))
+
+        XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.lastAcceptedSearchRequestID)
+        XCTAssertNil(state.lastAcceptedFiltersRequestID)
+        XCTAssertNil(state.pendingSearchQuery)
+        XCTAssertNil(state.searchStartedAt)
+        XCTAssertNil(state.filtersStartedAt)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertEqual(state.text, "keep this query")
+        XCTAssertEqual(state.scopes, ["/VoyagerFixtures/Documents"])
+        XCTAssertEqual(state.conditions.map(\.propertyKey), ["kind"])
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 effect를 함께 취소함
+    /// semantic cleanup이 search client 작업과 transient feedback timer를 모두 종료하는지 검증한다.
+    /// - 검증 내용: search cancellation handler 실행 및 feedback dismiss action 미발생
+    /// - 사전 조건: search effect와 feedback timer가 동시에 실행 중임
+    /// - 기대 결과: cleanup 후 search가 취소되고 clock을 진행해도 stale feedback action이 전달되지 않음
+    func testCleanupCollectionWork_withRunningEffects_cancelsSearchAndFeedbackTimer() async {
+        let gate = SearchCancellationGate()
+        let clock = TestClock()
+        var initialState = ComposerState()
+        initialState.text = "find invoices"
+        initialState.scopes = ["/VoyagerFixtures/Documents"]
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.searchClient.search = { _ in try await gate.wait() }
+        }
+        // store.exhaustivity = .off: UUID 기반 request action보다 effect 취소 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.submit)
+        await gate.waitUntilStarted()
+        await store.send(.internal(.presentTransientFeedback(
+            ComposerTransientFeedback(id: UUID(), kind: .error, message: "failure"),
+        )))
+        await store.send(.internal(.cleanupCollectionWork))
+        await clock.advance(by: .seconds(4))
+        await store.finish()
+
+        let cancellationObserved = await gate.cancellationObserved()
+        XCTAssertTrue(cancellationObserved)
+        XCTAssertNil(store.state.transientFeedback)
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: feedback 정리는 활성 query/filter 상태를 보존함
+    /// discard semantic action이 feedback timer만 취소하는지 검증한다.
+    /// - 검증 내용: transient feedback 제거, search/filter process 상태 보존, 4초 후 stale dismissal 미발생
+    /// - 사전 조건: search/filter가 진행 중이고 feedback dismiss timer가 실행 중임
+    /// - 기대 결과: feedback만 제거되고 활성 search/filter 상태는 유지됨
+    func testClearTransientFeedback_preservesActiveSearchAndFilterState() async {
+        let searchID = UUID()
+        let filtersID = UUID()
+        let feedbackID = UUID()
+        let clock = TestClock()
+        var initialState = ComposerState()
+        initialState.text = "find invoices"
+        initialState.scopes = ["/VoyagerFixtures/Documents"]
+        initialState.isLoadingSearch = true
+        initialState.isLoadingFilters = true
+        initialState.isFilteringInFlight = true
+        initialState.activeSearchRequestID = searchID
+        initialState.activeFiltersRequestID = filtersID
+        initialState.lastAcceptedSearchRequestID = searchID
+        initialState.lastAcceptedFiltersRequestID = filtersID
+        initialState.pendingSearchQuery = "pending invoices"
+        initialState.queryRenderPhase = .searching
+        initialState.searchStartedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        initialState.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_001)
+        let feedback = ComposerTransientFeedback(
+            id: feedbackID,
+            kind: .error,
+            message: "failure",
+        )
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.presentTransientFeedback(feedback)))
+        await store.send(.internal(.clearTransientFeedback))
+
+        XCTAssertNil(store.state.transientFeedback)
+        XCTAssertTrue(store.state.isLoadingSearch)
+        XCTAssertTrue(store.state.isLoadingFilters)
+        XCTAssertTrue(store.state.isFilteringInFlight)
+        XCTAssertEqual(store.state.activeSearchRequestID, searchID)
+        XCTAssertEqual(store.state.activeFiltersRequestID, filtersID)
+        XCTAssertEqual(store.state.lastAcceptedSearchRequestID, searchID)
+        XCTAssertEqual(store.state.lastAcceptedFiltersRequestID, filtersID)
+        XCTAssertEqual(store.state.pendingSearchQuery, "pending invoices")
+        XCTAssertEqual(store.state.queryRenderPhase, .searching)
+        XCTAssertEqual(store.state.searchStartedAt, initialState.searchStartedAt)
+        XCTAssertEqual(store.state.filtersStartedAt, initialState.filtersStartedAt)
+
+        await clock.advance(by: .seconds(4))
+        await store.finish()
+    }
+
+    // MARK: - RCL-004-feedback_dismiss_cancellation_ownership
+
+    /// RCL-004-feedback_dismiss_cancellation_ownership: 서로 다른 owner의 feedback timer는 서로 취소하지 않음
+    /// 두 Composer child가 공유하는 cancellation registry에서 한 owner의 feedback가 다른 owner의 timer를 대체하거나 지우지 않는지 검증한다.
+    /// - 검증 내용: owner A timer 유지 중 owner B presentation과 clear가 owner A feedback에 영향을 주지 않는지 확인
+    /// - 사전 조건: deterministic owner UUID 두 개와 하나의 TestClock으로 두 Composer child를 조합함
+    /// - 기대 결과: owner A feedback는 자기 timer가 만료될 때만 지워지고 owner B clear는 owner A timer를 취소하지 않음
+    func testFeedbackDismissCancellation_withDifferentOwners_isolatedInSharedReducerTree() async throws {
+        let ownerA = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        let ownerB = try XCTUnwrap(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"))
+        let clock = TestClock()
+        let feedbackA = try ComposerTransientFeedback(
+            id: XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111")),
+            kind: .error,
+            message: "A",
+        )
+        let feedbackB = try ComposerTransientFeedback(
+            id: XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222")),
+            kind: .info,
+            message: "B",
+        )
+        let store = TestStore(initialState: ComposerPairState(ownerA: ownerA, ownerB: ownerB)) {
+            ComposerPairFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+        }
+        store.exhaustivity = .off
+
+        await store.send(.first(.internal(.presentTransientFeedback(feedbackA))))
+        await clock.advance(by: .seconds(3))
+        await store.send(.second(.internal(.presentTransientFeedback(feedbackB))))
+        await store.send(.second(.internal(.clearTransientFeedback)))
+        XCTAssertEqual(store.state.first.transientFeedback, feedbackA)
+        XCTAssertNil(store.state.second.transientFeedback)
+
+        await clock.advance(by: .seconds(1))
+        await store.receive(\.first)
+        XCTAssertNil(store.state.first.transientFeedback)
+        await store.finish()
+    }
+
+    /// RCL-004-feedback_dismiss_cancellation_ownership: 같은 owner의 feedback presentation은 이전 timer를 대체함
+    /// 같은 Composer에서 새 feedback를 표시하면 이전 timer가 아니라 새 timer 기준으로 dismiss되는지 검증한다.
+    /// - 검증 내용: 첫 timer 만료 시점에는 두 번째 feedback가 유지되고 두 번째 timer 만료 후 지워지는지 확인
+    /// - 사전 조건: 하나의 owner가 같은 TestClock에서 두 feedback를 순서대로 표시함
+    /// - 기대 결과: 두 번째 presentation이 첫 timer를 대체하고 새 4초 timer가 시작됨
+    func testFeedbackDismissCancellation_withSameOwner_replacesPreviousTimer() async throws {
+        let ownerID = try XCTUnwrap(UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"))
+        let clock = TestClock()
+        let first = try ComposerTransientFeedback(
+            id: XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333")),
+            kind: .error,
+            message: "first",
+        )
+        let second = try ComposerTransientFeedback(
+            id: XCTUnwrap(UUID(uuidString: "44444444-4444-4444-4444-444444444444")),
+            kind: .info,
+            message: "second",
+        )
+        let store = TestStore(initialState: ComposerPairState(ownerA: ownerID, ownerB: UUID())) {
+            ComposerPairFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+        }
+        store.exhaustivity = .off
+
+        await store.send(.first(.internal(.presentTransientFeedback(first))))
+        await clock.advance(by: .seconds(3))
+        await store.send(.first(.internal(.presentTransientFeedback(second))))
+        await clock.advance(by: .seconds(1))
+        XCTAssertEqual(store.state.first.transientFeedback, second)
+        await clock.advance(by: .seconds(3))
+        await store.receive(\.first)
+        XCTAssertNil(store.state.first.transientFeedback)
+        await store.finish()
+    }
+
+    /// RCL-004-feedback_dismiss_cancellation_ownership: 같은 owner의 clear는 feedback timer만 취소함
+    /// transient feedback을 즉시 지워도 search/filter 진행 상태와 효과가 보존되는지 검증한다.
+    /// - 검증 내용: clear 후 feedback가 없고 활성 search/filter 상태가 유지되며 timer action이 늦게 도착하지 않는지 확인
+    /// - 사전 조건: owner가 지정된 Composer에 search/filter 상태와 feedback timer가 있음
+    /// - 기대 결과: clear는 현재 owner timer와 transient feedback만 정리함
+    func testFeedbackDismissCancellation_withSameOwner_clearCancelsTimerAndPreservesSearchState() async throws {
+        let ownerID = try XCTUnwrap(UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD"))
+        let searchID = try XCTUnwrap(UUID(uuidString: "55555555-5555-5555-5555-555555555555"))
+        let filtersID = try XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666"))
+        let clock = TestClock()
+        var initialState = ComposerPairState(ownerA: ownerID, ownerB: UUID())
+        initialState.first.text = "find invoices"
+        initialState.first.isLoadingSearch = true
+        initialState.first.isLoadingFilters = true
+        initialState.first.isFilteringInFlight = true
+        initialState.first.activeSearchRequestID = searchID
+        initialState.first.activeFiltersRequestID = filtersID
+        initialState.first.pendingSearchQuery = "pending invoices"
+        initialState.first.queryRenderPhase = .searching
+        let feedback = try ComposerTransientFeedback(
+            id: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")),
+            kind: .error,
+            message: "failure",
+        )
+        let store = TestStore(initialState: initialState) {
+            ComposerPairFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+        }
+        store.exhaustivity = .off
+
+        await store.send(.first(.internal(.presentTransientFeedback(feedback))))
+        await store.send(.first(.internal(.clearTransientFeedback)))
+        XCTAssertNil(store.state.first.transientFeedback)
+        XCTAssertTrue(store.state.first.isLoadingSearch)
+        XCTAssertTrue(store.state.first.isLoadingFilters)
+        XCTAssertTrue(store.state.first.isFilteringInFlight)
+        XCTAssertEqual(store.state.first.activeSearchRequestID, searchID)
+        XCTAssertEqual(store.state.first.activeFiltersRequestID, filtersID)
+        XCTAssertEqual(store.state.first.pendingSearchQuery, "pending invoices")
+        XCTAssertEqual(store.state.first.queryRenderPhase, .searching)
+
+        await clock.advance(by: .seconds(4))
+        await store.finish()
+    }
+
+    /// RCL-004-feedback_dismiss_cancellation_ownership: Composer reset은 cancellation owner를 보존함
+    /// collection 전환 중 semantic reset이 window별 feedback timer 격리 key를 제거하지 않는지 검증한다.
+    /// - 검증 내용: reset 후 transient state와 draft는 초기화되고 cancellationOwnerID만 유지되는지 확인
+    /// - 사전 조건: owner가 지정되고 query, feedback, collection context가 채워진 Composer가 있음
+    /// - 기대 결과: reset 이후에도 기존 owner가 유지되어 다음 feedback timer가 다른 window와 격리됨
+    func testResetComposerAndSync_preservesCancellationOwner() throws {
+        let ownerID = try XCTUnwrap(UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE"))
+        var state = ComposerState()
+        state.cancellationOwnerID = ownerID
+        state.text = "discard me"
+        state.transientFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "failure")
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .internal(.resetComposerAndSync(
+                context: nil,
+                url: nil,
+                compatibility: nil,
+                isCollectionMode: false,
+            )),
+        )
+
+        XCTAssertEqual(state.cancellationOwnerID, ownerID)
+        XCTAssertEqual(state.text, "")
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertFalse(state.isCollectionMode)
+    }
+
     private func makeSearchLoadingState(activeRequestID: UUID) -> ComposerState {
         var state = ComposerState()
         state.scopes = ["/VoyagerFixtures/Documents"]
@@ -248,6 +570,39 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
             operatorValueUIKind: { _, _ in "singleText" },
             resolvePropertyKey: { .canonical($0) },
         )
+    }
+}
+
+private struct ComposerPairState: Equatable {
+    var first: ComposerState
+    var second: ComposerState
+
+    init(ownerA: UUID, ownerB: UUID) {
+        first = ComposerState()
+        first.cancellationOwnerID = ownerA
+        second = ComposerState()
+        second.cancellationOwnerID = ownerB
+    }
+}
+
+@CasePathable
+private enum ComposerPairAction {
+    case first(ComposerFeature.Action)
+    case second(ComposerFeature.Action)
+}
+
+@Reducer
+private struct ComposerPairFeature {
+    typealias State = ComposerPairState
+    typealias Action = ComposerPairAction
+
+    var body: some ReducerOf<Self> {
+        Scope(state: \.first, action: \.first) {
+            ComposerFeature()
+        }
+        Scope(state: \.second, action: \.second) {
+            ComposerFeature()
+        }
     }
 }
 
