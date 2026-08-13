@@ -12,10 +12,16 @@ export function verifyContentBrowserContract(packageRoot, css, runtime, fileMana
   const reducerSource = source("src/model/reducer.ts")
   const fixtureSource = source("src/data/content-browser-fixtures.ts")
   const storySource = source("src/Stories/ContentBrowserStates.stories.tsx")
+  const entryListSource = source("src/Domains/Entries/EntryList.tsx")
+  const entryListRowSource = source("src/Domains/Entries/EntryListRow.tsx")
+  const toolbarSource = source("src/Patterns/Content/FileToolbar.tsx")
+  const toolbarNavigationSource = source("src/Patterns/Content/ToolbarNavigation.tsx")
 
   assert.match(typesSource, /export type FileManagerInitialPresentation/)
   assert.match(typesSource, /readonly initialPresentation\?: FileManagerInitialPresentation/)
   assert.match(adapterSource, /initialPresentation: props\.initialPresentation/)
+  assert.match(adapterSource, /dateModified: f\.dateModified/)
+  assert.match(adapterSource, /size: f\.size/)
   assert.match(reducerSource, /selectedEntryIds: params\.initialPresentation\.selectedEntryIds/)
   assert.match(reducerSource, /viewMode: params\.initialPresentation\.viewMode/)
   assert.match(reducerSource, /sidebarOpen: params\.initialPresentation\.sidebarOpen/)
@@ -47,7 +53,20 @@ export function verifyContentBrowserContract(packageRoot, css, runtime, fileMana
   )
   assert.match(css, /\.entry-name\s*{[^}]*-webkit-line-clamp:\s*2/s)
   assert.match(css, /\.entry-name\s*{[^}]*word-break:\s*break-word/s)
-  assert.match(css, /\.entry-list-name\s*{[^}]*text-overflow:\s*ellipsis/s)
+  assert.match(css, /\.entry-list-name-leading\s*{[^}]*text-overflow:\s*ellipsis/s)
+  assert.match(css, /\.entry-list-name-trailing\s*{[^}]*flex-shrink:\s*0/s)
+  assert.match(entryListSource, /<table className="entry-list"/)
+  assert.match(entryListSource, /<th scope="col">/)
+  assert.doesNotMatch(entryListSource, /aria-hidden="true"/)
+  assert.match(entryListRowSource, /intent: EntrySelectionIntent/)
+  assert.match(reducerSource, /selectionAnchorId:/)
+  assert.match(reducerSource, /case "range":/)
+  assert.match(
+    toolbarSource,
+    /aria-label=\{`Switch to \$\{viewMode === "grid" \? "list" : "grid"\} view`\}/,
+  )
+  assert.match(toolbarSource, /aria-label="Sort and group" disabled/)
+  assert.match(toolbarNavigationSource, /disabled/)
 
   const tabs = [
     { id: "home", label: "Home" },
@@ -60,6 +79,8 @@ export function verifyContentBrowserContract(packageRoot, css, runtime, fileMana
       kind: "pdf",
       extension: "pdf",
       secondaryLabel: null,
+      dateModified: "Aug 12, 10:42 AM",
+      size: "1.2 MB",
     },
   ]
   const render = (initialPresentation) =>
@@ -79,6 +100,10 @@ export function verifyContentBrowserContract(packageRoot, css, runtime, fileMana
   })
   assert.match(listSelectionMarkup, /class="entry-list"/)
   assert.match(listSelectionMarkup, /aria-selected="true"/)
+  assert.match(listSelectionMarkup, /<table class="entry-list"/)
+  assert.match(listSelectionMarkup, /<th scope="col">/)
+  assert.match(listSelectionMarkup, /Aug 12, 10:42 AM/)
+  assert.match(listSelectionMarkup, /1\.2 MB/)
   assert.match(listSelectionMarkup, /1 of 1 selected/)
 
   const narrowSidebarClosedMarkup = render({
