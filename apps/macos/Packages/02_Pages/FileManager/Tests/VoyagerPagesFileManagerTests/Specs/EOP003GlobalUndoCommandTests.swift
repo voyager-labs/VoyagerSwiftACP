@@ -6,6 +6,78 @@ import XCTest
 
 @MainActor
 final class EOP003GlobalUndoCommandTests: XCTestCase {
+    /// EOP-003-undo_entry_action: 단일 duplicate는 새 tab의 첫 Entry completion 전에 Undo scope를 활성화한다.
+    /// duplicate owner handoff와 canonical Undo lifecycle 사이의 누락을 검증한다.
+    /// - 검증 내용: duplicate post-reduce 뒤 새 scope의 generation과 native manager를 확인한다.
+    /// - 사전 조건: source tab scope가 활성화된 단일 Content Tab window가 있다.
+    /// - 기대 결과: duplicate tab도 독립 generation과 native manager를 즉시 보유한다.
+    func testSingleDuplicateActivatesUndoScopeBeforeEntryCompletion() async {
+        let registry = FileOperationUndoManagerRegistry()
+        let fileOperationClient = FileOperationUndoManagerClient.live(registry: registry)
+        let windowID = UUID()
+        let sourceID = ContentTabID(rawValue: "source")
+        let duplicateID = ContentTabID(rawValue: "duplicate")
+        let sourceScope = UndoManagerScope(windowID: windowID, contentTabID: sourceID.rawValue)
+        let duplicateScope = UndoManagerScope(windowID: windowID, contentTabID: duplicateID.rawValue)
+        _ = fileOperationClient.activate(sourceScope)
+        let store = TestStore(
+            initialState: makeState(windowID: windowID, tabIDs: [sourceID], activeTabID: sourceID),
+        ) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileOperationUndoManagerClient = fileOperationClient
+        }
+        // store.exhaustivity = .off: duplicate handoff의 부수 action보다 새 canonical scope 생성을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(fileOperationClient.generation(duplicateScope))
+        XCTAssertNotNil(registry.undoManager(for: duplicateScope))
+    }
+
+    /// EOP-003-undo_entry_action: bulk duplicate는 active 여부와 무관하게 생성된 모든 tab scope를 활성화한다.
+    /// inactive duplicate의 지연 Entry completion도 canonical 등록 가능한지 검증한다.
+    /// - 검증 내용: 두 duplicate scope의 generation과 native manager를 모두 확인한다.
+    /// - 사전 조건: 두 source tab scope가 활성화되고 두 duplicate identity가 충돌 없이 요청된다.
+    /// - 기대 결과: 생성된 active·inactive duplicate가 각각 독립 Undo scope를 보유한다.
+    func testBulkDuplicateActivatesUndoScopesForEveryCreatedTab() async {
+        let registry = FileOperationUndoManagerRegistry()
+        let fileOperationClient = FileOperationUndoManagerClient.live(registry: registry)
+        let windowID = UUID()
+        let sourceA = ContentTabID(rawValue: "source-a")
+        let sourceB = ContentTabID(rawValue: "source-b")
+        let duplicateA = ContentTabID(rawValue: "duplicate-a")
+        let duplicateB = ContentTabID(rawValue: "duplicate-b")
+        for tabID in [sourceA, sourceB] {
+            _ = fileOperationClient.activate(UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue))
+        }
+        let store = TestStore(
+            initialState: makeState(windowID: windowID, tabIDs: [sourceA, sourceB], activeTabID: sourceA),
+        ) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileOperationUndoManagerClient = fileOperationClient
+        }
+        // store.exhaustivity = .off: batch handoff 부수 action보다 모든 생성 scope의 lifecycle을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicateSelected([
+            ContentTabDuplicateRequest(sourceID: sourceA, duplicateID: duplicateA),
+            ContentTabDuplicateRequest(sourceID: sourceB, duplicateID: duplicateB),
+        ])))
+        await store.skipReceivedActions()
+
+        for tabID in [duplicateA, duplicateB] {
+            let scope = UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue)
+            XCTAssertNotNil(fileOperationClient.generation(scope))
+            XCTAssertNotNil(registry.undoManager(for: scope))
+        }
+    }
+
     /// EOP-003-undo_entry_action: parent completion은 active B가 아니라 captured origin A scope에 compatibility metadata를
     /// 연결한다.
     /// canonical 등록 뒤 child effect가 active scope를 재해석해 다른 tab history를 만드는 race를 검증한다.
@@ -151,6 +223,7 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
             return (tabID, content)
         })
         var state = FileManagerWindowState()
+        state.windowID = windowID
         state.contentTabs = ContentTabState(
             tabs: .init(uniqueElements: tabIDs.map { tabID in
                 ContentTabItem(

@@ -525,6 +525,14 @@ extension FileManagerWindowRoutingReducer {
                     return .none
                 }
 
+                let duplicateUndoScopeActivationEffect = ownerSnapshots
+                    .reduce(Effect<Action>.none) { effect, snapshot in
+                        .concatenate(
+                            effect,
+                            activateUndoManagerScopeEffect(tabID: snapshot.request.duplicateID, state: state),
+                        )
+                    }
+
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
 
@@ -572,6 +580,7 @@ extension FileManagerWindowRoutingReducer {
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
+                    duplicateUndoScopeActivationEffect,
                     .concatenate(
                         handoffCleanupEffect,
                         duplicatedAiChatRestoreEffect,
@@ -623,12 +632,16 @@ extension FileManagerWindowRoutingReducer {
                     anchor: duplicateAnchor ?? sourceAnchor,
                     inheritingWindowContextFrom: state.content,
                 )
+                let duplicateUndoScopeActivationEffect = activateUndoManagerScopeEffect(
+                    tabID: duplicateID,
+                    state: state,
+                )
 
                 // Pinned source는 active를 유지하므로 duplicate cache만 source snapshot으로 초기화한다.
                 guard state.contentTabs.activeTabID == duplicateID else {
                     state.tabContentStates[duplicateID] = duplicatedContentState
                     syncDashboardProjections(state: &state)
-                    return .none
+                    return duplicateUndoScopeActivationEffect
                 }
 
                 // === Active duplicate: .contentTabs(.open) handoff 패턴 적용 ===
@@ -670,6 +683,7 @@ extension FileManagerWindowRoutingReducer {
                     skipAiChatCancel: true,
                 )
                 return .merge(
+                    duplicateUndoScopeActivationEffect,
                     .concatenate(
                         handoffCleanupEffect,
                         duplicatedAiChatRestoreEffect,
