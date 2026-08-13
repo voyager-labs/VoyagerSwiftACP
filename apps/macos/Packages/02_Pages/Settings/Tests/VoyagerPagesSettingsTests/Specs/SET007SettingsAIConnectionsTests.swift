@@ -177,6 +177,65 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertEqual(refreshes, 1)
     }
 
+    /// SET-007-codex_oauth_runtime: live bootstrap resolves the overridden model-list dependency.
+    /// Credential verification must use the Settings model-list dependency instead of constructing live transport.
+    /// - 검증 내용: injected model loader invocation for the verification smoke.
+    /// - 사전 조건: bootstrap loads a valid Codex credential and the override returns one model.
+    /// - 기대 결과: the override runs once and bootstrap reaches connected without external network.
+    func testLiveBootstrapCodexUsesOverriddenModelListDependency() async throws {
+        let credential = OAuthCredentialFile(
+            accessToken: "valid-access",
+            expiresAtMs: Int64.max,
+        )
+        let file = AIConnectionsFile.singleProvider(
+            .chatgptCodex,
+            state: .connectionFailed,
+            credential: .oauth(credential),
+        )
+        let model = AiProviderModel(
+            id: AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5"),
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5",
+            displayName: "GPT-5",
+            providerDisplayName: "ChatGPT Codex",
+            thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "test")),
+        )
+        let modelLoadCount = LoadCounter()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiConnectionsFileClient.atomicUpdate = { transform in
+                try .success(transform(file))
+            }
+            $0.aiProviderModelListClient.loadModels = { _, _ in
+                _ = await modelLoadCount.increment()
+                return [model]
+            }
+            $0.aiProviderVerificationClient = .liveValue
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.onAppear) {
+            $0.didBootstrap = true
+            $0.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+            $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+        }
+        let persistedFile = try connectedCodexFile(file, credential: credential)
+        await store.receive(.delegate(.connectionsFileUpdated(persistedFile)))
+        await store.receive(\.bootstrapVerificationCompleted) {
+            $0.rows[id: .chatgptCodex]?.connectionState = .connected
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = Int64.max
+        }
+        await store.finish()
+
+        let modelLoads = await modelLoadCount.currentValue()
+        XCTAssertEqual(modelLoads, 1)
+    }
+
     private func expiredCodexFile(
         _ file: AIConnectionsFile,
         credential: OAuthCredentialFile,
@@ -189,6 +248,24 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                     provider: .chatgptCodex,
                     connectionState: .connectionFailed,
                     statusReason: .expired,
+                    sourceCredential: .oauth(credential),
+                    effectiveCredential: .oauth(credential),
+                ),
+            ],
+        ))
+    }
+
+    private func connectedCodexFile(
+        _ file: AIConnectionsFile,
+        credential: OAuthCredentialFile,
+    ) throws -> AIConnectionsFile {
+        try XCTUnwrap(AIProviderConnectionBootstrap.updatedConnectionsFile(
+            verificationSourceFile: file,
+            latestFile: file,
+            applying: [
+                AIProviderBootstrapResult(
+                    provider: .chatgptCodex,
+                    connectionState: .connected,
                     sourceCredential: .oauth(credential),
                     effectiveCredential: .oauth(credential),
                 ),

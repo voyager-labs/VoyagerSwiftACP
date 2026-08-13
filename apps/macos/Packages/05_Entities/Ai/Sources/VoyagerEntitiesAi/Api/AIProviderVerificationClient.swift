@@ -42,8 +42,11 @@ extension AIProviderVerificationClient: DependencyKey {
     private static func runtimeClient() -> AiConnectionRuntimeClient {
         @Dependency(\.codexNativeAuthClient)
         var nativeAuthClient
+        @Dependency(\.aiProviderModelListClient)
+        var modelListClient
         return AiConnectionRuntimeClient.live(
             refreshCredential: nativeAuthClient.refreshCredential,
+            loadModels: modelListClient.loadModels,
         )
     }
 

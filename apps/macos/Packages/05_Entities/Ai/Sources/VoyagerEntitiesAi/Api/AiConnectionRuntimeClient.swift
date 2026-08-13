@@ -60,8 +60,10 @@ extension AiConnectionRuntimeClient {
     public static func live(
         session: URLSession = .shared,
         refreshCredential: (@Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile)? = nil,
+        loadModels: (@Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel])? = nil,
     ) -> AiConnectionRuntimeClient {
         let refreshCredential = refreshCredential ?? CodexNativeAuthClient.live(session: session).refreshCredential
+        let loadModels = loadModels ?? AiProviderModelListClient.live(session: session).loadModels
         return AiConnectionRuntimeClient(
             verifyProvider: { provider, credential in
                 await Self.verifyStatus(provider: provider, credential: credential, session: session)
@@ -72,6 +74,7 @@ extension AiConnectionRuntimeClient {
                     credential: credential,
                     session: session,
                     refreshCredential: refreshCredential,
+                    loadModels: loadModels,
                 )
             },
             resolveAdapter: { provider, credential in
@@ -93,6 +96,7 @@ extension AiConnectionRuntimeClient {
         credential: StoredCredentialPayload?,
         session: URLSession,
         refreshCredential: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile,
+        loadModels: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel],
     ) async throws -> AiProviderVerificationOutcome {
         guard let credential else {
             return AiProviderVerificationOutcome(
@@ -127,7 +131,7 @@ extension AiConnectionRuntimeClient {
             provider: provider,
             sourceCredential: credential,
             effectiveCredential: effective,
-            session: session,
+            loadModels: loadModels,
         )
     }
 
@@ -135,10 +139,10 @@ extension AiConnectionRuntimeClient {
         provider: AiProvider,
         sourceCredential: StoredCredentialPayload,
         effectiveCredential: StoredCredentialPayload,
-        session: URLSession,
+        loadModels: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel],
     ) async throws -> AiProviderVerificationOutcome {
         do {
-            let models = try await AiProviderModelListClient.live(session: session).loadModels(
+            let models = try await loadModels(
                 provider,
                 effectiveCredential,
             )
