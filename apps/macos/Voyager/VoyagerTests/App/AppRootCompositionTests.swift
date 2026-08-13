@@ -481,7 +481,10 @@ final class AppRootCompositionTests: XCTestCase {
             stop: {},
             isRunning: { true },
             terminationEvents: { AsyncStream { $0.finish() } },
-            ensureRunning: { _ in },
+            ensureRunning: { canLaunch in
+                guard await canLaunch() else { return }
+                startCount?.withValue { $0 += 1 }
+            },
         )
     }
 
