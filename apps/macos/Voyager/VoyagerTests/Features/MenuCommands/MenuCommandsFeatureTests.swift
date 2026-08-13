@@ -27,6 +27,41 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-001-request_undo: Edit 메뉴는 native text responder를 Window Entry command보다 우선한다.
+    /// - 검증 내용: native action 성공 시 native route, 실패/미지원 시 Window fallback
+    /// - 사전 조건: text responder 처리 가능 여부와 deterministic native action 결과
+    /// - 기대 결과: native 성공만 Window fallback을 차단하고 미지원 시 native action을 호출하지 않는다.
+    func testEditMenuUndoRedoPrioritizesNativeResponderBeforeWindowFallback() {
+        let nativeCalls = LockIsolated(0)
+
+        let nativeRoute = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: true,
+            sendNativeAction: {
+                nativeCalls.withValue { $0 += 1 }
+                return true
+            },
+        )
+        let rejectedNativeRoute = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: true,
+            sendNativeAction: {
+                nativeCalls.withValue { $0 += 1 }
+                return false
+            },
+        )
+        let unsupportedRoute = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: false,
+            sendNativeAction: {
+                nativeCalls.withValue { $0 += 1 }
+                return true
+            },
+        )
+
+        XCTAssertEqual(nativeRoute, .native)
+        XCTAssertEqual(rejectedNativeRoute, .window)
+        XCTAssertEqual(unsupportedRoute, .window)
+        XCTAssertEqual(nativeCalls.value, 2)
+    }
+
     /// testTask3EntryCommandsRouteToWindowManagerDelegate 테스트 동작을 검증한다.
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
@@ -35,6 +70,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.open, .file(.open)),
             (.quickLook, .file(.quickLook)),
             (.restoreLastClosedTab, .file(.restoreLastClosedTab)),
+            (.duplicateTab, .file(.duplicateTab)),
         ]
 
         for (command, expected) in appCases {
@@ -309,6 +345,19 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
     }
 
+    /// FMW-001-ai_chat_commands: AI Chat 메뉴 명령은 Inspector 지원 capability를 따른다.
+    /// - 검증 내용: Home/AiChat 비지원 상태와 Directory 지원 상태의 command-surface 활성화
+    /// - 사전 조건: canonical `canUseAiChatInspector`가 false 또는 true인 메뉴 상태
+    /// - 기대 결과: 비지원 탭에서는 Open Chat과 Chat History가 비활성화되고 지원 탭에서만 활성화
+    func testAiChatMenuCommandsRequireInspectorCapability() {
+        XCTAssertFalse(EditMenuCommands.canPerformAiChatInspectorCommand(
+            canUseAiChatInspector: false,
+        ))
+        XCTAssertTrue(EditMenuCommands.canPerformAiChatInspectorCommand(
+            canUseAiChatInspector: true,
+        ))
+    }
+
     /// testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState 테스트 동작을 검증한다.
     /// focused window의 contentTabs.recentlyClosed 상태에 따라
     /// canRestoreLastClosedTab이 올바르게 반영되는지 검증한다.
@@ -370,6 +419,224 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertEqual(pinnedMenuState.pinTabTitle, "Unpin Tab")
     }
 
+    // MARK: - Duplicate Tab Projection & Routing
+
+    /// CTM-001-duplicate_selected_content_tabs: reconciled selected tab이 File 메뉴의 bulk command를 소유한다.
+    /// stale selection을 제외한 현재 tab selection만으로 File/Edit Command-D 우선순위를 결정한다.
+    /// - 검증 내용: bulk title/enablement와 Entry Duplicate 비활성화
+    /// - 사전 조건: focused window에 현재 tab 2개와 stale ID가 함께 선택되고 entry도 선택됨
+    /// - 기대 결과: File bulk command만 활성화되고 Edit Entry Duplicate는 비활성화됨
+    func testDuplicateSelectedContentTabsProjection_arbitratesFileAndEditCommands() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000058")
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        let secondTabID = ContentTabID(rawValue: "second-selected-tab")
+        focusedWindow.contentTabs.tabs.append(ContentTabItem(
+            id: secondTabID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Second",
+            iconName: "house",
+        ))
+        focusedWindow.contentTabs.selectedTabIDs = [
+            activeTabID,
+            secondTabID,
+            ContentTabID(rawValue: "stale-selected-tab"),
+        ]
+        focusedWindow.content.entryViewLayout.selectedIds = ["selected-entry"]
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        let menuState = MenuCommandsState(state: appState)
+        XCTAssertEqual(menuState.selectedContentTabCount, 2)
+        XCTAssertTrue(menuState.canDuplicateSelectedContentTabs)
+        XCTAssertEqual(menuState.duplicateContentTabTitle, "Duplicate 2 Tabs")
+        XCTAssertFalse(menuState.canDuplicateEntries)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: stale-only selection은 legacy single/Entry fallback을 가로채지 않는다.
+    /// canonical tab rows와 reconcile되지 않는 selection은 bulk command presence로 투영하지 않는다.
+    /// - 검증 내용: single title/availability와 Entry Duplicate availability
+    /// - 사전 조건: stale tab ID만 선택되고 active tab과 selected entry가 존재함
+    /// - 기대 결과: File single Shift-Command-D와 Entry Command-D fallback이 유지됨
+    func testDuplicateTabProjection_staleOnlySelectionPreservesLegacyFallbacks() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000059")
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            return XCTFail("Expected active content tab")
+        }
+        focusedWindow.contentTabs.selectedTabIDs = [
+            activeTabID,
+            ContentTabID(rawValue: "stale-selected-tab"),
+        ]
+        focusedWindow.content.entryViewLayout.selectedIds = ["selected-entry"]
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        let menuState = MenuCommandsState(state: appState)
+        XCTAssertEqual(menuState.selectedContentTabCount, 1)
+        XCTAssertFalse(menuState.canDuplicateSelectedContentTabs)
+        XCTAssertTrue(menuState.canDuplicateActiveContentTab)
+        XCTAssertEqual(menuState.duplicateContentTabTitle, "Duplicate Tab")
+        XCTAssertTrue(menuState.canDuplicateEntries)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: pending lifecycle와 zero capacity는 bulk command를 차단한다.
+    /// selection presence는 유지하되 실행 availability만 lifecycle/capacity projection으로 비활성화한다.
+    /// - 검증 내용: pending close, pending teardown, max tabs, no focus의 disabled matrix
+    /// - 사전 조건: reconciled selected tab이 있는 focused window를 각 차단 상태로 변경함
+    /// - 기대 결과: 모든 차단 상태에서 bulk command와 Entry Duplicate가 동시에 실행 불가함
+    func testDuplicateSelectedContentTabsProjection_disabledForUnavailableContexts() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000060")
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        let secondTabID = ContentTabID(rawValue: "unavailable-second-selected-tab")
+        focusedWindow.contentTabs.tabs.append(ContentTabItem(
+            id: secondTabID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Second",
+            iconName: "house",
+        ))
+        focusedWindow.contentTabs.selectedTabIDs = [activeTabID, secondTabID]
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        appState.windowManager.windows[id: focusedID]?.window.pendingContentTabClose = PendingContentTabClose(
+            tabID: activeTabID,
+        )
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateSelectedContentTabs)
+
+        appState.windowManager.windows[id: focusedID]?.window.pendingContentTabClose = nil
+        appState.windowManager.windows[id: focusedID]?.window.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: makeUUID("00000000-0000-0000-0000-000000000061"),
+            tabID: activeTabID,
+            ownerID: makeUUID("00000000-0000-0000-0000-000000000062"),
+        )
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateSelectedContentTabs)
+
+        appState.windowManager.windows[id: focusedID]?.window.pendingContentTabTeardown = nil
+        while appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs.count ?? 0
+            < ContentTabConstants.maxTabs
+        {
+            guard let tab = ContentTabState.withHomeTab().tabs.first else { continue }
+            appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs.append(tab)
+        }
+        let fullMenuState = MenuCommandsState(state: appState)
+        XCTAssertEqual(fullMenuState.selectedContentTabCount, 2)
+        XCTAssertFalse(fullMenuState.canDuplicateSelectedContentTabs)
+        XCTAssertFalse(fullMenuState.canDuplicateEntries)
+
+        appState.windowManager.focusedWindowID = nil
+        let noFocusMenuState = MenuCommandsState(state: appState)
+        XCTAssertEqual(noFocusMenuState.selectedContentTabCount, 0)
+        XCTAssertFalse(noFocusMenuState.canDuplicateSelectedContentTabs)
+        XCTAssertFalse(noFocusMenuState.canDuplicateEntries)
+    }
+
+    /// canDuplicateActiveContentTab은 focused window에 active tab이 있고
+    /// pending close가 없으며 tab count가 max 미만일 때 true여야 한다.
+    func testDuplicateTabProjection_enabledWhenActiveTabExists() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000050")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.pendingContentTabClose = nil
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertTrue(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// focused window가 없으면 canDuplicateActiveContentTab은 false여야 한다.
+    func testDuplicateTabProjection_disabledWhenNoFocusedWindow() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000051")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.pendingContentTabClose = nil
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        // focusedWindowID를 설정하지 않음
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// pendingContentTabClose가 nil이 아니면 canDuplicateActiveContentTab은 false여야 한다.
+    func testDuplicateTabProjection_disabledWhenPendingClose() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000052")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        focusedWindow.pendingContentTabClose = PendingContentTabClose(tabID: activeTabID)
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// tab count가 maxTabs에 도달하면 canDuplicateActiveContentTab은 false여야 한다.
+    func testDuplicateTabProjection_disabledWhenMaxTabs() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000053")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.pendingContentTabClose = nil
+        // maxTabs까지 탭을 채움
+        while focusedWindow.contentTabs.tabs.count < ContentTabConstants.maxTabs {
+            let newTab = ContentTabState.withHomeTab()
+            if let tab = newTab.tabs.first {
+                focusedWindow.contentTabs.tabs.append(tab)
+            }
+        }
+        XCTAssertEqual(focusedWindow.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// AppCommand .duplicateTab이 MenuCommandsFeature를 통해
+    /// .delegate(.windowManager(.file(.duplicateTab)))로 라우팅되는지 검증한다.
+    func testAppCommandDuplicateTab_routesToFileCommand() async {
+        await assertAppCommand(.duplicateTab, routesTo: .file(.duplicateTab))
+    }
+
     private func makeUUID(_ rawValue: String) -> UUID {
         guard let uuid = UUID(uuidString: rawValue) else {
             XCTFail("Invalid UUID fixture: \(rawValue)")
@@ -382,7 +649,20 @@ final class MenuCommandsFeatureTests: XCTestCase {
         _ command: MenuCommandItem.AppCommand,
         routesTo expected: WindowManagerAction,
     ) async {
-        let store = TestStore(initialState: MenuCommandsFeature.State()) {
+        var initialState = MenuCommandsFeature.State()
+        switch command {
+        case .newTab:
+            initialState.canOpenNewContentTab = true
+        case .togglePinTab:
+            initialState.canToggleActiveContentTabPin = true
+        case .restoreLastClosedTab:
+            initialState.canRestoreLastClosedTab = true
+        case .duplicateTab:
+            initialState.canDuplicateActiveContentTab = true
+        default:
+            break
+        }
+        let store = TestStore(initialState: initialState) {
             MenuCommandsFeature()
         }
         // 비포괄적: app command → delegate(.windowManager(action)) 단일 라우팅만 검증하며,
@@ -397,7 +677,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
                  (.file(.togglePinTab), .file(.togglePinTab)),
                  (.file(.open), .file(.open)),
                  (.file(.quickLook), .file(.quickLook)),
-                 (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)):
+                 (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)),
+                 (.file(.duplicateTab), .file(.duplicateTab)):
                 return true
             default:
                 return false

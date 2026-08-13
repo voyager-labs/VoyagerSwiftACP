@@ -8,28 +8,52 @@ struct MenuCommandsFeature {
     typealias Action = MenuCommandsAction
 
     var body: some Reducer<State, Action> {
-        Reduce { _, action in
+        Reduce { state, action in
             switch action {
+            case .view(.app(.newTab)):
+                guard state.canOpenNewContentTab else { return .none }
+                return routeAppCommand(.newTab)
+
+            case .view(.app(.closeTab)):
+                guard state.canCloseTab else { return .none }
+                return routeAppCommand(.closeTab)
+
+            case .view(.app(.togglePinTab)):
+                guard state.canPinTab else { return .none }
+                return routeAppCommand(.togglePinTab)
+
+            case .view(.app(.restoreLastClosedTab)):
+                guard state.canRestoreLastClosedTab else { return .none }
+                return routeAppCommand(.restoreLastClosedTab)
+
+            case .view(.app(.duplicateTab)):
+                let canDuplicate = state.selectedContentTabCount > 1
+                    ? state.canDuplicateSelectedContentTabs
+                    : state.canDuplicateActiveContentTab
+                guard canDuplicate else { return .none }
+                return routeAppCommand(.duplicateTab)
+
             case let .view(.app(command)):
-                routeAppCommand(command)
+                return routeAppCommand(command)
 
             case let .view(.viewCommand(command)):
-                routeViewCommand(command)
+                return routeViewCommand(command)
 
             case let .view(.edit(command)):
-                routeEditCommand(command)
+                return routeEditCommand(command)
 
             case .view:
-                .none
+                return .none
 
             case .delegate:
-                .none
+                return .none
             }
         }
     }
 
     private func routeAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action> {
         routeFileAppCommand(command)
+            ?? routeFileOperationAppCommand(command)
             ?? routeWindowAppCommand(command)
             ?? routeUpdaterAppCommand(command)
             ?? .none
@@ -60,16 +84,15 @@ struct MenuCommandsFeature {
     }
 
     private func routeFileAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
-        routeFileTabAppCommand(command) ?? routeFileOperationAppCommand(command)
-    }
-
-    private func routeFileTabAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
         switch command {
         case let .newWindow(path): .send(.delegate(.windowManager(.file(.newWindow(path: path)))))
         case .newTab: .send(.delegate(.windowManager(.file(.newTab))))
         case .closeTab: .send(.delegate(.windowManager(.file(.closeTab))))
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))
         case .restoreLastClosedTab: .send(.delegate(.windowManager(.file(.restoreLastClosedTab))))
+        case .duplicateTab: .send(.delegate(.windowManager(.file(.duplicateTab))))
+        case let .selectContentTab(position):
+            .send(.delegate(.windowManager(.file(.selectContentTab(position: position)))))
         default: nil
         }
     }

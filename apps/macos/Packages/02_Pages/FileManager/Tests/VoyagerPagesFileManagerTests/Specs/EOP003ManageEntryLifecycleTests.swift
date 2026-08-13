@@ -644,39 +644,57 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     /// - 사전 조건: W1/A·W1/B가 있고 B가 active이며 recorder client가 requested scope를 수집한다.
     /// - 기대 결과: recorder에는 W1/B scope 한 건만 있고 W1/A 요청은 없다.
     func testRequestUndoCapturesOnlyCurrentActiveTabScopeAndFailsClosedWhenEmpty() async {
-        let registry = FileOperationUndoManagerRegistry()
-        var client = makeClient(registry: registry)
-        let requestedScopes = LockIsolated<[UndoManagerScope]>([])
-        client.performUndoRedo = { scope, _, _, _ in
-            requestedScopes.withValue { $0.append(scope) }
-            return .rejected(.unavailable)
-        }
         let windowID = UUID()
         let tabB = ContentTabID(rawValue: "B")
+        let record = makeRecord("B")
         var state = makeTwoTabState(windowID: windowID, activeTabID: tabB)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeRecord("B")]
+        state.content.entryViewLayout.entryOperations.undoRecords = [record]
         state.tabContentStates[tabB] = state.content
-        _ = client.activate(UndoManagerScope(windowID: windowID, contentTabID: tabB.rawValue))
-        let store = makeStore(state: state, client: client)
-        // store.exhaustivity = .off: targeted transaction의 scope 기록만 검증한다.
+        let expectedTarget = UndoManagerRecordIdentity(
+            ownerID: state.content.entryViewLayout.entryOperations.undoOwnerID,
+            recordID: record.id,
+        )
+        state.undoManagerAvailability = .init(
+            canUndo: true,
+            canRedo: false,
+            undoTarget: expectedTarget,
+        )
+        let requestedTargets = LockIsolated<[UndoManagerRecordIdentity?]>([])
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { receivedWindowID, receivedTarget in
+                XCTAssertEqual(receivedWindowID, windowID)
+                requestedTargets.withValue { $0.append(receivedTarget) }
+                return .init(didInvoke: false, availability: .init())
+            },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
+        )
+        let requestID = UUID()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(requestID)
+        }
+        // store.exhaustivity = .off: canonical manager의 owner/record target과 fail-closed 경계만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.request(.requestUndo))
+        await store.receive(\.internal.undoManagerInvocationFinished)
         await store.finish()
 
-        let emptyStore = makeStore(
-            state: makeTwoTabState(windowID: windowID, activeTabID: tabB),
-            client: client,
-        )
+        let emptyStore = TestStore(
+            initialState: makeTwoTabState(windowID: windowID, activeTabID: tabB),
+        ) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(requestID)
+        }
         await emptyStore.send(.request(.requestUndo))
         await emptyStore.finish()
 
-        XCTAssertEqual(requestedScopes.value, [
-            UndoManagerScope(
-                windowID: windowID,
-                contentTabID: tabB.rawValue,
-            ),
-        ])
+        XCTAssertEqual(requestedTargets.value, [expectedTarget])
     }
 
     /// EOP-003-undo_entry_action: window delegate는 호출 시점 active tab의 manager를 동적으로 반환한다.
@@ -903,14 +921,6 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         ))))
 
         await store.send(.content(renameAction))
-        await store.receive { action in
-            guard case let .tabContent(receivedTabID, receivedAction) = action else { return false }
-            return receivedTabID == tabA && Self.isRenameAction(
-                receivedAction,
-                oldPath: oldPath,
-                newPath: newPath,
-            )
-        }
         await store.receive { action in
             guard case let .tabContent(
                 receivedTabID,
@@ -1182,7 +1192,7 @@ private extension EOP003ManageEntryLifecycleTests {
         TestStore(initialState: state) {
             CombineReducers {
                 Reduce<FileManagerWindowState, FileManagerWindowAction> { _, action in
-                    if case .closeWindow = action {
+                    if case .delegate(.closeWindow) = action {
                         closeWindowActionCount?.withValue { $0 += 1 }
                     }
                     return .none
@@ -1191,12 +1201,9 @@ private extension EOP003ManageEntryLifecycleTests {
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.entryFileOpsClient = entryFileOpsClient
-            $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
-            )
+            $0.undoManagerClient = .previewValue
             if let client {
                 $0.fileOperationUndoManagerClient = client
             }

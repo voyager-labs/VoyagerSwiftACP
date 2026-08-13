@@ -8,6 +8,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct HomeAiChatOpenCancelID: Hashable {
@@ -22,6 +23,7 @@ struct FileManagerWindowCommandRoutingReducer {
     nonisolated private enum CancelID: Hashable {
         case loadFixedLocations
         case loadHomeFavorites
+        case undoManagerEvents
     }
 
     @Dependency(\.aiConnectionsFileClient)
@@ -44,6 +46,10 @@ struct FileManagerWindowCommandRoutingReducer {
     private var userDefaultsClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.undoManagerClient)
+    private var undoManagerClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -65,10 +71,13 @@ struct FileManagerWindowCommandRoutingReducer {
                 let loadingClient = entryLoadingClient
                 let favoritesClient = fileManagerFavoritesClient
                 let defaultsClient = userDefaultsClient
+                let workspaceClient = workspaceClient
                 let fixedLocationsEffect: Effect<Action> = .run { send in
                     let items = FileManagerHomeDashboardProjection.makeFixedLocations(
                         from: locationsClient.loadLocations(loadingClient),
                     )
+                    _ = await workspaceClient.prepareFileIcons(items.map(\.path))
+                    guard !Task.isCancelled else { return }
                     await send(.internal(.fixedLocationsLoaded(
                         requestID: requestID,
                         items: items,
@@ -89,11 +98,48 @@ struct FileManagerWindowCommandRoutingReducer {
                 .cancellable(id: CancelID.loadHomeFavorites, cancelInFlight: true)
                 return .merge(fixedLocationsEffect, homeFavoritesEffect)
 
+            case let .content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))):
+                return .send(.internal(.undoManagerWindowIDChanged(windowID)))
+
+            case let .internal(.undoManagerWindowIDChanged(windowID)):
+                state.windowID = windowID
+                state.undoRedoPhase = .idle
+                return .merge(
+                    .send(.internal(.sidebarEntryDrop(.lifecycle(.windowIDChanged(windowID))))),
+                    undoManagerAvailabilityEffect(windowID: windowID),
+                    undoManagerEventsEffect(windowID: windowID),
+                )
+
+            case let .internal(.undoManagerInvocationFinished(requestID, direction, result)):
+                guard case let .invoking(currentRequestID, currentDirection) = state.undoRedoPhase,
+                      currentRequestID == requestID,
+                      currentDirection == direction
+                else { return .none }
+                state.undoManagerAvailability = result.availability
+                state.undoRedoPhase = result.didInvoke
+                    ? .replaying(requestID: requestID, direction: direction)
+                    : .idle
+                return .none
+
+            case let .internal(.undoManagerAvailabilityChanged(availability)):
+                guard state.undoRedoPhase == .idle else { return .none }
+                state.undoManagerAvailability = availability
+                return .none
+
+            case let .internal(.undoManagerReplayAvailabilityChanged(requestID, availability)):
+                guard case let .refreshing(currentRequestID) = state.undoRedoPhase,
+                      currentRequestID == requestID
+                else { return .none }
+                state.undoRedoPhase = .idle
+                state.undoManagerAvailability = availability
+                return .none
+
             case .onDisappear:
                 state.fixedLocationsLoadPhase = .idle
                 return .merge(
                     .cancel(id: CancelID.loadFixedLocations),
                     .cancel(id: CancelID.loadHomeFavorites),
+                    .cancel(id: CancelID.undoManagerEvents),
                 )
 
             case let .internal(.homeFavoritesLoaded(items)):
@@ -147,6 +193,26 @@ struct FileManagerWindowCommandRoutingReducer {
                     .send(.navigation(.view(.navigateToPath(location.path)))),
                 )
 
+            case let .sidebar(.delegate(.entryDropRequested(request))):
+                if case let .fixedLocation(id) = request.target {
+                    guard let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
+                    else { return .none }
+                    if location.kind == .trash {
+                        return .send(.internal(.sidebarEntryDrop(.routing(.handleDropToTrash(
+                            providers: request.providers,
+                        )))))
+                    }
+                }
+                guard let destinationPath = sidebarEntryDropDestinationPath(
+                    for: request.target,
+                    state: state,
+                ) else { return .none }
+                return .send(.internal(.sidebarEntryDrop(.routing(.handleDrop(
+                    providers: request.providers,
+                    destinationPath: destinationPath,
+                    isOptionDrag: request.isOptionDrag,
+                )))))
+
             case let .sidebar(.view(.setFixedLocationVisibility(id, isVisible))):
                 state.sidebar.setFixedLocationVisibility(id: id, isVisible: isVisible)
                 state.syncHomeLocationItems()
@@ -184,6 +250,9 @@ struct FileManagerWindowCommandRoutingReducer {
             case let .tabContent(tabID, .delegate(.openAISettings)):
                 guard tabID == state.contentTabs.activeTabID else { return .none }
                 return .send(.delegate(.openAISettings))
+
+            case let .content(.delegate(.requestUndoRedo(direction))):
+                return .send(.request(direction == .undo ? .requestUndo : .requestRedo))
 
             case .inspector(.closeChat):
                 state.pendingAiChatInspectorOpen = nil
@@ -321,6 +390,32 @@ struct FileManagerWindowCommandRoutingReducer {
         }
     }
 
+    private func sidebarEntryDropDestinationPath(
+        for target: FileManagerSidebarEntryDropTarget,
+        state: State,
+    ) -> String? {
+        switch target {
+        case let .fixedLocation(id):
+            return state.sidebar.fixedLocationItems.first(where: { $0.id == id })?.path
+
+        case let .contentTab(id):
+            guard let tab = state.contentTabs.tabs[id: id], tab.page == .directory else { return nil }
+
+            if id == state.contentTabs.activeTabID {
+                guard case let .folder(path) = state.content.navigation.navigationState else { return nil }
+                return path
+            }
+
+            if let contentState = state.tabContentStates[id] {
+                guard case let .folder(path) = contentState.navigation.navigationState else { return nil }
+                return path
+            }
+
+            guard case let .directory(path) = tab.anchor else { return nil }
+            return path
+        }
+    }
+
     private func hiddenFixedLocationIDs() -> Set<FileManagerFixedLocationItem.ID> {
         guard let storedIDs = userDefaultsClient.object(SettingsKeys.hiddenFixedLocationIDs) as? [String] else {
             return []
@@ -445,12 +540,57 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        if state.pendingSelectedContentTabPinMutation != nil {
+            if case .toggleActiveContentTabPin = command {
+                return .none
+            }
+        }
+        if state.pendingSelectedContentTabClose != nil {
+            switch command {
+            case .openNewContentTab,
+                 .closeActiveContentTab,
+                 .closeSelectedContentTabs,
+                 .toggleActiveContentTabPin,
+                 .restoreLastClosedContentTab,
+                 .duplicateContentTab,
+                 .duplicateActiveContentTab,
+                 .duplicateSelectedContentTabs,
+                 .saveCollection,
+                 .saveCollectionAs:
+                return .none
+            default:
+                break
+            }
+        }
+
         switch command {
         case .openNewContentTab,
-             .closeActiveContentTab,
-             .toggleActiveContentTabPin,
-             .restoreLastClosedContentTab:
-            handleContentTabRequest(command, state: &state)
+             .selectContentTab:
+            return handleContentTabCommand(command, state: state)
+
+        case .closeActiveContentTab:
+            return state.contentTabs.activeTabID
+                .map { Effect<Action>.send(.closeContentTabRequested($0)) }
+                ?? Effect<Action>.none
+
+        case .closeSelectedContentTabs:
+            return .send(.requestCloseSelectedContentTabs)
+
+        case .toggleActiveContentTabPin:
+            return toggleActiveContentTabPin(state: state)
+
+        case .restoreLastClosedContentTab:
+            return handleRestoreLastClosedContentTab(state: &state)
+
+        case let .duplicateContentTab(sourceID):
+            return handleDuplicateContentTabRequested(sourceID: sourceID, state: &state)
+
+        case .duplicateActiveContentTab:
+            guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+            return handleDuplicateContentTabRequested(sourceID: activeTabID, state: &state)
+
+        case .duplicateSelectedContentTabs:
+            return handleDuplicateSelectedContentTabsRequested(state: &state)
 
         case .newFolder,
              .openSelectedItem,
@@ -463,10 +603,10 @@ struct FileManagerWindowCommandRoutingReducer {
              .selectAll,
              .copyAbsolutePaths,
              .copyURLs:
-            handleEntryRequestIfAllowed(command, state: &state)
+            return handleEntryRequestIfAllowed(command, state: &state)
 
         case .toggleShowHiddenFiles:
-            handleEntryRequest(command, state: &state)
+            return handleEntryRequest(command, state: &state)
 
         case .saveCollection,
              .saveCollectionAs,
@@ -474,46 +614,52 @@ struct FileManagerWindowCommandRoutingReducer {
              .toggleComposer,
              .newChat,
              .showChatHistory:
-            handleComposerRequest(command, state: &state)
+            return handleComposerRequest(command, state: &state)
 
         case .goBack,
              .goForward,
              .goToEnclosingDirectory:
-            handleNavigationRequestIfAllowed(command, state: state)
+            return handleNavigationRequestIfAllowed(command, state: state)
 
         case .toggleSidebar,
              .setViewLayout,
              .setGroupKey,
              .setSortKey,
              .setSortOrder:
-            handleLayoutRequest(command, state: &state)
+            return handleLayoutRequest(command, state: &state)
 
         case .requestUndo,
              .requestRedo:
-            handleUndoRedoRequest(command, state: state)
+            return handleUndoRedoRequest(command, state: &state)
 
         case .reopenChat:
-            .none
+            return .none
         }
     }
 
-    private func handleContentTabRequest(
+    private func handleContentTabCommand(
         _ command: Action.WindowCommand,
-        state: inout State,
+        state: State,
     ) -> Effect<Action> {
         switch command {
         case .openNewContentTab:
-            .send(.contentTabs(.open(.homeDefault)))
-        case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { .send(.closeContentTabRequested($0)) }
-                ?? .none
-        case .toggleActiveContentTabPin:
-            toggleActiveContentTabPin(state: state)
-        case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
+            guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+            return .send(.contentTabs(.open(.homeDefault)))
+
+        case let .selectContentTab(position):
+            guard state.pendingSelectedContentTabClose == nil,
+                  state.pendingContentTabTeardown == nil,
+                  let targetID = ContentTabProjection.tabID(
+                      atDisplayPosition: position,
+                      in: state.contentTabs,
+                  ),
+                  targetID != state.contentTabs.activeTabID
+            else { return .none }
+            if case .tearingDownTab = state.undoRedoPhase { return .none }
+            return .send(.contentTabs(.setCurrent(targetID)))
+
         default:
-            .none
+            return .none
         }
     }
 
@@ -526,7 +672,8 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
-        guard state.pendingContentTabClose == nil,
+        guard state.pendingSelectedContentTabPinMutation == nil,
+              state.pendingContentTabClose == nil,
               let activeTabID = state.contentTabs.activeTabID,
               let activeTab = state.contentTabs.tabs[id: activeTabID]
         else { return .none }
@@ -861,32 +1008,50 @@ struct FileManagerWindowCommandRoutingReducer {
         }
     }
 
-    private func handleUndoRedoRequest(
-        _ command: Action.WindowCommand,
-        state: State,
-    ) -> Effect<Action> {
-        guard let activeTabID = state.contentTabs.activeTabID,
-              state.contentTabs.tabs[id: activeTabID] != nil
-        else { return .none }
-
+    private func handleUndoRedoRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        let direction: EntryActionDirection
         switch command {
         case .requestUndo:
-            guard state.content.entryViewLayout.entryOperations.canUndoEntryAction else { return .none }
-            return .send(.tabContent(
-                tabID: activeTabID,
-                action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
-            ))
-
+            direction = .undo
         case .requestRedo:
-            guard state.content.entryViewLayout.entryOperations.canRedoEntryAction else { return .none }
-            return .send(.tabContent(
-                tabID: activeTabID,
-                action: .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))),
-            ))
-
+            direction = .redo
         default:
             return .none
         }
+        guard let expectedTarget = state.validatedUndoRedoTarget(for: direction) else { return .none }
+
+        let requestID = uuid()
+        let windowID = state.windowID
+        state.undoRedoPhase = .invoking(requestID: requestID, direction: direction)
+        return .run { send in
+            let result = switch direction {
+            case .undo:
+                await undoManagerClient.undo(windowID, expectedTarget: expectedTarget)
+            case .redo:
+                await undoManagerClient.redo(windowID, expectedTarget: expectedTarget)
+            }
+            await send(.internal(.undoManagerInvocationFinished(
+                requestID: requestID,
+                direction: direction,
+                result: result,
+            )))
+        }
+    }
+
+    private func undoManagerAvailabilityEffect(windowID: UUID?) -> Effect<Action> {
+        .run { send in
+            let availability = await undoManagerClient.availability(windowID)
+            await send(.internal(.undoManagerAvailabilityChanged(availability)))
+        }
+    }
+
+    private func undoManagerEventsEffect(windowID: UUID) -> Effect<Action> {
+        .run { send in
+            for await event in undoManagerClient.events(windowID) {
+                await send(.internal(.undoManagerEventReceived(event)))
+            }
+        }
+        .cancellable(id: CancelID.undoManagerEvents, cancelInFlight: true)
     }
 
     // MARK: - Restore Last Closed Content Tab
@@ -909,7 +1074,10 @@ struct FileManagerWindowCommandRoutingReducer {
             return restoreFailureFeedbackEffect(reason)
         }
 
-        return .send(.contentTabs(.restore))
+        return .concatenate(
+            .send(.contentTabs(.restore)),
+            .send(.contentTabs(.collapseSelectionToActive)),
+        )
     }
 
     private func restoreFailureReason(
@@ -953,6 +1121,229 @@ struct FileManagerWindowCommandRoutingReducer {
                 "Cannot Restore Tab",
                 message,
             )
+        }
+    }
+}
+
+private extension FileManagerWindowCommandRoutingReducer {
+    // MARK: - Duplicate Content Tab
+
+    private enum DuplicateFailureReason {
+        case missingDirectory
+        case missingCollectionFile
+        case invalidAiChatSession
+        case temporaryCollection
+        case collectionOperationInProgress
+        case tabLimitReached
+
+        var message: String {
+            switch self {
+            case .missingDirectory:
+                "The directory no longer exists."
+            case .missingCollectionFile:
+                "The collection file no longer exists."
+            case .invalidAiChatSession:
+                "The AI Chat session is no longer valid."
+            case .temporaryCollection:
+                "Cannot duplicate a temporary collection. Save the collection first."
+            case .collectionOperationInProgress:
+                "Wait for the current collection operation to finish, then try again."
+            case .tabLimitReached:
+                "The tab limit was reached."
+            }
+        }
+    }
+
+    private struct DuplicateSkip {
+        let sourceTitle: String?
+        let reason: DuplicateFailureReason
+    }
+
+    private func handleDuplicateContentTabRequested(
+        sourceID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.pendingContentTabClose == nil,
+              state.pendingContentTabTeardown == nil
+        else { return .none }
+        guard let source = state.contentTabs.tabs[id: sourceID] else { return .none }
+        guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+
+        // source Content state 결정: active면 state.content, inactive면 tabContentStates[sourceID]
+        let isActiveSource = sourceID == state.contentTabs.activeTabID
+        let sourceContentState: FileManagerContentFeature.State? = isActiveSource
+            ? state.content
+            : state.tabContentStates[sourceID]
+
+        // anchor 기반 검증
+        if let failureReason = duplicateFailureReason(
+            for: source.anchor,
+            contentState: sourceContentState,
+        ) {
+            return duplicateFailureFeedbackEffect(failureReason)
+        }
+
+        let duplicateID = ContentTabID()
+        return .send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+    }
+
+    private func handleDuplicateSelectedContentTabsRequested(state: inout State) -> Effect<Action> {
+        guard state.pendingContentTabClose == nil,
+              state.pendingContentTabTeardown == nil
+        else { return .none }
+
+        let orderedSources = state.contentTabs.orderedValidSelectedTabIDs
+            .compactMap { state.contentTabs.tabs[id: $0] }
+        guard orderedSources.count > 1 else { return .none }
+        var validSources: [ContentTabItem] = []
+        var skips: [DuplicateSkip] = []
+
+        for source in orderedSources {
+            let sourceContentState = source.id == state.contentTabs.activeTabID
+                ? state.content
+                : state.tabContentStates[source.id]
+            if let failureReason = duplicateFailureReason(
+                for: source.anchor,
+                contentState: sourceContentState,
+            ) {
+                skips.append(DuplicateSkip(sourceTitle: source.title, reason: failureReason))
+            } else {
+                validSources.append(source)
+            }
+        }
+
+        let remainingCapacity = max(0, ContentTabConstants.maxTabs - state.contentTabs.tabs.count)
+        let successfulSources = Array(validSources.prefix(remainingCapacity))
+        skips.append(contentsOf: validSources.dropFirst(successfulSources.count).map { source in
+            DuplicateSkip(sourceTitle: source.title, reason: .tabLimitReached)
+        })
+
+        var reservedIDs = Set(state.contentTabs.tabs.ids)
+        let requests = successfulSources.map { source in
+            ContentTabDuplicateRequest(
+                sourceID: source.id,
+                duplicateID: makeFreshDuplicateID(reservedIDs: &reservedIDs),
+            )
+        }
+        let skippedCount = skips.count
+        let feedbackEffect = aggregateDuplicateFeedbackEffect(
+            successCount: requests.count,
+            skippedCount: skippedCount,
+            skips: skips,
+            unavailableCount: 0,
+        )
+
+        guard !requests.isEmpty else { return feedbackEffect }
+        let duplicateEffect: Effect<Action> = .send(.contentTabs(.duplicateSelected(requests)))
+        guard skippedCount > 0 else { return duplicateEffect }
+        return .concatenate(duplicateEffect, feedbackEffect)
+    }
+
+    private func makeFreshDuplicateID(reservedIDs: inout Set<ContentTabID>) -> ContentTabID {
+        let baseRawValue = uuid().uuidString
+        let preferredID = ContentTabID(rawValue: baseRawValue)
+        if reservedIDs.insert(preferredID).inserted {
+            return preferredID
+        }
+
+        for suffix in 1 ... reservedIDs.count {
+            let fallbackID = ContentTabID(rawValue: "\(baseRawValue)-\(suffix)")
+            if reservedIDs.insert(fallbackID).inserted {
+                return fallbackID
+            }
+        }
+
+        let fallbackID = ContentTabID(rawValue: "\(baseRawValue)-\(reservedIDs.count + 1)")
+        reservedIDs.insert(fallbackID)
+        return fallbackID
+    }
+
+    private func duplicateFailureReason(
+        for anchor: ContentTabPageAnchor,
+        contentState: FileManagerContentFeature.State?,
+    ) -> DuplicateFailureReason? {
+        if let contentState,
+           case let .collection(navigation) = contentState.navigation.navigationState,
+           case .temporary = navigation.kind
+        {
+            return .temporaryCollection
+        }
+
+        switch anchor {
+        case .homeDefault, .virtualCollection:
+            return nil
+
+        case let .directory(path):
+            var isDirectory = ObjCBool(false)
+            guard fileManagerClient.fileExistsWithIsDirectory(path, &isDirectory),
+                  isDirectory.boolValue
+            else { return .missingDirectory }
+            return nil
+
+        case let .collectionFile(url):
+            guard fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
+            else { return .missingCollectionFile }
+            if let collection = contentState?.collection,
+               collection.isSaving
+               || collection.collectionSession.phase.isOpening
+               || collection.collectionSession.phase.isInflightRefresh
+               || collection.collectionSession.phase.isInflightWriteBack
+            {
+                return .collectionOperationInProgress
+            }
+            return nil
+
+        case let .aiChat(sessionID):
+            guard UUID(uuidString: sessionID) != nil
+            else { return .invalidAiChatSession }
+            return nil
+        }
+    }
+
+    private func duplicateFailureFeedbackEffect(_ reason: DuplicateFailureReason) -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Duplicate Tab",
+                reason.message,
+            )
+        }
+    }
+
+    private func aggregateDuplicateFeedbackEffect(
+        successCount: Int,
+        skippedCount: Int,
+        skips: [DuplicateSkip],
+        unavailableCount: Int,
+    ) -> Effect<Action> {
+        guard skippedCount > 0 else { return .none }
+
+        let title = successCount > 0
+            ? "Some Tabs Couldn’t Be Duplicated"
+            : "Cannot Duplicate Selected Tabs"
+        var messageLines = [
+            "Duplicated \(successCount) \(successCount == 1 ? "tab" : "tabs"). "
+                + "Skipped \(skippedCount) \(skippedCount == 1 ? "tab" : "tabs").",
+        ]
+        messageLines.append(contentsOf: skips.map { skip in
+            let sourceLabel = if let sourceTitle = skip.sourceTitle, !sourceTitle.isEmpty {
+                sourceTitle
+            } else {
+                "Selected tab"
+            }
+            return "- \(sourceLabel): \(skip.reason.message)"
+        })
+        if unavailableCount > 0 {
+            let unavailableMessage = unavailableCount == 1
+                ? "1 selected tab is unavailable."
+                : "\(unavailableCount) selected tabs are unavailable."
+            messageLines.append(unavailableMessage)
+        }
+
+        let collectionAlertClient = collectionAlertClient
+        let message = messageLines.joined(separator: "\n")
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(title, message)
         }
     }
 }

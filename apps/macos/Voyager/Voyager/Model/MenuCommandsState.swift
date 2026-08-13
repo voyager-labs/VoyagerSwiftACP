@@ -19,19 +19,48 @@ struct MenuCommandsState: Equatable {
     var canGoToEnclosingDirectory: Bool
 
     var canSaveCollection: Bool
+    var canOpenNewContentTab: Bool
+    var canToggleActiveContentTabPin: Bool
+    var canSetSelectedContentTabsPinned: Bool
+    var isSelectedContentTabPinTargetPinned: Bool
     var isActiveContentTabPinned: Bool
     var canRestoreLastClosedTab: Bool
+    var selectedContentTabCount: Int
+    var canCloseSelectedContentTabs: Bool
+    var canCloseActiveContentTab: Bool
+    var canDuplicateSelectedContentTabs: Bool
+    var canDuplicateActiveContentTab: Bool
+
+    var duplicateContentTabTitle: String {
+        selectedContentTabCount > 1 ? "Duplicate \(selectedContentTabCount) Tabs" : "Duplicate Tab"
+    }
+
+    var canDuplicateEntries: Bool {
+        selectedContentTabCount <= 1 && canPerformEntryCommands && selectedItemCount > 0
+    }
 
     var closeTabTitle: String {
-        "Close Tab"
+        selectedContentTabCount > 1 ? "Close \(selectedContentTabCount) Tabs" : "Close Tab"
     }
 
     var showsCloseTabCommand: Bool {
-        !isActiveContentTabPinned
+        selectedContentTabCount > 1 || !isActiveContentTabPinned
+    }
+
+    var canCloseTab: Bool {
+        selectedContentTabCount > 1 ? canCloseSelectedContentTabs : canCloseActiveContentTab
     }
 
     var pinTabTitle: String {
-        isActiveContentTabPinned ? "Unpin Tab" : "Pin Tab"
+        let isPinned = selectedContentTabCount > 1
+            ? isSelectedContentTabPinTargetPinned
+            : isActiveContentTabPinned
+        let operation = isPinned ? "Unpin" : "Pin"
+        return selectedContentTabCount > 1 ? "\(operation) \(selectedContentTabCount) Tabs" : "\(operation) Tab"
+    }
+
+    var canPinTab: Bool {
+        selectedContentTabCount > 1 ? canSetSelectedContentTabsPinned : canToggleActiveContentTabPin
     }
 
     var sidebarVisible: Bool
@@ -68,8 +97,17 @@ struct MenuCommandsState: Equatable {
         canGoForward = false
         canGoToEnclosingDirectory = false
         canSaveCollection = false
+        canOpenNewContentTab = false
+        canToggleActiveContentTabPin = false
+        canSetSelectedContentTabsPinned = false
+        isSelectedContentTabPinTargetPinned = false
         isActiveContentTabPinned = false
         canRestoreLastClosedTab = false
+        selectedContentTabCount = 0
+        canCloseSelectedContentTabs = false
+        canCloseActiveContentTab = false
+        canDuplicateSelectedContentTabs = false
+        canDuplicateActiveContentTab = false
         sidebarVisible = false
         showHiddenFiles = false
         viewLayout = .list
@@ -90,6 +128,7 @@ struct MenuCommandsState: Equatable {
         self.init()
 
         guard let focusedID = state.windowManager.focusedWindowID,
+              !state.windowManager.closingWindowIDs.contains(focusedID),
               let window = state.windowManager.windows[id: focusedID]
         else {
             return
@@ -106,8 +145,17 @@ struct MenuCommandsState: Equatable {
         canGoForward = projection.canGoForward
         canGoToEnclosingDirectory = projection.canGoToEnclosingDirectory
         canSaveCollection = projection.canSaveCollection
+        canOpenNewContentTab = projection.canOpenNewContentTab
+        canToggleActiveContentTabPin = projection.canToggleActiveContentTabPin
+        canSetSelectedContentTabsPinned = projection.canSetSelectedContentTabsPinned
+        isSelectedContentTabPinTargetPinned = projection.isSelectedContentTabPinTargetPinned
         isActiveContentTabPinned = projection.isActiveContentTabPinned
         canRestoreLastClosedTab = projection.canRestoreLastClosedTab
+        selectedContentTabCount = projection.selectedContentTabCount
+        canCloseSelectedContentTabs = projection.canCloseSelectedContentTabs
+        canCloseActiveContentTab = projection.canCloseActiveContentTab
+        canDuplicateSelectedContentTabs = projection.canDuplicateSelectedContentTabs
+        canDuplicateActiveContentTab = projection.canDuplicateActiveContentTab
         sidebarVisible = projection.sidebarVisible
         showHiddenFiles = projection.showHiddenFiles
         viewLayout = projection.viewLayout

@@ -676,7 +676,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
 
         for direction in [EntryActionDirection.undo, .redo] {
-            await store.send(.bridge(.undoRedo(.entryActionApplied(direction: direction, record: record))))
+            await store.send(.bridge(.undoRedo(.replaySucceeded(
+                direction: direction,
+                sourceRecordID: record.id,
+                updatedRecord: record,
+            ))))
             await store.receive { action in
                 guard case let .forwarded(.collection(.externalPathsChanged(paths))) = action else { return false }
                 return paths == ["/tmp/a.txt"]
@@ -840,7 +844,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
+        await store.send(.bridge(.undoRedo(.replaySucceeded(
+            direction: .undo,
+            sourceRecordID: trashedRecord.id,
+            updatedRecord: trashedRecord,
+        ))))
         await store.receive { action in
             guard case .forwarded = action else { return false }
             return true

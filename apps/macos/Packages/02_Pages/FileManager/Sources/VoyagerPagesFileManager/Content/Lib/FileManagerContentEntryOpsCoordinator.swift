@@ -19,7 +19,7 @@ enum FileManagerContentEntryOpsCoordinator {
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
             )
 
-        case let .undoRedo(.entryActionApplied(direction: direction, record: record)):
+        case let .undoRedo(.replaySucceeded(direction: direction, sourceRecordID: _, updatedRecord: record)):
             .merge(
                 handleEntryActionApplied(direction: direction, record: record, state: state),
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
@@ -28,8 +28,14 @@ enum FileManagerContentEntryOpsCoordinator {
         case let .lifecycle(.pathsMutated(paths)):
             handleMutatedPaths(paths, state: state)
 
-        case let .lifecycle(.operationFinished(_, kind, _)):
+        case let .lifecycle(.operationFinished(_, kind, .success)):
             kind == .setTags ? .none : reloadEntryItemsEffect(state: state)
+
+        case .lifecycle(.operationFinished(_, _, .failure)):
+            .none
+
+        case .lifecycle(.dropOperationFinished):
+            .none
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))

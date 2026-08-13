@@ -137,6 +137,7 @@ public struct AiChatFeature {
                     return .none
                 }
                 state.restoreSessionID = nil
+                state.settleCancelledSessionRestoreIfNeeded()
                 return .cancel(id: CancelID.restore)
 
             case let .showSessionsForChat(sessionID):
@@ -160,6 +161,7 @@ public struct AiChatFeature {
                 state.sessionList.errorMessage = nil
                 state.restoreOutcome = nil
                 state.restoreFailure = nil
+                state.settleCancelledSessionRestoreIfNeeded()
                 state.mode = .chat
                 return .cancel(id: CancelID.restore)
 
@@ -304,6 +306,7 @@ public struct AiChatFeature {
                     state.restoreSessionID = nil
                     state.restoreOutcome = nil
                     state.restoreFailure = nil
+                    state.settleCancelledSessionRestoreIfNeeded()
                 }
                 return .none
 
@@ -338,7 +341,10 @@ public struct AiChatFeature {
                 } else {
                     .none
                 }
-                guard let restoreSessionID = state.restoreSessionID else { return attachmentDropCancellation }
+                guard let restoreSessionID = state.restoreSessionID else {
+                    state.settleCancelledSessionRestoreIfNeeded()
+                    return attachmentDropCancellation
+                }
                 if restoreSessionID == state.sessionID,
                    state.transcriptHistory.isEmpty,
                    state.sessionStatus == .idle
@@ -347,7 +353,7 @@ public struct AiChatFeature {
                     state.restoreSessionID = nil
                     return attachmentDropCancellation
                 }
-                state.sessionStatus = .restoring
+                state.beginSessionRestore(for: restoreSessionID)
                 return .merge(
                     attachmentDropCancellation,
                     restoreSession(sessionID: restoreSessionID, state: state),

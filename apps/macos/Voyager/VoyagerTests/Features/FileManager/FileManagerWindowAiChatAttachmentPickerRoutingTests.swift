@@ -135,6 +135,10 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
             $0.inspector.aiChat.currentContextFolderStructureModes = [
                 expectedFolderStructureKey: .currentFolderOnly,
             ]
+            $0.tabInspectorStates[activeTabID]?.aiChat.currentContext = expectedCurrentContext
+            $0.tabInspectorStates[activeTabID]?.aiChat.currentContextFolderStructureModes = [
+                expectedFolderStructureKey: .currentFolderOnly,
+            ]
         }
     }
 

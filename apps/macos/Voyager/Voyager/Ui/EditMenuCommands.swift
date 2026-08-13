@@ -2,6 +2,19 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+enum EditMenuUndoRedoRouting: Equatable {
+    case native
+    case window
+
+    static func resolve(
+        canHandleByTextResponder: Bool,
+        sendNativeAction: () -> Bool,
+    ) -> Self {
+        guard canHandleByTextResponder, sendNativeAction() else { return .window }
+        return .native
+    }
+}
+
 @ViewAction(for: MenuCommandsFeature.self)
 struct EditMenuCommands: Commands {
     private let undoSelector = Selector(("undo:"))
@@ -91,13 +104,17 @@ struct EditMenuCommands: Commands {
                 sendEditCommand(.openChat)
             }
             .keyboardShortcut("l", modifiers: .command)
-            .disabled(!viewStore.canUseAiChatInspector)
+            .disabled(!Self.canPerformAiChatInspectorCommand(
+                canUseAiChatInspector: viewStore.canUseAiChatInspector,
+            ))
 
             Button(viewStore.chatHistoryTitle) {
                 sendEditCommand(.showChatHistory)
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
-            .disabled(!viewStore.canUseAiChatInspector)
+            .disabled(!Self.canPerformAiChatInspectorCommand(
+                canUseAiChatInspector: viewStore.canUseAiChatInspector,
+            ))
         }
 
         CommandGroup(replacing: .pasteboard) {
@@ -135,7 +152,7 @@ struct EditMenuCommands: Commands {
                 sendEditCommand(.duplicate)
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(!canPerformEntryCommands || !hasSelectedItems)
+            .disabled(!viewStore.canDuplicateEntries)
 
             Button("Make Alias") {
                 sendEditCommand(.makeAlias)
@@ -156,6 +173,10 @@ struct EditMenuCommands: Commands {
         isPresented
             ? "Close Collection Filter Composer"
             : "Open Collection Filter Composer"
+    }
+
+    static func canPerformAiChatInspectorCommand(canUseAiChatInspector: Bool) -> Bool {
+        canUseAiChatInspector
     }
 
     static func canPerformTextOrEntryCommand(
@@ -180,9 +201,11 @@ struct EditMenuCommands: Commands {
         sendResponderAction: () -> Bool,
         sendFallback: () -> Void,
     ) {
-        if textResponderIsEditing, canHandleByTextResponder, sendResponderAction() {
-            return
-        }
+        let routing = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: textResponderIsEditing && canHandleByTextResponder,
+            sendNativeAction: sendResponderAction,
+        )
+        guard routing == .window else { return }
         guard !isComposerPresented else { return }
         sendFallback()
     }

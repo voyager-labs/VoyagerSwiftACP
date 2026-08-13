@@ -44,6 +44,36 @@ struct FileManagerSidebarSync {
         Constants.sidebarMaxWidth
     }
 
+    nonisolated static func synchronizeTopNavigation(
+        sidebar: inout FileManagerSidebarState,
+        optimisticOrder: inout FileManagerTopNavigationOrder,
+        dormantContentTabSlots: [FileManagerTopNavigationOrderPolicy.DormantContentTabSlot],
+    ) {
+        let pinnedItems = sidebar.contentTabSidebarItems.filter(\.isPinned)
+        let pinnedItemsByID = Dictionary(uniqueKeysWithValues: pinnedItems.map { ($0.id, $0) })
+        let locationsByID = Dictionary(uniqueKeysWithValues: sidebar.allFixedLocationItems.map { ($0.id, $0) })
+        optimisticOrder = FileManagerTopNavigationOrderPolicy.reconcilingDiscoveredLocations(
+            in: optimisticOrder,
+            discoveredLocationIDs: sidebar.allFixedLocationItems.map(\.id),
+        )
+        let runtimeOrder = FileManagerTopNavigationOrderPolicy.runtimeOrder(
+            authoritativeOrder: optimisticOrder,
+            discoveredLocationIDs: sidebar.allFixedLocationItems.map(\.id),
+            pinnedContentTabIDs: pinnedItems.map(\.id),
+            dormantContentTabSlots: dormantContentTabSlots,
+        )
+        let orderedItems = runtimeOrder.items.compactMap { item -> FileManagerSidebarTopNavigationItem? in
+            switch item {
+            case let .location(id):
+                locationsByID[id].map(FileManagerSidebarTopNavigationItem.location)
+            case let .contentTab(id):
+                pinnedItemsByID[id].map(FileManagerSidebarTopNavigationItem.contentTab)
+            }
+        }
+        sidebar.setOrderedTopNavigationItems(orderedItems)
+        sidebar.unpinnedContentTabItems = sidebar.contentTabSidebarItems.filter { !$0.isPinned }
+    }
+
     static func isSidebarEffectivelyVisible(
         splitView: NSSplitView?,
         sidebarView: NSView?,

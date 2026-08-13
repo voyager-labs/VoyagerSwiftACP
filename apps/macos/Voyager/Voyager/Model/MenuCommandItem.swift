@@ -13,6 +13,8 @@ struct MenuCommandItem: Identifiable, Equatable {
         case closeTab
         case togglePinTab
         case restoreLastClosedTab
+        case duplicateTab
+        case selectContentTab(position: Int)
 
         case newFolder
         case open
