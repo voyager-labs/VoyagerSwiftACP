@@ -105,11 +105,24 @@ public extension RuntimeControlPlane {
             group.addTask {
                 while true {
                     try await Task.sleep(for: .seconds(20))
-                    try await self.renewRestorationClaim(host, lease: lease)
+                    do {
+                        try await self.renewRestorationClaim(host, lease: lease)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        if let terminal = try await self.persistedTerminalResult(
+                            host: host,
+                            runReference: receipt.runReference,
+                        ) {
+                            return terminal
+                        }
+                        throw error
+                    }
                 }
             }
             defer { group.cancelAll() }
             guard let result = try await group.next() else { throw RuntimeHostError.invalidEvent }
+            try Task.checkCancellation()
             return result
         }
     }

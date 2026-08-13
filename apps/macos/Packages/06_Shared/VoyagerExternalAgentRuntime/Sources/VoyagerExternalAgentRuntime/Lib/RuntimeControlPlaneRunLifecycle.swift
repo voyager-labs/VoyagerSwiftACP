@@ -44,6 +44,8 @@ extension RuntimeControlPlane {
             let event: RuntimeEventEnvelope?
             do {
                 event = try await iterator.next()
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                     return terminal
@@ -75,6 +77,8 @@ extension RuntimeControlPlane {
     ) async throws -> ProviderStreamSource {
         do {
             return try await .stream(adapter.eventStream(for: receipt.runReference))
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                 return .storedTerminal(terminal)
@@ -93,6 +97,8 @@ extension RuntimeControlPlane {
         let result: RuntimeResult
         do {
             result = try await adapter.terminalResult(for: receipt.runReference)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                 return terminal
@@ -170,6 +176,8 @@ extension RuntimeControlPlane {
         let result: RuntimeResult
         do {
             result = try await adapter.terminalResult(for: receipt.runReference)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             if let terminal = try await persistedTerminalResult(host: host, runReference: receipt.runReference) {
                 return terminal
@@ -186,9 +194,7 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
     ) async throws -> RuntimeResult? {
-        try await mutateAfterPersistedTransitions { plane in
-            plane.storedTerminalResult(host: host, runReference: runReference)
-        }
+        try await loadPersistedTerminalResult(host: host, runReference: runReference)
     }
 
     func storedTerminalResult(
