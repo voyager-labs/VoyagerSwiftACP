@@ -37,6 +37,23 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(result.resolvedOperation, .none)
     }
 
+    /// EVM-002-manage_entries_view: UTType.fileURL로 위장한 https URL item은 원자적으로 거부된다.
+    /// file-URL pasteboard type을 광고하지만 실제 파일 URL이 아닌 item이 있으면 전체 drop session을 거부해야 한다.
+    /// - 검증 내용: `sourcePaths(from:)`이 file URL이 아닌 항목이 섞인 pasteboard에서 빈 배열을 반환한다.
+    /// - 사전 조건: UTType.fileURL 타입으로 https URL 문자열을 등록한 pasteboard item을 준비한다.
+    /// - 기대 결과: sourcePaths가 비어 있어 외부 drop session이 atomically 거부된다.
+    func testSourcePathsRejectsNonFileURLAdvertisedAsFileURL() {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("voyager.test.drop.https.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString("https://example.com/file.txt", forType: .fileURL)
+        pasteboard.writeObjects([item])
+
+        let sourcePaths = EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard)
+
+        XCTAssertTrue(sourcePaths.isEmpty)
+    }
+
     // MARK: - EVM-002-manage_entries_view_list_drop_destination
 
     /// EVM-002-manage_entries_view_list_drop_destination: package directory는 list drop destination이 되지 않는다.

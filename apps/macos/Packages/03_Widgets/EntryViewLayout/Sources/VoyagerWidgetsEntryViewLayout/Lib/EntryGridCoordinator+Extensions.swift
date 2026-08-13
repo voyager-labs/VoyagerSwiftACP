@@ -467,16 +467,12 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
-        let pasteboard = draggingInfo.draggingPasteboard
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty
-        else {
+        let sourcePaths = EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard)
+        guard !sourcePaths.isEmpty else {
             clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        let sourcePaths = urls.map(\.path)
         let validation = EntryViewLayoutDropValidationAdapter.resolve(
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,

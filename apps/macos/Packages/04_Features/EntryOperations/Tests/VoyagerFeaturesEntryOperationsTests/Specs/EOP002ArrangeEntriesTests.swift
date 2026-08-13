@@ -1492,7 +1492,6 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )))
         await store.finish()
         await store.skipReceivedActions()
-
         XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
         XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
@@ -1674,7 +1673,6 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )))
         await store.finish()
         await store.skipReceivedActions()
-
         XCTAssertEqual(provider.loadCount, 1)
         XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
@@ -1683,15 +1681,265 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         ))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
-}
+    // MARK: - EOP-002-drop_external_entries_on_directory_page
 
+    /// EOP-002-drop_external_entries_on_directory_page: 빈 external source는 drop operation을 만들지 않는다.
+    /// external payload가 비어 있으면 허용 operation mask가 남아 있어도 즉시 거절되어야 한다.
+    /// - 검증 내용: `.routing(.validateDrop(context:))`가 빈 sourcePaths에서 `.none`과 `isOptionDrag=false`를 반환한다.
+    /// - 사전 조건: sourcePaths가 비어 있고 destination과 copy 허용 mask가 존재한다.
+    /// - 기대 결과: destination은 유지되고 operation은 `.none`으로 resolve된다.
+    func testExternalDrop_emptySourceResolvesNone() async {
+        let destinationPath = "/Users/test/Desktop"
+        let store = EntryOperationsTestSupport.makeStore()
+        let context = EntryDropValidationContext(
+            sourcePaths: [],
+            destinationPath: destinationPath,
+            allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+            prefersCopy: false,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: destinationPath,
+                resolvedOperation: .none,
+                isOptionDrag: false,
+            )
+        }
+
+        XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .none)
+        XCTAssertFalse(store.state.dropValidationResult.isOptionDrag)
+    }
+
+    /// EOP-002-drop_external_entries_on_directory_page: copy-only external source는 copy로 resolve된다.
+    /// source mask에 copy만 있으면 Option modifier가 없어도 move로 승격하지 않아야 한다.
+    /// - 검증 내용: `.copy` mask와 `prefersCopy=false`가 `.copy` 및 `isOptionDrag=true`로 resolve되는지 확인한다.
+    /// - 사전 조건: sourcePaths에 external file path가 있고 destination이 source parent와 다르며 copy만 허용된다.
+    /// - 기대 결과: resolvedOperation이 `.copy`이고 `isOptionDrag`가 true다.
+    func testExternalDrop_copyOnlySourceResolvesCopy() async {
+        let store = EntryOperationsTestSupport.makeStore()
+        let context = EntryDropValidationContext(
+            sourcePaths: ["/Users/test/Documents/file.txt"],
+            destinationPath: "/Users/test/Desktop",
+            allowedOperationsRawValue: NSDragOperation.copy.rawValue,
+            prefersCopy: false,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: "/Users/test/Desktop",
+                resolvedOperation: .copy,
+                isOptionDrag: true,
+            )
+        }
+
+        XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .copy)
+        XCTAssertTrue(store.state.dropValidationResult.isOptionDrag)
+    }
+
+    /// EOP-002-drop_external_entries_on_directory_page: move-allowed external source는 move로 resolve된다.
+    /// move가 허용된 source를 Option 없이 drop하면 기존 move semantics를 유지해야 한다.
+    /// - 검증 내용: `.move` mask와 `prefersCopy=false`가 `.move` 및 `isOptionDrag=false`로 resolve되는지 확인한다.
+    /// - 사전 조건: sourcePaths에 external file path가 있고 destination이 source parent와 다르며 move가 허용된다.
+    /// - 기대 결과: resolvedOperation이 `.move`이고 `isOptionDrag`가 false다.
+    func testExternalDrop_moveAllowedSourceResolvesMove() async {
+        let store = EntryOperationsTestSupport.makeStore()
+        let context = EntryDropValidationContext(
+            sourcePaths: ["/Users/test/Documents/file.txt"],
+            destinationPath: "/Users/test/Desktop",
+            allowedOperationsRawValue: NSDragOperation.move.rawValue,
+            prefersCopy: false,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: "/Users/test/Desktop",
+                resolvedOperation: .move,
+                isOptionDrag: false,
+            )
+        }
+
+        XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .move)
+        XCTAssertFalse(store.state.dropValidationResult.isOptionDrag)
+    }
+
+    /// EOP-002-drop_external_entries_on_directory_page: dropItems는 stale named transport를 실행하지 않는다.
+    /// 외부 drop의 active payload가 dropItems sourcePaths로 전달되면 저장된 internal path는 실행 source가 될 수 없다.
+    /// - 검증 내용: move 실행 후 FileOpsRecorder에 active source만 기록되고 stale path의 copy/move/delete가 0건인지 확인한다.
+    /// - 사전 조건: named transport에는 stale path를 seed하고, active external source와 별도 move destination을 준비한다.
+    /// - 기대 결과: active source만 이동되고 stale path는 어떤 파일 operation에도 나타나지 않는다.
+    func testExternalDropItems_ignoresStaleNamedTransportPath() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staleURL = sandbox.root.appendingPathComponent("stale-internal.txt")
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: staleURL)
+        let destinationFolder = sandbox.root.appendingPathComponent("ActiveMove")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let recorder = FileOpsRecorder()
+        var client = makeRecordedFileOpsClient(recorder: recorder)
+        client.loadDragPaths = { [staleURL.path] }
+        client.loadDragWithOption = { false }
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = client
+        }
+
+        // store.exhaustivity = .off: drop 실행은 여러 lifecycle action을 내므로 recorder와 filesystem 결과를 검증한다.
+        store.exhaustivity = .off
+        await store.send(.routing(.dropItems(
+            sourcePaths: [sandbox.fileURL.path],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+        XCTAssertEqual(recorder.movedPaths.map(\.source.path), [sandbox.fileURL.path])
+        XCTAssertTrue(recorder.copiedPaths.isEmpty)
+        XCTAssertTrue(recorder.deletedPaths.isEmpty)
+        XCTAssertTrue(recorder.trashedPaths.allSatisfy { $0.path != staleURL.path })
+        XCTAssertTrue(recorder.renamedPaths
+            .allSatisfy { $0.source.path != staleURL.path && $0.destination.path != staleURL.path })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staleURL.path))
+    }
+
+    /// EOP-002-drop_external_entries_on_directory_page: active external payload만 copy 실행 source로 사용한다.
+    /// dropItems가 named transport를 읽지 않고 action payload의 sourcePaths만 downstream paste에 전달하는지 확인한다.
+    /// - 검증 내용: stale internal path가 transport에 있어도 copy recorder에는 active source 하나만 남는지 검증한다.
+    /// - 사전 조건: stale path와 active source가 모두 존재하고, named transport는 stale path를 반환하도록 주입한다.
+    /// - 기대 결과: active source만 destination으로 복사되고 stale path에는 copy/move/delete가 발생하지 않는다.
+    func testExternalDropItems_executesOnlyActiveSourcePaths() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staleURL = sandbox.root.appendingPathComponent("stale-internal.txt")
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: staleURL)
+        let destinationFolder = sandbox.root.appendingPathComponent("ActiveCopy")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let recorder = FileOpsRecorder()
+        var client = makeRecordedFileOpsClient(recorder: recorder)
+        client.loadDragPaths = { [staleURL.path] }
+        client.loadDragWithOption = { false }
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = client
+        }
+
+        // store.exhaustivity = .off: copy 실행의 lifecycle action 대신 active source와 recorder 결과를 검증한다.
+        store.exhaustivity = .off
+        await store.send(.routing(.dropItems(
+            sourcePaths: [sandbox.fileURL.path],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: true,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [sandbox.fileURL.path])
+        XCTAssertTrue(recorder.movedPaths.isEmpty)
+        XCTAssertTrue(recorder.deletedPaths.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staleURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destinationFolder.appendingPathComponent("11.txt").path))
+    }
+
+    /// EOP-002-drop_external_entries_on_directory_page: 취소된 drop 뒤 다음 source가 이전 source를 재사용하지 않는다.
+    /// 이름 충돌로 취소된 move session이 다음 외부 drop의 active source를 오염시키지 않아야 한다.
+    /// - 검증 내용: 첫 drop은 cancel failure가 되고 두 번째 drop은 새 source만 이동하는지 확인한다.
+    /// - 사전 조건: 첫 destination에는 충돌 파일이 있고 replace alert는 `.stop`이며 두 번째 source/destination은 유효하다.
+    /// - 기대 결과: 첫 source는 이동되지 않고 두 번째 source만 이동되며 recorder에 이전 source가 재사용되지 않는다.
+    func testExternalDropItems_afterCancellationDoesNotReusePreviousSource() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let firstSource = sandbox.fileURL
+        let secondSource = sandbox.root.appendingPathComponent("next-session.txt")
+        try FileManager.default.copyItem(at: firstSource, to: secondSource)
+        let firstDestinationFolder = sandbox.root.appendingPathComponent("CancelledDestination")
+        let secondDestinationFolder = sandbox.root.appendingPathComponent("NextDestination")
+        try FileManager.default.createDirectory(at: firstDestinationFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondDestinationFolder, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: firstSource,
+            to: firstDestinationFolder.appendingPathComponent(firstSource.lastPathComponent),
+        )
+
+        let recorder = FileOpsRecorder()
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+            $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
+        }
+
+        // store.exhaustivity = .off: cancel 후 새 drop의 source 격리를 recorder와 filesystem 결과로 검증한다.
+        store.exhaustivity = .off
+        await store.send(.routing(.dropItems(
+            sourcePaths: [firstSource.path],
+            destinationPath: firstDestinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+        await store.send(.routing(.dropItems(
+            sourcePaths: [secondSource.path],
+            destinationPath: secondDestinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.itemStates[firstSource.path]?.lastError, .cancelled)
+        XCTAssertEqual(recorder.movedPaths.map(\.source.path), [secondSource.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstSource.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondSource.path))
+    }
+
+    /// EOP-002-drop_external_entries_on_directory_page: 실패한 drop 뒤 다음 source가 이전 source를 재사용하지 않는다.
+    /// source failure가 다음 외부 drop의 active payload와 실행 경로를 오염시키지 않아야 한다.
+    /// - 검증 내용: 존재하지 않는 첫 source 실패 후 두 번째 유효 source만 move recorder에 남는지 확인한다.
+    /// - 사전 조건: 첫 source는 missing path이고 두 번째 source와 destination은 실제 샌드박스 경로다.
+    /// - 기대 결과: 첫 source operation은 없고 두 번째 source만 이동되어 session 간 source 재사용이 없다.
+    func testExternalDropItems_afterFailureDoesNotReusePreviousSource() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let failedSourcePath = sandbox.root.appendingPathComponent("missing-source.txt").path
+        let secondSource = sandbox.fileURL
+        let destinationFolder = sandbox.root.appendingPathComponent("AfterFailure")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let recorder = FileOpsRecorder()
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        }
+
+        // store.exhaustivity = .off: 실패 lifecycle을 모두 열거하지 않고 source별 recorder 결과를 검증한다.
+        store.exhaustivity = .off
+        await store.send(.routing(.dropItems(
+            sourcePaths: [failedSourcePath],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        await store.send(.routing(.dropItems(
+            sourcePaths: [secondSource.path],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.itemStates[failedSourcePath]?.lastError)
+        XCTAssertEqual(recorder.movedPaths.map(\.source.path), [secondSource.path])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondSource.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destinationFolder.appendingPathComponent("11.txt").path))
+    }
+}
 private func mutationImpacts(in actions: [EntryOperationsAction]) -> [EntryOperationsMutationImpact] {
     actions.compactMap { action in
         guard case let .outcome(.entriesMutated(impact)) = action else { return nil }
         return impact
     }
 }
-
 private func assertClipboardCommandOmitsSelectedDescendant(
     _ command: EntryOperationsClipboardCommand,
 ) {
@@ -1711,7 +1959,6 @@ private func assertClipboardCommandOmitsSelectedDescendant(
     }
     XCTAssertEqual(files.map(\.fullPath), [folder.fullPath])
 }
-
 private final class ClipboardRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var _writtenObjectPaths: [[String]] = []
