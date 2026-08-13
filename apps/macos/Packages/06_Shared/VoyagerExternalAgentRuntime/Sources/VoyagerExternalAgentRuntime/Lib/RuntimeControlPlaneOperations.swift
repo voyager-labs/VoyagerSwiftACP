@@ -75,6 +75,12 @@ public extension RuntimeControlPlane {
         guard !original.lease.isActive else { throw RuntimeHostError.activeRunExists }
         let stored = original.stored
         guard !stored.projection.isTerminal else { return .stale }
+        if let claim = stored.restorationClaim,
+           claim.ownerToken != restorationOwnerToken,
+           claim.isLive(at: Date())
+        {
+            return .stale
+        }
         guard let providerInternalSessionReference = stored.providerInternalSessionReference,
               stored.contextPolicy.hasSameExecutionContext(as: expectedContext),
               let adapter = adapters[stored.adapterID],
@@ -104,18 +110,52 @@ public extension RuntimeControlPlane {
         guard sessionUnchanged(original, at: hostReference) else { return .stale }
         switch compatibility {
         case .compatible:
-            return try await mutateAfterPersistedTransitions { plane in
-                try Task.checkCancellation()
-                guard plane.sessionUnchanged(original, at: hostReference),
-                      var current = plane.sessions[hostReference]
-                else { return .stale }
-                _ = current.issueLease(RuntimeLease.restored)
-                plane.sessions[hostReference] = current
-                return .restored
-            }
+            return try await acquireRestoreClaim(original, at: hostReference)
         case .stale, .incompatible:
             return try await releaseStaleRestoreReservation(original, at: hostReference)
         }
+    }
+
+    private func acquireRestoreClaim(
+        _ original: Session,
+        at host: ExternalAgentSessionReference,
+    ) async throws -> RuntimeRestoreResult {
+        guard store is any RuntimeStateStoreHostMutation else {
+            return try await mutateAfterPersistedTransitions { plane in
+                try Task.checkCancellation()
+                guard plane.sessionUnchanged(original, at: host),
+                      var current = plane.sessions[host]
+                else { return .stale }
+                _ = current.issueLease(RuntimeLease.restored)
+                plane.sessions[host] = current
+                return .restored
+            }
+        }
+        do {
+            return try await commit(host: host) { plane, registry in
+                guard plane.sessionUnchanged(original, at: host, in: registry),
+                      var current = registry[host],
+                      plane.canAcquireRestorationClaim(current.stored.restorationClaim)
+                else { return .stale }
+                current.stored = current.stored.withRestorationClaim(plane.makeRestorationClaim())
+                _ = current.issueLease(RuntimeLease.restored)
+                registry[host] = current
+                return .restored
+            }
+        } catch RuntimeHostError.persistenceFailure {
+            return .stale
+        }
+    }
+
+    private func canAcquireRestorationClaim(_ claim: RuntimeRestorationClaim?) -> Bool {
+        claim.map { $0.ownerToken == restorationOwnerToken || !$0.isLive(at: Date()) } ?? true
+    }
+
+    internal func makeRestorationClaim() -> RuntimeRestorationClaim {
+        RuntimeRestorationClaim(
+            ownerToken: restorationOwnerToken,
+            expiresAt: Date().addingTimeInterval(60),
+        )
     }
 
     private func requireSameIdentityResumeOrRelease(

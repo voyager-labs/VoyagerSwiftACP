@@ -9,7 +9,16 @@ public extension RuntimeControlPlane {
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         let result: RuntimeResult
         do {
-            result = try await consume(claim.receipt, from: adapter, host: hostReference)
+            if claim.isPersisted {
+                result = try await consumeWithRestorationHeartbeat(
+                    claim.receipt,
+                    from: adapter,
+                    host: hostReference,
+                    lease: claim.lease,
+                )
+            } else {
+                result = try await consume(claim.receipt, from: adapter, host: hostReference)
+            }
         } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
             try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
             throw RuntimeHostError.persistenceFailure
@@ -42,15 +51,37 @@ public extension RuntimeControlPlane {
     private func claimRestoredRun(
         _ hostReference: ExternalAgentSessionReference,
     ) async throws -> RestoredRunClaim {
-        try await mutateAfterPersistedTransitions { plane in
-            try Task.checkCancellation()
-            guard var session = plane.sessions[hostReference],
+        guard store is any RuntimeStateStoreHostMutation else {
+            return try await mutateAfterPersistedTransitions { plane in
+                try Task.checkCancellation()
+                guard var session = plane.sessions[hostReference],
+                      case let .restored(lease) = session.lease,
+                      let providerReference = session.stored.providerInternalSessionReference,
+                      plane.adapters[session.stored.adapterID] != nil
+                else { throw RuntimeHostError.invalidEvent }
+                session.lease = .resuming(lease)
+                plane.sessions[hostReference] = session
+                return RestoredRunClaim(
+                    receipt: RuntimeLaunchReceipt(
+                        runReference: session.stored.runReference,
+                        providerInternalSessionReference: providerReference,
+                    ),
+                    adapterID: session.stored.adapterID,
+                    lease: lease,
+                    isPersisted: false,
+                )
+            }
+        }
+        return try await commit(host: hostReference) { plane, registry in
+            guard var session = registry[hostReference],
                   case let .restored(lease) = session.lease,
+                  session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken,
                   let providerReference = session.stored.providerInternalSessionReference,
                   plane.adapters[session.stored.adapterID] != nil
             else { throw RuntimeHostError.invalidEvent }
+            session.stored = session.stored.withRestorationClaim(plane.makeRestorationClaim())
             session.lease = .resuming(lease)
-            plane.sessions[hostReference] = session
+            registry[hostReference] = session
             return RestoredRunClaim(
                 receipt: RuntimeLaunchReceipt(
                     runReference: session.stored.runReference,
@@ -58,7 +89,42 @@ public extension RuntimeControlPlane {
                 ),
                 adapterID: session.stored.adapterID,
                 lease: lease,
+                isPersisted: true,
             )
+        }
+    }
+
+    private func consumeWithRestorationHeartbeat(
+        _ receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> RuntimeResult {
+        try await withThrowingTaskGroup(of: RuntimeResult.self) { group in
+            group.addTask { try await self.consume(receipt, from: adapter, host: host) }
+            group.addTask {
+                while true {
+                    try await Task.sleep(for: .seconds(20))
+                    try await self.renewRestorationClaim(host, lease: lease)
+                }
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else { throw RuntimeHostError.invalidEvent }
+            return result
+        }
+    }
+
+    private func renewRestorationClaim(
+        _ host: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws {
+        _ = try await commit(host: host) { plane, registry in
+            guard var session = registry[host],
+                  session.lease == .resuming(lease),
+                  session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken
+            else { throw RuntimeHostError.invalidEvent }
+            session.stored = session.stored.withRestorationClaim(plane.makeRestorationClaim())
+            registry[host] = session
         }
     }
 
@@ -99,4 +165,5 @@ private struct RestoredRunClaim {
     let receipt: RuntimeLaunchReceipt
     let adapterID: RuntimeAdapterID
     let lease: UInt64
+    let isPersisted: Bool
 }

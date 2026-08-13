@@ -103,6 +103,79 @@ struct RuntimePersistenceTechnicalTests {
     }
 
     @Test
+    func `control planes sharing a file resume one provider owner`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = ExternalAgentSessionReference("host-shared-restore")
+        let run = RuntimeRunReference("run-shared-restore")
+        let context = makeContext()
+        let result = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://shared-restore.json"],
+        )
+        let capabilities = RuntimeCapabilities(
+            discovery: .unsupported,
+            eventStream: .unsupported,
+            approval: .unsupported,
+            cancellation: .unsupported,
+            queuedInput: .unsupported,
+            terminalResult: .supported,
+            sameIdentityResume: .supported,
+        )
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-shared-restore"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: capabilities,
+            contextPolicy: context,
+            projection: .running,
+        )
+        let seed = RuntimeFileStateStore(fileURL: fileURL)
+        try await seed.save(makeState([stored]))
+        let terminalGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: capabilities,
+            eventsByLaunch: [[]],
+            terminalResultOverride: result,
+            terminalResultGate: terminalGate,
+        )
+        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await firstPlane.register(adapter)
+        try await secondPlane.register(adapter)
+
+        let firstRestore = try await firstPlane.restore(hostReference: host, expectedContext: context)
+        let secondRestore = try await secondPlane.restore(hostReference: host, expectedContext: context)
+        #expect(firstRestore == .restored)
+        #expect(secondRestore == .stale)
+        let firstResume = Task { try await firstPlane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForTerminalResultCount(1)
+        if secondRestore == .restored {
+            let duplicateResume = Task { try await secondPlane.resumeRestoredRun(hostReference: host) }
+            await adapter.waitForTerminalResultCount(2)
+            await terminalGate.open()
+            _ = try? await duplicateResume.value
+        } else {
+            await #expect(throws: RuntimeHostError.invalidEvent) {
+                try await secondPlane.resumeRestoredRun(hostReference: host)
+            }
+            await terminalGate.open()
+        }
+
+        #expect(try await firstResume.value == result)
+        #expect(await adapter.counts().stream == 0)
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(persisted.sessions.first?.projection == .completed)
+    }
+
+    @Test
     func `cancelled file lock waiter cannot save after lock release`() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
