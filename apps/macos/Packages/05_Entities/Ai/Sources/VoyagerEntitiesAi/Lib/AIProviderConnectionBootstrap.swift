@@ -38,6 +38,12 @@ public enum AIProviderConnectionBootstrap {
         let credential: StoredCredentialPayload
     }
 
+    private enum PersistenceOutcome {
+        case persisted(AIConnectionsFile)
+        case unchanged
+        case failed
+    }
+
     public static func effect<Action: Sendable>(
         connectionsFileClient: AIConnectionsFileClient,
         verificationClient: AIProviderVerificationClient,
@@ -107,32 +113,12 @@ public enum AIProviderConnectionBootstrap {
         file: AIConnectionsFile,
         connectionsFileClient: AIConnectionsFileClient,
     ) async -> AIConnectionsFile? {
-        guard !Task.isCancelled else { return nil }
-        let mutationResult: AiConnectionMutationResult?
-        if let atomicUpdate = connectionsFileClient.atomicUpdate {
-            mutationResult = try? await atomicUpdate { latestFile in
-                updatedConnectionsFile(
-                    verificationSourceFile: file,
-                    latestFile: latestFile,
-                    applying: results,
-                ) ?? latestFile
-            }
-        } else {
-            guard let latestFile = try? await connectionsFileClient.load(),
-                  let updatedFile = updatedConnectionsFile(
-                      verificationSourceFile: file,
-                      latestFile: latestFile,
-                      applying: results,
-                  )
-            else { return nil }
-            mutationResult = try? await connectionsFileClient.save(updatedFile)
-        }
-        switch mutationResult {
-        case let .success(savedFile), let .partialSuccess(savedFile, _):
-            return savedFile
-        case .fileSystemError, nil:
-            return nil
-        }
+        guard case let .persisted(file) = await persistenceOutcome(
+            results,
+            file: file,
+            connectionsFileClient: connectionsFileClient,
+        ) else { return nil }
+        return file
     }
 
     public static func initialResults(from file: AIConnectionsFile) -> [AIProviderBootstrapResult] {
@@ -289,6 +275,38 @@ public enum AIProviderConnectionBootstrap {
         )
     }
 
+    private static func persistenceOutcome(
+        _ results: [AIProviderBootstrapResult],
+        file: AIConnectionsFile,
+        connectionsFileClient: AIConnectionsFileClient,
+    ) async -> PersistenceOutcome {
+        guard !Task.isCancelled else { return .failed }
+        let mutationResult: AiConnectionMutationResult?
+        if let atomicUpdate = connectionsFileClient.atomicUpdate {
+            mutationResult = try? await atomicUpdate { latestFile in
+                updatedConnectionsFile(
+                    verificationSourceFile: file,
+                    latestFile: latestFile,
+                    applying: results,
+                ) ?? latestFile
+            }
+        } else {
+            guard let latestFile = try? await connectionsFileClient.load() else { return .failed }
+            guard let updatedFile = updatedConnectionsFile(
+                verificationSourceFile: file,
+                latestFile: latestFile,
+                applying: results,
+            ) else { return .unchanged }
+            mutationResult = try? await connectionsFileClient.save(updatedFile)
+        }
+        switch mutationResult {
+        case let .success(savedFile), let .partialSuccess(savedFile, _):
+            return .persisted(savedFile)
+        case .fileSystemError, nil:
+            return .failed
+        }
+    }
+
     private static func run<Action: Sendable>(
         connectionsFileClient: AIConnectionsFileClient,
         verificationClient: AIProviderVerificationClient,
@@ -303,20 +321,26 @@ public enum AIProviderConnectionBootstrap {
         let results = try await verificationResults(from: file, verificationClient: verificationClient)
         guard !results.isEmpty, !Task.isCancelled else { return }
 
+        let persistence = await persistenceOutcome(
+            results,
+            file: file,
+            connectionsFileClient: connectionsFileClient,
+        )
+        guard !Task.isCancelled else { return }
+        switch persistence {
+        case let .persisted(savedFile):
+            if let action = mapEvent(.connectionsFileUpdated(savedFile)) {
+                await send(action)
+            }
+        case .unchanged:
+            break
+        case .failed:
+            return
+        }
+        guard !Task.isCancelled else { return }
         if let action = mapEvent(.verificationCompleted(results)) {
             await send(action)
         }
-
-        guard !Task.isCancelled,
-              let savedFile = await persistVerificationResults(
-                  results,
-                  file: file,
-                  connectionsFileClient: connectionsFileClient,
-              ),
-              let action = mapEvent(.connectionsFileUpdated(savedFile))
-        else { return }
-
-        await send(action)
     }
 
     private static func verify(

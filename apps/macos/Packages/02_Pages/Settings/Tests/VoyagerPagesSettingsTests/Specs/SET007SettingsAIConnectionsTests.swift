@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
@@ -65,6 +66,37 @@ private actor BootstrapVerificationController {
         firstCallCancelled = true
         cancellationContinuation?.resume()
         cancellationContinuation = nil
+    }
+}
+
+private actor BootstrapConnectionsStore {
+    private var file: AIConnectionsFile
+
+    init(file: AIConnectionsFile) {
+        self.file = file
+    }
+
+    func load() -> AIConnectionsFile {
+        file
+    }
+
+    func update(
+        _ transform: AIConnectionsFileClient.AtomicUpdateTransform,
+    ) throws -> AIConnectionsFile {
+        file = try transform(file)
+        return file
+    }
+}
+
+private actor LoadedCredentialRecorder {
+    private var credentials: [StoredCredentialPayload] = []
+
+    func record(_ credential: StoredCredentialPayload) {
+        credentials.append(credential)
+    }
+
+    func values() -> [StoredCredentialPayload] {
+        credentials
     }
 }
 
@@ -234,6 +266,181 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertEqual(savedRecord?.snapshot, snapshot)
     }
 
+    /// SET-007-codex_oauth_runtime: refreshed credential persists before model reload begins.
+    /// Connected bootstrap state must not trigger model loading from the expired source credential.
+    /// - 검증 내용: atomic credential persistence, delegate ordering, Chat model loader credential.
+    /// - 사전 조건: expired Codex credential verifies with a refreshed effective credential.
+    /// - 기대 결과: model reload receives only the refreshed persisted credential.
+    func testBootstrapRefreshPersistsCredentialBeforeChatModelReload() async {
+        let sourceCredential = OAuthCredentialFile(
+            accessToken: "expired-access",
+            refreshToken: "source-refresh",
+            expiresAtMs: 0,
+        )
+        let effectiveCredential = OAuthCredentialFile(
+            accessToken: "refreshed-access",
+            refreshToken: "rotated-refresh",
+            expiresAtMs: Int64.max,
+        )
+        let sourceFile = AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(sourceCredential),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectionFailed),
+                ),
+            ],
+        )
+        let connectionsStore = BootstrapConnectionsStore(file: sourceFile)
+        let credentialRecorder = LoadedCredentialRecorder()
+        let model = AiProviderModel(
+            id: AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5"),
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5",
+            displayName: "GPT-5",
+            providerDisplayName: "ChatGPT Codex",
+            thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "test")),
+        )
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { await connectionsStore.load() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(sourceFile) },
+                atomicUpdate: { transform in
+                    try await .success(connectionsStore.update(transform))
+                },
+            )
+            $0.aiProviderVerificationClient.verifyWithCredential = { _, credential in
+                AiProviderVerificationOutcome(
+                    result: .valid,
+                    sourceCredential: credential,
+                    effectiveCredential: .oauth(effectiveCredential),
+                )
+            }
+            $0.aiChatDefaultSettingsClient.load = {
+                AiChatDefaultSettings(
+                    provider: PersistedAIProviderSelection(rawValue: AiProvider.chatgptCodex.rawValue),
+                    model: nil,
+                    thinking: .providerDefault,
+                )
+            }
+            $0.aiProviderModelListClient.loadModels = { _, credential in
+                try await credentialRecorder.record(XCTUnwrap(credential))
+                return [model]
+            }
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.onAppear) {
+            $0.didBootstrap = true
+            $0.bootstrapPhase = .loading
+            $0.chatDefaultSettings = AiChatDefaultSettings(
+                provider: PersistedAIProviderSelection(rawValue: AiProvider.chatgptCodex.rawValue),
+                model: nil,
+                thinking: .providerDefault,
+            )
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+            $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+        }
+        let savedFile = await connectionsStore.load()
+        await store.receive(.delegate(.connectionsFileUpdated(savedFile)))
+        await store.receive(\.bootstrapVerificationCompleted) {
+            $0.rows[id: .chatgptCodex]?.connectionState = .connected
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = Int64.max
+            $0.chatModelCatalogPhase = .loading
+            $0.chatModelRequestID = UUID(0)
+        }
+        await store.receive(\.chatModelsLoaded) {
+            $0.chatModelsByProvider[.chatgptCodex] = [model]
+            $0.chatModelCatalogPhase = .loaded
+            $0.chatModelRequestID = nil
+        }
+        await store.finish()
+
+        let loadedCredentials = await credentialRecorder.values()
+        XCTAssertEqual(loadedCredentials, [.oauth(effectiveCredential)])
+        XCTAssertEqual(
+            savedFile.providers[AiProvider.chatgptCodex.rawValue]?.credential,
+            .oauth(effectiveCredential),
+        )
+    }
+
+    /// SET-007-codex_oauth_runtime: persistence failure suppresses verified success state.
+    /// A verified refreshed credential is not usable until its atomic persistence succeeds.
+    /// - 검증 내용: atomic persistence failure, completion suppression, model reload suppression.
+    /// - 사전 조건: Codex verification succeeds but atomic update reports a file-system error.
+    /// - 기대 결과: row remains checking and no verification completion or model load is emitted.
+    func testBootstrapPersistenceFailureSuppressesVerificationSuccessAndModelReload() async {
+        let credential = OAuthCredentialFile(
+            accessToken: "expired-access",
+            refreshToken: "source-refresh",
+            expiresAtMs: 0,
+        )
+        let file = AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(credential),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectionFailed),
+                ),
+            ],
+        )
+        let modelLoadCount = LoadCounter()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiConnectionsFileClient.atomicUpdate = { _ in
+                .fileSystemError(.fileSystemError("test"))
+            }
+            $0.aiProviderVerificationClient.verifyWithCredential = { _, source in
+                AiProviderVerificationOutcome(
+                    result: .valid,
+                    sourceCredential: source,
+                    effectiveCredential: .oauth(credential),
+                )
+            }
+            $0.aiChatDefaultSettingsClient.load = {
+                AiChatDefaultSettings(
+                    provider: PersistedAIProviderSelection(rawValue: AiProvider.chatgptCodex.rawValue),
+                    model: nil,
+                    thinking: .providerDefault,
+                )
+            }
+            $0.aiProviderModelListClient.loadModels = { _, _ in
+                _ = await modelLoadCount.increment()
+                return []
+            }
+        }
+
+        await store.send(.onAppear) {
+            $0.didBootstrap = true
+            $0.bootstrapPhase = .loading
+            $0.chatDefaultSettings = AiChatDefaultSettings(
+                provider: PersistedAIProviderSelection(rawValue: AiProvider.chatgptCodex.rawValue),
+                model: nil,
+                thinking: .providerDefault,
+            )
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+            $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+        }
+        await store.finish()
+
+        let modelLoads = await modelLoadCount.currentValue()
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .checkingStatus)
+        XCTAssertEqual(modelLoads, 0)
+    }
+
     /// SET-007-codex_oauth_runtime: retry cancels an expired Codex refresh without stale persistence.
     /// The cancelled bootstrap must not emit a verification completion or save a network failure.
     /// - 검증 내용: suspended refresh cancellation, retry completion ordering, persisted snapshot count.
@@ -288,13 +495,13 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         await store.receive(\.bootstrapCompleted) {
             $0.bootstrapPhase = .loaded
         }
+        let recordedFile = await savedConnectionsFile.value()
+        let savedFile = try XCTUnwrap(recordedFile)
+        await store.receive(.delegate(.connectionsFileUpdated(savedFile)))
         await store.receive(\.bootstrapVerificationCompleted) {
             $0.rows[id: .chatgptCodex]?.connectionState = .connected
             $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = 0
         }
-        let recordedFile = await savedConnectionsFile.value()
-        let savedFile = try XCTUnwrap(recordedFile)
-        await store.receive(.delegate(.connectionsFileUpdated(savedFile)))
         await store.finish()
 
         let savedFileCount = await savedConnectionsFile.values().count
@@ -827,12 +1034,11 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             state.rows[id: .openai]?.statusReason = .none
         }
 
+        await store.receive(.delegate(.connectionsFileUpdated(expectedFile)))
         await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .openai]?.connectionState = .connected
             state.rows[id: .openai]?.statusReason = .none
         }
-
-        await store.receive(.delegate(.connectionsFileUpdated(expectedFile)))
         await store.finish()
 
         XCTAssertEqual(saveSpy.savedFiles, [expectedFile])
@@ -921,12 +1127,11 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             state.rows[id: .chatgptCodex]?.statusReason = .none
         }
 
+        await store.receive(.delegate(.connectionsFileUpdated(expectedFile)))
         await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .chatgptCodex]?.connectionState = .unavailable
             state.rows[id: .chatgptCodex]?.statusReason = .providerUnsupportedInBuild
         }
-
-        await store.receive(.delegate(.connectionsFileUpdated(expectedFile)))
         await store.finish()
 
         XCTAssertEqual(saveSpy.savedFiles, [expectedFile])
