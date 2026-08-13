@@ -6,6 +6,8 @@ export type ComposerConditionChipProps = {
   readonly condition: ComposerCondition
   readonly inactive?: boolean
   readonly showRemove?: boolean
+  readonly operatorExpanded?: boolean
+  readonly valueExpanded?: boolean
   readonly onOperatorClick?: () => void
   readonly onValueClick?: () => void
 }
@@ -14,19 +16,22 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
   condition,
   inactive,
   showRemove,
+  operatorExpanded,
+  valueExpanded,
   onOperatorClick,
   onValueClick,
 }) => (
   <span
     className={`collection-composer-condition-chip${inactive ? " inactive" : ""}${showRemove ? " show-remove" : ""}`}
   >
-    <span className="collection-composer-condition-property">
+    <span className="collection-composer-condition-property collection-composer-condition-text">
       <SFSymbol name={condition.propertySymbol} size={10} weight={500} />
       {condition.property}
     </span>
     <button
       type="button"
-      className="collection-composer-condition-segment"
+      className="collection-composer-condition-segment collection-composer-condition-text"
+      aria-expanded={operatorExpanded}
       onClick={onOperatorClick}
     >
       {condition.operator}
@@ -34,7 +39,8 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
     {condition.value.length > 0 && (
       <button
         type="button"
-        className="collection-composer-condition-segment"
+        className="collection-composer-condition-segment collection-composer-condition-text"
+        aria-expanded={valueExpanded}
         onClick={onValueClick}
       >
         {condition.value}

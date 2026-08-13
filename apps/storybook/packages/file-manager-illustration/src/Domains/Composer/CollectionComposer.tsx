@@ -40,8 +40,12 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
           disabled={!fixture.canRedo}
         />
         <label className="collection-composer-query">
-          <span className="sr-only">Collection query</span>
-          <input value={fixture.query} readOnly placeholder="Describe the collection you want..." />
+          <input
+            aria-label="Collection query"
+            value={fixture.query}
+            readOnly
+            placeholder="Describe the collection you want..."
+          />
           <ComposerSymbolButton
             symbol={fixture.isProcessing ? "stop.fill" : "arrow.right"}
             label={fixture.isProcessing ? "Stop" : "Submit"}
@@ -79,6 +83,10 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
             <ComposerConditionChip
               condition={condition}
               key={condition.id}
+              operatorExpanded={
+                fixture.picker?.kind === "operator" && fixture.picker.conditionID === condition.id
+              }
+              valueExpanded={fixture.picker?.kind === "value"}
               onOperatorClick={onOperatorClick}
               onValueClick={onValueClick}
             />
@@ -163,7 +171,9 @@ const ScopePicker: FC<{ readonly picker: ComposerScopePicker }> = ({ picker }) =
           name={
             picker.feedback.phase === "Failed"
               ? "exclamationmark.triangle.fill"
-              : "checkmark.circle.fill"
+              : picker.feedback.phase === "Applying"
+                ? "clock.arrow.circlepath"
+                : "checkmark.circle.fill"
           }
           size={12}
           weight={600}

@@ -22,7 +22,7 @@ export const ComposerScopeTokenChip: FC<ComposerScopeTokenChipProps> = ({
     <span className="collection-composer-scope-glyph" aria-hidden="true">
       {"\u{10088A}"}
     </span>
-    <span>{title}</span>
+    <span className="collection-composer-scope-token-title">{title}</span>
     {removable && (
       <button type="button" aria-label={`Remove scope ${title}`}>
         <SFSymbol name="xmark" size={9} weight={500} />

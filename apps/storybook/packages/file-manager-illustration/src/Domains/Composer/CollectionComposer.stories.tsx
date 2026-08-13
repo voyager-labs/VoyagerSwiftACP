@@ -38,7 +38,12 @@ const ComposerSelectionFlow = ({
       step === "property"
         ? { kind: "property", items: composerPropertyOptions }
         : step === "operator" && property != null
-          ? { kind: "operator", options: property.operators }
+          ? {
+              kind: "operator",
+              conditionID: property.key,
+              selectedCode: operator?.code ?? property.operators[0]?.code ?? "",
+              options: property.operators,
+            }
           : step === "value" && operator != null
             ? { kind: "value", editor: operator.editor }
             : undefined,
@@ -101,6 +106,16 @@ type Story = StoryObj<typeof meta>
 
 export const EmptyDraft: Story = {}
 export const PopulatedDraft: Story = { args: { fixture: composerFixtures.populatedDraft } }
+export const CompactNarrow: Story = {
+  args: { fixture: composerFixtures.populatedDraft },
+  decorators: [
+    (Story) => (
+      <div className="collection-composer-compact-story-frame">
+        <Story />
+      </div>
+    ),
+  ],
+}
 export const PropertyPickerOpen: Story = { args: { fixture: composerFixtures.propertyPickerOpen } }
 export const OperatorPickerOpen: Story = { args: { fixture: composerFixtures.operatorPickerOpen } }
 export const ValuePickerOpen: Story = { args: { fixture: composerFixtures.valuePickerOpen } }
@@ -128,5 +143,6 @@ export const CategoricalFlow: Story = {
 }
 export const Processing: Story = { args: { fixture: composerFixtures.processing } }
 export const ScopeApplied: Story = { args: { fixture: composerFixtures.scopeApplied } }
+export const ScopeApplying: Story = { args: { fixture: composerFixtures.scopeApplying } }
 export const ScopeFailed: Story = { args: { fixture: composerFixtures.scopeFailed } }
 export const QueryRecovery: Story = { args: { fixture: composerFixtures.queryRecovery } }
