@@ -538,7 +538,11 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResyncContentNavigation = state.contentTabs.activeTabID == activeTabIDBeforeSync
                     && activeAnchorAfterSync != activeAnchorBeforeSync
                     && activeAnchorAfterSync?.isCollectionFileAnchor == true
+                let handoffCleanupEffect = shouldResyncContentNavigation
+                    ? prepareContentForActiveTabHandoff(state: &state.content)
+                    : .none
                 return .merge(
+                    handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
                         state: &state,

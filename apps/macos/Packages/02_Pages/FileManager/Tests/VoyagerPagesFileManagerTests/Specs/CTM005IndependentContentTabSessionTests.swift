@@ -50,6 +50,41 @@ private actor DirectoryLoadSuspensionGate {
     }
 }
 
+private actor ComposerCancellationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var wasCancelled = false
+
+    func wait() async throws -> SearchResponsePayload {
+        try await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                let waiters = startWaiters
+                startWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+            throw CancellationError()
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func cancellationObserved() -> Bool {
+        wasCancelled
+    }
+
+    private func cancel() {
+        wasCancelled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private func makeCloseTestDirectoryTab(
     id: ContentTabID,
     path: String,
@@ -945,6 +980,117 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.composer.pendingSearchQuery, "pending query")
         XCTAssertEqual(store.state.composer.searchStartedAt, Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertEqual(store.state.composer.filtersStartedAt, Date(timeIntervalSince1970: 1_700_000_001))
+    }
+
+    /// CTM-005-independent_content_tab_session: pinned active anchor resync는 Composer 실행 작업을 정리함
+    /// durable pinned anchor가 active runtime anchor를 대체할 때 outgoing Composer cleanup을 먼저 수행하는지 검증한다.
+    /// - 검증 내용: search/filter effect 취소, process 상태 초기화, stale response 무시
+    /// - 사전 조건: 동일 active tab ID가 directory에서 collection file anchor로 resync되고 search/filter가 실행 중임
+    /// - 기대 결과: 복원된 content는 cleanup 상태를 유지하고 이전 request response에 의해 변경되지 않음
+    func testApplyPinnedContentTabsResyncCleansOutgoingComposerWork() async throws {
+        let tabID = ContentTabID(rawValue: "pinned-resync")
+        let collectionURL = URL(fileURLWithPath: "/tmp/Resynced.voycoll")
+        let searchGate = ComposerCancellationGate()
+        let filtersGate = ComposerCancellationGate()
+        let state = Self.makePinnedResyncSourceState(tabID: tabID)
+        let restoredState = Self.makePinnedResyncTargetState(tabID: tabID, collectionURL: collectionURL)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.searchClient.search = { _ in try await searchGate.wait() }
+            $0.searchClient.applyFilters = { _ in try await filtersGate.wait() }
+        }
+        // store.exhaustivity = .off: UUID 기반 request와 collection open 후속 action보다 lifecycle 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tabContent(tabID: tabID, action: .composer(.submit)))
+        await searchGate.waitUntilStarted()
+        let searchID = try XCTUnwrap(store.state.content.composer.activeSearchRequestID)
+        await store.send(.tabContent(tabID: tabID, action: .composer(.applyFilters)))
+        await filtersGate.waitUntilStarted()
+        let filtersID = try XCTUnwrap(store.state.content.composer.activeFiltersRequestID)
+
+        await store.send(.applyPinnedContentTabs(restoredState))
+
+        XCTAssertFalse(store.state.content.composer.isLoadingSearch)
+        XCTAssertFalse(store.state.content.composer.isLoadingFilters)
+        XCTAssertFalse(store.state.content.composer.isFilteringInFlight)
+        XCTAssertNil(store.state.content.composer.activeSearchRequestID)
+        XCTAssertNil(store.state.content.composer.activeFiltersRequestID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, .collectionFile(url: collectionURL))
+        let searchCancelled = await searchGate.cancellationObserved()
+        let filtersCancelled = await filtersGate.cancellationObserved()
+        XCTAssertTrue(searchCancelled)
+        XCTAssertTrue(filtersCancelled)
+
+        await store.send(.tabContent(tabID: tabID, action: .composer(.internal(.searchResponse(
+            searchID,
+            .success(SearchResponsePayload(itemCount: 99)),
+        )))))
+        await store.send(.tabContent(tabID: tabID, action: .composer(.internal(.filtersResponse(
+            filtersID,
+            .success(SearchResponsePayload(itemCount: 99)),
+        )))))
+        XCTAssertNil(store.state.content.composer.lastSearchResponse)
+        XCTAssertNil(store.state.content.composer.lastFiltersResponse)
+    }
+
+    private static func makePinnedResyncSourceState(tabID: ContentTabID) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.composer.text = "find invoices"
+        state.content.composer.scopes = ["/Users/test/Documents"]
+        state.content.composer.conditions = [
+            Condition(
+                propertyKey: "kind",
+                propertyLabel: "Kind",
+                propertyType: "string",
+                operatorCode: "eq",
+                operatorLabel: "Equals",
+                operatorValueArity: 1,
+                operatorValueUIKind: "singleText",
+                valueType: "string",
+                values: ["pdf"],
+                isActive: true,
+            ),
+        ]
+        state.syncActiveTabContentState()
+        return state
+    }
+
+    private static func makePinnedResyncTargetState(
+        tabID: ContentTabID,
+        collectionURL: URL,
+    ) -> ContentTabState {
+        ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: collectionURL),
+                    isPinned: true,
+                    title: "Resynced",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
     }
 
     func testSwitchingTagTabNamedRecentsPreservesTagRouteKind() async {
