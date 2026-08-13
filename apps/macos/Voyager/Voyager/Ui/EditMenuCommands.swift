@@ -105,6 +105,12 @@ struct EditMenuCommands: Commands {
             }
             .keyboardShortcut("l", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
+
+            Button(viewStore.chatHistoryTitle) {
+                sendEditCommand(.showChatHistory)
+            }
+            .keyboardShortcut("l", modifiers: [.command, .shift])
+            .disabled(!viewStore.canUseAiChatInspector)
         }
 
         CommandGroup(replacing: .pasteboard) {
