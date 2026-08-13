@@ -126,8 +126,11 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
                 return (
                     response,
                     Data(
-                        #"{"access_token":"session-token","refresh_token":"rotated-token","expires_in":3600,"token_type":"Bearer"}"#
-                            .utf8,
+                        """
+                        {"access_token":"session-token","refresh_token":"rotated-token",\
+                        "expires_in":3600,"token_type":"Bearer"}
+                        """
+                        .utf8,
                     ),
                 )
             }
@@ -222,6 +225,114 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         } catch is CancellationError {
             XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
         }
+    }
+
+    /// SET-007-codex_oauth_runtime: Codex model authentication rejection requires reconnect.
+    /// OAuth model smoke failures must not use API-key failure semantics.
+    /// - 검증 내용: Codex HTTP 401/403 and 500 verification mapping.
+    /// - 사전 조건: typed Codex model-list HTTP failures.
+    /// - 기대 결과: 401/403 map to expired while 500 remains network.
+    func testCodexModelListHTTPFailures_mapAuthToExpiredAndServerToNetwork() {
+        for statusCode in [401, 403] {
+            XCTAssertEqual(
+                AiConnectionRuntimeClient.mapModelListError(.httpError(
+                    provider: .chatgptCodex,
+                    statusCode: statusCode,
+                    body: "test",
+                )),
+                .invalid(.expired),
+            )
+        }
+        XCTAssertEqual(
+            AiConnectionRuntimeClient.mapModelListError(.httpError(
+                provider: .chatgptCodex,
+                statusCode: 500,
+                body: "test",
+            )),
+            .networkError,
+        )
+    }
+
+    /// SET-007-codex_oauth_runtime: API-key model authentication rejection remains invalid API key.
+    /// Provider-aware mapping must not apply Codex OAuth semantics to OpenAI or Anthropic.
+    /// - 검증 내용: non-Codex HTTP 401/403 verification mapping.
+    /// - 사전 조건: typed API-key provider model-list HTTP failures.
+    /// - 기대 결과: both statuses retain invalidAPIKey semantics.
+    func testAPIKeyModelListHTTPAuthFailures_remainInvalidAPIKey() {
+        for provider in [AiProvider.openai, .anthropic] {
+            for statusCode in [401, 403] {
+                XCTAssertEqual(
+                    AiConnectionRuntimeClient.mapModelListError(.httpError(
+                        provider: provider,
+                        statusCode: statusCode,
+                        body: "test",
+                    )),
+                    .invalid(.invalidAPIKey),
+                )
+            }
+        }
+    }
+
+    /// SET-007-codex_oauth_runtime: live Codex model smoke maps OAuth rejection to expired.
+    /// Provider-aware mapping must hold across the actual URLSession model request boundary.
+    /// - 검증 내용: live Codex model-list HTTP 401/403 outcomes.
+    /// - 사전 조건: non-expired OAuth credential and isolated HTTP rejection responses.
+    /// - 기대 결과: both responses produce invalid expired verification outcomes.
+    func testCodexModelSmokeHTTPAuthFailures_mapToExpired() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let credential = StoredCredentialPayload.oauth(OAuthCredentialFile(
+            accessToken: "codex-token",
+            expiresAtMs: Int64.max,
+        ))
+        for statusCode in [401, 403] {
+            ProviderExecutionURLProtocol.handler = { request in
+                let response = try XCTUnwrap(try HTTPURLResponse(
+                    url: XCTUnwrap(request.url),
+                    statusCode: statusCode,
+                    httpVersion: nil,
+                    headerFields: nil,
+                ))
+                return (response, Data())
+            }
+            let client = AiConnectionRuntimeClient.live(session: session)
+
+            let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
+                .chatgptCodex,
+                credential,
+            )
+
+            XCTAssertEqual(outcome.result, .invalid(.expired))
+        }
+    }
+
+    /// SET-007-codex_oauth_runtime: live API-key smoke retains invalid API key semantics.
+    /// Codex OAuth mapping must not alter non-Codex verification behavior.
+    /// - 검증 내용: live OpenAI smoke HTTP 401 outcome.
+    /// - 사전 조건: API-key credential and isolated HTTP authentication rejection.
+    /// - 기대 결과: verification remains invalidAPIKey.
+    func testOpenAIModelSmokeHTTP401_remainsInvalidAPIKey() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        ProviderExecutionURLProtocol.handler = { request in
+            let response = try XCTUnwrap(try HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil,
+            ))
+            return (response, Data())
+        }
+        let client = AiConnectionRuntimeClient.live(session: session)
+
+        let result = await client.verifyProvider(
+            .openai,
+            .apiKey(APIKeyCredentialFile(secret: "sk-test")),
+        )
+
+        XCTAssertEqual(result, .invalid(.invalidAPIKey))
     }
 
     /// CBW-003-prepare_contextual_chat_request: registry executor가 없으면 network 호출 전에 실패한다.

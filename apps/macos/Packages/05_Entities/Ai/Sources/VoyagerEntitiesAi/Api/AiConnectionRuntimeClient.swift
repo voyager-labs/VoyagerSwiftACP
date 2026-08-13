@@ -215,16 +215,20 @@ extension AiConnectionRuntimeClient {
         return await performSmokeRequest(provider: provider, secret: secret, session: session)
     }
 
-    private static func mapModelListError(_ error: AiProviderModelListError) -> AiProviderVerificationResult {
+    static func mapModelListError(_ error: AiProviderModelListError) -> AiProviderVerificationResult {
         switch error {
         case .missingCredential: .invalid(.missingCredential)
         case .invalidCredential: .invalid(.credentialKindMismatch)
         case .unsupportedProvider: .unsupportedProvider
         case .invalidResponse: .invalid(.verificationFailed)
-        case let .httpError(_, statusCode, _):
+        case let .httpError(provider, statusCode, _):
             switch statusCode {
-            case 401: .invalid(.invalidAPIKey)
-            case 403: .invalid(.invalidAPIKey)
+            case 401, 403:
+                if provider == .chatgptCodex {
+                    .invalid(.expired)
+                } else {
+                    .invalid(.invalidAPIKey)
+                }
             case 500 ... 599: .networkError
             default: .invalid(.verificationFailed)
             }

@@ -80,6 +80,10 @@ private actor BootstrapConnectionsStore {
         file
     }
 
+    func set(_ file: AIConnectionsFile) {
+        self.file = file
+    }
+
     func update(
         _ transform: AIConnectionsFileClient.AtomicUpdateTransform,
     ) throws -> AIConnectionsFile {
@@ -439,6 +443,133 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         let modelLoads = await modelLoadCount.currentValue()
         XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .checkingStatus)
         XCTAssertEqual(modelLoads, 0)
+    }
+
+    /// SET-007-codex_oauth_runtime: concurrent reconnect suppresses stale bootstrap success.
+    /// Verification for the old account must not replace or project a newer credential.
+    /// - 검증 내용: atomic CAS miss after credential replacement and model reload suppression.
+    /// - 사전 조건: verification starts with one credential and another account reconnects before persistence.
+    /// - 기대 결과: latest credential remains and no stale connected completion or model load is emitted.
+    func testBootstrapConcurrentCredentialReplacementSuppressesStaleSuccess() async {
+        await assertBootstrapCASMissSuppressesSuccess(replacementCredential: .oauth(OAuthCredentialFile(
+            accessToken: "replacement-access",
+            refreshToken: "replacement-refresh",
+            expiresAtMs: Int64.max,
+        )))
+    }
+
+    /// SET-007-codex_oauth_runtime: concurrent deletion suppresses stale bootstrap success.
+    /// Verification for a deleted credential must not restore connected state or start model loading.
+    /// - 검증 내용: atomic CAS miss after credential deletion and model reload suppression.
+    /// - 사전 조건: verification starts with a credential that is deleted before persistence.
+    /// - 기대 결과: credential stays deleted and no stale connected completion or model load is emitted.
+    func testBootstrapConcurrentCredentialDeletionSuppressesStaleSuccess() async {
+        await assertBootstrapCASMissSuppressesSuccess(replacementCredential: nil)
+    }
+
+    private func assertBootstrapCASMissSuppressesSuccess(
+        replacementCredential: StoredCredentialPayload?,
+    ) async {
+        let sourceFile = bootstrapSourceFile()
+        let replacementFile = bootstrapReplacementFile(credential: replacementCredential)
+        let connectionsStore = BootstrapConnectionsStore(file: sourceFile)
+        let modelLoadCount = LoadCounter()
+        let store = bootstrapCASMissStore(
+            connectionsStore: connectionsStore,
+            replacementFile: replacementFile,
+            modelLoadCount: modelLoadCount,
+        )
+
+        await store.send(.onAppear) {
+            $0.didBootstrap = true
+            $0.bootstrapPhase = .loading
+            $0.chatDefaultSettings = AiChatDefaultSettings(
+                provider: PersistedAIProviderSelection(rawValue: AiProvider.chatgptCodex.rawValue),
+                model: nil,
+                thinking: .providerDefault,
+            )
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+            $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+        }
+        await store.finish()
+
+        let latestFile = await connectionsStore.load()
+        let modelLoads = await modelLoadCount.currentValue()
+        XCTAssertEqual(
+            latestFile.providers[AiProvider.chatgptCodex.rawValue]?.credential,
+            replacementCredential,
+        )
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .checkingStatus)
+        XCTAssertEqual(modelLoads, 0)
+    }
+
+    private func bootstrapSourceFile() -> AIConnectionsFile {
+        AIConnectionsFile.singleProvider(
+            .chatgptCodex,
+            state: .connectionFailed,
+            credential: .oauth(OAuthCredentialFile(
+                accessToken: "source-access",
+                refreshToken: "source-refresh",
+                expiresAtMs: 0,
+            )),
+        )
+    }
+
+    private func bootstrapReplacementFile(
+        credential: StoredCredentialPayload?,
+    ) -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: credential,
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: credential == nil ? .notVerified : .connected,
+                    ),
+                ),
+            ],
+        )
+    }
+
+    private func bootstrapCASMissStore(
+        connectionsStore: BootstrapConnectionsStore,
+        replacementFile: AIConnectionsFile,
+        modelLoadCount: LoadCounter,
+    ) -> TestStoreOf<AiSettingsFeature> {
+        TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { await connectionsStore.load() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(replacementFile) },
+                atomicUpdate: { transform in
+                    try await .success(connectionsStore.update(transform))
+                },
+            )
+            $0.aiProviderVerificationClient.verifyWithCredential = { _, credential in
+                await connectionsStore.set(replacementFile)
+                return AiProviderVerificationOutcome(
+                    result: .valid,
+                    sourceCredential: credential,
+                    effectiveCredential: credential,
+                )
+            }
+            $0.aiChatDefaultSettingsClient.load = { AiChatDefaultSettings(
+                provider: PersistedAIProviderSelection(rawValue: AiProvider.chatgptCodex.rawValue),
+                model: nil,
+                thinking: .providerDefault,
+            )
+            }
+            $0.aiProviderModelListClient.loadModels = { _, _ in
+                _ = await modelLoadCount.increment()
+                return []
+            }
+        }
     }
 
     /// SET-007-codex_oauth_runtime: retry cancels an expired Codex refresh without stale persistence.
@@ -1141,7 +1272,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
     /// bootstrap 중 사용자가 credential을 갱신한 경우 이전 credential 검증 결과가 덮어쓰지 않는지 검증한다.
     /// - 검증 내용: stale file load, latest file reload, save suppression
     /// - 사전 조건: 첫 load는 오래된 OpenAI credential, 두 번째 load는 새 credential을 반환한다.
-    /// - 기대 결과: row는 connected로 표시되지만 save는 호출되지 않는다.
+    /// - 기대 결과: stale row success와 save 모두 방출되지 않는다.
     func testBootstrapVerificationSkipsPersistWhenLatestCredentialChanged() async {
         let staleFile = AIConnectionsFile.singleProvider(
             .openai,
@@ -1175,14 +1306,10 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             state.rows[id: .openai]?.statusReason = .none
         }
 
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .openai]?.connectionState = .connected
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
         await store.finish()
 
         XCTAssertTrue(saveSpy.savedFiles.isEmpty)
+        XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .checkingStatus)
     }
 
     /// SET-007-restore_ai_provider_connection_status: fresh install은 모든 provider를 not_verified로 표시한다.

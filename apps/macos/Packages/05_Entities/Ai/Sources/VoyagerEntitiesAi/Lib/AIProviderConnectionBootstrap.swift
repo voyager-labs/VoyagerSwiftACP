@@ -41,7 +41,27 @@ public enum AIProviderConnectionBootstrap {
     private enum PersistenceOutcome {
         case persisted(AIConnectionsFile)
         case unchanged
+        case casMiss
         case failed
+    }
+
+    private enum FileUpdate {
+        case updated(AIConnectionsFile)
+        case unchanged
+        case casMiss
+    }
+
+    private final class FileUpdateBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue: FileUpdate = .unchanged
+
+        var value: FileUpdate {
+            lock.withLock { storedValue }
+        }
+
+        func setValue(_ value: FileUpdate) {
+            lock.withLock { storedValue = value }
+        }
     }
 
     public static func effect<Action: Sendable>(
@@ -226,6 +246,19 @@ public enum AIProviderConnectionBootstrap {
         latestFile: AIConnectionsFile,
         applying results: [AIProviderBootstrapResult],
     ) -> AIConnectionsFile? {
+        guard case let .updated(file) = classifiedFileUpdate(
+            verificationSourceFile: verificationSourceFile,
+            latestFile: latestFile,
+            applying: results,
+        ) else { return nil }
+        return file
+    }
+
+    private static func classifiedFileUpdate(
+        verificationSourceFile: AIConnectionsFile,
+        latestFile: AIConnectionsFile,
+        applying results: [AIProviderBootstrapResult],
+    ) -> FileUpdate {
         var providers = latestFile.providers
         var didUpdate = false
 
@@ -235,7 +268,7 @@ public enum AIProviderConnectionBootstrap {
                   var record = providers[providerKey],
                   record.credential != nil,
                   record.credential == result.sourceCredential ?? sourceRecord.credential
-            else { continue }
+            else { return .casMiss }
 
             let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
             let credential = result.effectiveCredential ?? record.credential
@@ -265,14 +298,14 @@ public enum AIProviderConnectionBootstrap {
             didUpdate = true
         }
 
-        guard didUpdate else { return nil }
-        return AIConnectionsFile(
+        guard didUpdate else { return .unchanged }
+        return .updated(AIConnectionsFile(
             schemaVersion: latestFile.schemaVersion,
             updatedAtMs: latestFile.updatedAtMs,
             lastUsedProviderId: latestFile.lastUsedProviderId,
             lastUsedAtMs: latestFile.lastUsedAtMs,
             providers: providers,
-        )
+        ))
     }
 
     private static func persistenceOutcome(
@@ -281,29 +314,63 @@ public enum AIProviderConnectionBootstrap {
         connectionsFileClient: AIConnectionsFileClient,
     ) async -> PersistenceOutcome {
         guard !Task.isCancelled else { return .failed }
-        let mutationResult: AiConnectionMutationResult?
         if let atomicUpdate = connectionsFileClient.atomicUpdate {
-            mutationResult = try? await atomicUpdate { latestFile in
-                updatedConnectionsFile(
-                    verificationSourceFile: file,
-                    latestFile: latestFile,
-                    applying: results,
-                ) ?? latestFile
-            }
-        } else {
-            guard let latestFile = try? await connectionsFileClient.load() else { return .failed }
-            guard let updatedFile = updatedConnectionsFile(
+            return await atomicPersistenceOutcome(results, file: file, atomicUpdate: atomicUpdate)
+        }
+
+        guard let latestFile = try? await connectionsFileClient.load() else { return .failed }
+        let update = classifiedFileUpdate(
+            verificationSourceFile: file,
+            latestFile: latestFile,
+            applying: results,
+        )
+        switch update {
+        case let .updated(updatedFile):
+            let mutationResult = try? await connectionsFileClient.save(updatedFile)
+            return mutationOutcome(mutationResult, update: update)
+        case .unchanged:
+            return .unchanged
+        case .casMiss:
+            return .casMiss
+        }
+    }
+
+    private static func atomicPersistenceOutcome(
+        _ results: [AIProviderBootstrapResult],
+        file: AIConnectionsFile,
+        atomicUpdate: @Sendable (AIConnectionsFileClient.AtomicUpdateTransform) async throws
+            -> AiConnectionMutationResult,
+    ) async -> PersistenceOutcome {
+        let fileUpdate = FileUpdateBox()
+        let mutationResult = try? await atomicUpdate { latestFile in
+            let update = classifiedFileUpdate(
                 verificationSourceFile: file,
                 latestFile: latestFile,
                 applying: results,
-            ) else { return .unchanged }
-            mutationResult = try? await connectionsFileClient.save(updatedFile)
+            )
+            fileUpdate.setValue(update)
+            guard case let .updated(updatedFile) = update else { return latestFile }
+            return updatedFile
         }
+        return mutationOutcome(mutationResult, update: fileUpdate.value)
+    }
+
+    private static func mutationOutcome(
+        _ mutationResult: AiConnectionMutationResult?,
+        update: FileUpdate,
+    ) -> PersistenceOutcome {
         switch mutationResult {
         case let .success(savedFile), let .partialSuccess(savedFile, _):
-            return .persisted(savedFile)
+            switch update {
+            case .updated:
+                .persisted(savedFile)
+            case .unchanged:
+                .unchanged
+            case .casMiss:
+                .casMiss
+            }
         case .fileSystemError, nil:
-            return .failed
+            .failed
         }
     }
 
@@ -334,6 +401,8 @@ public enum AIProviderConnectionBootstrap {
             }
         case .unchanged:
             break
+        case .casMiss:
+            return
         case .failed:
             return
         }
