@@ -3,7 +3,7 @@ import { FileBrowser } from "../Domains/Entries/FileBrowser"
 import type { EntryViewMode } from "../Patterns/Content/FileToolbar"
 import type { ContentRoute } from "../model/content-route"
 import type { HomeFavorite, HomeLocation } from "../model/home"
-import type { Entry } from "../model/types"
+import type { Entry, EntrySelectionIntent } from "../model/types"
 import { Home } from "./Home"
 
 export interface FileManagerPrimaryContentProps {
@@ -11,7 +11,7 @@ export interface FileManagerPrimaryContentProps {
   readonly entries: readonly Entry[]
   readonly selectedEntryIds: readonly string[]
   readonly viewMode: EntryViewMode
-  readonly onToggleEntry: (entryId: string, append: boolean) => void
+  readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
   readonly onFavoriteSelect: (favorite: HomeFavorite) => void
   readonly onLocationSelect: (location: HomeLocation) => void
 }

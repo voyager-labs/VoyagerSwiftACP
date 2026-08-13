@@ -7,8 +7,12 @@ export type FileEntry = {
   readonly kind: EntryKind
   readonly extension: string | null
   readonly secondaryLabel: string | null
+  readonly dateModified?: string
+  readonly size?: string
   readonly thumbnailSrc?: string
 }
+
+export type EntrySelectionIntent = "replace" | "toggle" | "range"
 
 export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
 

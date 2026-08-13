@@ -17,7 +17,12 @@ import {
 import { locationShortcuts } from "./lib/navigation-data"
 import type { HomeFavorite, HomeLocation } from "./model/home"
 import { createInitialState, getContentRoute, reducer } from "./model/reducer"
-import type { Entry, FileManagerIllustrationProps, SidebarTabItem } from "./model/types"
+import type {
+  Entry,
+  EntrySelectionIntent,
+  FileManagerIllustrationProps,
+  SidebarTabItem,
+} from "./model/types"
 import "./styles/macos-tokens.css"
 import "./styles/file-manager.css"
 import "./styles/atoms.css"
@@ -86,7 +91,8 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
   )
 
   const handleToggleEntry = useCallback(
-    (entryId: string, append: boolean) => dispatch({ type: "TOGGLE_ENTRY", entryId, append }),
+    (entryId: string, intent: EntrySelectionIntent) =>
+      dispatch({ type: "TOGGLE_ENTRY", entryId, intent }),
     [],
   )
   const handleViewModeChange = useCallback(

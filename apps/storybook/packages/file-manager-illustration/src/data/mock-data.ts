@@ -235,6 +235,8 @@ export const publicFiles: readonly FileEntry[] = files.map((file) => ({
   kind: file.kind,
   extension: null,
   secondaryLabel: file.meta ?? file.count ?? null,
+  dateModified: file.dateModified,
+  size: file.size,
   thumbnailSrc: file.thumbnailSrc,
 }))
 
