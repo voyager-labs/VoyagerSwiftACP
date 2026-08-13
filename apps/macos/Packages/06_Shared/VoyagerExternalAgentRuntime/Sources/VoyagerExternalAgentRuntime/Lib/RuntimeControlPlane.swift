@@ -163,24 +163,59 @@ public actor RuntimeControlPlane {
     ) async throws -> RuntimeResult {
         let primary = normalizeAdapterError(error)
         do {
-            if let terminal = try await commit(host: reservation.host, { plane, registry in
+            let terminal = try await commit(host: reservation.host, { plane, registry in
                 plane.failLaunchTransition(
                     host: reservation.host,
                     lease: reservation.lease,
                     in: &registry,
                 )
-            }) {
+            })
+            try Task.checkCancellation()
+            if let terminal {
                 return terminal
             }
         } catch {
-            if let terminal = try? await persistedTerminalResult(
-                host: reservation.host,
-                runReference: runReference,
-            ) {
-                return terminal
+            do {
+                try Task.checkCancellation()
+                if let terminal = try await persistedTerminalResult(
+                    host: reservation.host,
+                    runReference: runReference,
+                ), let reconciled = try await reconcileLaunchFailureTerminal(
+                    terminal,
+                    host: reservation.host,
+                    runReference: runReference,
+                    lease: reservation.lease,
+                ) {
+                    try Task.checkCancellation()
+                    return reconciled
+                }
+            } catch is CancellationError {
+                await detachLaunchOwner(host: reservation.host, lease: reservation.lease)
+                throw CancellationError()
+            } catch {
+                // 원래 adapter 오류를 우선하기 위해 fallback persistence 오류는 무시한다.
             }
         }
         throw primary
+    }
+
+    private func reconcileLaunchFailureTerminal(
+        _ terminal: RuntimeResult,
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) async throws -> RuntimeResult? {
+        try await mutateAfterPersistedTransitions { plane in
+            guard var session = plane.sessions[host],
+                  session.stored.runReference == runReference,
+                  session.lease == .launching(lease),
+                  session.stored.projection.isTerminal
+            else { return nil }
+            session.lease = .none
+            session.revision += 1
+            plane.sessions[host] = session
+            return terminal
+        }
     }
 
     private func consumeAndFinish(

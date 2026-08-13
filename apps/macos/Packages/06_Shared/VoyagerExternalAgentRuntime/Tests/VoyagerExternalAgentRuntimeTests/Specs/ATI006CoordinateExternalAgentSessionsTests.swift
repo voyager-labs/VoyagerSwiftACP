@@ -491,6 +491,38 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: cancellation wins during launch failure cleanup.
+    /// adapter 실패 정리가 persistence에서 대기하는 동안 caller 취소가 원래 오류보다 우선하는지 검증한다.
+    /// - 검증 내용: CancellationError 전파와 exact launch lease 정리.
+    /// - 사전 조건: adapter launch 실패 뒤 interrupted snapshot 저장이 gate에서 대기한다.
+    /// - 기대 결과: caller는 CancellationError를 받고 host는 active launch lease를 남기지 않는다.
+    @Test
+    func `cancellation wins during launch failure cleanup`() async throws {
+        let host: ExternalAgentSessionReference = "host-launch-failure-cleanup-cancelled"
+        let run = RuntimeRunReference("run-launch-failure-cleanup-cancelled")
+        let cleanupSaveGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(saveGates: [3: cleanupSaveGate])
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchFailures: 1,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await store.waitForSaveCount(3)
+
+        task.cancel()
+        await cleanupSaveGate.open()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.projection(for: host) == .interrupted)
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+    }
+
     /// ATI-006-coordinate_external_agent_launch: cancelling launch wait preserves the attempted reservation.
     /// receipt 전 caller task 취소를 adapter 실패나 명시적 interruption으로 저장하지 않는지 검증한다.
     /// - 검증 내용: CancellationError 전파, launching projection 보존, provider 재호출 차단.
@@ -1040,6 +1072,43 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         await #expect(throws: RuntimeHostError.adapterUnavailable) {
             _ = try await plane.restore(hostReference: "host-a", expectedContext: reviewRegressionTestsMakeContext())
         }
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: restart compatibility preserves caller cancellation.
+    /// restore 호환성 확인 중 발생한 caller 취소를 adapter 오류로 정규화하지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파와 restore claim·lease 미생성.
+    /// - 사전 조건: persisted running session의 restart compatibility 확인이 cancellable delay에서 대기한다.
+    /// - 기대 결과: restore는 CancellationError를 던지고 기존 running session은 비활성 lease로 유지된다.
+    @Test
+    func `restart compatibility preserves caller cancellation`() async throws {
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            restartDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(
+            store: InMemoryRuntimeStateStore(state: reviewRegressionTestsMakeRunningState()),
+        )
+        try await plane.register(adapter)
+        let restoreTask = Task {
+            try await plane.restore(
+                hostReference: "host-a",
+                expectedContext: reviewRegressionTestsMakeContext(),
+            )
+        }
+        for _ in 0 ..< 10000 {
+            if await !adapter.receivedRestartBindings().isEmpty { break }
+            await Task.yield()
+        }
+
+        restoreTask.cancel()
+
+        await #expect(throws: CancellationError.self) { try await restoreTask.value }
+        #expect(await plane.projection(for: "host-a") == .running)
+        #expect(await plane.sessions["host-a"]?.lease.isActive == false)
+        #expect(await plane.sessions["host-a"]?.stored.restorationClaim == nil)
+        #expect(await adapter.receivedRestartBindings().count == 1)
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: persisted run blocks launch while compatibility check restores
@@ -2192,6 +2261,64 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(try await task.value.outcome == .completed)
         #expect(await plane.projection(for: host) == .completed)
         #expect(await adapter.counts().launch == 1)
+    }
+
+    /// ATI-006-project_external_agent_run_events: persisted terminal fallback releases the exact launch lease.
+    /// 다른 control plane의 terminal을 launch 실패 fallback으로 수용한 plane이 replacement를 막지 않는지 검증한다.
+    /// - 검증 내용: fallback 결과, exact launch lease 해제, 같은 host의 replacement 실행.
+    /// - 사전 조건: 공유 file store에서 original launch가 대기하는 동안 다른 plane이 같은 run terminal을 저장한다.
+    /// - 기대 결과: original은 completed로 수렴하고 동일 plane의 replacement run도 completed로 종료된다.
+    @Test
+    func `persisted terminal fallback releases the exact launch lease`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host: ExternalAgentSessionReference = "host-cross-plane-launch-failure"
+        let originalRun = RuntimeRunReference("run-cross-plane-launch-failure")
+        let replacementRun = RuntimeRunReference("run-cross-plane-launch-replacement")
+        let launchGate = RuntimeTestGate()
+        let failingAdapter = DeterministicRuntimeAdapter(
+            id: "failing",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+            failsLaunchAfterGate: true,
+        )
+        let replacementCompleted = makeEvent(
+            host: host,
+            run: replacementRun,
+            sequence: 1,
+            idempotencyKey: "cross-plane-launch-replacement-completed",
+            kind: .completed,
+        )
+        let replacementAdapter = DeterministicRuntimeAdapter(
+            id: "replacement",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[replacementCompleted]],
+        )
+        let providerPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await providerPlane.register(failingAdapter)
+        try await providerPlane.register(replacementAdapter)
+        let originalTask = Task {
+            try await runPolicyReady(
+                providerPlane,
+                makeLaunch(host: host, run: originalRun, adapterID: "failing"),
+            )
+        }
+        await failingAdapter.waitForLaunchCount(1)
+
+        let hostPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        #expect(try await hostPlane.ingestHostEvent(
+            reviewerBlockerTestsMakeHostTerminal(host: host, run: originalRun, sequence: 1),
+        )?.outcome == .completed)
+        await launchGate.open()
+
+        #expect(try await originalTask.value.outcome == .completed)
+        let replacement = makeLaunch(host: host, run: replacementRun, adapterID: "replacement")
+        try await providerPlane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await providerPlane.run(replacement).outcome == .completed)
+        #expect(await providerPlane.projection(for: host) == .completed)
     }
 
     /// ATI-006-project_external_agent_run_events: pending host terminal save wins over launch failure cleanup.

@@ -110,6 +110,8 @@ public extension RuntimeControlPlane {
         let compatibility: RuntimeRestartCompatibility
         do {
             compatibility = try await adapter.restartCompatibility(for: binding)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw normalizeAdapterError(error)
         }
