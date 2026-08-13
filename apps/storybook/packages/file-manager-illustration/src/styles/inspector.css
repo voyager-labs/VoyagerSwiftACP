@@ -20,12 +20,25 @@
   padding: 0 var(--fm-space-5) 0 var(--fm-space-8);
 }
 
+/* Native InspectorPaneView header 계약: chat 모드 spacing 4/leading 8,
+   sessions 모드 spacing 8/leading 16, trailing 16은 양 모드 공통.
+   토큰 대신 literal을 쓰는 건 네이티브 수치 일치가 목적이다. */
+[data-file-manager-illustration] .inspector-header[data-chat-header="chat"] {
+  gap: 4px;
+  padding: 0 16px 0 8px;
+}
+
+[data-file-manager-illustration] .inspector-header[data-chat-header="sessions"] {
+  gap: 8px;
+  padding: 0 16px 0 16px;
+}
+
 [data-file-manager-illustration] .inspector-header-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   color: var(--fm-text-primary);
-  font-size: var(--fm-font-size-body);
+  font-size: 14px;
   font-weight: var(--fm-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -65,6 +78,13 @@
 [data-file-manager-illustration] .inspector-header-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* Native back/close 버튼은 28×28 고정 프레임. 아이콘 전용 버튼에만 적용. */
+[data-file-manager-illustration] .inspector-header-icon-btn {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
 }
 
 [data-file-manager-illustration] .pane-actions {
@@ -397,7 +417,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  padding: 7px 14px 5px 0;
+  padding: 5px 14px 5px 0;
   color: var(--fm-text-primary);
   font: inherit;
   font-size: var(--fm-font-size-body);
@@ -563,11 +583,14 @@
 
 [data-file-manager-illustration] .fm-ai-chat-native-menu-selector::after {
   position: absolute;
-  right: 0;
-  color: var(--fm-text-tertiary);
-  content: "▼";
-  font-size: 9px;
-  line-height: 1;
+  right: 1px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--fm-text-tertiary);
+  border-bottom: 1.5px solid var(--fm-text-tertiary);
+  content: "";
+  transform: translateY(-65%) rotate(45deg);
   pointer-events: none;
 }
 
@@ -878,6 +901,7 @@
   position: relative;
   flex-direction: column;
   gap: var(--fm-space-4);
+  padding: 4px;
   width: 100%;
   min-width: 0;
 }
@@ -904,11 +928,13 @@
 [data-file-manager-illustration] .chat-markdown-heading[data-level="2"] {
   font-size: var(--fm-chat-heading-2-size);
   line-height: var(--fm-chat-line-heading-2);
+  font-weight: var(--fm-weight-bold);
 }
 
 [data-file-manager-illustration] .chat-markdown-heading[data-level="3"] {
   font-size: var(--fm-chat-heading-3-size);
   line-height: var(--fm-chat-line-heading-3);
+  font-weight: var(--fm-weight-bold);
 }
 
 [data-file-manager-illustration] .chat-markdown-paragraph,
@@ -1195,7 +1221,7 @@
 [data-file-manager-illustration] .chat-empty {
   align-items: stretch;
   justify-content: center;
-  gap: var(--fm-space-8);
+  gap: 20px;
   padding: 40px 0;
 }
 

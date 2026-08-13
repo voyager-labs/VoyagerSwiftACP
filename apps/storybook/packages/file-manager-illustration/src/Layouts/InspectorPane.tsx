@@ -45,7 +45,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
   return (
     <aside className="inspector" aria-label="Context Pane">
       {/* Chat-only header — mirrors native InspectorPaneView header */}
-      <header className="inspector-header">
+      <header className="inspector-header" data-chat-header={chatHeader}>
         {chatHeader === "sessions" ? (
           <>
             <span className="inspector-header-title">Chat History</span>
@@ -59,7 +59,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
                 New Chat
               </button>
               <button
-                className="inspector-header-btn"
+                className="inspector-header-btn inspector-header-icon-btn"
                 type="button"
                 aria-label="Close AI Chat"
                 onClick={onCloseChat}
@@ -71,7 +71,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
         ) : (
           <>
             <button
-              className="inspector-header-btn"
+              className="inspector-header-btn inspector-header-icon-btn"
               type="button"
               aria-label="Back to Chat History"
               onClick={onOpenChatHistory}
@@ -81,7 +81,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
             <span className="inspector-header-title">{chatTitle}</span>
             <div className="inspector-header-actions">
               <button
-                className="inspector-header-btn"
+                className="inspector-header-btn inspector-header-icon-btn"
                 type="button"
                 aria-label="Close AI Chat"
                 onClick={onCloseChat}
