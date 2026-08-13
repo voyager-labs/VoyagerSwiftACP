@@ -419,6 +419,16 @@ private enum FileManagerHostFixtureProgressiveLoading {
             requestID: notificationRequestID,
             rowCount: children.count,
         )
+        guard scenario.progressiveEntryLoading != .partialFailure else {
+            FileManagerHostFixturePhase.partialFailure.log(
+                count: firstBatchCount,
+                preset: preset,
+                windowID: windowID,
+                requestID: notificationRequestID,
+                rowCount: firstBatchCount,
+            )
+            throw FileManagerHostFixtureProgressiveLoadingError.partialFailure
+        }
 
         try await finishEntryStream(
             children: children,

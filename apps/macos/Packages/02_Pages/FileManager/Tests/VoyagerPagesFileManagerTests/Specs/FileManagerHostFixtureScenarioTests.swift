@@ -141,6 +141,44 @@ extension FileManagerHostFixturePhaseNotificationTests {
         XCTAssertNil(phase.rowCount)
     }
 
+    func testProgressiveFailurePresetStopsAfterFirstBatchAndEmitsFailurePhase() async throws {
+        let windowID = UUID()
+        let client = FileManagerHostFixture.makeEntryLoadingClient(
+            preset: .progressiveEntryLoadingFailure,
+            windowID: windowID,
+        )
+        let recorder = PhaseRecorder()
+        let observer = NotificationCenter.default.addObserver(
+            forName: FileManagerHostFixture.phaseDidChange,
+            object: nil,
+            queue: nil,
+        ) { notification in
+            if let phase = FileManagerHostFixture.phaseNotification(from: notification) {
+                recorder.append(phase)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        var events: [EntryLoadEvent] = []
+        do {
+            for try await event in client.loadItems(
+                URL(fileURLWithPath: "/Fixture/FileManager/Projects"),
+                false,
+                .none,
+            ) {
+                events.append(event)
+            }
+            XCTFail("Expected progressive failure preset to fail")
+        } catch {}
+
+        XCTAssertEqual(events.rowCount, 32)
+        XCTAssertFalse(events.contains { if case .coreFinished = $0 { true } else { false } })
+        let phase = try XCTUnwrap(recorder.values().first { $0.phase == "partialFailure" })
+        XCTAssertEqual(phase.windowID, windowID)
+        XCTAssertEqual(phase.preset, FileManagerHostPreset.progressiveEntryLoadingFailure.rawValue)
+        XCTAssertEqual(phase.rowCount, 32)
+    }
+
     func testCollectionPresetEmitsStartAndFinishPhaseMetadata() {
         let windowID = UUID()
         let recorder = PhaseRecorder()
