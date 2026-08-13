@@ -4,6 +4,24 @@ import Testing
 
 @Suite("ATI-006 Coordinate External Agent Sessions")
 struct ATI006CoordinateExternalAgentSessionsTests {
+    enum OperationCancellationCase: String {
+        case approval
+        case queuedInput
+        case cancellation
+
+        func invocationCount(in adapter: DeterministicRuntimeAdapter) async -> Int {
+            let counts = await adapter.counts()
+            switch self {
+            case .approval:
+                return counts.approval
+            case .queuedInput:
+                return counts.input
+            case .cancellation:
+                return counts.cancellation
+            }
+        }
+    }
+
     // MARK: - ATI-006-bind_external_agent_session_reference
 
     /// ATI-006-bind_external_agent_session_reference: distinct host references do not cross-mutate.
@@ -3546,6 +3564,65 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await plane.projectPrelaunch(replacement, as: .policyReady)
         #expect(try await plane.run(replacement).outcome == .completed)
         #expect(await adapter.counts().launch == 2)
+    }
+
+    /// ATI-006-project_external_agent_run_events: operation APIs preserve caller cancellation.
+    /// provider operation 대기 중 caller 취소가 adapterUnavailable로 정규화되지 않는지 검증한다.
+    /// - 검증 내용: approval, queued input, cancellation operation의 CancellationError 전파.
+    /// - 사전 조건: active run과 취소 가능한 operation delay를 가진 adapter가 구성되어 있다.
+    /// - 기대 결과: 세 operation 모두 caller cancellation을 그대로 전파하고 active run은 유지된다.
+    @Test(arguments: [
+        OperationCancellationCase.approval,
+        .queuedInput,
+        .cancellation,
+    ])
+    func `operation APIs preserve caller cancellation`(operation: OperationCancellationCase) async throws {
+        let host = ExternalAgentSessionReference("host-operation-cancellation-\(operation.rawValue)")
+        let run = RuntimeRunReference("run-operation-cancellation-\(operation.rawValue)")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamDelay: .seconds(2),
+            operationDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let runTask = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForEventStreamCount(1)
+        let operationTask = Task {
+            switch operation {
+            case .approval:
+                try await plane.respondToApproval(
+                    hostReference: host,
+                    requestID: RuntimeApprovalRequestID("approval"),
+                    operationID: RuntimeOperationID("approve"),
+                )
+            case .queuedInput:
+                try await plane.enqueueInput(
+                    hostReference: host,
+                    operationID: RuntimeOperationID("input"),
+                    input: RuntimeSensitiveInput("not persisted"),
+                )
+            case .cancellation:
+                try await plane.requestCancellation(
+                    hostReference: host,
+                    operationID: RuntimeOperationID("cancel"),
+                )
+            }
+        }
+        while await operation.invocationCount(in: adapter) == 0 {
+            await Task.yield()
+        }
+
+        operationTask.cancel()
+
+        await #expect(throws: CancellationError.self) { try await operationTask.value }
+        #expect(await plane.projection(for: host) == .running)
+        runTask.cancel()
+        await #expect(throws: CancellationError.self) { try await runTask.value }
     }
 
     /// ATI-006-project_external_agent_run_events: terminal transition does not wait for a delayed operation.

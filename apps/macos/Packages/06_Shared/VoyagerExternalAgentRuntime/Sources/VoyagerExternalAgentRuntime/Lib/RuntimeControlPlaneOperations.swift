@@ -22,6 +22,8 @@ public extension RuntimeControlPlane {
                 runReference: session.runReference,
                 authorizationGeneration: session.contextPolicy.authorizationGeneration,
             ))
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw normalizeAdapterError(error)
         }
@@ -43,6 +45,8 @@ public extension RuntimeControlPlane {
                 runReference: claim.session.runReference,
                 input: input,
             ))
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw normalizeAdapterError(error)
         }
@@ -60,6 +64,8 @@ public extension RuntimeControlPlane {
                 operationID: operationID,
                 runReference: claim.session.runReference,
             ))
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw normalizeAdapterError(error)
         }
