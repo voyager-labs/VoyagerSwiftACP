@@ -56,21 +56,32 @@ extension RuntimeControlPlane {
     func loadPersistedTerminalResult(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
+        expectedSession: Session? = nil,
     ) async throws -> RuntimeResult? {
         try await acquirePersistenceMutation()
         defer { releasePersistenceMutation() }
+        try Task.checkCancellation()
         let state: RuntimeStoredState?
         do {
             state = try await store.load()?.validatedForRuntime()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as RuntimeHostError {
             throw error
         } catch {
             throw RuntimeHostError.persistenceFailure
         }
+        if let expectedSession, sessions[host] != expectedSession {
+            try Task.checkCancellation()
+            return nil
+        }
         guard let stored = state?.sessions.first(where: {
             $0.externalAgentSessionReference == host && $0.runReference == runReference
         }), outcome(for: stored.projection) != nil
-        else { return nil }
+        else {
+            try Task.checkCancellation()
+            return nil
+        }
         if let current = sessions[host] {
             sessions[host] = Session(
                 stored: stored,
@@ -80,6 +91,7 @@ extension RuntimeControlPlane {
         } else {
             sessions[host] = Session(stored: stored)
         }
+        try Task.checkCancellation()
         return storedTerminalResult(host: host, runReference: runReference)
     }
 

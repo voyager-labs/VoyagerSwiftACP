@@ -6,6 +6,7 @@ public extension RuntimeControlPlane {
         as projection: RuntimePrelaunchProjection,
     ) async throws {
         try await hydrateIfNeeded()
+        try await synchronizePersistedTerminalBeforeReplacement(request)
         try await commit(host: request.externalAgentSessionReference) { plane, registry in
             try plane.validateBoundary(request)
             guard let adapter = plane.adapters[request.adapterID] else {
@@ -54,6 +55,22 @@ public extension RuntimeControlPlane {
 }
 
 private extension RuntimeControlPlane {
+    func synchronizePersistedTerminalBeforeReplacement(
+        _ request: RuntimeLaunchRequest,
+    ) async throws {
+        let host = request.externalAgentSessionReference
+        guard let current = sessions[host],
+              !current.lease.isActive,
+              !current.stored.projection.isTerminal,
+              current.stored.runReference != request.runReference
+        else { return }
+        _ = try await loadPersistedTerminalResult(
+            host: host,
+            runReference: current.stored.runReference,
+            expectedSession: current,
+        )
+    }
+
     func validatePrelaunchTransition(
         _ current: Session,
         request: RuntimeLaunchRequest,

@@ -1052,6 +1052,60 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await plane.projection(for: "host-running") == .running)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: stale file plane admits replacement after durable terminal.
+    /// 다른 control plane이 저장한 기존 run의 terminal을 stale plane이 replacement 차단 전에 동기화하는지 검증한다.
+    /// - 검증 내용: exact host/run terminal 수렴, replacement prelaunch와 provider launch 횟수.
+    /// - 사전 조건: 공유 file store에서 stale plane은 running을 hydrate하고 다른 plane은 같은 run을 completed로 저장한다.
+    /// - 기대 결과: stale plane은 durable terminal을 반영한 뒤 같은 host의 replacement run을 한 번 실행한다.
+    @Test
+    func `stale file plane admits replacement after durable terminal`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host: ExternalAgentSessionReference = "host-stale-prelaunch"
+        let originalRun = RuntimeRunReference("run-stale-prelaunch-original")
+        let replacementRun = RuntimeRunReference("run-stale-prelaunch-replacement")
+        let stored = reviewerBlockerTestsMakeRunningSession(
+            host: host,
+            run: originalRun,
+            context: reviewerBlockerTestsMakeCanonicalContext(),
+        )
+        try await RuntimeFileStateStore(fileURL: fileURL).save(RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let replacementAdapter = DeterministicRuntimeAdapter(
+            id: "replacement",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: replacementRun,
+                sequence: 1,
+                idempotencyKey: "stale-prelaunch-replacement-completed",
+                kind: .completed,
+            )]],
+        )
+        let stalePlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await stalePlane.register(replacementAdapter)
+        try await stalePlane.hydrateIfNeeded()
+        #expect(await stalePlane.projection(for: host) == .running)
+
+        let hostPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        #expect(try await hostPlane.ingestHostEvent(reviewerBlockerTestsMakeHostTerminal(
+            host: host,
+            run: originalRun,
+            sequence: 1,
+        ))?.outcome == .completed)
+        #expect(try await RuntimeFileStateStore(fileURL: fileURL).load()?.sessions.first?.projection == .completed)
+
+        let replacement = makeLaunch(host: host, run: replacementRun, adapterID: "replacement")
+        try await stalePlane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await stalePlane.run(replacement).outcome == .completed)
+        #expect(await replacementAdapter.counts().launch == 1)
+        #expect(await stalePlane.projection(for: host) == .completed)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: restart adapter failure is normalized.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: 실행 가능한 상태, 효과, persistence 또는 event projection 경계.
