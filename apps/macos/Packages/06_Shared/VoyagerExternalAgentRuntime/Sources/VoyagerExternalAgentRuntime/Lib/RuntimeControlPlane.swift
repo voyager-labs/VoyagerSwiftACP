@@ -63,6 +63,7 @@ public actor RuntimeControlPlane {
 
     let store: any RuntimeStateStore
     let restorationOwnerToken = UUID().uuidString
+    let restorationHeartbeatInterval: Duration
     var adapters: [RuntimeAdapterID: any ExternalAgentRuntimeAdapter] = [:]
     var sessions: SessionRegistry = [:]
     var hydrationTask: Task<RuntimeStoredState?, Error>?
@@ -73,6 +74,12 @@ public actor RuntimeControlPlane {
 
     public init(store: any RuntimeStateStore) {
         self.store = store
+        restorationHeartbeatInterval = .seconds(20)
+    }
+
+    init(store: any RuntimeStateStore, restorationHeartbeatInterval: Duration) {
+        self.store = store
+        self.restorationHeartbeatInterval = restorationHeartbeatInterval
     }
 
     public func register(_ adapter: any ExternalAgentRuntimeAdapter) throws {
@@ -320,6 +327,13 @@ public actor RuntimeControlPlane {
                 try Task.checkCancellation()
                 return terminal
             } catch RuntimeHostError.persistenceFailure {
+                try Task.checkCancellation()
+                if try await loadPersistedTerminalResult(host: host, runReference: result.runReference) != nil,
+                   let terminal = try await reconcileConsumedResult(result, host: host, lease: lease)
+                {
+                    try Task.checkCancellation()
+                    return terminal
+                }
                 throw RuntimeHostError.persistenceFailure
             }
         }

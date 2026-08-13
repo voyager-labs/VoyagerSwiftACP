@@ -1,5 +1,9 @@
 import Foundation
 
+private enum RuntimeRestorationHeartbeatPersistenceError: Error {
+    case persistenceFailure
+}
+
 public extension RuntimeControlPlane {
     func resumeRestoredRun(
         hostReference: ExternalAgentSessionReference,
@@ -20,6 +24,9 @@ public extension RuntimeControlPlane {
                 result = try await consume(claim.receipt, from: adapter, host: hostReference)
             }
         } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
+            try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
+            throw RuntimeHostError.persistenceFailure
+        } catch RuntimeRestorationHeartbeatPersistenceError.persistenceFailure {
             try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
             throw RuntimeHostError.persistenceFailure
         } catch is CancellationError {
@@ -104,11 +111,25 @@ public extension RuntimeControlPlane {
             group.addTask { try await self.consume(receipt, from: adapter, host: host) }
             group.addTask {
                 while true {
-                    try await Task.sleep(for: .seconds(20))
+                    try await Task.sleep(for: self.restorationHeartbeatInterval)
                     do {
                         try await self.renewRestorationClaim(host, lease: lease)
                     } catch is CancellationError {
                         throw CancellationError()
+                    } catch RuntimeHostError.persistenceFailure {
+                        do {
+                            if let terminal = try await self.persistedTerminalResult(
+                                host: host,
+                                runReference: receipt.runReference,
+                            ) {
+                                return terminal
+                            }
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch RuntimeHostError.persistenceFailure {
+                            throw RuntimeRestorationHeartbeatPersistenceError.persistenceFailure
+                        }
+                        throw RuntimeRestorationHeartbeatPersistenceError.persistenceFailure
                     } catch {
                         if let terminal = try await self.persistedTerminalResult(
                             host: host,

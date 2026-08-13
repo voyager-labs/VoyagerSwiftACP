@@ -34,6 +34,8 @@ extension RuntimeControlPlane {
                     try await store.save(state)
                     sessions = candidate
                 }
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw RuntimeHostError.persistenceFailure
             }

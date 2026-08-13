@@ -696,6 +696,35 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         )
     }
 
+    /// ATI-006-coordinate_external_agent_launch: store cancellation remains caller cancellation.
+    /// 실제 store save 내부에서 발생한 취소가 persistenceFailure로 정규화되지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파와 prelaunch snapshot 미저장.
+    /// - 사전 조건: 첫 prelaunch save가 cancellation-aware delay에서 대기한다.
+    /// - 기대 결과: 취소된 호출은 원래 오류로 종료되고 durable session은 생성되지 않는다.
+    @Test
+    func `store cancellation remains caller cancellation`() async throws {
+        let store = InMemoryRuntimeStateStore(saveDelays: [1: .seconds(2)])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+        ))
+        let request = makeLaunch(
+            host: "host-store-save-cancellation",
+            run: RuntimeRunReference("run-store-save-cancellation"),
+            adapterID: "sdk",
+        )
+        let task = Task { try await plane.projectPrelaunch(request, as: .policyReady) }
+        await store.waitForSaveCount(1)
+
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.projection(for: request.externalAgentSessionReference) == nil)
+        #expect(await store.currentState() == nil)
+    }
+
     /// ATI-006-coordinate_external_agent_launch: ambiguous launch cleanup failure remains fail-closed.
     /// provider 호출 오류 뒤 cleanup 저장도 실패하면 durable reservation을 재실행하지 않는지 검증한다.
     /// - 검증 내용: 최초 adapter 오류 보존, restart 후 같은 run prelaunch 차단, launch 횟수.
@@ -1370,6 +1399,53 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await hostPlane.projection(for: host) == .completed)
         #expect(try await RuntimeFileStateStore(fileURL: fileURL).load()?.sessions.first?.restorationClaim == nil)
         #expect(await adapter.counts().stream == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: heartbeat persistence failure preserves resume claim.
+    /// provider 소비 중 heartbeat 저장 실패를 run interruption으로 오인하지 않는지 검증한다.
+    /// - 검증 내용: persistenceFailure 전파, running projection과 재개 가능한 claim 보존.
+    /// - 사전 조건: restored stream은 대기하고 첫 heartbeat renewal save가 실패한다.
+    /// - 기대 결과: run은 interrupted가 되지 않고 다음 resume이 동일 provider stream을 다시 연다.
+    @Test
+    func `heartbeat persistence failure preserves resume claim`() async throws {
+        let host = ExternalAgentSessionReference("host-heartbeat-persistence-failure")
+        let run = RuntimeRunReference("run-heartbeat-persistence-failure")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-heartbeat-persistence-failure"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: context,
+            projection: .running,
+        )
+        let store = DeterministicHostMutationRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            failingLoadNumbers: [2],
+            failingUpdateNumbers: [3],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: store, restorationHeartbeatInterval: .milliseconds(10))
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        let firstResume = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await store.waitForUpdateCount(3)
+        await #expect(throws: RuntimeHostError.persistenceFailure) { try await firstResume.value }
+        try #require(await plane.projection(for: host) == .running)
+        #expect(await store.currentState()?.sessions.first?.projection == .running)
+
+        let retry = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(2)
+        retry.cancel()
+        await #expect(throws: CancellationError.self) { try await retry.value }
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: cancellation wins over a visible restored terminal.
@@ -2705,6 +2781,49 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(try await task.value.outcome == .interrupted)
         #expect(await providerPlane.projection(for: host) == .interrupted)
         #expect(await hostPlane.projection(for: host) == .interrupted)
+    }
+
+    /// ATI-006-project_external_agent_run_events: retry CAS converges to a newly durable terminal.
+    /// 첫 durable 조회 뒤 저장된 같은 run terminal을 두 번째 stale finish CAS 실패 후 다시 수렴하는지 검증한다.
+    /// - 검증 내용: provider metadata 보존, completed projection, retry CAS 경쟁 처리.
+    /// - 사전 조건: 첫 finish update는 실패하고 retry update가 대기하는 동안 같은 outcome terminal이 저장된다.
+    /// - 기대 결과: caller는 persistenceFailure 대신 원래 provider result를 받고 active lease가 해제된다.
+    @Test
+    func `retry CAS converges to a newly durable terminal`() async throws {
+        let host: ExternalAgentSessionReference = "host-finish-second-cas"
+        let run = RuntimeRunReference("run-finish-second-cas")
+        let retryGate = RuntimeTestGate()
+        let store = DeterministicHostMutationRuntimeStateStore(
+            failingUpdateNumbers: [4],
+            updateGates: [5: retryGate],
+        )
+        let expected = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://second-cas.json"],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            terminalResultOverride: expected,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "terminal"))
+        }
+        await store.waitForUpdateCount(5)
+        let running = try #require(await store.currentState()?.sessions.first)
+        await store.replaceState(RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [running.withProjection(.completed)],
+        ))
+        await retryGate.open()
+
+        #expect(try await task.value == expected)
+        #expect(await plane.projection(for: host) == .completed)
     }
 
     /// ATI-006-project_external_agent_run_events: cancellation wins during persisted finish convergence.
