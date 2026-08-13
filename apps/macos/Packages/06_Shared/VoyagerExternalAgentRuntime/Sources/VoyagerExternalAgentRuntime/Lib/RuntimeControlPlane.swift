@@ -8,6 +8,7 @@ public actor RuntimeControlPlane {
         case launching(UInt64)
         case detachedLaunching(UInt64)
         case consuming(UInt64)
+        case detachedConsuming(UInt64)
         case restored(UInt64)
         case resuming(UInt64)
 
@@ -18,6 +19,15 @@ public actor RuntimeControlPlane {
         var isAwaitingResumption: Bool {
             if case .restored = self { return true }
             return false
+        }
+
+        var isDetachedOwner: Bool {
+            switch self {
+            case .detachedLaunching, .detachedConsuming:
+                true
+            default:
+                false
+            }
         }
     }
 
@@ -185,7 +195,7 @@ public actor RuntimeControlPlane {
             try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
             throw RuntimeHostError.persistenceFailure
         } catch is CancellationError {
-            _ = try? await releaseTerminalLeaseIfNeeded(host: reservation.host, lease: lease)
+            try? await detachConsumerOwner(host: reservation.host, lease: lease)
             throw CancellationError()
         } catch {
             let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
@@ -231,12 +241,12 @@ public actor RuntimeControlPlane {
         }
     }
 
-    func releaseTerminalLeaseIfNeeded(
+    func detachConsumerOwner(
         host: ExternalAgentSessionReference,
         lease: UInt64,
-    ) async throws -> Bool {
+    ) async throws {
         try await mutateAfterPersistedTransitions { plane in
-            plane.releaseTerminalLeaseTransition(host: host, lease: lease, in: &plane.sessions)
+            plane.detachConsumerOwnerTransition(host: host, lease: lease, in: &plane.sessions)
         }
     }
 
@@ -255,14 +265,25 @@ public actor RuntimeControlPlane {
         lease: UInt64,
     ) async throws -> RuntimeResult {
         do {
-            return try await commit(host: host) { plane, registry in
+            let terminal = try await commit(host: host) { plane, registry in
                 try plane.finishTransition(result, host: host, lease: lease, in: &registry)
             }
+            try Task.checkCancellation()
+            return terminal
         } catch RuntimeHostError.persistenceFailure {
+            try Task.checkCancellation()
+            if try await loadPersistedTerminalResult(host: host, runReference: result.runReference) != nil,
+               let terminal = try await reconcileConsumedResult(result, host: host, lease: lease)
+            {
+                try Task.checkCancellation()
+                return terminal
+            }
             do {
-                return try await commit(host: host) { plane, registry in
+                let terminal = try await commit(host: host) { plane, registry in
                     try plane.finishTransition(result, host: host, lease: lease, in: &registry)
                 }
+                try Task.checkCancellation()
+                return terminal
             } catch RuntimeHostError.persistenceFailure {
                 throw RuntimeHostError.persistenceFailure
             }

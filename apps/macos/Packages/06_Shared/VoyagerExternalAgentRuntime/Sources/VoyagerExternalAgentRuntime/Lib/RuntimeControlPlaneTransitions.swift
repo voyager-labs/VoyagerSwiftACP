@@ -215,19 +215,17 @@ extension RuntimeControlPlane {
         return nil
     }
 
-    func releaseTerminalLeaseTransition(
+    func detachConsumerOwnerTransition(
         host: ExternalAgentSessionReference,
         lease: UInt64,
         in registry: inout SessionRegistry,
-    ) -> Bool {
+    ) {
         guard var session = registry[host],
-              session.stored.projection.isTerminal,
-              session.lease == .consuming(lease) || session.lease == .resuming(lease)
-        else { return false }
-        session.lease = .none
+              session.lease == .consuming(lease)
+        else { return }
+        session.lease = session.stored.projection.isTerminal ? .none : .detachedConsuming(lease)
         session.revision += 1
         registry[host] = session
-        return true
     }
 
     func recoverTerminalPersistenceClaimTransition(

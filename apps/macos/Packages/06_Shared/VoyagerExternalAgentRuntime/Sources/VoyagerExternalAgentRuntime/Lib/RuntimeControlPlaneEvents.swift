@@ -196,7 +196,7 @@ extension RuntimeControlPlane {
         session.stored.restorationClaim = projection.isTerminal
             ? nil
             : restorationClaim
-        if projection.isTerminal, case .detachedLaunching = session.lease {
+        if projection.isTerminal, session.lease.isDetachedOwner {
             session.lease = .none
         }
         session.revision += 1

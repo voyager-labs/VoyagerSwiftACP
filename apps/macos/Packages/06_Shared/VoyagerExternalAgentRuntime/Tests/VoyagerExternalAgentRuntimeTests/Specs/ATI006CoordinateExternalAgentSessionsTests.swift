@@ -2461,6 +2461,128 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await plane.projection(for: host) == .interrupted)
     }
 
+    /// ATI-006-project_external_agent_run_events: cross-plane host terminal wins over provider finish CAS.
+    /// 다른 control plane이 저장한 같은 run의 terminal을 stale provider 결과로 덮지 않고 수렴하는지 검증한다.
+    /// - 검증 내용: provider 결과 반환, durable terminal 우선순위, 양쪽 control plane projection.
+    /// - 사전 조건: 공유 file store에서 provider terminalResult가 gate에 대기하는 동안 host terminal이 저장된다.
+    /// - 기대 결과: stale finish CAS는 persistenceFailure 대신 durable interrupted 결과로 수렴한다.
+    @Test
+    func `cross-plane host terminal wins over provider finish CAS`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host: ExternalAgentSessionReference = "host-provider-finish-cas"
+        let run = RuntimeRunReference("run-provider-finish-cas")
+        let resultGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            terminalResultGate: resultGate,
+        )
+        let providerPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await providerPlane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(providerPlane, makeLaunch(host: host, run: run, adapterID: "terminal"))
+        }
+        await adapter.waitForTerminalResultCount(1)
+
+        let hostPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let terminal = try await hostPlane.ingestHostEvent(RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("host-provider-finish-cas"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("host-provider-finish-cas"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: host,
+            runReference: run,
+            kind: .interrupted,
+        ))
+        await resultGate.open()
+
+        #expect(terminal?.outcome == .interrupted)
+        #expect(try await task.value.outcome == .interrupted)
+        #expect(await providerPlane.projection(for: host) == .interrupted)
+        #expect(await hostPlane.projection(for: host) == .interrupted)
+    }
+
+    /// ATI-006-project_external_agent_run_events: cancellation wins during persisted finish convergence.
+    /// durable terminal reload가 대기하는 동안 전달된 caller 취소가 terminal 성공보다 우선하는지 검증한다.
+    /// - 검증 내용: finish persistence 실패 뒤 reload suspension에서 CancellationError 전파.
+    /// - 사전 조건: provider finish 저장은 실패하고 같은 run의 terminal state는 reload gate 뒤에 존재한다.
+    /// - 기대 결과: durable terminal이 보여도 취소된 caller는 성공 결과 대신 CancellationError를 받는다.
+    @Test
+    func `cancellation wins during persisted finish convergence`() async throws {
+        let host: ExternalAgentSessionReference = "host-finish-convergence-cancellation"
+        let run = RuntimeRunReference("run-finish-convergence-cancellation")
+        let loadGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: [4],
+            loadGates: [2: loadGate],
+        )
+        let resultGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            terminalResultGate: resultGate,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "terminal"))
+        }
+        await adapter.waitForTerminalResultCount(1)
+        let running = try #require(await store.currentState()?.sessions.first)
+        let terminal = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [running.withProjection(.completed)],
+        )
+        await store.replaceState(terminal)
+        await resultGate.open()
+        await store.waitForLoadCount(2)
+
+        task.cancel()
+        await loadGate.open()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.projection(for: host) == .completed)
+    }
+
+    /// ATI-006-project_external_agent_run_events: cancellation wins during provider finish persistence.
+    /// provider terminal 저장이 대기하는 동안 전달된 caller 취소가 저장 성공보다 우선하는지 검증한다.
+    /// - 검증 내용: finish save suspension 뒤 CancellationError 전파와 durable terminal 보존.
+    /// - 사전 조건: terminal-only provider 결과의 finish save가 gate에서 대기한다.
+    /// - 기대 결과: 저장은 완료되지만 취소된 caller는 terminal 성공 대신 CancellationError를 받는다.
+    @Test
+    func `cancellation wins during provider finish persistence`() async throws {
+        let host: ExternalAgentSessionReference = "host-finish-persistence-cancellation"
+        let run = RuntimeRunReference("run-finish-persistence-cancellation")
+        let saveGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(saveGates: [4: saveGate])
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "terminal"))
+        }
+        await store.waitForSaveCount(4)
+
+        task.cancel()
+        await saveGate.open()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await store.currentState()?.sessions.first?.projection == .completed)
+    }
+
     /// ATI-006-project_external_agent_run_events: streaming terminal event preserves provider result metadata.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
     /// - 검증 내용: terminal event 이후 provider terminal result의 artifact metadata 반환.
@@ -3379,6 +3501,51 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
         #expect(await adapter.counts().stream == 1)
         #expect(await adapter.counts().cancellation == 0)
+    }
+
+    /// ATI-006-project_external_agent_run_events: terminal evidence releases a cancelled consumer lease.
+    /// 취소된 consumer의 exact-run terminal 증거가 orphan lease를 해제해 host 재사용을 허용하는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, terminal event 수용, replacement provider 실행.
+    /// - 사전 조건: provider stream 대기 중 caller가 취소되고 이후 같은 run의 host terminal이 도착한다.
+    /// - 기대 결과: terminal 저장 뒤 replacement가 activeRunExists 없이 완료된다.
+    @Test
+    func `terminal evidence releases a cancelled consumer lease`() async throws {
+        let host: ExternalAgentSessionReference = "host-cancelled-consumer"
+        let run = RuntimeRunReference("run-cancelled-consumer")
+        let replacementRun = RuntimeRunReference("run-cancelled-consumer-replacement")
+        let replacementCompleted = makeEvent(
+            host: host,
+            run: replacementRun,
+            sequence: 1,
+            idempotencyKey: "cancelled-consumer-replacement-completed",
+            kind: .completed,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[], [replacementCompleted]],
+            eventStreamDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let task = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await adapter.waitForEventStreamCount(1)
+
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.projection(for: host) == .running)
+        #expect(try await plane.ingestHostEvent(reviewerBlockerTestsMakeHostTerminal(
+            host: host,
+            run: run,
+            sequence: 1,
+        ))?.outcome == .completed)
+        let replacement = makeLaunch(host: host, run: replacementRun, adapterID: "sdk")
+        try await plane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await plane.run(replacement).outcome == .completed)
+        #expect(await adapter.counts().launch == 2)
     }
 
     /// ATI-006-project_external_agent_run_events: terminal transition does not wait for a delayed operation.
