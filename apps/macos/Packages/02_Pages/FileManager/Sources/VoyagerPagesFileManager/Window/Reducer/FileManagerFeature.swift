@@ -303,13 +303,18 @@ public struct FileManagerFeature {
                 else { return .none }
 
                 let scope = UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue)
-                guard fileOperationUndoManagerClient.registerUndo(scope, expectedGeneration, record) else {
-                    clearLogicalUndoHistory(tabID: tabID, state: &state)
-                    return .none
-                }
-
                 let isActiveTab = state.contentTabs.activeTabID == tabID
                 guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else {
+                    return .none
+                }
+                let ownerID = contentState.entryViewLayout.entryOperations.undoOwnerID
+                guard fileOperationUndoManagerClient.registerUndoWithOwner(
+                    scope,
+                    expectedGeneration,
+                    ownerID,
+                    record,
+                ) else {
+                    clearLogicalUndoHistory(tabID: tabID, state: &state)
                     return .none
                 }
                 let effect = FileManagerContentFeature().reduce(
