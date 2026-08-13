@@ -447,7 +447,10 @@ extension WindowManagerFeature {
         rebindIntents: [ContentTabTransfer.RebindIntent],
     ) -> Effect<Action> {
         .concatenate(
-            contentTabMoveTeardownEffect(teardownIntents),
+            contentTabMoveTeardownEffect(
+                teardownIntents,
+                targetWindowID: request.targetWindowID,
+            ),
             contentTabMoveObservationRebindEffect(
                 request: request,
                 rebindIntents,
@@ -457,9 +460,10 @@ extension WindowManagerFeature {
 
     private func contentTabMoveTeardownEffect(
         _ intents: [ContentTabTransfer.TeardownIntent],
+        targetWindowID: UUID,
     ) -> Effect<Action> {
         var loadingScopes: Set<ContentTabTransfer.LoadingTeardownScope> = []
-        var composerScopes: Set<ContentTabTransfer.ComposerTeardownScope> = []
+        var composerOwnerIDs: Set<UUID> = []
         var effects: [Effect<Action>] = []
         for intent in intents {
             if let scope = intent.loadingScope, loadingScopes.insert(scope).inserted {
@@ -468,9 +472,14 @@ extension WindowManagerFeature {
                     ownerID: scope.ownerID,
                 )))
             }
-            if let scope = intent.composerScope, composerScopes.insert(scope).inserted {
-                effects.append(.cancel(id: ComposerFeature.CancelID.search(ownerID: scope.ownerID)))
-                effects.append(.cancel(id: ComposerFeature.CancelID.filters(ownerID: scope.ownerID)))
+            if let scope = intent.composerScope, composerOwnerIDs.insert(scope.ownerID).inserted {
+                effects.append(.send(.windows(.element(
+                    id: targetWindowID,
+                    action: .window(.tabContent(
+                        tabID: intent.tabID,
+                        action: .composer(.internal(.cleanupCollectionWork)),
+                    )),
+                ))))
             }
         }
         return .concatenate(effects)

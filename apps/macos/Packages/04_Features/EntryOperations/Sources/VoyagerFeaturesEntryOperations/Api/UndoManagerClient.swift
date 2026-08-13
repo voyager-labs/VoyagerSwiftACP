@@ -594,9 +594,10 @@ public final class FileOperationUndoManagerRegistry {
 public extension FileOperationUndoManagerRegistry {
     @discardableResult
     func registerCompatibilityUndo(
-        _ scope: UndoManagerScope,
+        _ scope: UndoManagerScope?,
         ownerID: UUID,
         record: EntryActionRecord,
+        windowID: UUID? = nil,
     ) -> Bool {
         let canonicalScopes: [UndoManagerScope] = entries.compactMap { candidate in
             let (candidateScope, candidateEntry) = candidate
@@ -606,14 +607,17 @@ public extension FileOperationUndoManagerRegistry {
             return candidateScope
         }
         guard canonicalScopes.count <= 1 else { return false }
-        let registrationScope = canonicalScopes.first ?? scope
+        guard let registrationScope = canonicalScopes.first ?? scope else { return false }
         guard let entry = entries[registrationScope], entry.pendingTransition == nil else { return false }
         let recordedOwnerIdentity = entry.ownerIdentities[record.id]
         guard recordedOwnerIdentity?.ownerID == nil || recordedOwnerIdentity?.ownerID == ownerID else {
             return false
         }
         let ownerIdentity = recordedOwnerIdentity
-            ?? CompatibilityOwnerIdentity(windowID: scope.windowID, ownerID: ownerID)
+            ?? CompatibilityOwnerIdentity(
+                windowID: windowID ?? scope?.windowID ?? registrationScope.windowID,
+                ownerID: ownerID,
+            )
         guard !invalidatedCompatibilityWindows.contains(registrationScope.windowID),
               !invalidatedCompatibilityWindows.contains(ownerIdentity.windowID),
               !invalidatedCompatibilityOwners.contains(ownerIdentity)

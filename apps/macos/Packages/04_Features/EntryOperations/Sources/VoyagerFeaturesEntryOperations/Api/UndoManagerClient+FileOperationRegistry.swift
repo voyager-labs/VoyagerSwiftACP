@@ -168,8 +168,12 @@ public extension UndoManagerClient {
         .init(
             registerUndo: { windowID, ownerID, record in
                 await MainActor.run {
-                    guard let scope = resolveScope(windowID) else { return }
-                    registry.registerCompatibilityUndo(scope, ownerID: ownerID, record: record)
+                    _ = registry.registerCompatibilityUndo(
+                        resolveScope(windowID),
+                        ownerID: ownerID,
+                        record: record,
+                        windowID: windowID,
+                    )
                 }
             },
             events: { registry.compatibilityEvents(windowID: $0) },

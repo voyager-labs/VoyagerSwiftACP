@@ -47,7 +47,7 @@ public enum ContentTabTransfer {
     }
 
     public struct TeardownIntent: Equatable {
-        let tabID: ContentTabID
+        public let tabID: ContentTabID
         public let loadingScope: LoadingTeardownScope?
         public let composerScope: ComposerTeardownScope?
     }
@@ -1228,7 +1228,7 @@ private extension ContentTabTransfer {
 
     static func makeTeardownIntents(_ owners: [OutgoingContentOwner]) -> [TeardownIntent] {
         var seenLoadingScopes = Set<LoadingTeardownScope>()
-        var seenComposerScopes = Set<ComposerTeardownScope>()
+        var seenComposerOwnerIDs = Set<UUID>()
         var intents: [TeardownIntent] = []
 
         for owner in owners {
@@ -1241,7 +1241,8 @@ private extension ContentTabTransfer {
                 && seenLoadingScopes.insert(loadingScope).inserted ? loadingScope : nil
             let uniqueComposerScope: ComposerTeardownScope? = if owner.canCancelComposerExclusively,
                                                                  let composerScope,
-                                                                 seenComposerScopes.insert(composerScope).inserted
+                                                                 seenComposerOwnerIDs.insert(composerScope.ownerID)
+                                                                 .inserted
             {
                 composerScope
             } else {

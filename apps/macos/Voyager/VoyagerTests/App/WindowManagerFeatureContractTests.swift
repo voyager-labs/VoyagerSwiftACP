@@ -7869,7 +7869,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let sourceComposerOwnerID = UUID(4525)
         let targetLoadingWindowID = targetID
         let targetLoadingOwnerID = UUID(4527)
-        let targetComposerOwnerID = UUID(4528)
         let sourceProbeRequestID = UUID(4530)
         let targetProbeRequestID = UUID(4531)
         let request = ContentTabMoveRequest(
@@ -7902,19 +7901,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         target.window.content.entryViewLayout.entryOperations.windowID = targetLoadingWindowID
         target.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetLoadingOwnerID
-        target.window.content.composer.cancellationOwnerID = targetComposerOwnerID
         target.window.tabContentStates[targetOutgoingTabID] = target.window.content
         var initialState = WindowManagerFeature.State()
         initialState.windows = [source, target]
 
         let events = LockIsolated<[String]>([])
         let probesStarted = expectation(description: "outgoing lifecycle probes started")
-        probesStarted.expectedFulfillmentCount = 6
+        probesStarted.expectedFulfillmentCount = 2
         let probesCancelled = expectation(description: "outgoing lifecycle probes cancelled")
-        probesCancelled.expectedFulfillmentCount = 6
+        probesCancelled.expectedFulfillmentCount = 2
         let rebindCompleted = expectation(description: "observation rebind completed")
 
-        func probe(id: some Hashable & Sendable, event: String) -> Effect<WindowManagerAction> {
+        func probe(id: EntryOperationsLoadingCancelID, event: String) -> Effect<WindowManagerAction> {
             .run { _ in
                 probesStarted.fulfill()
                 try await withTaskCancellationHandler {
@@ -7936,41 +7934,21 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                         action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
                     )) = action {
                         if windowID == sourceID, probeRequestID == sourceProbeRequestID {
-                            return .merge(
-                                probe(
-                                    id: EntryOperationsLoadingCancelID.loadItems(
-                                        windowID: sourceLoadingWindowID,
-                                        ownerID: sourceLoadingOwnerID,
-                                    ),
-                                    event: "cancel-source-loading",
+                            return probe(
+                                id: EntryOperationsLoadingCancelID.loadItems(
+                                    windowID: sourceLoadingWindowID,
+                                    ownerID: sourceLoadingOwnerID,
                                 ),
-                                probe(
-                                    id: ComposerFeature.CancelID.search(ownerID: sourceComposerOwnerID),
-                                    event: "cancel-source-search",
-                                ),
-                                probe(
-                                    id: ComposerFeature.CancelID.filters(ownerID: sourceComposerOwnerID),
-                                    event: "cancel-source-filters",
-                                ),
+                                event: "cancel-source-loading",
                             )
                         }
                         if windowID == targetID, probeRequestID == targetProbeRequestID {
-                            return .merge(
-                                probe(
-                                    id: EntryOperationsLoadingCancelID.loadItems(
-                                        windowID: targetLoadingWindowID,
-                                        ownerID: targetLoadingOwnerID,
-                                    ),
-                                    event: "cancel-target-loading",
+                            return probe(
+                                id: EntryOperationsLoadingCancelID.loadItems(
+                                    windowID: targetLoadingWindowID,
+                                    ownerID: targetLoadingOwnerID,
                                 ),
-                                probe(
-                                    id: ComposerFeature.CancelID.search(ownerID: targetComposerOwnerID),
-                                    event: "cancel-target-search",
-                                ),
-                                probe(
-                                    id: ComposerFeature.CancelID.filters(ownerID: targetComposerOwnerID),
-                                    event: "cancel-target-filters",
-                                ),
+                                event: "cancel-target-loading",
                             )
                         }
                     }
@@ -7978,6 +7956,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                         id: windowID,
                         action: .window(.tabContent(tabID: tabID, action: contentAction)),
                     )) = action else { return .none }
+                    if windowID == targetID,
+                       case .composer(.internal(.cleanupCollectionWork)) = contentAction
+                    {
+                        if tabID == movedTabID {
+                            events.withValue { $0.append("cleanup-source-composer") }
+                        }
+                        if tabID == targetOutgoingTabID {
+                            events.withValue { $0.append("cleanup-target-composer") }
+                        }
+                    }
                     if windowID == sourceID,
                        tabID == fallbackTabID,
                        case .internal(.stopObservingSystemNotifications) = contentAction
@@ -8022,11 +8010,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(events.value, [
             "cancel-source-loading",
-            "cancel-source-search",
-            "cancel-source-filters",
             "cancel-target-loading",
-            "cancel-target-search",
-            "cancel-target-filters",
+            "cleanup-source-composer",
+            "cleanup-target-composer",
             "rebind-start",
             "rebind-complete",
         ])
@@ -8200,9 +8186,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let sourceActiveTabID = ContentTabID(rawValue: "shared-effect-source-active")
         let targetOutgoingTabID = ContentTabID(rawValue: "shared-effect-target-outgoing")
         let targetInactiveTabID = ContentTabID(rawValue: "shared-effect-target-inactive")
-        let sourceProbeRequestID = UUID(4543)
-        let targetProbeRequestID = UUID(4544)
-        let cleanupRequestID = UUID(4545)
         let request = ContentTabMoveRequest(
             requestID: UUID(4546),
             sourceWindowID: sourceID,
@@ -8240,25 +8223,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [source, target]
-        let cancellationCount = LockIsolated(0)
-        let probesStarted = expectation(description: "shared sibling composer probes started")
-        probesStarted.expectedFulfillmentCount = 2
-        let cleanupCompleted = expectation(description: "shared sibling composer probes cleaned up")
-        cleanupCompleted.expectedFulfillmentCount = 2
+        let cleanupActionCount = LockIsolated(0)
         let rebindCompleted = expectation(description: "shared sibling move rebind completed")
-
-        func probe(ownerID: UUID) -> Effect<WindowManagerAction> {
-            .run { _ in
-                probesStarted.fulfill()
-                try await withTaskCancellationHandler {
-                    try await Task.sleep(for: .seconds(60))
-                } onCancel: {
-                    cancellationCount.withValue { $0 += 1 }
-                    cleanupCompleted.fulfill()
-                }
-            }
-            .cancellable(id: ComposerFeature.CancelID.search(ownerID: ownerID))
-        }
 
         let store = TestStore(initialState: initialState) {
             CombineReducers {
@@ -8266,29 +8232,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 Reduce { _, action in
                     if case let .windows(.element(
                         id: windowID,
-                        action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
+                        action: .window(.tabContent(tabID: tabID, action: contentAction)),
                     )) = action {
-                        if windowID == sourceID, probeRequestID == sourceProbeRequestID {
-                            return probe(ownerID: sourceID)
+                        if case .composer(.internal(.cleanupCollectionWork)) = contentAction {
+                            cleanupActionCount.withValue { $0 += 1 }
                         }
-                        if windowID == targetID, probeRequestID == targetProbeRequestID {
-                            return probe(ownerID: targetID)
+                        if windowID == targetID,
+                           tabID == movedTabID,
+                           case .internal(.applyNavigationState) = contentAction
+                        {
+                            rebindCompleted.fulfill()
                         }
-                        if windowID == sourceID, probeRequestID == cleanupRequestID {
-                            return .merge(
-                                .cancel(id: ComposerFeature.CancelID.search(ownerID: sourceID)),
-                                .cancel(id: ComposerFeature.CancelID.search(ownerID: targetID)),
-                            )
-                        }
-                    }
-                    if case let .windows(.element(
-                        id: windowID,
-                        action: .window(.tabContent(tabID: tabID, action: .internal(.applyNavigationState))),
-                    )) = action,
-                        windowID == targetID,
-                        tabID == movedTabID
-                    {
-                        rebindCompleted.fulfill()
                     }
                     return .none
                 }
@@ -8303,29 +8257,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.windows(.element(
-            id: sourceID,
-            action: .window(.view(.dismissContentTabMoveFailure(requestID: sourceProbeRequestID))),
-        )))
-        await store.send(.windows(.element(
-            id: targetID,
-            action: .window(.view(.dismissContentTabMoveFailure(requestID: targetProbeRequestID))),
-        )))
-        await fulfillment(of: [probesStarted], timeout: 1)
-
         await store.send(.contentTabMoveRequest(request))
         await fulfillment(of: [rebindCompleted], timeout: 1)
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
-        XCTAssertEqual(cancellationCount.value, 0)
-
-        await store.send(.windows(.element(
-            id: sourceID,
-            action: .window(.view(.dismissContentTabMoveFailure(requestID: cleanupRequestID))),
-        )))
-        await fulfillment(of: [cleanupCompleted], timeout: 1)
+        XCTAssertEqual(cleanupActionCount.value, 0)
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.content.composer.activeSearchRequestID, UUID(4547))
+        XCTAssertEqual(store.state.windows[id: targetID]?.window.tabContentStates[targetInactiveTabID]?
+            .composer.activeSearchRequestID, UUID(4548))
         await store.skipReceivedActions()
         await store.finish()
-        XCTAssertEqual(cancellationCount.value, 2)
     }
 
     /// CTM-001-move_content_tab_to_another_window: foreign request는 동일 request ID terminal 원장을 선점하지 못한다.

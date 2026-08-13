@@ -337,7 +337,14 @@ final class EOP003UndoScopeMoveReconciliationTests: XCTestCase {
         let record = EntryActionRecord(operationKind: .rename, targets: [])
         var events = registry.compatibilityEvents(windowID: targetWindowID).makeAsyncIterator()
 
-        XCTAssertTrue(registry.registerUndo(source, expectedGeneration: generation, record: record))
+        XCTAssertTrue(
+            registry.registerUndo(
+                source,
+                expectedGeneration: generation,
+                ownerID: ownerID,
+                record: record,
+            ),
+        )
         XCTAssertEqual(
             registry.moveScopes([.init(source: source, target: target)]),
             .moved,
@@ -357,6 +364,34 @@ final class EOP003UndoScopeMoveReconciliationTests: XCTestCase {
         XCTAssertEqual(event, .init(ownerID: ownerID, record: record, direction: .undo))
         XCTAssertFalse(manager.canUndo)
         XCTAssertTrue(manager.canRedo)
+        XCTAssertEqual(registry.generation(for: target), generation)
+    }
+
+    /// EOP-003-undo_entry_action: source active scope가 사라져도 moved canonical record에 metadata를 결합한다.
+    /// 마지막 탭 이동 뒤 source resolver가 nil이어도 record ID 기반 lookup을 먼저 수행하는지 검증한다.
+    /// - 검증 내용: nil resolver registration 뒤 target availability와 native history를 비교한다.
+    /// - 사전 조건: source canonical record가 target window로 이동했고 source window active tab은 사라졌다.
+    /// - 기대 결과: target scope가 owner/record target을 노출하고 native history는 중복 없이 유지된다.
+    func testCompatibilityRegistrationFindsMovedCanonicalScopeWithoutSourceActiveTab() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let ownerID = UUID()
+        let source = UndoManagerScope(windowID: sourceWindowID, contentTabID: "moved")
+        let target = UndoManagerScope(windowID: targetWindowID, contentTabID: "moved")
+        let manager = registry.activate(source)
+        let generation = try XCTUnwrap(registry.generation(for: source))
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        let client = UndoManagerClient.live(registry: registry, resolveScope: { _ in nil })
+
+        XCTAssertTrue(registry.registerUndo(source, expectedGeneration: generation, record: record))
+        XCTAssertEqual(registry.moveScopes([.init(source: source, target: target)]), .moved)
+        await client.registerUndo(sourceWindowID, ownerID, record)
+
+        let identity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        XCTAssertEqual(registry.compatibilityAvailability(source), .init())
+        XCTAssertEqual(registry.compatibilityAvailability(target).undoTarget, identity)
+        XCTAssertTrue(manager.canUndo)
         XCTAssertEqual(registry.generation(for: target), generation)
     }
 

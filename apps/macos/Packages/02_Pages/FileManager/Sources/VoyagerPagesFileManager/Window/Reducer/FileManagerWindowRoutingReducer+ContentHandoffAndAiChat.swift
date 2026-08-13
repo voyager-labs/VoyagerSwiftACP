@@ -139,7 +139,9 @@ func prepareContentForActiveTabHandoff(
     state: inout FileManagerContentFeature.State,
     skipAiChatCleanup: Bool = false,
 ) -> Effect<FileManagerWindowAction> {
-    clearInFlightComposerStateOnTabSwitch(state: &state.composer)
+    let composerCleanupEffect = ComposerFeature()
+        .reduce(into: &state.composer, action: .internal(.cleanupCollectionWork))
+        .map { FileManagerWindowAction.content(.composer($0)) }
     let aiChatCleanupEffect: Effect<FileManagerWindowAction>
     if skipAiChatCleanup {
         aiChatCleanupEffect = .none
@@ -152,7 +154,7 @@ func prepareContentForActiveTabHandoff(
     state.entryViewLayout.entryOperations.isLoading = false
     state.entryViewLayout.entryOperations.isReloading = false
     state.entryViewLayout.isCollectionContentLoading = false
-    return aiChatCleanupEffect
+    return .merge(composerCleanupEffect, aiChatCleanupEffect)
 }
 
 func clearInFlightAiChatStateOnTabSwitch(state: inout AiChatState) {
@@ -175,23 +177,6 @@ func clearInFlightAiChatStateOnTabSwitch(state: inout AiChatState) {
     if state.sessionStatus == .restoring {
         state.sessionStatus = state.sessionID == nil ? .idle : .active
     }
-}
-
-func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.State) {
-    guard state.isLoadingSearch
-        || state.isLoadingFilters
-        || state.isFilteringInFlight
-        || state.activeSearchRequestID != nil
-        || state.activeFiltersRequestID != nil
-    else { return }
-
-    state.isLoadingSearch = false
-    state.isLoadingFilters = false
-    state.isFilteringInFlight = false
-    state.activeSearchRequestID = nil
-    state.activeFiltersRequestID = nil
-    state.pendingSearchQuery = nil
-    state.queryRenderPhase = .idle
 }
 
 func cancelLoadingEffectForClosedTab(
@@ -249,8 +234,6 @@ func cancelInFlightContentEffectsOnTabSwitch(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
         loadingCancellationEffect,
-        .cancel(id: ComposerFeature.CancelID.search(ownerID: state.content.composer.cancellationOwnerID)),
-        .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.content.composer.cancellationOwnerID)),
         state.contentTabs.previousActiveTabID
             .map { .cancel(id: HomeAiChatOpenCancelID(tabID: $0)) }
             ?? .none,
