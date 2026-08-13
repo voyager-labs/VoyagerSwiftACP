@@ -21,6 +21,10 @@
   font-family: var(--fm-font-ui);
 }
 
+[data-file-manager-illustration] .collection-composer-compact-story-frame {
+  width: min(386px, 100%);
+}
+
 [data-file-manager-illustration] .collection-composer-input-row {
   display: flex;
   height: 40px;
@@ -101,6 +105,8 @@
   color: var(--fm-text-primary);
   font: inherit;
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-file-manager-illustration] .collection-composer-query input::placeholder {
@@ -115,6 +121,7 @@
   padding: 4px 7px;
   font-size: 10px;
   font-weight: 500;
+  line-height: var(--fm-line-tight);
 }
 
 [data-file-manager-illustration] .collection-composer-text-button:hover:not(:disabled) {
@@ -148,7 +155,9 @@
   display: flex;
   min-width: 0;
   flex: 1;
+  flex-wrap: wrap;
   align-items: center;
+  align-content: center;
   gap: 8px;
 }
 
@@ -156,13 +165,25 @@
   display: inline-flex;
   height: 22px;
   min-width: 0;
+  max-width: 100%;
   border-radius: 4px;
   align-items: center;
   gap: 6px;
+  border: 1px solid var(--fm-composer-chip-item-border);
   background: color-mix(in srgb, var(--fm-separator) 90%, transparent);
+  box-sizing: border-box;
   padding: 0 5px 0 4px;
-  font-size: 11px;
+  font-size: var(--fm-font-size-caption-2);
   font-weight: 500;
+  line-height: var(--fm-line-tight);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-token-title,
+[data-file-manager-illustration] .collection-composer-condition-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-file-manager-illustration] .collection-composer-scope-glyph {
@@ -201,13 +222,19 @@
   position: relative;
   display: inline-flex;
   height: 28px;
+  min-width: 0;
+  max-width: calc(100% - 6px);
+  flex: 0 1 auto;
+  border: 1px solid var(--fm-composer-chip-item-border);
   border-radius: 6px;
   align-items: center;
   gap: 2px;
-  background: var(--fm-composer-chip-container-background);
+  background: var(--fm-composer-chip-item-background);
+  box-sizing: border-box;
   padding-inline: 8px;
-  font-size: 11px;
+  font-size: var(--fm-font-size-caption-2);
   font-weight: 500;
+  line-height: var(--fm-line-tight);
 }
 
 [data-file-manager-illustration] .collection-composer-condition-chip.inactive {
@@ -230,6 +257,18 @@
   background: transparent;
   color: var(--fm-text-primary);
   font: inherit;
+}
+
+[data-file-manager-illustration] button.collection-composer-condition-segment:hover,
+[data-file-manager-illustration]
+  button.collection-composer-condition-segment[aria-expanded="true"] {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration]
+  .collection-composer-condition-row
+  > .collection-composer-symbol-button.compact {
+  flex: 0 0 28px;
 }
 
 [data-file-manager-illustration] .collection-composer-condition-remove {

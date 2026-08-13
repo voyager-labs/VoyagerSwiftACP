@@ -161,6 +161,8 @@
   --fm-composer-input-background: var(--macos-composer-input-background-color);
   --fm-composer-input-border: var(--macos-composer-input-border-color);
   --fm-composer-chip-container-background: var(--macos-composer-chip-container-background-color);
+  --fm-composer-chip-item-background: var(--macos-composer-chip-item-background-color);
+  --fm-composer-chip-item-border: var(--macos-composer-chip-item-border-color);
   --fm-composer-popover-background: var(--macos-composer-popover-background-color);
   --fm-composer-popover-search-background: var(--macos-composer-popover-search-background-color);
   --fm-composer-control-background: var(--macos-composer-control-background-color);
