@@ -272,6 +272,17 @@ public actor RuntimeControlPlane {
         reservation: RunReservation,
         receipt: RuntimeLaunchReceipt? = nil,
     ) async throws {
+        do {
+            try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
+        } catch RuntimeHostError.persistenceFailure {
+            try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
+        }
+    }
+
+    private func persistStartedProviderFailure(
+        reservation: RunReservation,
+        receipt: RuntimeLaunchReceipt?,
+    ) async throws {
         _ = try await commit(host: reservation.host) { plane, registry in
             try plane.interruptTransition(
                 host: reservation.host,
