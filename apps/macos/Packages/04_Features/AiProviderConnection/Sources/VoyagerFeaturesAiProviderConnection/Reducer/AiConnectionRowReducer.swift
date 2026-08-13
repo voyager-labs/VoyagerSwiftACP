@@ -151,47 +151,57 @@ public struct AiConnectionRowReducer {
 
         return .run { [nativeAuthClient, connectionClient, verificationClient] send in
             let credentialResult = await Self.browserCredential(client: nativeAuthClient)
+            guard !Task.isCancelled else { return }
             guard case let .success(credential) = credentialResult else {
                 if case let .failure(error) = credentialResult {
                     await send(.browserLoginFailed(error))
                 }
                 return
             }
-
-            let outcome: AiProviderVerificationOutcome = if let verifyWithCredential = verificationClient
-                .verifyWithCredential
-            {
-                await verifyWithCredential(.chatgptCodex, .oauth(credential))
-            } else {
-                await AiProviderVerificationOutcome(
-                    result: verificationClient.verify(.chatgptCodex, .oauth(credential)),
-                    sourceCredential: .oauth(credential),
-                    effectiveCredential: .oauth(credential),
-                )
-            }
-
-            switch outcome.result {
-            case .valid:
-                let effective = outcome.effectiveCredential.flatMap { payload -> OAuthCredentialFile? in
-                    guard case let .oauth(value) = payload else { return nil }
-                    return value
-                } ?? credential
-                let result = await connectionClient.connectOAuth(.chatgptCodex, effective, .connected)
-                guard result.state == .connected else {
-                    await send(.browserLoginFailed(.networkError("Connection failed")))
-                    return
-                }
-                await send(.connectionResponse(result))
-                await send(.browserLoginCompleted(effective))
-            case let .invalid(reason):
-                await send(.verificationFailed(reason))
-            case .unsupportedProvider:
-                await send(.verificationFailed(.providerUnsupportedInBuild))
-            case .networkError:
-                await send(.verificationFailed(.networkUnavailable))
+            for action in await Self.browserLoginActions(
+                credential: credential,
+                connectionClient: connectionClient,
+                verificationClient: verificationClient,
+            ) {
+                await send(action)
             }
         }
         .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
+    }
+
+    private static func browserLoginActions(
+        credential: OAuthCredentialFile,
+        connectionClient: AIProviderConnectionClient,
+        verificationClient: AIProviderVerificationClient,
+    ) async -> [Action] {
+        let outcome: AiProviderVerificationOutcome
+        do {
+            outcome = try await verifyOAuth(credential, client: verificationClient)
+        } catch {
+            guard !isCancellation(error) else { return [] }
+            return [.verificationFailed(.networkUnavailable)]
+        }
+
+        switch outcome.result {
+        case .valid:
+            guard !Task.isCancelled else { return [] }
+            let effective = outcome.effectiveCredential.flatMap { payload -> OAuthCredentialFile? in
+                guard case let .oauth(value) = payload else { return nil }
+                return value
+            } ?? credential
+            let result = await connectionClient.connectOAuth(.chatgptCodex, effective, .connected)
+            guard !Task.isCancelled else { return [] }
+            guard result.state == .connected else {
+                return [.browserLoginFailed(.networkError("Connection failed"))]
+            }
+            return [.connectionResponse(result), .browserLoginCompleted(effective)]
+        case let .invalid(reason):
+            return [.verificationFailed(reason)]
+        case .unsupportedProvider:
+            return [.verificationFailed(.providerUnsupportedInBuild)]
+        case .networkError:
+            return [.verificationFailed(.networkUnavailable)]
+        }
     }
 
     private static func browserCredential(
@@ -217,9 +227,9 @@ public struct AiConnectionRowReducer {
     private static func verifyOAuth(
         _ credential: OAuthCredentialFile,
         client: AIProviderVerificationClient,
-    ) async -> AiProviderVerificationOutcome {
+    ) async throws -> AiProviderVerificationOutcome {
         if let verifyWithCredential = client.verifyWithCredential {
-            return await verifyWithCredential(.chatgptCodex, .oauth(credential))
+            return try await verifyWithCredential(.chatgptCodex, .oauth(credential))
         }
         return await AiProviderVerificationOutcome(
             result: client.verify(.chatgptCodex, .oauth(credential)),
@@ -238,7 +248,8 @@ public struct AiConnectionRowReducer {
                 let challenge = try await nativeAuthClient.startDeviceAuth()
                 let credential = try await nativeAuthClient.completeDeviceAuth(challenge)
 
-                let outcome = await Self.verifyOAuth(credential, client: verificationClient)
+                let outcome = try await Self.verifyOAuth(credential, client: verificationClient)
+                try Task.checkCancellation()
 
                 switch outcome.result {
                 case .valid:
@@ -247,6 +258,7 @@ public struct AiConnectionRowReducer {
                         return value
                     } ?? credential
                     let result = await connectionClient.connectOAuth(.chatgptCodex, effective, .connected)
+                    try Task.checkCancellation()
                     guard result.state == .connected else {
                         await send(.deviceAuthFailed(.networkError("Connection failed")))
                         return
@@ -260,13 +272,20 @@ public struct AiConnectionRowReducer {
                 case .networkError:
                     await send(.verificationFailed(.networkUnavailable))
                 }
-            } catch let error as CodexNativeAuthError {
-                await send(.deviceAuthFailed(error))
             } catch {
+                guard !Self.isCancellation(error) else { return }
+                if let error = error as? CodexNativeAuthError {
+                    await send(.deviceAuthFailed(error))
+                    return
+                }
                 await send(.deviceAuthFailed(.networkError(error.localizedDescription)))
             }
         }
         .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     private func handleAuthError(

@@ -268,6 +268,18 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("installed"), true)
     }
 
+    func testModelListHTTP401MapsToReconnectGuidance() {
+        assertModelListHTTPFailure(statusCode: 401, expectedCode: "AI_PROVIDER_INVALID_CREDENTIAL")
+    }
+
+    func testModelListHTTP403MapsToReconnectGuidance() {
+        assertModelListHTTPFailure(statusCode: 403, expectedCode: "AI_PROVIDER_INVALID_CREDENTIAL")
+    }
+
+    func testModelListHTTP500RemainsNetworkFailure() {
+        assertModelListHTTPFailure(statusCode: 500, expectedCode: "AI_PROVIDER_NETWORK_FAILURE")
+    }
+
     func testExplicitModelSelectionReturnsCollectionSearchModelUnavailableWhenPreferredModelIsMissing() async {
         let file = Self.makeConnectionsFile(updatedAtMs: 1)
         let fileBox = ConnectionFileBox(file)
@@ -333,6 +345,25 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
                 modelListClient: modelLoader.client,
             ),
         )
+    }
+
+    private func assertModelListHTTPFailure(statusCode: Int, expectedCode: String) {
+        let fileBox = ConnectionFileBox(Self.makeConnectionsFile(updatedAtMs: 1))
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: ModelLoadRecorder(responses: [:]),
+        )
+
+        let result = converter.mappedModelListFailure(
+            .httpError(provider: .openai, statusCode: statusCode, body: "test"),
+            provider: .openai,
+        )
+
+        XCTAssertEqual(result.errorCode, expectedCode)
+        XCTAssertEqual(result.outcome, statusCode == 500 ? .networkFailure : .invalidCredential)
+        if statusCode == 401 || statusCode == 403 {
+            XCTAssertEqual(result.error?.localizedCaseInsensitiveContains("reconnect"), true)
+        }
     }
 
     private static func makeFallbackExecutionClient() -> AiChatProviderExecutionClient {

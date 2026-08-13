@@ -39,14 +39,14 @@ public struct AiAdapterDescriptor: Equatable, Sendable {
 public struct AiConnectionRuntimeClient: Sendable {
     public var verifyProvider: @Sendable (AiProvider, StoredCredentialPayload?) async
         -> AiProviderVerificationResult
-    public var verifyProviderWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async
+    public var verifyProviderWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async throws
         -> AiProviderVerificationOutcome)?
     public var resolveAdapter: @Sendable (AiProvider, StoredCredentialPayload?) -> AiAdapterDescriptor?
 
     public init(
         verifyProvider: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async
             -> AiProviderVerificationResult,
-        verifyProviderWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async
+        verifyProviderWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async throws
             -> AiProviderVerificationOutcome)? = nil,
         resolveAdapter: @escaping @Sendable (AiProvider, StoredCredentialPayload?) -> AiAdapterDescriptor?,
     ) {
@@ -57,13 +57,22 @@ public struct AiConnectionRuntimeClient: Sendable {
 }
 
 extension AiConnectionRuntimeClient {
-    public static func live(session: URLSession = .shared) -> AiConnectionRuntimeClient {
-        AiConnectionRuntimeClient(
+    public static func live(
+        session: URLSession = .shared,
+        refreshCredential: (@Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile)? = nil,
+    ) -> AiConnectionRuntimeClient {
+        let refreshCredential = refreshCredential ?? CodexNativeAuthClient.live(session: session).refreshCredential
+        return AiConnectionRuntimeClient(
             verifyProvider: { provider, credential in
                 await Self.verifyStatus(provider: provider, credential: credential, session: session)
             },
             verifyProviderWithCredential: { provider, credential in
-                await Self.verifyWithEffectiveCredential(provider: provider, credential: credential, session: session)
+                try await Self.verifyWithEffectiveCredential(
+                    provider: provider,
+                    credential: credential,
+                    session: session,
+                    refreshCredential: refreshCredential,
+                )
             },
             resolveAdapter: { provider, credential in
                 guard credential != nil else { return nil }
@@ -83,7 +92,8 @@ extension AiConnectionRuntimeClient {
         provider: AiProvider,
         credential: StoredCredentialPayload?,
         session: URLSession,
-    ) async -> AiProviderVerificationOutcome {
+        refreshCredential: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile,
+    ) async throws -> AiProviderVerificationOutcome {
         guard let credential else {
             return AiProviderVerificationOutcome(
                 result: .invalid(.missingCredential),
@@ -105,28 +115,50 @@ extension AiConnectionRuntimeClient {
                 effectiveCredential: credential,
             )
         }
-        let effectiveCredential = await refreshedCredential(oauth, source: credential)
+        let effectiveCredential = try await refreshedCredential(
+            oauth,
+            source: credential,
+            refreshCredential: refreshCredential,
+        )
         guard case let .success(effective) = effectiveCredential else {
             return effectiveCredential.failure
         }
+        return try await verifyModels(
+            provider: provider,
+            sourceCredential: credential,
+            effectiveCredential: effective,
+            session: session,
+        )
+    }
+
+    private static func verifyModels(
+        provider: AiProvider,
+        sourceCredential: StoredCredentialPayload,
+        effectiveCredential: StoredCredentialPayload,
+        session: URLSession,
+    ) async throws -> AiProviderVerificationOutcome {
         do {
-            let models = try await AiProviderModelListClient.live(session: session).loadModels(provider, effective)
+            let models = try await AiProviderModelListClient.live(session: session).loadModels(
+                provider,
+                effectiveCredential,
+            )
             return AiProviderVerificationOutcome(
                 result: models.isEmpty ? .invalid(.verificationFailed) : .valid,
-                sourceCredential: credential,
-                effectiveCredential: effective,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         } catch let error as AiProviderModelListError {
             return AiProviderVerificationOutcome(
                 result: mapModelListError(error),
-                sourceCredential: credential,
-                effectiveCredential: effective,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         } catch {
+            guard !isCancellation(error) else { throw CancellationError() }
             return AiProviderVerificationOutcome(
                 result: .networkError,
-                sourceCredential: credential,
-                effectiveCredential: effective,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         }
     }
@@ -143,23 +175,29 @@ extension AiConnectionRuntimeClient {
     private static func refreshedCredential(
         _ oauth: OAuthCredentialFile,
         source: StoredCredentialPayload,
-    ) async -> RefreshResult {
+        refreshCredential: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile,
+    ) async throws -> RefreshResult {
         guard isExpired(oauth) else { return .success(source) }
         do {
-            return try await .success(.oauth(CodexNativeAuthClient.live().refreshCredential(oauth)))
+            return try await .success(.oauth(refreshCredential(oauth)))
         } catch let error as CodexCredentialRefreshError {
-            return .failure(AiProviderVerificationOutcome(
+            return try .failure(AiProviderVerificationOutcome(
                 result: mapRefreshError(error),
                 sourceCredential: source,
                 effectiveCredential: source,
             ))
         } catch {
+            guard !isCancellation(error) else { throw CancellationError() }
             return .failure(AiProviderVerificationOutcome(
                 result: .networkError,
                 sourceCredential: source,
                 effectiveCredential: source,
             ))
         }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     private static func verifyStatus(
@@ -194,12 +232,14 @@ extension AiConnectionRuntimeClient {
         }
     }
 
-    public static func mapRefreshError(_ error: CodexCredentialRefreshError) -> AiProviderVerificationResult {
+    public static func mapRefreshError(_ error: CodexCredentialRefreshError) throws -> AiProviderVerificationResult {
         switch error {
         case .missingRefreshToken, .invalidGrant, .unauthorized:
             .invalid(.expired)
-        case .transport, .server, .invalidResponse, .cancelled:
+        case .transport, .server, .invalidResponse:
             .networkError
+        case .cancelled:
+            throw CancellationError()
         }
     }
 

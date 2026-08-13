@@ -328,6 +328,10 @@ extension AiProviderModelListClient {
             return data
         } catch let error as AiProviderModelListError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError {
             throw AiProviderModelListError.networkError(
                 provider: provider,

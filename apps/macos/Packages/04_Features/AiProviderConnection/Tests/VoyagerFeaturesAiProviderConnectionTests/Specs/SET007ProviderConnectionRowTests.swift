@@ -97,40 +97,39 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
 
     /// SET-007-codex_oauth_runtime: refresh failure keeps authentication and transport causes distinct.
     /// Refresh failures must distinguish expired credentials from transient service failures.
-    /// - 검증 내용: missing/auth failures map to expired; transport/server/cancellation map to network.
+    /// - 검증 내용: missing/auth failures map to expired; transport/server failures map to network.
     /// - 사전 조건: typed refresh failures are supplied to the runtime mapper.
     /// - 기대 결과: only credential rejection returns expired.
-    func testCodexRefreshErrors_mapCredentialAndTransientCauses() {
+    func testCodexRefreshErrors_mapCredentialAndTransientCauses() throws {
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.missingRefreshToken),
+            try AiConnectionRuntimeClient.mapRefreshError(.missingRefreshToken),
             .invalid(.expired),
         )
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.unauthorized(statusCode: 401)),
+            try AiConnectionRuntimeClient.mapRefreshError(.unauthorized(statusCode: 401)),
             .invalid(.expired),
         )
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.unauthorized(statusCode: 403)),
+            try AiConnectionRuntimeClient.mapRefreshError(.unauthorized(statusCode: 403)),
             .invalid(.expired),
         )
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.transport),
+            try AiConnectionRuntimeClient.mapRefreshError(.transport),
             .networkError,
         )
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.server(statusCode: 500)),
+            try AiConnectionRuntimeClient.mapRefreshError(.server(statusCode: 500)),
             .networkError,
         )
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.invalidResponse),
+            try AiConnectionRuntimeClient.mapRefreshError(.invalidResponse),
             .networkError,
         )
+        XCTAssertThrowsError(try AiConnectionRuntimeClient.mapRefreshError(.cancelled)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(.cancelled),
-            .networkError,
-        )
-        XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(
+            try AiConnectionRuntimeClient.mapRefreshError(
                 CodexNativeAuthClient.classifyRefreshHTTPFailure(
                     statusCode: 400,
                     body: Data(#"{"error":"invalid_grant"}"#.utf8),
@@ -139,7 +138,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             .invalid(.expired),
         )
         XCTAssertEqual(
-            AiConnectionRuntimeClient.mapRefreshError(
+            try AiConnectionRuntimeClient.mapRefreshError(
                 CodexNativeAuthClient.classifyRefreshHTTPFailure(
                     statusCode: 400,
                     body: Data(#"{"error":"invalid_request"}"#.utf8),

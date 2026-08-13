@@ -2,7 +2,7 @@ import ComposableArchitecture
 import Foundation
 
 public struct AIProviderVerificationClient: Sendable {
-    public var verifyWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async
+    public var verifyWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async throws
         -> AiProviderVerificationOutcome)?
     public var verify: @Sendable (AiProvider, StoredCredentialPayload?) async
         -> AiProviderVerificationResult
@@ -10,7 +10,7 @@ public struct AIProviderVerificationClient: Sendable {
     nonisolated public init(
         verify: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async
             -> AiProviderVerificationResult,
-        verifyWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async
+        verifyWithCredential: (@Sendable (AiProvider, StoredCredentialPayload?) async throws
             -> AiProviderVerificationOutcome)? = nil,
     ) {
         self.verify = verify
@@ -27,7 +27,7 @@ extension AIProviderVerificationClient: DependencyKey {
             },
             verifyWithCredential: { provider, credential in
                 if let verifyWithCredential = runtimeClient.verifyProviderWithCredential {
-                    return await verifyWithCredential(provider, credential)
+                    return try await verifyWithCredential(provider, credential)
                 }
                 return await AiProviderVerificationOutcome(
                     result: runtimeClient.verifyProvider(provider, credential),

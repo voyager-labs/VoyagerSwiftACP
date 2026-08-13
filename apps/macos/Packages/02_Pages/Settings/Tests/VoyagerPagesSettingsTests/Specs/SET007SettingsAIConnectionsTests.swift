@@ -6,14 +6,65 @@ import VoyagerFeaturesAiProviderConnection
 import XCTest
 
 private actor SavedConnectionsFile {
-    private var file: AIConnectionsFile?
+    private var files: [AIConnectionsFile] = []
 
     func record(_ file: AIConnectionsFile) {
-        self.file = file
+        files.append(file)
     }
 
     func value() -> AIConnectionsFile? {
-        file
+        files.last
+    }
+
+    func values() -> [AIConnectionsFile] {
+        files
+    }
+}
+
+private actor BootstrapVerificationController {
+    private var callCount = 0
+    private var firstCallStarted = false
+    private var firstCallCancelled = false
+    private var startContinuation: CheckedContinuation<Void, Never>?
+    private var cancellationContinuation: CheckedContinuation<Void, Never>?
+
+    func verify(
+        credential: StoredCredentialPayload?,
+    ) async throws -> AiProviderVerificationOutcome {
+        callCount += 1
+        guard callCount == 1 else {
+            return AiProviderVerificationOutcome(
+                result: .valid,
+                sourceCredential: credential,
+                effectiveCredential: credential,
+            )
+        }
+
+        firstCallStarted = true
+        startContinuation?.resume()
+        startContinuation = nil
+        await withTaskCancellationHandler {
+            await waitForCancellation()
+        } onCancel: {
+            Task { await self.cancelFirstCall() }
+        }
+        throw URLError(.cancelled)
+    }
+
+    func waitUntilFirstCallStarts() async {
+        if firstCallStarted { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    private func waitForCancellation() async {
+        if firstCallCancelled { return }
+        await withCheckedContinuation { cancellationContinuation = $0 }
+    }
+
+    private func cancelFirstCall() {
+        firstCallCancelled = true
+        cancellationContinuation?.resume()
+        cancellationContinuation = nil
     }
 }
 
@@ -181,6 +232,77 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         let savedRecord = await savedConnectionsFile.value()?.providers[AiProvider.chatgptCodex.rawValue]
         XCTAssertEqual(savedRecord?.credential, .oauth(effectiveCredential))
         XCTAssertEqual(savedRecord?.snapshot, snapshot)
+    }
+
+    /// SET-007-codex_oauth_runtime: retry cancels an expired Codex refresh without stale persistence.
+    /// The cancelled bootstrap must not emit a verification completion or save a network failure.
+    /// - 검증 내용: suspended refresh cancellation, retry completion ordering, persisted snapshot count.
+    /// - 사전 조건: first Codex verification suspends until cancellation and second verification succeeds.
+    /// - 기대 결과: only the retried connected result is emitted and persisted once.
+    func testRetryBootstrapCancelsExpiredCodexRefreshWithoutPersistingStaleFailure() async throws {
+        let credential = OAuthCredentialFile(
+            accessToken: "expired-access",
+            refreshToken: "refresh-token",
+            expiresAtMs: 0,
+        )
+        let file = AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(credential),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectionFailed),
+                ),
+            ],
+        )
+        let verificationController = BootstrapVerificationController()
+        let savedConnectionsFile = SavedConnectionsFile()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiConnectionsFileClient.save = { savedFile in
+                await savedConnectionsFile.record(savedFile)
+                return .success(savedFile)
+            }
+            $0.aiProviderVerificationClient.verifyWithCredential = { _, credential in
+                try await verificationController.verify(credential: credential)
+            }
+        }
+
+        await store.send(.onAppear) {
+            $0.didBootstrap = true
+            $0.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+            $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            $0.rows[id: .chatgptCodex]?.statusReason = .none
+        }
+        await verificationController.waitUntilFirstCallStarts()
+
+        await store.send(.retryBootstrapTapped) {
+            $0.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+        }
+        await store.receive(\.bootstrapVerificationCompleted) {
+            $0.rows[id: .chatgptCodex]?.connectionState = .connected
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = 0
+        }
+        let recordedFile = await savedConnectionsFile.value()
+        let savedFile = try XCTUnwrap(recordedFile)
+        await store.receive(.delegate(.connectionsFileUpdated(savedFile)))
+        await store.finish()
+
+        let savedFileCount = await savedConnectionsFile.values().count
+        XCTAssertEqual(savedFileCount, 1)
+        XCTAssertEqual(
+            savedFile.providers[AiProvider.chatgptCodex.rawValue]?.snapshot.lastKnownStatus,
+            .connected,
+        )
     }
 
     // MARK: - SET-007-show_ai_provider_list

@@ -44,46 +44,26 @@ public enum AIProviderConnectionBootstrap {
         mapEvent: @escaping @Sendable (AIProviderBootstrapEvent) -> Action?,
     ) -> Effect<Action> {
         .run { send in
-            let file: AIConnectionsFile
             do {
-                file = try await connectionsFileClient.load()
+                try await run(
+                    connectionsFileClient: connectionsFileClient,
+                    verificationClient: verificationClient,
+                    mapEvent: mapEvent,
+                    send: send,
+                )
             } catch {
+                guard !isCancellation(error) else { return }
                 if let action = mapEvent(.failed) {
                     await send(action)
                 }
-                return
             }
-
-            if let action = mapEvent(.completed(initialResults(from: file))) {
-                await send(action)
-            }
-
-            let verificationResults = await verificationResults(
-                from: file,
-                verificationClient: verificationClient,
-            )
-            guard !verificationResults.isEmpty else { return }
-
-            if let action = mapEvent(.verificationCompleted(verificationResults)) {
-                await send(action)
-            }
-
-            guard let savedFile = await persistVerificationResults(
-                verificationResults,
-                file: file,
-                connectionsFileClient: connectionsFileClient,
-            ),
-                let action = mapEvent(.connectionsFileUpdated(savedFile))
-            else { return }
-
-            await send(action)
         }
     }
 
     public static func verificationResults(
         from file: AIConnectionsFile,
         verificationClient: AIProviderVerificationClient,
-    ) async -> [AIProviderBootstrapResult] {
+    ) async throws -> [AIProviderBootstrapResult] {
         // v1Catalog 순서를 복원하기 위해 인덱스와 함께 verifiable 항목을 사전 수집한다.
         let verifiable: [VerifiableProvider] = ProviderDescriptor.v1Catalog
             .enumerated()
@@ -101,36 +81,18 @@ public enum AIProviderConnectionBootstrap {
 
         guard !verifiable.isEmpty else { return [] }
 
-        // 비throwing TaskGroup 사용 — 한 provider 검증 실패/지연이 형제 task를 취소하지 않는다.
         // next()는 완료 순서로 반환하므로 (index, result) 튜플로 원래 순서를 추적한다.
-        let collected: [(Int, AIProviderBootstrapResult)] = await withTaskGroup(
+        let collected: [(Int, AIProviderBootstrapResult)] = try await withThrowingTaskGroup(
             of: (Int, AIProviderBootstrapResult).self,
         ) { group in
             for entry in verifiable {
                 group.addTask {
-                    let outcome: AiProviderVerificationOutcome = if let verifyWithCredential = verificationClient
-                        .verifyWithCredential
-                    {
-                        await verifyWithCredential(entry.provider, entry.credential)
-                    } else {
-                        await AiProviderVerificationOutcome(
-                            result: verificationClient.verify(entry.provider, entry.credential),
-                            sourceCredential: entry.credential,
-                            effectiveCredential: entry.credential,
-                        )
-                    }
-                    let result = verifiedResult(
-                        for: entry.provider,
-                        verification: outcome.result,
-                        sourceCredential: outcome.sourceCredential,
-                        effectiveCredential: outcome.effectiveCredential,
-                    )
-                    return (entry.catalogIndex, result)
+                    try await verify(entry, with: verificationClient)
                 }
             }
 
             var pairs: [(Int, AIProviderBootstrapResult)] = []
-            for await pair in group {
+            for try await pair in group {
                 pairs.append(pair)
             }
             return pairs
@@ -145,6 +107,7 @@ public enum AIProviderConnectionBootstrap {
         file: AIConnectionsFile,
         connectionsFileClient: AIConnectionsFileClient,
     ) async -> AIConnectionsFile? {
+        guard !Task.isCancelled else { return nil }
         let mutationResult: AiConnectionMutationResult?
         if let atomicUpdate = connectionsFileClient.atomicUpdate {
             mutationResult = try? await atomicUpdate { latestFile in
@@ -324,5 +287,71 @@ public enum AIProviderConnectionBootstrap {
             lastUsedAtMs: latestFile.lastUsedAtMs,
             providers: providers,
         )
+    }
+
+    private static func run<Action: Sendable>(
+        connectionsFileClient: AIConnectionsFileClient,
+        verificationClient: AIProviderVerificationClient,
+        mapEvent: @escaping @Sendable (AIProviderBootstrapEvent) -> Action?,
+        send: Send<Action>,
+    ) async throws {
+        let file = try await connectionsFileClient.load()
+        if let action = mapEvent(.completed(initialResults(from: file))) {
+            await send(action)
+        }
+
+        let results = try await verificationResults(from: file, verificationClient: verificationClient)
+        guard !results.isEmpty, !Task.isCancelled else { return }
+
+        if let action = mapEvent(.verificationCompleted(results)) {
+            await send(action)
+        }
+
+        guard !Task.isCancelled,
+              let savedFile = await persistVerificationResults(
+                  results,
+                  file: file,
+                  connectionsFileClient: connectionsFileClient,
+              ),
+              let action = mapEvent(.connectionsFileUpdated(savedFile))
+        else { return }
+
+        await send(action)
+    }
+
+    private static func verify(
+        _ entry: VerifiableProvider,
+        with verificationClient: AIProviderVerificationClient,
+    ) async throws -> (Int, AIProviderBootstrapResult) {
+        let outcome: AiProviderVerificationOutcome
+        do {
+            outcome = if let verifyWithCredential = verificationClient.verifyWithCredential {
+                try await verifyWithCredential(entry.provider, entry.credential)
+            } else {
+                await AiProviderVerificationOutcome(
+                    result: verificationClient.verify(entry.provider, entry.credential),
+                    sourceCredential: entry.credential,
+                    effectiveCredential: entry.credential,
+                )
+            }
+        } catch {
+            guard !isCancellation(error) else { throw CancellationError() }
+            outcome = AiProviderVerificationOutcome(
+                result: .networkError,
+                sourceCredential: entry.credential,
+                effectiveCredential: entry.credential,
+            )
+        }
+        let result = verifiedResult(
+            for: entry.provider,
+            verification: outcome.result,
+            sourceCredential: outcome.sourceCredential,
+            effectiveCredential: outcome.effectiveCredential,
+        )
+        return (entry.catalogIndex, result)
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 }

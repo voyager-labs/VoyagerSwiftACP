@@ -130,10 +130,6 @@ public struct CodexNativeAuthClient: Sendable {
         return .invalidGrant
     }
 
-    public static func live() -> CodexNativeAuthClient {
-        .liveValue
-    }
-
     public var startBrowserLogin: @Sendable () -> AsyncThrowingStream<BrowserLoginState, Error>
     public var startDeviceAuth: @Sendable () async throws -> DeviceAuthChallenge
     public var completeDeviceAuth: @Sendable (_ challenge: DeviceAuthChallenge) async throws -> OAuthCredentialFile
@@ -161,82 +157,15 @@ public struct CodexNativeAuthClient: Sendable {
 
 extension CodexNativeAuthClient: DependencyKey {
     nonisolated public static var liveValue: CodexNativeAuthClient {
+        .live()
+    }
+
+    public static func live(session: URLSession = .shared) -> CodexNativeAuthClient {
         let browserLoginFlow = CodexBrowserLoginFlow()
 
         return CodexNativeAuthClient(
             startBrowserLogin: {
-                AsyncThrowingStream { continuation in
-                    let config = CodexOAuthConfig.default
-                    let server = LocalOAuthHTTPServer(
-                        port: UInt16(config.redirectPort),
-                        expectedPath: config.redirectPath,
-                    )
-
-                    let flowGeneration = browserLoginFlow.start(server: server) {
-                        do {
-                            try Task.checkCancellation()
-                            let pkce = PKCE.generate()
-                            let state = PKCE.generateState()
-                            let authURL = config.authorizeURL(pkceChallenge: pkce.challenge, state: state)
-
-                            continuation.yield(.inProgress)
-
-                            openURL(authURL)
-
-                            let callback = try await server.startAndWait(timeout: 300)
-
-                            guard callback.state == state else {
-                                continuation.yield(.failed(.callbackMismatch))
-                                continuation.finish()
-                                return
-                            }
-
-                            let tokenResponse = try await exchangeCode(
-                                config: config,
-                                code: callback.code,
-                                pkce: pkce,
-                            )
-
-                            let credential = OAuthCredentialFile(
-                                accessToken: tokenResponse.access_token,
-                                refreshToken: tokenResponse.refresh_token,
-                                idToken: tokenResponse.id_token,
-                                tokenType: tokenResponse.token_type,
-                                scopes: config.scopes,
-                                expiresAtMs: Int64(Date().timeIntervalSince1970 * 1000)
-                                    + Int64(tokenResponse.expires_in ?? 3600) * 1000,
-                                chatGPTAccountId: Self.chatGPTAccountId(from: tokenResponse.id_token),
-                            )
-
-                            continuation.yield(.completed(credential))
-                            continuation.finish()
-                        } catch is CancellationError {
-                            continuation.yield(.failed(.cancelled))
-                            continuation.finish()
-                        } catch let error as OAuthCallbackError {
-                            let mapped: CodexNativeAuthError = switch error {
-                            case .cancelled: .cancelled
-                            case .serverStartFailed where error == .serverStartFailed(
-                                "Timeout waiting for OAuth callback",
-                            ): .timeout
-                            case .accessDenied, .invalidCallback, .serverStartFailed:
-                                .networkError(String(describing: error))
-                            }
-                            continuation.yield(.failed(mapped))
-                            continuation.finish()
-                        } catch let error as CodexNativeAuthError {
-                            continuation.yield(.failed(error))
-                            continuation.finish()
-                        } catch {
-                            continuation.yield(.failed(.networkError(error.localizedDescription)))
-                            continuation.finish()
-                        }
-                    }
-
-                    continuation.onTermination = { @Sendable _ in
-                        browserLoginFlow.cancel(generation: flowGeneration)
-                    }
-                }
+                browserLoginStream(flow: browserLoginFlow, session: session)
             },
             startDeviceAuth: {
                 throw CodexNativeAuthError.loginUnavailable
@@ -248,7 +177,11 @@ extension CodexNativeAuthClient: DependencyKey {
                 browserLoginFlow.cancel()
             },
             refreshCredential: { credential in
-                let response = try await refreshToken(config: .default, refreshToken: credential.refreshToken)
+                let response = try await refreshToken(
+                    config: .default,
+                    refreshToken: credential.refreshToken,
+                    session: session,
+                )
                 return OAuthCredentialFile(
                     accessToken: response.access_token,
                     refreshToken: response.refresh_token ?? credential.refreshToken,
@@ -331,6 +264,102 @@ extension CodexNativeAuthClient: DependencyKey {
 // MARK: - Live Helpers
 
 extension CodexNativeAuthClient {
+    private static func browserLoginStream(
+        flow: CodexBrowserLoginFlow,
+        session: URLSession,
+    ) -> AsyncThrowingStream<BrowserLoginState, Error> {
+        AsyncThrowingStream { continuation in
+            let config = CodexOAuthConfig.default
+            let server = LocalOAuthHTTPServer(
+                port: UInt16(config.redirectPort),
+                expectedPath: config.redirectPath,
+            )
+            let generation = flow.start(server: server) {
+                await runBrowserLogin(
+                    continuation: continuation,
+                    config: config,
+                    server: server,
+                    session: session,
+                )
+            }
+            continuation.onTermination = { @Sendable _ in
+                flow.cancel(generation: generation)
+            }
+        }
+    }
+
+    private static func runBrowserLogin(
+        continuation: AsyncThrowingStream<BrowserLoginState, Error>.Continuation,
+        config: CodexOAuthConfig,
+        server: LocalOAuthHTTPServer,
+        session: URLSession,
+    ) async {
+        do {
+            try Task.checkCancellation()
+            let pkce = PKCE.generate()
+            let state = PKCE.generateState()
+            let authURL = config.authorizeURL(pkceChallenge: pkce.challenge, state: state)
+            continuation.yield(.inProgress)
+            openURL(authURL)
+            let callback = try await server.startAndWait(timeout: 300)
+            guard callback.state == state else {
+                continuation.yield(.failed(.callbackMismatch))
+                continuation.finish()
+                return
+            }
+            let tokenResponse = try await exchangeCode(
+                config: config,
+                code: callback.code,
+                pkce: pkce,
+                session: session,
+            )
+            continuation.yield(.completed(oAuthCredential(from: tokenResponse, config: config)))
+            continuation.finish()
+        } catch is CancellationError {
+            continuation.yield(.failed(.cancelled))
+            continuation.finish()
+        } catch let error as URLError where error.code == .cancelled {
+            continuation.yield(.failed(.cancelled))
+            continuation.finish()
+        } catch let error as OAuthCallbackError {
+            continuation.yield(.failed(mapCallbackError(error)))
+            continuation.finish()
+        } catch let error as CodexNativeAuthError {
+            continuation.yield(.failed(error))
+            continuation.finish()
+        } catch {
+            continuation.yield(.failed(.networkError(error.localizedDescription)))
+            continuation.finish()
+        }
+    }
+
+    private static func mapCallbackError(_ error: OAuthCallbackError) -> CodexNativeAuthError {
+        switch error {
+        case .cancelled:
+            .cancelled
+        case .serverStartFailed where error == .serverStartFailed("Timeout waiting for OAuth callback"):
+            .timeout
+        case .accessDenied, .invalidCallback, .serverStartFailed:
+            .networkError(String(describing: error))
+        }
+    }
+
+    private static func oAuthCredential(
+        from response: CodexTokenResponse,
+        config: CodexOAuthConfig,
+    ) -> OAuthCredentialFile {
+        OAuthCredentialFile(
+            accessToken: response.access_token,
+            refreshToken: response.refresh_token,
+            idToken: response.id_token,
+            tokenType: response.token_type,
+            scopes: config.scopes,
+            expiresAtMs: Int64(Date().timeIntervalSince1970 * 1000)
+                + Int64(response.expires_in ?? 3600) * 1000,
+            chatGPTAccountId: chatGPTAccountId(from: response.id_token),
+        )
+    }
+
     private static func openURL(_ url: URL) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -342,6 +371,7 @@ extension CodexNativeAuthClient {
         config: CodexOAuthConfig,
         code: String,
         pkce: PKCECodes,
+        session: URLSession,
     ) async throws -> CodexTokenResponse {
         var request = URLRequest(url: config.tokenEndpoint)
         request.httpMethod = "POST"
@@ -357,7 +387,7 @@ extension CodexNativeAuthClient {
         ]
         request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -370,6 +400,7 @@ extension CodexNativeAuthClient {
     private static func refreshToken(
         config: CodexOAuthConfig,
         refreshToken: String?,
+        session: URLSession,
     ) async throws -> CodexTokenResponse {
         guard let refreshToken, !refreshToken.isEmpty else {
             throw CodexCredentialRefreshError.missingRefreshToken
@@ -384,15 +415,7 @@ extension CodexNativeAuthClient {
             URLQueryItem(name: "client_id", value: config.clientId),
         ]
         request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch is CancellationError {
-            throw CodexCredentialRefreshError.cancelled
-        } catch {
-            throw CodexCredentialRefreshError.transport
-        }
+        let (data, response) = try await refreshResponse(for: request, session: session)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CodexCredentialRefreshError.transport
         }
@@ -412,6 +435,21 @@ extension CodexNativeAuthClient {
             return try JSONDecoder().decode(CodexTokenResponse.self, from: data)
         } catch {
             throw CodexCredentialRefreshError.invalidResponse
+        }
+    }
+
+    private static func refreshResponse(
+        for request: URLRequest,
+        session: URLSession,
+    ) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch is CancellationError {
+            throw CodexCredentialRefreshError.cancelled
+        } catch let error as URLError where error.code == .cancelled {
+            throw CodexCredentialRefreshError.cancelled
+        } catch {
+            throw CodexCredentialRefreshError.transport
         }
     }
 
