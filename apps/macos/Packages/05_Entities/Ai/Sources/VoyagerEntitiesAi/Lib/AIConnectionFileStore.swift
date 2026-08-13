@@ -72,7 +72,9 @@ public actor AIConnectionFileStore {
         }
     }
 
-    public func update(_ transform: (AIConnectionsFile) throws -> AIConnectionsFile) throws -> AIConnectionsFile {
+    public func update(
+        _ transform: @Sendable (AIConnectionsFile) throws -> AIConnectionsFile,
+    ) throws -> AIConnectionsFile {
         try withExclusiveLock {
             let current = try loadUnlocked()
             let updated = try transform(current)

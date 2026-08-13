@@ -174,24 +174,11 @@ extension WindowManagerFeature {
             return .none
         }
         let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
-
-        state.windows.append(windowSession)
-        state.focusedWindowID = windowSession.id
-        state.moveWindowToMRUFront(windowSession.id)
-
-        let bootstrapEffect: Effect<Action> = if path == nil {
-            defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
-        } else {
-            .none
-        }
-
-        return .concatenate(
-            windowIDChangedEffect(for: windowSession.id),
-            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .run { [id = windowSession.id] _ in
-                await open(id)
-            },
-            bootstrapEffect,
+        return openWindowSession(
+            windowSession,
+            startsDefaultBootstrap: path == nil,
+            state: &state,
+            open: open,
         )
     }
 
@@ -200,21 +187,43 @@ extension WindowManagerFeature {
             return .none
         }
         let windowSession = makeWindowSession(path: nil)
-
-        state.windows.append(windowSession)
-        state.focusedWindowID = windowSession.id
-        state.moveWindowToMRUFront(windowSession.id)
-        let bootstrapEffect = defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
-
-        return .concatenate(
-            windowIDChangedEffect(for: windowSession.id),
-            .send(.windows(.element(
+        return openWindowSession(
+            windowSession,
+            startsDefaultBootstrap: true,
+            state: &state,
+            open: { [fileManagerWindowClient] id in
+                await fileManagerWindowClient.open(id)
+            },
+            beforePreferences: .send(.windows(.element(
                 id: windowSession.id,
                 action: .window(.navigation(.view(.openCollectionFile(url)))),
             ))),
+        )
+    }
+
+    private func openWindowSession(
+        _ windowSession: WindowSessionState,
+        startsDefaultBootstrap: Bool,
+        state: inout State,
+        open: @escaping @Sendable (UUID) async -> Void,
+        beforePreferences: Effect<Action> = .none,
+    ) -> Effect<Action> {
+        state.windows.append(windowSession)
+        state.focusedWindowID = windowSession.id
+        state.moveWindowToMRUFront(windowSession.id)
+
+        let bootstrapEffect: Effect<Action> = if startsDefaultBootstrap {
+            defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
+        } else {
+            .none
+        }
+
+        return .concatenate(
+            windowIDChangedEffect(for: windowSession.id),
+            beforePreferences,
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .run { [fileManagerWindowClient, id = windowSession.id] _ in
-                await fileManagerWindowClient.open(id)
+            .run { [id = windowSession.id] _ in
+                await open(id)
             },
             bootstrapEffect,
         )

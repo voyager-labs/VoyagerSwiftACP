@@ -110,13 +110,14 @@ func presentTransientFeedback(
         message: message,
     )
     state.transientFeedback = feedback
+    let feedbackDismissID = ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)
 
     return .concatenate(
-        .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+        .cancel(id: feedbackDismissID),
         .run { send in
             try await clock.sleep(for: .seconds(4))
             await send(.dismissTransientFeedback(id: feedback.id))
         }
-        .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
+        .cancellable(id: feedbackDismissID, cancelInFlight: true),
     )
 }

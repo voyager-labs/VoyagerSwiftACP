@@ -46,6 +46,79 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-003-move_entries_to_trash: 손상된 Trash metadata를 격리한 뒤 새 기록을 안전하게 저장한다.
+    /// 사용자가 Entry를 Trash로 보낼 때 기존 plist가 손상되어도 원본 증거와 새 복구 경로를 모두 보존하는지 확인한다.
+    /// - 검증 내용: 손상 파일 격리, 새 metadata 저장, 디렉터리와 plist의 owner-only 권한
+    /// - 사전 조건: 격리된 임시 디렉터리에 손상된 `trash_metadata.plist`가 존재한다.
+    /// - 기대 결과: 손상 bytes는 고유 quarantine 파일에 남고 새 plist에는 이동 metadata가 정상 저장된다.
+    func testMoveEntriesToTrash_corruptMetadataIsQuarantinedBeforeSaving() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trash-metadata-\(UUID().uuidString)")
+        let plistURL = root.appendingPathComponent("Voyager/trash_metadata.plist")
+        let store = TrashMetadataStore(plistURL: plistURL)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let corruptData = Data("not a property list".utf8)
+        try corruptData.write(to: plistURL)
+        let metadata = TrashMetadata(
+            trashPath: "/.Trash/file.txt",
+            originalPath: "/Documents/file.txt",
+            deletedDate: Date(timeIntervalSince1970: 0),
+        )
+
+        let loadedCorruptMetadata = await store.load()
+        XCTAssertTrue(loadedCorruptMetadata.isEmpty)
+        await store.save(metadata)
+
+        let loadedMetadata = await store.load()
+        XCTAssertEqual(loadedMetadata, [metadata])
+        let directory = plistURL.deletingLastPathComponent()
+        let quarantineURL = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .first { $0.lastPathComponent.hasPrefix("trash_metadata.plist.corrupted-") },
+        )
+        XCTAssertEqual(try Data(contentsOf: quarantineURL), corruptData)
+        XCTAssertEqual(try posixPermissions(at: directory), 0o700)
+        XCTAssertEqual(try posixPermissions(at: plistURL), 0o600)
+        XCTAssertEqual(try posixPermissions(at: quarantineURL), 0o600)
+    }
+
+    /// EOP-003-move_entries_to_trash: 반복 저장과 삭제가 유효한 plist를 유지한다.
+    /// 사용자가 여러 Entry를 Trash로 보낸 뒤 하나를 복구할 때 replace-style 저장의 결과와 기존 remove 동작을 확인한다.
+    /// - 검증 내용: 연속 save/remove round-trip과 임시 파일 정리
+    /// - 사전 조건: 격리된 빈 plist 경로와 두 개의 Trash metadata가 있다.
+    /// - 기대 결과: 복구되지 않은 metadata만 남고 쓰기용 임시 파일은 남지 않는다.
+    func testMoveEntriesToTrash_repeatedWritesPreserveMetadataAndRemoveBehavior() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trash-metadata-\(UUID().uuidString)")
+        let plistURL = root.appendingPathComponent("Voyager/trash_metadata.plist")
+        let store = TrashMetadataStore(plistURL: plistURL)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let first = TrashMetadata(
+            trashPath: "/.Trash/first.txt",
+            originalPath: "/Documents/first.txt",
+            deletedDate: Date(timeIntervalSince1970: 1),
+        )
+        let second = TrashMetadata(
+            trashPath: "/.Trash/second.txt",
+            originalPath: "/Documents/second.txt",
+            deletedDate: Date(timeIntervalSince1970: 2),
+        )
+
+        await store.save(first)
+        await store.save(second)
+        await store.remove(trashPath: first.trashPath)
+
+        let loadedMetadata = await store.load()
+        XCTAssertEqual(loadedMetadata, [second])
+        XCTAssertEqual(try posixPermissions(at: plistURL), 0o600)
+        let directoryContents = try FileManager.default.contentsOfDirectory(
+            atPath: plistURL.deletingLastPathComponent().path,
+        )
+        XCTAssertFalse(directoryContents.contains { $0.contains(".tmp-") })
+    }
+
     /// EOP-003-move_entries_to_trash: Trash 이동 클라이언트가 실패하면 상태가 실패로 남는지 검증한다.
     /// 사용자가 `fixtures/fixtures/texts/plain/11.txt`를 Trash로 보내려 할 때 client failure가 reducer state에 정확히 반영되는지 확인한다.
     /// - 검증 내용: `.trash(.moveToTrash)`가 moveToTrashAndReturnURL 오류를 error state로 변환한다.
@@ -1629,5 +1702,10 @@ extension EOP003ManageEntryLifecycleTests {
         XCTAssertEqual(sounds, [.moveToTrash])
 
         XCTAssertTrue(store.state.restorableTrashPaths.contains("/.Trash/file.txt"))
+    }
+
+    private func posixPermissions(at url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
     }
 }

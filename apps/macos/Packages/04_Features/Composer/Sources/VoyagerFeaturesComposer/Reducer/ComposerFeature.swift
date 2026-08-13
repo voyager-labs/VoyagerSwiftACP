@@ -32,12 +32,14 @@ public struct ComposerFeature {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.continuousClock)
+    var continuousClock
 
-    nonisolated public enum CancelID: Hashable, Sendable {
+    nonisolated enum CancelID: Hashable {
         case search(ownerID: UUID?)
         case filters(ownerID: UUID?)
         case scopeEditorSearch
-        case feedbackDismiss
+        case feedbackDismiss(ownerID: UUID?)
     }
 
     public init() {}
@@ -67,7 +69,7 @@ public struct ComposerFeature {
             case let .view(.setText(text)):
                 state.text = text
                 state.transientFeedback = nil
-                return .cancel(id: CancelID.feedbackDismiss)
+                return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
             case .view(.focusQueryField):
                 state.focusRequestID += 1
@@ -91,20 +93,52 @@ public struct ComposerFeature {
 
             case let .internal(.presentTransientFeedback(feedback)):
                 state.transientFeedback = feedback
+                let clock = continuousClock
+                let feedbackDismissID = CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)
                 return .concatenate(
-                    .cancel(id: CancelID.feedbackDismiss),
+                    .cancel(id: feedbackDismissID),
                     .run { [feedbackID = feedback.id] send in
-                        try await Task.sleep(for: .seconds(4))
+                        try await clock.sleep(for: .seconds(4))
                         await send(.internal(.dismissTransientFeedback(feedbackID)))
                     }
-                    .cancellable(id: CancelID.feedbackDismiss, cancelInFlight: true),
+                    .cancellable(id: feedbackDismissID, cancelInFlight: true),
+                )
+
+            case .internal(.clearTransientFeedback):
+                state.transientFeedback = nil
+                return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
+
+            case .internal(.cleanupCollectionWork):
+                if let requestID = state.activeSearchRequestID {
+                    state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
+                }
+                if let requestID = state.activeFiltersRequestID {
+                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
+                }
+                state.transientFeedback = nil
+                state.isLoadingSearch = false
+                state.isLoadingFilters = false
+                state.isFilteringInFlight = false
+                state.activeSearchRequestID = nil
+                state.activeFiltersRequestID = nil
+                state.lastAcceptedSearchRequestID = nil
+                state.lastAcceptedFiltersRequestID = nil
+                state.pendingSearchQuery = nil
+                state.searchStartedAt = nil
+                state.filtersStartedAt = nil
+                state.activeFiltersMetricSource = nil
+                applyQueryPhaseTransition(.reset, state: &state)
+                return .merge(
+                    .cancel(id: CancelID.search(ownerID: state.cancellationOwnerID)),
+                    .cancel(id: CancelID.filters(ownerID: state.cancellationOwnerID)),
+                    .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
                 )
 
             case .view(.submit),
                  .view(.cancelSearch),
                  .view(.cancelFilters):
                 state.transientFeedback = nil
-                return .cancel(id: CancelID.feedbackDismiss)
+                return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
             case let .internal(.applyCollectionDraftRestore(payload)):
                 state.applyCollectionDraftRestorePayload(payload)
@@ -142,7 +176,9 @@ public struct ComposerFeature {
                 return .none
 
             case let .internal(.resetComposerAndSync(context, url, compatibility, isCollectionMode)):
+                let cancellationOwnerID = state.cancellationOwnerID
                 state = .init()
+                state.cancellationOwnerID = cancellationOwnerID
                 state.collectionContext = context
                 state.openedCollectionURL = url
                 state.openedCollectionCompatibility = compatibility
@@ -216,7 +252,7 @@ private func handleSetPresented(
 
         var effects: [Effect<ComposerFeature.Action>] = [
             .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
-            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+            .cancel(id: ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
         ]
         if shouldPreserveFilterLifecycle {
             effects.append(.send(.scopeEditorSetPresented(false)))

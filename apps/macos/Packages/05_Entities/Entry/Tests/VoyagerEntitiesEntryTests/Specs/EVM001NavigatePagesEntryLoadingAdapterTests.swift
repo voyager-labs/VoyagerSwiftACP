@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Dependencies
 import Foundation
 @testable import VoyagerEntitiesEntry
@@ -1811,5 +1812,118 @@ private final class ResolverInterleavingGate: @unchecked Sendable {
         condition.lock()
         defer { condition.unlock() }
         return storedError
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: directory loader uses injected favorite color.
+    /// Directory refresh must resolve favorite tags before detached filesystem work begins.
+    /// - 검증 내용: EntryLoadingLive.loadItems가 주입된 favorite 색상으로 directory entry를 정규화하는지 확인
+    /// - 사전 조건: 임시 directory 파일에 색상 없는 태그가 저장되고 favorite client가 같은 이름의 색상을 반환함
+    /// - 기대 결과: directory loader 결과의 태그가 주입된 favorite 색상으로 정규화됨
+    func testDirectoryAdapterUsesInjectedFavoriteTagColor() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerEntryLoading-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("Tagged.txt")
+        try "content".write(to: fileURL, atomically: true, encoding: .utf8)
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+        try TagMetadataClient.setTags([Tag(name: tagName, colorCode: 0)], for: fileURL)
+
+        let items = try? await withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            try await EntryLoadingLive.loadItems(directory, true)
+        }
+
+        XCTAssertEqual(items?.first?.facets.tags, [favoriteTag])
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: Recents loader uses injected favorite color.
+    /// Recents refresh must normalize helper payload tags with the scoped favorite client.
+    /// - 검증 내용: Recents loader가 주입된 favorite 색상으로 payload tag를 정규화하는지 확인
+    /// - 사전 조건: Recents search closure가 색상 없는 동일 이름 tag payload를 반환함
+    /// - 기대 결과: Recents 결과의 태그가 주입된 favorite 색상으로 정규화됨
+    func testRecentAdapterUsesInjectedFavoriteTagColor() async {
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let items = await withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            await EntryLoadingLive.loadRecentItemsViaSearch(showHidden: false) { _ in
+                RecentSearchResponsePayload(
+                    items: [
+                        SearchEntryPayload(
+                            name: "Recent.txt",
+                            fullPath: "/tmp/Recent.txt",
+                            isFolder: false,
+                            isHidden: false,
+                            size: 1,
+                            modifiedDate: date,
+                            fileExtension: "txt",
+                            createdDate: date,
+                            addedDate: date,
+                            lastOpenedDate: nil,
+                            kind: "Text",
+                            creatorApplication: nil,
+                            tags: [SearchTagPayload(name: tagName, colorCode: 0)],
+                            supplementaryMetadata: nil,
+                        ),
+                    ],
+                )
+            }
+        }
+
+        XCTAssertEqual(items.first?.facets.tags, [favoriteTag])
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: tag-search loader uses injected favorite color.
+    /// Tag route refresh must normalize helper payload tags with the scoped favorite client.
+    /// - 검증 내용: Tag search loader가 주입된 favorite 색상으로 payload tag를 정규화하는지 확인
+    /// - 사전 조건: Tag search closure가 색상 없는 동일 이름 tag payload를 반환함
+    /// - 기대 결과: Tag search 결과의 태그가 주입된 favorite 색상으로 정규화됨
+    func testTagAdapterUsesInjectedFavoriteTagColor() async {
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let items = await withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            await EntryLoadingLive.loadFilesWithTagViaSearch(tag: tagName, showHidden: false) { request in
+                TagSearchResponsePayload(
+                    requestedTag: request.requestedTag,
+                    items: [
+                        SearchEntryPayload(
+                            name: "Tagged.txt",
+                            fullPath: "/tmp/Tagged.txt",
+                            isFolder: false,
+                            isHidden: false,
+                            size: 1,
+                            modifiedDate: date,
+                            fileExtension: "txt",
+                            createdDate: date,
+                            addedDate: date,
+                            lastOpenedDate: nil,
+                            kind: "Text",
+                            creatorApplication: nil,
+                            tags: [SearchTagPayload(name: tagName, colorCode: 0)],
+                            supplementaryMetadata: nil,
+                        ),
+                    ],
+                )
+            }
+        }
+
+        XCTAssertEqual(items.first?.facets.tags, [favoriteTag])
     }
 }

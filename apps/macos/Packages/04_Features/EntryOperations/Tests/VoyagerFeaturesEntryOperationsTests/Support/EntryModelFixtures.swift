@@ -7,7 +7,7 @@ import VoyagerEntitiesEntry
 /// Use `makeFileEntry` and `makeEntry` when you need file entries or path-based entries.
 enum EntryModelFixtures {
     static func makeFileEntry(
-        id: String = "/Users/test/file.txt",
+        id: String,
         name: String = "file.txt",
         fileExtension: String = "txt",
     ) -> EntryModel {

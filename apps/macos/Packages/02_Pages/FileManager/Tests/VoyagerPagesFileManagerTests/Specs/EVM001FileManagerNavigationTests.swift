@@ -454,7 +454,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 사전 조건: navigationState == .collection, collectionSession.document 설정됨
     /// - 기대 결과: externalFileSystemChanged 전송 후 수신 액션 없음
     func testExternalChangeIgnoresOpenedCollectionDocumentPath() async {
-        let collectionURL = URL(fileURLWithPath: Self.fixturePath("data/sample-config.yaml"))
+        let collectionURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sample-config-\(UUID().uuidString).voycoll", isDirectory: true)
         var state = FileManagerContentState()
         state.navigation.navigationState = .collection(.init(
             kind: .file(url: collectionURL, name: "sample-config"),
@@ -1303,15 +1304,19 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 검증 내용: folder route에서 entry operation 완료 액션이 현재 folder loader로 전달되는지 검증
     /// - 사전 조건: FileManagerContentState와 EntryOperations lifecycle bridge harness 구성
     /// - 기대 결과: route에 맞는 forwarding 또는 no-op/restore 동작 발생
-    func testOperationFinishedTriggersContentReload() async {
-        let folderPath = "/tmp/voyager"
+    func testOperationFinishedTriggersContentReload() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+        let folderPath = sandbox.fileURL.deletingLastPathComponent().path
         let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
             LifecycleBridgeHarness()
         }
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.operationFinished(
-            "/tmp/voyager/file.txt",
+            sandbox.fileURL.path,
             .rename,
             .success(()),
         ))))
@@ -1406,15 +1411,19 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     }
 
     /// EVM-001-reload_directory_page_on_external_change: setTags의 최종 성공 record는 일반 folder를 한 번 reload한다.
-    func testSetTagsEntryActionCompletedReloadsFolderOnce() async {
-        let folderPath = "/tmp/voyager"
+    func testSetTagsEntryActionCompletedReloadsFolderOnce() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+        let folderPath = sandbox.fileURL.deletingLastPathComponent().path
         let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
             LifecycleBridgeHarness()
         }
         store.exhaustivity = .off
         let record = EntryActionRecord(
             operationKind: .setTags,
-            targets: [.init(beforePath: "/tmp/voyager/file.txt", afterPath: "/tmp/voyager/file.txt")],
+            targets: [.init(beforePath: sandbox.fileURL.path, afterPath: sandbox.fileURL.path)],
         )
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))

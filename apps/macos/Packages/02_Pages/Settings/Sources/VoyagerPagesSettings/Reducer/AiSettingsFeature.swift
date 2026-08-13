@@ -337,6 +337,10 @@ private extension AiSettingsFeature {
             if let rowIdx = state.rows.index(id: result.provider) {
                 state.rows[rowIdx].connectionState = result.connectionState
                 state.rows[rowIdx].statusReason = result.statusReason
+                if case let .oauth(credential) = result.effectiveCredential ?? result.sourceCredential {
+                    state.rows[rowIdx].accountID = credential.chatGPTAccountId
+                    state.rows[rowIdx].tokenExpiresAtMs = credential.expiresAtMs
+                }
             }
         }
     }
@@ -529,7 +533,7 @@ private extension CollectionSearchAISettings {
         case .providerDefault:
             nil
         case .none:
-            .some(.none)
+            .some(AiThinkingSelection.none)
         case let .effort(raw):
             AiThinkingEffort(rawValue: raw).map { .effort($0) }
         case let .tokenBudget(value):

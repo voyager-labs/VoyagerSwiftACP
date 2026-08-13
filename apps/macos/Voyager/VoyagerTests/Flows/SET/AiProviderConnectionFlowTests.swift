@@ -43,10 +43,10 @@ final class AiProviderConnectionFlowTests: XCTestCase {
         )
 
         await store.send(.ai(.onAppear))
-        await store.receive(\.ai)
-        await store.receive(\.ai)
+        await store.receive(\.ai.bootstrapCompleted)
         await store.receive(\.ai.delegate.connectionsFileUpdated)
         await store.receive(\.delegate.aiConnectionsFileUpdated)
+        await store.receive(\.ai.bootstrapVerificationCompleted)
         await store.finish()
 
         XCTAssertEqual(savedFiles.withValue { $0 }, [expectedFile])
@@ -119,10 +119,10 @@ final class AiProviderConnectionFlowTests: XCTestCase {
         )
 
         await store.send(.ai(.onAppear))
-        await store.receive(\.ai)
-        await store.receive(\.ai)
+        await store.receive(\.ai.bootstrapCompleted)
         await store.receive(\.ai.delegate.connectionsFileUpdated)
         await store.receive(\.delegate.aiConnectionsFileUpdated)
+        await store.receive(\.ai.bootstrapVerificationCompleted)
         await store.finish()
 
         XCTAssertEqual(savedFiles.withValue { $0 }, [expectedFile])

@@ -134,8 +134,6 @@ func cancelInFlightContentEffectsOnTabSwitch(
             windowID: state.content.entryOperations.windowID,
         )),
         loadingCancellationEffect,
-        .cancel(id: ComposerFeature.CancelID.search(ownerID: state.content.composer.cancellationOwnerID)),
-        .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.content.composer.cancellationOwnerID)),
         state.contentTabs.previousActiveTabID
             .map { .cancel(id: HomeAiChatOpenCancelID(tabID: $0)) }
             ?? .none,
