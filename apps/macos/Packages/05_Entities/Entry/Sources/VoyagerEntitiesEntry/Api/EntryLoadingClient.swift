@@ -155,9 +155,11 @@ public extension DependencyValues {
 enum EntryLoadingLive {
     nonisolated static var loadItems: @Sendable (URL, Bool) async throws -> [EntryModel] {
         { directoryURL, showHidden in
-            try await Task.detached {
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            let favoriteTags = finderFavoritesTagClient.favoriteTags()
+            return try await Task.detached {
                 let entryLoadingClient = EntryLoadingClient.liveValue
-                let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
                 let workspaceClient = WorkspaceClient.liveValue
                 let fileManagerClient = FileManagerClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
@@ -386,7 +388,9 @@ enum EntryLoadingLive {
         },
     ) async -> [EntryModel] {
         do {
-            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            let favoriteTags = finderFavoritesTagClient.favoriteTags()
             let response = try await search(
                 .init(
                     scopeMode: .allIndexed,
@@ -413,7 +417,9 @@ enum EntryLoadingLive {
         },
     ) async -> [EntryModel] {
         do {
-            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            let favoriteTags = finderFavoritesTagClient.favoriteTags()
             let response = try await search(
                 .init(
                     requestedTag: tag,

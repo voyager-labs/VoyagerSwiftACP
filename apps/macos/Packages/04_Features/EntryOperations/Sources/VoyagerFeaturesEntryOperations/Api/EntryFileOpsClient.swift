@@ -393,13 +393,14 @@ enum EntryFileOpsLive {
 
     nonisolated static var setTags: @Sendable (URL, [String]) async throws -> Void {
         { url, tagNames in
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
             do {
                 let existingTags = TagMetadataClient.loadTags(from: url) ?? []
-                let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
                 let updatedTags = EntryFileOpsTagPersistenceResolver.makeTags(
                     tagNames: tagNames,
                     existingTags: existingTags,
-                    favoriteTags: favoriteTags,
+                    favoriteTags: finderFavoritesTagClient.favoriteTags(),
                 )
                 try TagMetadataClient.setTags(updatedTags, for: url)
             } catch TagMetadataClient.Error.failedToRemoveTags {

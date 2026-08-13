@@ -93,12 +93,11 @@ extension FileManagerContentFeature {
     func clearCollectionModeEffect(state: State) -> Effect<Action> {
         .concatenate(
             .send(.composer(.clearPendingSearchQuery)),
+            .send(.composer(.internal(.cleanupCollectionWork))),
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.collection(.sessionResetRequested)),
             .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
             .cancel(id: OpenCollectionFileCancelID(windowID: state.entryViewLayout.entryOperations.windowID)),
-            .cancel(id: ComposerFeature.CancelID.search(ownerID: state.composer.cancellationOwnerID)),
-            .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.composer.cancellationOwnerID)),
         )
     }
 
@@ -130,10 +129,9 @@ extension FileManagerContentFeature {
         }
 
         state.suppressAutomaticRefreshFeedback = true
-        state.composer.transientFeedback = nil
 
         return .concatenate(
-            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+            .send(.composer(.internal(.clearTransientFeedback))),
             .send(.collection(.draftDiscardRequested)),
             .send(.delegate(.collectionChangesDiscarded)),
         )
@@ -247,14 +245,7 @@ extension FileManagerContentFeature {
         )
         state.composer.isPresented = true
         state.composer.transientFeedback = feedback
-        return .concatenate(
-            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
-            .run { [feedbackID = feedback.id] send in
-                try await Task.sleep(for: .seconds(4))
-                await send(.composer(.dismissTransientFeedback(id: feedbackID)))
-            }
-            .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
-        )
+        return .send(.composer(.internal(.presentTransientFeedback(feedback))))
     }
 
     private func compatibilityBlockedRefreshMessage(
@@ -305,14 +296,7 @@ extension FileManagerContentFeature {
         )
         state.composer.isPresented = true
         state.composer.transientFeedback = feedback
-        return .concatenate(
-            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
-            .run { [feedbackID = feedback.id] send in
-                try await Task.sleep(for: .seconds(4))
-                await send(.composer(.dismissTransientFeedback(id: feedbackID)))
-            }
-            .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
-        )
+        return .send(.composer(.internal(.presentTransientFeedback(feedback))))
     }
 
     private func handleCollectionSearchResultPrepared(

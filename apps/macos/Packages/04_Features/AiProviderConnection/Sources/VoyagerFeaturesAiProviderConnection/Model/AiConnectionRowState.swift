@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 
 /// Per-provider row state for the Settings AI connection list.
@@ -12,6 +13,8 @@ public struct AiConnectionRowState: Equatable, Identifiable {
     public var enteredKey: String
     public var isVerifying: Bool
     public var isShowingDisconnectConfirmation: Bool
+    public var accountID: String?
+    public var tokenExpiresAtMs: Int64?
 
     public var id: AiProvider {
         provider
@@ -30,6 +33,8 @@ public struct AiConnectionRowState: Equatable, Identifiable {
         enteredKey: String = "",
         isVerifying: Bool = false,
         isShowingDisconnectConfirmation: Bool = false,
+        accountID: String? = nil,
+        tokenExpiresAtMs: Int64? = nil,
     ) {
         self.provider = provider
         self.connectionState = connectionState
@@ -38,6 +43,8 @@ public struct AiConnectionRowState: Equatable, Identifiable {
         self.enteredKey = enteredKey
         self.isVerifying = isVerifying
         self.isShowingDisconnectConfirmation = isShowingDisconnectConfirmation
+        self.accountID = accountID
+        self.tokenExpiresAtMs = tokenExpiresAtMs
     }
 
     public var displayName: String {
@@ -55,6 +62,16 @@ public struct AiConnectionRowState: Equatable, Identifiable {
 
     public var primaryAction: ProviderRowAction {
         connectionState.primaryAction
+    }
+
+    public var accountLabel: String? {
+        provider == .chatgptCodex ? accountID.map { "Account: \($0)" } : nil
+    }
+
+    public var expiryLabel: String? {
+        guard provider == .chatgptCodex, let tokenExpiresAtMs else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(tokenExpiresAtMs) / 1000)
+        return "Expires: \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 }
 

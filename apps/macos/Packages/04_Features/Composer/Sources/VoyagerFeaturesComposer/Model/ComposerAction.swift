@@ -65,6 +65,8 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case scopeEditorSearchResponse(String, Result<[ComposerScopeUtils.DirectoryItem], Error>)
         case dismissTransientFeedback(UUID)
         case presentTransientFeedback(ComposerTransientFeedback)
+        case clearTransientFeedback
+        case cleanupCollectionWork
         case searchListApplied
         case applyCollectionDraftRestore(CollectionDraftRestorePayload)
         case applyCollectionNavigationComposer(CollectionNavigationStatePayload)

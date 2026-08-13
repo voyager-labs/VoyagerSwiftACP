@@ -556,6 +556,9 @@ extension SpotlightQueryCompiler {
         value: String,
         propertyKey: String,
     ) -> String {
+        if propertyKey == "file_kind" {
+            return "\(attribute) == \"*\(escapeLiteral(value))*\"cd"
+        }
         guard propertyKey == "tag_names" else {
             return "\(attribute) == \"\(escapeLiteral(value))\""
         }

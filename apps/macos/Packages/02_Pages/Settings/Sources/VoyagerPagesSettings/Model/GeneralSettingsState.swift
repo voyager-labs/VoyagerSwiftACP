@@ -11,6 +11,7 @@ public enum DefaultFileViewerPhase: Equatable, Sendable {
 public struct GeneralSettingsState: Equatable {
     var startingDirectory: String = ""
     var selectedDirectoryOption: DirectoryOption = .home
+    var standardDirectories: StandardDirectories = .defaultValue
     var isSelectingDirectory: Bool = false
     var startingDirectoryError: String?
     var launchAtStartup: Bool = false

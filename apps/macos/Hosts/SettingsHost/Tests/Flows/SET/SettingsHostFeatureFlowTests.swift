@@ -1,10 +1,53 @@
 import ComposableArchitecture
 @testable import SettingsHost
+import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAccountAccess
 import VoyagerPagesSettings
+import VoyagerShared
 import XCTest
 
 final class SettingsHostFeatureFlowTests: XCTestCase {
+    @MainActor
+    func testOnAppearLoadsSandboxHomeBeforeSelectingHome() async {
+        let storage = SettingsHostStringStorage()
+        let store = makeStore(
+            directorySelectionClient: DirectorySelectionClient(
+                pickDirectory: { nil },
+                pathExists: { _ in true },
+                isDirectory: { _ in true },
+                standardDirectories: {
+                    StandardDirectories(
+                        homePath: "/tmp/voyager-settingshost-sandbox",
+                        homeDisplayName: "voyager-settingshost-sandbox",
+                        desktopPath: nil,
+                        documentsPath: nil,
+                        downloadsPath: nil,
+                    )
+                },
+            ),
+            userDefaultsClient: UserDefaultsClient(
+                bool: { _ in false },
+                setBool: { _, _ in },
+                string: { storage.string(forKey: $0) },
+                setString: { storage.setString($0, forKey: $1) },
+                double: { _ in 0 },
+                setDouble: { _, _ in },
+                object: { _ in nil },
+                setObject: { _, _ in },
+            ),
+        )
+        store.exhaustivity = .off
+
+        await store.send(.settings(.onAppear))
+        await store.send(.settings(.general(.selectDirectoryOption(.home))))
+        await store.skipInFlightEffects()
+
+        XCTAssertEqual(
+            storage.string(forKey: SettingsKeys.defaultTabPath),
+            "/tmp/voyager-settingshost-sandbox",
+        )
+    }
+
     @MainActor
     func testSignInDelegateRoutesOnceAndProjectsAccountAccess() async {
         let store = makeStore()
@@ -83,6 +126,8 @@ final class SettingsHostFeatureFlowTests: XCTestCase {
     private func makeStore(
         initialState: SettingsHostState = .init(),
         persistedSession: AccountSession? = nil,
+        directorySelectionClient: DirectorySelectionClient = .testValue,
+        userDefaultsClient: UserDefaultsClient = .testValue,
         syncSession: @escaping @Sendable (
             SessionSyncIntent,
             DeviceBindingRequest,
@@ -107,6 +152,21 @@ final class SettingsHostFeatureFlowTests: XCTestCase {
             $0.signInHandoffClient = .testValue
             $0.notificationCenterClient = .testValue
             $0.defaultFileViewerClient = .previewValue
+            $0.directorySelectionClient = directorySelectionClient
+            $0.userDefaultsClient = userDefaultsClient
         }
+    }
+}
+
+private final class SettingsHostStringStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var strings: [String: String] = [:]
+
+    func string(forKey key: String) -> String? {
+        lock.withLock { strings[key] }
+    }
+
+    func setString(_ value: String, forKey key: String) {
+        lock.withLock { strings[key] = value }
     }
 }

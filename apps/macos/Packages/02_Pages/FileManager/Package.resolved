@@ -1,5 +1,5 @@
 {
-  "originHash" : "0e1c22adca6ab05799643503864d4e84a63083224955f47f98fda1a28a06f6f9",
+  "originHash" : "715a2ec8f813396bf4a02f23bc38ef1d93175494e42be247304f4ea639fd6f3f",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "dcccb979a2183b8df3334237e3dc1ae2b4116a86",
         "version" : "1.2.0"
+      }
+    },
+    {
+      "identity" : "highlighterswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/smittytone/HighlighterSwift",
+      "state" : {
+        "revision" : "fe7aae9c9b31d3b296fd3d2dd575e1a207bb29e0",
+        "version" : "3.1.0"
       }
     },
     {
