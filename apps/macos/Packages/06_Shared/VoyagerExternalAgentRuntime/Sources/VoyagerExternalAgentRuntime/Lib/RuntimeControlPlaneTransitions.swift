@@ -19,6 +19,7 @@ extension RuntimeControlPlane {
               !current.lease.isActive,
               current.stored.projection == .launching,
               current.stored.providerInternalSessionReference == nil,
+              current.stored.providerLaunchAttempted == false,
               current.stored.runReference == request.runReference
         else { return false }
         return try await commit(host: host) { _, registry in
@@ -26,6 +27,7 @@ extension RuntimeControlPlane {
                   !candidate.lease.isActive,
                   candidate.stored.projection == .launching,
                   candidate.stored.providerInternalSessionReference == nil,
+                  candidate.stored.providerLaunchAttempted == false,
                   candidate.stored.runReference == request.runReference
             else { return false }
             candidate.stored = candidate.stored.withProjection(.interrupted)

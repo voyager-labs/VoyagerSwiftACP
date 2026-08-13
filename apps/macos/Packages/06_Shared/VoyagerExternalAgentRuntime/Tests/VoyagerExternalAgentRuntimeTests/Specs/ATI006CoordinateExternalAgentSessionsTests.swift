@@ -510,6 +510,53 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: restarted attempted launch remains fail-closed.
+    /// provider 시작 사실이 저장된 launching snapshot을 terminal 증거 없이 회수하지 않는지 검증한다.
+    /// - 검증 내용: same-run duplicate 거부, launching projection 보존, replacement 차단, provider 미호출.
+    /// - 사전 조건: provider handle 없이 launch 시도 사실만 저장된 snapshot을 새 control plane이 hydrate한다.
+    /// - 기대 결과: snapshot은 interrupted로 합성되지 않고 host는 terminal 증거 전까지 재사용되지 않는다.
+    @Test
+    func `restarted attempted launch remains fail closed`() async throws {
+        let host: ExternalAgentSessionReference = "host-restarted-attempted-launch"
+        let run = RuntimeRunReference("run-restarted-attempted-launch")
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: nil,
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            contextPolicy: request.contextPolicy,
+            projection: .launching,
+            providerLaunchAttempted: true,
+            providerNamespace: "sdk",
+            providerBranch: .unknown,
+        )
+        let store = InMemoryRuntimeStateStore(state: RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        await #expect(throws: RuntimeHostError.duplicateRunReference) {
+            _ = try await plane.run(request)
+        }
+
+        #expect(await plane.projection(for: host) == .launching)
+        let replacement = makeLaunch(
+            host: host,
+            run: RuntimeRunReference("run-restarted-attempted-replacement"),
+            adapterID: "sdk",
+        )
+        await #expect(throws: RuntimeHostError.activeRunExists) {
+            try await plane.projectPrelaunch(replacement, as: .policyReady)
+        }
+        #expect(await adapter.counts().launch == 0)
+    }
+
     /// ATI-006-coordinate_external_agent_launch: terminal evidence releases a cancelled launch reservation.
     /// caller가 사라진 launch의 terminal 증거가 남은 reservation을 회수해 host 재사용을 허용하는지 검증한다.
     /// - 검증 내용: CancellationError 전파, same-run terminal 수용, replacement provider 실행.
