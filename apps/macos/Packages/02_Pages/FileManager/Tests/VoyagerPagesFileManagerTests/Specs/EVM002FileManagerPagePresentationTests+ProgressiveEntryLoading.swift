@@ -333,6 +333,13 @@ extension EVM002FileManagerPagePresentationTests {
                 "default",
                 "progressive-entry-loading",
                 "progressive-entry-loading-failure",
+                "delayed-root-navigation",
+                "delayed-tab-switch",
+                "permission-denied",
+                "permission-retry",
+                "collection-directory",
+                "large-folder-1000",
+                "concurrent-large-folders",
             ],
         )
         XCTAssertEqual(FileManagerHostPreset.default.scenario.progressiveEntryLoading, .none)
