@@ -304,6 +304,7 @@ public final class FileOperationUndoManagerRegistry {
             clearNativeHistory(entry)
         }
         for restored in restoredEntries {
+            rebindCompatibilityOwnerIdentities(restored.entry, to: restored.scope)
             FileOperationUndoManagerHandlerStore.store(for: restored.entry.manager)
                 .rebind(to: restored.scope)
         }
@@ -536,8 +537,18 @@ public final class FileOperationUndoManagerRegistry {
             if let replacedTarget = move.replacedTarget {
                 clearNativeHistory(replacedTarget)
             }
+            rebindCompatibilityOwnerIdentities(move.entry, to: move.descriptor.target)
             FileOperationUndoManagerHandlerStore.store(for: move.entry.manager)
                 .rebind(to: move.descriptor.target)
+        }
+    }
+
+    private func rebindCompatibilityOwnerIdentities(_ entry: Entry, to scope: UndoManagerScope) {
+        for (recordID, ownerIdentity) in entry.ownerIdentities {
+            entry.ownerIdentities[recordID] = CompatibilityOwnerIdentity(
+                windowID: scope.windowID,
+                ownerID: ownerIdentity.ownerID,
+            )
         }
     }
 

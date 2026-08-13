@@ -367,6 +367,50 @@ final class EOP003UndoScopeMoveReconciliationTests: XCTestCase {
         XCTAssertEqual(registry.generation(for: target), generation)
     }
 
+    /// EOP-003-undo_entry_action: source window 종료 뒤에도 moved canonical record의 지연 metadata를 결합한다.
+    /// scope 이동이 record owner identity도 target window로 옮겨 source tombstone과 분리하는지 검증한다.
+    /// - 검증 내용: source window invalidation 뒤 registration 결과, target availability와 native Undo event를 비교한다.
+    /// - 사전 조건: owner가 있는 source canonical record를 target window로 이동한 뒤 source window가 종료된다.
+    /// - 기대 결과: target에서 지연 등록과 Undo가 성공하고 source tombstone은 이동된 history를 차단하지 않는다.
+    func testCompatibilityRegistrationSurvivesSourceWindowInvalidationAfterCrossWindowMove() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let ownerID = UUID()
+        let source = UndoManagerScope(windowID: sourceWindowID, contentTabID: "moved")
+        let target = UndoManagerScope(windowID: targetWindowID, contentTabID: "moved")
+        let manager = registry.activate(source)
+        let generation = try XCTUnwrap(registry.generation(for: source))
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        var events = registry.compatibilityEvents(windowID: targetWindowID).makeAsyncIterator()
+
+        XCTAssertTrue(
+            registry.registerUndo(
+                source,
+                expectedGeneration: generation,
+                ownerID: ownerID,
+                record: record,
+            ),
+        )
+        XCTAssertEqual(registry.moveScopes([.init(source: source, target: target)]), .moved)
+        XCTAssertTrue(registry.invalidateCompatibilityWindow(sourceWindowID).succeeded)
+        let didRegister = registry.registerCompatibilityUndo(source, ownerID: ownerID, record: record)
+        let identity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        let undo = registry.performCompatibilityUndoRedo(
+            target,
+            expectedTarget: identity,
+            direction: .undo,
+        )
+        let event = undo.didInvoke ? await events.next() : nil
+
+        XCTAssertTrue(didRegister)
+        XCTAssertTrue(undo.didInvoke)
+        XCTAssertEqual(event, .init(ownerID: ownerID, record: record, direction: .undo))
+        XCTAssertFalse(manager.canUndo)
+        XCTAssertTrue(manager.canRedo)
+        XCTAssertEqual(registry.generation(for: target), generation)
+    }
+
     /// EOP-003-undo_entry_action: source active scope가 사라져도 moved canonical record에 metadata를 결합한다.
     /// 마지막 탭 이동 뒤 source resolver가 nil이어도 record ID 기반 lookup을 먼저 수행하는지 검증한다.
     /// - 검증 내용: nil resolver registration 뒤 target availability와 native history를 비교한다.
