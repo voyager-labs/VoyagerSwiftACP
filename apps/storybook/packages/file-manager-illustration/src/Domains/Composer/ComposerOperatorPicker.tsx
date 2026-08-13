@@ -14,7 +14,12 @@ export const ComposerOperatorPicker: FC<ComposerOperatorPickerProps> = ({ picker
   >
     <div className="collection-composer-picker-list">
       {picker.options.map((operator) => (
-        <button type="button" key={operator.code} onClick={() => onSelect?.(operator.code)}>
+        <button
+          type="button"
+          aria-pressed={operator.code === picker.selectedCode}
+          key={operator.code}
+          onClick={() => onSelect?.(operator.code)}
+        >
           {operator.label}
         </button>
       ))}

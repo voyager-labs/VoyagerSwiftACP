@@ -26,6 +26,8 @@ export type ComposerPropertyPicker = {
 
 export type ComposerOperatorPicker = {
   readonly kind: "operator"
+  readonly conditionID: string
+  readonly selectedCode: string
   readonly options: readonly ComposerOperatorOption[]
 }
 
@@ -104,7 +106,13 @@ export const composerFixtures = {
   },
   operatorPickerOpen: {
     ...populatedDraft,
-    picker: { kind: "operator", options: composerPropertyOptions[0].operators },
+    picker: {
+      kind: "operator",
+      conditionID: "kind",
+      selectedCode: "eq",
+      options:
+        composerPropertyOptions.find((property) => property.key === "file_kind")?.operators ?? [],
+    },
   },
   valuePickerOpen: {
     ...populatedDraft,
@@ -124,6 +132,18 @@ export const composerFixtures = {
       sectionTitle: "Current scope",
       items: ["Documents", "Projects"],
       feedback: { phase: "Applied", title: "Scope updated to Documents", action: "Undo" },
+    },
+  },
+  scopeApplying: {
+    ...populatedDraft,
+    picker: {
+      kind: "scope",
+      query: "",
+      currentSummary: "Documents",
+      includeSubfolders: true,
+      sectionTitle: "Current scope",
+      items: ["Documents", "Projects"],
+      feedback: { phase: "Applying", title: "Updating scope" },
     },
   },
   scopeFailed: {

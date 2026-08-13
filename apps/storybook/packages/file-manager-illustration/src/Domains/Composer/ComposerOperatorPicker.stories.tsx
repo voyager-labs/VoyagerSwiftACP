@@ -15,6 +15,8 @@ const meta = {
   args: {
     picker: {
       kind: "operator",
+      conditionID: "modification_date",
+      selectedCode: "eq",
       options: composerPropertyOptions[3].operators,
     },
   },
