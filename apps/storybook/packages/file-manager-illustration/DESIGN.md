@@ -106,13 +106,13 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 
 - **Authority:** `FileManagerContentPaneView`, `ContentPageView`, `EntryGridView`, `EntryListView`, and `ContentPaneBreadcrumbBarView` native source establishes the page structure, grid/list modes, selection semantics, and status text. Storybook remains a deterministic review translation, not runtime proof.
 - **Root states:** `DefaultGrid`, `GridSelection`, `ListSelection`, `EmptyGrid`, `LongNamesList`, `NarrowSidebarClosed`, and `InspectorOpenList` cover the minimum VOY-720 review matrix without creating a Cartesian product.
-- **Content stress:** grid names preserve the native-style two-line clamp; list names remain single-line with tail truncation. Empty content preserves toolbar and breadcrumb chrome, while the 600px narrow fixture closes the sidebar so the 400px content minimum remains observable.
+- **Content stress:** grid names preserve the native-style two-line clamp; list names remain single-line with middle truncation that preserves the extension. Empty content preserves toolbar and breadcrumb chrome, while the 600px narrow fixture closes the sidebar so the 400px content minimum remains observable.
 - **Pane states:** sidebar and inspector open/closed are window-shell states. There is no separate native `content pane closed` state, so Storybook does not claim or add one.
 - **Decision:** Adopt the named root states as the canonical ContentPane/entry-browser review surface; isolated EntryGrid/EntryList stories remain reusable specimens.
 - **Checked:** typed initial presentation, SSR pane/list/selection markup, Storybook catalog state IDs, package check, static build, and contract verifier.
-- **Unknown/deviation:** runtime column count, list intrinsic row geometry, and dynamic material rendering remain runtime-dependent. Browser/Playwright visual review is excluded by the current user instruction.
+- **Unknown/deviation:** dynamic material rendering remains runtime-dependent. Runtime accessibility inspection confirms the AppKit table geometry below; pixel capture remains unavailable without Screen Recording permission.
 - **Follow-up:** Revisit only when native runtime captures are in scope or a new content state changes layout ownership.
-- **List view:** reflects the native `NSOutlineView` default with `Name`, `Date Modified`, `Size`, and `Kind` columns; 24px entry rows, 20px thumbnails, 13px regular name text, 12px secondary text, 4px inter-column spacing, and alternating unselected row backgrounds.
+- **List view:** reflects the native `NSOutlineView` default with `Name`, `Date Modified`, `Size`, and `Kind` columns; 420/220/110/180px default widths, a 28px header, 24px entry rows, 20px thumbnails, 13px regular name text, 12px secondary text, 4px inter-column spacing, horizontal overflow when the content pane is narrower than the native table, alternating unselected row backgrounds, metadata values, extension-preserving middle truncation, and replace/toggle/range selection.
 
 ### Domains: Chat and Composer
 
