@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerWidgetsEntryViewLayout
@@ -68,8 +69,13 @@ final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
         for preset in FileManagerHostPreset.allCases where preset != .default {
             let state = FileManagerHostFixture.makeState(preset: preset, windowID: UUID())
 
-            XCTAssertEqual(state.contentTabs.tabs.compactMap(\.title), ["Home"])
-            XCTAssertEqual(state.contentTabs.activeTabID, state.contentTabs.tabs.first?.id)
+            if preset == .delayedTabSwitch {
+                XCTAssertEqual(state.contentTabs.tabs.compactMap(\.title), ["Home", "Delayed Tab"])
+                XCTAssertEqual(state.contentTabs.activeTabID, state.contentTabs.tabs.first?.id)
+            } else {
+                XCTAssertEqual(state.contentTabs.tabs.compactMap(\.title), ["Home"])
+                XCTAssertEqual(state.contentTabs.activeTabID, state.contentTabs.tabs.first?.id)
+            }
         }
     }
 
