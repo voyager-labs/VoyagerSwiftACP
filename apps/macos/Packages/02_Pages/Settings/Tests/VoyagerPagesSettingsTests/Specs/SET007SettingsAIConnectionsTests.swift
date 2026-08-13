@@ -125,6 +125,77 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertTrue(labels.contains("effectiveCredential"))
     }
 
+    /// SET-007-codex_oauth_runtime: live bootstrap resolves the overridden Codex refresh dependency.
+    /// The verification dependency must not retain its default refresh transport when TCA overrides native auth.
+    /// - 검증 내용: live verification client, injected refresh invocation, network-free expired result.
+    /// - 사전 조건: bootstrap loads an expired Codex credential and refresh returns invalidGrant.
+    /// - 기대 결과: injected refresh runs once and the row becomes connectionFailed/expired.
+    func testLiveBootstrapExpiredCodexUsesOverriddenRefreshDependency() async throws {
+        let credential = OAuthCredentialFile(
+            accessToken: "expired-access",
+            refreshToken: "refresh-token",
+            expiresAtMs: 0,
+        )
+        let file = AIConnectionsFile.singleProvider(
+            .chatgptCodex,
+            state: .connectionFailed,
+            credential: .oauth(credential),
+        )
+        let refreshCount = LoadCounter()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiConnectionsFileClient.atomicUpdate = { transform in
+                try .success(transform(file))
+            }
+            $0.codexNativeAuthClient.refreshCredential = { _ in
+                _ = await refreshCount.increment()
+                throw CodexCredentialRefreshError.invalidGrant
+            }
+            $0.aiProviderVerificationClient = .liveValue
+        }
+
+        await store.send(.onAppear) {
+            $0.didBootstrap = true
+            $0.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapCompleted) {
+            $0.bootstrapPhase = .loaded
+            $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+        }
+        let persistedFile = try expiredCodexFile(file, credential: credential)
+        await store.receive(.delegate(.connectionsFileUpdated(persistedFile)))
+        await store.receive(\.bootstrapVerificationCompleted) {
+            $0.rows[id: .chatgptCodex]?.connectionState = .connectionFailed
+            $0.rows[id: .chatgptCodex]?.statusReason = .expired
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = 0
+        }
+        await store.finish()
+
+        let refreshes = await refreshCount.currentValue()
+        XCTAssertEqual(refreshes, 1)
+    }
+
+    private func expiredCodexFile(
+        _ file: AIConnectionsFile,
+        credential: OAuthCredentialFile,
+    ) throws -> AIConnectionsFile {
+        try XCTUnwrap(AIProviderConnectionBootstrap.updatedConnectionsFile(
+            verificationSourceFile: file,
+            latestFile: file,
+            applying: [
+                AIProviderBootstrapResult(
+                    provider: .chatgptCodex,
+                    connectionState: .connectionFailed,
+                    statusReason: .expired,
+                    sourceCredential: .oauth(credential),
+                    effectiveCredential: .oauth(credential),
+                ),
+            ],
+        ))
+    }
+
     /// SET-007-codex_oauth_runtime: bootstrap persistence preserves a competing credential write.
     /// Verification persistence must compare and replace credentials inside one atomic mutation.
     /// - 검증 내용: a competitor write after source capture is not overwritten by stale verification output.

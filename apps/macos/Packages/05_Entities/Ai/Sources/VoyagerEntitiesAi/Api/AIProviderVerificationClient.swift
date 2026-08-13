@@ -20,12 +20,13 @@ public struct AIProviderVerificationClient: Sendable {
 
 extension AIProviderVerificationClient: DependencyKey {
     nonisolated public static var liveValue: AIProviderVerificationClient {
-        let runtimeClient = AiConnectionRuntimeClient.live()
-        return AIProviderVerificationClient(
+        AIProviderVerificationClient(
             verify: { provider, credential in
-                await runtimeClient.verifyProvider(provider, credential)
+                let runtimeClient = runtimeClient()
+                return await runtimeClient.verifyProvider(provider, credential)
             },
             verifyWithCredential: { provider, credential in
+                let runtimeClient = runtimeClient()
                 if let verifyWithCredential = runtimeClient.verifyProviderWithCredential {
                     return try await verifyWithCredential(provider, credential)
                 }
@@ -35,6 +36,14 @@ extension AIProviderVerificationClient: DependencyKey {
                     effectiveCredential: credential,
                 )
             },
+        )
+    }
+
+    private static func runtimeClient() -> AiConnectionRuntimeClient {
+        @Dependency(\.codexNativeAuthClient)
+        var nativeAuthClient
+        return AiConnectionRuntimeClient.live(
+            refreshCredential: nativeAuthClient.refreshCredential,
         )
     }
 
