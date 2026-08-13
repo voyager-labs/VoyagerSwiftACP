@@ -41,7 +41,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
         {content === "directory" && (
           <span className="toolbar-title-controls">
             <IconButton
-              aria-label={viewMode === "grid" ? "Grid view" : "List view"}
+              aria-label={`Switch to ${viewMode === "grid" ? "list" : "grid"} view`}
               className="subtle"
               onClick={() => onViewModeChange(viewMode === "grid" ? "list" : "grid")}
             >
@@ -51,7 +51,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
                 weight={500}
               />
             </IconButton>
-            <IconButton className="subtle" aria-label="Sort and group">
+            <IconButton className="subtle" aria-label="Sort and group" disabled>
               <SFSymbol name="arrow.up.arrow.down" size={13} weight={500} />
             </IconButton>
           </span>
