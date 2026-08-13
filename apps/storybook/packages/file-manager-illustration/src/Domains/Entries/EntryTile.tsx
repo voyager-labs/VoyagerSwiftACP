@@ -1,5 +1,5 @@
 import type { FC, MouseEvent } from "react"
-import type { EntryKind } from "../../model/types"
+import type { EntryKind, EntrySelectionIntent } from "../../model/types"
 import { EntryThumbnail } from "./EntryThumbnail"
 import type { EntryThumbnailEntry } from "./EntryThumbnail"
 
@@ -13,12 +13,17 @@ export interface EntryTileEntry extends EntryThumbnailEntry {
 export interface EntryTileProps {
   entry: EntryTileEntry
   selected: boolean
-  onToggle: (entryId: string, append: boolean) => void
+  onToggle: (entryId: string, intent: EntrySelectionIntent) => void
 }
 
 export const EntryTile: FC<EntryTileProps> = ({ entry, selected, onToggle }) => {
   function handleClick(event: MouseEvent) {
-    onToggle(entry.id, event.metaKey || event.shiftKey)
+    const intent: EntrySelectionIntent = event.shiftKey
+      ? "range"
+      : event.metaKey
+        ? "toggle"
+        : "replace"
+    onToggle(entry.id, intent)
   }
 
   return (

@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import type { FC } from "react"
 import type { EntryViewMode } from "../../Patterns/Content/FileToolbar"
-import type { Entry } from "../../model/types"
+import type { Entry, EntrySelectionIntent } from "../../model/types"
 import { EntryGrid } from "./EntryGrid"
 import type { EntryGridEntry } from "./EntryGrid"
 import { EntryList } from "./EntryList"
@@ -35,7 +35,7 @@ export interface FileBrowserProps {
   readonly entries: readonly Entry[]
   readonly selectedEntryIds: readonly string[]
   readonly viewMode: EntryViewMode
-  readonly onToggleEntry: (entryId: string, append: boolean) => void
+  readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
 }
 
 export const FileBrowser: FC<FileBrowserProps> = ({

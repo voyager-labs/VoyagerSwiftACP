@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { EntryKind } from "../../model/types"
+import type { EntryKind, EntrySelectionIntent } from "../../model/types"
 import { EntryTile } from "./EntryTile"
 import type { EntryTileEntry } from "./EntryTile"
 
@@ -13,7 +13,7 @@ export interface EntryGridEntry extends EntryTileEntry {
 export interface EntryGridProps {
   readonly entries: readonly EntryGridEntry[]
   readonly selectedEntryIds: readonly string[]
-  readonly onToggleEntry: (entryId: string, append: boolean) => void
+  readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
 }
 
 export const EntryGrid: FC<EntryGridProps> = ({ entries, selectedEntryIds, onToggleEntry }) => {
