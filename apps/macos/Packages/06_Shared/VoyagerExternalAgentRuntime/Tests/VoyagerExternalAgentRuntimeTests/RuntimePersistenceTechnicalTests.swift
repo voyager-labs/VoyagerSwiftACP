@@ -176,6 +176,27 @@ struct RuntimePersistenceTechnicalTests {
     }
 
     @Test
+    func `derived event copies preserve restoration claim`() {
+        var stored = makeStoredSession()
+        let claim = RuntimeRestorationClaim(
+            ownerToken: "owner-copy",
+            expiresAt: Date(timeIntervalSince1970: 120),
+        )
+        stored.restorationClaim = claim
+
+        let withEvidence = stored.withEvidence(.ignoredDuplicate(RuntimeIdempotencyKey("duplicate")))
+        let withProviderCount = stored.withProcessedEventCount(3)
+        let withHostCount = stored.withHostProcessedEventCount(4)
+
+        #expect(withEvidence.restorationClaim == claim)
+        #expect(withEvidence.eventEvidence == [.ignoredDuplicate(RuntimeIdempotencyKey("duplicate"))])
+        #expect(withProviderCount.restorationClaim == claim)
+        #expect(withProviderCount.processedEventCount == 3)
+        #expect(withHostCount.restorationClaim == claim)
+        #expect(withHostCount.hostProcessedEventCount == 4)
+    }
+
+    @Test
     func `cancelled file lock waiter cannot save after lock release`() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

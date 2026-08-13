@@ -41,7 +41,7 @@ extension RuntimeControlPlane {
 
 extension RuntimeStoredSession {
     func withEvidence(_ evidence: RuntimeEventEvidence) -> Self {
-        Self(
+        var copy = Self(
             externalAgentSessionReference: externalAgentSessionReference,
             providerInternalSessionReference: providerInternalSessionReference,
             runReference: runReference,
@@ -65,10 +65,12 @@ extension RuntimeStoredSession {
                 (eventEvidence + [evidence]).suffix(RuntimeBoundaryLimits.persistedEventEntries),
             ),
         )
+        copy.restorationClaim = restorationClaim
+        return copy
     }
 
     func withProcessedEventCount(_ count: Int) -> Self {
-        Self(
+        var copy = Self(
             externalAgentSessionReference: externalAgentSessionReference,
             providerInternalSessionReference: providerInternalSessionReference,
             runReference: runReference,
@@ -90,10 +92,12 @@ extension RuntimeStoredSession {
             providerBranch: providerBranch,
             eventEvidence: eventEvidence,
         )
+        copy.restorationClaim = restorationClaim
+        return copy
     }
 
     func withHostProcessedEventCount(_ count: Int) -> Self {
-        Self(
+        var copy = Self(
             externalAgentSessionReference: externalAgentSessionReference,
             providerInternalSessionReference: providerInternalSessionReference,
             runReference: runReference,
@@ -115,5 +119,7 @@ extension RuntimeStoredSession {
             providerBranch: providerBranch,
             eventEvidence: eventEvidence,
         )
+        copy.restorationClaim = restorationClaim
+        return copy
     }
 }
