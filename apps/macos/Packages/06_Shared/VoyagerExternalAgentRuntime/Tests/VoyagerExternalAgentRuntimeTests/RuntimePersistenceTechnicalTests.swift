@@ -103,6 +103,48 @@ struct RuntimePersistenceTechnicalTests {
     }
 
     @Test
+    func `file host CAS compares persisted execution context semantics`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = ExternalAgentSessionReference("host-context-cas")
+        let run = RuntimeRunReference("run-context-cas")
+        let context = RuntimeContextPolicy(
+            branchReference: "feat/voy-696",
+            authorizationGeneration: 1,
+            localCorrelation: "context-cas",
+            workingDirectory: "/tmp/voyager-context-cas",
+            allowedRoots: ["/tmp/voyager-context-cas", "/tmp/voyager-shared"],
+            requestContext: "review-context",
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: host,
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            contextPolicy: context,
+            input: RuntimeSensitiveInput("secret"),
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await plane.register(adapter)
+
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let result = try await plane.run(request)
+
+        #expect(result.outcome == .completed)
+        #expect(await adapter.counts().launch == 1)
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(persisted.sessions.first?.projection == .completed)
+        #expect(persisted.sessions.first?.contextPolicy.hasSameExecutionContext(as: context) == true)
+    }
+
+    @Test
     func `control planes sharing a file resume one provider owner`() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

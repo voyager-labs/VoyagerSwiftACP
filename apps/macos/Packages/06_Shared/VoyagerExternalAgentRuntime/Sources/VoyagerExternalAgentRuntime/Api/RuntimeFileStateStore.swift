@@ -133,9 +133,12 @@ public actor RuntimeFileStateStore: RuntimeStateStore, RuntimeStateStoreHostMuta
                 schemaVersion: RuntimeStoredState.currentSchemaVersion,
                 sessions: [],
             )
-            guard current.sessions.first(where: {
+            let currentSession = current.sessions.first(where: {
                 $0.externalAgentSessionReference == host
-            }) == expected else { throw RuntimeHostError.persistenceFailure }
+            })
+            guard RuntimeStoredSession.hasSamePersistedState(currentSession, expected) else {
+                throw RuntimeHostError.persistenceFailure
+            }
             var sessions = Dictionary(uniqueKeysWithValues: current.sessions.map {
                 ($0.externalAgentSessionReference, $0)
             })

@@ -91,6 +91,41 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         self.eventEvidence = eventEvidence
         restorationClaim = nil
     }
+
+    func hasSamePersistedState(as other: Self) -> Bool {
+        externalAgentSessionReference == other.externalAgentSessionReference
+            && providerInternalSessionReference == other.providerInternalSessionReference
+            && runReference == other.runReference
+            && adapterID == other.adapterID
+            && providerNamespace == other.providerNamespace
+            && adapterVersion == other.adapterVersion
+            && providerBranch == other.providerBranch
+            && capabilitySnapshot == other.capabilitySnapshot
+            && contextPolicy.hasSameExecutionContext(as: other.contextPolicy)
+            && projection == other.projection
+            && providerLaunchAttempted == other.providerLaunchAttempted
+            && lastSequence == other.lastSequence
+            && acceptedEventCount == other.acceptedEventCount
+            && processedEventCount == other.processedEventCount
+            && acceptedIdempotencyKeys == other.acceptedIdempotencyKeys
+            && hostLastSequence == other.hostLastSequence
+            && hostAcceptedEventCount == other.hostAcceptedEventCount
+            && hostProcessedEventCount == other.hostProcessedEventCount
+            && hostAcceptedIdempotencyKeys == other.hostAcceptedIdempotencyKeys
+            && eventEvidence == other.eventEvidence
+            && restorationClaim == other.restorationClaim
+    }
+
+    static func hasSamePersistedState(_ lhs: Self?, _ rhs: Self?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            true
+        case let (.some(lhs), .some(rhs)):
+            lhs.hasSamePersistedState(as: rhs)
+        default:
+            false
+        }
+    }
 }
 
 struct RuntimeRestorationClaim: Codable, Hashable {
