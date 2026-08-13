@@ -75,17 +75,11 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             destinationPath = entry.fullPath
         }
 
-        let pasteboard = info.draggingPasteboard
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [
-            .urlReadingFileURLsOnly: true,
-        ]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty
-        else {
+        let sourcePaths = EntryViewLayoutDropValidationAdapter.sourcePaths(from: info.draggingPasteboard)
+        guard !sourcePaths.isEmpty else {
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        let sourcePaths = urls.map(\.path)
         let validation = EntryViewLayoutDropValidationAdapter.resolve(
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,

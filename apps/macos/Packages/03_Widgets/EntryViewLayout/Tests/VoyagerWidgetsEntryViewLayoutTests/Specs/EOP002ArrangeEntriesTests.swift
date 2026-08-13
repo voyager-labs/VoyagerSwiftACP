@@ -14,9 +14,6 @@ private struct EmittedDrop: Equatable {
     var isOptionDrag: Bool
 }
 
-/// coordinator가 store로 보내는 `.routing(.dropItems(...))` action을 기록한다.
-/// 실재 `EntryViewLayoutFeature` reducer를 그대로 실행하면서 외부에서 관찰 가능한
-/// source/destination/operation만 가로채서 TestStore의 exhaustive-send 제약 없이 검증한다.
 private final class DropRecorder {
     var emitted: [EmittedDrop] = []
 }
@@ -29,7 +26,7 @@ private struct DropRecordingReducer: Reducer {
     var inner: EntryViewLayoutFeature
 
     func reduce(into state: inout State, action: Action) -> Effect<Action> {
-        if case let .entryOperations(.routing(.dropItems(sourcePaths, destinationPath, isOptionDrag))) = action {
+        if case let .delegate(.dropItems(sourcePaths, destinationPath, isOptionDrag)) = action {
             recorder.emitted.append(EmittedDrop(
                 sourcePaths: sourcePaths,
                 destinationPath: destinationPath,
@@ -103,7 +100,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// - 사전 조건: source mask가 `.copy`만 허용하고 Option modifier가 없는 drag다.
     /// - 기대 결과: resolved operation이 copy이고 `isOptionDrag`가 true다.
     func testCopyOnlySourceMaskResolvesCopyWithOptionDrag() {
-        let transport = DragTransport(paths: ["/source/file.txt"])
+        let transport = DragTransport()
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
         let grid = EntryGridCoordinator(store: store)
@@ -112,7 +109,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let info = DragInfoFixture(
             source: nil,
             operationMask: .copy,
-            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
+            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: [
+                URL(fileURLWithPath: "/source/file.txt"),
+            ]),
         )
 
         withDependencies {
@@ -141,7 +140,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// - 사전 조건: source `/source/folder`를 destination `/source/folder/child`로 move하려 한다.
     /// - 기대 결과: resolved operation이 none이고 accept가 false며 dropItems를 emit하지 않는다.
     func testSourceFolderIntoOwnDescendantDestinationIsRejected() {
-        let transport = DragTransport(paths: ["/source/folder"])
+        let transport = DragTransport()
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
         let grid = EntryGridCoordinator(store: store)
@@ -150,7 +149,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let info = DragInfoFixture(
             source: nil,
             operationMask: [.copy, .move],
-            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
+            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: [
+                URL(fileURLWithPath: "/source/folder"),
+            ]),
         )
 
         var accepted = true
@@ -174,7 +175,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// - 사전 조건: source mask가 move를 허용하고 Option modifier가 없는 drag다.
     /// - 기대 결과: resolved operation이 move이고 `isOptionDrag`가 false다.
     func testMoveAllowedMaskResolvesMoveWithoutOptionDrag() {
-        let transport = DragTransport(paths: ["/source/file.txt"])
+        let transport = DragTransport()
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
         let grid = EntryGridCoordinator(store: store)
@@ -183,7 +184,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let info = DragInfoFixture(
             source: nil,
             operationMask: .move,
-            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
+            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: [
+                URL(fileURLWithPath: "/source/file.txt"),
+            ]),
         )
 
         withDependencies {
@@ -312,12 +315,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(recorder.emitted.isEmpty)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: accept-reject terminal path는 stale transport를 정리한다.
-    /// terminal path 후에는 다음 external session이 이전 source를 재사용하지 않아야 한다.
-    /// - 검증 내용: accept-reject(빈 pasteboard) 후 `loadDragPaths()`가 비어 있다.
-    /// - 사전 조건: transport에 stale internal path가 남아 있고 외부 drag가 거절된다.
-    /// - 기대 결과: accept-reject 후 transport가 비워져 다음 session이 이전 source를 쓰지 않는다.
-    func testAcceptRejectClearsStaleTransport() {
+    func testNonFileURLPayloadProducesNoOperation() {
+        let pasteboard = DragInfoFixture.makeNonFileURLPasteboard()
+
+        XCTAssertTrue(EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard).isEmpty)
+    }
+
+    func testAcceptRejectClearsDropTarget() {
         let transport = DragTransport(paths: ["/stale/internal"])
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
@@ -341,20 +345,15 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             )
         }
 
-        XCTAssertTrue(
-            transport.paths.isEmpty,
-            "accept-reject terminal path는 stale transport를 비워 다음 session 격리를 보장해야 한다",
-        )
+        XCTAssertFalse(store.state.isDropTargeted)
+        XCTAssertTrue(recorder.emitted.isEmpty)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: cancel terminal path는 stale transport를 정리한다.
-    /// - 검증 내용: drag cancel(operation none) 후 `loadDragPaths()`가 비어 있다.
-    /// - 사전 조건: transport에 stale internal path가 남아 있고 drag가 취소된다.
-    /// - 기대 결과: cancel 후 transport가 비워져 다음 session이 이전 source를 쓰지 않는다.
-    func testCancelClearsStaleTransport() {
+    func testCancelClearsDropTarget() {
         let transport = DragTransport(paths: ["/stale/internal"])
         let store = makeStore(transport: transport, recorder: DropRecorder())
         let grid = EntryGridCoordinator(store: store)
+        store.send(.view(.setDropTargeted(true)))
 
         withDependencies {
             $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
@@ -362,7 +361,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             grid.collectionView(NSCollectionView(), draggingSession: .init(), endedAt: .zero, dragOperation: [])
         }
 
-        XCTAssertTrue(transport.paths.isEmpty)
+        XCTAssertFalse(store.state.isDropTargeted)
     }
 
     // MARK: - EOP-002-drop_external_entries_on_directory_page (destination routing + parity)
@@ -429,10 +428,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     func testPackageDirectoryIsExcludedFromListDestination() {
         let transport = DragTransport(paths: [])
         let externalURL = URL(fileURLWithPath: "/external/pkg.txt")
-        let store = makeStore(transport: transport, recorder: DropRecorder(), currentPath: "/current")
+        let recorder = DropRecorder()
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current")
         let list = EntryListCoordinator(store: store)
 
-        let folderEntry = EntryModel.temporaryFolder(id: "/pkg.app", name: "pkg.app")
+        let folderEntry = makePackageFolder(id: "/pkg.app")
         let outlineItem = EntryListCoordinator.OutlineItem(kind: .entry(folderEntry))
         let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
         let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
@@ -445,11 +445,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         }
 
         XCTAssertTrue(accepted)
-        XCTAssertEqual(
-            store.state.entryOperations.dropValidationResult.destinationPath,
-            "/current",
-            "package directory는 destination으로 route하지 않아야 한다",
-        )
+        XCTAssertEqual(recorder.emitted.first?.destinationPath, "/current")
     }
 }
 
@@ -482,6 +478,28 @@ private extension EOP002ArrangeEntriesTests {
         client.pasteFile = { _, _ in }
         client.moveFile = { _, _ in }
         return client
+    }
+
+    func makePackageFolder(id: String) -> EntryModel {
+        EntryModel(
+            name: URL(fileURLWithPath: id).lastPathComponent,
+            fullPath: id,
+            isFolder: true,
+            isHidden: false,
+            size: 0,
+            modifiedDate: Date(timeIntervalSince1970: 0),
+            fileExtension: "app",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 0),
+                addedDate: Date(timeIntervalSince1970: 0),
+                lastOpenedDate: nil,
+                kind: "Application",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+            isPackage: true,
+        )
     }
 
     func driveGridAccept(
@@ -565,6 +583,15 @@ private extension DragInfoFixture {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-unsupported-\(UUID().uuidString)"))
         pasteboard.clearContents()
         pasteboard.writeObjects([text as NSString])
+        return pasteboard
+    }
+
+    static func makeNonFileURLPasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-non-file-url-\(UUID().uuidString)"))
+        let item = NSPasteboardItem()
+        item.setString("https://example.com/not-a-file", forType: .fileURL)
+        pasteboard.clearContents()
+        pasteboard.writeObjects([item])
         return pasteboard
     }
 }

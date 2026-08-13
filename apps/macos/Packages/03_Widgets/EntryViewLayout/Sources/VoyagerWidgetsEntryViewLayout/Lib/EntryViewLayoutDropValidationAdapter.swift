@@ -1,7 +1,31 @@
 @preconcurrency import AppKit
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 
+/// Grid/List drop validation·acceptance를 공유하는 stateless adapter.
+/// active `draggingSource` identity로 내부/외부 drag를 분류하고,
+/// 외부 drag는 active pasteboard를 원자적으로 파싱해 검증한다.
+/// source path는 invocation-local이며 reducer state나 named transport에 저장하지 않는다.
 enum EntryViewLayoutDropValidationAdapter {
+    /// drag origin을 `draggingSource` identity로 분류한다.
+    /// - 내부: draggingSource가 layout 자체 view이거나, draggingSource가 nil이고 transport에 source가 남아 있는 경우.
+    /// - 외부: draggingSource가 다른 객체이거나 (nil source + 빈 transport) active pasteboard를 사용한다.
+    @MainActor
+    static func isInternalDrag(
+        _ draggingInfo: any NSDraggingInfo,
+        ownView: AnyObject?,
+        hasInternalPaths: Bool,
+    ) -> Bool {
+        if let source = draggingInfo.draggingSource {
+            if let ownView, (source as AnyObject) === ownView {
+                return true
+            }
+            return false
+        }
+        // draggingSource가 nil이면 transport source 존재 여부로 내부 drag를 판정한다 (테스트/호환 경로).
+        return hasInternalPaths
+    }
+
     @MainActor
     static func resolve(
         draggingInfo: any NSDraggingInfo,
@@ -15,6 +39,24 @@ enum EntryViewLayoutDropValidationAdapter {
         )
     }
 
+    /// 외부 drag의 active pasteboard에서 source path를 원자적으로 추출한다.
+    /// `pasteboardItems`를 전체 검사해 모든 item이 실제 file URL일 때만 반환하고,
+    /// 하나라도 지원하지 않는 item이 있으면 전체 session을 거부(빈 배열)한다.
+    /// `readObjects`처럼 지원 항목만 조용히 걸러내는 동작은 하지 않는다.
+    @MainActor
+    static func sourcePaths(from pasteboard: NSPasteboard) -> [String] {
+        guard let items = pasteboard.pasteboardItems, !items.isEmpty else { return [] }
+        var paths: [String] = []
+        paths.reserveCapacity(items.count)
+        for item in items {
+            guard let url = fileURL(from: item) else { return [] }
+            paths.append(url.standardizedFileURL.path)
+        }
+        return paths
+    }
+
+    /// reducer `resolveDropValidation`과 동일한 검증 primitive를 공유한다.
+    /// 빈 source는 `EntryDropValidationResolver`가 no-op으로 resolve한다.
     static func resolve(
         sourcePaths: [String],
         destinationPath: String,
@@ -40,10 +82,12 @@ enum EntryViewLayoutDropValidationAdapter {
         }
     }
 
-    @MainActor
-    static func sourcePaths(from pasteboard: NSPasteboard) -> [String] {
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]
-        return urls?.map(\.path) ?? []
+    private static func fileURL(from item: NSPasteboardItem) -> URL? {
+        let fileURLType = NSPasteboard.PasteboardType(UTType.fileURL.identifier)
+        guard item.availableType(from: [fileURLType]) != nil else { return nil }
+        let string = item.string(forType: fileURLType)
+            ?? item.data(forType: fileURLType).flatMap { String(data: $0, encoding: .utf8) }
+        guard let string, let url = URL(string: string), url.isFileURL else { return nil }
+        return url
     }
 }
