@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { EntryKind } from "../../model/types"
+import type { EntryKind, EntrySelectionIntent } from "../../model/types"
 import { EntryListRow } from "./EntryListRow"
 import type { EntryListRowEntry } from "./EntryListRow"
 
@@ -13,27 +13,31 @@ export interface EntryListEntry extends EntryListRowEntry {
 export interface EntryListProps {
   readonly entries: readonly EntryListEntry[]
   readonly selectedEntryIds: readonly string[]
-  readonly onToggleEntry: (entryId: string, append: boolean) => void
+  readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
 }
 
 export const EntryList: FC<EntryListProps> = ({ entries, selectedEntryIds, onToggleEntry }) => {
   return (
-    <div className="entry-list">
-      <div className="entry-list-header" aria-hidden="true">
-        <span>Name</span>
-        <span>Date Modified</span>
-        <span>Size</span>
-        <span>Kind</span>
-      </div>
-      {entries.map((entry) => (
-        <EntryListRow
-          key={entry.id}
-          entry={entry}
-          selected={selectedEntryIds.includes(entry.id)}
-          onToggle={onToggleEntry}
-        />
-      ))}
-    </div>
+    <table className="entry-list" aria-label="Files">
+      <thead>
+        <tr className="entry-list-header">
+          <th scope="col">Name</th>
+          <th scope="col">Date Modified</th>
+          <th scope="col">Size</th>
+          <th scope="col">Kind</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map((entry) => (
+          <EntryListRow
+            key={entry.id}
+            entry={entry}
+            selected={selectedEntryIds.includes(entry.id)}
+            onToggle={onToggleEntry}
+          />
+        ))}
+      </tbody>
+    </table>
   )
 }
 
