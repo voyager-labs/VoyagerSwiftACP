@@ -21,6 +21,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
     public let hostProcessedEventCount: Int
     public let hostAcceptedIdempotencyKeys: [RuntimeIdempotencyKey]
     public let eventEvidence: [RuntimeEventEvidence]
+    var restorationClaim: RuntimeRestorationClaim?
 
     enum CodingKeys: String, CodingKey {
         case externalAgentSessionReference = "external_agent_session_reference"
@@ -43,6 +44,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         case hostProcessedEventCount = "host_processed_event_count"
         case hostAcceptedIdempotencyKeys = "host_accepted_idempotency_keys"
         case eventEvidence = "event_evidence"
+        case restorationClaim = "restoration_claim"
     }
 
     public init(
@@ -87,6 +89,21 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         self.hostProcessedEventCount = hostProcessedEventCount ?? hostAcceptedEventCount
         self.hostAcceptedIdempotencyKeys = hostAcceptedIdempotencyKeys
         self.eventEvidence = eventEvidence
+        restorationClaim = nil
+    }
+}
+
+struct RuntimeRestorationClaim: Codable, Hashable {
+    let ownerToken: String
+    let expiresAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case ownerToken = "owner_token"
+        case expiresAt = "expires_at"
+    }
+
+    func isLive(at date: Date) -> Bool {
+        expiresAt > date
     }
 }
 

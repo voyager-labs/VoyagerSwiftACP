@@ -67,6 +67,9 @@ extension RuntimeStoredSession {
             && hostAcceptedIdempotencyKeys.allSatisfy(\.rawValue.isRuntimeBounded)
             && eventEvidence.count <= RuntimeBoundaryLimits.persistedEventEntries
             && eventEvidence.allSatisfy(\.isWithinRuntimeBounds)
+            && restorationClaim.map {
+                $0.ownerToken.isRuntimeBounded && $0.expiresAt.timeIntervalSince1970.isFinite
+            } ?? true
             && acceptedEventCount >= 0
             && acceptedEventCount <= RuntimeBoundaryLimits.acceptedEventsPerRun
             && processedEventCount >= acceptedEventCount
