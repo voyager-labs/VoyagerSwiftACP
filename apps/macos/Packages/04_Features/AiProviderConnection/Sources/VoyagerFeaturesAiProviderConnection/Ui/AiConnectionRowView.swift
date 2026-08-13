@@ -23,6 +23,20 @@ public struct AiConnectionRowView: View {
                 progressRow
             }
 
+            if store.connectionState == .connected, let accountLabel = store.accountLabel {
+                Text(accountLabel)
+                    .font(.caption)
+                    .accessibilityLabel("Codex account")
+                    .accessibilityValue(accountLabel)
+            }
+
+            if store.connectionState == .connected, let expiryLabel = store.expiryLabel {
+                Text(expiryLabel)
+                    .font(.caption)
+                    .accessibilityLabel("Codex token expiry")
+                    .accessibilityValue(expiryLabel)
+            }
+
             if store.connectionState == .connectionFailed, store.statusReason != .none {
                 Text(statusReasonDescription)
                     .font(.caption)

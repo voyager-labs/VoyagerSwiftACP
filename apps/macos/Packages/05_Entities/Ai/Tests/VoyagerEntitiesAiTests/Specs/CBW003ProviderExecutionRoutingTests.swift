@@ -51,6 +51,290 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         )
     }
 
+    /// SET-007-codex_oauth_runtime: expired Codex verification uses the injected refresh dependency.
+    /// Runtime verification must use the refreshed credential without invoking the production refresh transport.
+    /// - 검증 내용: injected refresh invocation, refreshed bearer token, effective credential propagation.
+    /// - 사전 조건: expired source credential and an isolated models URLProtocol response.
+    /// - 기대 결과: verification succeeds and returns the injected refreshed credential.
+    func testCodexVerification_expiredCredentialUsesInjectedRefresh() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let source = OAuthCredentialFile(
+            accessToken: "expired-token",
+            refreshToken: "refresh-token",
+            expiresAtMs: 0,
+        )
+        let refreshed = OAuthCredentialFile(
+            accessToken: "injected-token",
+            refreshToken: "rotated-token",
+            expiresAtMs: Int64.max,
+        )
+        nonisolated(unsafe) var refreshInputs: [OAuthCredentialFile] = []
+        ProviderExecutionURLProtocol.handler = { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer injected-token")
+            let response = try XCTUnwrap(try HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil,
+            ))
+            return (response, Data(#"{"data":[{"slug":"gpt-5","display_name":"GPT-5"}]}"#.utf8))
+        }
+        let client = AiConnectionRuntimeClient.live(
+            session: session,
+            refreshCredential: { credential in
+                refreshInputs.append(credential)
+                return refreshed
+            },
+        )
+
+        let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
+            .chatgptCodex,
+            .oauth(source),
+        )
+
+        XCTAssertEqual(refreshInputs, [source])
+        XCTAssertEqual(outcome.result, .valid)
+        XCTAssertEqual(outcome.sourceCredential, .oauth(source))
+        XCTAssertEqual(outcome.effectiveCredential, .oauth(refreshed))
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
+    }
+
+    /// SET-007-codex_oauth_runtime: default Codex refresh uses the runtime client's injected URL session.
+    /// Refresh and model verification must share the isolated transport supplied to the runtime client.
+    /// - 검증 내용: refresh request transport, refreshed bearer token, request count.
+    /// - 사전 조건: expired credential and URLProtocol responses for token refresh and model listing.
+    /// - 기대 결과: both requests use the injected session and verification succeeds.
+    func testCodexVerification_defaultRefreshUsesInjectedSession() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let source = OAuthCredentialFile(
+            accessToken: "expired-token",
+            refreshToken: "refresh-token",
+            expiresAtMs: 0,
+        )
+        ProviderExecutionURLProtocol.handler = { request in
+            if request.url == CodexOAuthConfig.default.tokenEndpoint {
+                let response = try XCTUnwrap(try HTTPURLResponse(
+                    url: XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil,
+                ))
+                return (
+                    response,
+                    Data(
+                        """
+                        {"access_token":"session-token","refresh_token":"rotated-token",\
+                        "expires_in":3600,"token_type":"Bearer"}
+                        """
+                        .utf8,
+                    ),
+                )
+            }
+
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer session-token")
+            let response = try XCTUnwrap(try HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil,
+            ))
+            return (response, Data(#"{"data":[{"slug":"gpt-5","display_name":"GPT-5"}]}"#.utf8))
+        }
+        let client = AiConnectionRuntimeClient.live(session: session)
+
+        let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
+            .chatgptCodex,
+            .oauth(source),
+        )
+
+        XCTAssertEqual(outcome.result, .valid)
+        guard case let .oauth(effectiveCredential) = outcome.effectiveCredential else {
+            return XCTFail("Expected refreshed OAuth credential")
+        }
+        XCTAssertEqual(effectiveCredential.accessToken, "session-token")
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 2)
+    }
+
+    /// SET-007-codex_oauth_runtime: URLSession cancellation remains structured cancellation.
+    /// The live refresh transport must not convert URL loading cancellation into a network outcome.
+    /// - 검증 내용: injected session cancellation and runtime cancellation propagation.
+    /// - 사전 조건: expired credential and a token endpoint that returns URLError.cancelled.
+    /// - 기대 결과: verification throws CancellationError without requesting the model list.
+    func testCodexVerification_defaultRefreshPropagatesSessionCancellation() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let source = OAuthCredentialFile(
+            accessToken: "expired-token",
+            refreshToken: "refresh-token",
+            expiresAtMs: 0,
+        )
+        ProviderExecutionURLProtocol.handler = { _ in
+            throw URLError(.cancelled)
+        }
+        let client = AiConnectionRuntimeClient.live(session: session)
+
+        do {
+            _ = try await XCTUnwrap(client.verifyProviderWithCredential)(
+                .chatgptCodex,
+                .oauth(source),
+            )
+            XCTFail("Expected structured cancellation")
+        } catch is CancellationError {
+            XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
+        }
+    }
+
+    /// SET-007-codex_oauth_runtime: Codex model-list cancellation remains structured cancellation.
+    /// A cancelled models request after refresh must not become a network verification result.
+    /// - 검증 내용: injected refresh success followed by URLSession model-list cancellation.
+    /// - 사전 조건: expired source credential and an isolated models transport returning URLError.cancelled.
+    /// - 기대 결과: verification throws CancellationError and exposes no failure outcome.
+    func testCodexVerification_modelListCancellationPropagates() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let source = OAuthCredentialFile(
+            accessToken: "expired-token",
+            refreshToken: "refresh-token",
+            expiresAtMs: 0,
+        )
+        let refreshed = OAuthCredentialFile(
+            accessToken: "injected-token",
+            refreshToken: "rotated-token",
+            expiresAtMs: Int64.max,
+        )
+        ProviderExecutionURLProtocol.handler = { _ in
+            throw URLError(.cancelled)
+        }
+        let client = AiConnectionRuntimeClient.live(
+            session: session,
+            refreshCredential: { _ in refreshed },
+        )
+
+        do {
+            _ = try await XCTUnwrap(client.verifyProviderWithCredential)(
+                .chatgptCodex,
+                .oauth(source),
+            )
+            XCTFail("Expected structured cancellation")
+        } catch is CancellationError {
+            XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
+        }
+    }
+
+    /// SET-007-codex_oauth_runtime: Codex model authentication rejection requires reconnect.
+    /// OAuth model smoke failures must not use API-key failure semantics.
+    /// - 검증 내용: Codex HTTP 401/403 and 500 verification mapping.
+    /// - 사전 조건: typed Codex model-list HTTP failures.
+    /// - 기대 결과: 401/403 map to expired while 500 remains network.
+    func testCodexModelListHTTPFailures_mapAuthToExpiredAndServerToNetwork() {
+        for statusCode in [401, 403] {
+            XCTAssertEqual(
+                AiConnectionRuntimeClient.mapModelListError(.httpError(
+                    provider: .chatgptCodex,
+                    statusCode: statusCode,
+                    body: "test",
+                )),
+                .invalid(.expired),
+            )
+        }
+        XCTAssertEqual(
+            AiConnectionRuntimeClient.mapModelListError(.httpError(
+                provider: .chatgptCodex,
+                statusCode: 500,
+                body: "test",
+            )),
+            .networkError,
+        )
+    }
+
+    /// SET-007-codex_oauth_runtime: API-key model authentication rejection remains invalid API key.
+    /// Provider-aware mapping must not apply Codex OAuth semantics to OpenAI or Anthropic.
+    /// - 검증 내용: non-Codex HTTP 401/403 verification mapping.
+    /// - 사전 조건: typed API-key provider model-list HTTP failures.
+    /// - 기대 결과: both statuses retain invalidAPIKey semantics.
+    func testAPIKeyModelListHTTPAuthFailures_remainInvalidAPIKey() {
+        for provider in [AiProvider.openai, .anthropic] {
+            for statusCode in [401, 403] {
+                XCTAssertEqual(
+                    AiConnectionRuntimeClient.mapModelListError(.httpError(
+                        provider: provider,
+                        statusCode: statusCode,
+                        body: "test",
+                    )),
+                    .invalid(.invalidAPIKey),
+                )
+            }
+        }
+    }
+
+    /// SET-007-codex_oauth_runtime: live Codex model smoke maps OAuth rejection to expired.
+    /// Provider-aware mapping must hold across the actual URLSession model request boundary.
+    /// - 검증 내용: live Codex model-list HTTP 401/403 outcomes.
+    /// - 사전 조건: non-expired OAuth credential and isolated HTTP rejection responses.
+    /// - 기대 결과: both responses produce invalid expired verification outcomes.
+    func testCodexModelSmokeHTTPAuthFailures_mapToExpired() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let credential = StoredCredentialPayload.oauth(OAuthCredentialFile(
+            accessToken: "codex-token",
+            expiresAtMs: Int64.max,
+        ))
+        for statusCode in [401, 403] {
+            ProviderExecutionURLProtocol.handler = { request in
+                let response = try XCTUnwrap(try HTTPURLResponse(
+                    url: XCTUnwrap(request.url),
+                    statusCode: statusCode,
+                    httpVersion: nil,
+                    headerFields: nil,
+                ))
+                return (response, Data())
+            }
+            let client = AiConnectionRuntimeClient.live(session: session)
+
+            let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
+                .chatgptCodex,
+                credential,
+            )
+
+            XCTAssertEqual(outcome.result, .invalid(.expired))
+        }
+    }
+
+    /// SET-007-codex_oauth_runtime: live API-key smoke retains invalid API key semantics.
+    /// Codex OAuth mapping must not alter non-Codex verification behavior.
+    /// - 검증 내용: live OpenAI smoke HTTP 401 outcome.
+    /// - 사전 조건: API-key credential and isolated HTTP authentication rejection.
+    /// - 기대 결과: verification remains invalidAPIKey.
+    func testOpenAIModelSmokeHTTP401_remainsInvalidAPIKey() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        ProviderExecutionURLProtocol.handler = { request in
+            let response = try XCTUnwrap(try HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil,
+            ))
+            return (response, Data())
+        }
+        let client = AiConnectionRuntimeClient.live(session: session)
+
+        let result = await client.verifyProvider(
+            .openai,
+            .apiKey(APIKeyCredentialFile(secret: "sk-test")),
+        )
+
+        XCTAssertEqual(result, .invalid(.invalidAPIKey))
+    }
+
     /// CBW-003-prepare_contextual_chat_request: registry executor가 없으면 network 호출 전에 실패한다.
     /// 지원되지 않는 provider route가 외부 호출 없이 차단되는지 추적합니다.
     /// - 검증 내용: 빈 registry에서 OpenAI 실행이 unsupportedProvider 오류로 종료되는지 확인합니다.

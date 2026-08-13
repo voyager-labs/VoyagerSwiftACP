@@ -104,7 +104,7 @@ public extension AiProviderModelListClient {
     }
 }
 
-private extension AiProviderModelListClient {
+extension AiProviderModelListClient {
     static func secret(
         for provider: AiProvider,
         credential: StoredCredentialPayload?,
@@ -219,8 +219,8 @@ private extension AiProviderModelListClient {
         }
     }
 
-    static func codexClientVersion() -> String {
-        "0.0.0"
+    public static func codexClientVersion() -> String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
     }
 
     static func codexUserAgent(clientVersion: String) -> String {
@@ -328,6 +328,10 @@ private extension AiProviderModelListClient {
             return data
         } catch let error as AiProviderModelListError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError {
             throw AiProviderModelListError.networkError(
                 provider: provider,

@@ -5,15 +5,21 @@ public struct AIProviderBootstrapResult: Equatable, Sendable {
     public let provider: AiProvider
     public let connectionState: ProviderConnectionState
     public let statusReason: ProviderStatusReason
+    public let sourceCredential: StoredCredentialPayload?
+    public let effectiveCredential: StoredCredentialPayload?
 
     public init(
         provider: AiProvider,
         connectionState: ProviderConnectionState,
         statusReason: ProviderStatusReason = .none,
+        sourceCredential: StoredCredentialPayload? = nil,
+        effectiveCredential: StoredCredentialPayload? = nil,
     ) {
         self.provider = provider
         self.connectionState = connectionState
         self.statusReason = statusReason
+        self.sourceCredential = sourceCredential
+        self.effectiveCredential = effectiveCredential
     }
 }
 
@@ -32,52 +38,58 @@ public enum AIProviderConnectionBootstrap {
         let credential: StoredCredentialPayload
     }
 
+    private enum PersistenceOutcome {
+        case persisted(AIConnectionsFile)
+        case unchanged
+        case casMiss
+        case failed
+    }
+
+    private enum FileUpdate {
+        case updated(AIConnectionsFile)
+        case unchanged
+        case casMiss
+    }
+
+    private final class FileUpdateBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue: FileUpdate = .unchanged
+
+        var value: FileUpdate {
+            lock.withLock { storedValue }
+        }
+
+        func setValue(_ value: FileUpdate) {
+            lock.withLock { storedValue = value }
+        }
+    }
+
     public static func effect<Action: Sendable>(
         connectionsFileClient: AIConnectionsFileClient,
         verificationClient: AIProviderVerificationClient,
         mapEvent: @escaping @Sendable (AIProviderBootstrapEvent) -> Action?,
     ) -> Effect<Action> {
         .run { send in
-            let file: AIConnectionsFile
             do {
-                file = try await connectionsFileClient.load()
+                try await run(
+                    connectionsFileClient: connectionsFileClient,
+                    verificationClient: verificationClient,
+                    mapEvent: mapEvent,
+                    send: send,
+                )
             } catch {
+                guard !isCancellation(error) else { return }
                 if let action = mapEvent(.failed) {
                     await send(action)
                 }
-                return
             }
-
-            if let action = mapEvent(.completed(initialResults(from: file))) {
-                await send(action)
-            }
-
-            let verificationResults = await verificationResults(
-                from: file,
-                verificationClient: verificationClient,
-            )
-            guard !verificationResults.isEmpty else { return }
-
-            if let action = mapEvent(.verificationCompleted(verificationResults)) {
-                await send(action)
-            }
-
-            guard let savedFile = await persistVerificationResults(
-                verificationResults,
-                file: file,
-                connectionsFileClient: connectionsFileClient,
-            ),
-                let action = mapEvent(.connectionsFileUpdated(savedFile))
-            else { return }
-
-            await send(action)
         }
     }
 
     public static func verificationResults(
         from file: AIConnectionsFile,
         verificationClient: AIProviderVerificationClient,
-    ) async -> [AIProviderBootstrapResult] {
+    ) async throws -> [AIProviderBootstrapResult] {
         // v1Catalog 순서를 복원하기 위해 인덱스와 함께 verifiable 항목을 사전 수집한다.
         let verifiable: [VerifiableProvider] = ProviderDescriptor.v1Catalog
             .enumerated()
@@ -95,21 +107,18 @@ public enum AIProviderConnectionBootstrap {
 
         guard !verifiable.isEmpty else { return [] }
 
-        // 비throwing TaskGroup 사용 — 한 provider 검증 실패/지연이 형제 task를 취소하지 않는다.
         // next()는 완료 순서로 반환하므로 (index, result) 튜플로 원래 순서를 추적한다.
-        let collected: [(Int, AIProviderBootstrapResult)] = await withTaskGroup(
+        let collected: [(Int, AIProviderBootstrapResult)] = try await withThrowingTaskGroup(
             of: (Int, AIProviderBootstrapResult).self,
         ) { group in
             for entry in verifiable {
                 group.addTask {
-                    let verification = await verificationClient.verify(entry.provider, entry.credential)
-                    let result = verifiedResult(for: entry.provider, verification: verification)
-                    return (entry.catalogIndex, result)
+                    try await verify(entry, with: verificationClient)
                 }
             }
 
             var pairs: [(Int, AIProviderBootstrapResult)] = []
-            for await pair in group {
+            for try await pair in group {
                 pairs.append(pair)
             }
             return pairs
@@ -124,21 +133,12 @@ public enum AIProviderConnectionBootstrap {
         file: AIConnectionsFile,
         connectionsFileClient: AIConnectionsFileClient,
     ) async -> AIConnectionsFile? {
-        guard let latestFile = try? await connectionsFileClient.load(),
-              let updatedFile = updatedConnectionsFile(
-                  verificationSourceFile: file,
-                  latestFile: latestFile,
-                  applying: results,
-              )
-        else { return nil }
-
-        let mutationResult = await (try? connectionsFileClient.save(updatedFile))
-        switch mutationResult {
-        case let .success(savedFile), let .partialSuccess(savedFile, _):
-            return savedFile
-        case .fileSystemError, nil:
-            return nil
-        }
+        guard case let .persisted(file) = await persistenceOutcome(
+            results,
+            file: file,
+            connectionsFileClient: connectionsFileClient,
+        ) else { return nil }
+        return file
     }
 
     public static func initialResults(from file: AIConnectionsFile) -> [AIProviderBootstrapResult] {
@@ -202,6 +202,8 @@ public enum AIProviderConnectionBootstrap {
     public static func verifiedResult(
         for provider: AiProvider,
         verification: AiProviderVerificationResult,
+        sourceCredential: StoredCredentialPayload? = nil,
+        effectiveCredential: StoredCredentialPayload? = nil,
     ) -> AIProviderBootstrapResult {
         switch verification {
         case .valid:
@@ -209,24 +211,32 @@ public enum AIProviderConnectionBootstrap {
                 provider: provider,
                 connectionState: .connected,
                 statusReason: .none,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         case let .invalid(reason):
             AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: reason == .providerUnsupportedInBuild ? .unavailable : .connectionFailed,
                 statusReason: reason,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         case .networkError:
             AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: .connectionFailed,
                 statusReason: .networkUnavailable,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         case .unsupportedProvider:
             AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: .unavailable,
                 statusReason: .providerUnsupportedInBuild,
+                sourceCredential: sourceCredential,
+                effectiveCredential: effectiveCredential,
             )
         }
     }
@@ -236,6 +246,19 @@ public enum AIProviderConnectionBootstrap {
         latestFile: AIConnectionsFile,
         applying results: [AIProviderBootstrapResult],
     ) -> AIConnectionsFile? {
+        guard case let .updated(file) = classifiedFileUpdate(
+            verificationSourceFile: verificationSourceFile,
+            latestFile: latestFile,
+            applying: results,
+        ) else { return nil }
+        return file
+    }
+
+    private static func classifiedFileUpdate(
+        verificationSourceFile: AIConnectionsFile,
+        latestFile: AIConnectionsFile,
+        applying results: [AIProviderBootstrapResult],
+    ) -> FileUpdate {
         var providers = latestFile.providers
         var didUpdate = false
 
@@ -244,24 +267,30 @@ public enum AIProviderConnectionBootstrap {
             guard let sourceRecord = verificationSourceFile.providers[providerKey],
                   var record = providers[providerKey],
                   record.credential != nil,
-                  record.credential == sourceRecord.credential
-            else { continue }
+                  record.credential == result.sourceCredential ?? sourceRecord.credential
+            else { return .casMiss }
 
             let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
-            guard record.snapshot.lastKnownStatus != result.connectionState
+            let credential = result.effectiveCredential ?? record.credential
+            let credentialDidChange = record.credential != credential
+            let snapshotDidChange = record.snapshot.lastKnownStatus != result.connectionState
                 || record.snapshot.lastErrorCode != lastErrorCode
-            else { continue }
+            guard credentialDidChange || snapshotDidChange else { continue }
 
-            let snapshot = ProviderSnapshotFile(
-                lastKnownStatus: result.connectionState,
-                lastVerifiedAtMs: result.connectionState == .connected ? latestFile.updatedAtMs : nil,
-                lastErrorCode: lastErrorCode,
-            )
+            let snapshot = if snapshotDidChange {
+                ProviderSnapshotFile(
+                    lastKnownStatus: result.connectionState,
+                    lastVerifiedAtMs: result.connectionState == .connected ? latestFile.updatedAtMs : nil,
+                    lastErrorCode: lastErrorCode,
+                )
+            } else {
+                record.snapshot
+            }
 
             record = ProviderRecordFile(
                 providerId: record.providerId,
                 authMethod: record.authMethod,
-                credential: record.credential,
+                credential: credential,
                 snapshot: snapshot,
                 provenance: record.provenance,
             )
@@ -269,13 +298,153 @@ public enum AIProviderConnectionBootstrap {
             didUpdate = true
         }
 
-        guard didUpdate else { return nil }
-        return AIConnectionsFile(
+        guard didUpdate else { return .unchanged }
+        return .updated(AIConnectionsFile(
             schemaVersion: latestFile.schemaVersion,
             updatedAtMs: latestFile.updatedAtMs,
             lastUsedProviderId: latestFile.lastUsedProviderId,
             lastUsedAtMs: latestFile.lastUsedAtMs,
             providers: providers,
+        ))
+    }
+
+    private static func persistenceOutcome(
+        _ results: [AIProviderBootstrapResult],
+        file: AIConnectionsFile,
+        connectionsFileClient: AIConnectionsFileClient,
+    ) async -> PersistenceOutcome {
+        guard !Task.isCancelled else { return .failed }
+        if let atomicUpdate = connectionsFileClient.atomicUpdate {
+            return await atomicPersistenceOutcome(results, file: file, atomicUpdate: atomicUpdate)
+        }
+
+        guard let latestFile = try? await connectionsFileClient.load() else { return .failed }
+        let update = classifiedFileUpdate(
+            verificationSourceFile: file,
+            latestFile: latestFile,
+            applying: results,
         )
+        switch update {
+        case let .updated(updatedFile):
+            let mutationResult = try? await connectionsFileClient.save(updatedFile)
+            return mutationOutcome(mutationResult, update: update)
+        case .unchanged:
+            return .unchanged
+        case .casMiss:
+            return .casMiss
+        }
+    }
+
+    private static func atomicPersistenceOutcome(
+        _ results: [AIProviderBootstrapResult],
+        file: AIConnectionsFile,
+        atomicUpdate: @Sendable (AIConnectionsFileClient.AtomicUpdateTransform) async throws
+            -> AiConnectionMutationResult,
+    ) async -> PersistenceOutcome {
+        let fileUpdate = FileUpdateBox()
+        let mutationResult = try? await atomicUpdate { latestFile in
+            let update = classifiedFileUpdate(
+                verificationSourceFile: file,
+                latestFile: latestFile,
+                applying: results,
+            )
+            fileUpdate.setValue(update)
+            guard case let .updated(updatedFile) = update else { return latestFile }
+            return updatedFile
+        }
+        return mutationOutcome(mutationResult, update: fileUpdate.value)
+    }
+
+    private static func mutationOutcome(
+        _ mutationResult: AiConnectionMutationResult?,
+        update: FileUpdate,
+    ) -> PersistenceOutcome {
+        switch mutationResult {
+        case let .success(savedFile), let .partialSuccess(savedFile, _):
+            switch update {
+            case .updated:
+                .persisted(savedFile)
+            case .unchanged:
+                .unchanged
+            case .casMiss:
+                .casMiss
+            }
+        case .fileSystemError, nil:
+            .failed
+        }
+    }
+
+    private static func run<Action: Sendable>(
+        connectionsFileClient: AIConnectionsFileClient,
+        verificationClient: AIProviderVerificationClient,
+        mapEvent: @escaping @Sendable (AIProviderBootstrapEvent) -> Action?,
+        send: Send<Action>,
+    ) async throws {
+        let file = try await connectionsFileClient.load()
+        if let action = mapEvent(.completed(initialResults(from: file))) {
+            await send(action)
+        }
+
+        let results = try await verificationResults(from: file, verificationClient: verificationClient)
+        guard !results.isEmpty, !Task.isCancelled else { return }
+
+        let persistence = await persistenceOutcome(
+            results,
+            file: file,
+            connectionsFileClient: connectionsFileClient,
+        )
+        guard !Task.isCancelled else { return }
+        switch persistence {
+        case let .persisted(savedFile):
+            if let action = mapEvent(.connectionsFileUpdated(savedFile)) {
+                await send(action)
+            }
+        case .unchanged:
+            break
+        case .casMiss:
+            return
+        case .failed:
+            return
+        }
+        guard !Task.isCancelled else { return }
+        if let action = mapEvent(.verificationCompleted(results)) {
+            await send(action)
+        }
+    }
+
+    private static func verify(
+        _ entry: VerifiableProvider,
+        with verificationClient: AIProviderVerificationClient,
+    ) async throws -> (Int, AIProviderBootstrapResult) {
+        let outcome: AiProviderVerificationOutcome
+        do {
+            outcome = if let verifyWithCredential = verificationClient.verifyWithCredential {
+                try await verifyWithCredential(entry.provider, entry.credential)
+            } else {
+                await AiProviderVerificationOutcome(
+                    result: verificationClient.verify(entry.provider, entry.credential),
+                    sourceCredential: entry.credential,
+                    effectiveCredential: entry.credential,
+                )
+            }
+        } catch {
+            guard !isCancellation(error) else { throw CancellationError() }
+            outcome = AiProviderVerificationOutcome(
+                result: .networkError,
+                sourceCredential: entry.credential,
+                effectiveCredential: entry.credential,
+            )
+        }
+        let result = verifiedResult(
+            for: entry.provider,
+            verification: outcome.result,
+            sourceCredential: outcome.sourceCredential,
+            effectiveCredential: outcome.effectiveCredential,
+        )
+        return (entry.catalogIndex, result)
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 }

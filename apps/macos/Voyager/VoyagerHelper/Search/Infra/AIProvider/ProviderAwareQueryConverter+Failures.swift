@@ -22,15 +22,22 @@ extension ProviderAwareQueryConverter {
                 reason: expected.rawValue,
             )
         case let .providerUnavailable(provider, reason):
-            QueryConversionResult(
-                conditions: [],
-                scopes: nil,
-                error: "AI provider is unavailable. Check the connection and try again.",
-                outcome: .providerUnavailable,
-                providerId: provider.rawValue,
-                errorCode: "AI_PROVIDER_UNAVAILABLE",
-                reason: reason.rawValue,
-            )
+            switch reason {
+            case .expired:
+                expiredCredentialFailure(provider: provider, reason: reason.rawValue)
+            case .networkUnavailable:
+                networkFailure(provider: provider, reason: reason.rawValue)
+            default:
+                QueryConversionResult(
+                    conditions: [],
+                    scopes: nil,
+                    error: "AI provider is unavailable. Check the connection and try again.",
+                    outcome: .providerUnavailable,
+                    providerId: provider.rawValue,
+                    errorCode: "AI_PROVIDER_UNAVAILABLE",
+                    reason: reason.rawValue,
+                )
+            }
         }
     }
 
@@ -51,8 +58,15 @@ extension ProviderAwareQueryConverter {
                 errorCode: "AI_PROVIDER_INVALID_CREDENTIAL",
                 reason: expected.rawValue,
             )
-        case let .providerUnavailable(provider, reason):
-            explicitProviderUnavailable(providerRawValue: provider.rawValue, reason: reason.rawValue)
+        case let .providerUnavailable(_, reason):
+            switch reason {
+            case .expired:
+                expiredCredentialFailure(provider: provider, reason: reason.rawValue)
+            case .networkUnavailable:
+                networkFailure(provider: provider, reason: reason.rawValue)
+            default:
+                explicitProviderUnavailable(providerRawValue: provider.rawValue, reason: reason.rawValue)
+            }
         }
     }
 
@@ -147,7 +161,7 @@ extension ProviderAwareQueryConverter {
                 errorCode: "AI_PROVIDER_INVALID_CREDENTIAL",
                 reason: String(describing: error),
             )
-        case .unsupportedProvider, .invalidResponse, .httpError, .networkError:
+        case .unsupportedProvider, .invalidResponse:
             QueryConversionResult(
                 conditions: [],
                 scopes: nil,
@@ -157,6 +171,26 @@ extension ProviderAwareQueryConverter {
                 errorCode: "AI_PROVIDER_UNAVAILABLE",
                 reason: String(describing: error),
             )
+        case let .httpError(_, statusCode, _) where (500 ... 599).contains(statusCode):
+            networkFailure(provider: provider, reason: String(describing: error))
+        case let .httpError(errorProvider, statusCode, _) where statusCode == 401 || statusCode == 403:
+            if errorProvider == .chatgptCodex {
+                expiredCredentialFailure(provider: provider, reason: String(describing: error))
+            } else {
+                authenticationFailure(provider: provider, reason: String(describing: error))
+            }
+        case .httpError:
+            QueryConversionResult(
+                conditions: [],
+                scopes: nil,
+                error: "AI provider is unavailable. Check the connection and try again.",
+                outcome: .providerUnavailable,
+                providerId: provider.rawValue,
+                errorCode: "AI_PROVIDER_UNAVAILABLE",
+                reason: String(describing: error),
+            )
+        case .networkError:
+            networkFailure(provider: provider, reason: String(describing: error))
         }
     }
 
@@ -214,16 +248,8 @@ extension ProviderAwareQueryConverter {
                 reason: failure.rawValue,
             )
         case .authentication:
-            QueryConversionResult(
-                conditions: [],
-                scopes: nil,
-                error: "Reconnect your AI provider in Settings, then try again.",
-                outcome: .invalidCredential,
-                providerId: provider.rawValue,
-                errorCode: "AI_PROVIDER_INVALID_CREDENTIAL",
-                reason: failure.rawValue,
-            )
-        case .modelUnavailable, .unsupportedProvider, .cliUnavailable:
+            authenticationFailure(provider: provider, reason: failure.rawValue)
+        case .modelUnavailable, .unsupportedProvider:
             QueryConversionResult(
                 conditions: [],
                 scopes: nil,
@@ -233,7 +259,20 @@ extension ProviderAwareQueryConverter {
                 errorCode: "AI_PROVIDER_UNAVAILABLE",
                 reason: failure.rawValue,
             )
-        case .network, .rateLimited, .quotaExceeded, .transportError, .sessionMismatch, .invalidRequest, .unknown:
+        case .cliUnavailable:
+            QueryConversionResult(
+                conditions: [],
+                scopes: nil,
+                error: "The Codex CLI could not be launched. Make sure the codex command is installed "
+                    + "and available to Voyager.",
+                outcome: .providerUnavailable,
+                providerId: provider.rawValue,
+                errorCode: "AI_PROVIDER_UNAVAILABLE",
+                reason: failure.rawValue,
+            )
+        case .network, .transportError:
+            networkFailure(provider: provider, reason: failure.rawValue)
+        case .rateLimited, .quotaExceeded, .sessionMismatch, .invalidRequest, .unknown:
             QueryConversionResult(
                 conditions: [],
                 scopes: nil,
@@ -244,5 +283,50 @@ extension ProviderAwareQueryConverter {
                 reason: failure.rawValue,
             )
         }
+    }
+
+    private func expiredCredentialFailure(
+        provider: AiProvider,
+        reason: String,
+    ) -> QueryConversionResult {
+        QueryConversionResult(
+            conditions: [],
+            scopes: nil,
+            error: "Your AI provider session has expired. Reconnect your AI provider in Settings, then try again.",
+            outcome: .invalidCredential,
+            providerId: provider.rawValue,
+            errorCode: "AI_PROVIDER_INVALID_CREDENTIAL",
+            reason: reason,
+        )
+    }
+
+    private func authenticationFailure(
+        provider: AiProvider,
+        reason: String,
+    ) -> QueryConversionResult {
+        QueryConversionResult(
+            conditions: [],
+            scopes: nil,
+            error: "AI provider authentication failed. Reconnect your AI provider in Settings, then try again.",
+            outcome: .invalidCredential,
+            providerId: provider.rawValue,
+            errorCode: "AI_PROVIDER_INVALID_CREDENTIAL",
+            reason: reason,
+        )
+    }
+
+    private func networkFailure(
+        provider: AiProvider,
+        reason: String,
+    ) -> QueryConversionResult {
+        QueryConversionResult(
+            conditions: [],
+            scopes: nil,
+            error: "The network connection to your AI provider failed. Check your connection and try again.",
+            outcome: .networkFailure,
+            providerId: provider.rawValue,
+            errorCode: "AI_PROVIDER_NETWORK_FAILURE",
+            reason: reason,
+        )
     }
 }
