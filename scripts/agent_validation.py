@@ -30,6 +30,30 @@ V2_HEADINGS = [
 ]
 PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives"]
 PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
+PLAN_TASK_HEADING = re.compile(r"^### [1-9]\d*\.\s+\S")
+PLAN_TASK_FIELD = re.compile(
+    r"^\s*(?:[-*+]\s+)?\*\*(?P<label>[^*]+)\*\*\s*:\s*(?P<value>.*)$",
+    re.MULTILINE,
+)
+PLAN_INLINE_EVIDENCE = re.compile(
+    r"(?:evidence|증거)\s*:\s*(?P<value>\S.*)", re.IGNORECASE
+)
+PLAN_ACCEPTANCE_LABELS = {
+    "acceptance",
+    "acceptance criteria",
+    "수용 기준",
+    "인수 조건",
+}
+PLAN_EVIDENCE_LABELS = {
+    "evidence",
+    "verification evidence",
+    "증거",
+    "검증 증거",
+}
+PLAN_COMBINED_ACCEPTANCE_EVIDENCE_LABELS = {
+    "acceptance evidence",
+    "수용 증거",
+}
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
 SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+\.md)`")
 BARE_REFERENCE_LITERAL = re.compile(
@@ -428,6 +452,52 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                         "plan checkbox TODOs are retired; keep execution status in runtime artifacts",
                     )
                 )
+        task_indexes = [
+            index for index, line in enumerate(lines) if PLAN_TASK_HEADING.match(line)
+        ]
+        if not task_indexes:
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    root,
+                    1,
+                    "PLAN_TODO_CONTRACT",
+                    "plan requires at least one numbered ### N. task heading",
+                )
+            )
+        for index in task_indexes:
+            task_end = next(
+                (
+                    offset
+                    for offset in range(index + 1, len(lines))
+                    if lines[offset].startswith("## ")
+                    or lines[offset].startswith("### ")
+                ),
+                len(lines),
+            )
+            task_fields = plan_task_fields("\n".join(lines[index + 1 : task_end]))
+            acceptance = task_fields["acceptance"]
+            evidence = task_fields["evidence"]
+            if not acceptance:
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_TODO_CONTRACT",
+                        "numbered task must name non-empty acceptance criteria",
+                    )
+                )
+            if not evidence:
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_ACCEPTANCE_EVIDENCE",
+                        "task acceptance criteria must name required evidence",
+                    )
+                )
         for section in PLAN_SECTIONS:
             if section not in headings:
                 diagnostics.append(
@@ -521,6 +591,26 @@ def plan_section_text(
         (line for line in headings.values() if line > start), default=len(lines) + 1
     )
     return "\n".join(lines[start : end - 1]).strip()
+
+
+def plan_task_fields(block: str) -> dict[str, str]:
+    fields = {"acceptance": "", "evidence": ""}
+    for match in PLAN_TASK_FIELD.finditer(block):
+        label = " ".join(match.group("label").split()).casefold()
+        value = match.group("value").strip()
+        if not value:
+            continue
+        if label in PLAN_COMBINED_ACCEPTANCE_EVIDENCE_LABELS:
+            fields["acceptance"] = value
+            fields["evidence"] = value
+        elif label in PLAN_ACCEPTANCE_LABELS:
+            fields["acceptance"] = value
+            inline_evidence = PLAN_INLINE_EVIDENCE.search(value)
+            if inline_evidence and inline_evidence.group("value").strip():
+                fields["evidence"] = inline_evidence.group("value").strip()
+        elif label in PLAN_EVIDENCE_LABELS:
+            fields["evidence"] = value
+    return fields
 
 
 def json_result(name: str, diagnostics: list[Diagnostic], mode: str) -> str:

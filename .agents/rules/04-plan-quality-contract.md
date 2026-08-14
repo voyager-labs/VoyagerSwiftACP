@@ -20,7 +20,7 @@ schemaVersion: 2
 2. For each implementation task, add QA scenarios showing the RED → GREEN flow.
 3. In the Commit Strategy section, reference the `commit-message` skill.
 4. Verify every acceptance criterion names its required evidence.
-5. Describe implementation work with numbered headings or ordered steps; keep completion state in runtime artifacts rather than plan Markdown.
+5. Describe each implementation task under a numbered level-three heading (`### N. Task title`); keep completion state in runtime artifacts rather than plan Markdown.
 
 ## Decision Rules
 
@@ -34,6 +34,7 @@ schemaVersion: 2
 - Duplicate behavior assertions across test owners.
 - Plan commits without referencing the `commit-message` skill.
 - Add checkbox TODOs to a plan.
+- Omit acceptance criteria or required evidence from a numbered implementation task.
 
 ## Verification
 
@@ -42,3 +43,4 @@ schemaVersion: 2
 - Every planned test has one canonical owner from the owning platform's test topology.
 - No behavior assertion is duplicated across test owners.
 - Plan Markdown contains no `- [ ]`/`- [x]` task-state markers.
+- Every numbered implementation task contains non-empty acceptance criteria and required evidence.

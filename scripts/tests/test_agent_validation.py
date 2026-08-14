@@ -80,6 +80,9 @@ Objective.
 ### 1. Fixture task
 
 Implementation steps.
+
+**Acceptance Criteria**: The validator accepts this task.
+**Evidence**: Validator output has no diagnostics.
 """
 
 
@@ -451,6 +454,75 @@ class AgentValidationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
 
+    def test_heading_prose_tasks_require_acceptance_evidence(self) -> None:
+        korean_plan = PLAN.replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "**수용 증거**: validator가 진단 없이 통과한다.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/korean.md", korean_plan)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
+
+        missing_task = PLAN.replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "Implementation steps only.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/missing.md", missing_task)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                [item["code"] for item in payload["diagnostics"]],
+                ["PLAN_TODO_CONTRACT", "PLAN_ACCEPTANCE_EVIDENCE"],
+            )
+
+        global_acceptance = PLAN.replace(
+            "## Implementation",
+            "## Acceptance Criteria\n\n**Acceptance**: Global acceptance.\n**Evidence**: Global evidence.\n\n## Implementation",
+        ).replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "Implementation steps only.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/global.md", global_acceptance)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                [item["code"] for item in payload["diagnostics"]],
+                ["PLAN_TODO_CONTRACT", "PLAN_ACCEPTANCE_EVIDENCE"],
+            )
+
+        missing_evidence = PLAN.replace(
+            "**Evidence**: Validator output has no diagnostics.", ""
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/missing-evidence.md", missing_evidence)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_exact_diagnostic(result, payload, "PLAN_ACCEPTANCE_EVIDENCE")
+
+        two_tasks = PLAN.replace(
+            "### 1. Fixture task",
+            "### 1. Fixture task\n\n**Acceptance**: First task is covered.\n**Evidence**: First test output.\n\n### 2. Second task",
+        ).replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "**Acceptance**: Second task is covered.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/two-tasks.md", two_tasks)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_exact_diagnostic(result, payload, "PLAN_ACCEPTANCE_EVIDENCE")
+            second_task_line = two_tasks.splitlines().index("### 2. Second task") + 1
+            self.assertEqual(payload["diagnostics"][0]["line"], second_task_line)
+
     def test_every_emitted_diagnostic_has_an_exact_fixture(self) -> None:
         harness_cases = {
             "HARNESS_MISSING_FRONTMATTER": (
@@ -525,6 +597,12 @@ class AgentValidationTests(unittest.TestCase):
         plan_cases = {
             "PLAN_MISSING_TITLE": PLAN.replace("# Fixture Plan", "Fixture Plan"),
             "PLAN_MISSING_SECTION": PLAN.replace("## Context", "## Background"),
+            "PLAN_TODO_CONTRACT": PLAN.replace(
+                "### 1. Fixture task", "Implementation steps"
+            ),
+            "PLAN_ACCEPTANCE_EVIDENCE": PLAN.replace(
+                "**Evidence**: Validator output has no diagnostics.", ""
+            ),
             "PLAN_CHECKBOX_TODO_RETIRED": PLAN.replace(
                 "Implementation steps.", "- [ ] Legacy task"
             ),
