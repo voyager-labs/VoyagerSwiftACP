@@ -5,6 +5,7 @@ import Dependencies
 import VoyagerEntitiesCollection
 import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
+import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
@@ -16,6 +17,55 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testLiveUndoManagerClientUsesCanonicalRegistryStackForSequentialUndo() async throws {
+        let windowID = UUID()
+        let ownerID = UUID()
+        let registry = FileOperationUndoManagerRegistry()
+        let window = FileManagerWindowState.makeInitial(path: "/active")
+        let activeTabID = try XCTUnwrap(window.contentTabs.activeTabID)
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: activeTabID.rawValue)
+        let nativeUndoManager = registry.activate(scope)
+        let generation = try XCTUnwrap(registry.generation(for: scope))
+        let client = VoyagerApp.makeUndoManagerClient(
+            fileOperationUndoManagerRegistry: registry,
+            resolveScope: { requestedWindowID in
+                requestedWindowID == windowID ? scope : nil
+            },
+        )
+        let firstRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/first-old", afterPath: "/first-new")],
+        )
+        let secondRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/second-old", afterPath: "/second-new")],
+        )
+        var events = client.events(windowID).makeAsyncIterator()
+
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: firstRecord))
+        await client.registerUndo(windowID, ownerID, firstRecord)
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: secondRecord))
+        await client.registerUndo(windowID, ownerID, secondRecord)
+
+        let secondIdentity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: secondRecord.id)
+        let firstUndo = await client.undo(windowID, expectedTarget: secondIdentity)
+        let firstEvent = await events.next()
+        let firstIdentity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: firstRecord.id)
+        let secondUndo = await client.undo(windowID, expectedTarget: firstIdentity)
+        let secondEvent = await events.next()
+
+        XCTAssertIdentical(registry.undoManager(for: scope), nativeUndoManager)
+        XCTAssertTrue(firstUndo.didInvoke)
+        XCTAssertTrue(secondUndo.didInvoke)
+        XCTAssertEqual(firstEvent, UndoManagerEvent(ownerID: ownerID, record: secondRecord, direction: .undo))
+        XCTAssertEqual(secondEvent, UndoManagerEvent(ownerID: ownerID, record: firstRecord, direction: .undo))
+        XCTAssertFalse(secondUndo.availability.canUndo)
+        XCTAssertTrue(secondUndo.availability.canRedo)
+        XCTAssertFalse(nativeUndoManager.canUndo)
+        XCTAssertTrue(nativeUndoManager.canRedo)
+        XCTAssertEqual(registry.generation(for: scope), generation)
+    }
+
     func testSignedOutLaunchDefersInitialWindowUntilRuntimeAndWindowCompletion() async {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
@@ -184,6 +234,11 @@ final class AppRootCompositionTests: XCTestCase {
     func testEntryCoreHealthProbeCancellationPreservesTerminationRouting() async {
         let probeStarted = expectation(description: "Entry Core health probe started")
         let probeCancelled = expectation(description: "Entry Core health probe cancelled")
+        let helperMonitorCancelled = expectation(description: "Helper monitor cancelled")
+        let helperEvents = AsyncStream<Void>.makeStream()
+        helperEvents.continuation.onTermination = { @Sendable _ in
+            helperMonitorCancelled.fulfill()
+        }
         let store = TestStore(initialState: AppLifecycleFeature.State()) {
             AppLifecycleFeature()
         } withDependencies: {
@@ -200,7 +255,13 @@ final class AppRootCompositionTests: XCTestCase {
                     probeCancelled.fulfill()
                 }
             }
-            $0.helperAppClient = helperAppClient()
+            $0.helperAppClient = HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { true },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { _ in },
+            )
             $0.helperStateClient = readyHelperStateClient
             $0.onboardingWindowClient.showIfNeeded = { false }
         }
@@ -215,8 +276,238 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.termination(.willTerminate))
         await store.receive(\.accountAccess.appWillTerminate)
-        await fulfillment(of: [probeCancelled], timeout: 1)
+        await fulfillment(of: [probeCancelled, helperMonitorCancelled], timeout: 1)
         await store.finish()
+    }
+
+    // MARK: - Helper monitoring
+
+    func testHelperMonitorRestartsAfterTerminationEvent() async {
+        let restartRequested = expectation(description: "Helper restart requested")
+        let restartCount = LockIsolated(0)
+        let ensureRequestCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    guard await canLaunch() else { return }
+                    let requestCount = ensureRequestCount.withValue {
+                        $0 += 1
+                        return $0
+                    }
+                    guard requestCount > 1 else { return }
+                    restartCount.withValue { $0 += 1 }
+                    restartRequested.fulfill()
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await Task.yield()
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [restartRequested], timeout: 1)
+
+        task.cancel()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(restartCount.value, 1)
+    }
+
+    func testHelperMonitorCancellationDuringGraceWindowDoesNotRestart() async {
+        let clock = TestClock()
+        let restartRequested = expectation(description: "Initial helper restart requested")
+        let graceSleepStarted = expectation(description: "Grace window sleep started")
+        let restartCount = LockIsolated(0)
+        let ensureRequestCount = LockIsolated(0)
+        let nowReadCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    guard await canLaunch() else { return }
+                    let requestCount = ensureRequestCount.withValue {
+                        $0 += 1
+                        return $0
+                    }
+                    guard requestCount > 1 else { return }
+                    restartCount.withValue { $0 += 1 }
+                    restartRequested.fulfill()
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: clock,
+            now: {
+                let count = nowReadCount.withValue {
+                    $0 += 1
+                    return $0
+                }
+                if count == 3 {
+                    graceSleepStarted.fulfill()
+                }
+                return Date(timeIntervalSince1970: 0)
+            },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await Task.yield()
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [restartRequested], timeout: 1)
+
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [graceSleepStarted], timeout: 1)
+
+        task.cancel()
+        await clock.advance(by: .seconds(5))
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(restartCount.value, 1)
+    }
+
+    func testHelperMonitorCancellationBeforeLaunchDoesNotRestart() async {
+        let restartEntered = expectation(description: "Helper restart boundary entered")
+        let restartCount = LockIsolated(0)
+        let ensureRequestCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let restartGate = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    let requestCount = ensureRequestCount.withValue {
+                        $0 += 1
+                        return $0
+                    }
+                    guard requestCount > 1 else { return }
+                    restartEntered.fulfill()
+                    for await _ in restartGate.stream {
+                        break
+                    }
+                    guard await canLaunch() else { return }
+                    restartCount.withValue { $0 += 1 }
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await Task.yield()
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [restartEntered], timeout: 1)
+
+        task.cancel()
+        restartGate.continuation.yield(())
+        restartGate.continuation.finish()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(restartCount.value, 0)
+    }
+
+    func testHelperMonitorCancellationBeforeInitialLaunchDoesNotStart() async {
+        let launchEntered = expectation(description: "Initial helper launch boundary entered")
+        let launchCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let launchGate = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: { launchCount.withValue { $0 += 1 } },
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    launchEntered.fulfill()
+                    for await _ in launchGate.stream {
+                        break
+                    }
+                    guard await canLaunch() else { return }
+                    launchCount.withValue { $0 += 1 }
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await fulfillment(of: [launchEntered], timeout: 1)
+        task.cancel()
+        launchGate.continuation.yield(())
+        launchGate.continuation.finish()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(launchCount.value, 0)
+    }
+
+    func testHelperMonitorCancellationDuringInitialAlignmentDoesNotRestart() async {
+        let resolveEntered = expectation(description: "Initial helper state resolution entered")
+        let startCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let resolveGate = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: { startCount.withValue { $0 += 1 } },
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    guard await canLaunch() else { return }
+                    startCount.withValue { $0 += 1 }
+                },
+            ),
+            stateClient: HelperStateClient(
+                resolve: {
+                    resolveEntered.fulfill()
+                    for await _ in resolveGate.stream {
+                        return nil
+                    }
+                    return nil
+                },
+                observe: { AsyncStream { $0.finish() } },
+            ),
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await fulfillment(of: [resolveEntered], timeout: 1)
+        XCTAssertEqual(startCount.value, 1)
+
+        task.cancel()
+        resolveGate.continuation.yield(())
+        resolveGate.continuation.finish()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(startCount.value, 1)
     }
 
     private var accessSnapshot: AccessStatusSnapshot {
@@ -240,7 +531,10 @@ final class AppRootCompositionTests: XCTestCase {
             stop: {},
             isRunning: { true },
             terminationEvents: { AsyncStream { $0.finish() } },
-            ensureRunning: {},
+            ensureRunning: { canLaunch in
+                guard await canLaunch() else { return }
+                startCount?.withValue { $0 += 1 }
+            },
         )
     }
 
@@ -671,6 +965,7 @@ final class AppRootCompositionTests: XCTestCase {
             ],
         )
         let events = LockIsolated<[String]>([])
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.didStartHelper = true
@@ -688,7 +983,10 @@ final class AppRootCompositionTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in
                 events.withValue { $0.append("alert") }
             }
@@ -757,6 +1055,7 @@ final class AppRootCompositionTests: XCTestCase {
             .directory(path: "/tmp"),
             .collectionFile(url: collectionURL),
         ] + (0 ..< 18).map { .directory(path: "/tmp/overflow/\($0)") }
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.didStartHelper = true
@@ -773,7 +1072,10 @@ final class AppRootCompositionTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }
@@ -1630,13 +1932,17 @@ final class AppRootCompositionTests: XCTestCase {
 
         let activationStarted = expectation(description: "native activation started")
         let activationGate = AsyncStream<Void>.makeStream()
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.isRequired = { false }
-            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.fileManagerWindowClient.activate = { _ in
                 activationStarted.fulfill()
                 for await _ in activationGate.stream {
@@ -2589,6 +2895,10 @@ final class AppRootCompositionTests: XCTestCase {
                 XCTAssertEqual(id, windowID)
                 closeCompleted.fulfill()
             }
+            $0.undoManagerClient.invalidateWindow = { id in
+                XCTAssertEqual(id, windowID)
+                return .init(succeeded: true, availability: .init())
+            }
         }
         // store.exhaustivity = .off: native completion과 queued parent terminal 사이 revoke ownership만 검증함.
         store.exhaustivity = .off
@@ -2596,6 +2906,10 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [closeCompleted], timeout: 1)
         await store.skipReceivedActions()
+        XCTAssertNotNil(store.state.windowManager.windows[id: windowID])
+
+        await store.send(.windowManager(.event(.windowClosed(windowID))))
+        await store.receive(\.windowManager.windowInvalidationFinished)
 
         XCTAssertTrue(store.state.windowManager.windows.isEmpty)
         XCTAssertNil(store.state.windowManager.trackedSingletonWindow)
@@ -2740,6 +3054,7 @@ final class AppRootCompositionTests: XCTestCase {
         let batchURL = URL(fileURLWithPath: "/tmp/batch-after-native-open")
         let openStarted = expectation(description: "tracked native open started")
         let openGate = AsyncStream<Void>.makeStream()
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.didStartHelper = true
@@ -2754,12 +3069,14 @@ final class AppRootCompositionTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
             $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
-            $0.fileManagerWindowClient.open = { _ in
+            $0.fileManagerWindowClient.open = { id in
+                registeredWindowIDs.withValue { $0.insert(id) }
                 openStarted.fulfill()
                 for await _ in openGate.stream {
                     break
                 }
             }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.pathProbeClient.probeExistence = { _ in PathProbeResult(exists: false, isDirectory: false) }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }

@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
@@ -432,21 +433,25 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     /// - 검증 내용: collective add 명령이 display 순서의 선택 경로와 `.add` mode를 가진 tag mutation 하나로 계획된다.
     /// - 사전 조건: display entries 두 개가 선택되어 있고 첫 항목에만 `Red` 태그가 존재한다.
     /// - 기대 결과: 계획된 요청은 두 경로를 순서대로 포함하며 `.add` mode를 사용한다.
-    func testEditEntryTagsPlansCollectiveAddForMixedSelection() {
+    func testEditEntryTagsPlansCollectiveAddForMixedSelection() throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { firstSandbox.cleanup() }
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/98.txt")
+        defer { secondSandbox.cleanup() }
         let first = EntryModelFixtures.makeFileEntry(
-            id: "/tmp/first.txt",
-            name: "first.txt",
-            fileExtension: "txt",
+            id: firstSandbox.fileURL.path,
+            name: firstSandbox.fileURL.lastPathComponent,
+            fileExtension: firstSandbox.fileURL.pathExtension,
         )
         let second = EntryModelFixtures.makeFileEntry(
-            id: "/tmp/second.txt",
-            name: "second.txt",
-            fileExtension: "txt",
+            id: secondSandbox.fileURL.path,
+            name: secondSandbox.fileURL.lastPathComponent,
+            fileExtension: secondSandbox.fileURL.pathExtension,
         )
         let context = EntryOperationsCommandContext(
             selectedIds: [first.id, second.id],
             displayItems: [first, second],
-            currentPath: "/tmp",
+            currentPath: firstSandbox.root.path,
         )
 
         let outputs = EntryOperationsCommandPlanner.plan(
@@ -469,10 +474,16 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     /// - 검증 내용: 중복 경로를 제외한 최초 요청 대상은 동기적으로 busy가 되고, 겹치는 후속 요청은 새 대상까지 포함해 거부된다.
     /// - 사전 조건: 첫 번째 태그 조회가 제어 가능한 gate에서 대기 중이고, 두 요청은 `secondPath`를 공유한다.
     /// - 기대 결과: 최초 요청만 tag write와 undo record를 만들며, 후속 요청의 고유 경로는 busy가 되지 않는다.
-    func testEditEntryTagsSynchronouslyReservesPathsAndRejectsOverlap() async {
-        let firstPath = "/tmp/first.txt"
-        let secondPath = "/tmp/second.txt"
-        let rejectedPath = "/tmp/rejected.txt"
+    func testEditEntryTagsSynchronouslyReservesPathsAndRejectsOverlap() async throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { firstSandbox.cleanup() }
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/98.txt")
+        defer { secondSandbox.cleanup() }
+        let rejectedSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/100.txt")
+        defer { rejectedSandbox.cleanup() }
+        let firstPath = firstSandbox.fileURL.path
+        let secondPath = secondSandbox.fileURL.path
+        let rejectedPath = rejectedSandbox.fileURL.path
         let gate = TagMutationGate()
         let recorder = TagMutationRecorder()
         var entryFileOpsClient = EntryFileOpsClient.previewValue
@@ -547,14 +558,72 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
 }
 
 extension EOP004EditEntryMetadataTests {
+    /// EOP-004-edit_entry_tags: injected favorite color reaches tag persistence.
+    /// Tag writes must resolve favorite tags through the operation dependency scope.
+    /// - 검증 내용: EntryFileOpsClient.liveValue.setTags가 주입된 favorite 색상으로 태그를 저장하는지 확인
+    /// - 사전 조건: FixtureSandbox 파일에 기존 태그가 없고 favorite client가 같은 이름의 색상을 반환함
+    /// - 기대 결과: 저장된 태그가 주입된 favorite 색상으로 복원됨
+    func testSetTagsUsesInjectedFavoriteTagColor() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+
+        try await withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            try await EntryFileOpsClient.liveValue.setTags(sandbox.fileURL, [tagName])
+        }
+
+        XCTAssertEqual(TagMetadataClient.loadTags(from: sandbox.fileURL), [favoriteTag])
+    }
+
+    /// EOP-004-edit_entry_tags: collection conversion uses injected favorite color.
+    /// Collection item normalization must resolve favorite tags through the operation dependency scope.
+    /// - 검증 내용: EntryCollectionItemsConverter가 주입된 favorite 색상으로 collection item을 정규화하는지 확인
+    /// - 사전 조건: FixtureSandbox 파일에 같은 이름의 색상 없는 태그와 inline EntryLoadingClient가 있음
+    /// - 기대 결과: 변환된 entry의 태그가 주입된 favorite 색상으로 정규화됨
+    func testCollectionItemsConverterUsesInjectedFavoriteTagColor() throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let tagName = "InjectedFavorite"
+        let favoriteTag = Tag(name: tagName, colorCode: 6)
+        try TagMetadataClient.setTags([Tag(name: tagName, colorCode: 0)], for: sandbox.fileURL)
+
+        let entryLoadingClient = EntryLoadingClient.liveValue
+        withDependencies {
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [tagName] },
+                favoriteTags: { [favoriteTag] },
+            )
+        } operation: {
+            let items = EntryCollectionItemsConverter.convert(
+                [sandbox.fileURL.path],
+                showHidden: false,
+                entryLoadingClient: entryLoadingClient,
+                workspaceClient: .liveValue,
+            )
+            XCTAssertEqual(items.first?.facets.tags, [favoriteTag])
+        }
+    }
+}
+
+extension EOP004EditEntryMetadataTests {
     /// EOP-004-edit_entry_tags: 일부 태그 저장이 실패해도 성공 대상만 undo에 남기고 실패를 한 번에 알린다.
     /// 각 경로의 lifecycle 결과는 독립적으로 유지되어 실패 경로의 오류와 성공 경로의 변경 기록이 섞이지 않아야 한다.
     /// - 검증 내용: 성공한 첫 경로만 undo record에 포함되고, 실패한 두 번째 경로의 reason을 가진 alert payload가 한 번 전달된다.
     /// - 사전 조건: 두 경로 모두 기존 태그가 없고 두 번째 경로의 `setTags`만 `FileOpError.system`을 던진다.
     /// - 기대 결과: 성공 경로는 busy/error가 정리되고, 실패 경로는 lastError를 보존하며, 단일 집계 alert가 호출된다.
-    func testEditEntryTagsAggregatesPartialFailuresAndRecordsSuccessfulTargetsOnly() async {
-        let successfulPath = "/tmp/success.txt"
-        let failedPath = "/tmp/failed.txt"
+    func testEditEntryTagsAggregatesPartialFailuresAndRecordsSuccessfulTargetsOnly() async throws {
+        let successfulSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { successfulSandbox.cleanup() }
+        let failedSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/98.txt")
+        defer { failedSandbox.cleanup() }
+        let successfulPath = successfulSandbox.fileURL.path
+        let failedPath = failedSandbox.fileURL.path
         let recorder = TagMutationRecorder()
         var entryFileOpsClient = EntryFileOpsClient.previewValue
         entryFileOpsClient.getTags = { _ in [] }
@@ -592,7 +661,7 @@ extension EOP004EditEntryMetadataTests {
         XCTAssertNotEqual(store.state.itemStates[successfulPath]?.isBusy, true)
         XCTAssertNotEqual(store.state.itemStates[failedPath]?.isBusy, true)
         XCTAssertEqual(alerts, [
-            [TagMutationFailure(fileName: "failed.txt", reason: "Tag write failed")],
+            [TagMutationFailure(fileName: failedSandbox.fileURL.lastPathComponent, reason: "Tag write failed")],
         ])
         XCTAssertEqual(store.state.undoRecords.count, 1)
         XCTAssertEqual(store.state.undoRecords.first?.targets.map(\.beforePath), [successfulPath])

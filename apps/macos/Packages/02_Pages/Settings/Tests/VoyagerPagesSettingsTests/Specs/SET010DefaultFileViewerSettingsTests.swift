@@ -66,7 +66,15 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
             pickDirectory: pickDirectory,
             pathExists: pathExists,
             isDirectory: isDirectory,
-            defaultHomePath: { homePath },
+            standardDirectories: {
+                StandardDirectories(
+                    homePath: homePath,
+                    homeDisplayName: "Home",
+                    desktopPath: nil,
+                    documentsPath: nil,
+                    downloadsPath: nil,
+                )
+            },
         )
         let defaultFileViewerClient = DefaultFileViewerClient(
             appBundleID: DefaultFileViewerClient.voyagerBundleID,
@@ -685,6 +693,8 @@ private func makeEntryOpenClient(
         performService: { _, _ in },
         revealInFinder: { _ in },
         applicationsForFile: { _ in [] },
+        applicationsForType: { _, _ in [] },
+        invalidateApplicationsForType: { _ in },
         defaultApplication: defaultApplication,
         trashDirectoryPath: { nil },
     )

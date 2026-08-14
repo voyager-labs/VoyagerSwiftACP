@@ -170,9 +170,37 @@ enum EntryOperationsTestSupport {
             $0.entryQuickLookClient = .previewValue
             $0.pasteboardClient = .noOp
             $0.undoManagerClient = UndoManagerClient(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            )
+            $0.trashMetadataStoreClient = .testValue
+            configure(&$0)
+        }
+    }
+
+    static func makeObservedStore(
+        initialState: EntryOperationsFeature.State = .init(),
+        observeAction: @escaping @Sendable (EntryOperationsFeature.Action) -> Void,
+        configure: (inout DependencyValues) -> Void = { _ in },
+    ) -> TestStore<EntryOperationsFeature.State, EntryOperationsFeature.Action> {
+        TestStore(initialState: initialState) {
+            CombineReducers {
+                EntryOperationsFeature()
+                Reduce { _, action in
+                    observeAction(action)
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.entryOpenClient = .previewValue
+            $0.entryQuickLookClient = .previewValue
+            $0.pasteboardClient = .noOp
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.trashMetadataStoreClient = .testValue
             configure(&$0)

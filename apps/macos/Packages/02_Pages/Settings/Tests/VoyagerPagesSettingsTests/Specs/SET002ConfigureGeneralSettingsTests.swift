@@ -32,16 +32,11 @@ import XCTest
 
 @MainActor
 final class SET002ConfigureGeneralSettingsTests: XCTestCase {
-    nonisolated(unsafe) private var storage: InMemoryStorage!
+    nonisolated(unsafe) private var storage = InMemoryStorage()
 
     override func setUp() {
         super.setUp()
         storage = InMemoryStorage()
-    }
-
-    override func tearDown() {
-        storage = nil
-        super.tearDown()
     }
 
     private func makeStore(
@@ -52,8 +47,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         pathExists: @escaping @Sendable (String) -> Bool = { _ in false },
         isDirectory: @escaping @Sendable (String) -> Bool = { _ in false },
     ) -> TestStore<GeneralSettingsFeature.State, GeneralSettingsFeature.Action> {
-        // swiftlint:disable:next force_unwrapping
-        let storage = storage!
+        let storage = storage
         let userDefaultsClient = UserDefaultsClient(
             bool: { key in storage.getBool(key) ?? false },
             setBool: { value, key in storage.setBool(value, forKey: key) },
@@ -68,7 +62,15 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
             pickDirectory: pickDirectory,
             pathExists: pathExists,
             isDirectory: isDirectory,
-            defaultHomePath: { homePath },
+            standardDirectories: {
+                StandardDirectories(
+                    homePath: homePath,
+                    homeDisplayName: "user",
+                    desktopPath: "/home/user/Desktop",
+                    documentsPath: "/home/user/Documents",
+                    downloadsPath: "/home/user/Downloads",
+                )
+            },
         )
         return TestStore(initialState: GeneralSettingsFeature.State()) {
             GeneralSettingsFeature()
@@ -87,9 +89,9 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// 디렉터리 로드
     /// SET-002-configure_initial_page: 저장된 시작 경로가 없으면 home directory를 기본 시작 위치로 사용한다.
     /// General tab 첫 로드에서 사용자가 별도 시작 폴더를 저장하지 않은 fresh 상태를 검증한다.
-    /// - 검증 내용: `.loadSettings`가 `default_tab_path` 부재 시 `DirectorySelectionClient.defaultHomePath()` 값을 적용한다.
+    /// - 검증 내용: `.loadSettings`가 `default_tab_path` 부재 시 주입된 표준 디렉터리의 home 경로를 적용한다.
     /// - 사전 조건: `InMemoryStorage`에 `SettingsKeys.defaultTabPath`가 없고 home path는 `/home/user`로 주입된다.
-    /// - 기대 결과: `startingDirectory = "/home/user"`, `selectedDirectoryOption = .custom("/home/user")`이다.
+    /// - 기대 결과: `startingDirectory = "/home/user"`, `selectedDirectoryOption = .home`이다.
     func testLoadSettingsUsesHomeWhenNoSavedPath() async {
         let store = makeStore(homePath: "/home/user")
         // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 startingDirectory만 검증
@@ -98,7 +100,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         await store.send(.loadSettings)
 
         XCTAssertEqual(store.state.startingDirectory, "/home/user")
-        XCTAssertEqual(store.state.selectedDirectoryOption, .custom("/home/user"))
+        XCTAssertEqual(store.state.selectedDirectoryOption, .home)
     }
 
     /// SET-002-configure_initial_page: 저장된 `default_tab_path`가 있으면 General tab 로드 시 해당 시작 경로를 복원한다.
@@ -188,23 +190,26 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
 
     /// 디렉터리 옵션 선택
     /// SET-002-configure_initial_page: 표준 디렉터리 옵션을 선택하면 해당 시스템 경로를 시작 경로로 저장한다.
-    /// 사용자가 Root 같은 predefined option을 선택했을 때 state와 persistence가 함께 갱신되는지 검증한다.
-    /// - 검증 내용: `.selectDirectoryOption(.root)`가 `.setStartingDirectory`를 거쳐 state와 storage를 갱신한다.
+    /// 사용자가 주입된 Desktop option을 선택했을 때 state와 persistence가 함께 갱신되는지 검증한다.
+    /// - 검증 내용: `.selectDirectoryOption(.desktop)`이 `.setStartingDirectory`를 거쳐 state와 storage를 갱신한다.
     /// - 사전 조건: General settings는 기본 상태이고 storage에는 기존 시작 경로가 없다.
-    /// - 기대 결과: `startingDirectory = "/"`, `selectedDirectoryOption = .root`, 저장된 `default_tab_path = "/"`다.
+    /// - 기대 결과: 주입한 Desktop 경로가 저장되고 `selectedDirectoryOption = .desktop`이다.
     func testSelectDirectoryOptionWithStandardOption() async {
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings의 관련 없는 설정 필드 갱신은 이 경로 선택 시나리오에서 추적하지 않는다.
+        store.exhaustivity = .off
 
-        await store.send(.selectDirectoryOption(.root))
+        await store.send(.loadSettings)
+        await store.send(.selectDirectoryOption(.desktop))
         await store.receive(\.setStartingDirectory) { state in
-            state.startingDirectory = "/"
-            state.selectedDirectoryOption = .root
+            state.startingDirectory = "/home/user/Desktop"
+            state.selectedDirectoryOption = .desktop
             state.startingDirectoryError = nil
         }
 
-        XCTAssertEqual(store.state.startingDirectory, "/")
-        XCTAssertEqual(store.state.selectedDirectoryOption, .root)
-        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), "/")
+        XCTAssertEqual(store.state.startingDirectory, "/home/user/Desktop")
+        XCTAssertEqual(store.state.selectedDirectoryOption, .desktop)
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), "/home/user/Desktop")
     }
 
     /// SET-002-configure_initial_page: Other... 옵션을 선택하면 directory picker flow를 시작한다.

@@ -1,6 +1,7 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
 import CoreGraphics
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
@@ -13,6 +14,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     private var popover: NSPopover?
     private var popoverController: EntryTagsPopoverViewController?
     private var pendingTagSpecs: [EntryContextMenuTagSpec]?
+    private var openWithObservation: ObserveToken?
 
     init(
         store: StoreOf<EntryViewLayoutFeature>,
@@ -52,6 +54,41 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
             && !store.state.entries.isEmpty
     }
 
+    @discardableResult
+    func observeOpenWithMenu(_ menu: NSMenu) -> NSMenu {
+        guard let openWithMenu = menu.item(withTitle: "Open With")?.submenu else { return menu }
+        let selectedFiles = target.entries.filter { !$0.isFolder }
+        guard !selectedFiles.isEmpty else { return menu }
+
+        openWithObservation?.cancel()
+        openWithObservation = observe { [weak self, weak openWithMenu] in
+            guard let self, let openWithMenu else { return }
+            let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
+                store.state.entryOperations.commonApplicationsForSelectedFiles
+            } else if let file = selectedFiles.first {
+                store.state.entryOperations.applicationsForTypes[Self.typeID(for: file)] ?? []
+            } else {
+                []
+            }
+            let isLoading = selectedFiles.contains { file in
+                let typeID = Self.typeID(for: file)
+                return store.state.entryOperations.openWithInFlightTypeIDs.contains(typeID)
+                    || store.state.entryOperations.applicationsForTypes[typeID] == nil
+            }
+            EntryContextMenuBuilder.updateOpenWithMenu(
+                openWithMenu,
+                applications: applications,
+                isLoading: isLoading,
+                target: self,
+            )
+        }
+        return menu
+    }
+
+    private static func typeID(for file: EntryModel) -> String {
+        UTType(filenameExtension: file.fileExtension)?.identifier ?? UTType.data.identifier
+    }
+
     @objc
     func contextMenuOpenSelectedItem() {
         guard canPerformTargetBoundCommand else { return }
@@ -68,6 +105,17 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
             return
         }
         store.send(.delegate(.openPathInNewWindow(path)))
+    }
+
+    @objc
+    func contextMenuOpenInNewTab(_ sender: NSMenuItem) {
+        guard let paths = sender.representedObject as? [String],
+              !paths.isEmpty,
+              canPerformTargetBoundCommand
+        else {
+            return
+        }
+        executeCommand(.navigation(.openInNewTab(paths: paths)))
     }
 
     @objc
@@ -96,6 +144,16 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     @objc
     func contextMenuShareSelectedItems() {
         executeCommand(.navigation(.shareSelectedItems(anchor: nil)))
+    }
+
+    @objc
+    func contextMenuPerformService(_ sender: NSMenuItem) {
+        guard let serviceName = sender.representedObject as? String,
+              canPerformTargetBoundCommand
+        else {
+            return
+        }
+        executeCommand(.navigation(.performService(serviceName: serviceName)))
     }
 
     @objc
@@ -225,6 +283,8 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     }
 
     func menuDidClose(_: NSMenu) {
+        openWithObservation?.cancel()
+        openWithObservation = nil
         DispatchQueue.main.async { [weak self] in
             self?.presentPendingTagsPopover()
         }

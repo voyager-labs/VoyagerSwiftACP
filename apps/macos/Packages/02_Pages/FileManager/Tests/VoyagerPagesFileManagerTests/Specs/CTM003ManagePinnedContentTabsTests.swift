@@ -8,6 +8,26 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+@Reducer
+private struct CTM003PinnedPersistenceHarness {
+    typealias State = ContentTabState
+    typealias Action = ContentTabAction
+
+    var body: some Reducer<State, Action> {
+        ContentTabFeature()
+    }
+}
+
+@Reducer
+struct CTM003FileManagerPersistenceHarness {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
+    var body: some Reducer<State, Action> {
+        FileManagerFeature()
+    }
+}
+
 private final class PinnedRecordStoreRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var savedStores: [ContentTabPinnedRecordStore] = []
@@ -41,6 +61,10 @@ private final class PinnedRecordDefaultsRecorder: @unchecked Sendable {
         storedData = try JSONEncoder().encode(store)
     }
 
+    init(data: Data?) {
+        storedData = data
+    }
+
     func object() -> Any? {
         lock.lock()
         defer { lock.unlock() }
@@ -52,6 +76,12 @@ private final class PinnedRecordDefaultsRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         storedData = value as? Data
         writes += 1
+    }
+
+    func data() -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedData
     }
 
     func writeCount() -> Int {
@@ -74,6 +104,16 @@ private final class PinnedRecordDefaultsRecorder: @unchecked Sendable {
     }
 }
 
+private struct ContentTabPinnedRecordStoreV1Fixture: Encodable {
+    let schemaVersion = 1
+    let records: [ContentTabPinnedRecord]
+}
+
+private struct ContentTabPinnedRecordStoreLegacyV2Fixture: Encodable {
+    let schemaVersion = 2
+    let records: [ContentTabPinnedRecord]
+}
+
 private final class CollectionPinAlertRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var alerts: [(title: String, message: String)] = []
@@ -88,6 +128,12 @@ private final class CollectionPinAlertRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return alerts.last
+    }
+
+    func alertCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return alerts.count
     }
 }
 
@@ -243,6 +289,21 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
     }
 
+    private static func pinnedItem(
+        id: ContentTabID,
+        anchor: ContentTabPageAnchor,
+        title: String,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: .directory,
+            anchor: anchor,
+            isPinned: true,
+            title: title,
+            iconName: "folder",
+        )
+    }
+
     private static func pinnedRuntimeNavigationMatcher(
         tabID: ContentTabID,
         path: String,
@@ -257,21 +318,2089 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
     }
 
-    func testPinnedRecordClient_invalidPersistedDataFallsBackToEmptyStore() throws {
-        let invalidDefaults = UserDefaultsClient(
-            bool: { _ in false },
-            setBool: { _, _ in },
-            string: { _ in nil },
-            setString: { _, _ in },
-            double: { _ in 0 },
-            setDouble: { _, _ in },
-            object: { _ in Data("not-json".utf8) },
-            setObject: { _, _ in },
+    @MainActor
+    private struct ExplicitPinPlacementFixture {
+        let pinnedA = ContentTabID(rawValue: "pin-A")
+        let pinnedB = ContentTabID(rawValue: "pin-B")
+        let pinnedC = ContentTabID(rawValue: "pin-C")
+        let target = ContentTabID(rawValue: "pin-target")
+        let trailing = ContentTabID(rawValue: "pin-trailing")
+        let locationID = "loc-1"
+
+        var initialStore: ContentTabPinnedRecordStore {
+            .init(
+                records: [
+                    CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedA,
+                        anchor: .directory(path: "/pin/A"),
+                        title: "Pinned A",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedB,
+                        anchor: .directory(path: "/pin/B"),
+                        title: "Pinned B",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedC,
+                        anchor: .directory(path: "/pin/C"),
+                        title: "Pinned C",
+                    ),
+                ],
+                topNavigationOrder: .init(items: [
+                    .location(locationID),
+                    .contentTab(pinnedA),
+                    .contentTab(pinnedB),
+                    .contentTab(pinnedC),
+                ]),
+            )
+        }
+
+        var initialState: ContentTabState {
+            .init(
+                tabs: [
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedA,
+                        anchor: .directory(path: "/pin/A"),
+                        title: "Pinned A",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedB,
+                        anchor: .directory(path: "/pin/B"),
+                        title: "Pinned B",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedC,
+                        anchor: .directory(path: "/pin/C"),
+                        title: "Pinned C",
+                    ),
+                    ContentTabItem(
+                        id: target,
+                        page: .directory,
+                        anchor: .directory(path: "/pin/target"),
+                        isPinned: false,
+                        title: "Pin Target",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: trailing,
+                        page: .directory,
+                        anchor: .directory(path: "/pin/trailing"),
+                        isPinned: false,
+                        title: "Trailing",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: target,
+                pinnedRecords: [
+                    pinnedA: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedA,
+                        anchor: .directory(path: "/pin/A"),
+                        title: "Pinned A",
+                    ),
+                    pinnedB: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedB,
+                        anchor: .directory(path: "/pin/B"),
+                        title: "Pinned B",
+                    ),
+                    pinnedC: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedC,
+                        anchor: .directory(path: "/pin/C"),
+                        title: "Pinned C",
+                    ),
+                ],
+            )
+        }
+
+        static func emptyPinnedState() -> ContentTabState {
+            let target = ContentTabID(rawValue: "empty-pin-target")
+            let sibling = ContentTabID(rawValue: "empty-pin-sibling")
+            return .init(
+                tabs: [
+                    ContentTabItem(
+                        id: target,
+                        page: .directory,
+                        anchor: .directory(path: "/empty/pin-target"),
+                        isPinned: false,
+                        title: "Pin Target",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: sibling,
+                        page: .directory,
+                        anchor: .directory(path: "/empty/pin-sibling"),
+                        isPinned: false,
+                        title: "Sibling",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: target,
+            )
+        }
+    }
+
+    @MainActor
+    private struct ExplicitUnpinPlacementFixture {
+        let pinnedA = ContentTabID(rawValue: "unpin-A")
+        let target = ContentTabID(rawValue: "unpin-target")
+        let pinnedB = ContentTabID(rawValue: "unpin-B")
+        let unpinnedA = ContentTabID(rawValue: "unpin-free-A")
+        let unpinnedB = ContentTabID(rawValue: "unpin-free-B")
+        let locationID = "loc-2"
+
+        var initialStore: ContentTabPinnedRecordStore {
+            .init(
+                records: [
+                    CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedA,
+                        anchor: .directory(path: "/unpin/A"),
+                        title: "Pinned A",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: target,
+                        anchor: .directory(path: "/unpin/target"),
+                        title: "Target",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedB,
+                        anchor: .directory(path: "/unpin/B"),
+                        title: "Pinned B",
+                    ),
+                ],
+                topNavigationOrder: .init(items: [
+                    .location(locationID),
+                    .contentTab(pinnedA),
+                    .contentTab(target),
+                    .contentTab(pinnedB),
+                ]),
+            )
+        }
+
+        var initialState: ContentTabState {
+            .init(
+                tabs: [
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedA,
+                        anchor: .directory(path: "/unpin/A"),
+                        title: "Pinned A",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: target,
+                        anchor: .directory(path: "/unpin/target"),
+                        title: "Target",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedB,
+                        anchor: .directory(path: "/unpin/B"),
+                        title: "Pinned B",
+                    ),
+                    ContentTabItem(
+                        id: unpinnedA,
+                        page: .directory,
+                        anchor: .directory(path: "/unpin/free-A"),
+                        isPinned: false,
+                        title: "Unpinned A",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: unpinnedB,
+                        page: .directory,
+                        anchor: .directory(path: "/unpin/free-B"),
+                        isPinned: false,
+                        title: "Unpinned B",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: target,
+                pinnedRecords: [
+                    pinnedA: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedA,
+                        anchor: .directory(path: "/unpin/A"),
+                        title: "Pinned A",
+                    ),
+                    target: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: target,
+                        anchor: .directory(path: "/unpin/target"),
+                        title: "Target",
+                    ),
+                    pinnedB: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedB,
+                        anchor: .directory(path: "/unpin/B"),
+                        title: "Pinned B",
+                    ),
+                ],
+            )
+        }
+
+        static func emptyUnpinnedState() -> ContentTabState {
+            let pinnedA = ContentTabID(rawValue: "empty-unpin-A")
+            let target = ContentTabID(rawValue: "empty-unpin-target")
+            let pinnedB = ContentTabID(rawValue: "empty-unpin-B")
+            return .init(
+                tabs: [
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedA,
+                        anchor: .directory(path: "/empty/unpin-A"),
+                        title: "Pinned A",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: target,
+                        anchor: .directory(path: "/empty/unpin-target"),
+                        title: "Target",
+                    ),
+                    CTM003ManagePinnedContentTabsTests.pinnedItem(
+                        id: pinnedB,
+                        anchor: .directory(path: "/empty/unpin-B"),
+                        title: "Pinned B",
+                    ),
+                ],
+                activeTabID: target,
+                pinnedRecords: [
+                    pinnedA: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedA,
+                        anchor: .directory(path: "/empty/unpin-A"),
+                        title: "Pinned A",
+                    ),
+                    target: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: target,
+                        anchor: .directory(path: "/empty/unpin-target"),
+                        title: "Target",
+                    ),
+                    pinnedB: CTM003ManagePinnedContentTabsTests.pinnedRecord(
+                        id: pinnedB,
+                        anchor: .directory(path: "/empty/unpin-B"),
+                        title: "Pinned B",
+                    ),
+                ],
+            )
+        }
+    }
+
+    // MARK: - CTM-003-restore_pinned_content_tabs
+
+    /// CTM-003-restore_pinned_content_tabs: 같은 raw ID의 Location과 Content Tab을 서로 다른 identity로 취급한다.
+    /// 통합 상단 내비게이션에서 서로 다른 tag가 raw 문자열 충돌에도 섞이지 않는지 검증한다.
+    /// - 검증 내용: tagged enum의 Equatable 및 Hashable identity
+    /// - 사전 조건: 두 case 모두 raw ID가 `same`
+    /// - 기대 결과: Location과 Content Tab identity가 같지 않음
+    func testTopNavigationItemID_sameRawIDWithDifferentTagsIsNotEqual() {
+        XCTAssertNotEqual(
+            FileManagerTopNavigationItemID.location("same"),
+            FileManagerTopNavigationItemID.contentTab(ContentTabID(rawValue: "same")),
         )
 
-        let store = try ContentTabPinnedRecordClient.liveValue.loadStore(invalidDefaults)
+        let sameID = ContentTabID(rawValue: "same")
+        let normalized = FileManagerTopNavigationOrderPolicy.normalize(
+            store: ContentTabPinnedRecordStore(
+                records: [Self.pinnedRecord(id: sameID, anchor: .directory(path: "/same"))],
+                topNavigationOrder: .init(items: [.location("same"), .contentTab(sameID)]),
+            ),
+            discoveredLocationIDs: ["same"],
+        )
+        XCTAssertEqual(normalized.durableOrder.items, [.location("same"), .contentTab(sameID)])
+    }
 
-        XCTAssertEqual(store, ContentTabPinnedRecordStore())
+    /// CTM-003-restore_pinned_content_tabs: schema v2 order가 명시적 tagged JSON으로 왕복된다.
+    /// durable wire contract가 synthesized enum 표현에 의존하지 않는지 검증한다.
+    /// - 검증 내용: schemaVersion, dense order 배열, 각 `{kind,id}` exact key/value 및 round-trip
+    /// - 사전 조건: Location과 Content Tab이 하나씩 포함된 schema v2 store
+    /// - 기대 결과: 정확한 wire shape와 원본 store가 복원됨
+    func testTopNavigationOrder_schemaV2UsesExactTaggedWireShapeAndRoundTrips() throws {
+        let store = ContentTabPinnedRecordStore(
+            records: [],
+            topNavigationOrder: .init(items: [
+                .location("L1"),
+                .contentTab(ContentTabID(rawValue: "A")),
+            ]),
+        )
+
+        let data = try JSONEncoder().encode(store)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let order = try XCTUnwrap(object["topNavigationOrder"] as? [[String: String]])
+
+        XCTAssertEqual(object["schemaVersion"] as? Int, 2)
+        XCTAssertEqual(order, [
+            ["kind": "location", "id": "L1"],
+            ["kind": "contentTab", "id": "A"],
+        ])
+        XCTAssertEqual(try JSONDecoder().decode(ContentTabPinnedRecordStore.self, from: data), store)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: v1 record를 discovered Location 앞순서와 함께 메모리에서 migration한다.
+    /// 기존 pinned record를 보존하면서 load-only 경로가 저장소를 수정하지 않는지 검증한다.
+    /// - 검증 내용: migratedV1 category, `[L1,L2,A,B]` exact order, record 보존, write 0회
+    /// - 사전 조건: 독립 v1 fixture `[A,B]`와 discovered Locations `[L1,L2]`
+    /// - 기대 결과: schema v2 writable store가 메모리에만 생성되고 원본 bytes가 유지됨
+    func testPinnedRecordClient_v1LoadMigratesInMemoryWithoutWriting() throws {
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "A"), anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "B"), anchor: .directory(path: "/B")),
+        ]
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreV1Fixture(records: records))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: ["L1", "L2"],
+        )
+
+        guard case let .migratedV1(store) = outcome else {
+            return XCTFail("v1 payload는 migratedV1이어야 함: \(outcome)")
+        }
+        XCTAssertEqual(store.schemaVersion, 2)
+        XCTAssertEqual(store.records, records)
+        XCTAssertEqual(store.topNavigationOrder.items, [
+            .location("L1"),
+            .location("L2"),
+            .contentTab(ContentTabID(rawValue: "A")),
+            .contentTab(ContentTabID(rawValue: "B")),
+        ])
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: order 필드가 없는 과도기 v2 payload를 메모리에서 migration한다.
+    /// 유효한 pinned record를 corrupt fallback으로 숨기지 않고 원본 bytes를 유지하는지 검증한다.
+    /// - 검증 내용: migratedLegacyV2 category, discovered Location 뒤 record order, write 0회
+    /// - 사전 조건: schemaVersion 2와 records `[A,B]`는 있지만 `topNavigationOrder`가 없는 payload
+    /// - 기대 결과: schema v2 writable store가 메모리에 생성되고 pinned records와 원본 bytes가 보존됨
+    func testPinnedRecordClient_legacyV2WithoutOrderMigratesInMemoryWithoutWriting() throws {
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "A"), anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "B"), anchor: .directory(path: "/B")),
+        ]
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreLegacyV2Fixture(records: records))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: ["L1", "L2"],
+        )
+
+        guard case let .migratedLegacyV2(store) = outcome else {
+            return XCTFail("order 없는 과도기 v2 payload는 migratedLegacyV2여야 함: \(outcome)")
+        }
+        XCTAssertEqual(store.schemaVersion, 2)
+        XCTAssertEqual(store.records, records)
+        XCTAssertEqual(store.topNavigationOrder.items, [
+            .location("L1"),
+            .location("L2"),
+            .contentTab(ContentTabID(rawValue: "A")),
+            .contentTab(ContentTabID(rawValue: "B")),
+        ])
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 저장 값 부재를 명시적인 missing으로 분류한다.
+    /// 최초 실행과 손상 상태가 같은 empty fallback으로 합쳐지지 않는지 검증한다.
+    /// - 검증 내용: missing category와 write 0회
+    /// - 사전 조건: storage key에 Data가 없음
+    /// - 기대 결과: missing이며 빈 schema v2 writable store만 메모리에서 제공됨
+    func testPinnedRecordClient_missingValueReturnsTypedMissingWithoutWriting() throws {
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: nil)
+
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: ["L1"],
+        )
+
+        XCTAssertEqual(outcome, .missing)
+        XCTAssertEqual(outcome.writableStore, ContentTabPinnedRecordStore())
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 유효한 schema v2 payload를 currentV2로 분류한다.
+    /// 단순 current load가 저장 값을 다시 encode하거나 쓰지 않는지 검증한다.
+    /// - 검증 내용: currentV2 category, store/bytes 보존, write 0회
+    /// - 사전 조건: tagged order를 포함한 유효한 schema v2 Data
+    /// - 기대 결과: 원본 store가 반환되고 source bytes가 변경되지 않음
+    func testPinnedRecordClient_schemaV2LoadReturnsCurrentWithoutWriting() throws {
+        let store = ContentTabPinnedRecordStore(
+            topNavigationOrder: .init(items: [.location("L1")]),
+        )
+        let sourceData = try JSONEncoder().encode(store)
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [],
+        )
+
+        XCTAssertEqual(outcome, .currentV2(store))
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: malformed JSON을 writable store로 복구하지 않는다.
+    /// 손상 payload가 missing과 구분되고 원본 bytes를 유지하는지 검증한다.
+    /// - 검증 내용: corruptUnavailable category, source bytes, write 0회
+    /// - 사전 조건: JSON이 아닌 raw Data
+    /// - 기대 결과: unavailable이며 writable store가 생성되지 않음
+    func testPinnedRecordClient_malformedPayloadPreservesBytesAndDoesNotWrite() throws {
+        let sourceData = Data("not-json".utf8)
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [],
+        )
+
+        XCTAssertEqual(outcome, .corruptUnavailable(originalData: sourceData, reason: .invalidPayload))
+        XCTAssertNil(outcome.writableStore)
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 미래 schema payload를 손상과 다른 unavailable로 분류한다.
+    /// 현재 앱이 이해하지 못하는 bytes를 downgrade rewrite하지 않는지 검증한다.
+    /// - 검증 내용: futureSchemaUnavailable version/source bytes와 write 0회
+    /// - 사전 조건: schemaVersion 3 payload
+    /// - 기대 결과: future category이며 writable store가 생성되지 않음
+    func testPinnedRecordClient_futureSchemaPreservesBytesAndDoesNotWrite() throws {
+        let sourceData = Data(#"{"schemaVersion":3,"records":[],"topNavigationOrder":[]}"#.utf8)
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [],
+        )
+
+        XCTAssertEqual(outcome, .futureSchemaUnavailable(schemaVersion: 3, originalData: sourceData))
+        XCTAssertNil(outcome.writableStore)
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 알 수 없는 kind를 corrupt unavailable로 거부한다.
+    /// tagged identity discriminator가 임의 case로 확장되지 않는지 검증한다.
+    /// - 검증 내용: unknown kind의 deterministic corrupt classification
+    /// - 사전 조건: schema v2 order item의 kind가 `other`
+    /// - 기대 결과: 원본 bytes를 보존한 corruptUnavailable
+    func testPinnedRecordClient_unknownTaggedKindIsCorruptUnavailable() throws {
+        try assertCorruptTaggedItem(#"{"kind":"other","id":"A"}"#)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: id가 누락된 tagged item을 거부한다.
+    /// required-field decoding이 누락을 암묵적인 빈 문자열로 바꾸지 않는지 검증한다.
+    /// - 검증 내용: missing id의 deterministic corrupt classification
+    /// - 사전 조건: schema v2 order item에 kind만 존재
+    /// - 기대 결과: 원본 bytes를 보존한 corruptUnavailable
+    func testPinnedRecordClient_missingTaggedIDIsCorruptUnavailable() throws {
+        try assertCorruptTaggedItem(#"{"kind":"location"}"#)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 빈 id의 tagged item을 거부한다.
+    /// durable identity가 빈 문자열로 생성되지 않는지 검증한다.
+    /// - 검증 내용: empty id의 deterministic corrupt classification
+    /// - 사전 조건: schema v2 order item의 id가 빈 문자열
+    /// - 기대 결과: 원본 bytes를 보존한 corruptUnavailable
+    func testPinnedRecordClient_emptyTaggedIDIsCorruptUnavailable() throws {
+        try assertCorruptTaggedItem(#"{"kind":"location","id":""}"#)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 문자열이 아닌 id의 tagged item을 거부한다.
+    /// JSON type mismatch가 문자열 변환이나 기본값으로 흡수되지 않는지 검증한다.
+    /// - 검증 내용: non-string id의 deterministic corrupt classification
+    /// - 사전 조건: schema v2 order item의 id가 숫자
+    /// - 기대 결과: 원본 bytes를 보존한 corruptUnavailable
+    func testPinnedRecordClient_nonStringTaggedIDIsCorruptUnavailable() throws {
+        try assertCorruptTaggedItem(#"{"kind":"contentTab","id":42}"#)
+    }
+
+    private func assertCorruptTaggedItem(
+        _ itemJSON: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) throws {
+        let sourceData = Data(
+            "{\"schemaVersion\":2,\"records\":[],\"topNavigationOrder\":[\(itemJSON)]}".utf8,
+        )
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+        let outcome = try ContentTabPinnedRecordClient.liveValue.loadStoreOutcome(
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [],
+        )
+
+        XCTAssertEqual(
+            outcome,
+            .corruptUnavailable(originalData: sourceData, reason: .invalidPayload),
+            file: file,
+            line: line,
+        )
+        XCTAssertNil(outcome.writableStore, file: file, line: line)
+        XCTAssertEqual(defaultsRecorder.data(), sourceData, file: file, line: line)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0, file: file, line: line)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: durable order를 정해진 1→7 순서로 정규화한다.
+    /// 중복, orphan, tombstone, 누락 pin, 새 Location이 서로 다른 단계에서 결정되는 대표 복구 경로를 검증한다.
+    /// - 검증 내용: full-tag first-wins, invalid/orphan 제거, Location tombstone 보존, record-order append, canonical discovery
+    /// insertion, projection 분리
+    /// - 사전 조건: `[L1,A,L1,orphan,absent]`, pinned records `[A,B]`, discovered Locations `[L1,L2]`
+    /// - 기대 결과: discovery 전 `[L1,A,absent,B]`, 최종 durable `[L1,A,absent,L2,B]`, visible에서 absent 제거
+    func testTopNavigationOrderPolicy_normalizesInCanonicalStageOrder() {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let records = [
+            Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+        ]
+        let store = ContentTabPinnedRecordStore(
+            records: records,
+            topNavigationOrder: .init(items: [
+                .location("L1"),
+                .contentTab(tabA),
+                .location("L1"),
+                .contentTab(ContentTabID(rawValue: "orphan")),
+                .location("absentLocation"),
+                .location(""),
+            ]),
+        )
+
+        let beforeDiscovery = FileManagerTopNavigationOrderPolicy.normalize(
+            store: store,
+            discoveredLocationIDs: ["L1"],
+        )
+        XCTAssertEqual(beforeDiscovery.durableOrder.items, [
+            .location("L1"), .contentTab(tabA), .location("absentLocation"), .contentTab(tabB),
+        ])
+
+        let result = FileManagerTopNavigationOrderPolicy.normalize(
+            store: store,
+            discoveredLocationIDs: ["L1", "L2"],
+        )
+        XCTAssertEqual(result.durableOrder.items, [
+            .location("L1"), .contentTab(tabA), .location("absentLocation"),
+            .location("L2"), .contentTab(tabB),
+        ])
+        XCTAssertEqual(result.normalizedStore.topNavigationOrder, result.durableOrder)
+        XCTAssertEqual(result.visibleMixedTopOrder.items, [
+            .location("L1"), .contentTab(tabA), .location("L2"), .contentTab(tabB),
+        ])
+    }
+
+    /// CTM-003-pin_content_tab_s: 신규 pin과 same-session/restart repin 삽입 위치를 구분한다.
+    /// runtime dormant slot이 durable DTO에 저장되지 않으면서 같은 세션 repin에만 재사용되는지 검증한다.
+    /// - 검증 내용: new/restart pin end insertion, dormant neighbor anchor insertion, runtime-only dormant projection
+    /// - 사전 조건: durable `[L1,A,L2,B]`와 L1-A 사이 dormant C slot
+    /// - 기대 결과: new/restart C는 end, same-session C는 L1-A 사이, dormant C는 durable에는 없고 runtime에만 존재
+    func testTopNavigationOrderPolicy_appliesPinAndDormantRepinInsertionContracts() {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let order = FileManagerTopNavigationOrder(items: [
+            .location("L1"), .contentTab(tabA), .location("L2"), .contentTab(tabB),
+        ])
+        let dormant = FileManagerTopNavigationOrderPolicy.DormantContentTabSlot(
+            id: tabC,
+            before: .location("L1"),
+            after: .contentTab(tabA),
+        )
+
+        XCTAssertEqual(
+            FileManagerTopNavigationOrderPolicy.insertingPinnedItem(tabC, into: order).items,
+            order.items + [.contentTab(tabC)],
+        )
+        XCTAssertEqual(
+            FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+                tabC,
+                into: order,
+                dormantSlot: dormant,
+            ).items,
+            [.location("L1"), .contentTab(tabC), .contentTab(tabA), .location("L2"), .contentTab(tabB)],
+        )
+
+        let runtime = FileManagerTopNavigationOrderPolicy.normalize(
+            store: ContentTabPinnedRecordStore(
+                records: [
+                    Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+                    Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+                ],
+                topNavigationOrder: order,
+            ),
+            discoveredLocationIDs: ["L1", "L2"],
+            dormantContentTabSlots: [dormant],
+        )
+        XCTAssertFalse(runtime.durableOrder.items.contains(.contentTab(tabC)))
+        XCTAssertEqual(runtime.runtimeOrder.items, [
+            .location("L1"), .contentTab(tabC), .contentTab(tabA), .location("L2"), .contentTab(tabB),
+        ])
+        XCTAssertFalse(runtime.visibleMixedTopOrder.items.contains(.contentTab(tabC)))
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 새 Location은 마지막 Location tombstone 뒤에 들어가고 재등장 Location은 기존 slot을 유지한다.
+    /// discovery 변화가 pinned 상대 순서나 absent Location tombstone을 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: no-location front insertion, last-location insertion, tombstone slot retention
+    /// - 사전 조건: pinned-only order와 `[L1,A,absent,B]` tombstone order
+    /// - 기대 결과: 새 Location은 canonical discovery order로 front/last tombstone 뒤, absent 재등장은 기존 위치 유지
+    func testTopNavigationOrderPolicy_insertsNewAndReappearingLocationsCanonically() {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let records = [
+            Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+        ]
+        let pinnedOnly = ContentTabPinnedRecordStore(
+            records: records,
+            topNavigationOrder: .init(items: [.contentTab(tabA), .contentTab(tabB)]),
+        )
+        XCTAssertEqual(
+            FileManagerTopNavigationOrderPolicy.normalize(
+                store: pinnedOnly,
+                discoveredLocationIDs: ["L1", "L2"],
+            ).durableOrder.items,
+            [.location("L1"), .location("L2"), .contentTab(tabA), .contentTab(tabB)],
+        )
+
+        let tombstoneStore = ContentTabPinnedRecordStore(
+            records: records,
+            topNavigationOrder: .init(items: [
+                .location("L1"), .contentTab(tabA), .location("absent"), .contentTab(tabB),
+            ]),
+        )
+        XCTAssertEqual(
+            FileManagerTopNavigationOrderPolicy.normalize(
+                store: tombstoneStore,
+                discoveredLocationIDs: ["L1", "absent", "L2"],
+            ).durableOrder.items,
+            [.location("L1"), .contentTab(tabA), .location("absent"), .location("L2"), .contentTab(tabB)],
+        )
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: semantic move는 storage lock 안에서 최신 snapshot에 적용된다.
+    /// caller가 보지 못한 pinned/Location 항목을 잃지 않고 tagged anchor 기준으로 이동하는지 검증한다.
+    /// - 검증 내용: latest load, A after B semantic move, normalized committed snapshot, 단일 write
+    /// - 사전 조건: caller 관점은 `[L1,A]`, 실제 저장소는 `[L1,A,L2,B]`
+    /// - 기대 결과: committed `[L1,L2,B,A]`, B/L2 보존, write 1회
+    func testPinnedRecordClient_semanticMoveUsesLatestLockedSnapshot() throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let latestStore = ContentTabPinnedRecordStore(
+            records: [
+                Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+                Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+            ],
+            topNavigationOrder: .init(items: [
+                .location("L1"), .contentTab(tabA), .location("L2"), .contentTab(tabB),
+            ]),
+        )
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: latestStore)
+
+        let committed = try ContentTabPinnedRecordClient.liveValue.moveTopNavigationItem(
+            defaultsRecorder.client(),
+            ["L1", "L2"],
+            .contentTab(tabA),
+            .after(.contentTab(tabB)),
+        )
+
+        XCTAssertEqual(committed.topNavigationOrder.items, [
+            .location("L1"), .location("L2"), .contentTab(tabB), .contentTab(tabA),
+        ])
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+        XCTAssertEqual(
+            try ContentTabPinnedRecordClient.liveValue.loadStore(defaultsRecorder.client()),
+            committed,
+        )
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: missing source/anchor와 unchanged move는 성공 no-op이다.
+    /// stale semantic intent가 최신 committed snapshot을 다시 쓰거나 오류로 바꾸지 않는지 검증한다.
+    /// - 검증 내용: 세 no-op 분기 반환 snapshot과 write count
+    /// - 사전 조건: normalized latest `[L1,A,B]`
+    /// - 기대 결과: 각 호출은 latest snapshot을 그대로 반환하고 write 0회
+    func testPinnedRecordClient_semanticMoveNoOpsReturnLatestWithoutWriting() throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let latestStore = ContentTabPinnedRecordStore(
+            records: [
+                Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+                Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+            ],
+            topNavigationOrder: .init(items: [.location("L1"), .contentTab(tabA), .contentTab(tabB)]),
+        )
+        let mutations: [(FileManagerTopNavigationItemID, FileManagerTopNavigationMoveDestination)] = [
+            (.contentTab(ContentTabID(rawValue: "missing")), .after(.contentTab(tabB))),
+            (.contentTab(tabA), .after(.contentTab(ContentTabID(rawValue: "missing-anchor")))),
+            (.contentTab(tabA), .before(.contentTab(tabB))),
+        ]
+
+        for (source, destination) in mutations {
+            let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: latestStore)
+            let returned = try ContentTabPinnedRecordClient.liveValue.moveTopNavigationItem(
+                defaultsRecorder.client(),
+                ["L1"],
+                source,
+                destination,
+            )
+            XCTAssertEqual(returned, latestStore)
+            XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        }
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: pinned group committed mutation은 변경 시 한 번, no-op 시 쓰지 않는다.
+    /// latest locked store에 frozen `[C, A]` block을 한 번 적용하고 invalid/unchanged 요청의 write 경계를 검증한다.
+    /// - 검증 내용: committed final order, changed write count 1, selected/stale/mixed/unchanged write count 0
+    /// - 사전 조건: `[Home, A, Downloads, B, C]` pinned store와 독립 defaults recorder
+    /// - 기대 결과: 변경은 `[Home, Downloads, C, A, B]`를 한 번 저장하고 모든 no-op은 원본 bytes를 보존한다.
+    func testPinnedRecordClient_groupMoveWritesChangedOrderOnceAndNoOpsZeroTimes() async throws {
+        let fixture = makePinnedGroupClientFixture()
+        let changedRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let changedCommit = try await ContentTabPinnedRecordClient.liveValue
+            .moveTopNavigationPinnedGroupCommitted(
+                changedRecorder.client(),
+                fixture.locationIDs,
+                fixture.orderedIDs,
+                fixture.destination,
+            )
+
+        XCTAssertEqual(changedCommit.order, fixture.expectedOrder)
+        XCTAssertEqual(changedRecorder.writeCount(), 1)
+        for scenario in fixture.noOps {
+            try await assertPinnedGroupClientNoOp(scenario, fixture: fixture)
+        }
+
+        let unchangedStore = ContentTabPinnedRecordStore(
+            records: fixture.records,
+            topNavigationOrder: fixture.expectedOrder,
+        )
+        let unchangedRecorder = try PinnedRecordDefaultsRecorder(store: unchangedStore)
+        let unchangedCommit = try await ContentTabPinnedRecordClient.liveValue
+            .moveTopNavigationPinnedGroupCommitted(
+                unchangedRecorder.client(),
+                fixture.locationIDs,
+                fixture.orderedIDs,
+                fixture.destination,
+            )
+        XCTAssertEqual(unchangedCommit.order, fixture.expectedOrder)
+        XCTAssertEqual(unchangedRecorder.writeCount(), 0)
+    }
+
+    private struct PinnedGroupClientNoOpScenario {
+        let orderedIDs: [ContentTabID]
+        let destination: FileManagerTopNavigationMoveDestination
+    }
+
+    private struct PinnedGroupClientFixture {
+        let records: [ContentTabPinnedRecord]
+        let initialStore: ContentTabPinnedRecordStore
+        let expectedOrder: FileManagerTopNavigationOrder
+        let locationIDs: [String]
+        let orderedIDs: [ContentTabID]
+        let destination: FileManagerTopNavigationMoveDestination
+        let noOps: [PinnedGroupClientNoOpScenario]
+    }
+
+    private func makePinnedGroupClientFixture() -> PinnedGroupClientFixture {
+        let tabA = ContentTabID(rawValue: "group-client-a")
+        let tabB = ContentTabID(rawValue: "group-client-b")
+        let tabC = ContentTabID(rawValue: "group-client-c")
+        let records = [
+            Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+            Self.pinnedRecord(id: tabC, anchor: .directory(path: "/C")),
+        ]
+        let initialStore = ContentTabPinnedRecordStore(
+            records: records,
+            topNavigationOrder: .init(items: [
+                .location("Home"),
+                .contentTab(tabA),
+                .location("Downloads"),
+                .contentTab(tabB),
+                .contentTab(tabC),
+            ]),
+        )
+        let expectedOrder = FileManagerTopNavigationOrder(items: [
+            .location("Home"),
+            .location("Downloads"),
+            .contentTab(tabC),
+            .contentTab(tabA),
+            .contentTab(tabB),
+        ])
+        return PinnedGroupClientFixture(
+            records: records,
+            initialStore: initialStore,
+            expectedOrder: expectedOrder,
+            locationIDs: ["Home", "Downloads"],
+            orderedIDs: [tabC, tabA],
+            destination: .after(.location("Downloads")),
+            noOps: [
+                .init(orderedIDs: [tabC, tabA], destination: .before(.contentTab(tabA))),
+                .init(orderedIDs: [tabC, tabA], destination: .after(.location("stale"))),
+                .init(
+                    orderedIDs: [tabC, ContentTabID(rawValue: "group-client-missing")],
+                    destination: .before(.location("Downloads")),
+                ),
+            ],
+        )
+    }
+
+    private func assertPinnedGroupClientNoOp(
+        _ scenario: PinnedGroupClientNoOpScenario,
+        fixture: PinnedGroupClientFixture,
+    ) async throws {
+        let recorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let sourceData = recorder.data()
+        let commit = try await ContentTabPinnedRecordClient.liveValue
+            .moveTopNavigationPinnedGroupCommitted(
+                recorder.client(),
+                fixture.locationIDs,
+                scenario.orderedIDs,
+                scenario.destination,
+            )
+        XCTAssertEqual(commit.order, fixture.initialStore.topNavigationOrder)
+        XCTAssertEqual(recorder.writeCount(), 0)
+        XCTAssertEqual(recorder.data(), sourceData)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 비정규화된 latest store의 no-op은 저장된 원본 snapshot을 반환한다.
+    /// normalization이 move 판단에만 사용되고 쓰지 않은 projection을 committed 결과로 노출하지 않는지 검증한다.
+    /// - 검증 내용: latest raw store load, normalized unchanged 판단, exact raw snapshot 반환, write count
+    /// - 사전 조건: duplicate Location과 orphan ContentTab이 있는 persisted order에서 A before B 요청
+    /// - 기대 결과: 반환값은 비정규화 persisted store와 정확히 같고 write는 0회
+    func testPinnedRecordClient_semanticMoveNoOpReturnsExactNonNormalizedLatestStore() throws {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let latestStore = ContentTabPinnedRecordStore(
+            records: [
+                Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A")),
+                Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B")),
+            ],
+            topNavigationOrder: .init(items: [
+                .location("L1"),
+                .contentTab(tabA),
+                .location("L1"),
+                .contentTab(ContentTabID(rawValue: "orphan")),
+                .contentTab(tabB),
+            ]),
+        )
+        let normalizedStore = FileManagerTopNavigationOrderPolicy.normalize(
+            store: latestStore,
+            discoveredLocationIDs: ["L1"],
+        ).normalizedStore
+        XCTAssertNotEqual(latestStore, normalizedStore)
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: latestStore)
+        let sourceData = defaultsRecorder.data()
+
+        let returned = try ContentTabPinnedRecordClient.liveValue.moveTopNavigationItem(
+            defaultsRecorder.client(),
+            ["L1"],
+            .contentTab(tabA),
+            .before(.contentTab(tabB)),
+        )
+
+        XCTAssertEqual(returned, latestStore)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: v1의 첫 실제 semantic mutation만 normalized schema v2를 기록한다.
+    /// lazy migration bytes가 read 시점이 아니라 성공한 order 변경 시점에 한 번만 교체되는지 검증한다.
+    /// - 검증 내용: v1 latest load, normalized move, schema v2 encode, write 1회
+    /// - 사전 조건: v1 records `[A,B]`, discovered Location `[L1]`, A after B mutation
+    /// - 기대 결과: `[L1,B,A]` schema v2가 한 번 저장됨
+    func testPinnedRecordClient_firstSuccessfulV1MutationWritesNormalizedV2Once() throws {
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "A"), anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "B"), anchor: .directory(path: "/B")),
+        ]
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreV1Fixture(records: records))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let committed = try ContentTabPinnedRecordClient.liveValue.moveTopNavigationItem(
+            defaultsRecorder.client(),
+            ["L1"],
+            .contentTab(ContentTabID(rawValue: "A")),
+            .after(.contentTab(ContentTabID(rawValue: "B"))),
+        )
+
+        XCTAssertEqual(committed.schemaVersion, 2)
+        XCTAssertEqual(committed.topNavigationOrder.items, [
+            .location("L1"), .contentTab(ContentTabID(rawValue: "B")),
+            .contentTab(ContentTabID(rawValue: "A")),
+        ])
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+        XCTAssertNotEqual(defaultsRecorder.data(), sourceData)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: 과도기 v2의 첫 semantic mutation은 완전한 schema v2를 기록한다.
+    /// 누락된 order를 load 시 덮어쓰지 않고 실제 사용자 변경 시에만 교체하는 lazy migration을 검증한다.
+    /// - 검증 내용: legacy-v2 latest load, normalized move, 완전한 v2 encode, write 1회
+    /// - 사전 조건: order 없는 v2 records `[A,B]`, discovered Location `[L1]`, A after B mutation
+    /// - 기대 결과: `[L1,B,A]`와 `topNavigationOrder` 필드가 한 번 저장됨
+    func testPinnedRecordClient_firstSuccessfulLegacyV2MutationWritesNormalizedV2Once() throws {
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "A"), anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "B"), anchor: .directory(path: "/B")),
+        ]
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreLegacyV2Fixture(records: records))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+
+        let committed = try ContentTabPinnedRecordClient.liveValue.moveTopNavigationItem(
+            defaultsRecorder.client(),
+            ["L1"],
+            .contentTab(ContentTabID(rawValue: "A")),
+            .after(.contentTab(ContentTabID(rawValue: "B"))),
+        )
+
+        XCTAssertEqual(committed.schemaVersion, 2)
+        XCTAssertEqual(committed.topNavigationOrder.items, [
+            .location("L1"), .contentTab(ContentTabID(rawValue: "B")),
+            .contentTab(ContentTabID(rawValue: "A")),
+        ])
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+        let storedData = try XCTUnwrap(defaultsRecorder.data())
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: storedData) as? [String: Any])
+        XCTAssertNotNil(object["topNavigationOrder"])
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: v1 semantic mutation 저장 실패는 원본 bytes를 보존한다.
+    /// write 경계 실패가 load-corrupt로 오분류되지 않고 save error 그대로 전달되는지 검증한다.
+    /// - 검증 내용: migrated v1 transform 이후 throwing save, 원본 bytes/write count 보존
+    /// - 사전 조건: 유효한 v1 `[A,B]`와 saveStore failure
+    /// - 기대 결과: injected save failure가 반환되고 원본 v1 bytes가 유지됨
+    func testPinnedRecordClient_failedV1MutationPreservesOriginalBytes() throws {
+        enum SaveFailure: Error, Equatable { case expected }
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "A"), anchor: .directory(path: "/A")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "B"), anchor: .directory(path: "/B")),
+        ]
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreV1Fixture(records: records))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+        let live = ContentTabPinnedRecordClient.liveValue
+        let client = ContentTabPinnedRecordClient(
+            loadStore: live.loadStore,
+            classifyStoreLoad: live.classifyStoreLoad,
+            saveStore: { _, _ in throw SaveFailure.expected },
+        )
+
+        XCTAssertThrowsError(try client.moveTopNavigationItem(
+            defaultsRecorder.client(),
+            ["L1"],
+            .contentTab(ContentTabID(rawValue: "A")),
+            .after(.contentTab(ContentTabID(rawValue: "B"))),
+        )) { error in
+            XCTAssertEqual(error as? SaveFailure, .expected)
+        }
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-restore_pinned_content_tabs: corrupt/future unavailable store는 semantic mutation을 거부한다.
+    /// 이해할 수 없는 저장 상태가 writable empty store로 바뀌거나 rewrite되지 않는지 검증한다.
+    /// - 검증 내용: typed rejection, source bytes 보존, write 0회
+    /// - 사전 조건: malformed payload와 schemaVersion 3 payload
+    /// - 기대 결과: 각각 corrupt/future load error이며 bytes가 그대로 유지됨
+    func testPinnedRecordClient_unavailableStoreRejectsSemanticMoveWithoutWriting() throws {
+        let fixtures: [(Data, ContentTabPinnedRecordStoreLoadError)] = [
+            (Data("not-json".utf8), .corruptUnavailable),
+            (Data(#"{"schemaVersion":3,"records":[],"topNavigationOrder":[]}"#.utf8), .futureSchemaUnavailable(3)),
+        ]
+
+        for (sourceData, expectedError) in fixtures {
+            let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+            XCTAssertThrowsError(try ContentTabPinnedRecordClient.liveValue.moveTopNavigationItem(
+                defaultsRecorder.client(),
+                [],
+                .location("L1"),
+                .after(.location("L2")),
+            )) { error in
+                XCTAssertEqual(error as? ContentTabPinnedRecordStoreLoadError, expectedError)
+            }
+            XCTAssertEqual(defaultsRecorder.data(), sourceData)
+            XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        }
+    }
+
+    /// CTM-003-pin_content_tab_s: v1 첫 lifecycle mutation은 발견된 Location identity를 보존한다.
+    /// lazy migration이 실제 window discovery를 사용해 mixed order를 완전한 schema v2로 기록하는지 검증한다.
+    /// - 검증 내용: 첫 pin 뒤 저장된 order의 non-empty Location ID와 신규 Content Tab
+    /// - 사전 조건: Location L1이 발견된 window, v1 records A, unpinned B
+    /// - 기대 결과: 저장된 schema v2 order가 `[L1,A,B]`를 유지함
+    func testLifecycle_firstV1PinMutationRetainsDiscoveredLocationIDs() async throws {
+        let existingTabID = ContentTabID(rawValue: "legacy-A")
+        let newTabID = ContentTabID(rawValue: "new-B")
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreV1Fixture(records: [
+            Self.pinnedRecord(id: existingTabID, anchor: .directory(path: "/A")),
+        ]))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+        let fixedLocation = FileManagerFixedLocationItem(
+            id: "L1",
+            title: "Location",
+            path: "/Users/test/Location",
+            iconName: "folder",
+            accessibilityLabel: "Location",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: newTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/B"),
+                    isPinned: false,
+                    title: "B",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: newTabID,
+        )
+        state.applyFixedLocationItems([fixedLocation])
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: lifecycle terminal 내부 action보다 migration 결과를 집중 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.contentTabs(.pin(newTabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        let stored = try ContentTabPinnedRecordClient.liveValue.loadStore(defaultsRecorder.client())
+        XCTAssertEqual(stored.topNavigationOrder.items, [
+            .location(fixedLocation.id),
+            .contentTab(existingTabID),
+            .contentTab(newTabID),
+        ])
+    }
+
+    private func topNavigationToken(_ value: UInt8) -> FileManagerTopNavigationOperationToken {
+        FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, value,
+        )))
+    }
+
+    private func makeParentExplicitPinWindowState(
+        pinnedIDs: [ContentTabID],
+        targetID: ContentTabID,
+        trailingID: ContentTabID,
+        locationID: String,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        let pinnedTabs = pinnedIDs.enumerated().map { index, id in
+            ContentTabItem(
+                id: id,
+                page: .directory,
+                anchor: .directory(path: "/parent/\(index)"),
+                isPinned: true,
+                title: "Pinned \(index)",
+                iconName: "folder",
+            )
+        }
+        let pinnedRecords = Dictionary(uniqueKeysWithValues: pinnedIDs.enumerated().map { index, id in
+            (
+                id,
+                Self.pinnedRecord(
+                    id: id,
+                    anchor: .directory(path: "/parent/\(index)"),
+                    title: "Pinned \(index)",
+                    iconName: "folder",
+                ),
+            )
+        })
+        state.contentTabs = ContentTabState(
+            tabs: IdentifiedArray(uniqueElements: pinnedTabs + [
+                ContentTabItem(
+                    id: targetID,
+                    page: .directory,
+                    anchor: .directory(path: "/parent/target"),
+                    isPinned: false,
+                    title: "Target",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: trailingID,
+                    page: .directory,
+                    anchor: .directory(path: "/parent/trailing"),
+                    isPinned: false,
+                    title: "Trailing",
+                    iconName: "folder",
+                ),
+            ]),
+            activeTabID: targetID,
+            pinnedRecords: pinnedRecords,
+        )
+        state
+            .lastConfirmedTopNavigationOrder = .init(items: [.location(locationID)] + pinnedIDs.map { .contentTab($0) })
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        return state
+    }
+
+    /// CTM-003-pin_content_tab_s: pin/unpin helper는 records와 mixed order를 한 store 값으로 변경한다.
+    /// lifecycle transform이 record-only snapshot을 만들지 않고 tagged order까지 함께 확정하는지 검증한다.
+    /// - 검증 내용: pin append와 unpin 제거 뒤 records/order 일치
+    /// - 사전 조건: Location L1만 있는 schema-v2 store와 신규 A record
+    /// - 기대 결과: pin은 `[L1,A]`, unpin은 `[L1]`이며 어느 시점에도 orphan durable ID가 없음
+    func testPinnedRecordLifecycleHelpers_updateRecordsAndOrderAtomically() {
+        let tabID = ContentTabID(rawValue: "lifecycle-A")
+        let record = Self.pinnedRecord(id: tabID, anchor: .directory(path: "/A"))
+        let initial = ContentTabPinnedRecordStore(
+            topNavigationOrder: .init(items: [.location("L1")]),
+        )
+
+        let pinned = upsertPinnedRecord(record, in: initial)
+        XCTAssertEqual(pinned.records, [record])
+        XCTAssertEqual(pinned.topNavigationOrder.items, [.location("L1"), .contentTab(tabID)])
+
+        let unpinned = removePinnedRecord(id: tabID.rawValue, from: pinned)
+        XCTAssertTrue(unpinned.records.isEmpty)
+        XCTAssertEqual(unpinned.topNavigationOrder.items, [.location("L1")])
+    }
+
+    /// CTM-003-unpin_content_tab_s: same-session unpin은 semantic 이웃 anchor dormant slot을 한 개 남긴다.
+    /// raw index가 아니라 현재 mixed order의 before/after identity를 window-local 상태에 기록하는지 검증한다.
+    /// - 검증 내용: A unpin 직후 dormant slot과 durable optimistic projection
+    /// - 사전 조건: mixed order `[L1,A,L2,B]`와 pinned A/B runtime
+    /// - 기대 결과: A slot은 before L1/after L2이고 durable optimistic order에서 A가 제거됨
+    func testUnpin_recordsOneWindowLocalDormantNeighborAnchor() {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let recordA = Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A"))
+        let recordB = Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B"))
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: tabA, anchor: .directory(path: "/A"), title: "A"),
+                Self.pinnedItem(id: tabB, anchor: .directory(path: "/B"), title: "B"),
+            ],
+            activeTabID: tabA,
+            pinnedRecords: [tabA: recordA, tabB: recordB],
+        )
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .location("L1"), .contentTab(tabA), .location("L2"), .contentTab(tabB),
+        ])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+
+        _ = FileManagerFeature().reduce(into: &state, action: .contentTabs(.unpin(tabA)))
+
+        XCTAssertEqual(state.dormantContentTabSlots, [.init(
+            id: tabA,
+            before: .location("L1"),
+            after: .location("L2"),
+        )])
+        XCTAssertEqual(state.optimisticTopNavigationOrder.items, [
+            .location("L1"), .location("L2"), .contentTab(tabB),
+        ])
+        XCTAssertEqual(state.contentTabs.tabs.filter { !$0.isPinned }.map(\.id), [tabA])
+    }
+
+    /// CTM-003-pin_content_tab_s: same-session repin은 dormant anchor를 복원하고 restart repin은 end에 붙인다.
+    /// window-local slot 유무만으로 동일 tab의 durable 삽입 위치가 달라지는 lifecycle 계약을 검증한다.
+    /// - 검증 내용: unpin commit, same-session repin commit, slot 없는 restart-equivalent repin commit
+    /// - 사전 조건: durable `[L1,A,L2,B]`와 pinned A/B
+    /// - 기대 결과: same-session은 원래 slot, restart-equivalent는 `[L1,L2,B,A]`
+    func testLifecycle_sameSessionRepinRestoresAnchorAndRestartRepinAppends() async throws {
+        let tabA = ContentTabID(rawValue: "lifecycle-repin-A")
+        let tabB = ContentTabID(rawValue: "lifecycle-repin-B")
+        let recordA = Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A"), title: "A")
+        let recordB = Self.pinnedRecord(id: tabB, anchor: .directory(path: "/B"), title: "B")
+        let initialOrder = FileManagerTopNavigationOrder(items: [
+            .location("L1"), .contentTab(tabA), .location("L2"), .contentTab(tabB),
+        ])
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: .init(
+            records: [recordA, recordB],
+            topNavigationOrder: initialOrder,
+        ))
+        var initialState = FileManagerFeature.State()
+        initialState.contentTabs = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: tabA, anchor: .directory(path: "/A"), title: "A"),
+                Self.pinnedItem(id: tabB, anchor: .directory(path: "/B"), title: "B"),
+            ],
+            activeTabID: tabA,
+            pinnedRecords: [tabA: recordA, tabB: recordB],
+        )
+        initialState.lastConfirmedTopNavigationOrder = initialOrder
+        initialState.optimisticTopNavigationOrder = initialOrder
+        let sameSession = TestStore(initialState: initialState) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: lifecycle 내부 terminal보다 최종 durable/runtime 계약을 집중 검증한다.
+        sameSession.exhaustivity = .off(showSkippedAssertions: false)
+
+        await sameSession.send(.contentTabs(.unpin(tabA)))
+        await sameSession.skipReceivedActions(strict: false)
+        await sameSession.finish()
+        XCTAssertEqual(sameSession.state.dormantContentTabSlots.count, 1)
+        XCTAssertEqual(sameSession.state.contentTabs.tabs.filter { !$0.isPinned }.map(\.id), [tabA])
+        await sameSession.send(.contentTabs(.pin(tabA)))
+        await sameSession.skipReceivedActions(strict: false)
+        await sameSession.finish()
+
+        let sameSessionStore = try ContentTabPinnedRecordClient.liveValue.loadStore(defaultsRecorder.client())
+        XCTAssertEqual(sameSessionStore.topNavigationOrder, initialOrder)
+        XCTAssertTrue(sameSession.state.dormantContentTabSlots.isEmpty)
+
+        let restartRecorder = try PinnedRecordDefaultsRecorder(store: removePinnedRecord(
+            id: tabA.rawValue,
+            from: .init(records: [recordA, recordB], topNavigationOrder: initialOrder),
+        ))
+        var restartState = initialState
+        restartState.contentTabs.tabs[id: tabA]?.isPinned = false
+        restartState.contentTabs.pinnedRecords.removeValue(forKey: tabA)
+        restartState.dormantContentTabSlots = []
+        restartState.lastConfirmedTopNavigationOrder = .init(items: [
+            .location("L1"), .location("L2"), .contentTab(tabB),
+        ])
+        restartState.optimisticTopNavigationOrder = restartState.lastConfirmedTopNavigationOrder
+        let restarted = TestStore(initialState: restartState) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = restartRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: restart-equivalent 최종 삽입 위치와 write 결과를 집중 검증한다.
+        restarted.exhaustivity = .off(showSkippedAssertions: false)
+        await restarted.send(.contentTabs(.pin(tabA)))
+        await restarted.skipReceivedActions(strict: false)
+        await restarted.finish()
+
+        XCTAssertEqual(
+            try ContentTabPinnedRecordClient.liveValue.loadStore(restartRecorder.client())
+                .topNavigationOrder.items,
+            [.location("L1"), .location("L2"), .contentTab(tabB), .contentTab(tabA)],
+        )
+    }
+
+    /// CTM-003-unpin_content_tab_s: pinned close와 dormant-unpinned close는 durable ID와 slot을 모두 제거한다.
+    /// close가 generic unpin처럼 dormant residue를 남기지 않고 기존 active fallback을 수행하는지 검증한다.
+    /// - 검증 내용: pinned close atomic removal/runtime close와 dormant unpinned close cleanup
+    /// - 사전 조건: active pinned A, unpinned B 및 별도 dormant C
+    /// - 기대 결과: A/C tab·record·order·slot residue가 없고 B가 active임
+    func testLifecycle_closeRemovesPinnedAndDormantResidue() async throws {
+        let tabA = ContentTabID(rawValue: "close-pinned-A")
+        let tabB = ContentTabID(rawValue: "close-fallback-B")
+        let recordA = Self.pinnedRecord(id: tabA, anchor: .directory(path: "/A"), title: "A")
+        let initialOrder = FileManagerTopNavigationOrder(items: [.location("L1"), .contentTab(tabA)])
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: .init(
+            records: [recordA],
+            topNavigationOrder: initialOrder,
+        ))
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: tabA, anchor: .directory(path: "/A"), title: "A"),
+                ContentTabItem(
+                    id: tabB, page: .home, anchor: .homeDefault, isPinned: false,
+                    title: "Home", iconName: "house",
+                ),
+            ],
+            activeTabID: tabA,
+            pinnedRecords: [tabA: recordA],
+        )
+        state.lastConfirmedTopNavigationOrder = initialOrder
+        state.optimisticTopNavigationOrder = initialOrder
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: close coordinator의 내부 action보다 최종 residue와 active fallback을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.closeContentTabRequested(tabA))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: tabA])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertTrue(store.state.dormantContentTabSlots.isEmpty)
+        let closedStore = try ContentTabPinnedRecordClient.liveValue.loadStore(defaultsRecorder.client())
+        XCTAssertFalse(closedStore.records.contains { $0.id == tabA.rawValue })
+        XCTAssertFalse(closedStore.topNavigationOrder.items.contains(.contentTab(tabA)))
+
+        var dormantState = store.state
+        dormantState.dormantContentTabSlots = [.init(
+            id: tabB, before: .location("L1"), after: nil,
+        )]
+        _ = FileManagerFeature().reduce(into: &dormantState, action: .closeContentTabRequested(tabB))
+        XCTAssertTrue(dormantState.dormantContentTabSlots.isEmpty)
+    }
+
+    /// CTM-003-unpin_content_tab_s: pending unpin 중 close는 dormant anchor까지 완전한 no-op이다.
+    /// close gate가 durable terminal 전 runtime repin 위치를 먼저 지우지 않는지 검증한다.
+    /// - 검증 내용: pending marker가 있는 unpinned tab의 close 요청 이후 tab·dormant slot 보존
+    /// - 사전 조건: optimistic unpin 상태와 same-session dormant anchor
+    /// - 기대 결과: tab과 anchor가 그대로 남아 성공 terminal 이후 repin 위치를 복원할 수 있음
+    func testLifecycle_pendingUnpinClosePreservesDormantAnchor() {
+        let tabID = ContentTabID(rawValue: "pending-unpin-close")
+        let dormantSlot = FileManagerTopNavigationOrderPolicy.DormantContentTabSlot(
+            id: tabID,
+            before: .location("L1"),
+            after: .location("L2"),
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Pending",
+                iconName: "house",
+            )],
+            activeTabID: tabID,
+        )
+        state.contentTabs.pendingPinnedRecordIDs = [tabID]
+        state.dormantContentTabSlots = [dormantSlot]
+
+        _ = FileManagerFeature().reduce(into: &state, action: .closeContentTabRequested(tabID))
+
+        XCTAssertNotNil(state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(state.dormantContentTabSlots, [dormantSlot])
+        XCTAssertEqual(state.contentTabs.pendingPinnedRecordIDs, [tabID])
+    }
+
+    /// CTM-003-pin_content_tab_s: corrupt store pin은 bytes를 보존하고 load-unavailable로 남는다.
+    /// unavailable store를 writable empty state로 취급하거나 save rollback으로 오분류하지 않는지 검증한다.
+    /// - 검증 내용: write 0, source bytes, local rollback, typed availability/presentation
+    /// - 사전 조건: malformed persisted bytes와 unpinned A
+    /// - 기대 결과: bytes 불변, A unpinned, corrupt/loadUnavailable 상태 유지
+    func testLifecycle_unavailablePinPreservesBytesAndPresentation() async {
+        let tabID = ContentTabID(rawValue: "unavailable-pin")
+        let sourceData = Data("not-json".utf8)
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID, page: .directory, anchor: .directory(path: "/A"),
+                isPinned: false, title: "A", iconName: "folder",
+            )],
+            activeTabID: tabID,
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: typed unavailable terminal 이후 최종 rollback과 byte 보존을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.contentTabs(.pin(tabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertEqual(store.state.topNavigationArrangementAvailability, .unavailable(.corrupt))
+        XCTAssertEqual(store.state.topNavigationArrangementPresentation, .loadUnavailable)
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: pinned anchor 갱신도 unavailable store를 load failure로 표시한다.
+    /// metadata 갱신 경로가 corrupt bytes를 save rollback으로 오분류하지 않는지 검증한다.
+    /// - 검증 내용: runtime anchor 유지, frozen record rollback, bytes/write 0, loadUnavailable presentation
+    /// - 사전 조건: pinned A와 malformed persisted bytes
+    /// - 기대 결과: runtime은 새 anchor, record는 이전 snapshot이며 corrupt/loadUnavailable 상태가 됨
+    func testPinnedAnchorUpdate_unavailableStoreUsesLoadUnavailablePresentation() async {
+        let tabID = ContentTabID(rawValue: "unavailable-anchor-update")
+        let oldAnchor = ContentTabPageAnchor.directory(path: "/old")
+        let newAnchor = ContentTabPageAnchor.directory(path: "/new")
+        let oldRecord = Self.pinnedRecord(id: tabID, anchor: oldAnchor, title: "Old")
+        let sourceData = Data("not-json".utf8)
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [Self.pinnedItem(id: tabID, anchor: oldAnchor, title: "Old")],
+            activeTabID: tabID,
+            pinnedRecords: [tabID: oldRecord],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: metadata persistence terminal 뒤 typed presentation과 runtime/record 분리를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.contentTabs(.updateActivePageAnchor(tabID, newAnchor)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(defaultsRecorder.data(), sourceData)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, newAnchor)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[tabID], oldRecord)
+        XCTAssertEqual(store.state.topNavigationArrangementAvailability, .unavailable(.corrupt))
+        XCTAssertEqual(store.state.topNavigationArrangementPresentation, .loadUnavailable)
+    }
+
+    /// CTM-003-pin_content_tab_s: save failure는 confirmed order와 runtime cache를 보존해 reconcile한다.
+    /// optimistic pin rollback이 active route나 tab content cache를 captured store snapshot으로 덮지 않는지 검증한다.
+    /// - 검증 내용: saveRollback, confirmed/optimistic equality, runtime route/cache identity
+    /// - 사전 조건: confirmed L1, active directory A cache와 throwing guarded write
+    /// - 기대 결과: A는 unpinned, order는 L1, cache/route는 그대로이며 saveRollback만 표시됨
+    func testLifecycle_saveFailureReconcilesWithoutCorruptingRuntimeCache() async {
+        struct SaveFailure: Error {}
+        let tabID = ContentTabID(rawValue: "save-failure-pin")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID, page: .directory, anchor: .directory(path: "/runtime"),
+                isPinned: false, title: "Runtime", iconName: "folder",
+            )],
+            activeTabID: tabID,
+        )
+        state.content.navigation.navigationState = .folder("/runtime")
+        state.syncActiveTabContentState()
+        state.lastConfirmedTopNavigationOrder = .init(items: [.location("L1")])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        let originalContent = state.content
+        var client = ContentTabPinnedRecordClient.liveValue
+        client.guardedUpdateStore = { _, _, _ in throw SaveFailure() }
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = client
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: failure terminal의 최종 reconciliation과 runtime cache 불변을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.contentTabs(.pin(tabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder.items, [.location("L1")])
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder.items, [.location("L1")])
+        XCTAssertEqual(store.state.content, originalContent)
+        XCTAssertEqual(store.state.tabContentStates[tabID], originalContent)
+        XCTAssertEqual(store.state.topNavigationArrangementPresentation, .saveRollback)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: pinned 선택 그룹 persistence 실패는 confirmed order로 rollback한다.
+    /// frozen `[C, A]` optimistic block이 save/store-unavailable terminal에서 기존 presentation 정책과 함께 정리되는지 검증한다.
+    /// - 검증 내용: group pending correlation, confirmed rollback, pending cleanup, typed presentation
+    /// - 사전 조건: `[Home, A, Downloads, B, C]`와 Downloads 앞 group move, current operation token
+    /// - 기대 결과: 두 실패 모두 confirmed order를 복원하고 pending을 비우며 failure별 presentation을 표시한다.
+    func testPinnedTopNavigationSelectedGroupFailuresRollbackAndCleanPendingCorrelation() async {
+        let fixture = makePinnedGroupFailureFixture()
+        let expectations = [
+            PinnedGroupFailureExpectation(
+                terminal: .failed(.save),
+                availability: .available,
+                presentation: .saveRollback,
+            ),
+            PinnedGroupFailureExpectation(
+                terminal: .failed(.storeUnavailable(.corrupt)),
+                availability: .unavailable(.corrupt),
+                presentation: .loadUnavailable,
+            ),
+        ]
+
+        for expectation in expectations {
+            await assertPinnedGroupFailure(expectation, fixture: fixture)
+        }
+    }
+
+    private struct PinnedGroupFailureExpectation {
+        let terminal: FileManagerTopNavigationIntentTerminal
+        let availability: FileManagerTopNavigationArrangementAvailability
+        let presentation: FileManagerTopNavigationArrangementPresentation
+    }
+
+    private struct PinnedGroupFailureFixture {
+        let tabA: ContentTabID
+        let tabB: ContentTabID
+        let tabC: ContentTabID
+        let token: FileManagerTopNavigationOperationToken
+        let sourceWindowID: UUID
+        let operationID: UUID
+        let initialOrder: FileManagerTopNavigationOrder
+        let optimisticOrder: FileManagerTopNavigationOrder
+    }
+
+    private func makePinnedGroupFailureFixture() -> PinnedGroupFailureFixture {
+        let tabA = ContentTabID(rawValue: "group-failure-a")
+        let tabB = ContentTabID(rawValue: "group-failure-b")
+        let tabC = ContentTabID(rawValue: "group-failure-c")
+        return PinnedGroupFailureFixture(
+            tabA: tabA,
+            tabB: tabB,
+            tabC: tabC,
+            token: topNavigationToken(60),
+            sourceWindowID: UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1,
+            )),
+            operationID: UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2,
+            )),
+            initialOrder: .init(items: [
+                .location("Home"), .contentTab(tabA), .location("Downloads"),
+                .contentTab(tabB), .contentTab(tabC),
+            ]),
+            optimisticOrder: .init(items: [
+                .location("Home"), .contentTab(tabC), .contentTab(tabA),
+                .location("Downloads"), .contentTab(tabB),
+            ]),
+        )
+    }
+
+    private func makePinnedGroupFailureState(_ fixture: PinnedGroupFailureFixture) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        let records = [
+            fixture.tabA: Self.pinnedRecord(id: fixture.tabA, anchor: .directory(path: "/A"), title: "A"),
+            fixture.tabB: Self.pinnedRecord(id: fixture.tabB, anchor: .directory(path: "/B"), title: "B"),
+            fixture.tabC: Self.pinnedRecord(id: fixture.tabC, anchor: .directory(path: "/C"), title: "C"),
+        ]
+        state.contentTabs = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: fixture.tabA, anchor: .directory(path: "/A"), title: "A"),
+                Self.pinnedItem(id: fixture.tabB, anchor: .directory(path: "/B"), title: "B"),
+                Self.pinnedItem(id: fixture.tabC, anchor: .directory(path: "/C"), title: "C"),
+            ],
+            activeTabID: fixture.tabC,
+            pinnedRecords: records,
+        )
+        state.contentTabs.selectedTabIDs = [fixture.tabC, fixture.tabA]
+        state.lastConfirmedTopNavigationOrder = fixture.initialOrder
+        state.optimisticTopNavigationOrder = fixture.initialOrder
+        state.syncContentTabSidebarItems()
+        state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: fixture.operationID,
+            sourceWindowID: fixture.sourceWindowID,
+            initiatingTabID: fixture.tabC,
+            orderedTabIDs: [fixture.tabC, fixture.tabA],
+            lifecycle: .inFlight,
+        )
+        return state
+    }
+
+    private func assertPinnedGroupFailure(
+        _ expectation: PinnedGroupFailureExpectation,
+        fixture: PinnedGroupFailureFixture,
+    ) async {
+        let store = TestStore(initialState: makePinnedGroupFailureState(fixture)) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == fixture.token }
+        }
+
+        await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+            sourceID: .contentTab(fixture.tabC),
+            anchorID: .location("Downloads"),
+            placement: .before,
+        ))))
+        await store.receive(\.topNavigationMoveRequested) {
+            $0.sidebar.contentTabDragSnapshot = nil
+            $0.pendingTopNavigationIntents = [
+                .init(
+                    token: fixture.token,
+                    intent: .movePinnedGroup(
+                        orderedIDs: [fixture.tabC, fixture.tabA],
+                        destination: .before(.location("Downloads")),
+                    ),
+                ),
+            ]
+            $0.optimisticTopNavigationOrder = fixture.optimisticOrder
+        }
+        await store.receive { action in
+            guard case let .delegate(.persistTopNavigationPinnedGroupMove(
+                token,
+                orderedIDs,
+                destination,
+                _,
+            )) = action else { return false }
+            return token == fixture.token
+                && orderedIDs == [fixture.tabC, fixture.tabA]
+                && destination == .before(.location("Downloads"))
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: fixture.token,
+            terminal: expectation.terminal,
+        ))) {
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.optimisticTopNavigationOrder = fixture.initialOrder
+            $0.topNavigationArrangementAvailability = expectation.availability
+            $0.topNavigationArrangementPresentation = expectation.presentation
+        }
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, fixture.initialOrder)
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        await store.finish()
+    }
+
+    // MARK: - CTM-003-reconcile_top_navigation_order
+
+    /// CTM-003-reconcile_top_navigation_order: 실패한 이전 move 뒤의 newer move를 유지한다.
+    /// terminal rollback이 전체 before-state를 복원하지 않고 완료 intent 하나만 제거하는지 검증한다.
+    /// - 검증 내용: A save failure 뒤 pending B와 B의 optimistic 결과
+    /// - 사전 조건: confirmed `[A,B,C]`, pending A=`C before A`, pending B=`B after C`
+    /// - 기대 결과: A만 제거되고 B를 confirmed 위에 replay한 `[A,C,B]`가 표시됨
+    func testTopNavigationReconciliation_failedOlderMoveRetainsNewerMove() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tokenA = topNavigationToken(1)
+        let tokenB = topNavigationToken(2)
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
+        state.pendingTopNavigationIntents = [
+            .init(token: tokenA, intent: .move(
+                source: .contentTab(tabC),
+                destination: .before(.contentTab(tabA)),
+            )),
+            .init(token: tokenB, intent: .move(
+                source: .contentTab(tabB),
+                destination: .after(.contentTab(tabC)),
+            )),
+        ]
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(tabC), .contentTab(tabB), .contentTab(tabA),
+        ])
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == tokenB }
+        }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .failed(.save),
+        ))) {
+            $0.pendingTopNavigationIntents.removeFirst()
+            $0.optimisticTopNavigationOrder = .init(items: [
+                .contentTab(tabA), .contentTab(tabC), .contentTab(tabB),
+            ])
+        }
+
+        XCTAssertNil(store.state.topNavigationArrangementPresentation)
+
+        let committedB = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabA), .contentTab(tabC), .contentTab(tabB),
+        ])
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .committed(.init(order: committedB, revision: 1)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = committedB
+            $0.lastConfirmedTopNavigationCommitRevision = 1
+            $0.pendingTopNavigationIntents.removeAll()
+        }
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, committedB)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: Window child가 valid move를 optimistic 적용하고 parent persistence를 요청한다.
+    /// child 수명과 persistence effect를 분리하면서 terminal reconciliation은 기존 child 계약을 유지하는지 검증한다.
+    /// - 검증 내용: pending enqueue, optimistic order, parent delegate 요청, committed terminal
+    /// - 사전 조건: confirmed `[L1,A,B]`, semantic `A after B`
+    /// - 기대 결과: `[L1,B,A]`가 confirmed/optimistic에 반영되고 pending queue가 비워짐
+    func testTopNavigationReconciliation_childRequestsParentPersistenceAndCommitsSnapshot() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let token = topNavigationToken(3)
+        let initial = FileManagerTopNavigationOrder(items: [
+            .location("L1"), .contentTab(tabA), .contentTab(tabB),
+        ])
+        let committed = FileManagerTopNavigationOrder(items: [
+            .location("L1"), .contentTab(tabB), .contentTab(tabA),
+        ])
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = initial
+        state.optimisticTopNavigationOrder = initial
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == token }
+        }
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(tabA),
+            destination: .after(.contentTab(tabB)),
+        )) {
+            $0.pendingTopNavigationIntents = [.init(token: token, intent: .move(
+                source: .contentTab(tabA),
+                destination: .after(.contentTab(tabB)),
+            ))]
+            $0.optimisticTopNavigationOrder = committed
+        }
+        await store.receive { action in
+            guard case let .delegate(.persistTopNavigationMove(
+                receivedToken,
+                source,
+                destination,
+                discoveredLocationIDs,
+            )) = action else { return false }
+            return receivedToken == token
+                && source == .contentTab(tabA)
+                && destination == .after(.contentTab(tabB))
+                && discoveredLocationIDs.isEmpty
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: token,
+            terminal: .committed(.init(order: committed, revision: 1)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = committed
+            $0.lastConfirmedTopNavigationCommitRevision = 1
+            $0.pendingTopNavigationIntents.removeAll()
+        }
+
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, committed)
+        // store.finish() 불필요: delegate와 terminal을 모두 소비함
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: stale A success snapshot을 confirmed에 적용하고 pending B를 다시 투영한다.
+    /// arrival order가 generation보다 늦어도 committed snapshot 자체를 버리지 않는지 검증한다.
+    /// - 검증 내용: lastConfirmed 교체, A intent만 제거, B replay
+    /// - 사전 조건: pending A/B와 A committed `[C,A,B]`
+    /// - 기대 결과: confirmed는 `[C,A,B]`, visible optimistic은 B가 적용된 `[C,B,A]`
+    func testTopNavigationReconciliation_staleSuccessUpdatesConfirmedAndReplaysNewerMove() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tokenA = topNavigationToken(11)
+        let tokenB = topNavigationToken(12)
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
+        state.pendingTopNavigationIntents = [
+            .init(token: tokenA, intent: .move(
+                source: .contentTab(tabC),
+                destination: .before(.contentTab(tabA)),
+            )),
+            .init(token: tokenB, intent: .move(
+                source: .contentTab(tabB),
+                destination: .after(.contentTab(tabC)),
+            )),
+        ]
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(tabC), .contentTab(tabB), .contentTab(tabA),
+        ])
+        let committedA = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabC), .contentTab(tabA), .contentTab(tabB),
+        ])
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == tokenB }
+        }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: committedA, revision: 1)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = committedA
+            $0.lastConfirmedTopNavigationCommitRevision = 1
+            $0.pendingTopNavigationIntents.removeFirst()
+            $0.optimisticTopNavigationOrder = .init(items: [
+                .contentTab(tabC), .contentTab(tabB), .contentTab(tabA),
+            ])
+        }
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: failed pin-shaped intent 뒤 successful unpin-shaped winner를 유지한다.
+    /// pin/unpin lifecycle 구현 없이 semantic queue replay가 stale pin snapshot을 복원하지 않는지 검증한다.
+    /// - 검증 내용: pin failure 후 unpin pending 유지, unpin commit 후 queue 정리
+    /// - 사전 조건: confirmed `[L1,A]`, pending pin X 다음 unpin X
+    /// - 기대 결과: 두 terminal 모두 X가 보이지 않고 마지막 confirmed가 winner order가 됨
+    func testTopNavigationReconciliation_failedPinThenSuccessfulUnpinRetainsWinner() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabX = ContentTabID(rawValue: "X")
+        let tokenPin = topNavigationToken(21)
+        let tokenUnpin = topNavigationToken(22)
+        let winner = FileManagerTopNavigationOrder(items: [.location("L1"), .contentTab(tabA)])
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = winner
+        state.optimisticTopNavigationOrder = winner
+        state.pendingTopNavigationIntents = [
+            .init(token: tokenPin, intent: .pin(tabX)),
+            .init(token: tokenUnpin, intent: .unpin(tabX)),
+        ]
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == tokenUnpin }
+        }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenPin,
+            terminal: .failed(.save),
+        ))) {
+            $0.pendingTopNavigationIntents.removeFirst()
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenUnpin,
+            terminal: .committed(.init(order: winner, revision: 1)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = winner
+            $0.lastConfirmedTopNavigationCommitRevision = 1
+            $0.pendingTopNavigationIntents.removeAll()
+        }
+
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, winner)
+        XCTAssertNil(store.state.topNavigationArrangementPresentation)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: external committed snapshot 위에 local pending move를 rebase한다.
+    /// 외부에서 추가된 항목을 잃지 않고 window-local overlay를 유지하는지 검증한다.
+    /// - 검증 내용: confirmed external 교체, pending 보존, semantic replay
+    /// - 사전 조건: local pending `B before A`, external `[X,A,B]`
+    /// - 기대 결과: confirmed `[X,A,B]`, optimistic `[X,B,A]`, X 보존
+    func testTopNavigationReconciliation_externalCommitRebasesPendingWithoutItemLoss() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let token = topNavigationToken(31)
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(tabA), .contentTab(tabB)])
+        state.optimisticTopNavigationOrder = .init(items: [.contentTab(tabB), .contentTab(tabA)])
+        state.pendingTopNavigationIntents = [.init(token: token, intent: .move(
+            source: .contentTab(tabB),
+            destination: .before(.contentTab(tabA)),
+        ))]
+        let external = FileManagerTopNavigationOrder(items: [
+            .location("X"), .contentTab(tabA), .contentTab(tabB),
+        ])
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.applyExternalCommittedTopNavigationOrder(external)) {
+            $0.lastConfirmedTopNavigationOrder = external
+            $0.lastConfirmedTopNavigationCommitRevision = nil
+            $0.optimisticTopNavigationOrder = .init(items: [
+                .location("X"), .contentTab(tabB), .contentTab(tabA),
+            ])
+            $0.topNavigationArrangementAvailability = .available
+            $0.topNavigationArrangementPresentation = nil
+        }
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: relevant save failure만 redacted rollback presentation을 만든다.
+    /// superseded/cancelled terminal은 사용자 오류를 만들지 않는 typed presentation 계약을 검증한다.
+    /// - 검증 내용: current save failure 1회 표시와 cancelled/superseded 무표시
+    /// - 사전 조건: 각 terminal token 하나가 pending인 독립 상태
+    /// - 기대 결과: save만 `.saveRollback`, 나머지는 nil
+    func testTopNavigationReconciliation_onlyRelevantSaveFailurePresentsRedactedRollback() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let failures: [(FileManagerTopNavigationIntentFailure, Bool)] = [
+            (.save, true), (.superseded, false), (.cancelled, false),
+        ]
+        for (index, fixture) in failures.enumerated() {
+            let token = topNavigationToken(UInt8(41 + index))
+            var state = FileManagerFeature.State()
+            state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(tabA), .contentTab(tabB)])
+            state.optimisticTopNavigationOrder = .init(items: [.contentTab(tabB), .contentTab(tabA)])
+            state.pendingTopNavigationIntents = [.init(token: token, intent: .move(
+                source: .contentTab(tabB),
+                destination: .before(.contentTab(tabA)),
+            ))]
+            let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+                $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == token }
+            }
+
+            await store.send(.internal(.topNavigationIntentCompleted(
+                token: token,
+                terminal: .failed(fixture.0),
+            ))) {
+                $0.pendingTopNavigationIntents.removeAll()
+                $0.optimisticTopNavigationOrder = $0.lastConfirmedTopNavigationOrder
+                $0.topNavigationArrangementPresentation = fixture.1 ? .saveRollback : nil
+            }
+        }
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: newer success 뒤 stale store-unavailable가 availability를 회귀시키지 않는다.
+    /// stale failure가 자기 intent만 제거하고 최신 committed 상태와 사용자 presentation을 보존하는지 검증한다.
+    /// - 검증 내용: current B revision 2 success 뒤 stale A unavailable terminal
+    /// - 사전 조건: pending A/B, current token B, B committed `[C,B,A]`
+    /// - 기대 결과: available/nil presentation과 revision 2 confirmed/optimistic을 유지하고 queue만 비움
+    func testTopNavigationReconciliation_staleStoreUnavailableAfterNewerSuccessPreservesAvailableWinner() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tokenA = topNavigationToken(54)
+        let tokenB = topNavigationToken(55)
+        let committedB = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabC), .contentTab(tabB), .contentTab(tabA),
+        ])
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
+        state.optimisticTopNavigationOrder = committedB
+        state.pendingTopNavigationIntents = [
+            .init(token: tokenA, intent: .move(
+                source: .contentTab(tabC),
+                destination: .before(.contentTab(tabA)),
+            )),
+            .init(token: tokenB, intent: .move(
+                source: .contentTab(tabB),
+                destination: .after(.contentTab(tabC)),
+            )),
+        ]
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == tokenB }
+        }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .committed(.init(order: committedB, revision: 2)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = committedB
+            $0.lastConfirmedTopNavigationCommitRevision = 2
+            $0.pendingTopNavigationIntents.removeLast()
+            $0.optimisticTopNavigationOrder = .init(items: [
+                .contentTab(tabB), .contentTab(tabC), .contentTab(tabA),
+            ])
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .failed(.storeUnavailable(.corrupt)),
+        ))) {
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.optimisticTopNavigationOrder = committedB
+        }
+
+        XCTAssertEqual(store.state.topNavigationArrangementAvailability, .available)
+        XCTAssertNil(store.state.topNavigationArrangementPresentation)
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, committedB)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, committedB)
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationCommitRevision, 2)
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: newer unavailable 뒤 stale committed가 availability를 복구하지 않는다.
+    /// revision이 거부된 stale success가 현재 failure의 typed availability/presentation을 지우지 않는지 검증한다.
+    /// - 검증 내용: current B unavailable 뒤 older A revision 1 committed terminal
+    /// - 사전 조건: confirmed revision 2, pending A/B, current token B
+    /// - 기대 결과: confirmed revision/order를 유지하고 corrupt/loadUnavailable 상태와 빈 queue를 보존함
+    func testTopNavigationReconciliation_staleCommitAfterNewerUnavailablePreservesFailureState() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tokenA = topNavigationToken(56)
+        let tokenB = topNavigationToken(57)
+        let confirmed = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
+        let staleCommit = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabC), .contentTab(tabA), .contentTab(tabB),
+        ])
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = confirmed
+        state.lastConfirmedTopNavigationCommitRevision = 2
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(tabC), .contentTab(tabB), .contentTab(tabA),
+        ])
+        state.pendingTopNavigationIntents = [
+            .init(token: tokenA, intent: .move(
+                source: .contentTab(tabC),
+                destination: .before(.contentTab(tabA)),
+            )),
+            .init(token: tokenB, intent: .move(
+                source: .contentTab(tabB),
+                destination: .after(.contentTab(tabC)),
+            )),
+        ]
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == tokenB }
+        }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .failed(.storeUnavailable(.corrupt)),
+        ))) {
+            $0.pendingTopNavigationIntents.removeLast()
+            $0.optimisticTopNavigationOrder = staleCommit
+            $0.topNavigationArrangementAvailability = .unavailable(.corrupt)
+            $0.topNavigationArrangementPresentation = .loadUnavailable
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: staleCommit, revision: 1)),
+        ))) {
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.optimisticTopNavigationOrder = confirmed
+        }
+
+        XCTAssertEqual(store.state.topNavigationArrangementAvailability, .unavailable(.corrupt))
+        XCTAssertEqual(store.state.topNavigationArrangementPresentation, .loadUnavailable)
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, confirmed)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, confirmed)
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationCommitRevision, 2)
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: newer commit terminal 뒤 늦은 older terminal이 confirmed를 회귀시키지 않는다.
+    /// storage commit revision이 action arrival inversion에서도 최종 durable winner를 보존하는지 검증한다.
+    /// - 검증 내용: B revision 2 수신 후 A revision 1 수신, completed token별 queue 제거
+    /// - 사전 조건: pending A/B와 committed snapshots A=`[C,A,B]`, B=`[C,B,A]`
+    /// - 기대 결과: queue는 비고 confirmed/optimistic은 revision 2의 B snapshot을 유지함
+    func testTopNavigationReconciliation_reverseSuccessArrivalKeepsNewestCommit() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tokenA = topNavigationToken(51)
+        let tokenB = topNavigationToken(52)
+        let committedA = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabC), .contentTab(tabA), .contentTab(tabB),
+        ])
+        let committedB = FileManagerTopNavigationOrder(items: [
+            .contentTab(tabC), .contentTab(tabB), .contentTab(tabA),
+        ])
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
+        state.optimisticTopNavigationOrder = committedB
+        state.pendingTopNavigationIntents = [
+            .init(token: tokenA, intent: .move(
+                source: .contentTab(tabC),
+                destination: .before(.contentTab(tabA)),
+            )),
+            .init(token: tokenB, intent: .move(
+                source: .contentTab(tabB),
+                destination: .after(.contentTab(tabC)),
+            )),
+        ]
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .committed(.init(order: committedB, revision: 2)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = committedB
+            $0.lastConfirmedTopNavigationCommitRevision = 2
+            $0.pendingTopNavigationIntents.removeLast()
+            $0.optimisticTopNavigationOrder = .init(items: [
+                .contentTab(tabB), .contentTab(tabC), .contentTab(tabA),
+            ])
+        }
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: committedA, revision: 1)),
+        ))) {
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.optimisticTopNavigationOrder = committedB
+        }
+
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, committedB)
+        XCTAssertEqual(store.state.lastConfirmedTopNavigationCommitRevision, 2)
+    }
+
+    /// CTM-003-reconcile_top_navigation_order: current successful commit은 이전 save rollback presentation을 정리한다.
+    /// stale success가 아닌 실제 winner 성공만 obsolete save error를 해제하는지 검증한다.
+    /// - 검증 내용: current token commit 뒤 typed presentation 해제
+    /// - 사전 조건: `.saveRollback` presentation과 pending winner B
+    /// - 기대 결과: committed order/revision을 적용하고 presentation이 nil이 됨
+    func testTopNavigationReconciliation_currentSuccessClearsPreviousSaveRollbackPresentation() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let token = topNavigationToken(53)
+        let committed = FileManagerTopNavigationOrder(items: [.contentTab(tabB), .contentTab(tabA)])
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(tabA), .contentTab(tabB)])
+        state.optimisticTopNavigationOrder = committed
+        state.pendingTopNavigationIntents = [.init(token: token, intent: .move(
+            source: .contentTab(tabB),
+            destination: .before(.contentTab(tabA)),
+        ))]
+        state.topNavigationArrangementPresentation = .saveRollback
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == token }
+        }
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: token,
+            terminal: .committed(.init(order: committed, revision: 3)),
+        ))) {
+            $0.lastConfirmedTopNavigationOrder = committed
+            $0.lastConfirmedTopNavigationCommitRevision = 3
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.topNavigationArrangementPresentation = nil
+        }
     }
 
     func testPinnedRecordClient_updateStoreSerializesConcurrentMutations() async throws {
@@ -312,19 +2441,19 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     }
 
     // VOY-570 Linear AC mapping (CTM owner):
-    // AC1/AC5 -> testBuiltInSeed_ordersRecentsExistingAndAllTags
+    // AC1/AC5 -> testBuiltInSeed_appendsAbsentBuiltInsWithoutReorderingExistingRecords
     // AC6 -> testBuiltInSeed_completionTrueMissingRecordIsSuppressedWithoutMutation
     // AC9 -> testBuiltInSeed_itemDecisionsAreIndependent
-    // AC10 -> testBuiltInSeed_deduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp
+    // AC10 -> existing Recents/All Tags canonicalization slot-preservation tests
     // Capacity retry -> testBuiltInSeed_capacityDeferredThenLaterSeedsLatestLockedStore
 
     // MARK: - CTM-003-seed_built_in_pinned_content_tabs
 
-    /// CTM-003-seed_built_in_pinned_content_tabs: Recents와 All Tags 사이 기존 순서를 보존한다.
-    /// 최초 built-in seed가 canonical metadata와 전체 pinned ordering을 만드는지 검증한다.
-    /// - 검증 내용: Recents index 0, 기존 상대 순서, All Tags 마지막 및 canonical page/anchor/title/icon
-    /// - 사전 조건: Finder와 user record가 있고 두 built-in ensure 결과가 ready, completion은 false
-    /// - 기대 결과: [Recents, finder, user, All Tags] 순서와 stable identity가 저장됨
+    /// CTM-003-seed_built_in_pinned_content_tabs: Recents와 All Tags 사이에 기존 Finder/User 순서를 보존한다.
+    /// 최초 built-in seed가 identity별 canonical 위치와 metadata를 전체 pinned ordering에 반영하는지 검증한다.
+    /// - 검증 내용: Location과 Finder/User 상대 순서 보존, Recents 첫 탭·All Tags 마지막 탭 배치 및 canonical metadata
+    /// - 사전 조건: Location 사이 Finder/User record가 있고 두 built-in ensure 결과가 ready, completion은 false
+    /// - 기대 결과: built-in canonical 위치와 기존 mixed-order 상대 순서가 함께 저장됨
     func testBuiltInSeed_ordersRecentsExistingAndAllTags() {
         let recentsURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/recents.voycoll")
         let allTagsURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/all-tags.voycoll")
@@ -339,13 +2468,25 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/User.voycoll")),
             title: "User",
         )
-        let initialStore = ContentTabPinnedRecordStore(records: [finderRecord, userRecord])
+        let locationA = "fixed-location-a"
+        let locationB = "fixed-location-b"
+        let discoveredLocationIDs = [locationA, locationB]
+        let initialStore = ContentTabPinnedRecordStore(
+            records: [finderRecord, userRecord],
+            topNavigationOrder: .init(items: [
+                .location(locationA),
+                .contentTab(ContentTabID(rawValue: "finder")),
+                .location(locationB),
+                .contentTab(ContentTabID(rawValue: "user")),
+            ]),
+        )
 
         let recentsResult = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
             ensureResult: .ready(.init(identity: .recents, canonicalPackageURL: recentsURL)),
             completion: false,
             store: initialStore,
             now: Self.pinnedAt,
+            discoveredLocationIDs: discoveredLocationIDs,
         )
         guard case let .seed(recentsStore) = recentsResult else {
             return XCTFail("Recents는 새 record를 seed해야 함")
@@ -355,6 +2496,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             completion: false,
             store: recentsStore,
             now: Self.pinnedAt,
+            discoveredLocationIDs: discoveredLocationIDs,
         )
         guard case let .seed(finalStore) = allTagsResult else {
             return XCTFail("All Tags는 새 record를 seed해야 함")
@@ -366,25 +2508,35 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             "user",
             "built-in-collection-all-tags",
         ])
-        XCTAssertEqual(finalStore.records.first?.page, .collection)
-        XCTAssertEqual(finalStore.records.first?.anchor, .collectionFile(url: recentsURL))
-        XCTAssertEqual(finalStore.records.first?.title, "Recents")
-        XCTAssertEqual(finalStore.records.first?.iconName, "clock")
-        XCTAssertEqual(finalStore.records.last?.page, .collection)
-        XCTAssertEqual(finalStore.records.last?.anchor, .collectionFile(url: allTagsURL))
-        XCTAssertEqual(finalStore.records.last?.title, "All Tags")
-        XCTAssertEqual(finalStore.records.last?.iconName, "tag")
+        let recentsRecord = finalStore.records.first { $0.id == "built-in-collection-recents" }
+        let allTagsRecord = finalStore.records.first { $0.id == "built-in-collection-all-tags" }
+        XCTAssertEqual(recentsRecord?.page, .collection)
+        XCTAssertEqual(recentsRecord?.anchor, .collectionFile(url: recentsURL))
+        XCTAssertEqual(recentsRecord?.title, "Recents")
+        XCTAssertEqual(recentsRecord?.iconName, "clock")
+        XCTAssertEqual(allTagsRecord?.page, .collection)
+        XCTAssertEqual(allTagsRecord?.anchor, .collectionFile(url: allTagsURL))
+        XCTAssertEqual(allTagsRecord?.title, "All Tags")
+        XCTAssertEqual(allTagsRecord?.iconName, "tag")
         XCTAssertFalse(finalStore.records.contains {
             if case .virtualCollection = $0.anchor { true } else { false }
         })
+        XCTAssertEqual(finalStore.topNavigationOrder.items, [
+            .location(locationA),
+            .contentTab(ContentTabID(rawValue: "built-in-collection-recents")),
+            .contentTab(ContentTabID(rawValue: "finder")),
+            .location(locationB),
+            .contentTab(ContentTabID(rawValue: "user")),
+            .contentTab(ContentTabID(rawValue: "built-in-collection-all-tags")),
+        ])
     }
 
-    /// CTM-003-seed_built_in_pinned_content_tabs: stable ID를 URL보다 우선해 중복을 canonicalize한다.
-    /// crash retry에서 ID/URL residue가 함께 남아도 하나의 stable record만 유지되는지 검증한다.
-    /// - 검증 내용: stable ID first match의 pinnedAt 보존, ID/URL 전체 duplicate 제거, nonmatching 순서 보존
+    /// CTM-003-seed_built_in_pinned_content_tabs: stable ID를 URL보다 우선해 중복을 canonicalize하고 선두에 배치한다.
+    /// crash retry에서 ID/URL residue가 함께 남아도 nonmatching 상대 순서와 하나의 stable record만 유지되는지 검증한다.
+    /// - 검증 내용: stable ID match의 pinnedAt 보존, ID/URL 전체 duplicate 제거, Recents 선두와 nonmatching 상대 순서 보존
     /// - 사전 조건: canonical URL duplicate 2개와 stable ID duplicate 1개가 섞인 store
-    /// - 기대 결과: Recents 하나만 index 0에 남고 stable ID record의 pinnedAt이 유지됨
-    func testBuiltInSeed_deduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp() {
+    /// - 기대 결과: [Recents, first-other, second-other] 순서와 stable ID record의 pinnedAt이 유지됨
+    func testBuiltInSeed_recentsDeduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp() {
         let canonicalURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/recents.voycoll")
         let urlDuplicate = ContentTabPinnedRecord(
             id: "legacy-recents",
@@ -402,14 +2554,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             iconName: nil,
             pinnedAt: Date(timeIntervalSince1970: 200),
         )
-        let secondURLDuplicate = ContentTabPinnedRecord(
-            id: "second-recents",
-            page: .collection,
-            anchor: .collectionFile(url: canonicalURL),
-            title: nil,
-            iconName: nil,
-            pinnedAt: Date(timeIntervalSince1970: 300),
-        )
         let firstOther = Self.pinnedRecord(
             id: ContentTabID(rawValue: "first-other"),
             anchor: .directory(path: "/first"),
@@ -418,8 +2562,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             id: ContentTabID(rawValue: "second-other"),
             anchor: .directory(path: "/second"),
         )
+        let thirdOther = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "third-other"),
+            anchor: .directory(path: "/third"),
+        )
         let store = ContentTabPinnedRecordStore(records: [
-            firstOther, urlDuplicate, stableDuplicate, secondOther, secondURLDuplicate,
+            firstOther, urlDuplicate, secondOther, stableDuplicate, thirdOther,
         ])
 
         let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
@@ -429,14 +2577,93 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             now: Date(timeIntervalSince1970: 999),
         )
         guard case let .alreadyPresent(finalStore) = result else {
+            return XCTFail("기존 Recents match는 alreadyPresent여야 함")
+        }
+
+        XCTAssertEqual(finalStore.records.map(\.id), [
+            "built-in-collection-recents", "first-other", "second-other", "third-other",
+        ])
+        XCTAssertEqual(finalStore.records[0].pinnedAt, Date(timeIntervalSince1970: 200))
+        XCTAssertEqual(finalStore.records[0].anchor, .collectionFile(url: canonicalURL))
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: All Tags stable ID match의 기존 상대 슬롯을 보존한다.
+    /// crash retry에서 ID/URL residue가 함께 남아도 선택된 stable record 위치에 하나만 canonicalize하는지 검증한다.
+    /// - 검증 내용: stable ID 우선 선택, pinnedAt 보존, ID/URL 중복 제거, 선택 match의 상대 insertion position
+    /// - 사전 조건: canonical URL duplicate 2개와 가운데 stable ID duplicate 1개가 섞인 store
+    /// - 기대 결과: [first-other, All Tags, second-other]이며 stable ID record의 pinnedAt이 유지됨
+    func testBuiltInSeed_allTagsDeduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp() {
+        let canonicalURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/all-tags.voycoll")
+        let store = makeAllTagsDuplicateStore(canonicalURL: canonicalURL)
+
+        let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(identity: .allTags, canonicalPackageURL: canonicalURL)),
+            completion: false,
+            store: store,
+            now: Date(timeIntervalSince1970: 999),
+        )
+        guard case let .alreadyPresent(finalStore) = result else {
             return XCTFail("기존 match는 alreadyPresent여야 함")
         }
 
         XCTAssertEqual(finalStore.records.map(\.id), [
-            "built-in-collection-recents", "first-other", "second-other",
+            "first-other", "second-other", "built-in-collection-all-tags",
         ])
-        XCTAssertEqual(finalStore.records.first?.pinnedAt, Date(timeIntervalSince1970: 200))
-        XCTAssertEqual(finalStore.records.first?.anchor, .collectionFile(url: canonicalURL))
+        assertCanonicalBuiltInRecord(
+            in: finalStore,
+            id: "built-in-collection-all-tags",
+            pinnedAt: Date(timeIntervalSince1970: 200),
+            url: canonicalURL,
+        )
+    }
+
+    private func assertCanonicalBuiltInRecord(
+        in store: ContentTabPinnedRecordStore,
+        id: String,
+        pinnedAt: Date,
+        url: URL,
+    ) {
+        let record = store.records.first { $0.id == id }
+        XCTAssertEqual(record?.pinnedAt, pinnedAt)
+        XCTAssertEqual(record?.anchor, .collectionFile(url: url))
+    }
+
+    private func makeAllTagsDuplicateStore(canonicalURL: URL) -> ContentTabPinnedRecordStore {
+        let firstOther = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "first-other"),
+            anchor: .directory(path: "/first"),
+        )
+        let urlDuplicate = ContentTabPinnedRecord(
+            id: "legacy-all-tags",
+            page: .collection,
+            anchor: .collectionFile(url: canonicalURL),
+            title: "Old All Tags",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 100),
+        )
+        let stableDuplicate = ContentTabPinnedRecord(
+            id: "built-in-collection-all-tags",
+            page: .directory,
+            anchor: .directory(path: "/stale"),
+            title: "Stale",
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 200),
+        )
+        let secondOther = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "second-other"),
+            anchor: .directory(path: "/second"),
+        )
+        let secondURLDuplicate = ContentTabPinnedRecord(
+            id: "second-all-tags",
+            page: .collection,
+            anchor: .collectionFile(url: canonicalURL),
+            title: nil,
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 300),
+        )
+        return ContentTabPinnedRecordStore(records: [
+            firstOther, urlDuplicate, stableDuplicate, secondOther, secondURLDuplicate,
+        ])
     }
 
     /// CTM-003-seed_built_in_pinned_content_tabs: completion된 누락 record를 자동 복구하지 않는다.
@@ -555,9 +2782,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     /// CTM-003-seed_built_in_pinned_content_tabs: capacity가 가득 차도 기존 match는 canonicalize한다.
     /// match 교체는 record count를 늘리지 않으므로 full store에서도 허용되는지 검증한다.
-    /// - 검증 내용: canonical URL match가 있으면 alreadyPresent와 All Tags end ordering 반환
-    /// - 사전 조건: max count 2인 store에 user record와 legacy All Tags URL record 존재
-    /// - 기대 결과: user 뒤에 stable All Tags가 있고 count는 2로 유지됨
+    /// - 검증 내용: canonical URL match가 있으면 alreadyPresent와 기존 All Tags 상대 슬롯 반환
+    /// - 사전 조건: max count 2인 store에서 legacy All Tags URL record가 user record 앞에 존재
+    /// - 기대 결과: stable All Tags가 기존 첫 슬롯을 유지하고 count는 2로 유지됨
     func testBuiltInSeed_fullCapacityWithMatchCanonicalizesWithoutGrowth() {
         let canonicalURL = URL(fileURLWithPath: "/BuiltIn/all-tags.voycoll")
         let preservedPinnedAt = Date(timeIntervalSince1970: 123)
@@ -699,6 +2926,157 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(defaultsRecorder.writeCount(), 0)
     }
 
+    /// CTM-003-pin_content_tab_s: app-global 동일 tab mutation은 최신 generation만 durable store에 반영한다.
+    /// window scope와 무관한 generation 예약이 오래된 transform 실행과 write를 함께 차단하는지 검증한다.
+    /// - 검증 내용: stale disposition/transform 미실행, latest disposition/write, 최종 persisted anchor
+    /// - 사전 조건: 동일 ContentTabID에 old/new generation을 순서대로 예약
+    /// - 기대 결과: old는 superseded이고 new만 applied되어 newer record 하나가 저장됨
+    func testPinnedRecordClient_guardedMutationLatestGlobalGenerationWins() async throws {
+        let tabID = ContentTabID(rawValue: "shared-global-generation")
+        let oldRecord = Self.pinnedRecord(id: tabID, anchor: .directory(path: "/old"))
+        let newRecord = Self.pinnedRecord(id: tabID, anchor: .directory(path: "/new"))
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: ContentTabPinnedRecordStore())
+        let defaults = defaultsRecorder.client()
+        let client = ContentTabPinnedRecordClient.liveValue
+        let oldTransformCalled = LockIsolated(false)
+
+        let oldGeneration = client.reserveMutationGeneration(tabID)
+        XCTAssertTrue(client.isCurrentMutationGeneration(oldGeneration))
+        let newGeneration = client.reserveMutationGeneration(tabID)
+        XCTAssertFalse(client.isCurrentMutationGeneration(oldGeneration))
+        XCTAssertTrue(client.isCurrentMutationGeneration(newGeneration))
+        let oldDisposition = try await client.updateStoreGuarded(oldGeneration, defaults) { store in
+            oldTransformCalled.withValue { $0 = true }
+            return upsertPinnedRecord(oldRecord, in: store)
+        }
+        let newDisposition = try await client.updateStoreGuarded(newGeneration, defaults) { store in
+            upsertPinnedRecord(newRecord, in: store)
+        }
+
+        XCTAssertEqual(oldDisposition, .superseded)
+        XCTAssertFalse(oldTransformCalled.value)
+        XCTAssertEqual(newDisposition, .applied)
+        XCTAssertEqual(try client.loadStore(defaults), ContentTabPinnedRecordStore(
+            records: [newRecord],
+            topNavigationOrder: .init(items: [.contentTab(tabID)]),
+        ))
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+    }
+
+    /// CTM-003-pin_content_tab_s: superseded pin은 optimistic state를 기존 snapshot으로 복구한다.
+    /// global winner가 다른 window에 있을 때 local terminal이 pending을 남기지 않는지 검증한다.
+    /// - 검증 내용: superseded typed terminal과 isPinned/record/pending rollback
+    /// - 사전 조건: unpinned tab의 pin effect가 guarded client에서 superseded disposition을 반환
+    /// - 기대 결과: local tab은 unpinned로 복구되고 pending/error가 모두 정리됨
+    func testPin_supersededGlobalMutationRollsBackLocalOptimisticState() async throws {
+        let tabID = ContentTabID(rawValue: "superseded-local-pin")
+        let anchor: ContentTabPageAnchor = .directory(path: "/Users/test/Superseded")
+        let generation = try ContentTabPinnedRecordMutationGeneration(
+            tabID: tabID,
+            value: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453")),
+        )
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .directory,
+                        anchor: anchor,
+                        isPinned: false,
+                        title: "Superseded",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: tabID,
+            ),
+        ) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.reserveMutationGeneration = { _ in generation }
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in .superseded }
+        }
+
+        await store.send(.pin(tabID)) {
+            $0.tabs[id: tabID]?.isPinned = true
+            $0.pinnedRecords[tabID] = Self.pinnedRecord(
+                id: tabID,
+                anchor: anchor,
+                title: "Superseded",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(tabID)
+        }
+        await store.receive { action in
+            guard case let .pinnedRecordSaveNotApplied(receivedTabID, context, reason, _) = action else {
+                return false
+            }
+            return receivedTabID == tabID
+                && context.generation == generation
+                && reason == .superseded
+        } assert: {
+            $0.tabs[id: tabID]?.isPinned = false
+            $0.pinnedRecords.removeValue(forKey: tabID)
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
+
+        XCTAssertNil(store.state.pinnedRecordPersistenceError)
+    }
+
+    /// CTM-003-pin_content_tab_s: durable commit 전 cancellation도 local non-applied terminal을 전달한다.
+    /// cancellation이 optimistic state와 pending을 고립시키지 않는지 검증한다.
+    /// - 검증 내용: cancelled typed terminal과 pin rollback/pending cleanup
+    /// - 사전 조건: guarded client가 durable mutation 전에 CancellationError 발생
+    /// - 기대 결과: local tab은 기존 unpinned snapshot으로 복구되고 pending이 제거됨
+    func testPin_cancelledBeforeCommitRollsBackLocalOptimisticState() async {
+        let tabID = ContentTabID(rawValue: "cancelled-local-pin")
+        let anchor: ContentTabPageAnchor = .directory(path: "/Users/test/Cancelled")
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .directory,
+                        anchor: anchor,
+                        isPinned: false,
+                        title: "Cancelled",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: tabID,
+            ),
+        ) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in
+                throw CancellationError()
+            }
+        }
+
+        await store.send(.pin(tabID)) {
+            $0.tabs[id: tabID]?.isPinned = true
+            $0.pinnedRecords[tabID] = Self.pinnedRecord(
+                id: tabID,
+                anchor: anchor,
+                title: "Cancelled",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(tabID)
+        }
+        await store.receive { action in
+            guard case let .pinnedRecordSaveNotApplied(receivedTabID, _, reason, _) = action else {
+                return false
+            }
+            return receivedTabID == tabID && reason == .cancelled
+        } assert: {
+            $0.tabs[id: tabID]?.isPinned = false
+            $0.pinnedRecords.removeValue(forKey: tabID)
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
+        await store.finish()
+    }
+
     /// CTM-003-seed_built_in_pinned_content_tabs: completion key는 built-in item별로 분리된다.
     /// Window bootstrap이 후속 task에서 독립 flag를 읽고 쓸 수 있도록 exact key 계약을 검증한다.
     /// - 검증 내용: Recents/All Tags SettingsKeys 문자열과 상호 distinct 여부
@@ -720,6 +3098,229 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     }
 
     // MARK: - CTM-003-pin_content_tab_s
+
+    /// CTM-003-pin_content_tab_s: explicit Pin placement는 pinned domain before/after/empty semantics를 따른다.
+    /// same-window semantic placement가 ordinary append fallback 없이 runtime 순서를 즉시 반영하는지 검증한다.
+    /// - 검증 내용: `.pin(_, placement:)`의 pinned runtime ordering
+    /// - 사전 조건: pinned anchor 3개가 있는 상태와 pinned domain empty 상태
+    /// - 기대 결과: before/after/empty 각각 requested pinned slot에만 삽입된다.
+    func testPin_explicitPlacementUsesPinnedDomainBeforeAfterAndEmptySlots() async {
+        let fixture = ExplicitPinPlacementFixture()
+
+        let beforeStore = TestStore(initialState: fixture.initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+        // store.exhaustivity = .off: explicit placement 최종 runtime slot만 검증한다.
+        beforeStore.exhaustivity = .off
+        await beforeStore.send(.pin(fixture.target, placement: .before(fixture.pinnedB)))
+        await beforeStore.receive(\.pinnedRecordSaveSucceeded)
+        XCTAssertEqual(beforeStore.state.tabs.map(\.id), [
+            fixture.pinnedA,
+            fixture.target,
+            fixture.pinnedB,
+            fixture.pinnedC,
+            fixture.trailing,
+        ])
+
+        let afterStore = TestStore(initialState: fixture.initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+        // store.exhaustivity = .off: explicit placement 최종 runtime slot만 검증한다.
+        afterStore.exhaustivity = .off
+        await afterStore.send(.pin(fixture.target, placement: .after(fixture.pinnedB)))
+        await afterStore.receive(\.pinnedRecordSaveSucceeded)
+        XCTAssertEqual(afterStore.state.tabs.map(\.id), [
+            fixture.pinnedA,
+            fixture.pinnedB,
+            fixture.target,
+            fixture.pinnedC,
+            fixture.trailing,
+        ])
+
+        let emptyState = ExplicitPinPlacementFixture.emptyPinnedState()
+        guard let emptyTarget = emptyState.activeTabID else {
+            return XCTFail("empty pin fixture는 active target을 가져야 함")
+        }
+        let emptyStore = TestStore(initialState: emptyState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+        // store.exhaustivity = .off: explicit placement 최종 runtime slot만 검증한다.
+        emptyStore.exhaustivity = .off
+        await emptyStore.send(.pin(emptyTarget, placement: .empty))
+        await emptyStore.receive(\.pinnedRecordSaveSucceeded)
+        XCTAssertEqual(emptyStore.state.tabs.map(\.id), [
+            emptyTarget,
+            ContentTabID(rawValue: "empty-pin-sibling"),
+        ])
+    }
+
+    /// CTM-003-pin_content_tab_s: explicit Pin invalid anchor와 invalid empty는 no-op이며 write가 없다.
+    /// wrong-domain/self/non-empty empty 요청이 fallback append로 저장되지 않는지 검증한다.
+    /// - 검증 내용: invalid explicit Pin 요청들의 state/write zero
+    /// - 사전 조건: pinned/unpinned가 함께 있는 상태와 UserDefaults recorder
+    /// - 기대 결과: 모든 invalid 요청이 state unchanged, persistence write 0회를 유지한다.
+    func testPin_explicitPlacementRejectsInvalidAnchorsWithoutWrite() async throws {
+        let fixture = ExplicitPinPlacementFixture()
+        let scenarios: [ContentTabPlacement] = [
+            .before(fixture.trailing),
+            .after(fixture.target),
+            .empty,
+        ]
+
+        for placement in scenarios {
+            let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+            let store = TestStore(initialState: fixture.initialState) {
+                CTM003PinnedPersistenceHarness()
+            } withDependencies: {
+                $0.date = .constant(Self.pinnedAt)
+                $0.userDefaultsClient = defaultsRecorder.client()
+                $0.contentTabPinnedRecordClient = .liveValue
+                $0.contentTabPinnedRecordPersistenceRouting = .local(discoveredLocationIDs: [fixture.locationID])
+            }
+            let originalState = store.state
+
+            await store.send(.pin(fixture.target, placement: placement))
+            await store.finish()
+
+            XCTAssertEqual(store.state, originalState)
+            XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        }
+    }
+
+    /// CTM-003-pin_content_tab_s: explicit Pin durable commit은 한 write와 한 revision 증가로 record+mixed order를 함께 저장한다.
+    /// placement 적용이 기존 client lock 내부의 단일 commit으로 끝나는지 검증한다.
+    /// - 검증 내용: guarded explicit Pin commit의 write count와 revision delta, final durable order
+    /// - 사전 조건: discovered Location 1개와 pinned anchor 3개가 있는 persisted store
+    /// - 기대 결과: write는 1회이고 final order는 requested insertion을 반영한다.
+    func testPin_explicitPlacementCommitsRecordAndMixedOrderAtomically() async throws {
+        let fixture = ExplicitPinPlacementFixture()
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let client = ContentTabPinnedRecordClient.liveValue
+        let beforeCommit = try client.loadTopNavigationCommit(
+            defaultsRecorder.client(),
+            [fixture.locationID],
+        )
+        let generation = client.reserveMutationGeneration(fixture.target)
+
+        let commitDisposition = try await client.applyPersistenceMutationCommittedGuarded(
+            generation,
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [fixture.locationID],
+            mutation: .upsert(
+                record: Self.pinnedRecord(
+                    id: fixture.target,
+                    anchor: .directory(path: "/pin/target"),
+                    title: "Pin Target",
+                ),
+                dormantSlot: nil,
+                placement: .before(fixture.pinnedB),
+            ),
+        ) {}
+
+        guard case let .applied(commit) = commitDisposition else {
+            return XCTFail("explicit pin은 applied commit이어야 함: \(commitDisposition)")
+        }
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+        XCTAssertEqual(commit.topNavigation.revision, beforeCommit.revision + 1)
+        XCTAssertEqual(commit.store.topNavigationOrder.items, [
+            .location(fixture.locationID),
+            .contentTab(fixture.pinnedA),
+            .contentTab(fixture.target),
+            .contentTab(fixture.pinnedB),
+            .contentTab(fixture.pinnedC),
+        ])
+    }
+
+    /// CTM-003-pin_content_tab_s: explicit Pin의 durable anchor가 사라지면 성공으로 보고하지 않는다.
+    /// 다른 창의 committed fan-out이 anchor를 제거한 뒤 도착한 stale placement를 non-applied로 구분하는지 검증한다.
+    /// - 검증 내용: missing durable anchor의 superseded disposition, write zero, revision stable
+    /// - 사전 조건: 요청은 pinned B 앞 placement를 유지하지만 persisted store에는 pinned B record/order가 없음
+    /// - 기대 결과: guarded commit은 superseded이고 durable store와 revision은 변경되지 않음
+    func testPin_explicitPlacementMissingDurableAnchorReturnsSupersededWithoutWrite() async throws {
+        let fixture = ExplicitPinPlacementFixture()
+        let staleStore = ContentTabPinnedRecordStore(
+            records: fixture.initialStore.records.filter { $0.id != fixture.pinnedB.rawValue },
+            topNavigationOrder: .init(items: fixture.initialStore.topNavigationOrder.items.filter {
+                $0 != .contentTab(fixture.pinnedB)
+            }),
+        )
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: staleStore)
+        let client = ContentTabPinnedRecordClient.liveValue
+        let beforeCommit = try client.loadTopNavigationCommit(
+            defaultsRecorder.client(),
+            [fixture.locationID],
+        )
+        let generation = client.reserveMutationGeneration(fixture.target)
+
+        let disposition = try await client.applyPersistenceMutationCommittedGuarded(
+            generation,
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [fixture.locationID],
+            mutation: .upsert(
+                record: Self.pinnedRecord(
+                    id: fixture.target,
+                    anchor: .directory(path: "/pin/target"),
+                    title: "Pin Target",
+                ),
+                dormantSlot: nil,
+                placement: .before(fixture.pinnedB),
+            ),
+        ) {}
+
+        XCTAssertEqual(disposition, .superseded)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        let afterCommit = try client.loadTopNavigationCommit(defaultsRecorder.client(), [fixture.locationID])
+        XCTAssertEqual(afterCommit, beforeCommit)
+    }
+
+    /// CTM-003-pin_content_tab_s: committed readback은 마지막 durable revision을 그대로 반환한다.
+    /// read 경로가 synthetic revision을 발급하지 않고 마지막 write revision을 재사용하는지 검증한다.
+    /// - 검증 내용: explicit Pin commit 뒤 연속 readback revision stable, extra write zero
+    /// - 사전 조건: discovered Location 1개와 pinned anchor 3개가 있는 persisted store
+    /// - 기대 결과: 두 readback revision이 동일하고 defaults write count는 1회로 유지된다.
+    func testPin_topNavigationCommitReadbackKeepsLastDurableRevision() async throws {
+        let fixture = ExplicitPinPlacementFixture()
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let client = ContentTabPinnedRecordClient.liveValue
+        let generation = client.reserveMutationGeneration(fixture.target)
+
+        let commitDisposition = try await client.applyPersistenceMutationCommittedGuarded(
+            generation,
+            defaultsRecorder.client(),
+            discoveredLocationIDs: [fixture.locationID],
+            mutation: .upsert(
+                record: Self.pinnedRecord(
+                    id: fixture.target,
+                    anchor: .directory(path: "/pin/target"),
+                    title: "Pin Target",
+                ),
+                dormantSlot: nil,
+                placement: .before(fixture.pinnedB),
+            ),
+        ) {}
+
+        guard case let .applied(commit) = commitDisposition else {
+            return XCTFail("explicit pin은 applied commit이어야 함: \(commitDisposition)")
+        }
+
+        let firstReadback = try client.loadTopNavigationCommit(defaultsRecorder.client(), [fixture.locationID])
+        let secondReadback = try client.loadTopNavigationCommit(defaultsRecorder.client(), [fixture.locationID])
+
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+        XCTAssertEqual(firstReadback.revision, commit.topNavigation.revision)
+        XCTAssertEqual(secondReadback.revision, commit.topNavigation.revision)
+        XCTAssertEqual(firstReadback.order, commit.topNavigation.order)
+        XCTAssertEqual(secondReadback.order, commit.topNavigation.order)
+    }
 
     /// CTM-003-pin_content_tab_s: unpinned tab pin 시 pinned 상태 전환과 persistence 기록
     /// Directory tab을 pin하면 isPinned가 true가 되고 pin 시점 anchor가 frozen되며 persistence save가 완료됨을 검증한다.
@@ -745,7 +3346,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
@@ -756,7 +3357,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -785,7 +3388,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
@@ -802,7 +3405,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.tabs.count, 1)
@@ -834,7 +3439,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in
@@ -872,7 +3477,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 activeTabID: tabID,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in
@@ -910,7 +3515,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -943,7 +3548,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -988,7 +3593,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: sameAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -1004,7 +3609,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[unpinnedID] = Self.pinnedRecord(id: unpinnedID, anchor: sameAnchor)
             $0.pendingPinnedRecordIDs.insert(unpinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(unpinnedID)
+        }
         await store.finish()
     }
 
@@ -1042,7 +3649,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [tabID: originalRecord],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in
@@ -1086,7 +3693,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             record: originalRecord,
         )
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.entryLoadingClient.displayName = { URL(fileURLWithPath: $0).lastPathComponent }
@@ -1099,7 +3706,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         store.exhaustivity = .off
 
         // Sidebar command routing과 같이 tab anchor가 navigation보다 먼저 갱신된 조건을 재현함
-        await store.send(.contentTabs(.updateActivePageAnchor(tabID, .directory(path: nextPath))))
+        await store.send(.contentTabs(.updateRuntimePageAnchor(tabID, .directory(path: nextPath))))
         await store.send(.navigation(.internal(.performNavigateToPath(nextPath))))
         await store.receive { action in
             guard case let .navigation(.delegate(.navigateToState(.folder(receivedPath)))) = action
@@ -1107,9 +3714,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             return receivedPath == nextPath
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
-            else { return false }
-            return receivedPath == nextPath
+            guard case let .tabContent(
+                receivedTabID,
+                .internal(.applyNavigationState(.folder(receivedPath))),
+            ) = action else { return false }
+            return receivedTabID == tabID && receivedPath == nextPath
         }
         await store.receive(Self.pinnedRuntimeNavigationMatcher(tabID: tabID, path: nextPath))
         await store.finish()
@@ -1122,6 +3731,110 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(sidebarItem.iconName, "folder")
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[tabID], originalRecord)
         XCTAssertTrue(persistenceRecorder.stores().isEmpty)
+    }
+
+    /// - 기대 결과: 첫 record page/anchor/title/iconName/pinnedAt이 pin 시점 값으로 유지
+    func testPin_pinnedTabNavigationUpdatesPinnedRecordAndPersists() async {
+        let firstID = ContentTabID()
+        let secondID = ContentTabID()
+        let originalAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let changedAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Desktop")
+        let secondAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Downloads")
+        let firstSnapshotAtPin = Self.pinnedRecord(
+            id: firstID,
+            anchor: originalAnchor,
+            title: "Documents",
+            iconName: "folder",
+        )
+        let firstSnapshotAfterNav = Self.pinnedRecord(
+            id: firstID,
+            anchor: changedAnchor,
+            title: "/Users/test/Desktop",
+            iconName: "folder",
+        )
+        let secondSnapshot = Self.pinnedRecord(
+            id: secondID,
+            anchor: secondAnchor,
+            title: "Downloads",
+            iconName: "folder",
+        )
+        let savedStores = PinnedRecordStoreRecorder()
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: firstID,
+                        page: .directory,
+                        anchor: originalAnchor,
+                        isPinned: false,
+                        title: "Documents",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: secondID,
+                        page: .directory,
+                        anchor: secondAnchor,
+                        isPinned: false,
+                        title: "Downloads",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: firstID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                // Chain stores: apply transform against latest recorded store
+                let savedStore = try transform(savedStores.latestStore())
+                _ = savedStores.record(savedStore)
+            }
+        }
+
+        // Pin first tab → save first record
+        await store.send(.pin(firstID)) {
+            $0.tabs[id: firstID]?.isPinned = true
+            $0.pinnedRecords[firstID] = firstSnapshotAtPin
+            $0.pendingPinnedRecordIDs.insert(firstID)
+            $0.pinnedRecordPersistenceError = nil
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
+        XCTAssertEqual(savedStores.stores().count, 1)
+        XCTAssertEqual(savedStores.stores()[0].records, [firstSnapshotAtPin])
+
+        // Navigate within pinned tab → record should update and persist
+        await store.send(.updateActivePageAnchor(firstID, changedAnchor)) {
+            $0.tabs[id: firstID]?.anchor = changedAnchor
+            $0.tabs[id: firstID]?.title = "/Users/test/Desktop"
+            $0.tabs[id: firstID]?.iconName = "folder"
+            $0.pinnedRecords[firstID] = firstSnapshotAfterNav
+            $0.pendingPinnedRecordIDs.insert(firstID)
+            $0.pinnedRecordPersistenceError = nil
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
+        XCTAssertEqual(savedStores.stores().count, 2)
+        XCTAssertEqual(savedStores.stores()[1].records, [firstSnapshotAfterNav])
+
+        // Pin second tab → save both records (existing pinned first + new pinned second)
+        await store.send(.pin(secondID)) {
+            $0.tabs[id: secondID]?.isPinned = true
+            $0.pinnedRecords[secondID] = secondSnapshot
+            $0.pendingPinnedRecordIDs.insert(secondID)
+            $0.pinnedRecordPersistenceError = nil
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(secondID)
+        }
+        XCTAssertEqual(savedStores.stores().count, 3)
+        XCTAssertEqual(savedStores.stores()[2].records, [firstSnapshotAfterNav, secondSnapshot])
+
+        await store.finish()
     }
 
     private struct MissingInactiveAiChatCacheFixture {
@@ -1332,7 +4045,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
         let restoredSnapshot = fixture.restoredSnapshot
         let store = TestStore(initialState: fixture.state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.aiChatSessionPersistenceClient.loadSession = { requestedSessionID in
                 loadedSessionIDs.withValue { $0.append(requestedSessionID) }
@@ -1586,7 +4299,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         _ state: FileManagerFeature.State,
     ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_608))
         }
@@ -1636,7 +4349,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             struct SaveError: Error {}
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
@@ -1691,17 +4404,35 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             pinnedRecords: [activeID: Self.pinnedRecord(id: activeID, anchor: anchor)],
         )
 
-        let feature = ContentTabFeature()
-        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded(activeID))
+        let feature = CTM003PinnedPersistenceHarness()
+        let successIntentID = state.markLatestPinnedRecordPersistenceIntent(for: activeID)
+        _ = feature.reduce(
+            into: &state,
+            action: .pinnedRecordSaveSucceeded(
+                tabID: activeID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: successIntentID,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: activeID),
+                ),
+            ),
+        )
         XCTAssertEqual(state.previousActiveTabID, previousID)
         XCTAssertNil(state.pinnedRecordPersistenceError)
 
+        let failureIntentID = state.markLatestPinnedRecordPersistenceIntent(for: activeID)
         _ = feature.reduce(
             into: &state,
             action: .pinnedRecordSaveFailed(
                 tabID: activeID,
-                previousIsPinned: false,
-                previousPinnedRecord: nil,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: failureIntentID,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: activeID),
+                ),
+                rollback: ContentTabPinnedRecordRollbackSnapshot(
+                    previousIsPinned: false,
+                    previousPinnedRecord: nil,
+                    previousTabIndex: nil,
+                ),
             ),
         )
         XCTAssertEqual(state.previousActiveTabID, previousID)
@@ -1747,7 +4478,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -1779,7 +4510,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[firstID] = firstRecord
             $0.pendingPinnedRecordIDs.insert(firstID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondRecord
@@ -1794,8 +4527,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(recorder.stores(), [
-            ContentTabPinnedRecordStore(records: [firstRecord]),
-            ContentTabPinnedRecordStore(records: [firstRecord, secondRecord]),
+            ContentTabPinnedRecordStore(
+                records: [firstRecord],
+                topNavigationOrder: .init(items: [.contentTab(firstID)]),
+            ),
+            ContentTabPinnedRecordStore(
+                records: [firstRecord, secondRecord],
+                topNavigationOrder: .init(items: [.contentTab(firstID), .contentTab(secondID)]),
+            ),
         ])
     }
 
@@ -1846,7 +4585,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -1862,13 +4601,17 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[firstID] = firstRecord
             $0.pendingPinnedRecordIDs.insert(firstID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondRecord
             $0.pendingPinnedRecordIDs.insert(secondID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(secondID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores().map { $0.records.map(\.id).sorted() }, [
@@ -1884,16 +4627,116 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 기대 결과: 오래된 intent는 거부되고 최신 intent만 통과
     func testPinThenUnpin_rejectsOlderPinPersistenceIntentForSameTab() throws {
         let tabID = ContentTabID()
-        let olderIntent = PinnedRecordPersistenceIntent.markLatest(tabID: tabID)
-        let latestIntent = PinnedRecordPersistenceIntent.markLatest(tabID: tabID)
+        let scopeID = UUID()
+        let olderIntent = PinnedRecordPersistenceIntent.markLatest(scopeID: scopeID, tabID: tabID)
+        let latestIntent = PinnedRecordPersistenceIntent.markLatest(scopeID: scopeID, tabID: tabID)
 
         XCTAssertThrowsError(try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: scopeID,
             tabID: tabID,
             intentID: olderIntent,
         )) { error in
             XCTAssertTrue(error is CancellationError)
         }
-        XCTAssertNoThrow(try PinnedRecordPersistenceIntent.checkCurrent(tabID: tabID, intentID: latestIntent))
+        XCTAssertNoThrow(try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: scopeID,
+            tabID: tabID,
+            intentID: latestIntent,
+        ))
+    }
+
+    /// CTM-003-pin_content_tab_s: 같은 tab의 stale 성공 terminal은 최신 persistence pending을 해제하지 않음
+    /// 이전 intent 완료가 선택 탭 일괄 닫기 시작 gate를 조기 개방하는 경합을 방지한다.
+    /// - 검증 내용: stale 성공 무시 후 pending/gate 유지, 최신 성공 후 pending 해제와 gate 복구
+    /// - 사전 조건: 동일 tab에 older/latest intent가 연속 발급되고 최신 pin persistence가 pending
+    /// - 기대 결과: older terminal은 상태를 바꾸지 않고 latest terminal만 pending을 정리한다.
+    func testPinnedRecordSaveSucceeded_staleIntentKeepsLatestPendingAndBatchCloseGateBlocked() {
+        let tabID = ContentTabID()
+        var contentTabState = ContentTabState()
+        contentTabState.pendingPinnedRecordIDs = [tabID]
+        let olderIntent = contentTabState.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        let latestIntent = contentTabState.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        let feature = CTM003PinnedPersistenceHarness()
+
+        _ = feature.reduce(
+            into: &contentTabState,
+            action: .pinnedRecordSaveSucceeded(
+                tabID: tabID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: olderIntent,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
+                ),
+            ),
+        )
+
+        XCTAssertEqual(contentTabState.pendingPinnedRecordIDs, [tabID])
+        var windowState = FileManagerFeature.State()
+        windowState.contentTabs = contentTabState
+        XCTAssertFalse(windowState.canStartSelectedContentTabClose)
+
+        _ = feature.reduce(
+            into: &contentTabState,
+            action: .pinnedRecordSaveSucceeded(
+                tabID: tabID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: latestIntent,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
+                ),
+            ),
+        )
+
+        XCTAssertTrue(contentTabState.pendingPinnedRecordIDs.isEmpty)
+        windowState.contentTabs = contentTabState
+        XCTAssertTrue(windowState.canStartSelectedContentTabClose)
+    }
+
+    /// CTM-003-unpin_content_tab_s: wrapper로 도착한 stale-local non-applied terminal은 완전한 no-op이다.
+    /// 최신 intent의 optimistic 상태와 선택 닫기 coordinator를 오래된 rollback이 종료하지 못하게 한다.
+    /// - 검증 내용: stale non-applied 처리 전후 전체 window state equality와 downstream action 부재
+    /// - 사전 조건: 같은 tab의 최신 intent와 matching selected-close coordinator가 존재
+    /// - 기대 결과: pending pin, batch, pending close, tab state가 모두 유지된다.
+    func testSelectedClose_staleLocalNonAppliedTerminalIsIgnored() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000454"))
+        let tabID = ContentTabID(rawValue: "stale-non-applied")
+        var initialState = FileManagerFeature.State()
+        initialState.contentTabs.pendingPinnedRecordIDs = [tabID]
+        let staleIntent = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        _ = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        initialState.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+            originalActiveTabID: initialState.contentTabs.activeTabID,
+            preferredFallbackIDs: initialState.contentTabs.tabs.map(\.id),
+        )
+        initialState.pendingContentTabClose = PendingContentTabClose(
+            tabID: tabID,
+            batchOperationID: operationID,
+        )
+        let store = TestStore(initialState: initialState) {
+            CTM003FileManagerPersistenceHarness()
+        }
+
+        await store.send(.performSelectedContentTabCloseMutation(
+            operationID: operationID,
+            tabID: tabID,
+            action: .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: staleIntent,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
+                ),
+                reason: .superseded,
+                rollback: ContentTabPinnedRecordRollbackSnapshot(
+                    previousIsPinned: true,
+                    previousPinnedRecord: nil,
+                    previousTabIndex: nil,
+                ),
+            ),
+        ))
+
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
     }
 
     /// CTM-003-pin_content_tab_s: 다른 window의 persisted pinned record를 보존하며 현재 window pin 저장
@@ -1901,6 +4744,204 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 검증 내용: 기존 store에 다른 window record가 있을 때 pin 저장 결과가 other + current record로 merge
     /// - 사전 조건: 다른 window record 1개가 persisted store에 있고 현재 window에는 unpinned Directory tab 1개
     /// - 기대 결과: saveStore가 다른 window record를 보존한 merged store를 저장
+    func testParentExplicitPinOptimisticOrderUsesBeforeAfterAndEmptyPlacement() {
+        let pinnedA = ContentTabID(rawValue: "parent-pin-A")
+        let pinnedB = ContentTabID(rawValue: "parent-pin-B")
+        let target = ContentTabID(rawValue: "parent-pin-target")
+        let trailing = ContentTabID(rawValue: "parent-pin-trailing")
+        let locationID = "parent-loc-1"
+
+        let beforeToken = topNavigationToken(80)
+        var beforeState = makeParentExplicitPinWindowState(
+            pinnedIDs: [pinnedA, pinnedB],
+            targetID: target,
+            trailingID: trailing,
+            locationID: locationID,
+        )
+        _ = withDependencies {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { beforeToken }
+            $0.date = .constant(Self.pinnedAt)
+        } operation: {
+            FileManagerFeature().reduce(
+                into: &beforeState,
+                action: .contentTabs(.pin(target, placement: .before(pinnedB))),
+            )
+        }
+        XCTAssertEqual(beforeState.pendingTopNavigationIntents, [.init(
+            token: beforeToken,
+            intent: .pin(target, placement: .before(pinnedB)),
+        )])
+        XCTAssertEqual(beforeState.optimisticTopNavigationOrder, .init(items: [
+            .location(locationID),
+            .contentTab(pinnedA),
+            .contentTab(target),
+            .contentTab(pinnedB),
+        ]))
+
+        let afterToken = topNavigationToken(81)
+        var afterState = makeParentExplicitPinWindowState(
+            pinnedIDs: [pinnedA, pinnedB],
+            targetID: target,
+            trailingID: trailing,
+            locationID: locationID,
+        )
+        _ = withDependencies {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { afterToken }
+            $0.date = .constant(Self.pinnedAt)
+        } operation: {
+            FileManagerFeature().reduce(
+                into: &afterState,
+                action: .contentTabs(.pin(target, placement: .after(pinnedA))),
+            )
+        }
+        XCTAssertEqual(afterState.pendingTopNavigationIntents, [.init(
+            token: afterToken,
+            intent: .pin(target, placement: .after(pinnedA)),
+        )])
+        XCTAssertEqual(afterState.optimisticTopNavigationOrder, .init(items: [
+            .location(locationID),
+            .contentTab(pinnedA),
+            .contentTab(target),
+            .contentTab(pinnedB),
+        ]))
+
+        let emptyTarget = ContentTabID(rawValue: "parent-empty-target")
+        let emptyTrailing = ContentTabID(rawValue: "parent-empty-trailing")
+        var emptyState = FileManagerFeature.State()
+        emptyState.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: emptyTarget,
+                    page: .directory,
+                    anchor: .directory(path: "/parent/empty-target"),
+                    isPinned: false,
+                    title: "Target",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: emptyTrailing,
+                    page: .directory,
+                    anchor: .directory(path: "/parent/empty-trailing"),
+                    isPinned: false,
+                    title: "Trailing",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: emptyTarget,
+        )
+        emptyState.lastConfirmedTopNavigationOrder = .init(items: [.location(locationID)])
+        emptyState.optimisticTopNavigationOrder = emptyState.lastConfirmedTopNavigationOrder
+        let emptyToken = topNavigationToken(82)
+        _ = withDependencies {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { emptyToken }
+            $0.date = .constant(Self.pinnedAt)
+        } operation: {
+            FileManagerFeature().reduce(into: &emptyState, action: .contentTabs(.pin(emptyTarget, placement: .empty)))
+        }
+        XCTAssertEqual(
+            emptyState.pendingTopNavigationIntents,
+            [.init(token: emptyToken, intent: .pin(emptyTarget, placement: .empty))],
+        )
+        XCTAssertEqual(emptyState.optimisticTopNavigationOrder, .init(items: [
+            .location(locationID),
+            .contentTab(emptyTarget),
+        ]))
+    }
+
+    /// CTM-003-pin_content_tab_s: parent explicit Pin invalid placement는 optimistic token/order를 만들지 않는다.
+    /// parent-owned mixed top navigation이 invalid anchor fallback으로 mutate되지 않는지 검증한다.
+    /// - 검증 내용: invalid explicit placement direct pin의 pending intent/order no-op
+    /// - 사전 조건: pinned anchor 2개와 unpinned target 1개가 있는 window state
+    /// - 기대 결과: invalid before/after/empty 모두 token reserve 없이 상태 불변이다.
+    func testParentExplicitPinInvalidPlacementDoesNotCreateTokenOrOptimisticMutation() {
+        let pinnedA = ContentTabID(rawValue: "parent-invalid-A")
+        let pinnedB = ContentTabID(rawValue: "parent-invalid-B")
+        let target = ContentTabID(rawValue: "parent-invalid-target")
+        let trailing = ContentTabID(rawValue: "parent-invalid-trailing")
+        let locationID = "parent-loc-2"
+        let placements: [ContentTabPlacement] = [
+            .before(trailing),
+            .after(target),
+            .empty,
+        ]
+
+        for placement in placements {
+            let reserveCount = LockIsolated(0)
+            let token = topNavigationToken(83)
+            let initialState = makeParentExplicitPinWindowState(
+                pinnedIDs: [pinnedA, pinnedB],
+                targetID: target,
+                trailingID: trailing,
+                locationID: locationID,
+            )
+            var state = initialState
+            _ = withDependencies {
+                $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                    reserveCount.withValue { $0 += 1 }
+                    return token
+                }
+                $0.date = .constant(Self.pinnedAt)
+            } operation: {
+                FileManagerFeature().reduce(into: &state, action: .contentTabs(.pin(target, placement: placement)))
+            }
+
+            XCTAssertEqual(state.pendingTopNavigationIntents, initialState.pendingTopNavigationIntents)
+            XCTAssertEqual(state.optimisticTopNavigationOrder, initialState.optimisticTopNavigationOrder)
+            XCTAssertEqual(state.dormantContentTabSlots, initialState.dormantContentTabSlots)
+            XCTAssertEqual(reserveCount.value, 0)
+        }
+    }
+
+    /// CTM-003-pin_content_tab_s: selected-wrapper explicit Pin은 parent optimistic placement를 그대로 보존한다.
+    /// wrapper correlation 경로가 child placement payload를 nil로 지우지 않는지 검증한다.
+    /// - 검증 내용: performSelectedContentTabPinMutation explicit pin의 pending intent/order projection
+    /// - 사전 조건: current selected pin mutation coordinator와 explicit before placement payload
+    /// - 기대 결과: parent pending intent와 optimistic order가 explicit placement 기준으로 갱신된다.
+    func testSelectedWrapperExplicitPinPreservesPlacementIntoParentOptimisticOrder() {
+        let pinnedA = ContentTabID(rawValue: "wrapper-pin-A")
+        let pinnedB = ContentTabID(rawValue: "wrapper-pin-B")
+        let target = ContentTabID(rawValue: "wrapper-pin-target")
+        let trailing = ContentTabID(rawValue: "wrapper-pin-trailing")
+        let locationID = "parent-loc-3"
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 1))
+        let token = topNavigationToken(84)
+        var initialState = makeParentExplicitPinWindowState(
+            pinnedIDs: [pinnedA, pinnedB],
+            targetID: target,
+            trailingID: trailing,
+            locationID: locationID,
+        )
+        initialState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: [target],
+            currentTabID: target,
+        )
+        _ = withDependencies {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
+            $0.date = .constant(Self.pinnedAt)
+        } operation: {
+            FileManagerFeature().reduce(
+                into: &initialState,
+                action: .performSelectedContentTabPinMutation(
+                    operationID: operationID,
+                    tabID: target,
+                    action: .pin(target, placement: .before(pinnedB)),
+                ),
+            )
+        }
+        XCTAssertEqual(
+            initialState.pendingTopNavigationIntents,
+            [.init(token: token, intent: .pin(target, placement: .before(pinnedB)))],
+        )
+        XCTAssertEqual(initialState.optimisticTopNavigationOrder, .init(items: [
+            .location(locationID),
+            .contentTab(pinnedA),
+            .contentTab(target),
+            .contentTab(pinnedB),
+        ]))
+    }
+
     func testPin_preservesOtherWindowPinnedRecordsInGlobalStore() async {
         let otherID = ContentTabID()
         let currentID = ContentTabID()
@@ -1933,7 +4974,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -1947,11 +4988,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[currentID] = currentRecord
             $0.pendingPinnedRecordIDs.insert(currentID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(currentID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores(), [
-            ContentTabPinnedRecordStore(records: [otherRecord, currentRecord]),
+            ContentTabPinnedRecordStore(
+                records: [otherRecord, currentRecord],
+                topNavigationOrder: .init(items: [.contentTab(otherID), .contentTab(currentID)]),
+            ),
         ])
     }
 
@@ -1993,7 +5039,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [currentID: currentRecord],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
                 let savedStore = try transform(ContentTabPinnedRecordStore(records: [otherRecord, currentRecord]))
@@ -2004,12 +5050,18 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(currentID)) {
             $0.tabs[id: currentID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(currentID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(currentID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores(), [
-            ContentTabPinnedRecordStore(records: [otherRecord]),
+            ContentTabPinnedRecordStore(
+                records: [otherRecord],
+                topNavigationOrder: .init(items: [.contentTab(otherID)]),
+            ),
         ])
     }
 
@@ -2021,6 +5073,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     func testToggleActiveContentTabPinCommand_pinsActiveUnpinnedTab() async {
         let tabID = ContentTabID()
         let directoryAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let token = topNavigationToken(71)
+        let committedOrder = FileManagerTopNavigationOrder(items: [.contentTab(tabID)])
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [ContentTabItem(
@@ -2036,14 +5090,21 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
+            $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == token }
+            $0.contentTabPinnedRecordClient.loadTopNavigationCommit = { _, _ in
+                .init(order: committedOrder, revision: 1)
+            }
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
         await store.receive(\.contentTabs) {
+            $0.pendingTopNavigationIntents = [.init(token: token, intent: .pin(tabID))]
+            $0.optimisticTopNavigationOrder = committedOrder
             $0.contentTabs.tabs[id: tabID]?.isPinned = true
             $0.contentTabs.pinnedRecords[tabID] = Self.pinnedRecord(
                 id: tabID,
@@ -2054,7 +5115,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
-        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
+            $0.lastConfirmedTopNavigationOrder = committedOrder
+            $0.lastConfirmedTopNavigationCommitRevision = 1
+            $0.pendingTopNavigationIntents.removeAll()
+            $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -2069,7 +5135,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let alertRecorder = CollectionPinAlertRecorder()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                 alertRecorder.record(title: title, message: message)
@@ -2116,7 +5182,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
@@ -2137,7 +5203,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let alertRecorder = CollectionPinAlertRecorder()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                 alertRecorder.record(title: title, message: message)
@@ -2245,7 +5311,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
@@ -2289,7 +5355,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
@@ -2323,7 +5389,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2332,13 +5398,496 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive(\.contentTabs) {
             $0.contentTabs.tabs[id: tabID]?.isPinned = false
             $0.contentTabs.pinnedRecords.removeAll()
+            $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
-        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
+            $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
+    /// CTM-003-pin_content_tab_s: pin 성공과 persistence rollback은 selection/anchor를 보존함
+    /// identity를 유지하는 pin lifecycle이 runtime selection intent를 변경하지 않는지 검증한다.
+    /// - 검증 내용: pin save 성공 및 실패 rollback 전후 selected IDs와 valid-unselected anchor exact equality
+    /// - 사전 조건: selected pin target과 anchor-only sibling을 가진 동일한 두 초기 상태
+    /// - 기대 결과: pin 상태는 성공/rollback 정책대로 변하지만 selection은 target, anchor는 sibling으로 유지됨
+    func testPin_successAndPersistenceRollbackPreserveSelectionAndAnchor() async {
+        struct SaveError: Error {}
+
+        let targetID = ContentTabID(rawValue: "pin-target")
+        let anchorID = ContentTabID(rawValue: "pin-anchor")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/PinTarget")
+        let initialState = Self.selectionPreservationState(
+            targetID: targetID,
+            anchorID: anchorID,
+            targetAnchor: targetAnchor,
+            targetTitle: "Pin Target",
+        )
+
+        let successStore = TestStore(initialState: initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+            }
+        }
+        await successStore.send(.pin(targetID)) {
+            Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
+        }
+        await successStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
+        }
+        await successStore.finish()
+        Self.assertSelection(successStore.state, targetID: targetID, anchorID: anchorID)
+
+        let rollbackStore = TestStore(initialState: initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+        await rollbackStore.send(.pin(targetID)) {
+            Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
+        }
+        await rollbackStore.receive(\.pinnedRecordSaveFailed) {
+            Self.expectPinRollbackState(&$0, targetID: targetID)
+        }
+        await rollbackStore.finish()
+        Self.assertSelection(rollbackStore.state, targetID: targetID, anchorID: anchorID)
+    }
+
+    /// CTM-003-pin_content_tab_s: PRODUCT Pin eligibility는 active/inactive 실제 content를 함께 판정한다.
+    /// 단일 command와 이후 batch preflight가 같은 predicate로 Directory와 저장된 real Collection만 허용하는지 검증한다.
+    /// - 검증 내용: missing/Home/AI Chat/virtual/temporary/unsaved 거부와 active/inactive Directory·saved Collection 허용
+    /// - 사전 조건: 각 page/anchor와 active content 또는 inactive tabContentStates를 가진 Window state
+    /// - 기대 결과: 저장 가능한 실제 위치만 true이고 존재하지 않거나 unsupported인 tab은 false
+    func testPinEligibilityAllowsOnlyDirectoryAndSavedRealCollectionForActiveAndInactiveTabs() {
+        assertSupportedPinEligibility()
+        assertUnsupportedPagePinEligibility()
+        assertUnsavedAndTemporaryCollectionPinEligibility()
+    }
+
+    /// CTM-003-pin_content_tab_s: ordinary Pin은 현재 pinned segment의 마지막에 frozen 순서로 append한다.
+    /// 이후 batch가 single Pin을 순차 재사용해도 runtime tab과 durable record가 같은 pinned boundary를 유지하는지 검증한다.
+    /// - 검증 내용: 두 ordinary Pin의 runtime/durable append 순서와 selection/anchor 보존
+    /// - 사전 조건: All Tags, wonsik, Recents, ordinary unpinned 2개 순서와 기존 pinned records
+    /// - 기대 결과: All Tags·wonsik·Recents·new1·new2 뒤에 unpinned가 남는 순서로 수렴
+    func testPinOrdinaryTabsAppendAfterAllExistingPinsInFrozenProcessingOrder() async {
+        let fixture = Self.ordinaryPinOrderingFixture
+        let recorder = fixture.recorder
+        let store = TestStore(initialState: fixture.state) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                _ = try recorder.record(transform(recorder.latestStore()))
+            }
+        }
+
+        await store.send(.pin(fixture.firstID)) {
+            $0.tabs[id: fixture.firstID]?.isPinned = true
+            $0.pinnedRecords[fixture.firstID] = Self.pinnedRecord(
+                id: fixture.firstID,
+                anchor: fixture.firstAnchor,
+                title: "First",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(fixture.firstID)
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(fixture.firstID)
+        }
+        await store.send(.pin(fixture.secondID)) {
+            $0.tabs[id: fixture.secondID]?.isPinned = true
+            $0.pinnedRecords[fixture.secondID] = Self.pinnedRecord(
+                id: fixture.secondID,
+                anchor: fixture.secondAnchor,
+                title: "Second",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(fixture.secondID)
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(fixture.secondID)
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.tabs.map(\.id), fixture.expectedRuntimeIDs)
+        XCTAssertEqual(recorder.latestStore().records.map(\.id), fixture.expectedPinnedIDs.map(\.rawValue))
+        XCTAssertEqual(store.state.selectedTabIDs, [fixture.firstID, fixture.secondID])
+        XCTAssertEqual(store.state.selectionAnchorID, fixture.allTagsID)
+    }
+
+    /// CTM-003-pin_content_tab_s: first/middle/last Pin persistence failure는 exact snapshot을 복원한다.
+    /// ordinary unpinned segment의 모든 위치에서 optimistic pinned-boundary 이동이 원래 위치로 되돌아가는지 matrix로 검증한다.
+    /// - 검증 내용: 각 위치 failed terminal의 exact tabs/pinnedRecords/selection/anchor rollback
+    /// - 사전 조건: Recents·All Tags 뒤 first/middle/last unpinned target과 save failure
+    /// - 기대 결과: 세 target 모두 Pin 직전 ID 배열과 record/selection snapshot으로 복구
+    func testPinFailureRestoresFirstMiddleAndLastExactSnapshots() async {
+        struct SaveError: Error {}
+
+        for fixture in Self.pinFailureRollbackFixtures {
+            let store = TestStore(initialState: fixture.state) {
+                CTM003PinnedPersistenceHarness()
+            } withDependencies: {
+                $0.date = .constant(Self.pinnedAt)
+                $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+            }
+            // store.exhaustivity = .off: 위치별 최종 exact snapshot과 typed failure terminal에 집중함
+            store.exhaustivity = .off
+
+            await store.send(.pin(fixture.targetID))
+            await store.receive(\.pinnedRecordSaveFailed)
+            await store.finish()
+
+            Self.assertExactRollback(store.state, fixture: fixture)
+        }
+    }
+
+    /// CTM-003-pin_content_tab_s: notApplied Pin도 이동 전 exact snapshot을 복원한다.
+    /// global superseded terminal이 failure와 같은 index/record/selection rollback 경계를 공유하는지 검증한다.
+    /// - 검증 내용: notApplied terminal의 tab order/isPinned/record/selection/anchor rollback
+    /// - 사전 조건: pinned segment 뒤 unpinned target과 guarded superseded disposition, 다중 selection 및 별도 anchor
+    /// - 기대 결과: error 없이 Pin 직전 전체 ordering과 selection snapshot이 exact equality로 복구
+    func testPinNotAppliedRestoresExactOriginalOrderingAndSelection() async {
+        let fixture = Self.pinOrderingRollbackFixture
+        let store = TestStore(initialState: fixture.state) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in .superseded }
+        }
+
+        await store.send(.pin(fixture.targetID)) {
+            Self.expectOptimisticOrderedPin(&$0, fixture: fixture)
+        }
+        await store.receive(\.pinnedRecordSaveNotApplied) {
+            Self.expectOrderedPinRollback(&$0, fixture: fixture, hasError: false)
+        }
+        await store.finish()
+        Self.assertOrderedPinSnapshot(store.state, fixture: fixture)
+    }
+
     // MARK: - CTM-003-unpin_content_tab_s
+
+    /// CTM-003-unpin_content_tab_s: explicit Unpin placement는 unpinned domain before/after/empty semantics를 따른다.
+    /// requested destination이 durable order가 아닌 window runtime ordering에만 반영되는지 검증한다.
+    /// - 검증 내용: `.unpin(_, placement:)`의 unpinned runtime ordering
+    /// - 사전 조건: pinned anchor 3개와 unpinned anchor 2개가 있는 상태, 그리고 unpinned empty 상태
+    /// - 기대 결과: before/after/empty 각각 requested unpinned slot에만 삽입된다.
+    func testUnpin_explicitPlacementUsesUnpinnedDomainBeforeAfterAndEmptySlots() async {
+        let fixture = ExplicitUnpinPlacementFixture()
+
+        let beforeStore = TestStore(initialState: fixture.initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+        // store.exhaustivity = .off: explicit placement 최종 runtime slot만 검증한다.
+        beforeStore.exhaustivity = .off
+        await beforeStore.send(.unpin(fixture.target, placement: .before(fixture.unpinnedA)))
+        await beforeStore.receive(\.pinnedRecordSaveSucceeded)
+        XCTAssertEqual(beforeStore.state.tabs.map(\.id), [
+            fixture.pinnedA,
+            fixture.pinnedB,
+            fixture.target,
+            fixture.unpinnedA,
+            fixture.unpinnedB,
+        ])
+
+        let afterStore = TestStore(initialState: fixture.initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+        // store.exhaustivity = .off: explicit placement 최종 runtime slot만 검증한다.
+        afterStore.exhaustivity = .off
+        await afterStore.send(.unpin(fixture.target, placement: .after(fixture.unpinnedA)))
+        await afterStore.receive(\.pinnedRecordSaveSucceeded)
+        XCTAssertEqual(afterStore.state.tabs.map(\.id), [
+            fixture.pinnedA,
+            fixture.pinnedB,
+            fixture.unpinnedA,
+            fixture.target,
+            fixture.unpinnedB,
+        ])
+
+        let emptyState = ExplicitUnpinPlacementFixture.emptyUnpinnedState()
+        guard let emptyTarget = emptyState.activeTabID else {
+            return XCTFail("empty unpin fixture는 active target을 가져야 함")
+        }
+        let emptyStore = TestStore(initialState: emptyState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+        // store.exhaustivity = .off: explicit placement 최종 runtime slot만 검증한다.
+        emptyStore.exhaustivity = .off
+        await emptyStore.send(.unpin(emptyTarget, placement: .empty))
+        await emptyStore.receive(\.pinnedRecordSaveSucceeded)
+        XCTAssertEqual(emptyStore.state.tabs.map(\.id), [
+            ContentTabID(rawValue: "empty-unpin-A"),
+            ContentTabID(rawValue: "empty-unpin-B"),
+            emptyTarget,
+        ])
+    }
+
+    /// CTM-003-unpin_content_tab_s: explicit Unpin invalid anchor와 invalid empty는 no-op이며 write가 없다.
+    /// wrong-domain/self/non-empty empty 요청이 tail fallback으로 저장되지 않는지 검증한다.
+    /// - 검증 내용: invalid explicit Unpin 요청들의 state/write zero
+    /// - 사전 조건: pinned/unpinned가 함께 있는 상태와 UserDefaults recorder
+    /// - 기대 결과: 모든 invalid 요청이 state unchanged, persistence write 0회를 유지한다.
+    func testUnpin_explicitPlacementRejectsInvalidAnchorsWithoutWrite() async throws {
+        let fixture = ExplicitUnpinPlacementFixture()
+        let scenarios: [ContentTabPlacement] = [
+            .before(fixture.pinnedA),
+            .after(fixture.target),
+            .empty,
+        ]
+
+        for placement in scenarios {
+            let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+            let store = TestStore(initialState: fixture.initialState) {
+                CTM003PinnedPersistenceHarness()
+            } withDependencies: {
+                $0.userDefaultsClient = defaultsRecorder.client()
+                $0.contentTabPinnedRecordClient = .liveValue
+                $0.contentTabPinnedRecordPersistenceRouting = .local(discoveredLocationIDs: [fixture.locationID])
+            }
+            let originalState = store.state
+
+            await store.send(.unpin(fixture.target, placement: placement))
+            await store.finish()
+
+            XCTAssertEqual(store.state, originalState)
+            XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        }
+    }
+
+    /// CTM-003-unpin_content_tab_s: explicit Unpin placement는 runtime에만 적용되고 durable order는 record 제거만 저장한다.
+    /// target destination이 persisted mixed order로 새로 저장되지 않는지 검증한다.
+    /// - 검증 내용: runtime reordered tabs와 durable remove-only topNavigationOrder
+    /// - 사전 조건: pinned/unpinned mixed state와 persisted pinned order
+    /// - 기대 결과: state tabs는 requested unpinned slot에 이동하고 store order는 target 제거만 반영한다.
+    func testUnpin_explicitPlacementIsRuntimeOnlyWhileDurableOrderOnlyRemovesRecord() async throws {
+        let fixture = ExplicitUnpinPlacementFixture()
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let store = TestStore(initialState: fixture.initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.contentTabPinnedRecordPersistenceRouting = .local(discoveredLocationIDs: [fixture.locationID])
+        }
+
+        // store.exhaustivity = .off: 최종 runtime/durable 분리 결과에 집중한다.
+        store.exhaustivity = .off
+        await store.send(.unpin(fixture.target, placement: .before(fixture.unpinnedA)))
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.finish()
+
+        let finalStore = try ContentTabPinnedRecordClient.liveValue.loadStore(defaultsRecorder.client())
+        XCTAssertEqual(store.state.tabs.map(\.id), [
+            fixture.pinnedA,
+            fixture.pinnedB,
+            fixture.target,
+            fixture.unpinnedA,
+            fixture.unpinnedB,
+        ])
+        XCTAssertEqual(finalStore.topNavigationOrder.items, [
+            .location(fixture.locationID),
+            .contentTab(fixture.pinnedA),
+            .contentTab(fixture.pinnedB),
+        ])
+    }
+
+    /// CTM-003-unpin_content_tab_s: guarded stale rejection은 pre-save에서 write와 revision을 모두 막고 local rollback을 만든다.
+    /// current intent가 save 직전 stale 되면 optimistic explicit Pin이 durable mutation 없이 복구되는지 검증한다.
+    /// - 검증 내용: pre-save stale validation의 write zero, revision non-increment, local rollback
+    /// - 사전 조건: explicit Pin optimistic state와 세 번째 validate에서 stale 되는 guarded client
+    /// - 기대 결과: persisted bytes는 유지되고 reducer state는 original snapshot으로 복구된다.
+    func testPin_explicitPlacementPreSaveStaleValidationRejectsWithoutWriteAndRollsBack() async throws {
+        let fixture = ExplicitPinPlacementFixture()
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: fixture.initialStore)
+        let client = ContentTabPinnedRecordClient.liveValue
+        let beforeCommit = try client.loadTopNavigationCommit(
+            defaultsRecorder.client(),
+            [fixture.locationID],
+        )
+        let generation = client.reserveMutationGeneration(fixture.target)
+        let validateCallCount = LockIsolated(0)
+
+        do {
+            _ = try await client.applyPersistenceMutationCommittedGuarded(
+                generation,
+                defaultsRecorder.client(),
+                discoveredLocationIDs: [fixture.locationID],
+                mutation: .upsert(
+                    record: Self.pinnedRecord(
+                        id: fixture.target,
+                        anchor: .directory(path: "/pin/target"),
+                        title: "Pin Target",
+                    ),
+                    dormantSlot: nil,
+                    placement: .before(fixture.pinnedB),
+                ),
+            ) {
+                let next = validateCallCount.withValue {
+                    $0 += 1
+                    return $0
+                }
+                if next >= 3 {
+                    throw CancellationError()
+                }
+            }
+            XCTFail("pre-save stale validation은 CancellationError로 거부되어야 함")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+        let afterCommit = try client.loadTopNavigationCommit(defaultsRecorder.client(), [fixture.locationID])
+        XCTAssertEqual(afterCommit.revision, beforeCommit.revision)
+
+        let reducerInitialState = fixture.initialState
+        let reducerStore = TestStore(initialState: reducerInitialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.reserveMutationGeneration = { _ in generation }
+            $0.contentTabPinnedRecordClient.guardedApplyPersistenceMutationCommitted = { _, _, _, _, validate in
+                try validate()
+                try validate()
+                try validate()
+                return .superseded
+            }
+        }
+
+        await reducerStore.send(.pin(fixture.target, placement: .before(fixture.pinnedB))) {
+            $0.tabs.move(fromOffsets: [3], toOffset: 1)
+            $0.tabs[id: fixture.target]?.isPinned = true
+            $0.pinnedRecords[fixture.target] = Self.pinnedRecord(
+                id: fixture.target,
+                anchor: .directory(path: "/pin/target"),
+                title: "Pin Target",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(fixture.target)
+        }
+        await reducerStore.receive(\.pinnedRecordSaveNotApplied) {
+            var tab = $0.tabs[id: fixture.target]!
+            tab.isPinned = false
+            $0.tabs.remove(id: fixture.target)
+            $0.tabs.insert(tab, at: 3)
+            $0.tabs[id: fixture.target]?.isPinned = false
+            $0.pinnedRecords.removeValue(forKey: fixture.target)
+            $0.pendingPinnedRecordIDs.remove(fixture.target)
+        }
+        await reducerStore.finish()
+        XCTAssertEqual(reducerStore.state, reducerInitialState)
+    }
+
+    /// CTM-003-unpin_content_tab_s: legacy unsupported pinned tabs는 PRODUCT eligibility와 무관하게 Unpin한다.
+    /// Home/AI Chat/virtual/temporary Collection의 page·anchor와 Window-owned content cache를 보존하는지 compact matrix로 검증한다.
+    /// - 검증 내용: 네 unsupported kind의 successful Unpin tail append와 AI owner/session/content preservation
+    /// - 사전 조건: legacy pinned target, inactive cached content, AI background owner와 unpinned sibling
+    /// - 기대 결과: target만 unpinned tail로 이동하고 page/anchor/cache/selection/anchor는 변경되지 않음
+    func testLegacyUnsupportedPinnedTabsCanUnpinWithoutChangingOwnedContent() async throws {
+        let fixtures = legacyUnsupportedUnpinFixtures
+
+        for fixture in fixtures {
+            let originalItem = try XCTUnwrap(fixture.state.contentTabs.tabs[id: fixture.targetID])
+            let persistedStore = ContentTabPinnedRecordStore(
+                records: Array(fixture.state.contentTabs.pinnedRecords.values),
+            )
+            let store = TestStore(initialState: fixture.state) {
+                CTM003FileManagerPersistenceHarness()
+            } withDependencies: {
+                $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                    _ = try transform(persistedStore)
+                }
+            }
+            // store.exhaustivity = .off: Window routing 내부 동기화보다 legacy owner/cache 최종 보존을 검증함
+            store.exhaustivity = .off
+
+            await store.send(.contentTabs(.unpin(fixture.targetID)))
+            await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+            await store.finish()
+
+            XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), [fixture.siblingID, fixture.targetID])
+            XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.targetID]?.page, originalItem.page)
+            XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.targetID]?.anchor, originalItem.anchor)
+            XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.targetID]?.isPinned, false)
+            XCTAssertNil(store.state.contentTabs.pinnedRecords[fixture.targetID])
+            XCTAssertEqual(store.state.contentTabs.selectedTabIDs, fixture.state.contentTabs.selectedTabIDs)
+            XCTAssertEqual(store.state.contentTabs.selectionAnchorID, fixture.state.contentTabs.selectionAnchorID)
+            XCTAssertEqual(store.state.tabContentStates, fixture.state.tabContentStates)
+            XCTAssertEqual(store.state.backgroundAiChatStates, fixture.state.backgroundAiChatStates)
+            if let aiSessionID = fixture.aiSessionID {
+                XCTAssertEqual(store.state.tabContentStates[fixture.targetID]?.aiChat.sessionID, aiSessionID)
+                XCTAssertEqual(store.state.backgroundAiChatStates[aiSessionID]?.aiChat.sessionID, aiSessionID)
+                XCTAssertEqual(store.state.tabContentStates[fixture.targetID]?.aiChat.draftText, "legacy owner draft")
+            }
+        }
+    }
+
+    /// CTM-003-unpin_content_tab_s: legacy AI Chat Unpin failure도 owner/session/content와 exact tab snapshot을 복원한다.
+    /// unsupported AI Chat의 optimistic tail 이동이 실패해도 Window-owned cache를 건드리지 않는지 검증한다.
+    /// - 검증 내용: failed terminal의 exact tabs/records/selection/anchor와 AI cache/background owner 보존
+    /// - 사전 조건: legacy pinned AI Chat과 persistence failure
+    /// - 기대 결과: original pinned index와 record가 복구되고 AI session/content owner는 exact equality 유지
+    func testLegacyAiChatUnpinFailureRestoresExactOwnedSnapshot() async throws {
+        struct SaveError: Error {}
+        let fixture = try XCTUnwrap(legacyUnsupportedUnpinFixtures.first { $0.aiSessionID != nil })
+        let store = TestStore(initialState: fixture.state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+        // store.exhaustivity = .off: Window routing 내부 동기화보다 rollback과 AI owner/cache exact 보존을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.unpin(fixture.targetID)))
+        await store.receive(\.contentTabs.pinnedRecordSaveFailed)
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs, fixture.state.contentTabs.tabs)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords, fixture.state.contentTabs.pinnedRecords)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, fixture.state.contentTabs.selectedTabIDs)
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, fixture.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.tabContentStates, fixture.state.tabContentStates)
+        XCTAssertEqual(store.state.backgroundAiChatStates, fixture.state.backgroundAiChatStates)
+        let aiSessionID = try XCTUnwrap(fixture.aiSessionID)
+        XCTAssertEqual(store.state.tabContentStates[fixture.targetID]?.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.backgroundAiChatStates[aiSessionID]?.aiChat.sessionID, aiSessionID)
+    }
+
+    /// CTM-003-unpin_content_tab_s: first/middle/last Unpin persistence failure는 exact snapshot을 복원한다.
+    /// pinned segment의 모든 위치에서 optimistic tail 이동이 원래 index로 되돌아가는지 matrix로 검증한다.
+    /// - 검증 내용: 각 위치 failed terminal의 exact tabs/pinnedRecords/selection/anchor rollback
+    /// - 사전 조건: first/middle/last pinned target과 unpinned tail, save failure
+    /// - 기대 결과: 세 target 모두 Unpin 직전 ID 배열과 record/selection snapshot으로 복구
+    func testUnpinFailureRestoresFirstMiddleAndLastExactSnapshots() async {
+        struct SaveError: Error {}
+
+        for fixture in Self.unpinFailureRollbackFixtures {
+            let store = TestStore(initialState: fixture.state) {
+                CTM003PinnedPersistenceHarness()
+            } withDependencies: {
+                $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+            }
+            // store.exhaustivity = .off: 위치별 최종 exact snapshot과 typed failure terminal에 집중함
+            store.exhaustivity = .off
+
+            await store.send(.unpin(fixture.targetID))
+            await store.receive(\.pinnedRecordSaveFailed)
+            await store.finish()
+
+            Self.assertExactRollback(store.state, fixture: fixture)
+        }
+    }
 
     /// CTM-003-unpin_content_tab_s: pinned tab unpin 시 persistence에서 제거
     /// Pinned Directory tab을 unpin하면 isPinned=false, frozen record 제거, persistence save 완료됨을 검증한다.
@@ -2365,7 +5914,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [tabID: Self.pinnedRecord(id: tabID, anchor: directoryAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2373,8 +5922,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -2421,7 +5973,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: pinnedAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2432,8 +5984,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs.remove(id: pinnedID)
             $0.tabs.append(unpinnedTab)
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.tabs.map(\.id), [firstUnpinnedID, secondUnpinnedID, pinnedID])
@@ -2464,7 +6019,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2497,7 +6052,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2531,7 +6086,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [tabID: Self.pinnedRecord(id: tabID, anchor: directoryAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             struct SaveError: Error {}
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
@@ -2540,21 +6095,24 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
         await store.receive(\.pinnedRecordSaveFailed) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
             $0.tabs[id: tabID]?.isPinned = true
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
+            $0.pendingPinnedRecordIDs.remove(tabID)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
         }
         await store.finish()
     }
 
-    /// CTM-003-unpin_content_tab_s: pinned tab close는 unpin transition으로 위임
-    /// lifecycle contract의 pinned_tab_close_means_unpin 정책을 검증한다.
-    /// - 검증 내용: close(pinnedID) → isPinned=false, tab 유지, recentlyClosed 미생성, saveSucceeded 수신
+    /// CTM-003-unpin_content_tab_s: leaf close는 durable 제거 전환을 만들고 window commitClose가 실제 close를 소유한다.
+    /// 저장 성공 전 runtime cache를 제거하지 않는 2단계 pinned close 준비 계약을 검증한다.
+    /// - 검증 내용: leaf close의 isPinned=false, tab 유지, record 제거와 saveSucceeded
     /// - 사전 조건: pinned Directory tab 하나 (frozen record 설정)
-    /// - 기대 결과: 탭은 남고 pinned 상태만 해제됨
-    func testClose_pinnedTabDelegatesToUnpin() async {
+    /// - 기대 결과: leaf 단계는 탭을 유지하고 window lifecycle 성공 뒤 별도 commitClose가 제거함
+    func testContentTabLeafClose_preparesPinnedRemovalBeforeWindowCommitClose() async {
         let pinnedID = ContentTabID()
         let directoryAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
         let store = TestStore(
@@ -2574,7 +6132,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: directoryAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2582,8 +6140,150 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.close(pinnedID)) {
             $0.tabs[id: pinnedID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
+        await store.finish()
+    }
+
+    /// CTM-003-unpin_content_tab_s: unpin 성공과 persistence rollback은 selection/anchor를 보존함
+    /// 같은 ID를 재배치하는 unpin lifecycle이 runtime selection intent를 변경하지 않는지 검증한다.
+    /// - 검증 내용: unpin save 성공 및 실패 rollback 전후 selected IDs와 valid-unselected anchor exact equality
+    /// - 사전 조건: selected pinned target과 anchor-only sibling, target pinned record를 가진 동일한 두 초기 상태
+    /// - 기대 결과: unpin 상태는 성공/rollback 정책대로 변하지만 selection은 target, anchor는 sibling으로 유지됨
+    func testUnpin_successAndPersistenceRollbackPreserveSelectionAndAnchor() async {
+        struct SaveError: Error {}
+
+        let targetID = ContentTabID(rawValue: "unpin-target")
+        let anchorID = ContentTabID(rawValue: "unpin-anchor")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/UnpinTarget")
+        let pinnedRecord = Self.pinnedRecord(id: targetID, anchor: targetAnchor, title: "Unpin Target")
+        var initialState = Self.selectionPreservationState(
+            targetID: targetID,
+            anchorID: anchorID,
+            targetAnchor: targetAnchor,
+            targetTitle: "Unpin Target",
+            isPinned: true,
+            previousActiveTabID: anchorID,
+            pinnedRecord: pinnedRecord,
+        )
+        initialState.activeTabID = anchorID
+        initialState.selectedTabIDs = [targetID, anchorID]
+        initialState.selectionAnchorID = targetID
+
+        let successStore = TestStore(initialState: initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                _ = try transform(ContentTabPinnedRecordStore(records: [pinnedRecord]))
+            }
+        }
+        await successStore.send(.unpin(targetID)) {
+            Self.expectUnpinnedState(&$0, targetID: targetID)
+            $0.previousActiveTabID = anchorID
+            $0.pendingPinnedRecordIDs.insert(targetID)
+            $0.selectedTabIDs.insert(targetID)
+            $0.selectionAnchorID = targetID
+        }
+        await successStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
+        }
+        await successStore.finish()
+        XCTAssertEqual(successStore.state.selectedTabIDs, [targetID, anchorID])
+        XCTAssertEqual(successStore.state.selectionAnchorID, targetID)
+
+        let rollbackStore = TestStore(initialState: initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+        await rollbackStore.send(.unpin(targetID)) {
+            Self.expectUnpinnedState(&$0, targetID: targetID)
+            $0.previousActiveTabID = anchorID
+            $0.pendingPinnedRecordIDs.insert(targetID)
+            $0.selectedTabIDs.insert(targetID)
+            $0.selectionAnchorID = targetID
+        }
+        await rollbackStore.receive(\.pinnedRecordSaveFailed) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
+            $0.tabs.move(fromOffsets: [1], toOffset: 0)
+            $0.tabs[id: targetID]?.isPinned = true
+            $0.pinnedRecords[targetID] = pinnedRecord
+            $0.pendingPinnedRecordIDs.remove(targetID)
+            $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+            $0.selectedTabIDs.insert(targetID)
+            $0.selectionAnchorID = targetID
+        }
+        await rollbackStore.finish()
+        XCTAssertEqual(rollbackStore.state.selectedTabIDs, [targetID, anchorID])
+        XCTAssertEqual(rollbackStore.state.selectionAnchorID, targetID)
+    }
+
+    /// CTM-003-unpin_content_tab_s: persistence 실패 rollback은 원래 pinned 상대 순서를 복원함
+    /// unpin optimistic 이동이 실패한 뒤 range 선택 기준이 변경되는 회귀를 방지한다.
+    /// - 검증 내용: 중간 pinned tab unpin 실패 → raw/pinned-first 순서 복원 → 원래 구간 range 선택
+    /// - 사전 조건: pinned tab 3개, 첫 tab이 anchor, 중간 tab 저장 실패
+    /// - 기대 결과: 마지막 pinned tab을 포함하지 않고 첫 tab부터 중간 tab까지만 선택
+    func testUnpin_persistenceFailureThenSelectRangeUsesOriginalPinnedRelativeOrder() async {
+        struct SaveError: Error {}
+
+        let firstPinnedID = ContentTabID(rawValue: "first-pinned")
+        let rollbackTargetID = ContentTabID(rawValue: "rollback-target")
+        let trailingPinnedID = ContentTabID(rawValue: "trailing-pinned")
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/First")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Target")
+        let trailingAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Trailing")
+        let targetRecord = Self.pinnedRecord(id: rollbackTargetID, anchor: targetAnchor, title: "Target")
+        var initialState = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: firstPinnedID, anchor: firstAnchor, title: "First"),
+                Self.pinnedItem(id: rollbackTargetID, anchor: targetAnchor, title: "Target"),
+                Self.pinnedItem(id: trailingPinnedID, anchor: trailingAnchor, title: "Trailing"),
+            ],
+            activeTabID: firstPinnedID,
+            pinnedRecords: [
+                firstPinnedID: Self.pinnedRecord(id: firstPinnedID, anchor: firstAnchor, title: "First"),
+                rollbackTargetID: targetRecord,
+                trailingPinnedID: Self.pinnedRecord(
+                    id: trailingPinnedID,
+                    anchor: trailingAnchor,
+                    title: "Trailing",
+                ),
+            ],
+        )
+        initialState.selectedTabIDs = [firstPinnedID]
+        initialState.selectionAnchorID = firstPinnedID
+        let store = TestStore(initialState: initialState) {
+            CTM003PinnedPersistenceHarness()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+
+        await store.send(.unpin(rollbackTargetID)) {
+            $0.tabs[id: rollbackTargetID]?.isPinned = false
+            $0.tabs.move(fromOffsets: [1], toOffset: 3)
+            $0.pinnedRecords.removeValue(forKey: rollbackTargetID)
+            $0.pendingPinnedRecordIDs.insert(rollbackTargetID)
+        }
+        await store.receive(\.pinnedRecordSaveFailed) {
+            $0.pendingPinnedRecordIDs.remove(rollbackTargetID)
+            $0.tabs.move(fromOffsets: [2], toOffset: 1)
+            $0.tabs[id: rollbackTargetID]?.isPinned = true
+            $0.pinnedRecords[rollbackTargetID] = targetRecord
+            $0.pendingPinnedRecordIDs.remove(rollbackTargetID)
+            $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+        }
+
+        XCTAssertEqual(store.state.selectionOrderedTabIDs, [firstPinnedID, rollbackTargetID, trailingPinnedID])
+
+        await store.send(.selectRange(
+            to: rollbackTargetID,
+            orderedIDs: store.state.selectionOrderedTabIDs,
+        )) {
+            $0.selectedTabIDs = [firstPinnedID, rollbackTargetID]
+        }
         await store.finish()
     }
 
@@ -2673,6 +6373,127 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.activeTabID, unpinnedID)
         XCTAssertNil(state.tabContentStates[stalePinnedID])
         XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([firstPinnedID, secondPinnedID]))
+    }
+
+    func testApplyPinnedContentTabsReconcilesSelectionAfterFinalMerge() {
+        let survivingPinnedID = ContentTabID(rawValue: "surviving-pin")
+        let removedPinnedID = ContentTabID(rawValue: "removed-pin")
+        let survivingUnpinnedID = ContentTabID(rawValue: "working-tab")
+        let restoredPinnedID = ContentTabID(rawValue: "restored-pin")
+        let survivingAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Surviving")
+        var state = Self.pinnedMergeSelectionState(
+            survivingPinnedID: survivingPinnedID,
+            removedPinnedID: removedPinnedID,
+            survivingUnpinnedID: survivingUnpinnedID,
+            survivingAnchor: survivingAnchor,
+        )
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: survivingPinnedID,
+                    page: .directory,
+                    anchor: survivingAnchor,
+                    isPinned: true,
+                    title: "Surviving",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: restoredPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Restored"),
+                    isPinned: true,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: restoredPinnedID,
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [survivingPinnedID, survivingUnpinnedID])
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, survivingPinnedID)
+        XCTAssertFalse(state.contentTabs.selectedTabIDs.contains(restoredPinnedID))
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: final merge에서 제거된 pinned identity anchor 정리
+    /// - 검증 내용: surviving unpinned selection은 유지하고 removed pinned anchor만 nil 처리
+    /// - 사전 조건: 선택된 unpinned tab과 anchor인 pinned tab이 있고 restore 결과에서 pinned tab 제거
+    /// - 기대 결과: surviving selection 유지, selectionAnchorID == nil
+    func testApplyPinnedContentTabsClearsAnchorForRemovedPinnedIdentity() {
+        let removedPinnedID = ContentTabID(rawValue: "removed-anchor-pin")
+        let survivingUnpinnedID = ContentTabID(rawValue: "surviving-unpinned")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: removedPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Removed"),
+                    isPinned: true,
+                    title: "Removed",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: survivingUnpinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: survivingUnpinnedID,
+        )
+        state.contentTabs.selectedTabIDs = [survivingUnpinnedID]
+        state.contentTabs.selectionAnchorID = removedPinnedID
+
+        state.applyPinnedContentTabs(ContentTabState())
+
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [survivingUnpinnedID])
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [survivingUnpinnedID])
+        XCTAssertNil(state.contentTabs.selectionAnchorID)
+    }
+
+    func testApplyPinnedContentTabsPreservesSelectionForSameIDAnchorReplacement() {
+        let pinnedID = ContentTabID(rawValue: "same-id-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
+        let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/New")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+        )
+        state.contentTabs.selectedTabIDs = [pinnedID]
+        state.contentTabs.selectionAnchorID = pinnedID
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: newAnchor,
+                    isPinned: true,
+                    title: "New",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs[id: pinnedID]?.anchor, newAnchor)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [pinnedID])
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, pinnedID)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: sync 중 같은 id의 optimistic unpinned tab 중복 제거
@@ -2937,7 +6758,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ],
         )
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
@@ -3059,7 +6880,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.pinnedRecords[pinnedID]?.anchor, newAnchor)
     }
 
-    func testApplyPinnedContentTabsRestoresHomeContentWhenActivePinnedTabRemoved() throws {
+    func testApplyPinnedContentTabs_createsHomeFallbackWhenNoTabsRemain() throws {
         let pinnedID = ContentTabID(rawValue: "removed-pin")
         let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Removed")
         var state = FileManagerFeature.State()
@@ -3081,6 +6902,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         state.content.navigation.seedInitialFolderPath("/Users/test/Removed")
         state.syncActiveTabContentState()
+        state.contentTabs.selectedTabIDs = [pinnedID]
+        state.contentTabs.selectionAnchorID = pinnedID
         let restoredState = ContentTabState(tabs: [], activeTabID: nil, pinnedRecords: [:])
 
         state.applyPinnedContentTabs(restoredState)
@@ -3090,6 +6913,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .home)
         XCTAssertFalse(state.contentTabs.tabs[id: activeTabID]?.isPinned ?? true)
         XCTAssertEqual(state.content.navigation.currentPath, "Home")
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [])
+        XCTAssertNil(state.contentTabs.selectionAnchorID)
         XCTAssertNil(state.tabContentStates[pinnedID])
         XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")
     }
@@ -3590,7 +7415,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 iconName: "bubble.right",
                 pinnedAt: pinnedAt,
             ),
-        ])
+        ], topNavigationOrder: .init(items: [
+            .contentTab(ContentTabID(rawValue: "dir-1")),
+            .contentTab(ContentTabID(rawValue: "col-1")),
+            .contentTab(ContentTabID(rawValue: "ai-1")),
+        ]))
         let updatedCollection = ContentTabPinnedRecord(
             id: "col-1",
             page: .collection,
@@ -3617,6 +7446,17 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             .collectionFile(url: URL(fileURLWithPath: "/Users/test/UpdatedPhotos")),
         )
         XCTAssertEqual(appendedStore.records.map(\.id), ["dir-1", "col-1", "ai-1", "dir-2"])
+        XCTAssertEqual(updatedStore.topNavigationOrder.items, [
+            .contentTab(ContentTabID(rawValue: "dir-1")),
+            .contentTab(ContentTabID(rawValue: "col-1")),
+            .contentTab(ContentTabID(rawValue: "ai-1")),
+        ])
+        XCTAssertEqual(appendedStore.topNavigationOrder.items, [
+            .contentTab(ContentTabID(rawValue: "dir-1")),
+            .contentTab(ContentTabID(rawValue: "col-1")),
+            .contentTab(ContentTabID(rawValue: "ai-1")),
+            .contentTab(ContentTabID(rawValue: "dir-2")),
+        ])
     }
 
     // MARK: - CTM-003-pinned_record_restore_compaction
@@ -3751,7 +7591,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         _ = recorder.record(store)
 
         let testStore = TestStore(initialState: restore.state) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { pinnedAt }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -3767,12 +7607,3456 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             state.tabs.remove(id: tabID)
             state.tabs.append(unpinnedTab)
             state.pinnedRecords[tabID] = nil
+            state.pendingPinnedRecordIDs.insert(tabID)
         }
-        await testStore.receive(\.pinnedRecordSaveSucceeded)
+        await testStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
 
         // saveStore 결과에 orig-dir-1 record가 없어야 함 (unpin으로 제거됨)
         let ids = recorder.stores().last?.records.map(\.id) ?? []
         XCTAssertFalse(ids.contains("orig-dir-1"), "unpin한 record ID가 persistence에 남아 있으면 안 됨")
         XCTAssertTrue(ids.contains("orig-dir-2"), "unpin하지 않은 record ID는 persistence에 유지되어야 함")
+    }
+
+    // MARK: - CTM-003-unpin_selected_content_tabs
+
+    /// CTM-003-unpin_selected_content_tabs: selected pinned clicked row는 bulk Unpin presentation을 노출한다.
+    /// clicked row의 현재 pinned 상태가 전체 선택의 target을 unpinned로 결정하는 메뉴 계약을 검증한다.
+    /// - 검증 내용: exact title, accessibility identifier, enabled state, command와 delegate target
+    /// - 사전 조건: clicked pinned row가 normalized live selection 2개에 포함되고 start gate가 열려 있음
+    /// - 기대 결과: `Unpin 2 Tabs`, unique identifier, enabled, target `.unpinned`
+    func testSelectedPinnedRowPresentsBulkUnpinCommand() {
+        let clickedID = ContentTabID(rawValue: "selected-pinned")
+        let presentation = ContentTabPinPresentation(
+            clickedTabID: clickedID,
+            isPinned: true,
+            validSelectedTabIDs: [clickedID, ContentTabID(rawValue: "selected-peer")],
+            isPinMutationEnabled: true,
+            isSingleUnpinEnabled: true,
+        )
+
+        XCTAssertEqual(presentation.title, "Unpin 2 Tabs")
+        XCTAssertEqual(presentation.accessibilityIdentifier, "unpin-selected-content-tabs")
+        XCTAssertTrue(presentation.isEnabled)
+        guard case let .setSelectedContentTabsPinned(target) = presentation.command else {
+            return XCTFail("selected pinned row should keep the bulk Unpin command")
+        }
+        XCTAssertEqual(target, .unpinned)
+        guard case let .setSelectedContentTabsPinned(delegateTarget) = presentation.viewAction else {
+            return XCTFail("bulk Unpin should map to the semantic Sidebar View action")
+        }
+        XCTAssertEqual(delegateTarget, .unpinned)
+    }
+
+    /// CTM-003-unpin_selected_content_tabs: Sidebar View pin 계열 intent는 기존 Delegate로 각각 한 번 relay한다.
+    /// View가 Window 경계 action을 직접 만들지 않고 Sidebar reducer가 semantic outward event를 소유하는지 검증한다.
+    /// - 검증 내용: single Pin, single Unpin, selected bulk target별 View -> Delegate 1:1 routing과 state 불변
+    /// - 사전 조건: 기본 Sidebar state와 세 pin 계열 View action
+    /// - 기대 결과: 각 action마다 대응 Delegate 하나만 receive하고 추가 action이나 state 변경이 없다.
+    func testSidebarPinViewActionsRelayExactlyOnceToDelegate() async {
+        let tabID = ContentTabID(rawValue: "sidebar-view-pin-route")
+        let routes: [FileManagerSidebarAction.View] = [
+            .pinContentTab(tabID),
+            .unpinContentTab(tabID),
+            .setSelectedContentTabsPinned(target: .pinned),
+            .setSelectedContentTabsPinned(target: .unpinned),
+        ]
+
+        for (index, viewAction) in routes.enumerated() {
+            let initialState = FileManagerSidebarFeature.State()
+            let store = TestStore(initialState: initialState) {
+                FileManagerSidebarFeature()
+            }
+
+            await store.send(.view(viewAction))
+            await store.receive { action in
+                switch (index, action) {
+                case (0, .delegate(.pinContentTab(tabID))),
+                     (1, .delegate(.unpinContentTab(tabID))):
+                    tabID == ContentTabID(rawValue: "sidebar-view-pin-route")
+                case (2, .delegate(.setSelectedContentTabsPinned(target: .pinned))),
+                     (3, .delegate(.setSelectedContentTabsPinned(target: .unpinned))):
+                    true
+                default:
+                    false
+                }
+            }
+            XCTAssertEqual(store.state, initialState)
+            await store.finish()
+        }
+    }
+
+    /// CTM-003-unpin_selected_content_tabs: Sidebar bulk Unpin delegate는 Window request를 정확히 한 번 전달한다.
+    /// presentation의 target payload가 coordinator request 경계에서 변환되거나 중복되지 않는지 검증한다.
+    /// - 검증 내용: Sidebar delegate에서 `.requestSelectedContentTabPinMutation(target:)` 단일 effect
+    /// - 사전 조건: target `.unpinned`와 normalized count가 2 미만인 no-start Window state
+    /// - 기대 결과: payload `.unpinned` request를 한 번 receive하고 추가 action 없음
+    func testBulkUnpinDelegateRoutesExactlyOneWindowRequest() async {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.setSelectedContentTabsPinned(target: .unpinned))))
+        await store.receive(\.requestSelectedContentTabPinMutation, .unpinned)
+        await store.finish()
+    }
+
+    /// CTM-003-unpin_selected_content_tabs: Unpin terminal 뒤 authoritative Pin replay는 live runtime을 보존한다.
+    /// persistence 실패 중 바뀐 탐색·content·inspector가 오래된 persisted anchor로 되돌아가지 않는지 검증한다.
+    /// - 검증 내용: failed/superseded/cancelled의 durable Pin 복구와 runtime anchor/cache 보존
+    /// - 사전 조건: optimistic selected Unpin current item, 이전 persisted authoritative snapshot, terminal 전 peer 전환과 target
+    /// anchor 변경
+    /// - 기대 결과: Pin 상태·record·index는 복구되지만 최신 active/selection/anchor/content/inspector는 유지됨
+    func testUnpinSelectedRollbackReplaysAuthoritativePinWithoutReplacingLiveRuntime() async throws {
+        for terminal in SelectedPinReplacementTerminal.allCases {
+            try await assertUnpinAuthoritativeReplayPreservesRuntime(for: terminal)
+        }
+    }
+
+    private func assertUnpinAuthoritativeReplayPreservesRuntime(
+        for terminal: SelectedPinReplacementTerminal,
+    ) async throws {
+        let fixture = currentOptimisticSelectedUnpinFixture()
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: fixture.state) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+        // store.exhaustivity = .off: terminal 세부 action보다 authoritative replay 이후 durable/runtime 분리를 검증함
+        store.exhaustivity = .off
+
+        let previousRecord = try XCTUnwrap(fixture.rollback.previousPinnedRecord)
+        let peerRecord = try XCTUnwrap(fixture.state.contentTabs.pinnedRecords[fixture.peerID])
+        let authoritative = ContentTabState.restoringPinnedRecords(
+            from: ContentTabPinnedRecordStore(records: [previousRecord, peerRecord]),
+        ).state
+        await store.send(.contentTabs(.setCurrent(fixture.peerID)))
+        await store.skipReceivedActions()
+        await store.send(.contentTabs(.toggleSelection(fixture.tabID)))
+        await store.send(.contentTabs(.updateActivePageAnchor(fixture.tabID, fixture.changedAnchor)))
+        let liveState = store.state
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: fixture.operationID,
+            tabID: fixture.tabID,
+            action: selectedPinReplacementTerminalAction(
+                terminal,
+                tabID: fixture.tabID,
+                context: fixture.context,
+                rollback: fixture.rollback,
+            ),
+        ))
+        await store.skipReceivedActions()
+        await store.send(.applyAuthoritativePinnedContentTabs(authoritative))
+        await store.finish()
+
+        let label = "unpin-authoritative-\(terminal)"
+        guard let result = completedResults.value.first else {
+            return XCTFail("missing Unpin completion: \(label)")
+        }
+        XCTAssertEqual(result.failureCount, terminal == .failed ? 1 : 0, label)
+        XCTAssertEqual(result.remainingCount, terminal == .failed ? 0 : 1, label)
+        assertUnpinAuthoritativeRuntimeState(
+            store.state,
+            matches: liveState,
+            fixture: fixture,
+            previousRecord: previousRecord,
+            label: label,
+        )
+    }
+
+    private func assertUnpinAuthoritativeRuntimeState(
+        _ state: FileManagerFeature.State,
+        matches liveState: FileManagerFeature.State,
+        fixture: CurrentOptimisticSelectedUnpinFixture,
+        previousRecord: ContentTabPinnedRecord,
+        label: String,
+    ) {
+        XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertNil(state.deferredPinnedContentTabs, label)
+        XCTAssertNil(state.deferredPinnedContentTabsMode, label)
+        XCTAssertTrue(state.pendingRuntimePreservationRecords.isEmpty, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.isPinned, true, label)
+        XCTAssertEqual(state.contentTabs.pinnedRecords[fixture.tabID], previousRecord, label)
+        XCTAssertEqual(state.contentTabs.tabs.index(id: fixture.tabID), fixture.rollback.previousTabIndex, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.anchor, fixture.changedAnchor, label)
+        XCTAssertEqual(state.contentTabs.activeTabID, fixture.peerID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, liveState.contentTabs.selectedTabIDs, label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, liveState.contentTabs.selectionAnchorID, label)
+        XCTAssertEqual(state.content, liveState.content, label)
+        XCTAssertEqual(state.tabContentStates, liveState.tabContentStates, label)
+        XCTAssertEqual(state.inspector, liveState.inspector, label)
+        XCTAssertEqual(state.tabInspectorStates, liveState.tabInspectorStates, label)
+    }
+
+    // MARK: - CTM-003-pin_selected_content_tabs
+
+    /// CTM-003-pin_selected_content_tabs: selected unpinned clicked row는 bulk Pin presentation을 노출한다.
+    /// clicked row의 현재 unpinned 상태가 전체 선택의 target을 pinned로 결정하는 메뉴 계약을 검증한다.
+    /// - 검증 내용: exact title, accessibility identifier, enabled state, command와 delegate target
+    /// - 사전 조건: clicked unpinned row가 normalized live selection 2개에 포함되고 start gate가 열려 있음
+    /// - 기대 결과: `Pin 2 Tabs`, unique identifier, enabled, target `.pinned`
+    func testSelectedUnpinnedRowPresentsBulkPinCommand() {
+        let clickedID = ContentTabID(rawValue: "selected-unpinned")
+        let presentation = ContentTabPinPresentation(
+            clickedTabID: clickedID,
+            isPinned: false,
+            validSelectedTabIDs: [clickedID, ContentTabID(rawValue: "selected-peer")],
+            isPinMutationEnabled: true,
+            isSingleUnpinEnabled: true,
+        )
+
+        XCTAssertEqual(presentation.title, "Pin 2 Tabs")
+        XCTAssertEqual(presentation.accessibilityIdentifier, "pin-selected-content-tabs")
+        XCTAssertTrue(presentation.isEnabled)
+        guard case let .setSelectedContentTabsPinned(target) = presentation.command else {
+            return XCTFail("selected unpinned row should keep the bulk Pin command")
+        }
+        XCTAssertEqual(target, .pinned)
+        guard case let .setSelectedContentTabsPinned(delegateTarget) = presentation.viewAction else {
+            return XCTFail("bulk Pin should map to the semantic Sidebar View action")
+        }
+        XCTAssertEqual(delegateTarget, .pinned)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: unselected row와 normalized count 0/1은 exact single Pin/Unpin으로 fallback한다.
+    /// bulk eligibility가 없을 때 기존 clicked-row command와 identifier를 그대로 보존하는지 검증한다.
+    /// - 검증 내용: unselected/count 0/1의 title, identifier, enabled state, single View payload
+    /// - 사전 조건: 2-selection 밖 unpinned row, empty selection unpinned row, 1-selection pinned row
+    /// - 기대 결과: row별 `Pin`/`Unpin`과 tab ID 기반 single View action이 유지됨
+    func testPinPresentationFallsBackToExistingSingleCommands() {
+        let clickedID = ContentTabID(rawValue: "single-clicked")
+        let unselected = ContentTabPinPresentation(
+            clickedTabID: clickedID,
+            isPinned: false,
+            validSelectedTabIDs: [
+                ContentTabID(rawValue: "selected-a"),
+                ContentTabID(rawValue: "selected-b"),
+            ],
+            isPinMutationEnabled: false,
+            isSingleUnpinEnabled: false,
+        )
+        let empty = ContentTabPinPresentation(
+            clickedTabID: clickedID,
+            isPinned: false,
+            validSelectedTabIDs: [],
+            isPinMutationEnabled: false,
+            isSingleUnpinEnabled: false,
+        )
+        let countOnePinned = ContentTabPinPresentation(
+            clickedTabID: clickedID,
+            isPinned: true,
+            validSelectedTabIDs: [clickedID],
+            isPinMutationEnabled: false,
+            isSingleUnpinEnabled: true,
+        )
+
+        for presentation in [unselected, empty] {
+            XCTAssertEqual(presentation.title, "Pin")
+            XCTAssertEqual(presentation.accessibilityIdentifier, "pin-content-tab-\(clickedID)")
+            XCTAssertTrue(presentation.isEnabled)
+            guard case let .pinContentTab(tabID) = presentation.viewAction else {
+                return XCTFail("unpinned single fallback should retain pinContentTab")
+            }
+            XCTAssertEqual(tabID, clickedID)
+        }
+        XCTAssertEqual(countOnePinned.title, "Unpin")
+        XCTAssertEqual(countOnePinned.accessibilityIdentifier, "unpin-content-tab-\(clickedID)")
+        XCTAssertTrue(countOnePinned.isEnabled)
+        guard case let .unpinContentTab(tabID) = countOnePinned.viewAction else {
+            return XCTFail("pinned single fallback should retain unpinContentTab")
+        }
+        XCTAssertEqual(tabID, clickedID)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: busy bulk는 disabled bulk intent를 유지하고 single로 우회하지 않는다.
+    /// stale UI enablement와 무관하게 reducer gate가 authoritative인 동안 presentation도 bulk identity를 보존하는지 검증한다.
+    /// - 검증 내용: 양 target의 exact bulk title, identifier, disabled state, selected View payload
+    /// - 사전 조건: clicked row가 normalized 2-selection에 포함되고 `canStartSelectedContentTabPinMutation == false`
+    /// - 기대 결과: `Pin 2 Tabs`/`Unpin 2 Tabs` bulk command가 disabled이며 single command가 생성되지 않음
+    func testBusyBulkPinPresentationRemainsBulkAndDisabled() {
+        let clickedID = ContentTabID(rawValue: "busy-clicked")
+        let selectedIDs: Set<ContentTabID> = [clickedID, ContentTabID(rawValue: "busy-peer")]
+        let presentations = [
+            ContentTabPinPresentation(
+                clickedTabID: clickedID,
+                isPinned: false,
+                validSelectedTabIDs: selectedIDs,
+                isPinMutationEnabled: false,
+                isSingleUnpinEnabled: true,
+            ),
+            ContentTabPinPresentation(
+                clickedTabID: clickedID,
+                isPinned: true,
+                validSelectedTabIDs: selectedIDs,
+                isPinMutationEnabled: false,
+                isSingleUnpinEnabled: true,
+            ),
+        ]
+
+        XCTAssertEqual(presentations.map(\.title), ["Pin 2 Tabs", "Unpin 2 Tabs"])
+        XCTAssertEqual(
+            presentations.map(\.accessibilityIdentifier),
+            ["pin-selected-content-tabs", "unpin-selected-content-tabs"],
+        )
+        XCTAssertTrue(presentations.allSatisfy { !$0.isEnabled })
+        for (presentation, expectedTarget) in zip(
+            presentations,
+            [SelectedContentTabPinMutationTargetState.pinned, .unpinned],
+        ) {
+            guard case let .setSelectedContentTabsPinned(target) = presentation.viewAction else {
+                return XCTFail("busy bulk must not fall back to a single View action")
+            }
+            XCTAssertEqual(target, expectedTarget)
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: bulk Pin과 single Unpin은 각자의 authoritative gate를 사용한다.
+    /// close gate와 pin-mutation gate가 달라도 row presentation이 command별 source를 혼동하지 않는지 검증한다.
+    /// - 검증 내용: bulk는 `isPinMutationEnabled`, single Unpin은 `isCloseEnabled`만 반영
+    /// - 사전 조건: 두 gate 값을 서로 반대로 구성한 interaction surface
+    /// - 기대 결과: bulk enablement는 close gate와 무관하고 single Unpin은 pin gate와 무관함
+    func testPinPresentationUsesDedicatedPinMutationGateAndSeparateSingleUnpinGate() {
+        let clickedID = ContentTabID(rawValue: "gate-clicked")
+        let selectedIDs: Set<ContentTabID> = [clickedID, ContentTabID(rawValue: "gate-peer")]
+        let disabledBulk = makePinPresentation(
+            clickedTabID: clickedID,
+            validSelectedTabIDs: selectedIDs,
+            isPinned: false,
+            isCloseEnabled: true,
+            isPinMutationEnabled: false,
+        )
+        let enabledBulk = makePinPresentation(
+            clickedTabID: clickedID,
+            validSelectedTabIDs: selectedIDs,
+            isPinned: true,
+            isCloseEnabled: false,
+            isPinMutationEnabled: true,
+        )
+        let singleUnpin = makePinPresentation(
+            clickedTabID: clickedID,
+            validSelectedTabIDs: [clickedID],
+            isPinned: true,
+            isCloseEnabled: false,
+            isPinMutationEnabled: true,
+        )
+
+        XCTAssertFalse(disabledBulk.isEnabled)
+        guard case .setSelectedContentTabsPinned = disabledBulk.command else {
+            return XCTFail("disabled dedicated pin gate must retain bulk command")
+        }
+        XCTAssertTrue(enabledBulk.isEnabled)
+        guard case .setSelectedContentTabsPinned = enabledBulk.command else {
+            return XCTFail("enabled dedicated pin gate must retain bulk command")
+        }
+        XCTAssertFalse(singleUnpin.isEnabled)
+        guard case .unpinContentTab = singleUnpin.command else {
+            return XCTFail("count-one fallback must retain single Unpin and close gate")
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: Sidebar bulk Pin delegate는 Window request를 정확히 한 번 전달한다.
+    /// presentation의 target payload가 coordinator request 경계에서 변환되거나 중복되지 않는지 검증한다.
+    /// - 검증 내용: Sidebar delegate에서 `.requestSelectedContentTabPinMutation(target:)` 단일 effect
+    /// - 사전 조건: target `.pinned`와 normalized count가 2 미만인 no-start Window state
+    /// - 기대 결과: payload `.pinned` request를 한 번 receive하고 추가 action 없음
+    func testBulkPinDelegateRoutesExactlyOneWindowRequest() async {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.setSelectedContentTabsPinned(target: .pinned))))
+        await store.receive(\.requestSelectedContentTabPinMutation, .pinned)
+        await store.finish()
+    }
+
+    /// CTM-003-pin_selected_content_tabs: 실행 시점 live selection을 pinned-first 순서로 동결한다.
+    /// stale selection identity를 제거하고 same-state와 unsupported live tab도 total에 유지하는 시작 계약을 검증한다.
+    /// - 검증 내용: request의 target state, frozen ordered IDs, cursor/current/count 초기값
+    /// - 사전 조건: pinned 1개, unpinned Directory 1개, unsupported Home 1개와 stale selected ID
+    /// - 기대 결과: stale ID만 제외한 pinned-first 3개가 coordinator total로 동결됨
+    func testPinSelectedRequestFreezesNormalizedPinnedFirstTargets() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1))
+        let fixture = selectedPinMutationFixture()
+        var initialState = fixture.state
+        initialState.contentTabs.selectedTabIDs.insert(ContentTabID(rawValue: "stale-selected"))
+        let store = TestStore(initialState: initialState) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: request 순간 frozen coordinator와 전체 완료 결과에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned)) {
+            $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+                operationID: operationID,
+                target: .pinned,
+                orderedTargetIDs: [fixture.pinnedID, fixture.unpinnedID, fixture.unsupportedID],
+            )
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: 선택 일괄 작업은 Sidebar에 표시된 pinned 순서를 동결한다.
+    /// 저장 배열과 표시 순서가 달라도 dormant slot과 후속 영속화가 사용자 순서를 따르는지 검증한다.
+    /// - 검증 내용: coordinator의 frozen ordered IDs
+    /// - 사전 조건: 저장 순서 `[A, B]`, 표시 순서 `[B, A]`, 두 pinned tab 선택
+    /// - 기대 결과: selected Pin/Unpin 대상이 표시 순서 `[B, A]`로 동결됨
+    func testSelectedPinMutationFreezesDisplayedPinnedOrder() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 15))
+        let fixture = allPinnedSelectedPinMutationFixture()
+        let firstID = fixture.orderedIDs[0]
+        let secondID = fixture.orderedIDs[1]
+        var state = fixture.state
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(secondID),
+            .contentTab(firstID),
+        ])
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+        }
+        // store.exhaustivity = .off: request 시점에 동결되는 표시 순서만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned)) {
+            $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+                operationID: operationID,
+                target: .unpinned,
+                orderedTargetIDs: [secondID, firstID],
+            )
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// CTM-003-pin_selected_content_tabs: all-unpinned Pin을 기존 single persistence terminal로 직렬 완료한다.
+    /// wrapper가 child reducer를 한 번씩 실행하고 정상 completion count invariant와 state preservation을 지키는지 검증한다.
+    /// - 검증 내용: 두 Pin success, total=count invariant, aggregate sync 없음, selection/owner snapshot 보존
+    /// - 사전 조건: selected Directory 2개와 deterministic applied persistence
+    /// - 기대 결과: 두 tab만 pinned, success=2, failure/remaining=0이며 batch coordinator가 정리됨
+    func testPinSelectedSerializesSinglePinTerminalsAndPreservesWindowState() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2))
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let originalContent = fixture.state.content
+        let originalInspector = fixture.state.inspector
+        let originalTabContentStates = fixture.state.tabContentStates
+        let originalSelection = fixture.state.contentTabs.selectedTabIDs
+        let originalAnchor = fixture.state.contentTabs.selectionAnchorID
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: fixture.state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .selectedPinMutationBatchCompleted(result) = action {
+                    completedResults.withValue { $0.append(result) }
+                }
+                return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: correlated child terminal의 동적 intent/generation보다 최종 직렬 결과와 보존 계약을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertTrue(fixture.orderedIDs.allSatisfy { store.state.contentTabs.tabs[id: $0]?.isPinned == true })
+        XCTAssertEqual(completedResults.value, [
+            .init(
+                operationID: operationID,
+                target: .pinned,
+                totalCount: 2,
+                successCount: 2,
+                failureCount: 0,
+                remainingCount: 0,
+            ),
+        ])
+        XCTAssertEqual(store.state.content, originalContent)
+        XCTAssertEqual(store.state.inspector, originalInspector)
+        XCTAssertEqual(store.state.tabContentStates, originalTabContentStates)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, originalSelection)
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, originalAnchor)
+    }
+
+    // MARK: - CTM-003-unpin_selected_content_tabs
+
+    /// CTM-003-unpin_selected_content_tabs: all-pinned Unpin을 frozen 순서대로 직렬 완료한다.
+    /// legacy-compatible single Unpin terminal을 재사용하면서 active/previous active와 live selection을 보존하는지 검증한다.
+    /// - 검증 내용: 두 Unpin success와 unpinned tail processing order, coordinator cleanup
+    /// - 사전 조건: selected pinned Directory 2개와 applied persistence
+    /// - 기대 결과: 두 tab이 frozen 순서의 unpinned tail이 되고 selection/active identity는 유지됨
+    func testUnpinSelectedSerializesAllPinnedTargetsAndPreservesSelection() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 8))
+        let fixture = allPinnedSelectedPinMutationFixture()
+        let originalSelection = fixture.state.contentTabs.selectedTabIDs
+        let originalAnchor = fixture.state.contentTabs.selectionAnchorID
+        let originalActive = fixture.state.contentTabs.activeTabID
+        let originalPrevious = fixture.state.contentTabs.previousActiveTabID
+        let persistedStore = ContentTabPinnedRecordStore(
+            records: fixture.orderedIDs.compactMap { fixture.state.contentTabs.pinnedRecords[$0] },
+        )
+        let store = TestStore(initialState: fixture.state) { CTM003FileManagerPersistenceHarness() } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(persistedStore)
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: 동적 terminal context보다 최종 직렬 Unpin ordering과 보존 상태를 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), fixture.orderedIDs)
+        XCTAssertTrue(fixture.orderedIDs.allSatisfy { store.state.contentTabs.tabs[id: $0]?.isPinned == false })
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, originalSelection)
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, originalAnchor)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, originalActive)
+        XCTAssertEqual(store.state.contentTabs.previousActiveTabID, originalPrevious)
+    }
+
+    // MARK: - CTM-003-pin_selected_content_tabs
+
+    /// CTM-003-pin_selected_content_tabs: global-stale success는 local child cleanup 후 remaining으로 집계한다.
+    /// wrapper success terminal을 보존하면서 app-global generation이 stale인 경우 success로 세지 않는 계약을 검증한다.
+    /// - 검증 내용: local pending cleanup, remaining increment, success zero
+    /// - 사전 조건: locally-current optimistic Pin과 globally-stale generation
+    /// - 기대 결과: child terminal은 한 번 reduce되고 item outcome은 remaining
+    func testPinSelectedGlobalStaleSuccessCompletesAsRemainingAfterLocalCleanup() async throws {
+        let fixture = try globalStaleSelectedPinMutationFixture()
+        let operationID = fixture.operationID
+        let tabID = fixture.tabID
+        let context = fixture.context
+        let store = TestStore(initialState: fixture.state) { CTM003FileManagerPersistenceHarness() } withDependencies: {
+            $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { _ in false }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: tabID,
+            action: .pinnedRecordSaveSucceeded(tabID: tabID, context: context),
+        )) {
+            $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        }
+        await store.receive { action in
+            guard case let .selectedPinMutationItemCompleted(
+                receivedOperationID,
+                receivedTabID,
+                outcome,
+            ) = action else { return false }
+            return receivedOperationID == operationID && receivedTabID == tabID && outcome == .remaining
+        } assert: {
+            $0.pendingSelectedContentTabPinMutation?.cursor = 1
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = nil
+            $0.pendingSelectedContentTabPinMutation?.remainingCount = 1
+        }
+        await store.receive(\.processNextSelectedContentTabPinMutation, operationID) {
+            $0.pendingSelectedContentTabPinMutation = nil
+        }
+        await store.receive(\.selectedPinMutationBatchCompleted, .init(
+            operationID: operationID,
+            target: .pinned,
+            totalCount: 1,
+            successCount: 0,
+            failureCount: 0,
+            remainingCount: 1,
+        ))
+        await store.finish()
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: unavailable store terminal은 batch failure로 완료한다.
+    /// corrupt/future 보호를 유지하면서 coordinator가 다음 항목을 영구 차단하지 않는지 검증한다.
+    /// - 검증 내용: optimistic Pin rollback, failure 집계, pending coordinator cleanup
+    /// - 사전 조건: current Selected Pin item과 corrupt store unavailable terminal
+    /// - 기대 결과: tab은 unpinned rollback되고 batch는 failure 1건으로 종료됨
+    func testPinSelectedStoreUnavailableCompletesFailureAfterRollback() async throws {
+        let fixture = try globalStaleSelectedPinMutationFixture()
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let rollback = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: false,
+            previousPinnedRecord: nil,
+            previousTabIndex: nil,
+        )
+        let store = TestStore(initialState: fixture.state) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        }
+        // store.exhaustivity = .off: unavailable presentation 세부 상태보다 batch 종료와 rollback을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: fixture.operationID,
+            tabID: fixture.tabID,
+            action: .pinnedRecordStoreUnavailable(
+                tabID: fixture.tabID,
+                context: fixture.context,
+                failure: .corrupt,
+                rollback: rollback,
+            ),
+        ))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.tabID]?.isPinned, false)
+        XCTAssertFalse(store.state.contentTabs.pendingPinnedRecordIDs.contains(fixture.tabID))
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(completedResults.value.first?.failureCount, 1)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: start gate는 normalized count와 pending operation 상호 배제를 적용한다.
+    /// selected-close/single-close/teardown/pin persistence가 존재하면 새 coordinator가 시작되지 않는지 검증한다.
+    /// - 검증 내용: 각 busy gate와 count 1 request의 exact no-op
+    /// - 사전 조건: 동일 2-selection fixture에 busy state를 하나씩 주입
+    /// - 기대 결과: 모든 busy state의 canStart가 false이고 count 1 request도 coordinator를 만들지 않음
+    func testPinSelectedStartGateRejectsMutuallyExclusivePendingOperationsAndCountOne() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        var states: [FileManagerFeature.State] = []
+
+        var selectedClose = fixture.state
+        selectedClose.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: UUID(),
+            orderedTargetIDs: fixture.orderedIDs,
+            originalActiveTabID: fixture.orderedIDs[0],
+            preferredFallbackIDs: [],
+        )
+        states.append(selectedClose)
+        var singleClose = fixture.state
+        singleClose.pendingContentTabClose = PendingContentTabClose(tabID: fixture.orderedIDs[0])
+        states.append(singleClose)
+        var teardown = fixture.state
+        teardown.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: UUID(),
+            tabID: fixture.orderedIDs[0],
+            ownerID: UUID(),
+        )
+        states.append(teardown)
+        var persistence = fixture.state
+        persistence.contentTabs.pendingPinnedRecordIDs.insert(fixture.orderedIDs[0])
+        states.append(persistence)
+        var closing = fixture.state
+        closing.isClosing = true
+        states.append(closing)
+
+        XCTAssertTrue(states.allSatisfy { !$0.canStartSelectedContentTabPinMutation })
+
+        var countOne = fixture.state
+        countOne.contentTabs.selectedTabIDs = [fixture.orderedIDs[0]]
+        let store = TestStore(initialState: countOne) { CTM003FileManagerPersistenceHarness() }
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: wrong operation/current tab과 stale-local terminal을 완전히 무시한다.
+    /// correlation guard가 child rollback, count, cursor, projection을 모두 차단하는지 검증한다.
+    /// - 검증 내용: wrapper pre-reduction operation/current/local-intent validation
+    /// - 사전 조건: 첫 item 처리 중인 coordinator와 다른 operation/tab 및 stale intent terminal
+    /// - 기대 결과: 세 wrapper 모두 Window/ContentTab/sidebar state를 전혀 변경하지 않음
+    func testPinSelectedWrapperRejectsWrongCorrelationAndStaleLocalTerminal() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3))
+        let wrongOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4))
+        var initialState = fixture.state
+        initialState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: fixture.orderedIDs,
+            currentTabID: fixture.orderedIDs[0],
+        )
+        let staleContext = ContentTabPinnedRecordTerminalContext(
+            intentID: UUID(),
+            generation: ContentTabPinnedRecordMutationGeneration(tabID: fixture.orderedIDs[0], value: UUID()),
+        )
+        let rollback = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: false,
+            previousPinnedRecord: nil,
+            previousTabIndex: 0,
+        )
+        let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
+        let originalState = store.state
+
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: wrongOperationID,
+            tabID: fixture.orderedIDs[0],
+            action: .pin(fixture.orderedIDs[0]),
+        ))
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: fixture.orderedIDs[1],
+            action: .pin(fixture.orderedIDs[1]),
+        ))
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: fixture.orderedIDs[0],
+            action: .pinnedRecordSaveFailed(
+                tabID: fixture.orderedIDs[0],
+                context: staleContext,
+                rollback: rollback,
+            ),
+        ))
+
+        XCTAssertEqual(store.state, originalState)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: active batch 동안 direct single Pin/Unpin과 중복 process를 차단한다.
+    /// reducer boundary가 wrapper 외 mutation 우회와 cursor 중복 진행을 허용하지 않는지 검증한다.
+    /// - 검증 내용: direct `.contentTabs(.pin/.unpin)` 및 current item 존재 중 process no-op
+    /// - 사전 조건: 첫 selected Pin item이 current인 coordinator
+    /// - 기대 결과: tab state, counts, cursor, sidebar projection이 exact equality 유지
+    func testPinSelectedBatchBlocksDirectSingleMutationAndDuplicateProcess() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5))
+        var initialState = fixture.state
+        initialState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: fixture.orderedIDs,
+            currentTabID: fixture.orderedIDs[0],
+        )
+        let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
+        let originalState = store.state
+
+        await store.send(.contentTabs(.pin(fixture.orderedIDs[1])))
+        await store.send(.contentTabs(.unpin(fixture.orderedIDs[0])))
+        await store.send(.processNextSelectedContentTabPinMutation(operationID: operationID))
+
+        XCTAssertEqual(store.state, originalState)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: active current Unpin 동안 direct close mutation을 모두 차단한다.
+    /// optimistic Unpin으로 current tab이 unpinned여도 routing teardown/commit이 batch 경계를 우회하지 않는지 검증한다.
+    /// - 검증 내용: requestClose/close/commitClose의 exact state no-op과 teardown effect 0회, 정상 terminal 완료
+    /// - 사전 조건: active tab이 optimistic Unpin된 one-item selected coordinator
+    /// - 기대 결과: close/undo/coordinator/selection 상태가 유지되고 wrapped success로 batch가 완료됨
+    func testUnpinSelectedCurrentTabBlocksQueuedDirectCloseMutationsAndCompletesBatch() async {
+        let fixture = currentOptimisticSelectedUnpinFixture()
+        let invalidationCount = LockIsolated(0)
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: fixture.state) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        } withDependencies: {
+            $0.uuid = .constant(matrixOperationID(group: 8, offset: 5))
+            $0.undoManagerClient.invalidateOwner = { _, _ in
+                invalidationCount.withValue { $0 += 1 }
+                return .init(succeeded: true, availability: .init())
+            }
+        }
+        // store.exhaustivity = .off: direct close effect 부재와 terminal 이후 aggregate completion을 함께 검증함
+        store.exhaustivity = .off
+        let expectedBoundary = store.state
+
+        for action in directCloseActions(tabID: fixture.tabID) {
+            await store.send(.contentTabs(action))
+            assertSelectedPinCloseBoundary(
+                store.state,
+                equals: expectedBoundary,
+                invalidationCount: invalidationCount.value,
+            )
+        }
+
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: fixture.operationID,
+            tabID: fixture.tabID,
+            action: .pinnedRecordSaveSucceeded(tabID: fixture.tabID, context: fixture.context),
+        ))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        assertSelectedPinCompletion(completedResults, total: 1)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.tabID]?.isPinned, false)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: current Pin item 중 non-current unpinned tab의 queued close를 차단한다.
+    /// child reduction 뒤 routing reducer가 requestClose teardown이나 close commit을 시작하지 않는지 검증한다.
+    /// - 검증 내용: 세 direct close 액션의 exact boundary no-op, teardown effect 0회, frozen batch continuation
+    /// - 사전 조건: 첫 item이 optimistic Pin current이고 두 번째 unpinned selected tab이 non-current
+    /// - 기대 결과: queued target이 보존되고 정상 terminal 뒤 frozen 3-item batch가 모두 완료됨
+    func testPinSelectedCurrentItemBlocksNonCurrentUnpinnedQueuedCloseAndContinuesBatch() async {
+        let fixture = selectedPinBatchMatrixFixture()
+        let operationID = matrixOperationID(group: 8, offset: 0)
+        let currentTabID = fixture.orderedIDs[0]
+        let queuedCloseTabID = fixture.orderedIDs[1]
+        var initialState = fixture.state
+        let context = prepareCurrentOptimisticSelectedPin(
+            state: &initialState,
+            operationID: operationID,
+            orderedTargetIDs: fixture.orderedIDs,
+            currentTabID: currentTabID,
+        )
+        initialState.windowID = matrixOperationID(group: 8, offset: 1)
+        let invalidationCount = LockIsolated(0)
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: initialState) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+            $0.undoManagerClient.invalidateOwner = { _, _ in
+                invalidationCount.withValue { $0 += 1 }
+                return .init(succeeded: true, availability: .init())
+            }
+        }
+        // store.exhaustivity = .off: direct close effect 부재와 남은 실제 persistence chain의 완료를 검증함
+        store.exhaustivity = .off
+        let expectedBoundary = store.state
+
+        for action in directCloseActions(tabID: queuedCloseTabID) {
+            await store.send(.contentTabs(action))
+            assertSelectedPinCloseBoundary(
+                store.state,
+                equals: expectedBoundary,
+                invalidationCount: invalidationCount.value,
+            )
+        }
+
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: currentTabID,
+            action: .pinnedRecordSaveSucceeded(tabID: currentTabID, context: context),
+        ))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        assertSelectedPinCompletion(completedResults, total: fixture.orderedIDs.count)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertTrue(fixture.orderedIDs.allSatisfy { store.state.contentTabs.tabs[id: $0]?.isPinned == true })
+    }
+
+    /// CTM-003-pin_selected_content_tabs: current item의 anchor persistence 교체도 batch wrapper가 종결한다.
+    /// navigation이 optimistic Pin intent를 교체해도 coordinator가 stale terminal을 기다리며 멈추지 않는지 검증한다.
+    /// - 검증 내용: direct updateActivePageAnchor의 wrapper 재라우팅과 replacement terminal completion
+    /// - 사전 조건: selected Pin current item이 pinned/pending 상태이고 같은 tab anchor가 변경됨
+    /// - 기대 결과: 새 terminal이 success로 집계되고 coordinator와 pending persistence가 모두 정리됨
+    func testPinSelectedCurrentAnchorPersistenceReplacementCompletesBatch() async throws {
+        let fixture = try selectedPinPersistenceReplacementFixture()
+        let tabID = fixture.tabID
+        let changedAnchor = fixture.changedAnchor
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: fixture.state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .selectedPinMutationBatchCompleted(result) = action {
+                    completedResults.withValue { $0.append(result) }
+                    return .none
+                }
+                return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: 동적 terminal context보다 replacement intent의 최종 batch 정산을 검증함
+        store.exhaustivity = .off
+
+        let optimisticContentTabs = store.state.contentTabs
+        let optimisticCoordinator = store.state.pendingSelectedContentTabPinMutation
+        await store.send(.closeContentTabRequested(tabID))
+        await store.send(.contentTabs(.requestClose(tabID)))
+        await store.send(.contentTabs(.close(tabID)))
+        await store.send(.contentTabs(.commitClose(tabID)))
+        XCTAssertEqual(store.state.contentTabs, optimisticContentTabs)
+        XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation, optimisticCoordinator)
+        XCTAssertNil(store.state.pendingContentTabClose)
+
+        await store.send(.contentTabs(.updateActivePageAnchor(tabID, changedAnchor)))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, changedAnchor)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[tabID]?.anchor, changedAnchor)
+        XCTAssertTrue(store.state.contentTabs.pendingPinnedRecordIDs.isEmpty)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        guard let result = completedResults.value.first else {
+            return XCTFail("replacement persistence completion missing")
+        }
+        XCTAssertEqual(result.successCount, 1)
+        XCTAssertEqual(result.failureCount, 0)
+        XCTAssertEqual(result.remainingCount, 0)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: anchor replacement 실패 계열은 current item의 Pin 변경만 rollback한다.
+    /// persistence 대기 중 발생한 active/selection/content 변경을 failed/superseded/cancelled가 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: item-scoped Pin/order/record rollback, live content/inspector/active/selection 보존, deferred replay
+    /// - 사전 조건: optimistic selected Pin current item, empty authoritative snapshot, terminal 전 peer 전환과 target deselect
+    /// - 기대 결과: target만 unpinned 상태로 복구되고 최신 window runtime과 anchor는 보존된다.
+    func testPinSelectedAnchorReplacementRollbackReplaysEmptyAuthoritativeSnapshot() async throws {
+        for terminal in SelectedPinReplacementTerminal.allCases {
+            let fixture = try selectedPinPersistenceReplacementFixture()
+            let rollback = try XCTUnwrap(
+                fixture.state.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot,
+            )
+            let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+            let store = TestStore(initialState: fixture.state) {
+                Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                    if case let .selectedPinMutationBatchCompleted(result) = action {
+                        completedResults.withValue { $0.append(result) }
+                    }
+                    return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
+                }
+            } withDependencies: {
+                $0.date = .constant(Self.pinnedAt)
+                $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in
+                    switch terminal {
+                    case .failed:
+                        throw SelectedPinMatrixError.persistenceFailed
+                    case .superseded:
+                        return .superseded
+                    case .cancelled:
+                        throw CancellationError()
+                    }
+                }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            }
+            // store.exhaustivity = .off: replacement terminal context보다 최종 rollback/replay snapshot을 검증함
+            store.exhaustivity = .off
+
+            let liveState = await exerciseSelectedPinReplacementRuntime(store: store, fixture: fixture)
+
+            let label = "replacement-\(terminal)"
+            guard let result = completedResults.value.first else {
+                return XCTFail("missing replacement completion: \(label)")
+            }
+            assertSelectedPinReplacementRollback(
+                state: store.state,
+                expectation: SelectedPinReplacementRollbackExpectation(
+                    rollback: rollback,
+                    fixture: fixture,
+                    liveContent: liveState.content,
+                    liveTabContentStates: liveState.tabContentStates,
+                    liveInspector: liveState.inspector,
+                    liveTabInspectorStates: liveState.tabInspectorStates,
+                ),
+                terminal: terminal,
+                result: result,
+                label: label,
+            )
+        }
+    }
+
+    private struct SelectedPinReplacementRollbackExpectation {
+        let rollback: ContentTabPinnedRecordRollbackSnapshot
+        let fixture: SelectedPinPersistenceReplacementFixture
+        let liveContent: FileManagerContentFeature.State
+        let liveTabContentStates: [ContentTabID: FileManagerContentFeature.State]
+        let liveInspector: FileManagerInspectorFeature.State
+        let liveTabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
+    }
+
+    private struct SelectedPinReplacementLiveState {
+        let content: FileManagerContentFeature.State
+        let tabContentStates: [ContentTabID: FileManagerContentFeature.State]
+        let inspector: FileManagerInspectorFeature.State
+        let tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
+    }
+
+    private func exerciseSelectedPinReplacementRuntime(
+        store: TestStoreOf<FileManagerFeature>,
+        fixture: SelectedPinPersistenceReplacementFixture,
+    ) async -> SelectedPinReplacementLiveState {
+        let empty = ContentTabState.restoringPinnedRecords(from: ContentTabPinnedRecordStore()).state
+        await store.send(.applyAuthoritativePinnedContentTabs(empty))
+        await store.send(.contentTabs(.setCurrent(fixture.peerID)))
+        await store.skipReceivedActions()
+        await store.send(.contentTabs(.toggleSelection(fixture.tabID)))
+        let liveState = SelectedPinReplacementLiveState(
+            content: store.state.content,
+            tabContentStates: store.state.tabContentStates,
+            inspector: store.state.inspector,
+            tabInspectorStates: store.state.tabInspectorStates,
+        )
+        await store.send(.contentTabs(.updateActivePageAnchor(fixture.tabID, fixture.changedAnchor)))
+        await store.skipReceivedActions()
+        await store.finish()
+        return liveState
+    }
+
+    private func assertSelectedPinReplacementRollback(
+        state: FileManagerFeature.State,
+        expectation: SelectedPinReplacementRollbackExpectation,
+        terminal: SelectedPinReplacementTerminal,
+        result: SelectedContentTabPinMutationResult,
+        label: String,
+    ) {
+        let rollback = expectation.rollback
+        let fixture = expectation.fixture
+        XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertNil(state.deferredPinnedContentTabs, label)
+        XCTAssertNil(state.deferredPinnedContentTabsMode, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.isPinned, rollback.previousIsPinned, label)
+        XCTAssertEqual(state.contentTabs.pinnedRecords[fixture.tabID], rollback.previousPinnedRecord, label)
+        XCTAssertEqual(state.contentTabs.tabs.index(id: fixture.tabID), rollback.previousTabIndex, label)
+        XCTAssertEqual(state.contentTabs.pendingPinnedRecordIDs, [], label)
+        XCTAssertEqual(state.contentTabs.activeTabID, fixture.peerID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [fixture.peerID], label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, fixture.tabID, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.anchor, fixture.changedAnchor, label)
+        XCTAssertEqual(
+            state.contentTabs.pinnedRecordPersistenceError,
+            terminal == .failed ? "pinned_record_save_failed" : nil,
+            label,
+        )
+        XCTAssertEqual(state.content, expectation.liveContent, label)
+        XCTAssertEqual(state.tabContentStates, expectation.liveTabContentStates, label)
+        XCTAssertEqual(state.inspector, expectation.liveInspector, label)
+        XCTAssertEqual(state.tabInspectorStates, expectation.liveTabInspectorStates, label)
+        XCTAssertEqual(result.failureCount, terminal == .failed ? 1 : 0, label)
+        XCTAssertEqual(result.remainingCount, terminal == .failed ? 0 : 1, label)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: onDisappear가 operation을 정리하고 late terminal을 무시한다.
+    /// window teardown 이후 wrapper terminal이 coordinator나 child state를 부활시키지 않는지 검증한다.
+    /// - 검증 내용: coordinator clear/cancel과 late wrapped success zero mutation
+    /// - 사전 조건: optimistic Pin persistence가 pending인 current item
+    /// - 기대 결과: isClosing=true, coordinator=nil이며 late terminal 전후 state가 동일함
+    func testPinSelectedOnDisappearClearsCoordinatorAndIgnoresLateTerminal() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6))
+        let tabID = fixture.orderedIDs[0]
+        var initialState = fixture.state
+        initialState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: fixture.orderedIDs,
+            currentTabID: tabID,
+        )
+        let intentID = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        initialState.contentTabs.pendingPinnedRecordIDs.insert(tabID)
+        let context = ContentTabPinnedRecordTerminalContext(
+            intentID: intentID,
+            generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID, value: UUID()),
+        )
+        let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
+        // store.exhaustivity = .off: cancellation effect 자체보다 teardown 후 late terminal의 zero mutation을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+        await store.finish()
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        let disappearedState = store.state
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: tabID,
+            action: .pinnedRecordSaveSucceeded(tabID: tabID, context: context),
+        ))
+        XCTAssertEqual(store.state, disappearedState)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: preflight remaining 분기를 first/middle/last에서 모두 집계한다.
+    /// missing, same-state, ineligible target이 frozen total을 유지하면서 다음 item으로 계속 진행하는지 검증한다.
+    /// - 검증 내용: 9개 위치/사유 조합의 exact count invariant, process continuation, coordinator cleanup
+    /// - 사전 조건: selected Directory 3개와 위치별 preflight remaining 조건
+    /// - 기대 결과: total=3, success=2, failure=0, remaining=1이며 process 4회 후 coordinator=nil
+    func testPinSelectedPreflightMatrixCoversFirstMiddleLastMissingSameStateAndIneligible() async throws {
+        for targetOffset in 0 ..< 3 {
+            for reason in SelectedPinPreflightReason.allCases {
+                try await assertSelectedPinPreflightCase(targetOffset: targetOffset, reason: reason)
+            }
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: correlated failed/notApplied terminal을 first/middle/last에서 모두 처리한다.
+    /// 실제 single Pin persistence terminal wrapper가 target만 rollback하고 이후 frozen item을 계속 처리하는지 검증한다.
+    /// - 검증 내용: 6개 terminal matrix의 exact rollback/order/record/count/continuation
+    /// - 사전 조건: selected unpinned Directory 3개와 위치별 failure 또는 superseded persistence
+    /// - 기대 결과: affected tab은 원래 unpinned snapshot, 나머지는 pinned이며 coordinator=nil
+    func testPinSelectedTerminalMatrixCoversFirstMiddleLastFailedAndNotAppliedRollback() async {
+        for targetOffset in 0 ..< 3 {
+            for terminal in SelectedPinMatrixTerminal.allCases {
+                await assertSelectedPinTerminalCase(targetOffset: targetOffset, terminal: terminal)
+            }
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: active coordinator의 duplicate request와 duplicate terminal은 no-op이다.
+    /// 첫 correlated success를 한 번 집계한 뒤 같은 wrapper terminal을 다시 보내도 state/count가 변하지 않는지 검증한다.
+    /// - 검증 내용: duplicate request zero mutation, duplicate terminal zero mutation, single final success
+    /// - 사전 조건: optimistic Pin이 current인 one-item coordinator
+    /// - 기대 결과: cursor는 한 번만 증가하고 total=success=1로 coordinator가 정리됨
+    func testPinSelectedDuplicateRequestAndDuplicateTerminalAreNoOps() async {
+        let fixture = selectedPinBatchMatrixFixture()
+        let operationID = matrixOperationID(group: 4, offset: 0)
+        let tabID = fixture.orderedIDs[0]
+        var initialState = fixture.state
+        let context = prepareCurrentOptimisticSelectedPin(
+            state: &initialState,
+            operationID: operationID,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+        )
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: initialState) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        }
+        // store.exhaustivity = .off: 첫 terminal completion chain 뒤 duplicate wrapper의 zero mutation을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        XCTAssertEqual(store.state, initialState)
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: tabID,
+            action: .pinnedRecordSaveSucceeded(tabID: tabID, context: context),
+        ))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let completedState = store.state
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: tabID,
+            action: .pinnedRecordSaveSucceeded(tabID: tabID, context: context),
+        ))
+        XCTAssertEqual(store.state, completedState)
+
+        guard let result = completedResults.withValue({ $0.first }) else {
+            return XCTFail("missing duplicate completion")
+        }
+        XCTAssertEqual(result.totalCount, 1)
+        XCTAssertEqual(result.successCount, 1)
+        XCTAssertEqual(result.failureCount, 0)
+        XCTAssertEqual(result.remainingCount, 0)
+        XCTAssertEqual(result.totalCount, result.successCount + result.failureCount + result.remainingCount)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: mid-batch live selection/anchor 변경을 completion이 덮어쓰지 않는다.
+    /// frozen orderedTargetIDs는 유지되어 deselected target도 처리하지만 live membership과 anchor는 그대로 보존되는지 검증한다.
+    /// - 검증 내용: live toggle 이후 frozen IDs 불변, exact final selection/anchor/count
+    /// - 사전 조건: 첫 item optimistic Pin 중인 selected Directory 3개
+    /// - 기대 결과: frozen 3개 모두 success이고 live selection은 2개, anchor는 deselected third로 유지됨
+    func testPinSelectedPreservesLiveSelectionAndAnchorWhileFrozenTargetsContinue() async {
+        let fixture = selectedPinBatchMatrixFixture()
+        let operationID = matrixOperationID(group: 5, offset: 0)
+        let firstID = fixture.orderedIDs[0]
+        let changedAnchorID = fixture.orderedIDs[2]
+        var initialState = fixture.state
+        let context = prepareCurrentOptimisticSelectedPin(
+            state: &initialState,
+            operationID: operationID,
+            orderedTargetIDs: fixture.orderedIDs,
+            currentTabID: firstID,
+        )
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: initialState) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: 첫 terminal 이후 실제 persistence chain을 소비하고 live/frozen 최종 상태를 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.toggleSelection(changedAnchorID))) {
+            $0.contentTabs.selectedTabIDs.remove(changedAnchorID)
+            $0.contentTabs.selectionAnchorID = changedAnchorID
+        }
+        XCTAssertEqual(
+            store.state.pendingSelectedContentTabPinMutation?.orderedTargetIDs,
+            fixture.orderedIDs,
+        )
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: firstID,
+            action: .pinnedRecordSaveSucceeded(tabID: firstID, context: context),
+        ))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        guard let result = completedResults.withValue({ $0.first }) else {
+            return XCTFail("missing preservation completion")
+        }
+        XCTAssertEqual(result.totalCount, 3)
+        XCTAssertEqual(result.successCount, 3)
+        XCTAssertEqual(result.failureCount, 0)
+        XCTAssertEqual(result.remainingCount, 0)
+        XCTAssertEqual(result.totalCount, result.successCount + result.failureCount + result.remainingCount)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, Set(fixture.orderedIDs.prefix(2)))
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, changedAnchorID)
+        XCTAssertTrue(fixture.orderedIDs.allSatisfy { store.state.contentTabs.tabs[id: $0]?.isPinned == true })
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: aggregate feedback의 silent/failure/remaining 세 분기를 정확히 소유한다.
+    /// item completion은 alert를 만들지 않고 batch completion만 branch별 최대 한 번 호출하는지 검증한다.
+    /// - 검증 내용: all-success 0회, failure summary 1회, remaining-only summary 1회, per-item 0회
+    /// - 사전 조건: 세 가지 completed result와 coordinator 없는 item completion
+    /// - 기대 결과: branch별 exact call count와 title이 일치함
+    func testPinSelectedFeedbackCoversSilentFailureAndRemainingSummariesWithoutPerItemAlerts() async {
+        let cases = selectedPinFeedbackCases()
+
+        for testCase in cases {
+            let recorder = CollectionPinAlertRecorder()
+            let store = TestStore(initialState: FileManagerFeature.State()) { CTM003FileManagerPersistenceHarness()
+            } withDependencies: {
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                    recorder.record(title: title, message: message)
+                }
+            }
+            await store.send(.selectedPinMutationItemCompleted(
+                operationID: testCase.result.operationID,
+                tabID: ContentTabID(rawValue: "feedback-item"),
+                outcome: .failure,
+            ))
+            XCTAssertEqual(recorder.alertCount(), 0)
+            await store.send(.selectedPinMutationBatchCompleted(testCase.result))
+            await store.finish()
+            XCTAssertEqual(recorder.alertCount(), testCase.count)
+            XCTAssertEqual(recorder.latestAlert()?.title, testCase.title)
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: failure feedback가 remaining 정보보다 우선하고 한 번만 표시된다.
+    /// aggregate completion만 사용자 feedback을 소유하며 item별 alert를 만들지 않는지 검증한다.
+    /// - 검증 내용: failure/remaining 혼합 result의 정확한 alert 호출 수와 failure title
+    /// - 사전 조건: success 0, failure 1, remaining 1인 completed result
+    /// - 기대 결과: failure summary alert 정확히 1회, informational alert 0회
+    func testPinSelectedFeedbackUsesFailurePrecedenceWithoutPerItemAlerts() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7))
+        let recorder = CollectionPinAlertRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) { CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                recorder.record(title: title, message: message)
+            }
+        }
+
+        await store.send(.selectedPinMutationBatchCompleted(.init(
+            operationID: operationID,
+            target: .pinned,
+            totalCount: 2,
+            successCount: 0,
+            failureCount: 1,
+            remainingCount: 1,
+        )))
+        await store.finish()
+
+        XCTAssertEqual(recorder.alertCount(), 1)
+        XCTAssertEqual(recorder.latestAlert()?.title, "Some Tabs Couldn’t Be Pinned")
+    }
+
+    private func directCloseActions(tabID: ContentTabID) -> [ContentTabAction] {
+        [.requestClose(tabID), .close(tabID), .commitClose(tabID)]
+    }
+
+    private func assertSelectedPinCloseBoundary(
+        _ state: FileManagerFeature.State,
+        equals expected: FileManagerFeature.State,
+        invalidationCount: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), expected.contentTabs.tabs.map(\.id), file: file, line: line)
+        XCTAssertEqual(state.contentTabs.tabs, expected.contentTabs.tabs, file: file, line: line)
+        XCTAssertEqual(state.contentTabs, expected.contentTabs, file: file, line: line)
+        XCTAssertEqual(state.pendingContentTabClose, expected.pendingContentTabClose, file: file, line: line)
+        XCTAssertEqual(state.pendingContentTabTeardown, expected.pendingContentTabTeardown, file: file, line: line)
+        XCTAssertEqual(state.undoRedoPhase, expected.undoRedoPhase, file: file, line: line)
+        XCTAssertEqual(state.undoManagerAvailability, expected.undoManagerAvailability, file: file, line: line)
+        XCTAssertEqual(
+            state.pendingSelectedContentTabPinMutation?.currentTabID,
+            expected.pendingSelectedContentTabPinMutation?.currentTabID,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            state.pendingSelectedContentTabPinMutation?.cursor,
+            expected.pendingSelectedContentTabPinMutation?.cursor,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            state.pendingSelectedContentTabPinMutation?.successCount,
+            expected.pendingSelectedContentTabPinMutation?.successCount,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            state.pendingSelectedContentTabPinMutation?.failureCount,
+            expected.pendingSelectedContentTabPinMutation?.failureCount,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            state.pendingSelectedContentTabPinMutation?.remainingCount,
+            expected.pendingSelectedContentTabPinMutation?.remainingCount,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            state.contentTabs.selectedTabIDs,
+            expected.contentTabs.selectedTabIDs,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            state.contentTabs.selectionAnchorID,
+            expected.contentTabs.selectionAnchorID,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(invalidationCount, 0, file: file, line: line)
+    }
+
+    private func assertSelectedPinCompletion(
+        _ results: LockIsolated<[SelectedContentTabPinMutationResult]>,
+        total: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        guard let result = results.withValue({ $0.first }) else {
+            return XCTFail("missing selected Pin/Unpin completion", file: file, line: line)
+        }
+        XCTAssertEqual(result.totalCount, total, file: file, line: line)
+        XCTAssertEqual(result.successCount, total, file: file, line: line)
+        XCTAssertEqual(result.failureCount, 0, file: file, line: line)
+        XCTAssertEqual(result.remainingCount, 0, file: file, line: line)
+    }
+
+    private struct SelectedPinFeedbackCase {
+        let result: SelectedContentTabPinMutationResult
+        let count: Int
+        let title: String?
+    }
+
+    private func selectedPinFeedbackCases() -> [SelectedPinFeedbackCase] {
+        [
+            .init(
+                result: .init(
+                    operationID: matrixOperationID(group: 6, offset: 0),
+                    target: .pinned,
+                    totalCount: 3,
+                    successCount: 3,
+                    failureCount: 0,
+                    remainingCount: 0,
+                ),
+                count: 0,
+                title: nil,
+            ),
+            .init(
+                result: .init(
+                    operationID: matrixOperationID(group: 6, offset: 1),
+                    target: .pinned,
+                    totalCount: 3,
+                    successCount: 1,
+                    failureCount: 1,
+                    remainingCount: 1,
+                ),
+                count: 1,
+                title: "Some Tabs Couldn’t Be Pinned",
+            ),
+            .init(
+                result: .init(
+                    operationID: matrixOperationID(group: 6, offset: 2),
+                    target: .unpinned,
+                    totalCount: 3,
+                    successCount: 2,
+                    failureCount: 0,
+                    remainingCount: 1,
+                ),
+                count: 1,
+                title: "Some Tabs Remained Pinned",
+            ),
+        ]
+    }
+
+    private func assertSelectedPinPreflightCase(
+        targetOffset: Int,
+        reason: SelectedPinPreflightReason,
+    ) async throws {
+        let fixture = selectedPinBatchMatrixFixture()
+        let operationID = matrixOperationID(group: 1, offset: targetOffset * 3 + reason.rawValue)
+        let initialState = try selectedPinPreflightState(
+            fixture: fixture,
+            operationID: operationID,
+            targetOffset: targetOffset,
+            reason: reason,
+        )
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let processCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            selectedPinMatrixReducer(completedResults: completedResults, processCount: processCount)
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: matrix의 동적 persistence context 대신 final count와 continuation을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.processNextSelectedContentTabPinMutation(operationID: operationID))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let label = "\(reason)-\(targetOffset)"
+        assertSelectedPinResult(completedResults, success: 2, failure: 0, remaining: 1, label: label)
+        XCTAssertEqual(processCount.value, 4, label)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation, label)
+    }
+
+    private func selectedPinPreflightState(
+        fixture: SelectedPinBatchMatrixFixture,
+        operationID: UUID,
+        targetOffset: Int,
+        reason: SelectedPinPreflightReason,
+    ) throws -> FileManagerFeature.State {
+        let targetID = fixture.orderedIDs[targetOffset]
+        var state = fixture.state
+        switch reason {
+        case .missing:
+            state.contentTabs.tabs.remove(id: targetID)
+        case .sameState:
+            state.contentTabs.tabs[id: targetID]?.isPinned = true
+            state.contentTabs.pinnedRecords[targetID] = try Self.pinnedRecord(
+                id: targetID,
+                anchor: XCTUnwrap(state.contentTabs.tabs[id: targetID]?.anchor),
+                title: XCTUnwrap(state.contentTabs.tabs[id: targetID]?.title),
+                iconName: "folder",
+            )
+        case .ineligible:
+            state.contentTabs.tabs[id: targetID]?.page = .home
+            state.contentTabs.tabs[id: targetID]?.anchor = .homeDefault
+        }
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: fixture.orderedIDs,
+        )
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    private func assertSelectedPinTerminalCase(
+        targetOffset: Int,
+        terminal: SelectedPinMatrixTerminal,
+    ) async {
+        let fixture = selectedPinBatchMatrixFixture()
+        let operationID = matrixOperationID(group: 2 + terminal.rawValue, offset: targetOffset)
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let processCount = LockIsolated(0)
+        let persistenceCallCount = LockIsolated(0)
+        let store = TestStore(initialState: fixture.state) {
+            selectedPinMatrixReducer(completedResults: completedResults, processCount: processCount)
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                let callIndex = persistenceCallCount.withValue { value in
+                    defer { value += 1 }
+                    return value
+                }
+                if callIndex == targetOffset {
+                    switch terminal {
+                    case .failed:
+                        throw SelectedPinMatrixError.persistenceFailed
+                    case .superseded:
+                        return .superseded
+                    case .cancelled:
+                        throw CancellationError()
+                    }
+                }
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: 실제 wrapper terminal의 동적 context를 소비하고 final rollback matrix를 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let label = "\(terminal)-\(targetOffset)"
+        assertSelectedPinTerminalResult(completedResults, terminal: terminal, label: label)
+        assertSelectedPinTerminalState(store.state, fixture: fixture, targetOffset: targetOffset, label: label)
+        XCTAssertEqual(processCount.value, 4, label)
+        XCTAssertEqual(persistenceCallCount.value, 3, label)
+    }
+
+    private func assertSelectedPinResult(
+        _ results: LockIsolated<[SelectedContentTabPinMutationResult]>,
+        success: Int,
+        failure: Int,
+        remaining: Int,
+        label: String,
+    ) {
+        guard let result = results.withValue({ $0.first }) else {
+            return XCTFail("missing completion: \(label)")
+        }
+        XCTAssertEqual(result.totalCount, 3, label)
+        XCTAssertEqual(result.successCount, success, label)
+        XCTAssertEqual(result.failureCount, failure, label)
+        XCTAssertEqual(result.remainingCount, remaining, label)
+        XCTAssertEqual(result.totalCount, result.successCount + result.failureCount + result.remainingCount, label)
+    }
+
+    private func assertSelectedPinTerminalResult(
+        _ results: LockIsolated<[SelectedContentTabPinMutationResult]>,
+        terminal: SelectedPinMatrixTerminal,
+        label: String,
+    ) {
+        assertSelectedPinResult(
+            results,
+            success: 2,
+            failure: terminal == .failed ? 1 : 0,
+            remaining: terminal == .failed ? 0 : 1,
+            label: label,
+        )
+    }
+
+    private func assertSelectedPinTerminalState(
+        _ state: FileManagerFeature.State,
+        fixture: SelectedPinBatchMatrixFixture,
+        targetOffset: Int,
+        label: String,
+    ) {
+        let targetID = fixture.orderedIDs[targetOffset]
+        XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertEqual(state.content, fixture.state.content, label)
+        XCTAssertEqual(state.tabContentStates, fixture.state.tabContentStates, label)
+        XCTAssertEqual(state.inspector, fixture.state.inspector, label)
+        XCTAssertEqual(state.tabInspectorStates, fixture.state.tabInspectorStates, label)
+        XCTAssertEqual(state.contentTabs.activeTabID, fixture.state.contentTabs.activeTabID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, fixture.state.contentTabs.selectedTabIDs, label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, fixture.state.contentTabs.selectionAnchorID, label)
+        XCTAssertEqual(
+            state.contentTabs.tabs.map(\.id),
+            fixture.orderedIDs.filter { $0 != targetID } + [targetID],
+            label,
+        )
+        XCTAssertEqual(state.contentTabs.tabs[id: targetID]?.isPinned, false, label)
+        XCTAssertNil(state.contentTabs.pinnedRecords[targetID], label)
+        for successfulID in fixture.orderedIDs where successfulID != targetID {
+            XCTAssertEqual(state.contentTabs.tabs[id: successfulID]?.isPinned, true, label)
+            XCTAssertNotNil(state.contentTabs.pinnedRecords[successfulID], label)
+        }
+    }
+
+    private enum SelectedPinPreflightReason: Int, CaseIterable {
+        case missing
+        case sameState
+        case ineligible
+    }
+
+    private enum SelectedPinMatrixTerminal: Int, CaseIterable {
+        case failed
+        case superseded
+        case cancelled
+    }
+
+    private enum SelectedPinReplacementTerminal: CaseIterable {
+        case failed
+        case superseded
+        case cancelled
+    }
+
+    private func selectedPinReplacementTerminalAction(
+        _ terminal: SelectedPinReplacementTerminal,
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+    ) -> ContentTabAction {
+        switch terminal {
+        case .failed:
+            .pinnedRecordSaveFailed(tabID: tabID, context: context, rollback: rollback)
+        case .superseded:
+            .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: context,
+                reason: .superseded,
+                rollback: rollback,
+            )
+        case .cancelled:
+            .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: context,
+                reason: .cancelled,
+                rollback: rollback,
+            )
+        }
+    }
+
+    private enum SelectedPinMatrixError: Error {
+        case persistenceFailed
+    }
+
+    private struct SelectedPinBatchMatrixFixture {
+        let state: FileManagerFeature.State
+        let orderedIDs: [ContentTabID]
+    }
+
+    private func selectedPinBatchMatrixFixture() -> SelectedPinBatchMatrixFixture {
+        let orderedIDs = ["first", "middle", "last"].map {
+            ContentTabID(rawValue: "selected-pin-matrix-\($0)")
+        }
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: .init(uniqueElements: orderedIDs.enumerated().map { offset, id in
+                ContentTabItem(
+                    id: id,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/SelectedMatrix/\(offset)"),
+                    isPinned: false,
+                    title: "Matrix \(offset)",
+                    iconName: "folder",
+                )
+            }),
+            activeTabID: orderedIDs[0],
+            previousActiveTabID: orderedIDs[2],
+        )
+        state.contentTabs.selectedTabIDs = Set(orderedIDs)
+        state.contentTabs.selectionAnchorID = orderedIDs[1]
+        state.syncContentTabSidebarItems()
+        return SelectedPinBatchMatrixFixture(state: state, orderedIDs: orderedIDs)
+    }
+
+    private func selectedPinMatrixReducer(
+        completedResults: LockIsolated<[SelectedContentTabPinMutationResult]>,
+        processCount: LockIsolated<Int>? = nil,
+    ) -> Reduce<FileManagerFeature.State, FileManagerFeature.Action> {
+        Reduce { state, action in
+            if case .processNextSelectedContentTabPinMutation = action {
+                processCount?.withValue { $0 += 1 }
+            }
+            if case let .selectedPinMutationBatchCompleted(result) = action {
+                completedResults.withValue { $0.append(result) }
+            }
+            return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
+        }
+    }
+
+    private func prepareCurrentOptimisticSelectedPin(
+        state: inout FileManagerFeature.State,
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        currentTabID: ContentTabID,
+    ) -> ContentTabPinnedRecordTerminalContext {
+        state.contentTabs.tabs[id: currentTabID]?.isPinned = true
+        guard let tab = state.contentTabs.tabs[id: currentTabID] else {
+            preconditionFailure("Current matrix tab must exist")
+        }
+        state.contentTabs.pinnedRecords[currentTabID] = Self.pinnedRecord(
+            id: currentTabID,
+            anchor: tab.anchor,
+            title: tab.title,
+            iconName: tab.iconName,
+        )
+        state.contentTabs.pendingPinnedRecordIDs.insert(currentTabID)
+        let intentID = state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: currentTabID)
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: orderedTargetIDs,
+            currentTabID: currentTabID,
+        )
+        state.syncContentTabSidebarItems()
+        return ContentTabPinnedRecordTerminalContext(
+            intentID: intentID,
+            generation: ContentTabPinnedRecordMutationGeneration(
+                tabID: currentTabID,
+                value: matrixOperationID(group: 7, offset: orderedTargetIDs.count),
+            ),
+        )
+    }
+
+    private struct CurrentOptimisticSelectedUnpinFixture {
+        let state: FileManagerFeature.State
+        let operationID: UUID
+        let tabID: ContentTabID
+        let peerID: ContentTabID
+        let changedAnchor: ContentTabPageAnchor
+        let context: ContentTabPinnedRecordTerminalContext
+        let rollback: ContentTabPinnedRecordRollbackSnapshot
+    }
+
+    private func currentOptimisticSelectedUnpinFixture() -> CurrentOptimisticSelectedUnpinFixture {
+        let fixture = allPinnedSelectedPinMutationFixture()
+        let operationID = matrixOperationID(group: 8, offset: 2)
+        let tabID = fixture.orderedIDs[0]
+        var state = fixture.state
+        guard var currentTab = state.contentTabs.tabs[id: tabID] else {
+            preconditionFailure("Current selected Unpin tab must exist")
+        }
+        let rollback = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: currentTab.isPinned,
+            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
+            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
+        )
+        state.contentTabs.tabs.remove(id: tabID)
+        currentTab.isPinned = false
+        state.contentTabs.tabs.append(currentTab)
+        state.contentTabs.pinnedRecords.removeValue(forKey: tabID)
+        state.contentTabs.pendingPinnedRecordIDs.insert(tabID)
+        let intentID = state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .unpinned,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+            currentItemRollbackSnapshot: rollback,
+        )
+        state.windowID = matrixOperationID(group: 8, offset: 3)
+        state.syncContentTabSidebarItems()
+        return CurrentOptimisticSelectedUnpinFixture(
+            state: state,
+            operationID: operationID,
+            tabID: tabID,
+            peerID: fixture.orderedIDs[1],
+            changedAnchor: .directory(path: "/Users/test/Selected/UnpinChanged"),
+            context: ContentTabPinnedRecordTerminalContext(
+                intentID: intentID,
+                generation: ContentTabPinnedRecordMutationGeneration(
+                    tabID: tabID,
+                    value: matrixOperationID(group: 8, offset: 4),
+                ),
+            ),
+            rollback: rollback,
+        )
+    }
+
+    private func matrixOperationID(group: Int, offset: Int) -> UUID {
+        UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            UInt8(group), UInt8(offset), UInt8(group * 16 + offset),
+        ))
+    }
+
+    private struct GlobalStaleSelectedPinMutationFixture {
+        let state: FileManagerFeature.State
+        let operationID: UUID
+        let tabID: ContentTabID
+        let context: ContentTabPinnedRecordTerminalContext
+    }
+
+    private func globalStaleSelectedPinMutationFixture() throws -> GlobalStaleSelectedPinMutationFixture {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 9))
+        let tabID = fixture.orderedIDs[0]
+        var state = fixture.state
+        state.contentTabs.tabs[id: tabID]?.isPinned = true
+        state.contentTabs.pinnedRecords[tabID] = Self.pinnedRecord(
+            id: tabID,
+            anchor: .directory(path: "/Users/test/Selected/First"),
+            title: "First",
+            iconName: "folder",
+        )
+        state.contentTabs.pendingPinnedRecordIDs.insert(tabID)
+        state.syncContentTabSidebarItems()
+        let intentID = state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+        )
+        let context = ContentTabPinnedRecordTerminalContext(
+            intentID: intentID,
+            generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID, value: UUID()),
+        )
+        return GlobalStaleSelectedPinMutationFixture(
+            state: state,
+            operationID: operationID,
+            tabID: tabID,
+            context: context,
+        )
+    }
+
+    private struct SelectedPinPersistenceReplacementFixture {
+        let state: FileManagerFeature.State
+        let tabID: ContentTabID
+        let peerID: ContentTabID
+        let changedAnchor: ContentTabPageAnchor
+    }
+
+    private func selectedPinPersistenceReplacementFixture() throws -> SelectedPinPersistenceReplacementFixture {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7))
+        let tabID = fixture.orderedIDs[0]
+        var state = fixture.state
+        let rollbackSnapshot = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: state.contentTabs.tabs[id: tabID]?.isPinned ?? false,
+            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
+            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
+        )
+        state.contentTabs.tabs[id: tabID]?.isPinned = true
+        state.contentTabs.pinnedRecords[tabID] = try Self.pinnedRecord(
+            id: tabID,
+            anchor: XCTUnwrap(state.contentTabs.tabs[id: tabID]?.anchor),
+            title: XCTUnwrap(state.contentTabs.tabs[id: tabID]?.title),
+            iconName: "folder",
+        )
+        state.contentTabs.pendingPinnedRecordIDs.insert(tabID)
+        _ = state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+            currentItemRollbackSnapshot: rollbackSnapshot,
+        )
+        return SelectedPinPersistenceReplacementFixture(
+            state: state,
+            tabID: tabID,
+            peerID: fixture.orderedIDs[1],
+            changedAnchor: .directory(path: "/Users/test/replaced-anchor"),
+        )
+    }
+
+    private struct SelectedPinMutationFixture {
+        let state: FileManagerFeature.State
+        let orderedIDs: [ContentTabID]
+        let pinnedID: ContentTabID
+        let unpinnedID: ContentTabID
+        let unsupportedID: ContentTabID
+    }
+
+    private func selectedPinMutationFixture() -> SelectedPinMutationFixture {
+        let pinnedID = ContentTabID(rawValue: "selected-pin-pinned")
+        let unpinnedID = ContentTabID(rawValue: "selected-pin-unpinned")
+        let unsupportedID = ContentTabID(rawValue: "selected-pin-home")
+        let record = Self.pinnedRecord(
+            id: pinnedID,
+            anchor: .directory(path: "/Users/test/Selected/Pinned"),
+            title: "Pinned",
+            iconName: "folder",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: .init(uniqueElements: selectedPinMutationTabs(
+                pinnedID: pinnedID,
+                unpinnedID: unpinnedID,
+                unsupportedID: unsupportedID,
+            )),
+            activeTabID: unpinnedID,
+            previousActiveTabID: pinnedID,
+            pinnedRecords: [pinnedID: record],
+        )
+        state.contentTabs.selectedTabIDs = [pinnedID, unpinnedID, unsupportedID]
+        state.contentTabs.selectionAnchorID = unsupportedID
+        state.tabContentStates[pinnedID] = .initialContent(
+            for: .directory(path: "/Users/test/Selected/Pinned"),
+            inheritingWindowContextFrom: state.content,
+        )
+        state.syncContentTabSidebarItems()
+        return SelectedPinMutationFixture(
+            state: state,
+            orderedIDs: [pinnedID, unpinnedID, unsupportedID],
+            pinnedID: pinnedID,
+            unpinnedID: unpinnedID,
+            unsupportedID: unsupportedID,
+        )
+    }
+
+    private func selectedPinMutationTabs(
+        pinnedID: ContentTabID,
+        unpinnedID: ContentTabID,
+        unsupportedID: ContentTabID,
+    ) -> [ContentTabItem] {
+        [
+            Self.pinnedItem(
+                id: pinnedID,
+                anchor: .directory(path: "/Users/test/Selected/Pinned"),
+                title: "Pinned",
+            ),
+            ContentTabItem(
+                id: unpinnedID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Selected/Unpinned"),
+                isPinned: false,
+                title: "Unpinned",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: unsupportedID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+        ]
+    }
+
+    private func allPinnedSelectedPinMutationFixture() -> SelectedPinMutationFixture {
+        let firstID = ContentTabID(rawValue: "selected-unpin-first")
+        let secondID = ContentTabID(rawValue: "selected-unpin-second")
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Selected/UnpinFirst")
+        let secondAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Selected/UnpinSecond")
+        let records = [
+            firstID: Self.pinnedRecord(id: firstID, anchor: firstAnchor, title: "First", iconName: "folder"),
+            secondID: Self.pinnedRecord(id: secondID, anchor: secondAnchor, title: "Second", iconName: "folder"),
+        ]
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: firstID, anchor: firstAnchor, title: "First"),
+                Self.pinnedItem(id: secondID, anchor: secondAnchor, title: "Second"),
+            ],
+            activeTabID: firstID,
+            previousActiveTabID: secondID,
+            pinnedRecords: records,
+        )
+        state.contentTabs.selectedTabIDs = [firstID, secondID]
+        state.contentTabs.selectionAnchorID = secondID
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(firstID),
+            .contentTab(secondID),
+        ])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        state.tabContentStates[secondID] = .initialContent(
+            for: secondAnchor,
+            inheritingWindowContextFrom: state.content,
+        )
+        state.syncContentTabSidebarItems()
+        return SelectedPinMutationFixture(
+            state: state,
+            orderedIDs: [firstID, secondID],
+            pinnedID: firstID,
+            unpinnedID: secondID,
+            unsupportedID: secondID,
+        )
+    }
+
+    private func allUnpinnedSelectedPinMutationFixture() -> SelectedPinMutationFixture {
+        let firstID = ContentTabID(rawValue: "selected-pin-first")
+        let secondID = ContentTabID(rawValue: "selected-pin-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Selected/First"),
+                    isPinned: false,
+                    title: "First",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Selected/Second"),
+                    isPinned: false,
+                    title: "Second",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: firstID,
+            previousActiveTabID: secondID,
+        )
+        state.contentTabs.selectedTabIDs = [firstID, secondID]
+        state.contentTabs.selectionAnchorID = secondID
+        state.tabContentStates[secondID] = .initialContent(
+            for: .directory(path: "/Users/test/Selected/Second"),
+            inheritingWindowContextFrom: state.content,
+        )
+        state.syncContentTabSidebarItems()
+        return SelectedPinMutationFixture(
+            state: state,
+            orderedIDs: [firstID, secondID],
+            pinnedID: firstID,
+            unpinnedID: secondID,
+            unsupportedID: secondID,
+        )
+    }
+
+    private struct RollbackMatrixFixture {
+        let name: String
+        let state: ContentTabState
+        let targetID: ContentTabID
+    }
+
+    private struct LegacyUnsupportedUnpinFixture {
+        let name: String
+        let state: FileManagerFeature.State
+        let targetID: ContentTabID
+        let siblingID: ContentTabID
+        let aiSessionID: AiChatSessionID?
+    }
+
+    private struct LegacyUnsupportedTabCase {
+        let name: String
+        let page: ContentTabPage
+        let anchor: ContentTabPageAnchor
+        let aiSessionID: AiChatSessionID?
+    }
+
+    private static var pinFailureRollbackFixtures: [RollbackMatrixFixture] {
+        let recentsID = ContentTabID(rawValue: "pin-matrix-recents")
+        let allTagsID = ContentTabID(rawValue: "built-in-collection-all-tags")
+        let recentsRecord = pinnedRecord(
+            id: recentsID,
+            page: .collection,
+            anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Matrix Recents.voycollection")),
+            title: "Recents",
+            iconName: "clock",
+        )
+        let allTagsRecord = pinnedRecord(
+            id: allTagsID,
+            page: .collection,
+            anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Matrix All Tags.voycollection")),
+            title: "All Tags",
+            iconName: "tag",
+        )
+        let positions = ["first", "middle", "last"]
+        return positions.enumerated().map { targetOffset, name in
+            let unpinnedItems = positions.map { position in
+                ContentTabItem(
+                    id: ContentTabID(rawValue: "pin-matrix-\(position)"),
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/PinMatrix/\(position)"),
+                    isPinned: false,
+                    title: position,
+                    iconName: "folder",
+                )
+            }
+            let targetID = unpinnedItems[targetOffset].id
+            var state = ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: recentsID,
+                        page: .collection,
+                        anchor: recentsRecord.anchor,
+                        isPinned: true,
+                        title: "Recents",
+                        iconName: "clock",
+                    ),
+                    ContentTabItem(
+                        id: allTagsID,
+                        page: .collection,
+                        anchor: allTagsRecord.anchor,
+                        isPinned: true,
+                        title: "All Tags",
+                        iconName: "tag",
+                    ),
+                ] + unpinnedItems,
+                activeTabID: targetID,
+                pinnedRecords: [recentsID: recentsRecord, allTagsID: allTagsRecord],
+            )
+            state.selectedTabIDs = [targetID, unpinnedItems[(targetOffset + 1) % unpinnedItems.count].id]
+            state.selectionAnchorID = allTagsID
+            return RollbackMatrixFixture(name: name, state: state, targetID: targetID)
+        }
+    }
+
+    private static var unpinFailureRollbackFixtures: [RollbackMatrixFixture] {
+        let positions = ["first", "middle", "last"]
+        return positions.enumerated().map { targetOffset, name in
+            let pinnedItems = positions.map { position in
+                pinnedItem(
+                    id: ContentTabID(rawValue: "unpin-matrix-\(position)"),
+                    anchor: .directory(path: "/Users/test/UnpinMatrix/\(position)"),
+                    title: position,
+                )
+            }
+            let records = Dictionary(uniqueKeysWithValues: pinnedItems.map { item in
+                (item.id, pinnedRecord(id: item.id, anchor: item.anchor, title: item.title, iconName: item.iconName))
+            })
+            let tailID = ContentTabID(rawValue: "unpin-matrix-tail")
+            let targetID = pinnedItems[targetOffset].id
+            var state = ContentTabState(
+                tabs: pinnedItems + [
+                    ContentTabItem(
+                        id: tailID,
+                        page: .directory,
+                        anchor: .directory(path: "/Users/test/UnpinMatrix/tail"),
+                        isPinned: false,
+                        title: "tail",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: targetID,
+                pinnedRecords: records,
+            )
+            state.selectedTabIDs = [targetID, tailID]
+            state.selectionAnchorID = pinnedItems[(targetOffset + 1) % pinnedItems.count].id
+            return RollbackMatrixFixture(name: name, state: state, targetID: targetID)
+        }
+    }
+
+    private static func assertExactRollback(
+        _ state: ContentTabState,
+        fixture: RollbackMatrixFixture,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.tabs.map(\.id), fixture.state.tabs.map(\.id), fixture.name, file: file, line: line)
+        XCTAssertEqual(state.tabs, fixture.state.tabs, fixture.name, file: file, line: line)
+        XCTAssertEqual(state.pinnedRecords, fixture.state.pinnedRecords, fixture.name, file: file, line: line)
+        XCTAssertEqual(state.selectedTabIDs, fixture.state.selectedTabIDs, fixture.name, file: file, line: line)
+        XCTAssertEqual(state.selectionAnchorID, fixture.state.selectionAnchorID, fixture.name, file: file, line: line)
+    }
+
+    private var legacyUnsupportedUnpinFixtures: [LegacyUnsupportedUnpinFixture] {
+        let aiSessionID = AiChatSessionID(
+            rawValue: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 1)),
+        )
+        let temporaryURL = URL(fileURLWithPath: "/Users/test/Legacy Temporary.voycollection")
+        let cases = [
+            LegacyUnsupportedTabCase(name: "home", page: .home, anchor: .homeDefault, aiSessionID: nil),
+            LegacyUnsupportedTabCase(
+                name: "ai-chat",
+                page: .aiChat,
+                anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                aiSessionID: aiSessionID,
+            ),
+            LegacyUnsupportedTabCase(
+                name: "virtual",
+                page: .collection,
+                anchor: .virtualCollection(id: "Legacy Recents"),
+                aiSessionID: nil,
+            ),
+            LegacyUnsupportedTabCase(
+                name: "temporary",
+                page: .collection,
+                anchor: .collectionFile(url: temporaryURL),
+                aiSessionID: nil,
+            ),
+        ]
+        return cases.map { tabCase in
+            let name = tabCase.name
+            let targetID = ContentTabID(rawValue: "legacy-unpin-\(name)")
+            let siblingID = ContentTabID(rawValue: "legacy-unpin-\(name)-sibling")
+            let record = Self.pinnedRecord(
+                id: targetID,
+                page: tabCase.page,
+                anchor: tabCase.anchor,
+                title: name,
+                iconName: tabCase.page == .aiChat ? "bubble.right" : "folder",
+            )
+            var state = FileManagerFeature.State()
+            state.contentTabs = ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: targetID,
+                        page: tabCase.page,
+                        anchor: tabCase.anchor,
+                        isPinned: true,
+                        title: name,
+                        iconName: record.iconName,
+                    ),
+                    ContentTabItem(
+                        id: siblingID,
+                        page: .directory,
+                        anchor: .directory(path: "/Users/test/LegacySibling/\(name)"),
+                        isPinned: false,
+                        title: "Sibling",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: siblingID,
+                pinnedRecords: [targetID: record],
+            )
+            state.contentTabs.selectedTabIDs = [targetID, siblingID]
+            state.contentTabs.selectionAnchorID = siblingID
+            var cachedContent = FileManagerContentFeature.State()
+            if let sessionID = tabCase.aiSessionID {
+                cachedContent = .initialContent(
+                    for: .aiChat(sessionID: sessionID.rawValue.uuidString),
+                    inheritingWindowContextFrom: state.content,
+                )
+                cachedContent.aiChat.sessionID = sessionID
+                cachedContent.aiChat.mode = .chat
+                cachedContent.aiChat.draftText = "legacy owner draft"
+                state.backgroundAiChatStates[sessionID] = cachedContent
+            } else if name == "temporary" {
+                cachedContent.entryViewLayout.isCollectionMode = true
+                cachedContent.navigation.navigationState = .collection(.init(
+                    kind: .temporary,
+                    context: .init(),
+                    sortKey: .name,
+                    sortOrder: .ascending,
+                    viewLayout: .list,
+                ))
+            }
+            state.tabContentStates[targetID] = cachedContent
+            state.syncContentTabSidebarItems()
+            return LegacyUnsupportedUnpinFixture(
+                name: name,
+                state: state,
+                targetID: targetID,
+                siblingID: siblingID,
+                aiSessionID: tabCase.aiSessionID,
+            )
+        }
+    }
+
+    private struct PinOrderingRollbackFixture {
+        let state: ContentTabState
+        let targetID: ContentTabID
+        let originalIDs: [ContentTabID]
+        let originalPinnedRecords: [ContentTabID: ContentTabPinnedRecord]
+        let selectedTabIDs: Set<ContentTabID>
+        let selectionAnchorID: ContentTabID
+    }
+
+    private struct OrdinaryPinOrderingFixture {
+        let state: ContentTabState
+        let recorder: PinnedRecordStoreRecorder
+        let firstID: ContentTabID
+        let secondID: ContentTabID
+        let allTagsID: ContentTabID
+        let firstAnchor: ContentTabPageAnchor
+        let secondAnchor: ContentTabPageAnchor
+        let expectedRuntimeIDs: [ContentTabID]
+        let expectedPinnedIDs: [ContentTabID]
+    }
+
+    private static var ordinaryPinOrderingFixture: OrdinaryPinOrderingFixture {
+        let recentsID = ContentTabID(rawValue: "built-in-collection-recents")
+        let ordinaryID = ContentTabID(rawValue: "wonsik")
+        let allTagsID = ContentTabID(rawValue: "built-in-collection-all-tags")
+        let firstID = ContentTabID(rawValue: "first-new-pin")
+        let secondID = ContentTabID(rawValue: "second-new-pin")
+        let trailingID = ContentTabID(rawValue: "remaining-unpinned")
+        let recentsURL = URL(fileURLWithPath: "/Users/test/Recents.voycollection")
+        let allTagsURL = URL(fileURLWithPath: "/Users/test/All Tags.voycollection")
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/First")
+        let secondAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Second")
+        let recentsRecord = pinnedRecord(
+            id: recentsID,
+            page: .collection,
+            anchor: .collectionFile(url: recentsURL),
+            title: "Recents",
+            iconName: "clock",
+        )
+        let ordinaryRecord = pinnedRecord(
+            id: ordinaryID,
+            anchor: .directory(path: "/Users/test/wonsik"),
+            title: "wonsik",
+        )
+        let allTagsRecord = pinnedRecord(
+            id: allTagsID,
+            page: .collection,
+            anchor: .collectionFile(url: allTagsURL),
+            title: "All Tags",
+            iconName: "tag",
+        )
+        let recorder = PinnedRecordStoreRecorder()
+        _ = recorder.record(ContentTabPinnedRecordStore(records: [allTagsRecord, ordinaryRecord, recentsRecord]))
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: allTagsID,
+                    page: .collection,
+                    anchor: .collectionFile(url: allTagsURL),
+                    isPinned: true,
+                    title: "All Tags",
+                    iconName: "tag",
+                ),
+                pinnedItem(
+                    id: ordinaryID,
+                    anchor: .directory(path: "/Users/test/wonsik"),
+                    title: "wonsik",
+                ),
+                ContentTabItem(
+                    id: recentsID,
+                    page: .collection,
+                    anchor: .collectionFile(url: recentsURL),
+                    isPinned: true,
+                    title: "Recents",
+                    iconName: "clock",
+                ),
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: firstAnchor,
+                    isPinned: false,
+                    title: "First",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: secondAnchor,
+                    isPinned: false,
+                    title: "Second",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: trailingID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Remaining"),
+                    isPinned: false,
+                    title: "Remaining",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: firstID,
+            pinnedRecords: [recentsID: recentsRecord, ordinaryID: ordinaryRecord, allTagsID: allTagsRecord],
+        )
+        state.selectedTabIDs = [firstID, secondID]
+        state.selectionAnchorID = allTagsID
+        return OrdinaryPinOrderingFixture(
+            state: state,
+            recorder: recorder,
+            firstID: firstID,
+            secondID: secondID,
+            allTagsID: allTagsID,
+            firstAnchor: firstAnchor,
+            secondAnchor: secondAnchor,
+            expectedRuntimeIDs: [allTagsID, ordinaryID, recentsID, firstID, secondID, trailingID],
+            expectedPinnedIDs: [allTagsID, ordinaryID, recentsID, firstID, secondID],
+        )
+    }
+
+    private func assertSupportedPinEligibility() {
+        let directoryTab = ContentTabItem(
+            id: ContentTabID(rawValue: "directory"),
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Documents"),
+            isPinned: false,
+            title: "Documents",
+            iconName: "folder",
+        )
+        XCTAssertTrue(pinEligibilityWindowState(tab: directoryTab, isActive: true).canPinContentTab(directoryTab.id))
+        XCTAssertTrue(pinEligibilityWindowState(tab: directoryTab, isActive: false).canPinContentTab(directoryTab.id))
+
+        let savedURL = URL(fileURLWithPath: "/Users/test/Saved.voyagercollection")
+        let savedTab = ContentTabItem(
+            id: ContentTabID(rawValue: "saved-collection"),
+            page: .collection,
+            anchor: .collectionFile(url: savedURL),
+            isPinned: false,
+            title: "Saved",
+            iconName: "rectangle.stack",
+        )
+        let savedContent = savedCollectionContent(url: savedURL)
+        XCTAssertTrue(
+            pinEligibilityWindowState(tab: savedTab, isActive: true, content: savedContent)
+                .canPinContentTab(savedTab.id),
+        )
+        XCTAssertTrue(
+            pinEligibilityWindowState(tab: savedTab, isActive: false, content: savedContent)
+                .canPinContentTab(savedTab.id),
+        )
+    }
+
+    private func assertUnsupportedPagePinEligibility() {
+        var missingState = FileManagerFeature.State()
+        missingState.contentTabs = ContentTabState(tabs: [], activeTabID: nil)
+        XCTAssertFalse(missingState.canPinContentTab(ContentTabID(rawValue: "missing")))
+
+        let cases: [ContentTabItem] = [
+            .init(
+                id: ContentTabID(rawValue: "home"),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+            .init(
+                id: ContentTabID(rawValue: "ai-chat"),
+                page: .aiChat,
+                anchor: .aiChat(sessionID: "session"),
+                isPinned: false,
+                title: "AI Chat",
+                iconName: "bubble.right",
+            ),
+            .init(
+                id: ContentTabID(rawValue: "virtual"),
+                page: .collection,
+                anchor: .virtualCollection(id: "Recents"),
+                isPinned: false,
+                title: "Recents",
+                iconName: "clock",
+            ),
+        ]
+        for (index, tab) in cases.enumerated() {
+            XCTAssertFalse(pinEligibilityWindowState(tab: tab, isActive: index != 1).canPinContentTab(tab.id))
+        }
+    }
+
+    private func assertUnsavedAndTemporaryCollectionPinEligibility() {
+        let temporaryState = temporaryCollectionWindowState(tabID: ContentTabID(rawValue: "temporary"))
+        let temporaryTab = temporaryState.contentTabs.tabs[0]
+        XCTAssertFalse(temporaryState.canPinContentTab(temporaryTab.id))
+        XCTAssertFalse(
+            pinEligibilityWindowState(tab: temporaryTab, isActive: false, content: temporaryState.content)
+                .canPinContentTab(temporaryTab.id),
+        )
+
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = CollectionContext(query: "draft", scopes: [], conditions: [])
+        let tab = ContentTabItem(
+            id: ContentTabID(rawValue: "unsaved"),
+            page: .collection,
+            anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Unsaved.voyagercollection")),
+            isPinned: false,
+            title: "Unsaved",
+            iconName: "rectangle.stack",
+        )
+        XCTAssertFalse(pinEligibilityWindowState(tab: tab, isActive: true, content: content).canPinContentTab(tab.id))
+        XCTAssertFalse(pinEligibilityWindowState(tab: tab, isActive: false, content: content).canPinContentTab(tab.id))
+    }
+
+    private func pinEligibilityWindowState(
+        tab: ContentTabItem,
+        isActive: Bool,
+        content: FileManagerContentFeature.State? = nil,
+    ) -> FileManagerFeature.State {
+        let activeID = isActive ? tab.id : ContentTabID(rawValue: "eligibility-home")
+        let homeTab = ContentTabItem(
+            id: activeID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: isActive ? [tab] : [homeTab, tab],
+            activeTabID: activeID,
+        )
+        if let content {
+            if isActive {
+                state.content = content
+            } else {
+                state.tabContentStates[tab.id] = content
+            }
+        }
+        return state
+    }
+
+    private func savedCollectionContent(url: URL) -> FileManagerContentFeature.State {
+        let context = CollectionContext(query: "saved", scopes: ["/Users/test"], conditions: [])
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = context
+        content.collection.collectionSession.document = .init(url: url, name: "Saved")
+        content.collection.collectionSession.metadata.baseline = .init(context: context)
+        content.navigation.navigationState = .collection(.init(
+            kind: .file(url: url, name: "Saved"),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        return content
+    }
+
+    private static var pinOrderingRollbackFixture: PinOrderingRollbackFixture {
+        let recentsID = ContentTabID(rawValue: "built-in-collection-recents")
+        let allTagsID = ContentTabID(rawValue: "built-in-collection-all-tags")
+        let leadingID = ContentTabID(rawValue: "rollback-pin-leading")
+        let targetID = ContentTabID(rawValue: "rollback-pin-target")
+        let trailingID = ContentTabID(rawValue: "rollback-pin-trailing")
+        let recentsURL = URL(fileURLWithPath: "/Users/test/Recents.voycollection")
+        let allTagsURL = URL(fileURLWithPath: "/Users/test/All Tags.voycollection")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Target")
+        let recentsRecord = pinnedRecord(
+            id: recentsID,
+            page: .collection,
+            anchor: .collectionFile(url: recentsURL),
+            title: "Recents",
+            iconName: "clock",
+        )
+        let allTagsRecord = pinnedRecord(
+            id: allTagsID,
+            page: .collection,
+            anchor: .collectionFile(url: allTagsURL),
+            title: "All Tags",
+            iconName: "tag",
+        )
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: recentsID,
+                    page: .collection,
+                    anchor: .collectionFile(url: recentsURL),
+                    isPinned: true,
+                    title: "Recents",
+                    iconName: "clock",
+                ),
+                ContentTabItem(
+                    id: allTagsID,
+                    page: .collection,
+                    anchor: .collectionFile(url: allTagsURL),
+                    isPinned: true,
+                    title: "All Tags",
+                    iconName: "tag",
+                ),
+                ContentTabItem(
+                    id: leadingID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Leading"),
+                    isPinned: false,
+                    title: "Leading",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: targetID,
+                    page: .directory,
+                    anchor: targetAnchor,
+                    isPinned: false,
+                    title: "Target",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: trailingID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Trailing"),
+                    isPinned: false,
+                    title: "Trailing",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: targetID,
+            pinnedRecords: [recentsID: recentsRecord, allTagsID: allTagsRecord],
+        )
+        let selectedTabIDs: Set<ContentTabID> = [targetID, trailingID]
+        state.selectedTabIDs = selectedTabIDs
+        state.selectionAnchorID = allTagsID
+        return PinOrderingRollbackFixture(
+            state: state,
+            targetID: targetID,
+            originalIDs: state.tabs.map(\.id),
+            originalPinnedRecords: state.pinnedRecords,
+            selectedTabIDs: selectedTabIDs,
+            selectionAnchorID: allTagsID,
+        )
+    }
+
+    private static func expectOptimisticOrderedPin(
+        _ state: inout ContentTabState,
+        fixture: PinOrderingRollbackFixture,
+    ) {
+        state.tabs[id: fixture.targetID]?.isPinned = true
+        state.tabs.move(fromOffsets: [3], toOffset: 2)
+        state.pinnedRecords[fixture.targetID] = pinnedRecord(
+            id: fixture.targetID,
+            anchor: .directory(path: "/Users/test/Target"),
+            title: "Target",
+            iconName: "folder",
+        )
+        state.pendingPinnedRecordIDs.insert(fixture.targetID)
+    }
+
+    private static func expectOrderedPinRollback(
+        _ state: inout ContentTabState,
+        fixture: PinOrderingRollbackFixture,
+        hasError: Bool,
+    ) {
+        state.tabs.move(fromOffsets: [2], toOffset: 4)
+        state.tabs[id: fixture.targetID]?.isPinned = false
+        state.pinnedRecords = fixture.originalPinnedRecords
+        state.pendingPinnedRecordIDs.remove(fixture.targetID)
+        state.pinnedRecordPersistenceError = hasError ? "pinned_record_save_failed" : nil
+    }
+
+    private static func assertOrderedPinSnapshot(
+        _ state: ContentTabState,
+        fixture: PinOrderingRollbackFixture,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.tabs.map(\.id), fixture.originalIDs, file: file, line: line)
+        XCTAssertEqual(state.tabs[id: fixture.targetID]?.isPinned, false, file: file, line: line)
+        XCTAssertEqual(state.pinnedRecords, fixture.originalPinnedRecords, file: file, line: line)
+        XCTAssertEqual(state.selectedTabIDs, fixture.selectedTabIDs, file: file, line: line)
+        XCTAssertEqual(state.selectionAnchorID, fixture.selectionAnchorID, file: file, line: line)
+    }
+
+    private static func selectionPreservationState(
+        targetID: ContentTabID,
+        anchorID: ContentTabID,
+        targetAnchor: ContentTabPageAnchor,
+        targetTitle: String,
+        isPinned: Bool = false,
+        previousActiveTabID: ContentTabID? = nil,
+        pinnedRecord: ContentTabPinnedRecord? = nil,
+    ) -> ContentTabState {
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: targetID,
+                    page: .directory,
+                    anchor: targetAnchor,
+                    isPinned: isPinned,
+                    title: targetTitle,
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: anchorID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: targetID,
+            previousActiveTabID: previousActiveTabID,
+        )
+        if let pinnedRecord {
+            state.pinnedRecords[targetID] = pinnedRecord
+        }
+        state.selectedTabIDs = [targetID]
+        state.selectionAnchorID = anchorID
+        return state
+    }
+
+    private static func expectPinnedState(
+        _ state: inout ContentTabState,
+        targetID: ContentTabID,
+        targetAnchor: ContentTabPageAnchor,
+    ) {
+        state.tabs[id: targetID]?.isPinned = true
+        state.pinnedRecords[targetID] = pinnedRecord(
+            id: targetID,
+            anchor: targetAnchor,
+            title: "Pin Target",
+            iconName: "folder",
+        )
+        state.pendingPinnedRecordIDs.insert(targetID)
+    }
+
+    private func makePinPresentation(
+        clickedTabID: ContentTabID,
+        validSelectedTabIDs: Set<ContentTabID>,
+        isPinned: Bool,
+        isCloseEnabled: Bool,
+        isPinMutationEnabled: Bool,
+    ) -> ContentTabPinPresentation {
+        let surface = ContentTabRowInteractionSurface(
+            currentTabIDs: Array(validSelectedTabIDs),
+            validSelectedTabIDs: validSelectedTabIDs,
+            isCloseEnabled: isCloseEnabled,
+            isPinMutationEnabled: isPinMutationEnabled,
+        )
+        return ContentTabPinPresentation(
+            clickedTabID: clickedTabID,
+            isPinned: isPinned,
+            validSelectedTabIDs: surface.validSelectedTabIDs,
+            isPinMutationEnabled: surface.isPinMutationEnabled,
+            isSingleUnpinEnabled: surface.isCloseEnabled,
+        )
+    }
+
+    private static func expectPinRollbackState(
+        _ state: inout ContentTabState,
+        targetID: ContentTabID,
+    ) {
+        state.tabs[id: targetID]?.isPinned = false
+        state.pinnedRecords.removeAll()
+        state.pendingPinnedRecordIDs.remove(targetID)
+        state.pinnedRecordPersistenceError = "pinned_record_save_failed"
+    }
+
+    private static func expectUnpinnedState(
+        _ state: inout ContentTabState,
+        targetID: ContentTabID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        guard var unpinnedTab = state.tabs[id: targetID] else {
+            XCTFail("Expected target tab before unpin", file: file, line: line)
+            return
+        }
+        state.previousActiveTabID = nil
+        unpinnedTab.isPinned = false
+        state.tabs.remove(id: targetID)
+        state.tabs.append(unpinnedTab)
+        state.pinnedRecords.removeAll()
+        state.pendingPinnedRecordIDs.insert(targetID)
+    }
+
+    private static func assertSelection(
+        _ state: ContentTabState,
+        targetID: ContentTabID,
+        anchorID: ContentTabID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.selectedTabIDs, [targetID], file: file, line: line)
+        XCTAssertEqual(state.selectionAnchorID, anchorID, file: file, line: line)
+    }
+
+    private static func pinnedMergeSelectionState(
+        survivingPinnedID: ContentTabID,
+        removedPinnedID: ContentTabID,
+        survivingUnpinnedID: ContentTabID,
+        survivingAnchor: ContentTabPageAnchor,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: survivingPinnedID,
+                    page: .directory,
+                    anchor: survivingAnchor,
+                    isPinned: true,
+                    title: "Surviving",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: removedPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Removed"),
+                    isPinned: true,
+                    title: "Removed",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: survivingUnpinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: survivingUnpinnedID,
+        )
+        state.contentTabs.selectedTabIDs = [survivingPinnedID, removedPinnedID, survivingUnpinnedID]
+        state.contentTabs.selectionAnchorID = survivingPinnedID
+        return state
+    }
+}
+
+@MainActor
+extension CTM003ManagePinnedContentTabsTests {
+    /// CTM-003-pin_selected_content_tabs: drag batch-of-one은 live selection을 읽지 않고 frozen identity를 사용한다.
+    /// canonical drag request가 비어 있는 현재 selection과 독립적으로 coordinator를 시작하는지 검증한다.
+    /// - 검증 내용: drag origin, frozen singleton, source/target domain, initial placement
+    /// - 사전 조건: 선택되지 않은 unpinned Directory와 비어 있는 pinned target domain
+    /// - 기대 결과: singleton coordinator가 `.empty` placement로 시작되고 selection은 비어 있음
+    func testDragDomainTransitionBatchOfOneUsesFrozenRequestWithoutLiveSelection() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let sourceWindowID = matrixOperationID(group: 9, offset: 0)
+        let dragOperationID = matrixOperationID(group: 9, offset: 1)
+        let coordinatorOperationID = matrixOperationID(group: 9, offset: 2)
+        let targetID = fixture.orderedIDs[0]
+        var initialState = fixture.state
+        initialState.windowID = sourceWindowID
+        initialState.sidebar.currentWindowID = sourceWindowID
+        initialState.contentTabs.selectedTabIDs = []
+        let request = ContentTabDomainTransitionRequest(
+            operationID: dragOperationID,
+            sourceWindowID: sourceWindowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            initiatingTabID: targetID,
+            orderedTabIDs: [targetID],
+            placement: .empty,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(coordinatorOperationID)
+        }
+        // store.exhaustivity = .off: coordinator 시작 snapshot과 selection 비의존성에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestContentTabDomainTransition(request)) {
+            $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+                operationID: coordinatorOperationID,
+                target: .pinned,
+                orderedTargetIDs: [targetID],
+                origin: .drag,
+                dragOperationID: dragOperationID,
+                sourceWindowID: sourceWindowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initialPlacement: .empty,
+            )
+        }
+        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// CTM-003-pin_content_tab_s: 숨겨진 pinned record는 가시적으로 빈 pinned domain drop을 막지 않는다.
+    /// cross-window 이동 뒤 suppression된 authoritative record와 현재 창의 drop admission을 분리하는지 검증한다.
+    /// - 검증 내용: suppressed record 유지, `.empty` drag admission, singleton coordinator 생성
+    /// - 사전 조건: visible pinned tab은 없고 suppressed pinned record와 unpinned Directory가 존재함
+    /// - 기대 결과: record를 삭제하지 않고 empty Pin coordinator가 시작됨
+    func testDragPinIntoVisibleEmptyDomainIgnoresSuppressedPinnedRecord() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let sourceWindowID = matrixOperationID(group: 14, offset: 0)
+        let dragOperationID = matrixOperationID(group: 14, offset: 1)
+        let coordinatorOperationID = matrixOperationID(group: 14, offset: 2)
+        let targetID = fixture.orderedIDs[0]
+        let suppressedID = ContentTabID(rawValue: "suppressed-global-pinned")
+        var initialState = fixture.state
+        initialState.windowID = sourceWindowID
+        initialState.sidebar.currentWindowID = sourceWindowID
+        initialState.contentTabs.pinnedRecords[suppressedID] = Self.pinnedRecord(
+            id: suppressedID,
+            anchor: .directory(path: "/Users/test/SuppressedPinned"),
+        )
+        initialState.suppressedPinnedTabIDs = [suppressedID]
+        let request = ContentTabDomainTransitionRequest(
+            operationID: dragOperationID,
+            sourceWindowID: sourceWindowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            initiatingTabID: targetID,
+            orderedTabIDs: [targetID],
+            placement: .empty,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(coordinatorOperationID)
+        }
+        // store.exhaustivity = .off: visible empty admission과 coordinator 생성에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestContentTabDomainTransition(request)) {
+            $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+                operationID: coordinatorOperationID,
+                target: .pinned,
+                orderedTargetIDs: [targetID],
+                origin: .drag,
+                dragOperationID: dragOperationID,
+                sourceWindowID: sourceWindowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initialPlacement: .empty,
+            )
+        }
+        XCTAssertNotNil(store.state.contentTabs.pinnedRecords[suppressedID])
+        XCTAssertTrue(store.state.suppressedPinnedTabIDs.contains(suppressedID))
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// CTM-003-pin_selected_content_tabs: invalid drag batch는 첫 persistence 전에 전체 거부한다.
+    /// malformed identity와 target locator를 축소하거나 fallback하지 않는 admission 계약을 검증한다.
+    /// - 검증 내용: duplicate batch, wrong source window, missing anchor의 exact state no-op
+    /// - 사전 조건: 두 unpinned Directory와 비어 있는 pinned target domain
+    /// - 기대 결과: 모든 invalid request에서 coordinator와 effect가 생성되지 않음
+    func testDragDomainTransitionAdmissionRejectsInvalidWholeBatchWithoutFallback() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let sourceWindowID = matrixOperationID(group: 9, offset: 3)
+        let firstID = fixture.orderedIDs[0]
+        var initialState = fixture.state
+        initialState.windowID = sourceWindowID
+        initialState.sidebar.currentWindowID = sourceWindowID
+        let requests = [
+            ContentTabDomainTransitionRequest(
+                operationID: matrixOperationID(group: 9, offset: 4),
+                sourceWindowID: sourceWindowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initiatingTabID: firstID,
+                orderedTabIDs: [firstID, firstID],
+                placement: .empty,
+            ),
+            ContentTabDomainTransitionRequest(
+                operationID: matrixOperationID(group: 9, offset: 5),
+                sourceWindowID: matrixOperationID(group: 9, offset: 6),
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initiatingTabID: firstID,
+                orderedTabIDs: [firstID],
+                placement: .empty,
+            ),
+            ContentTabDomainTransitionRequest(
+                operationID: matrixOperationID(group: 9, offset: 7),
+                sourceWindowID: sourceWindowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initiatingTabID: firstID,
+                orderedTabIDs: [firstID],
+                placement: .before(ContentTabID(rawValue: "missing-pinned-anchor")),
+            ),
+        ]
+
+        for request in requests {
+            let store = TestStore(initialState: initialState) {
+                FileManagerWindowRoutingReducer()
+            }
+            await store.send(.requestContentTabDomainTransition(request))
+            XCTAssertEqual(store.state, initialState)
+            await store.finish()
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: drag placement chain은 마지막 성공 identity만 다음 anchor로 사용한다.
+    /// 중간 실패가 committed prefix anchor를 덮어쓰지 않는 serial coordinator 계약을 검증한다.
+    /// - 검증 내용: first `.empty`, second `.after(first)`, failure 후 third도 `.after(first)`
+    /// - 사전 조건: 세 unpinned Directory의 drag-origin pending coordinator
+    /// - 기대 결과: success만 lastSuccessfullyPlacedID를 갱신하고 failure는 chain을 유지함
+    func testDragDomainTransitionPlacementChainAdvancesOnlyAfterSuccess() async {
+        let fixture = selectedPinBatchMatrixFixture()
+        let operationID = matrixOperationID(group: 9, offset: 8)
+        let firstID = fixture.orderedIDs[0]
+        let middleID = fixture.orderedIDs[1]
+        let lastID = fixture.orderedIDs[2]
+        var initialState = fixture.state
+        initialState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: fixture.orderedIDs,
+            origin: .drag,
+            dragOperationID: matrixOperationID(group: 9, offset: 9),
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            initialPlacement: .empty,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.processNextSelectedContentTabPinMutation(operationID: operationID)) {
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = firstID
+            $0.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot = .init(
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+                previousTabIndex: 0,
+            )
+        }
+        await store.receive { action in
+            guard case let .performSelectedContentTabPinMutation(
+                receivedOperationID,
+                receivedTabID,
+                .pin(requestedTabID, placement),
+            ) = action else { return false }
+            return receivedOperationID == operationID
+                && receivedTabID == firstID
+                && requestedTabID == firstID
+                && placement == .empty
+        }
+        await store.send(.selectedPinMutationItemCompleted(
+            operationID: operationID,
+            tabID: firstID,
+            outcome: .success,
+        )) {
+            $0.pendingSelectedContentTabPinMutation?.cursor = 1
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = nil
+            $0.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot = nil
+            $0.pendingSelectedContentTabPinMutation?.lastSuccessfullyPlacedID = firstID
+            $0.pendingSelectedContentTabPinMutation?.successCount = 1
+        }
+        await store.receive(\.processNextSelectedContentTabPinMutation, operationID) {
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = middleID
+            $0.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot = .init(
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+                previousTabIndex: 1,
+            )
+        }
+        await store.receive { action in
+            guard case let .performSelectedContentTabPinMutation(
+                receivedOperationID,
+                receivedTabID,
+                .pin(requestedTabID, placement),
+            ) = action else { return false }
+            return receivedOperationID == operationID
+                && receivedTabID == middleID
+                && requestedTabID == middleID
+                && placement == .after(firstID)
+        }
+        await store.send(.selectedPinMutationItemCompleted(
+            operationID: operationID,
+            tabID: middleID,
+            outcome: .failure,
+        )) {
+            $0.pendingSelectedContentTabPinMutation?.cursor = 2
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = nil
+            $0.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot = nil
+            $0.pendingSelectedContentTabPinMutation?.failureCount = 1
+        }
+        await store.receive(\.processNextSelectedContentTabPinMutation, operationID) {
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = lastID
+            $0.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot = .init(
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+                previousTabIndex: 2,
+            )
+        }
+        await store.receive { action in
+            guard case let .performSelectedContentTabPinMutation(
+                receivedOperationID,
+                receivedTabID,
+                .pin(requestedTabID, placement),
+            ) = action else { return false }
+            return receivedOperationID == operationID
+                && receivedTabID == lastID
+                && requestedTabID == lastID
+                && placement == .after(firstID)
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: menu coordinator는 drag placement chain을 사용하지 않는다.
+    /// 기존 bulk menu의 각 item이 nil placement로 처리되는 호환 계약을 검증한다.
+    /// - 검증 내용: menu-origin pending의 첫 perform action placement
+    /// - 사전 조건: unpinned Directory 한 개의 menu-origin pending coordinator
+    /// - 기대 결과: emitted Pin action의 placement가 nil임
+    func testMenuSelectedPinKeepsNilPlacement() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = matrixOperationID(group: 9, offset: 10)
+        let tabID = fixture.orderedIDs[0]
+        var initialState = fixture.state
+        initialState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: [tabID],
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.processNextSelectedContentTabPinMutation(operationID: operationID)) {
+            $0.pendingSelectedContentTabPinMutation?.currentTabID = tabID
+            $0.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot = .init(
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+                previousTabIndex: 0,
+            )
+        }
+        await store.receive { action in
+            guard case let .performSelectedContentTabPinMutation(
+                receivedOperationID,
+                receivedTabID,
+                .pin(requestedTabID, placement),
+            ) = action else { return false }
+            return receivedOperationID == operationID
+                && receivedTabID == tabID
+                && requestedTabID == tabID
+                && placement == nil
+        }
+    }
+
+    /// CTM-003-pin_selected_content_tabs: wrong top-navigation token terminal은 current coordinator를 건드리지 않는다.
+    /// operation/tab/intent가 같아도 coordinator가 저장한 token과 다르면 parent terminal을 소비하지 않는지 검증한다.
+    /// - 검증 내용: pending intents/coordinator/current rollback/cursor/count exact equality와 completion 0회
+    /// - 사전 조건: 같은 tab/context를 가진 current Pin intent와 경쟁 wrong-token intent
+    /// - 기대 결과: wrong token committed terminal이 whole-state no-op이고 child terminal을 emit하지 않음
+    func testSelectedPinWrongTopNavigationTokenTerminalIsWholeStateNoOp() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let operationID = matrixOperationID(group: 10, offset: 1)
+        let correctToken = FileManagerTopNavigationOperationToken(value: matrixOperationID(group: 10, offset: 2))
+        let wrongToken = FileManagerTopNavigationOperationToken(value: matrixOperationID(group: 10, offset: 3))
+        let tabID = fixture.orderedIDs[0]
+        var state = fixture.state
+        let rollback = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: false,
+            previousPinnedRecord: nil,
+            previousTabIndex: 0,
+        )
+        state.contentTabs.tabs[id: tabID]?.isPinned = true
+        let record = Self.pinnedRecord(
+            id: tabID,
+            anchor: .directory(path: "/Users/test/Selected/First"),
+            title: "First",
+        )
+        state.contentTabs.pinnedRecords[tabID] = record
+        state.contentTabs.pendingPinnedRecordIDs.insert(tabID)
+        let context = ContentTabPinnedRecordTerminalContext(
+            intentID: state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID),
+            generation: .init(tabID: tabID, value: matrixOperationID(group: 10, offset: 4)),
+        )
+        let request = ContentTabPinnedRecordPersistenceRequest(
+            tabID: tabID,
+            context: context,
+            rollback: rollback,
+            mutation: .upsert(record: record, dormantSlot: nil, placement: nil),
+            persistenceScopeID: state.contentTabs.pinnedRecordPersistenceScopeID,
+        )
+        state.pendingSelectedContentTabPinMutation = .init(
+            operationID: operationID,
+            target: .pinned,
+            orderedTargetIDs: fixture.orderedIDs,
+            origin: .menu,
+            currentTabID: tabID,
+            currentItemRollbackSnapshot: rollback,
+            currentPersistenceContext: context,
+            currentTopNavigationToken: correctToken,
+        )
+        state.pendingTopNavigationIntents = [
+            .init(token: correctToken, intent: .pin(tabID), persistenceContext: context),
+            .init(token: wrongToken, intent: .update(tabID), persistenceContext: context),
+        ]
+        let completions = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case .selectedPinMutationItemCompleted = action {
+                    completions.withValue { $0 += 1 }
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        }
+        let initialState = store.state
+
+        await store.send(.internal(.pinnedRecordPersistenceCompleted(
+            token: wrongToken,
+            source: .selectedPin(operationID: operationID),
+            request: request,
+            terminal: .committed(.init(order: .init(), revision: 1)),
+        )))
+
+        XCTAssertEqual(store.state, initialState)
+        XCTAssertEqual(completions.value, 0)
+    }
+
+    /// CTM-003-pin_selected_content_tabs: 실행 시점 stale placement도 coordinator terminal로 정리한다.
+    /// admission 이후 optimistic order에서 anchor가 사라져도 현재 item이 영구 pending으로 남지 않는지 검증한다.
+    /// - 검증 내용: persistence write 0회, remaining terminal, coordinator cleanup, 후속 request 재시작
+    /// - 사전 조건: pinned anchor와 record는 존재하지만 optimistic top-navigation order에는 anchor가 없음
+    /// - 기대 결과: 각 요청이 remaining 1건으로 종료되고 후속 Pin/Unpin 시작 조건이 다시 열림
+    func testDragPinStaleOptimisticPlacementCompletesRemainingAndAllowsRetry() async {
+        let fixture = stalePlacementCoordinatorFixture()
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let persistenceRequests = LockIsolated(0)
+        let store = TestStore(initialState: fixture.state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .selectedPinMutationBatchCompleted(result) = action {
+                    completedResults.withValue { $0.append(result) }
+                }
+                if case .performSelectedContentTabPinMutation(_, _, .delegate(.persistPinnedRecord)) = action {
+                    persistenceRequests.withValue { $0 += 1 }
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.uuid = .constant(fixture.coordinatorOperationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+        // store.exhaustivity = .off: stale execution terminal과 coordinator 재시작 가능성에 집중함
+        store.exhaustivity = .off
+
+        for _ in 0 ..< 2 {
+            await store.send(.requestContentTabDomainTransition(fixture.request))
+            await store.skipReceivedActions()
+        }
+        await store.finish()
+
+        let expectedResult = SelectedContentTabPinMutationResult(
+            operationID: fixture.coordinatorOperationID,
+            target: .pinned,
+            totalCount: 1,
+            successCount: 0,
+            failureCount: 0,
+            remainingCount: 1,
+        )
+        XCTAssertEqual(completedResults.value, [expectedResult, expectedResult])
+        XCTAssertEqual(persistenceRequests.value, 0)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertTrue(store.state.canStartSelectedContentTabPinMutation)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.targetID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[fixture.targetID])
+    }
+
+    /// CTM-003-pin_selected_content_tabs: perform 직전 Pin target compatibility 변경도 terminal로 정리한다.
+    /// admission 뒤 target page anchor가 Pin 비호환 상태가 되어도 parent intent가 잔류하지 않는지 검증한다.
+    /// - 검증 내용: persistence 0회, optimistic intent/overlay 원복, coordinator cleanup과 재시작
+    /// - 사전 조건: parent placement anchor는 유효하고 perform 직전에 target page anchor만 비호환으로 변경됨
+    /// - 기대 결과: 두 요청 모두 remaining으로 종료되고 target은 unpinned 상태를 유지함
+    func testDragPinRuntimeCompatibilityDivergenceCompletesRemainingAndAllowsRetry() async {
+        await assertRuntimeValidationDivergenceCompletesRemaining(pinRuntimeDivergenceFixture())
+    }
+
+    /// CTM-003-unpin_selected_content_tabs: perform 직전 Unpin destination domain 변경도 terminal로 정리한다.
+    /// admission 뒤 destination anchor가 pinned domain으로 바뀌어도 parent intent가 잔류하지 않는지 검증한다.
+    /// - 검증 내용: persistence 0회, optimistic intent/overlay 원복, coordinator cleanup과 재시작
+    /// - 사전 조건: parent Unpin source order는 유효하고 perform 직전에 destination anchor domain만 변경됨
+    /// - 기대 결과: 두 요청 모두 remaining으로 종료되고 source는 pinned 상태를 유지함
+    func testDragUnpinRuntimeDestinationDivergenceCompletesRemainingAndAllowsRetry() async {
+        await assertRuntimeValidationDivergenceCompletesRemaining(unpinRuntimeDivergenceFixture())
+    }
+
+    private enum RuntimeValidationDivergence {
+        case incompatiblePinTarget
+        case pinnedUnpinDestination
+    }
+
+    private struct RuntimeValidationDivergenceFixture {
+        let state: FileManagerFeature.State
+        let request: ContentTabDomainTransitionRequest
+        let coordinatorOperationID: UUID
+        let movingID: ContentTabID
+        let anchorID: ContentTabID
+        let expectedMovingIsPinned: Bool
+        let divergence: RuntimeValidationDivergence
+
+        func restoreAdmissionState(_ state: inout FileManagerFeature.State) {
+            switch divergence {
+            case .incompatiblePinTarget:
+                state.contentTabs.tabs[id: movingID]?.page = .directory
+                state.contentTabs.tabs[id: movingID]?.anchor = .directory(path: "/Users/test/RuntimeDivergence/Target")
+            case .pinnedUnpinDestination:
+                state.contentTabs.tabs[id: anchorID]?.isPinned = false
+                state.contentTabs.pinnedRecords.removeValue(forKey: anchorID)
+            }
+        }
+
+        func applyBeforePerform(_ state: inout FileManagerFeature.State) {
+            switch divergence {
+            case .incompatiblePinTarget:
+                state.contentTabs.tabs[id: movingID]?.page = .collection
+                state.contentTabs.tabs[id: movingID]?.anchor = .virtualCollection(id: "runtime-divergence")
+            case .pinnedUnpinDestination:
+                state.contentTabs.tabs[id: anchorID]?.isPinned = true
+                let anchor = state.contentTabs.tabs[id: anchorID]
+                state.contentTabs.pinnedRecords[anchorID] = ContentTabPinnedRecord(
+                    id: anchorID.rawValue,
+                    page: anchor?.page ?? .home,
+                    anchor: anchor?.anchor ?? .homeDefault,
+                    title: anchor?.title,
+                    iconName: anchor?.iconName,
+                    pinnedAt: Date(timeIntervalSince1970: 0),
+                )
+            }
+        }
+    }
+
+    private func assertRuntimeValidationDivergenceCompletesRemaining(
+        _ fixture: RuntimeValidationDivergenceFixture,
+    ) async {
+        let results = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let persistenceRequests = LockIsolated(0)
+        let store = runtimeValidationDivergenceStore(fixture, results: results, writes: persistenceRequests)
+        // store.exhaustivity = .off: runtime divergence terminal과 coordinator cleanup 결과에 집중함
+        store.exhaustivity = .off
+
+        for _ in 0 ..< 2 {
+            await store.send(.requestContentTabDomainTransition(fixture.request))
+            await store.skipReceivedActions()
+        }
+        await store.finish()
+
+        XCTAssertEqual(results.value, [runtimeDivergenceResult(fixture), runtimeDivergenceResult(fixture)])
+        XCTAssertEqual(persistenceRequests.value, 0)
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, fixture.state.optimisticTopNavigationOrder)
+        XCTAssertTrue(store.state.canStartSelectedContentTabPinMutation)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.movingID]?.isPinned, fixture.expectedMovingIsPinned)
+    }
+
+    private func runtimeValidationDivergenceStore(
+        _ fixture: RuntimeValidationDivergenceFixture,
+        results: LockIsolated<[SelectedContentTabPinMutationResult]>,
+        writes: LockIsolated<Int>,
+    ) -> TestStoreOf<FileManagerFeature> {
+        TestStore(initialState: fixture.state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case .requestContentTabDomainTransition = action {
+                    fixture.restoreAdmissionState(&state)
+                }
+                if case .performSelectedContentTabPinMutation = action {
+                    fixture.applyBeforePerform(&state)
+                }
+                if case let .selectedPinMutationBatchCompleted(result) = action {
+                    results.withValue { $0.append(result) }
+                }
+                if case .performSelectedContentTabPinMutation(_, _, .delegate(.persistPinnedRecord)) = action {
+                    writes.withValue { $0 += 1 }
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.uuid = .constant(fixture.coordinatorOperationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+    }
+
+    private func runtimeDivergenceResult(
+        _ fixture: RuntimeValidationDivergenceFixture,
+    ) -> SelectedContentTabPinMutationResult {
+        SelectedContentTabPinMutationResult(
+            operationID: fixture.coordinatorOperationID,
+            target: fixture.request.targetDomain == .pinned ? .pinned : .unpinned,
+            totalCount: 1,
+            successCount: 0,
+            failureCount: 0,
+            remainingCount: 1,
+        )
+    }
+
+    private func pinRuntimeDivergenceFixture() -> RuntimeValidationDivergenceFixture {
+        let windowID = matrixOperationID(group: 12, offset: 1)
+        let operationID = matrixOperationID(group: 12, offset: 2)
+        let anchorID = ContentTabID(rawValue: "runtime-pin-anchor")
+        let movingID = ContentTabID(rawValue: "runtime-pin-target")
+        var state = runtimeDivergenceState(
+            windowID: windowID,
+            movingID: movingID,
+            anchorID: anchorID,
+            movingPinned: false,
+        )
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(anchorID)])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        return .init(
+            state: state,
+            request: .init(
+                operationID: matrixOperationID(group: 12, offset: 3),
+                sourceWindowID: windowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initiatingTabID: movingID,
+                orderedTabIDs: [movingID],
+                placement: .before(anchorID),
+            ),
+            coordinatorOperationID: operationID,
+            movingID: movingID,
+            anchorID: anchorID,
+            expectedMovingIsPinned: false,
+            divergence: .incompatiblePinTarget,
+        )
+    }
+
+    private func unpinRuntimeDivergenceFixture() -> RuntimeValidationDivergenceFixture {
+        let windowID = matrixOperationID(group: 13, offset: 1)
+        let operationID = matrixOperationID(group: 13, offset: 2)
+        let anchorID = ContentTabID(rawValue: "runtime-unpin-anchor")
+        let movingID = ContentTabID(rawValue: "runtime-unpin-source")
+        var state = runtimeDivergenceState(
+            windowID: windowID,
+            movingID: movingID,
+            anchorID: anchorID,
+            movingPinned: true,
+        )
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(movingID)])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        return .init(
+            state: state,
+            request: .init(
+                operationID: matrixOperationID(group: 13, offset: 3),
+                sourceWindowID: windowID,
+                sourceDomain: .pinned,
+                targetDomain: .unpinned,
+                initiatingTabID: movingID,
+                orderedTabIDs: [movingID],
+                placement: .before(anchorID),
+            ),
+            coordinatorOperationID: operationID,
+            movingID: movingID,
+            anchorID: anchorID,
+            expectedMovingIsPinned: true,
+            divergence: .pinnedUnpinDestination,
+        )
+    }
+
+    private func runtimeDivergenceState(
+        windowID: UUID,
+        movingID: ContentTabID,
+        anchorID: ContentTabID,
+        movingPinned: Bool,
+    ) -> FileManagerFeature.State {
+        let pinnedID = movingPinned ? movingID : anchorID
+        let moving = ContentTabItem(
+            id: movingID,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/RuntimeDivergence/Moving"),
+            isPinned: movingPinned,
+            title: "Moving",
+            iconName: "folder",
+        )
+        let anchor = ContentTabItem(
+            id: anchorID,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/RuntimeDivergence/Anchor"),
+            isPinned: !movingPinned,
+            title: "Anchor",
+            iconName: "folder",
+        )
+        let pinnedRecord = Self.pinnedRecord(
+            id: pinnedID,
+            anchor: movingPinned ? moving.anchor : anchor.anchor,
+        )
+        var state = FileManagerFeature.State()
+        state.windowID = windowID
+        state.contentTabs = .init(
+            tabs: [moving, anchor],
+            activeTabID: movingID,
+            pinnedRecords: [pinnedID: pinnedRecord],
+        )
+        state.syncContentTabSidebarItems()
+        state.sidebar.currentWindowID = windowID
+        return state
+    }
+
+    private struct StalePlacementCoordinatorFixture {
+        let state: FileManagerFeature.State
+        let request: ContentTabDomainTransitionRequest
+        let coordinatorOperationID: UUID
+        let targetID: ContentTabID
+    }
+
+    private func stalePlacementCoordinatorFixture() -> StalePlacementCoordinatorFixture {
+        let sourceWindowID = matrixOperationID(group: 11, offset: 1)
+        let coordinatorOperationID = matrixOperationID(group: 11, offset: 3)
+        let anchorID = ContentTabID(rawValue: "stale-placement-anchor")
+        let targetID = ContentTabID(rawValue: "stale-placement-target")
+        let anchor = Self.pinnedItem(
+            id: anchorID,
+            anchor: .directory(path: "/Users/test/StalePlacement/Anchor"),
+            title: "Anchor",
+        )
+        let target = ContentTabItem(
+            id: targetID,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/StalePlacement/Target"),
+            isPinned: false,
+            title: "Target",
+            iconName: "folder",
+        )
+        var state = FileManagerFeature.State()
+        state.windowID = sourceWindowID
+        state.contentTabs = ContentTabState(
+            tabs: [anchor, target],
+            activeTabID: targetID,
+            pinnedRecords: [anchorID: Self.pinnedRecord(id: anchorID, anchor: anchor.anchor)],
+        )
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(anchorID)])
+        state.syncContentTabSidebarItems()
+        state.sidebar.currentWindowID = sourceWindowID
+        let request = ContentTabDomainTransitionRequest(
+            operationID: matrixOperationID(group: 11, offset: 2),
+            sourceWindowID: sourceWindowID,
+            sourceDomain: .unpinned,
+            targetDomain: .pinned,
+            initiatingTabID: targetID,
+            orderedTabIDs: [targetID],
+            placement: .after(anchorID),
+        )
+        return .init(
+            state: state,
+            request: request,
+            coordinatorOperationID: coordinatorOperationID,
+            targetID: targetID,
+        )
     }
 }

@@ -2081,6 +2081,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.inspector.activeMode = .chat
         initialState.inspector.aiChat.sessionID = sessionID
         initialState.inspector.aiChat.sessionStatus = .active
+        initialState.syncActiveTabInspectorState()
 
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
@@ -2088,6 +2089,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         await store.send(.inspector(.closeChat)) {
             $0.inspector.inspectorVisible = false
+            $0.syncActiveTabInspectorState()
         }
 
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
@@ -2104,6 +2106,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.inspector.aiChat.mode = .chat
         initialState.inspector.aiChat.sessionID = sessionID
         initialState.inspector.aiChat.sessionStatus = .active
+        initialState.syncActiveTabInspectorState()
 
         let store = makeStore(
             initialState: initialState,
@@ -2113,6 +2116,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         await store.send(.inspector(.closeChat)) {
             $0.inspector.inspectorVisible = false
+            $0.syncActiveTabInspectorState()
         }
 
         await store.send(.request(.showChatHistory))

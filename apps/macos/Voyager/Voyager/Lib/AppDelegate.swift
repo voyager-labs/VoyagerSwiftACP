@@ -8,6 +8,7 @@ import VoyagerFeaturesUpdateVersion
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
+    private lazy var keyboardShortcutMonitor = AppKeyboardShortcutMonitor()
 
     /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
     /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.
@@ -54,7 +55,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
         withAppRootStore {
             $0.send(.lifecycle(.launch(.didFinishLaunching)))
+            keyboardShortcutMonitor.start(
+                context: { [weak self] in
+                    self?.contentTabShortcutContext() ?? .unavailable
+                },
+                onSelectContentTab: { [weak self] position in
+                    self?.withAppRootStore {
+                        $0.send(.menuCommands(.view(.app(.selectContentTab(position: position)))))
+                    }
+                },
+            )
         }
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        keyboardShortcutMonitor.stop()
     }
 
     func application(_: NSApplication, open urls: [URL]) {
@@ -182,6 +197,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } onMissing: {
             .terminateNow
         }
+    }
+
+    private func contentTabShortcutContext() -> AppKeyboardShortcutMonitor.ContentTabShortcutContext {
+        withAppRootStore({ store in
+            store.withState { state in
+                let menuCommands = MenuCommandsState(state: state)
+                return .init(
+                    hasFocusedWindow: menuCommands.hasFocusedWindow,
+                    isComposerPresented: menuCommands.isComposerPresented,
+                )
+            }
+        }, onMissing: {
+            .unavailable
+        })
     }
 
     @discardableResult

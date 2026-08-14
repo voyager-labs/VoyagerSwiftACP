@@ -69,6 +69,7 @@ extension FileManagerLocationsClient: DependencyKey {
                         name: "Trash",
                         url: trashURL,
                         iconName: "trash",
+                        kind: .trash,
                     ))
                 }
 

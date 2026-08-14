@@ -35,10 +35,12 @@ struct GeneralSettingsFeature {
             switch action {
             case .loadSettings:
                 // 시작 디렉토리 로드
+                let standardDirectories = directorySelectionClient.standardDirectories()
+                state.standardDirectories = standardDirectories
                 let startingDir = userDefaultsClient.string(SettingsKeys.defaultTabPath)
-                    ?? directorySelectionClient.defaultHomePath()
+                    ?? standardDirectories.homePath
                 state.startingDirectory = startingDir
-                state.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
+                state.selectedDirectoryOption = DirectoryOption.from(path: startingDir, using: standardDirectories)
 
                 // 로그인 시 실행 상태 확인
                 let isActuallyRegistered = launchAtLoginClient.isEnabled()
@@ -60,7 +62,7 @@ struct GeneralSettingsFeature {
 
             case let .setStartingDirectory(path):
                 state.startingDirectory = path
-                state.selectedDirectoryOption = DirectoryOption.from(path: path)
+                state.selectedDirectoryOption = DirectoryOption.from(path: path, using: state.standardDirectories)
                 state.startingDirectoryError = nil
                 userDefaultsClient.setString(path, SettingsKeys.defaultTabPath)
                 return .none
@@ -68,7 +70,7 @@ struct GeneralSettingsFeature {
             case let .selectDirectoryOption(option):
                 if case .other = option {
                     return .send(.openOtherDirectoryPanel)
-                } else if let path = option.path {
+                } else if let path = option.path(using: state.standardDirectories) {
                     return .send(.setStartingDirectory(path))
                 } else {
                     return .none

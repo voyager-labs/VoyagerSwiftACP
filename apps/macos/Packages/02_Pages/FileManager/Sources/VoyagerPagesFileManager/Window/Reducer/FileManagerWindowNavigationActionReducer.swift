@@ -411,8 +411,9 @@ private func handleCollectionFileLoaded(
 
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
-    state _: inout FileManagerWindowState,
+    state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID else { return .none }
     let (openedURL, openedName): (URL?, String?) = switch navigation.kind {
     case .temporary:
         (nil, nil)
@@ -437,21 +438,24 @@ private func handleNavigateToCollection(
     )
 
     let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let queryEffect: Effect<FileManagerWindowAction> = trimmedQuery.isEmpty
-        ? .send(.content(.composer(.applyFilters)))
-        : .send(.content(.composer(.submit)))
+    let queryAction: FileManagerContentAction = trimmedQuery.isEmpty
+        ? .composer(.applyFilters)
+        : .composer(.submit)
     return .concatenate(
-        .send(.content(.collection(.navigationStateApplied(payload)))),
-        .send(.content(.composer(.applyCollectionNavigationComposer(payload)))),
-        .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
-        .send(.content(.composer(.syncCollectionState(
+        .send(.tabContent(tabID: activeTabID, action: .collection(.navigationStateApplied(payload)))),
+        .send(.tabContent(tabID: activeTabID, action: .composer(.applyCollectionNavigationComposer(payload)))),
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.setCollectionMode(true))),
+        )),
+        .send(.tabContent(tabID: activeTabID, action: .composer(.syncCollectionState(
             context: payload.context,
             url: payload.document?.url,
             compatibility: payload.document?.compatibility,
             isCollectionMode: true,
         )))),
-        .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
-        queryEffect,
+        .send(.tabContent(tabID: activeTabID, action: .entryViewLayout(.entryArrangements(.reapply)))),
+        .send(.tabContent(tabID: activeTabID, action: queryAction)),
     )
 }
 

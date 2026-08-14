@@ -97,7 +97,9 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         let store = TestStore(initialState: AiProviderSetupState()) {
             AiProviderSetupFeature()
         } withDependencies: {
-            $0.aiConnectionsFileClient.load = { throw CancellationError() }
+            $0.aiConnectionsFileClient.load = {
+                throw AiConnectionStoreError.fileSystemError("test")
+            }
         }
 
         await store.send(.onAppear) { state in

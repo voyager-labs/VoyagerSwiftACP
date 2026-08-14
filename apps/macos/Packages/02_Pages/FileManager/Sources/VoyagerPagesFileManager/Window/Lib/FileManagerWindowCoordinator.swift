@@ -55,6 +55,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
         window.delegate = self
+        store.send(.internal(.undoManagerWindowIDChanged(windowID)))
         FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
@@ -96,6 +97,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
         window.delegate = self
+        store.send(.internal(.undoManagerWindowIDChanged(windowID)))
         FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
@@ -125,6 +127,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
         if duplicateState == nil {
             store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))))
+            store.send(.internal(.sidebarEntryDrop(.lifecycle(.windowIDChanged(windowID)))))
         }
 
         self.windowID = windowID
@@ -176,7 +179,11 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
                 guard var tabContent = state.tabContentStates[tabID]
                     ?? (tabID == state.contentTabs.activeTabID ? state.content : nil)
                 else { continue }
-                tabContent.entryViewLayout.entryOperations.resetForDuplicate(windowID: windowID)
+                tabContent.entryViewLayout.entryOperations.resetForDuplicate(
+                    windowID: windowID,
+                    loadingCancellationOwnerID: UUID(),
+                    undoOwnerID: UUID(),
+                )
                 tabContent.entryViewLayout.selectedIds = []
                 tabContent.entryViewLayout.lastSelectedId = nil
                 tabContent.entryViewLayout.rangeAnchorId = nil

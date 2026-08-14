@@ -35,6 +35,7 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
 
         await store.send(.setCurrent(directoryID)) {
             $0.previousActiveTabID = homeID
+            $0.recentlyUsedTabIDs = [directoryID, homeID]
             $0.activeTabID = directoryID
         }
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state), directoryAnchor)
@@ -69,6 +70,7 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
 
         await store.send(.setCurrent(homeID)) {
             $0.previousActiveTabID = directoryID
+            $0.recentlyUsedTabIDs = [homeID, directoryID]
             $0.activeTabID = homeID
         }
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state), .homeDefault)
@@ -270,9 +272,11 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         await store.send(.navigation(.delegate(.navigateToState(.folder(nextPath)))))
         await store.receive(\.contentTabs)
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
-            else { return false }
-            return receivedPath == nextPath
+            guard case let .tabContent(
+                receivedTabID,
+                .internal(.applyNavigationState(.folder(receivedPath))),
+            ) = action else { return false }
+            return receivedTabID == tabID && receivedPath == nextPath
         }
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs[id: tabID])

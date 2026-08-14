@@ -60,9 +60,15 @@ public struct SettingsHostFeature {
                 return .send(.accountAccess(.signOut))
 
             case .settings(.onAppear):
-                guard state.isAccountAccessBootstrapPending else { return .none }
+                let bootstrapLocalPreferences = Effect<Action>.send(
+                    .settings(.bootstrapLocalPreferences),
+                )
+                guard state.isAccountAccessBootstrapPending else { return bootstrapLocalPreferences }
                 state.isAccountAccessBootstrapPending = false
-                return .send(.accountAccess(.onAppear))
+                return .merge(
+                    bootstrapLocalPreferences,
+                    .send(.accountAccess(.onAppear)),
+                )
 
             case .accountAccess:
                 return .send(.settings(.accountAccessPresentationUpdated(

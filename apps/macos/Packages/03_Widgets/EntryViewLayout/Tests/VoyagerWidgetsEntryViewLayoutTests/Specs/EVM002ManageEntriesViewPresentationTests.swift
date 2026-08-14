@@ -15,7 +15,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 showHiddenFiles == false
     /// - 기대 결과: 상태가 true로 전환됨
     func testToggleShowHiddenFilesFlipsState() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -50,7 +51,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 showHiddenFiles == false
     /// - 기대 결과: true 설정 후 false로 복원 가능
     func testSetShowHiddenFilesDirectly() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -69,7 +71,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 (기본값)
     /// - 기대 결과: preferences에 지정한 값들이 상태에 반영됨
     func testApplyPreferencesSetsShowHiddenFiles() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -98,7 +101,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태 (기본 컬럼)
     /// - 기대 결과: 새 컬럼 목록이 normalize되어 상태에 반영됨
     func testSetListVisibleColumnsUpdatesState() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        let initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -133,7 +137,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 초기 상태
     /// - 기대 결과: 상태 변화 없음 (name은 requiredColumns에 포함)
     func testNameColumnIsRequired() async {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+        var initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         }
 
@@ -886,11 +891,21 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: 일반 items load 후 collection mode 전환과 collection items 설정 sequence 확인
     /// - 사전 조건: 일반 item과 collection item이 순차적으로 주어짐
     /// - 기대 결과: mode에 맞는 apply/reapply delegate sequence와 entries가 반영됨
-    func testSetCollectionModeUpdatesStateAndReapplies() async {
+    func testSetCollectionModeUpdatesStateAndReapplies() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
-        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+        let regularSandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { regularSandbox.cleanup() }
+        let collectionSandbox = try EntryViewLayoutFixtureSandbox
+            .copyingFile(from: "fixtures/fixtures/texts/plain/98.txt")
+        defer { collectionSandbox.cleanup() }
+        let regularItem = EntryModel.temporaryFolder(
+            id: regularSandbox.fileURL.path,
+            name: regularSandbox.fileURL.lastPathComponent,
+        )
+        let collectionItem = EntryModel.temporaryFolder(
+            id: collectionSandbox.fileURL.path,
+            name: collectionSandbox.fileURL.lastPathComponent,
+        )
 
         await store.send(.entryOperations(.loading(.itemsLoaded([regularItem])))) {
             $0.entryOperations.items = [regularItem]
@@ -930,11 +945,20 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: collection items 설정 후 reapply sequence 확인
     /// - 사전 조건: collection mode가 false인 상태에서 collection items를 설정함
     /// - 기대 결과: 일반 mode 기준 empty source가 reapply됨
-    func testSetCollectionItemsUpdatesStateAndReapplies() async {
+    func testSetCollectionItemsUpdatesStateAndReapplies() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let item1 = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
-        let item2 = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
+        let firstSandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { firstSandbox.cleanup() }
+        let secondSandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/98.txt")
+        defer { secondSandbox.cleanup() }
+        let item1 = EntryModel.temporaryFolder(
+            id: firstSandbox.fileURL.path,
+            name: firstSandbox.fileURL.lastPathComponent,
+        )
+        let item2 = EntryModel.temporaryFolder(
+            id: secondSandbox.fileURL.path,
+            name: secondSandbox.fileURL.lastPathComponent,
+        )
 
         await store.send(.internal(.setCollectionItems([item1, item2]))) {
             $0.collectionItems = [item1, item2]
@@ -952,10 +976,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: collection mode 상태의 items 설정과 reapply sequence 확인
     /// - 사전 조건: collection mode를 먼저 켠 뒤 collection item을 설정함
     /// - 기대 결과: collection item이 entries와 arrangement apply source로 반영됨
-    func testSetCollectionItemsWithCollectionModeOn() async {
+    func testSetCollectionItemsWithCollectionModeOn() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let item = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+        let sandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let item = EntryModel.temporaryFolder(id: sandbox.fileURL.path, name: sandbox.fileURL.lastPathComponent)
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
@@ -984,11 +1009,12 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: clearCollectionPresentation 후 mode, collectionItems, entries, reapply sequence 확인
     /// - 사전 조건: 일반 item load 후 collection mode와 collection item이 설정됨
     /// - 기대 결과: 일반 mode로 복귀하고 entries가 일반 item source로 복원됨
-    func testClearCollectionPresentationFallsBackToRegularSource() async {
+    func testClearCollectionPresentationFallsBackToRegularSource() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
-        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+        let fixtures = try makeCollectionPresentationItems()
+        defer { fixtures.sandboxes.forEach { $0.cleanup() } }
+        let regularItem = fixtures.regularItem
+        let collectionItem = fixtures.collectionItem
 
         await store.send(.entryOperations(.loading(.itemsLoaded([regularItem])))) {
             $0.entryOperations.items = [regularItem]
@@ -1040,10 +1066,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: collection mode/items 설정 후 entries와 mode 확인
     /// - 사전 조건: collection mode를 켜고 collection item을 설정함
     /// - 기대 결과: entries가 collection item source로 유지됨
-    func testReapplyUsesDisplayOrderItemsSnapshot() async {
+    func testReapplyUsesDisplayOrderItemsSnapshot() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let item = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+        let sandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let item = EntryModel.temporaryFolder(id: sandbox.fileURL.path, name: sandbox.fileURL.lastPathComponent)
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
@@ -1077,10 +1104,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: itemsLoaded 후 entries와 reapply sequence 확인
     /// - 사전 조건: 일반 item load action 수신
     /// - 기대 결과: 일반 mode 기준 entries와 arrangement apply가 반영됨
-    func testEntryOperationsItemsLoadedReusesSameHelperPath() async {
+    func testEntryOperationsItemsLoadedReusesSameHelperPath() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let item = EntryModel.temporaryFolder(id: "/tmp/test.txt", name: "test.txt")
+        let sandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let item = EntryModel.temporaryFolder(id: sandbox.fileURL.path, name: sandbox.fileURL.lastPathComponent)
 
         await store.send(.entryOperations(.loading(.itemsLoaded([item])))) {
             $0.entryOperations.items = [item]
@@ -1103,11 +1131,12 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 검증 내용: removeCollectionPaths 후 collectionItems, selectedIds, anchors, entries 확인
     /// - 사전 조건: collection mode에서 두 collection item과 selection state가 설정됨
     /// - 기대 결과: 제거 대상 item은 빠지고 남은 item 기준 selection과 entries가 유지됨
-    func testRemoveCollectionPathsPrunesItemsAndSelection() async {
+    func testRemoveCollectionPathsPrunesItemsAndSelection() async throws {
         let store = makeCollectionPresentationTestStore()
-
-        let removedItem = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
-        let keptItem = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
+        let fixtures = try makeCollectionPresentationItems()
+        defer { fixtures.sandboxes.forEach { $0.cleanup() } }
+        let removedItem = fixtures.regularItem
+        let keptItem = fixtures.collectionItem
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
@@ -1143,7 +1172,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         }
         await store.receive(\.delegate.selectionChanged)
 
-        await store.send(.internal(.removeCollectionPaths(["/tmp/a.txt"]))) {
+        await store.send(.internal(.removeCollectionPaths([removedItem.id]))) {
             $0.collectionItems = [keptItem]
             $0.selectedIds = [keptItem.id]
             $0.lastSelectedId = keptItem.id
@@ -1158,9 +1187,12 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             resultingEntries: [keptItem],
         )
     }
+}
 
-    private func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
-        let store = TestStore(initialState: EntryViewLayoutState()) {
+private extension EVM002ManageEntriesViewPresentationTests {
+    func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
+        var initialState = EntryViewLayoutState()
+        let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
@@ -1169,6 +1201,29 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         // EntryArrangements 내부 grouping 파생 상태는 해당 패키지 owner suite에서 별도로 검증한다.
         store.exhaustivity = .off
         return store
+    }
+
+    private struct CollectionPresentationItems {
+        let regularItem: EntryModel
+        let collectionItem: EntryModel
+        let sandboxes: [EntryViewLayoutFixtureSandbox]
+    }
+
+    private func makeCollectionPresentationItems() throws -> CollectionPresentationItems {
+        let regularSandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        let collectionSandbox = try EntryViewLayoutFixtureSandbox
+            .copyingFile(from: "fixtures/fixtures/texts/plain/98.txt")
+        return CollectionPresentationItems(
+            regularItem: EntryModel.temporaryFolder(
+                id: regularSandbox.fileURL.path,
+                name: regularSandbox.fileURL.lastPathComponent,
+            ),
+            collectionItem: EntryModel.temporaryFolder(
+                id: collectionSandbox.fileURL.path,
+                name: collectionSandbox.fileURL.lastPathComponent,
+            ),
+            sandboxes: [regularSandbox, collectionSandbox],
+        )
     }
 
     private func receiveCollectionPresentationReapplySequence(
@@ -1206,5 +1261,67 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
                 return sortedItems == applyItems && mode == isCollectionMode
             }
         }
+    }
+}
+
+extension EVM002ManageEntriesViewPresentationTests {
+    /// EVM-002-set_entries_view_as_icon_grid: collection path conversion uses injected Finder favorite colors.
+    /// Collection presentation must resolve favorite tags through the reducer dependency override.
+    /// - 검증 내용: applyCollectionSearchPaths가 주입된 favorite tag 색상으로 collection item을 정규화하는지 확인
+    /// - 사전 조건: fixture 파일에 주입된 favorite tag와 같은 이름의 다른 색상 태그가 저장되어 있음
+    /// - 기대 결과: collectionItems와 entries의 태그 색상이 주입된 favorite tag 색상으로 변경됨
+    func testCollectionPathConversionUsesInjectedFavoriteTagColor() async throws {
+        let sandbox = try EntryViewLayoutFixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let rawTag = Tag(name: "InjectedFavorite", colorCode: 0)
+        let favoriteTag = Tag(name: rawTag.name, colorCode: 6)
+        try TagMetadataClient.setTags([rawTag], for: sandbox.fileURL)
+        var entryLoadingClient = EntryLoadingClient.testValue
+        entryLoadingClient.fileExistsAtPath = { path, isDirectory in
+            var resolvedIsDirectory = ObjCBool(false)
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &resolvedIsDirectory) else {
+                return false
+            }
+            isDirectory?.pointee = resolvedIsDirectory
+            return true
+        }
+        entryLoadingClient.getItemMetadata = { _, _, _ in
+            EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil)
+        }
+        entryLoadingClient.isPackageDirectory = { _ in false }
+        var initialState = EntryViewLayoutState()
+        initialState.isCollectionMode = true
+        let store = TestStore(initialState: initialState) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient = entryLoadingClient
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [favoriteTag.name] },
+                favoriteTags: { [favoriteTag] },
+            )
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyCollectionSearchPaths(
+            paths: [sandbox.fileURL.path],
+            showHidden: true,
+        )))
+
+        await store.receive(\.entryArrangements.reapply)
+        await store.receive(\.entryArrangements.delegate.requestApply)
+        await store.receive { action in
+            guard case .entryArrangements(.apply) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryArrangements(.delegate(.applied)) = action else { return false }
+            return true
+        }
+
+        XCTAssertEqual(store.state.collectionItems.count, 1)
+        XCTAssertEqual(store.state.collectionItems.first?.facets.tags, [favoriteTag])
+        XCTAssertEqual(store.state.entries.count, 1)
+        XCTAssertEqual(store.state.entries.first?.facets.tags, [favoriteTag])
     }
 }

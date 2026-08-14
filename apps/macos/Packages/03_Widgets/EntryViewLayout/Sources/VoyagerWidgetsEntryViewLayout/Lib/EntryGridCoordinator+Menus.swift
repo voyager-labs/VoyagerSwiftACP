@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import UniformTypeIdentifiers
 import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
 
@@ -13,6 +14,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
         )
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
+        let serviceNames = entryOpenClient.serviceNames()
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: target.selectedIds,
             selectedEntries: target.entries,
@@ -22,6 +24,13 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             canPaste: !state.entryOperations.clipboardItems.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
+            isOpenWithApplicationsLoading: target.entries.contains { entry in
+                guard !entry.isFolder else { return false }
+                let typeID = UTType(filenameExtension: entry.fileExtension)?.identifier ?? UTType.data.identifier
+                return state.entryOperations.openWithInFlightTypeIDs.contains(typeID)
+                    || state.entryOperations.applicationsForTypes[typeID] == nil
+            },
+            serviceNames: serviceNames,
         )
         let coordinator = EntryContextMenuCoordinator(
             store: store,
@@ -30,10 +39,12 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             anchorScreenPoint: contextMenuAnchor,
         )
         contextMenuCoordinator = coordinator
-        return EntryContextMenuBuilder.makeMenu(configuration: .init(
+        return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
             selectedCount: menuSpec.selectedCount,
             rowEntryPathForOpenInNewWindow: menuSpec.rowEntryPathForOpenInNewWindow,
+            openInNewTabPaths: menuSpec.openInNewTabPaths,
+            serviceNames: menuSpec.serviceNames,
             canPaste: menuSpec.canPaste,
             showCompress: menuSpec.showCompress,
             showExtract: menuSpec.showExtract,
@@ -45,7 +56,8 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             knownTags: menuSpec.knownTags,
             canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
                 && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
-        ))
+            isOpenWithApplicationsLoading: menuSpec.isOpenWithApplicationsLoading,
+        )))
     }
 
     private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {

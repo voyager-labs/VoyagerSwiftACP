@@ -56,7 +56,8 @@ enum FileManagerContentChromePropsBuilder {
             isDiscardEnabled: state.content.isCollectionMode
                 && state.content.collection.collectionSession.metadata.baseline != nil
                 && state.content.isOpenedCollectionDirty,
-            canSaveCollection: state.content.canSaveCollection,
+            canSaveCollection: state.content.canSaveCollection
+                && state.pendingSelectedContentTabClose == nil,
             isTemporaryCollection: !state.content.openedCollectionURLExists,
         )
     }

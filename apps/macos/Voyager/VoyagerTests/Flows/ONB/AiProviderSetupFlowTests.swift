@@ -92,7 +92,7 @@ final class AiProviderSetupFlowTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = Self.progressClient(saveRecorder: saveRecorder)
-            $0.aiConnectionsFileClient.load = { throw CancellationError() }
+            $0.aiConnectionsFileClient.load = { throw NSError(domain: "test", code: -1) }
         }
         // store.exhaustivity = .off: retry bootstrap의 내부 effect와 parent progress 저장보다 오류 후 선택 가능성을 검증한다.
         store.exhaustivity = .off

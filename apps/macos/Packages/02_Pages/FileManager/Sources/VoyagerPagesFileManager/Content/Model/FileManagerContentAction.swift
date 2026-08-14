@@ -7,6 +7,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -51,6 +52,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposer
         case resetComposerAfterDirectoryNavigation
         case setAutomaticRefreshFeedbackSuppressed(Bool)
+        case reloadDirectoryListing
         case homeDirectoryPickerFinished(FileManagerHomePickerResult<String>)
         case homeCollectionPickerFinished(FileManagerHomePickerResult<URL>)
         case homeAiChatSessionCreated(FileManagerHomePickerResult<String>)
@@ -65,11 +67,14 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case composerCollectionSearchSucceeded
         case composerCollectionSearchFailed
         case openPathInNewWindow(String)
+        case openInNewTab([String])
         case closeWindow
         case newChatRequested
         case durableNewChatRequested
         case showChatHistoryRequested
         case openAISettings
+        case requestDuplicate
+        case requestUndoRedo(EntryActionDirection)
         case currentContextChanged(AiChatCurrentContextSnapshot)
         case homePageAnchorSelected(ContentTabPageAnchor)
         case homeChatHistorySessionSelected(AiChatSessionID)

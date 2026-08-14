@@ -34,8 +34,10 @@ struct VoyagerApp: App {
     init() {
         let appRootStoreReference = AppRootStoreReference()
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
+        let workspaceClient = WorkspaceClient.liveValue
         let fileManagerWindowClient = makeFileManagerWindowClientLive(
             fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+            workspaceClient: workspaceClient,
         )
 
         appRootStore = Store(initialState: AppRootState()) {
@@ -51,12 +53,38 @@ struct VoyagerApp: App {
             )
             $0.fileManagerWindowClient = fileManagerWindowClient
             $0.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
+            $0.undoManagerClient = Self.makeUndoManagerClient(
+                fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                resolveScope: { windowID in
+                    guard let store = appRootStoreReference.store else { return nil }
+                    return store.withState { state in
+                        guard let window = state.windowManager.windows[id: windowID]?.window,
+                              let activeTabID = window.contentTabs.activeTabID
+                        else { return nil }
+                        return UndoManagerScope(
+                            windowID: windowID,
+                            contentTabID: activeTabID.rawValue,
+                        )
+                    }
+                },
+            )
             $0.metricsClient = Self.makeFileManagerMetricsClient()
+            $0.workspaceClient = workspaceClient
         }
         appRootStoreReference.store = appRootStore
         configureFileManagerWindowCallbacks()
         appDelegate.configure(appRootStore: appRootStore)
         configureLogging()
+    }
+
+    static func makeUndoManagerClient(
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+        resolveScope: @escaping @MainActor @Sendable (UUID) -> UndoManagerScope?,
+    ) -> UndoManagerClient {
+        .live(
+            registry: fileOperationUndoManagerRegistry,
+            resolveScope: resolveScope,
+        )
     }
 
     private static func makeComposerMetricClient() -> ComposerMetricClient {
