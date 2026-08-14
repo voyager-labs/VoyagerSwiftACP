@@ -297,7 +297,7 @@ export type FileManagerIllustrationProps = {
   readonly files: readonly FileEntry[]
   readonly contentContext: ContentContext
   readonly initialPresentation?: FileManagerInitialPresentation
-  // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/unconnected/streaming/error/recovery)을 root에서 재현한다.
+  // 생략 시 inspector는 빈 화면을 렌더링한다 (native InspectorPaneView와 일치). 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/unconnected/streaming/error/recovery)을 root에서 재현한다.
   readonly chatSurface?: ChatSurfaceState
   readonly chatInputActions?: AiChatInputBarActions
   readonly chatOnErrorRecovery?: () => void

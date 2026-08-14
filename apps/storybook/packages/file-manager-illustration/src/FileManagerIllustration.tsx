@@ -18,7 +18,6 @@ import { locationShortcuts } from "./lib/navigation-data"
 import type { HomeFavorite, HomeLocation } from "./model/home"
 import { createInitialState, getContentRoute, reducer } from "./model/reducer"
 import type {
-  Entry,
   EntrySelectionIntent,
   FileManagerIllustrationProps,
   SidebarTabItem,
@@ -66,7 +65,6 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
     () => state.files.filter((e) => state.selectedEntryIds.includes(e.id)),
     [state.files, state.selectedEntryIds],
   )
-  const primaryEntry: Entry | null = selectedEntries[0] ?? state.files[0] ?? null
   const activeTab = useMemo(
     () => state.tabs.find((t) => t.id === state.activeTabId) ?? null,
     [state.tabs, state.activeTabId],
@@ -220,8 +218,6 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
               <InspectorPane
                 chatHeader={effectiveChatHeader}
                 requestText={state.requestText}
-                selectedEntries={selectedEntries}
-                primaryEntry={primaryEntry}
                 chatTitle={inspectorChatTitle}
                 onRequestTextChange={handleRequestTextChange}
                 onOpenChatHistory={handleOpenChatHistory}
