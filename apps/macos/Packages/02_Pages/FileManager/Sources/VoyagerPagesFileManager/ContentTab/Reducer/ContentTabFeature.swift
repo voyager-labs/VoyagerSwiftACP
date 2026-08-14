@@ -194,10 +194,7 @@ extension ContentTabFeature {
     }
 
     private func open(anchor: ContentTabPageAnchor, state: inout ContentTabState) -> Effect<ContentTabAction> {
-        guard state.tabs.count < ContentTabConstants.maxTabs else {
-            state.previousActiveTabID = nil
-            return .none
-        }
+        guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
 
         let previousActiveTabID = state.activeTabID
         let item = ContentTabItem(
@@ -210,17 +207,16 @@ extension ContentTabFeature {
         )
         state.tabs.append(item)
         state.previousActiveTabID = previousActiveTabID
+        state.recordActivation(item.id)
         state.activeTabID = item.id
         return .none
     }
 
     private func setCurrent(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
         guard state.tabs[id: id] != nil else { return .none }
-        guard state.activeTabID != id else {
-            state.previousActiveTabID = nil
-            return .none
-        }
+        guard state.activeTabID != id else { return .none }
         state.previousActiveTabID = state.activeTabID
+        state.recordActivation(id)
         state.activeTabID = id
         return .none
     }
@@ -260,6 +256,7 @@ extension ContentTabFeature {
                 state.tabs[id: id]?.title = "Home"
                 state.tabs[id: id]?.iconName = "house"
                 state.activeTabID = id
+                state.pruneRecentlyUsedTabIDs()
                 return .none
             }
 
@@ -273,6 +270,8 @@ extension ContentTabFeature {
             )
             state.tabs.remove(id: id)
             state.tabs.append(homeTab)
+            state.pruneRecentlyUsedTabIDs()
+            state.recordActivation(homeTab.id)
             state.activeTabID = homeTab.id
             state.selectedTabIDs = [homeTab.id]
             state.selectionAnchorID = homeTab.id
@@ -313,9 +312,13 @@ extension ContentTabFeature {
 
         state.tabs.remove(id: id)
         state.reconcileSelection()
+        state.pruneRecentlyUsedTabIDs()
 
         if wasActive {
             state.previousActiveTabID = id
+            if let fallbackTabID {
+                state.recordActivation(fallbackTabID)
+            }
             state.activeTabID = fallbackTabID
         } else {
             state.previousActiveTabID = nil
@@ -325,14 +328,8 @@ extension ContentTabFeature {
     }
 
     private func restore(state: inout ContentTabState) -> Effect<ContentTabAction> {
-        guard let snapshot = state.recentlyClosed else {
-            state.previousActiveTabID = nil
-            return .none
-        }
-        guard state.tabs.count < ContentTabConstants.maxTabs else {
-            state.previousActiveTabID = nil
-            return .none
-        }
+        guard let snapshot = state.recentlyClosed else { return .none }
+        guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
 
         let item = ContentTabItem(
             id: ContentTabID(),
@@ -344,6 +341,7 @@ extension ContentTabFeature {
         )
         state.tabs.append(item)
         state.previousActiveTabID = state.activeTabID
+        state.recordActivation(item.id)
         state.activeTabID = item.id
         state.recentlyClosed = nil
         return .none
@@ -372,6 +370,7 @@ extension ContentTabFeature {
             guard let sourceIndex = state.tabs.index(id: sourceID) else { return .none }
             state.tabs.insert(duplicateItem, at: sourceIndex + 1)
             state.previousActiveTabID = state.activeTabID
+            state.recordActivation(duplicateID)
             state.activeTabID = duplicateID
         }
 
@@ -428,6 +427,7 @@ extension ContentTabFeature {
         }
         state.tabs = .init(uniqueElements: updatedTabs)
         state.previousActiveTabID = preOperationActiveID
+        state.recordActivation(successfulRequests[0].duplicate.id)
         state.activeTabID = successfulRequests[0].duplicate.id
         state.reconcileSelection()
         return .none
