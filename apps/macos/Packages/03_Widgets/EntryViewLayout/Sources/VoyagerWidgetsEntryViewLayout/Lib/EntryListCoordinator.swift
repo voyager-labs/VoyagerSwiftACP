@@ -2,6 +2,7 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
@@ -200,6 +201,8 @@ public final class EntryListCoordinator: NSObject {
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     init(store: StoreOf<EntryViewLayoutFeature>) {

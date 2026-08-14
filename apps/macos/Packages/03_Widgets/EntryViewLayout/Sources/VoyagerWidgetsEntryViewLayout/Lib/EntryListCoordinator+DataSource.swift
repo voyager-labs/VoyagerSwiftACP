@@ -51,9 +51,18 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             outlineView.setDropItem(nil, dropChildIndex: -1)
         }
 
+        let origin = resolveDropOrigin(info, ownView: outlineView)
+        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
+        guard !origin.sourcePaths.isEmpty else {
+            outlineView.setDropItem(nil, dropChildIndex: -1)
+            store.send(.view(.setDropTargeted(false)))
+            return []
+        }
         let validation = EntryViewLayoutDropValidationAdapter.resolve(
-            draggingInfo: info,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
+            allowedOperations: info.draggingSourceOperationMask,
+            prefersCopy: origin.wantsCopy,
         )
         let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
@@ -61,7 +70,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
     }
 
     public func outlineView(
-        _: NSOutlineView,
+        _ outlineView: NSOutlineView,
         acceptDrop info: any NSDraggingInfo,
         item: Any?,
         childIndex _: Int,
@@ -75,28 +84,63 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             destinationPath = entry.fullPath
         }
 
-        let sourcePaths = EntryViewLayoutDropValidationAdapter.sourcePaths(from: info.draggingPasteboard)
-        guard !sourcePaths.isEmpty else {
+        let origin = resolveDropOrigin(info, ownView: outlineView)
+        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
+        guard !origin.sourcePaths.isEmpty else {
+            entryFileOpsClient.saveDragPaths([])
             store.send(.view(.setDropTargeted(false)))
             return false
         }
         let validation = EntryViewLayoutDropValidationAdapter.resolve(
-            sourcePaths: sourcePaths,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             allowedOperations: info.draggingSourceOperationMask,
-            prefersCopy: NSEvent.modifierFlags.contains(.option),
+            prefersCopy: origin.wantsCopy,
         )
-        guard !EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation).isEmpty else {
+        let resolvedOperation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
+        guard !resolvedOperation.isEmpty else {
+            // accept-reject terminal path: transport/visual 상태를 정리한다.
+            entryFileOpsClient.saveDragPaths([])
             store.send(.view(.setDropTargeted(false)))
             return false
         }
         store.send(.view(.dropItems(
-            sourcePaths: sourcePaths,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
         )))
-        store.send(.view(.setDropTargeted(false)))
+        if !origin.isInternal {
+            // 외부 accept는 transport를 정리하고 visual highlight를 유지하지 않는다.
+            // 내부 accept transport 정리는 `draggingSession endedAt` + `EntryViewLayoutDragStateClearRuleSet`이 담당한다.
+            entryFileOpsClient.saveDragPaths([])
+            store.send(.view(.setDropTargeted(false)))
+        }
         return true
+    }
+
+    /// 내부/외부 drop origin과 active source path를 결정한다.
+    /// 외부 session 진입 시 stale 내부 transport를 무효화한다 (FIX 7).
+    @MainActor
+    private func resolveDropOrigin(
+        _ draggingInfo: any NSDraggingInfo,
+        ownView: AnyObject?,
+    ) -> EntryViewLayoutDropValidationAdapter.DropOrigin {
+        let transportPaths = entryFileOpsClient.loadDragPaths()
+        let isInternal = EntryViewLayoutDropValidationAdapter.isInternalDrag(draggingInfo, ownView: ownView)
+        if isInternal {
+            return .init(
+                sourcePaths: transportPaths,
+                wantsCopy: entryFileOpsClient.loadDragWithOption(),
+                isInternal: true,
+            )
+        }
+        entryFileOpsClient.saveDragPaths([])
+        entryFileOpsClient.saveDragWithOption(false)
+        return .init(
+            sourcePaths: EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard),
+            wantsCopy: NSEvent.modifierFlags.contains(.option),
+            isInternal: false,
+        )
     }
 }
 

@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import Foundation
 import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 
@@ -7,23 +8,21 @@ import VoyagerEntitiesEntry
 /// 외부 drag는 active pasteboard를 원자적으로 파싱해 검증한다.
 /// source path는 invocation-local이며 reducer state나 named transport에 저장하지 않는다.
 enum EntryViewLayoutDropValidationAdapter {
+    /// resolveDropOrigin의 결과: active source와 drag origin 분류 결과.
+    struct DropOrigin {
+        var sourcePaths: [String]
+        var wantsCopy: Bool
+        var isInternal: Bool
+    }
+
     /// drag origin을 `draggingSource` identity로 분류한다.
-    /// - 내부: draggingSource가 layout 자체 view이거나, draggingSource가 nil이고 transport에 source가 남아 있는 경우.
-    /// - 외부: draggingSource가 다른 객체이거나 (nil source + 빈 transport) active pasteboard를 사용한다.
+    /// 내부 drag는 오직 `draggingSource`가 layout 자체 view(`ownView`)와 동일한 경우에만 인정한다.
+    /// `draggingSource`가 nil이거나 다른 객체면 외부 drag로 보고 active pasteboard를 사용한다.
+    /// 저장된 transport path는 incoming drop 분류의 근거로 사용하지 않는다.
     @MainActor
-    static func isInternalDrag(
-        _ draggingInfo: any NSDraggingInfo,
-        ownView: AnyObject?,
-        hasInternalPaths: Bool,
-    ) -> Bool {
-        if let source = draggingInfo.draggingSource {
-            if let ownView, (source as AnyObject) === ownView {
-                return true
-            }
-            return false
-        }
-        // draggingSource가 nil이면 transport source 존재 여부로 내부 drag를 판정한다 (테스트/호환 경로).
-        return hasInternalPaths
+    static func isInternalDrag(_ draggingInfo: any NSDraggingInfo, ownView: AnyObject?) -> Bool {
+        guard let source = draggingInfo.draggingSource, let ownView else { return false }
+        return (source as AnyObject) === ownView
     }
 
     @MainActor
@@ -43,14 +42,19 @@ enum EntryViewLayoutDropValidationAdapter {
     /// `pasteboardItems`를 전체 검사해 모든 item이 실제 file URL일 때만 반환하고,
     /// 하나라도 지원하지 않는 item이 있으면 전체 session을 거부(빈 배열)한다.
     /// `readObjects`처럼 지원 항목만 조용히 걸러내는 동작은 하지 않는다.
+    /// 입력 순서를 보존하면서 중복 경로를 제거한다.
     @MainActor
     static func sourcePaths(from pasteboard: NSPasteboard) -> [String] {
         guard let items = pasteboard.pasteboardItems, !items.isEmpty else { return [] }
         var paths: [String] = []
+        var seen: Set<String> = []
         paths.reserveCapacity(items.count)
         for item in items {
             guard let url = fileURL(from: item) else { return [] }
-            paths.append(url.standardizedFileURL.path)
+            let path = url.standardizedFileURL.path
+            if seen.insert(path).inserted {
+                paths.append(path)
+            }
         }
         return paths
     }
