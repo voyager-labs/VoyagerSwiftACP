@@ -21,6 +21,12 @@ const editorError = (
   ) {
     return editor.kind === "number" ? "Enter a valid number." : "Enter valid numbers."
   }
+  if (editor.kind === "numberRange") {
+    const [from, to] = values.map(Number)
+    if (!Number.isNaN(from) && !Number.isNaN(to) && from > to) {
+      return "From must be less than or equal to To."
+    }
+  }
   return undefined
 }
 
@@ -54,7 +60,12 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
       >
         <div className="collection-composer-picker-list">
           {(["True", "False"] as const).map((value) => (
-            <button type="button" key={value} onClick={() => onCommit?.(value)}>
+            <button
+              type="button"
+              aria-pressed={picker.selectedValue === value}
+              key={value}
+              onClick={() => onCommit?.(value)}
+            >
               {value}
             </button>
           ))}
@@ -124,6 +135,9 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
                   type="text"
                   inputMode={editor.kind === "text" ? "text" : "decimal"}
                   aria-label={isRange ? label : "Value"}
+                  aria-invalid={error != null}
+                  className={error != null ? "invalid" : undefined}
+                  placeholder={editor.kind === "text" ? "Enter text" : "0"}
                   value={value}
                   onChange={(event) => setValue(index, event.currentTarget.value)}
                 />
