@@ -20,8 +20,11 @@ Prioritize these checks over generic frontend advice:
    details or allowing contradictory combinations?
 5. Does the rendered result preserve hierarchy, spacing rhythm, balance,
    legibility, baseline identity, and the intended interaction model?
-6. Can users operate real interactive controls with clear semantics, keyboard
-   focus, sufficient contrast, and reduced-motion behavior where applicable?
+6. Can users operate real interactive controls, and does any declared
+   accessibility state (`aria-pressed`, `aria-expanded`, `aria-selected`,
+   `aria-label`) match the rendered visual state? Accessibility attributes are
+   reviewed as a behavior contract — the attribute, the visible state, and the
+   interaction must agree — not as a checklist of "must have" labels.
 
 Do not use line count as a component-splitting rule. Flag size or decomposition
 only when mixed responsibilities create concrete ownership, reuse, testing, or
@@ -62,6 +65,29 @@ Treat a visual or interaction issue as P1 when it has clear user impact:
 - Spacing, balance, or visual rhythm is degraded enough to obscure grouping,
   priority, or interaction affordance.
 
+Accessibility findings are P1 only when a declared state or missing name
+causes real user impact:
+
+- A declared state attribute (`aria-pressed`, `aria-expanded`, `aria-selected`)
+  has **no matching visible selected/expanded style**, so screen-reader and
+  sighted users disagree about the current state. This is a defect even when the
+  DOM is correct, because the visible state and the semantics diverge.
+- A control that has **no visible text** (icon-only button) exposes no
+  accessible name at all, so assistive technology cannot identify it.
+- Contrast, focus visibility, keyboard operation, or reduced-motion behavior
+  prevents or materially impairs interaction in the rendered story.
+
+Do NOT raise P1/P2 for these — they add noise without user impact:
+
+- Adding or demanding `aria-label` on a control whose visible text already
+  provides the accessible name (duplicate/redundant label).
+- Requiring an accessibility attribute purely because a similar control has one,
+  without an identified interaction or state gap.
+- Speculative assistive-technology behavior not confirmed against the rendered
+  DOM or an actual screen-reader/interaction trace.
+- A single deprecated or imperfectly-worded attribute that does not change the
+  resolved accessible name or current state.
+
 Source evidence is valid when the result is deterministic from the code, such as
 a CSS cascade, selector match, token override, fixed overflow rule, or impossible
 prop/state combination. Do not turn subjective preference into a blocking finding.
@@ -96,6 +122,11 @@ A source-proven finding may still be reported, but the final verdict must includ
 the rendered review result. Record the story, viewport or container condition,
 and observed behavior. Drop visual findings that remain speculative after the
 available source and browser evidence are considered.
+
+For accessibility findings, confirm the attribute against the rendered DOM and
+verify the visible counterpart before leaving a comment. A `aria-pressed`/`aria-expanded`
+claim must show both the attribute and the matching rendered style; an `aria-label`
+claim must show the control's visible text (or absence of it) in the built story.
 
 Generated output may be used as evidence but is not the repair owner. Trace a
 generated CSS or metadata defect to its generator or input source and leave the
