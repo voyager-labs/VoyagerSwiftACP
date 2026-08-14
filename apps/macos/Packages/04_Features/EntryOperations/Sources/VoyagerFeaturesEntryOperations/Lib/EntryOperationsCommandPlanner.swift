@@ -18,6 +18,7 @@ public enum EntryOperationsNavigationCommand: Sendable {
     case revealSelectedItemsInFinder
     case performService(serviceName: String)
     case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
+    case openInNewTab(paths: [String])
 }
 
 public enum EntryOperationsClipboardCommand: Sendable {
@@ -100,6 +101,8 @@ enum EntryOperationsCommandPlanner {
                 bundleID: bundleID,
                 shouldSetAsDefault: shouldSetAsDefault,
             )
+        case let .openInNewTab(paths):
+            return planOpenInNewTab(paths: paths, context: context)
         }
     }
 
@@ -198,6 +201,22 @@ enum EntryOperationsCommandPlanner {
     private static func planRevealSelectedItemsInFinder(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
         return [.entryOperations(.open(.revealInFinder(paths: selected.map(\.fullPath))))]
+    }
+
+    /// Open in New Tab은 요청 경로와 현재 선택된 폴더 경로의 교집합만 display 순서로 위로 전달한다.
+    /// 파일/미선택 경로는 제외하고, 결과가 비어 있으면 아무 output도 만들지 않는다.
+    private static func planOpenInNewTab(
+        paths: [String],
+        context: EntryOperationsCommandContext,
+    ) -> [EntryOperationsCommandOutput] {
+        let selectedFolderPaths = Set(
+            context.displayItems
+                .filter { context.selectedIds.contains($0.id) && $0.isFolder }
+                .map(\.fullPath),
+        )
+        let delegatedPaths = paths.filter { selectedFolderPaths.contains($0) }
+        guard !delegatedPaths.isEmpty else { return [] }
+        return [.delegate(.openInNewTab(delegatedPaths))]
     }
 
     private static func planPerformService(
