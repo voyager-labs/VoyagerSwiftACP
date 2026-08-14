@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
@@ -12,7 +13,9 @@ extension EntryGridCoordinator {
         if selectedFiles.count > 1 {
             sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
+                  state.entryOperations
+                  .applicationsForTypes[UTType(filenameExtension: file.fileExtension)?.identifier ?? UTType.data
+                      .identifier] == nil
         {
             sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
         }
@@ -23,7 +26,9 @@ extension EntryGridCoordinator {
         return if selectedFiles.count > 1 {
             state.entryOperations.commonApplicationsForSelectedFiles
         } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
+            state.entryOperations
+                .applicationsForTypes[UTType(filenameExtension: file.fileExtension)?.identifier ?? UTType.data
+                    .identifier] ?? []
         } else {
             []
         }

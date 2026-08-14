@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
@@ -58,7 +59,9 @@ extension EntryListCoordinator {
         if selectedFiles.count > 1 {
             sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
+                  state.entryOperations
+                  .applicationsForTypes[UTType(filenameExtension: file.fileExtension)?.identifier ?? UTType.data
+                      .identifier] == nil
         {
             sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
         }
@@ -69,7 +72,9 @@ extension EntryListCoordinator {
         return if selectedFiles.count > 1 {
             state.entryOperations.commonApplicationsForSelectedFiles
         } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
+            state.entryOperations
+                .applicationsForTypes[UTType(filenameExtension: file.fileExtension)?.identifier ?? UTType.data
+                    .identifier] ?? []
         } else {
             [] as [ApplicationInfo]
         }
@@ -121,6 +126,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
         )
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
+        let serviceNames = listContextMenuServiceNames()
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: target.selectedIds,
             selectedEntries: target.entries,
@@ -130,6 +136,13 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             canPaste: !state.entryOperations.clipboardItems.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
+            isOpenWithApplicationsLoading: target.entries.contains { entry in
+                guard !entry.isFolder else { return false }
+                let typeID = UTType(filenameExtension: entry.fileExtension)?.identifier ?? UTType.data.identifier
+                return state.entryOperations.openWithInFlightTypeIDs.contains(typeID)
+                    || state.entryOperations.applicationsForTypes[typeID] == nil
+            },
+            serviceNames: serviceNames,
         )
         let coordinator = EntryContextMenuCoordinator(
             store: store,
@@ -138,10 +151,12 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             anchorScreenPoint: contextMenuAnchor,
         )
         contextMenuCoordinator = coordinator
-        return EntryContextMenuBuilder.makeMenu(configuration: .init(
+        return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
             selectedCount: menuSpec.selectedCount,
             rowEntryPathForOpenInNewWindow: menuSpec.rowEntryPathForOpenInNewWindow,
+            openInNewTabPaths: menuSpec.openInNewTabPaths,
+            serviceNames: menuSpec.serviceNames,
             canPaste: menuSpec.canPaste,
             showCompress: menuSpec.showCompress,
             showExtract: menuSpec.showExtract,
@@ -153,7 +168,8 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             knownTags: menuSpec.knownTags,
             canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
                 && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
-        ))
+            isOpenWithApplicationsLoading: menuSpec.isOpenWithApplicationsLoading,
+        )))
     }
 
     private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {
@@ -167,4 +183,16 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             )))
         }
     }
+}
+
+@MainActor
+private func listContextMenuServiceNames() -> [String] {
+    NSApp.servicesMenu?.update()
+    return NSApp.servicesMenu?.items.compactMap { item -> String? in
+        guard !item.isSeparatorItem,
+              item.action != nil,
+              !item.title.isEmpty
+        else { return nil }
+        return item.title
+    } ?? []
 }
