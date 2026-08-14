@@ -76,6 +76,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
         XCTAssertEqual(recorder.emitted.first?.destinationPath, "/destination")
+        XCTAssertEqual(recorder.emitted.first?.isOptionDrag, false)
     }
 
     /// EOP-002 (FIX 1 core regression): `draggingSource == nil` + stale transport + external pasteboard
@@ -97,6 +98,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(accepted)
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
+        XCTAssertEqual(recorder.emitted.first?.destinationPath, "/destination")
+        XCTAssertEqual(recorder.emitted.first?.isOptionDrag, false)
         XCTAssertFalse(recorder.emitted.first?.sourcePaths.contains("/stale/internal") ?? true)
     }
 
@@ -118,6 +121,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(accepted)
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
+        XCTAssertEqual(recorder.emitted.first?.destinationPath, "/current")
+        XCTAssertEqual(recorder.emitted.first?.isOptionDrag, false)
         XCTAssertFalse(recorder.emitted.first?.sourcePaths.contains("/stale/internal") ?? true)
     }
 

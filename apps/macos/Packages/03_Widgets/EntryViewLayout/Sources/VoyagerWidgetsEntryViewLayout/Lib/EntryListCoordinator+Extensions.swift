@@ -71,7 +71,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.view(.startDrag(paths: paths)))
+        entryFileOpsClient.saveDragPaths(paths)
+        entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
     }
 
     public func outlineView(
@@ -81,7 +82,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        store.send(.view(.startDrag(paths: [])))
+        entryFileOpsClient.saveDragPaths([])
+        entryFileOpsClient.saveDragWithOption(false)
         store.send(.view(.setDropTargeted(false)))
     }
 
