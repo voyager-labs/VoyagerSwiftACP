@@ -16,7 +16,7 @@ export type ComposerCondition = {
 export type ComposerScopeFeedback = {
   readonly phase: "Applied" | "Applying" | "Failed"
   readonly title: string
-  readonly action?: "Undo" | "Redo"
+  readonly action?: "Undo" | "Redo" | "Retry"
 }
 
 export type ComposerPropertyPicker = {
@@ -34,6 +34,7 @@ export type ComposerOperatorPicker = {
 export type ComposerValuePicker = {
   readonly kind: "value"
   readonly editor: ComposerValueEditor
+  readonly selectedValue?: string
   readonly error?: string
 }
 
@@ -47,6 +48,15 @@ export type ComposerScopePicker = {
   readonly feedback?: ComposerScopeFeedback
 }
 
+// 네이티브 ComposerTopRowView와 동일하게 한 버튼이 모드에 따라 Clear/Discard, Save/Save As 로 전환
+export type ComposerClearMode = "clear" | "discard"
+export type ComposerSaveMode = "save" | "saveAs"
+
+export type ComposerTransientFeedback = {
+  readonly type: "success" | "warning" | "error"
+  readonly message: string
+}
+
 export type ComposerFixture = {
   readonly query: string
   readonly scopes: readonly string[]
@@ -54,8 +64,10 @@ export type ComposerFixture = {
   readonly canUndo: boolean
   readonly canRedo: boolean
   readonly canSave: boolean
+  readonly clearMode?: ComposerClearMode
+  readonly saveMode?: ComposerSaveMode
   readonly isProcessing?: boolean
-  readonly transientFeedback?: string
+  readonly transientFeedback?: ComposerTransientFeedback
   readonly picker?:
     | ComposerPropertyPicker
     | ComposerOperatorPicker
@@ -97,6 +109,14 @@ export const composerFixtures = {
     canSave: false,
   },
   populatedDraft,
+  discardMode: {
+    ...populatedDraft,
+    clearMode: "discard" as const,
+  },
+  saveAsMode: {
+    ...populatedDraft,
+    saveMode: "saveAs" as const,
+  },
   propertyPickerOpen: {
     ...populatedDraft,
     picker: {
@@ -116,7 +136,7 @@ export const composerFixtures = {
   },
   valuePickerOpen: {
     ...populatedDraft,
-    picker: { kind: "value", editor: { kind: "boolean" } },
+    picker: { kind: "value", editor: { kind: "boolean" }, selectedValue: "True" },
   },
   processing: {
     ...populatedDraft,
@@ -130,7 +150,7 @@ export const composerFixtures = {
       currentSummary: "Documents",
       includeSubfolders: true,
       sectionTitle: "Current scope",
-      items: ["Documents", "Projects"],
+      items: ["Documents"],
       feedback: { phase: "Applied", title: "Scope updated to Documents", action: "Undo" },
     },
   },
@@ -151,15 +171,29 @@ export const composerFixtures = {
     picker: {
       kind: "scope",
       query: "",
-      currentSummary: "Documents",
+      currentSummary: "Documents, Projects",
       includeSubfolders: true,
       sectionTitle: "Current scope",
       items: ["Documents", "Projects"],
-      feedback: { phase: "Failed", title: "Scope change could not be fully applied" },
+      feedback: {
+        phase: "Failed",
+        title: "Scope change could not be fully applied",
+        action: "Retry",
+      },
     },
   },
   queryRecovery: {
     ...populatedDraft,
-    transientFeedback: "Couldn’t run the collection query. Review the draft and try again.",
+    transientFeedback: {
+      type: "error" as const,
+      message: "Couldn’t run the collection query. Review the draft and try again.",
+    },
+  },
+  savedConfirmation: {
+    ...populatedDraft,
+    transientFeedback: {
+      type: "success" as const,
+      message: "Collection saved.",
+    },
   },
 } satisfies Record<string, ComposerFixture>
