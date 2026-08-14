@@ -43,10 +43,10 @@ final class AiProviderConnectionFlowTests: XCTestCase {
         )
 
         await store.send(.ai(.onAppear))
-        await store.receive(\.ai)
-        await store.receive(\.ai)
+        await store.receive(\.ai.bootstrapCompleted)
         await store.receive(\.ai.delegate.connectionsFileUpdated)
         await store.receive(\.delegate.aiConnectionsFileUpdated)
+        await store.receive(\.ai.bootstrapVerificationCompleted)
         await store.finish()
 
         XCTAssertEqual(savedFiles.withValue { $0 }, [expectedFile])
@@ -89,7 +89,7 @@ final class AiProviderConnectionFlowTests: XCTestCase {
         await store.receive(\.ai)
         await store.finish()
 
-        XCTAssertEqual(savedFiles.withValue { $0 }, [])
+        XCTAssertEqual(savedFiles.withValue { $0 }, [file, file])
         XCTAssertEqual(verificationCalls.withValue { $0 }, [.openai, .anthropic, .openai, .anthropic])
     }
 
@@ -119,10 +119,10 @@ final class AiProviderConnectionFlowTests: XCTestCase {
         )
 
         await store.send(.ai(.onAppear))
-        await store.receive(\.ai)
-        await store.receive(\.ai)
+        await store.receive(\.ai.bootstrapCompleted)
         await store.receive(\.ai.delegate.connectionsFileUpdated)
         await store.receive(\.delegate.aiConnectionsFileUpdated)
+        await store.receive(\.ai.bootstrapVerificationCompleted)
         await store.finish()
 
         XCTAssertEqual(savedFiles.withValue { $0 }, [expectedFile])
@@ -137,7 +137,8 @@ final class AiProviderConnectionFlowTests: XCTestCase {
             SettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { file }
-            $0.aiConnectionsFileClient.save = { updatedFile in
+            $0.aiConnectionsFileClient.atomicUpdate = { transform in
+                let updatedFile = try transform(file)
                 savedFiles.withValue { $0.append(updatedFile) }
                 return .success(updatedFile)
             }

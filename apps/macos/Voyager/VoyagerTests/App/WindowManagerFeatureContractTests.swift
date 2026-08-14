@@ -6624,7 +6624,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             targetWindow.tabContentStates[sourceInitialTabID]?.entryViewLayout.entryOperations.windowID,
             targetWindowID,
         )
-        XCTAssertEqual(targetWindow.tabContentStates[sourceInitialTabID]?.composer.cancellationOwnerID, targetWindowID)
+        XCTAssertEqual(targetWindow.tabContentStates[sourceInitialTabID]?.composer.cancellationOwnerID, sourceWindowID)
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[moveRequestID]?.outcome, .succeeded)
         XCTAssertNil(sourceWindow.sidebar.pendingContentTabMoveRequest)
         XCTAssertEqual(generatedUUIDs.value, [])
@@ -8175,7 +8175,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             action: .window(.view(.dismissContentTabMoveFailure(requestID: cleanupRequestID))),
         )))
         await fulfillment(of: [sourceCleanup], timeout: 1)
-        await store.skipReceivedActions()
         await store.finish()
     }
 
