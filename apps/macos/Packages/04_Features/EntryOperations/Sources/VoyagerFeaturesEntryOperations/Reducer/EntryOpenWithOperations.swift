@@ -162,7 +162,9 @@ struct EntryOpenWithOperationsReducer {
             case let .openWith(.loadCommonApplicationsForFiles(files)):
                 state.openWithCommonRequestGeneration += 1
                 let generation = state.openWithCommonRequestGeneration
-                let typeIDs = Set(files.compactMap { UTType(filenameExtension: $0.fileExtension)?.identifier })
+                let typeIDs = Set(files.map {
+                    (UTType(filenameExtension: $0.fileExtension) ?? .data).identifier
+                })
                 state.commonApplicationsForSelectedFiles = []
                 for typeID in typeIDs {
                     state.openWithCommonTypeGenerations[typeID] = generation

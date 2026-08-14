@@ -156,6 +156,38 @@ final class EOP001ExecuteEntryTests: XCTestCase {
         XCTAssertTrue(store.state.openWithInFlightTypeIDs.isEmpty)
     }
 
+    /// EOP-001-open_with_discovery: 확장자 없는 다중 선택은 data 타입으로 공통 앱을 조회한다.
+    /// 확장자가 없는 파일만 선택해도 Open With loading이 완료되는 fallback 경로를 검증한다.
+    /// - 검증 내용: common discovery가 `UTType.data`로 앱 목록을 조회하고 결과를 상태에 반영한다.
+    /// - 사전 조건: 확장자 없는 파일과 data 타입을 지원하는 앱 mock이 있다.
+    /// - 기대 결과: data 타입 조회가 한 번 실행되고 공통 앱 결과와 in-flight 상태가 수렴한다.
+    func testOpenWithCommonApplicationsUsesDataFallbackForExtensionlessFiles() async {
+        let file = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/README",
+            name: "README",
+            fileExtension: "",
+        )
+        let app = ApplicationInfo(id: "text-edit", name: "TextEdit", bundleID: "text-edit")
+        let requestedTypeIDs = LockIsolated<[String]>([])
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOpenClient.applicationsForType = { type, _ in
+                requestedTypeIDs.withValue { $0.append(type.identifier) }
+                return [app]
+            }
+            $0.entryOpenClient.defaultApplication = { _ in nil }
+        }
+        // store.exhaustivity = .off: common discovery의 내부 completion보다 최종 fallback 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.openWith(.loadCommonApplicationsForFiles(files: [file])))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(requestedTypeIDs.value, [UTType.data.identifier])
+        XCTAssertEqual(store.state.commonApplicationsForSelectedFiles.compactMap(\.bundleID), ["text-edit"])
+        XCTAssertTrue(store.state.openWithInFlightTypeIDs.isEmpty)
+    }
+
     /// EOP-001-open_with_discovery: 기본 앱 변경은 진행 중인 공통 조회의 이전 snapshot을 무효화한다.
     /// - 검증 내용: default mutation reload를 먼저 완료한 뒤 이전 common completion을 완료한다.
     /// - 사전 조건: 같은 txt 타입의 common 조회와 default mutation reload가 겹친다.
