@@ -3,9 +3,16 @@ import { SFSymbol } from "../../Foundations/SFSymbol"
 import { ComposerConditionChip } from "./ComposerConditionChip"
 import { ComposerOperatorPicker } from "./ComposerOperatorPicker"
 import { ComposerPropertyPicker } from "./ComposerPropertyPicker"
+import { ComposerScopeSummaryChip } from "./ComposerScopeSummaryChip"
 import { ComposerScopeTokenChip } from "./ComposerScopeTokenChip"
 import { ComposerValuePicker } from "./ComposerValuePicker"
-import type { ComposerFixture, ComposerScopePicker } from "./composer-fixtures"
+import type {
+  ComposerClearMode,
+  ComposerFixture,
+  ComposerSaveMode,
+  ComposerScopePicker,
+  ComposerTransientFeedback,
+} from "./composer-fixtures"
 
 export type CollectionComposerProps = {
   readonly fixture: ComposerFixture
@@ -17,6 +24,27 @@ export type CollectionComposerProps = {
   readonly onValueCommit?: (value: string) => void
 }
 
+const transientFeedbackIcon = (type: ComposerTransientFeedback["type"]): string =>
+  type === "success"
+    ? "checkmark.circle.fill"
+    : type === "warning"
+      ? "exclamationmark.triangle.fill"
+      : "xmark.octagon.fill"
+
+const clearButtonContent = (
+  mode: ComposerClearMode,
+): { readonly symbol: string; readonly label: string } => ({
+  symbol: "xmark.square",
+  label: mode === "discard" ? "Discard" : "Clear",
+})
+
+const saveButtonContent = (
+  mode: ComposerSaveMode,
+): { readonly symbol: string; readonly label: string } =>
+  mode === "saveAs"
+    ? { symbol: "square.and.arrow.down", label: "Save As" }
+    : { symbol: "tray.and.arrow.down", label: "Save" }
+
 export const CollectionComposer: FC<CollectionComposerProps> = ({
   fixture,
   onAddCondition,
@@ -25,101 +53,115 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
   onOperatorSelect,
   onValueClick,
   onValueCommit,
-}) => (
-  <div className="collection-composer-overlay">
-    <section className="collection-composer" aria-label="Collection Composer">
-      <div className="collection-composer-input-row">
-        <ComposerSymbolButton
-          symbol="arrow.uturn.backward"
-          label="Undo"
-          disabled={!fixture.canUndo}
-        />
-        <ComposerSymbolButton
-          symbol="arrow.uturn.forward"
-          label="Redo"
-          disabled={!fixture.canRedo}
-        />
-        <label className="collection-composer-query">
-          <input
-            aria-label="Collection query"
-            value={fixture.query}
-            readOnly
-            placeholder="Describe the collection you want..."
+}) => {
+  const clearContent = clearButtonContent(fixture.clearMode ?? "clear")
+  const saveContent = saveButtonContent(fixture.saveMode ?? "save")
+
+  return (
+    <div className="collection-composer-overlay">
+      <section className="collection-composer" aria-label="Collection Composer">
+        <div className="collection-composer-input-row">
+          <ComposerSymbolButton
+            symbol="arrow.uturn.backward"
+            label="Undo"
+            disabled={!fixture.canUndo}
           />
           <ComposerSymbolButton
-            symbol={fixture.isProcessing ? "stop.fill" : "arrow.right"}
-            label={fixture.isProcessing ? "Stop" : "Submit"}
-            accent
-            disabled={!fixture.isProcessing && fixture.query.trim().length === 0}
+            symbol="arrow.uturn.forward"
+            label="Redo"
+            disabled={!fixture.canRedo}
           />
-        </label>
-        <ComposerTextButton symbol="xmark.square" label="Clear" />
-        <ComposerTextButton symbol="tray.and.arrow.down" label="Save" disabled={!fixture.canSave} />
-      </div>
-
-      <div className="collection-composer-separator" />
-
-      <div className="collection-composer-chip-area">
-        <div className="collection-composer-scope-row" aria-label="Collection scope">
-          <div className="collection-composer-scope-tokens">
-            {fixture.scopes.length === 0 ? (
-              <ComposerScopeTokenChip title="This Mac" />
-            ) : (
-              fixture.scopes.map((scope) => (
-                <ComposerScopeTokenChip
-                  title={scope.split("/").at(-1) ?? scope}
-                  path={scope}
-                  removable
-                  key={scope}
-                />
-              ))
-            )}
-          </div>
-          <ComposerSymbolButton symbol="chevron.down" label="Edit scopes" compact />
-        </div>
-
-        <div className="collection-composer-condition-row" aria-label="Collection conditions">
-          {fixture.conditions.map((condition) => (
-            <ComposerConditionChip
-              condition={condition}
-              key={condition.id}
-              operatorExpanded={
-                fixture.picker?.kind === "operator" && fixture.picker.conditionID === condition.id
-              }
-              valueExpanded={fixture.picker?.kind === "value"}
-              onOperatorClick={onOperatorClick}
-              onValueClick={onValueClick}
+          <label className="collection-composer-query">
+            <input
+              aria-label="Collection query"
+              value={fixture.query}
+              readOnly
+              placeholder="Describe the collection you want..."
+              title={fixture.query}
             />
-          ))}
-          <ComposerSymbolButton
-            symbol="plus"
-            label="Add condition"
-            compact
-            onClick={onAddCondition}
+            <ComposerSymbolButton
+              symbol={fixture.isProcessing ? "stop.fill" : "arrow.right"}
+              label={fixture.isProcessing ? "Stop" : "Submit"}
+              accent
+              disabled={!fixture.isProcessing && fixture.query.trim().length === 0}
+            />
+          </label>
+          <ComposerTextButton symbol={clearContent.symbol} label={clearContent.label} />
+          <ComposerTextButton
+            symbol={saveContent.symbol}
+            label={saveContent.label}
+            disabled={!fixture.canSave}
           />
         </div>
-      </div>
 
-      {fixture.picker?.kind === "property" && (
-        <ComposerPropertyPicker picker={fixture.picker} onSelect={onPropertySelect} />
-      )}
-      {fixture.picker?.kind === "operator" && (
-        <ComposerOperatorPicker picker={fixture.picker} onSelect={onOperatorSelect} />
-      )}
-      {fixture.picker?.kind === "value" && (
-        <ComposerValuePicker picker={fixture.picker} onCommit={onValueCommit} />
-      )}
-      {fixture.picker?.kind === "scope" && <ScopePicker picker={fixture.picker} />}
+        <div className="collection-composer-separator" />
 
-      {fixture.transientFeedback != null && (
-        <output className="collection-composer-toast">
-          <SFSymbol name="exclamationmark.triangle.fill" size={12} weight={600} />
-          {fixture.transientFeedback}
-        </output>
-      )}
-    </section>
-  </div>
-)
+        <div className="collection-composer-chip-area">
+          <div className="collection-composer-scope-row" aria-label="Collection scope">
+            <div className="collection-composer-scope-tokens">
+              {fixture.scopes.length === 0 ? (
+                <ComposerScopeTokenChip title="This Mac" />
+              ) : (
+                fixture.scopes.map((scope) => (
+                  <ComposerScopeTokenChip
+                    title={scope.split("/").at(-1) ?? scope}
+                    path={scope}
+                    removable
+                    key={scope}
+                  />
+                ))
+              )}
+            </div>
+            <ComposerSymbolButton symbol="chevron.down" label="Edit scopes" compact />
+          </div>
+
+          <div className="collection-composer-condition-row" aria-label="Collection conditions">
+            {fixture.conditions.map((condition) => (
+              <ComposerConditionChip
+                condition={condition}
+                key={condition.id}
+                operatorExpanded={
+                  fixture.picker?.kind === "operator" && fixture.picker.conditionID === condition.id
+                }
+                valueExpanded={fixture.picker?.kind === "value"}
+                onOperatorClick={onOperatorClick}
+                onValueClick={onValueClick}
+              />
+            ))}
+            <ComposerSymbolButton
+              symbol="plus"
+              label="Add condition"
+              compact
+              onClick={onAddCondition}
+            />
+          </div>
+        </div>
+
+        {fixture.picker?.kind === "property" && (
+          <ComposerPropertyPicker picker={fixture.picker} onSelect={onPropertySelect} />
+        )}
+        {fixture.picker?.kind === "operator" && (
+          <ComposerOperatorPicker picker={fixture.picker} onSelect={onOperatorSelect} />
+        )}
+        {fixture.picker?.kind === "value" && (
+          <ComposerValuePicker picker={fixture.picker} onCommit={onValueCommit} />
+        )}
+        {fixture.picker?.kind === "scope" && <ScopePicker picker={fixture.picker} />}
+
+        {fixture.transientFeedback != null && (
+          <output className={`collection-composer-toast ${fixture.transientFeedback.type}`}>
+            <SFSymbol
+              name={transientFeedbackIcon(fixture.transientFeedback.type)}
+              size={12}
+              weight={600}
+            />
+            {fixture.transientFeedback.message}
+          </output>
+        )}
+      </section>
+    </div>
+  )
+}
 
 CollectionComposer.displayName = "CollectionComposer"
 
@@ -159,11 +201,11 @@ const ScopePicker: FC<{ readonly picker: ComposerScopePicker }> = ({ picker }) =
       <SFSymbol name="magnifyingglass" size={12} />
       <span>{picker.query.length > 0 ? picker.query : "Search directories..."}</span>
     </div>
-    <div className="collection-composer-scope-summary">
-      <SFSymbol name="scope" size={18} />
-      <strong>{picker.currentSummary}</strong>
-      <span>Includes subfolders</span>
-      <SFSymbol name={picker.includeSubfolders ? "checkmark.circle.fill" : "circle"} size={14} />
+    <div className="collection-composer-scope-summary-chip-area">
+      <ComposerScopeSummaryChip
+        primary={picker.currentSummary}
+        secondary={picker.includeSubfolders ? "Includes subfolders" : undefined}
+      />
     </div>
     {picker.feedback != null && (
       <div className={`collection-composer-scope-feedback ${picker.feedback.phase.toLowerCase()}`}>

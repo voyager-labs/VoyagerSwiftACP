@@ -106,6 +106,9 @@ type Story = StoryObj<typeof meta>
 
 export const EmptyDraft: Story = {}
 export const PopulatedDraft: Story = { args: { fixture: composerFixtures.populatedDraft } }
+export const DiscardMode: Story = { args: { fixture: composerFixtures.discardMode } }
+export const SaveAsMode: Story = { args: { fixture: composerFixtures.saveAsMode } }
+export const SavedConfirmation: Story = { args: { fixture: composerFixtures.savedConfirmation } }
 export const CompactNarrow: Story = {
   args: { fixture: composerFixtures.populatedDraft },
   decorators: [
