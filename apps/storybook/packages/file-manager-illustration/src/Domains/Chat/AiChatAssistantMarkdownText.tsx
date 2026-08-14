@@ -1,3 +1,4 @@
+import hljs from "highlight.js/lib/common"
 import type { FC, ReactNode } from "react"
 import { AiChatCopyFeedback, type AiChatCopyFeedbackState } from "./AiChatCopyFeedback"
 import {
@@ -70,7 +71,7 @@ function renderBlock(block: AssistantMarkdownBlock): ReactNode {
         <figure key={key} className="chat-markdown-code">
           <figcaption className="chat-markdown-code-header">{block.language ?? "Code"}</figcaption>
           <pre>
-            <code>{block.text}</code>
+            <code>{renderCode(block.text, block.language)}</code>
           </pre>
         </figure>
       )
@@ -171,6 +172,40 @@ function renderInlineToken(token: string, key: string): ReactNode {
 
 function isSafeLink(destination: string): boolean {
   return /^(https?:|mailto:)/i.test(destination)
+}
+
+// highlight.js가 생성한 HTML을 React 노드로 변환한다.
+// 언어가 없거나 highlight.js가 지원하지 않으면 원문 그대로 반환한다(네이티브 fallback 계약과 동일).
+function renderCode(code: string, language: string | undefined): ReactNode {
+  if (language == null || hljs.getLanguage(language) == null) return code
+  try {
+    const body = new DOMParser().parseFromString(
+      hljs.highlight(code, { language }).value,
+      "text/html",
+    ).body
+    const nodes: ReactNode[] = []
+    body.childNodes.forEach((node, index) => nodes.push(fromNode(node, index)))
+    return nodes
+  } catch {
+    return code
+  }
+}
+
+function fromNode(node: Node, index: number): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const element = node as Element
+    const children: ReactNode[] = []
+    element.childNodes.forEach((child, childIndex) => children.push(fromNode(child, childIndex)))
+    return children.length === 0 ? (
+      ""
+    ) : (
+      <span key={index} className={element.className}>
+        {children}
+      </span>
+    )
+  }
+  return null
 }
 
 function assertNever(value: never): never {
