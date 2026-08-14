@@ -14,7 +14,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
         )
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
-        let serviceNames = gridContextMenuServiceNames()
+        let serviceNames = entryOpenClient.serviceNames()
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: target.selectedIds,
             selectedEntries: target.entries,
@@ -71,16 +71,4 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             )))
         }
     }
-}
-
-@MainActor
-private func gridContextMenuServiceNames() -> [String] {
-    NSApp.servicesMenu?.update()
-    return NSApp.servicesMenu?.items.compactMap { item -> String? in
-        guard !item.isSeparatorItem,
-              item.action != nil,
-              !item.title.isEmpty
-        else { return nil }
-        return item.title
-    } ?? []
 }

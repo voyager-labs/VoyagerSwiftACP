@@ -11,6 +11,7 @@ public struct EntryOpenClient: Sendable {
     public var openFinderInfo: @Sendable ([URL]) async throws -> Void
     public var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void
     public var performService: @Sendable (String, [URL]) async throws -> Void
+    public var serviceNames: @MainActor @Sendable () -> [String]
     public var revealInFinder: @Sendable ([URL]) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var applicationsForType: @Sendable (UTType, URL) async -> [ApplicationInfo]
@@ -24,6 +25,7 @@ public struct EntryOpenClient: Sendable {
         openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
         shareItems: @escaping @Sendable ([URL], CGPoint?) async throws -> Void,
         performService: @escaping @Sendable (String, [URL]) async throws -> Void,
+        serviceNames: @escaping @MainActor @Sendable () -> [String] = { [] },
         revealInFinder: @escaping @Sendable ([URL]) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         applicationsForType: @escaping @Sendable (UTType, URL) async -> [ApplicationInfo],
@@ -36,6 +38,7 @@ public struct EntryOpenClient: Sendable {
         self.openFinderInfo = openFinderInfo
         self.shareItems = shareItems
         self.performService = performService
+        self.serviceNames = serviceNames
         self.revealInFinder = revealInFinder
         self.applicationsForFile = applicationsForFile
         self.applicationsForType = applicationsForType
@@ -84,6 +87,7 @@ extension EntryOpenClient: DependencyKey {
             openFinderInfo: EntryOpenLive.openFinderInfo,
             shareItems: EntryOpenLive.shareItems,
             performService: EntryOpenLive.performService,
+            serviceNames: { @MainActor in EntryOpenLive.serviceNames() },
             revealInFinder: EntryOpenLive.revealInFinder,
             applicationsForFile: EntryOpenLive.applicationsForFile,
             applicationsForType: EntryOpenLive.applicationsForType,
@@ -375,6 +379,19 @@ enum EntryOpenLive {
                 )
             }
         }
+    }
+
+    @MainActor
+    static func serviceNames() -> [String] {
+        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+        NSApp.servicesMenu?.update()
+        return NSApp.servicesMenu?.items.compactMap { item -> String? in
+            guard !item.isSeparatorItem,
+                  item.action != nil,
+                  !item.title.isEmpty
+            else { return nil }
+            return item.title
+        } ?? []
     }
 }
 

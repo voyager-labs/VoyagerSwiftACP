@@ -126,7 +126,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
         )
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
-        let serviceNames = listContextMenuServiceNames()
+        let serviceNames = entryOpenClient.serviceNames()
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: target.selectedIds,
             selectedEntries: target.entries,
@@ -183,16 +183,4 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             )))
         }
     }
-}
-
-@MainActor
-private func listContextMenuServiceNames() -> [String] {
-    NSApp.servicesMenu?.update()
-    return NSApp.servicesMenu?.items.compactMap { item -> String? in
-        guard !item.isSeparatorItem,
-              item.action != nil,
-              !item.title.isEmpty
-        else { return nil }
-        return item.title
-    } ?? []
 }
