@@ -27,8 +27,12 @@ public struct EntryOperationsState: Equatable {
     public var pendingEmptyTrashItemCount: Int = 0
     public var emptyTrashCompletedCount: Int = 0
     public var restorableTrashPaths: Set<String> = []
-    public var applicationsForItems: [String: [ApplicationInfo]] = [:]
+    public var applicationsForTypes: [String: [ApplicationInfo]] = [:]
+    public var openWithTypeRequestGenerations: [String: Int] = [:]
+    public var openWithInFlightTypeIDs: Set<String> = []
+    public var openWithCommonTypeGenerations: [String: Int] = [:]
     public var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
+    public var openWithCommonRequestGeneration: Int = 0
     public var dropValidationResult: EntryDropValidationResult = .empty
 
     public init(
@@ -71,8 +75,12 @@ public struct EntryOperationsState: Equatable {
         pendingEmptyTrashItemCount = 0
         emptyTrashCompletedCount = 0
         restorableTrashPaths = []
-        applicationsForItems = [:]
+        applicationsForTypes = [:]
+        openWithTypeRequestGenerations = [:]
+        openWithInFlightTypeIDs = []
+        openWithCommonTypeGenerations = [:]
         commonApplicationsForSelectedFiles = []
+        openWithCommonRequestGeneration = 0
         dropValidationResult = .empty
     }
 

@@ -117,13 +117,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func finalizeApplicationList(_ apps: [ApplicationInfo]) -> [ApplicationInfo] {
-        var result = apps
-        result.append(ApplicationInfo(
-            id: "other",
-            name: "Other…",
-            bundleID: nil,
-            isDefault: false,
-        ))
+        var result = apps.filter { $0.bundleID != nil }
         result.sort { lhs, rhs in
             if lhs.isDefault != rhs.isDefault {
                 return lhs.isDefault
