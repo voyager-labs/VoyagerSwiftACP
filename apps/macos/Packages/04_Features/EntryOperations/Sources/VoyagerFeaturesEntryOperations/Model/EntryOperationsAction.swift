@@ -26,6 +26,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     public enum Delegate: CasePathable, Sendable {
         case navigateToPath(String)
         case openCollectionFile(URL)
+        case openInNewTab([String])
     }
 
     @CasePathable
@@ -92,9 +93,14 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case setDefaultAppWithOther(file: EntryModel)
         case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
         case loadApplicationsForFile(file: EntryModel)
-        case applicationsLoaded(String, [ApplicationInfo])
+        case applicationsLoaded(typeID: String, generation: Int, [ApplicationInfo])
         case loadCommonApplicationsForFiles(files: [EntryModel])
-        case commonApplicationsLoaded([ApplicationInfo])
+        case commonApplicationsLoaded(
+            generation: Int,
+            typeIDs: Set<String>,
+            applicationsByType: [String: [ApplicationInfo]],
+            [ApplicationInfo],
+        )
     }
 
     @CasePathable
