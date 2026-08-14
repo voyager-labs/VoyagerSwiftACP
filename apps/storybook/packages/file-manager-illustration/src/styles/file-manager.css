@@ -171,6 +171,13 @@
   --fm-composer-accent: var(--macos-composer-accent-color);
   --fm-composer-accent-label: var(--macos-composer-accent-label-color);
   --fm-composer-warning: var(--macos-composer-warning-color);
+  --fm-composer-error: var(--macos-composer-error-color);
+  --fm-composer-success: var(--macos-composer-success-color);
+  --fm-composer-selected-fill: color-mix(
+    in srgb,
+    var(--macos-control-accent-color) 22%,
+    transparent
+  );
   --fm-composer-radius: 16px;
   --fm-composer-shadow: 0 10px 18px color-mix(in srgb, var(--macos-shadow-color) 52%, transparent);
   --fm-composer-popover-shadow: 0 4px 8px

@@ -44,7 +44,7 @@
 }
 
 [data-file-manager-illustration] .collection-composer-value-picker.boolean {
-  width: 150px;
+  width: 180px;
 }
 
 [data-file-manager-illustration] .collection-composer-value-picker.date {
@@ -99,8 +99,14 @@
 }
 
 [data-file-manager-illustration] .collection-composer-value-error {
-  color: var(--fm-composer-warning);
+  color: var(--fm-composer-error);
   font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form input.invalid,
+[data-file-manager-illustration] .collection-composer-value-form select.invalid,
+[data-file-manager-illustration] .collection-composer-token-field.invalid {
+  border-color: var(--fm-composer-error);
 }
 
 [data-file-manager-illustration] .collection-composer-token-field {
@@ -157,16 +163,19 @@
 
 [data-file-manager-illustration] .collection-composer-picker-list,
 [data-file-manager-illustration] .collection-composer-scope-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0;
   padding: 10px 12px;
 }
 
 [data-file-manager-illustration] .collection-composer-property-group {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   border-top: 1px solid var(--fm-separator);
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
 }
 
 [data-file-manager-illustration] .collection-composer-picker-list small,
@@ -193,12 +202,40 @@
   font-size: 12px;
   line-height: var(--fm-line-body);
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button > :not(.sf-symbol),
+[data-file-manager-illustration] .collection-composer-scope-list button > :not(.sf-symbol) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-file-manager-illustration] .collection-composer-picker-list button:hover,
-[data-file-manager-illustration] .collection-composer-picker-list button[aria-pressed="true"],
 [data-file-manager-illustration] .collection-composer-scope-list button:hover {
   background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button[aria-pressed="true"] {
+  background: var(--fm-composer-selected-fill);
+  color: var(--fm-text-primary);
+  font-weight: 600;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-picker-list
+  button[aria-pressed="true"]
+  .sf-symbol {
+  color: var(--macos-control-accent-color);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-chip-area {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--fm-separator);
 }
 
 [data-file-manager-illustration] .collection-composer-scope-summary {
@@ -242,7 +279,19 @@
 }
 
 [data-file-manager-illustration] .collection-composer-scope-feedback.failed > .sf-symbol {
+  color: var(--fm-composer-error);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.applying > .sf-symbol {
   color: var(--fm-composer-warning);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.applied > .sf-symbol {
+  color: var(--fm-composer-success);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.failed strong {
+  color: var(--fm-composer-error);
 }
 
 [data-file-manager-illustration] .collection-composer-scope-list small {
@@ -272,4 +321,12 @@
 
 [data-file-manager-illustration] .collection-composer-toast > .sf-symbol {
   color: var(--fm-composer-warning);
+}
+
+[data-file-manager-illustration] .collection-composer-toast.error > .sf-symbol {
+  color: var(--fm-composer-error);
+}
+
+[data-file-manager-illustration] .collection-composer-toast.success > .sf-symbol {
+  color: var(--fm-composer-success);
 }

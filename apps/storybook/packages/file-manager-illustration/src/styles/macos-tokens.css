@@ -53,6 +53,8 @@
   --macos-composer-accent-color: #d7b652;
   --macos-composer-accent-label-color: #000;
   --macos-composer-warning-color: #f79a30;
+  --macos-composer-error-color: #d92121;
+  --macos-composer-success-color: #2ea352;
   --macos-control-accent-color: #0a84ff;
   --macos-control-text-color: var(--macos-label-color);
   --macos-disabled-control-text-color: var(--macos-tertiary-label-color);
@@ -236,6 +238,9 @@
     --macos-composer-control-background-color: #ffffff14;
     --macos-composer-control-hover-color: #ffffff1a;
     --macos-composer-hover-color: #ffffff14;
+    --macos-composer-warning-color: #ff9f0a;
+    --macos-composer-error-color: #ff453a;
+    --macos-composer-success-color: #30d158;
     --macos-unemphasized-selected-text-background-color: #0a84ff3d;
     --macos-link-color: #2997ff;
     --macos-separator-color: #ffffff2e;
