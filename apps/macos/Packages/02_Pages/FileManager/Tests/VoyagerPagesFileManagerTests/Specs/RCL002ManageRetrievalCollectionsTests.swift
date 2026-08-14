@@ -435,6 +435,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             $0.searchClient = .testValue
             $0.userDefaultsClient = .testValue
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ImmediateClock()
         }
         store.exhaustivity = .off
         return store
