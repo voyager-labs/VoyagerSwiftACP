@@ -693,6 +693,8 @@ private func makeEntryOpenClient(
         performService: { _, _ in },
         revealInFinder: { _ in },
         applicationsForFile: { _ in [] },
+        applicationsForType: { _, _ in [] },
+        invalidateApplicationsForType: { _ in },
         defaultApplication: defaultApplication,
         trashDirectoryPath: { nil },
     )
