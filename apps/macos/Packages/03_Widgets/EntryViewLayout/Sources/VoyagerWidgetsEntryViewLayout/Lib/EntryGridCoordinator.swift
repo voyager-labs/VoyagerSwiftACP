@@ -2,6 +2,7 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @MainActor
@@ -55,6 +56,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12

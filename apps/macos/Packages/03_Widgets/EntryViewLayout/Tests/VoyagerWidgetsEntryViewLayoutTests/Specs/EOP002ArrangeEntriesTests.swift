@@ -50,15 +50,10 @@ private final class DragTransport: @unchecked Sendable {
 
 @MainActor
 final class EOP002ArrangeEntriesTests: XCTestCase {
-    // MARK: - EOP-002-drop_external_entries_on_directory_page
+    // MARK: - EOP-002-drop_external_entries_on_directory_page (origin classification)
 
-    /// EOP-002-drop_external_entries_on_directory_page: stale internal path가 있어도 외부 drag는 현재 external URL만 source로 쓴다.
-    /// origin을 저장된 path 비어있음이 아니라 `draggingSource` identity로 분류해야 한다.
-    /// - 검증 내용: named transport에 stale internal path를 seed하고 외부 drag를 accept하면 emit된 dropItems source가 external URL
-    /// 하나뿐이다.
-    /// - 사전 조건: `VoyagerDragDrop` transport에 `["/stale/internal"]`이 남아 있고, `draggingSource`가 layout source가 아닌 외부 drag가
-    /// file URL을 제공한다.
-    /// - 기대 결과: emit된 source는 `["/external/url"]`만이고 stale path는 절대 포함하지 않는다.
+    /// EOP-002: foreign `draggingSource`(layout source가 아님) + stale transport + external pasteboard → external URL만
+    /// emit한다.
     func testExternalDropEmitsOnlyActiveExternalURLWithStaleTransport() {
         let transport = DragTransport(paths: ["/stale/internal"])
         let recorder = DropRecorder()
@@ -75,146 +70,127 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             pasteboard: pasteboard,
         )
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport)
 
+        XCTAssertTrue(accepted)
         XCTAssertEqual(recorder.emitted.count, 1)
-        XCTAssertEqual(
-            recorder.emitted.first?.sourcePaths,
-            [externalURL.path],
-            "external drag는 stale internal path 대신 active external URL만 source로 사용해야 한다",
-        )
+        XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
+        XCTAssertEqual(recorder.emitted.first?.destinationPath, "/destination")
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: copy-only source mask와 Option 없음은 copy로 resolve한다.
-    /// copy-only source를 move로 승격하지 않는다 (`02bf1e1f7` 이후 semantics).
-    /// - 검증 내용: `.copy` mask + no Option drag에서 accept가 `.copy`를 emit하고 `isOptionDrag=true`다.
-    /// - 사전 조건: source mask가 `.copy`만 허용하고 Option modifier가 없는 drag다.
-    /// - 기대 결과: resolved operation이 copy이고 `isOptionDrag`가 true다.
+    /// EOP-002 (FIX 1 core regression): `draggingSource == nil` + stale transport + external pasteboard
+    /// → stored path를 신뢰하지 않고 active external pasteboard만 source로 사용한다 (Grid).
+    func testNilSourceExternalDropIgnoresStaleTransport() {
+        let transport = DragTransport(paths: ["/stale/internal"])
+        let recorder = DropRecorder()
+        let externalURL = URL(fileURLWithPath: "/external/url.txt")
+        let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
+
+        let store = makeStore(transport: transport, recorder: recorder)
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(recorder.emitted.count, 1)
+        XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
+        XCTAssertFalse(recorder.emitted.first?.sourcePaths.contains("/stale/internal") ?? true)
+    }
+
+    /// EOP-002 (FIX 1 core regression): `draggingSource == nil` + stale transport + external pasteboard
+    /// → stored path를 신뢰하지 않고 active external pasteboard만 source로 사용한다 (List).
+    func testNilSourceExternalDropIgnoresStaleTransportList() {
+        let transport = DragTransport(paths: ["/stale/internal"])
+        let recorder = DropRecorder()
+        let externalURL = URL(fileURLWithPath: "/external/list-url.txt")
+        let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current")
+        let list = EntryListCoordinator(store: store)
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveListAccept(list: list, info: info, item: nil, transport: transport)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(recorder.emitted.count, 1)
+        XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
+        XCTAssertFalse(recorder.emitted.first?.sourcePaths.contains("/stale/internal") ?? true)
+    }
+
+    /// EOP-002: copy-only source mask와 Option 없음은 copy로 resolve한다.
     func testCopyOnlySourceMaskResolvesCopyWithOptionDrag() {
-        let transport = DragTransport()
+        let transport = DragTransport(paths: ["/source/file.txt"])
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
         let grid = EntryGridCoordinator(store: store)
         grid.validatedDropDestinationPath = "/destination"
 
+        let collectionView = NSCollectionView()
         let info = DragInfoFixture(
-            source: nil,
+            source: collectionView,
             operationMask: .copy,
-            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: [
-                URL(fileURLWithPath: "/source/file.txt"),
-            ]),
+            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
         )
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, collectionView: collectionView)
 
+        XCTAssertTrue(accepted)
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, ["/source/file.txt"])
         XCTAssertEqual(recorder.emitted.first?.destinationPath, "/destination")
-        XCTAssertEqual(
-            recorder.emitted.first?.isOptionDrag,
-            true,
-            "copy-only source는 copy로 resolve되어 isOptionDrag=true여야 한다",
-        )
+        XCTAssertEqual(recorder.emitted.first?.isOptionDrag, true)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: source folder의 자신 하위 destination drop을 거부한다.
-    /// canonical descendant rejection을 그대로 재사용한다.
-    /// - 검증 내용: source folder를 자신의 descendant destination으로 drop하면 accept가 거부된다.
-    /// - 사전 조건: source `/source/folder`를 destination `/source/folder/child`로 move하려 한다.
-    /// - 기대 결과: resolved operation이 none이고 accept가 false며 dropItems를 emit하지 않는다.
+    /// EOP-002: source folder를 자신의 descendant destination으로 drop하면 거부한다.
     func testSourceFolderIntoOwnDescendantDestinationIsRejected() {
-        let transport = DragTransport()
+        let transport = DragTransport(paths: ["/source/folder"])
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
         let grid = EntryGridCoordinator(store: store)
         grid.validatedDropDestinationPath = "/source/folder/child"
 
+        let collectionView = NSCollectionView()
         let info = DragInfoFixture(
-            source: nil,
+            source: collectionView,
             operationMask: [.copy, .move],
-            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: [
-                URL(fileURLWithPath: "/source/folder"),
-            ]),
+            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
         )
 
-        var accepted = true
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            accepted = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, collectionView: collectionView)
 
         XCTAssertFalse(accepted)
         XCTAssertTrue(recorder.emitted.isEmpty)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: move-allowed mask와 Option 없음은 move로 resolve한다.
-    /// - 검증 내용: `.move` mask + no Option drag에서 accept가 move를 emit하고 `isOptionDrag=false`다.
-    /// - 사전 조건: source mask가 move를 허용하고 Option modifier가 없는 drag다.
-    /// - 기대 결과: resolved operation이 move이고 `isOptionDrag`가 false다.
+    /// EOP-002: move-allowed mask와 Option 없음은 move로 resolve한다.
     func testMoveAllowedMaskResolvesMoveWithoutOptionDrag() {
-        let transport = DragTransport()
+        let transport = DragTransport(paths: ["/source/file.txt"])
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
         let grid = EntryGridCoordinator(store: store)
         grid.validatedDropDestinationPath = "/destination"
 
+        let collectionView = NSCollectionView()
         let info = DragInfoFixture(
-            source: nil,
+            source: collectionView,
             operationMask: .move,
-            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: [
-                URL(fileURLWithPath: "/source/file.txt"),
-            ]),
+            pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
         )
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, collectionView: collectionView)
 
+        XCTAssertTrue(accepted)
         XCTAssertEqual(recorder.emitted.count, 1)
         XCTAssertEqual(recorder.emitted.first?.sourcePaths, ["/source/file.txt"])
-        XCTAssertNotEqual(
-            recorder.emitted.first?.isOptionDrag,
-            true,
-            "move-allowed source는 move로 resolve되어 isOptionDrag=false여야 한다",
-        )
+        XCTAssertEqual(recorder.emitted.first?.destinationPath, "/destination")
+        XCTAssertEqual(recorder.emitted.first?.isOptionDrag, false)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: supported + unsupported mixed payload는 원자적으로 전체 거절한다.
-    /// full `pasteboardItems`를 검사하고 unsupported item을 `readObjects`로 조용히 걸러내지 않는다.
-    /// - 검증 내용: file URL item과 unsupported item이 섞인 payload를 accept하면 dropItems를 emit하지 않는다.
-    /// - 사전 조건: pasteboard에 file URL 1개와 지원하지 않는 item 1개가 함께 있다.
-    /// - 기대 결과: source count가 0이고 부분 수용 없이 session 전체가 거절된다.
+    /// EOP-002: supported + unsupported mixed payload는 원자적으로 전체 거절한다.
     func testMixedPayloadIsAtomicallyRejected() {
         let transport = DragTransport(paths: [])
         let recorder = DropRecorder()
@@ -227,33 +203,15 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             fileURL: externalURL,
             unsupportedText: "unsupported",
         )
-        let info = DragInfoFixture(
-            source: nil,
-            operationMask: [.copy, .move],
-            pasteboard: pasteboard,
-        )
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport)
 
-        XCTAssertTrue(
-            recorder.emitted.isEmpty,
-            "mixed payload는 supported item만 부분 수용하지 않고 전체를 거절해야 한다",
-        )
+        XCTAssertFalse(accepted)
+        XCTAssertTrue(recorder.emitted.isEmpty)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: empty payload는 no operation이다.
-    /// - 검증 내용: file URL을 포함하지 않는 빈 pasteboard를 accept하면 dropItems를 emit하지 않는다.
-    /// - 사전 조건: external drag pasteboard에 file URL item이 없다.
-    /// - 기대 결과: accept가 false이고 source count가 0이다.
+    /// EOP-002: empty payload는 no operation이다.
     func testEmptyPayloadProducesNoOperation() {
         let transport = DragTransport(paths: [])
         let recorder = DropRecorder()
@@ -267,26 +225,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
         )
 
-        var accepted = true
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            accepted = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport)
 
         XCTAssertFalse(accepted)
         XCTAssertTrue(recorder.emitted.isEmpty)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: unsupported-only payload는 no operation이다.
-    /// - 검증 내용: file URL 없이 지원하지 않는 item만 있는 pasteboard를 accept하면 dropItems를 emit하지 않는다.
-    /// - 사전 조건: external drag pasteboard에 file URL이 하나도 없다.
-    /// - 기대 결과: accept가 false이고 source count가 0이다.
+    /// EOP-002: unsupported-only payload는 no operation이다.
     func testUnsupportedOnlyPayloadProducesNoOperation() {
         let transport = DragTransport(paths: [])
         let recorder = DropRecorder()
@@ -295,23 +240,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         grid.validatedDropDestinationPath = "/destination"
 
         let pasteboard = DragInfoFixture.makeUnsupportedOnlyPasteboard(text: "not a file")
-        let info = DragInfoFixture(
-            source: nil,
-            operationMask: [.copy, .move],
-            pasteboard: pasteboard,
-        )
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
 
-        var accepted = true
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            accepted = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport)
 
         XCTAssertFalse(accepted)
         XCTAssertTrue(recorder.emitted.isEmpty)
@@ -323,7 +254,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard).isEmpty)
     }
 
-    func testAcceptRejectClearsDropTarget() {
+    /// EOP-002: accept-reject terminal path는 stale transport를 정리한다.
+    func testAcceptRejectClearsStaleTransport() {
         let transport = DragTransport(paths: ["/stale/internal"])
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder)
@@ -336,22 +268,15 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             pasteboard: DragInfoFixture.makeFileURLPasteboard(urls: []),
         )
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
+        _ = driveGridAccept(grid: grid, info: info, transport: transport)
 
         XCTAssertFalse(store.state.isDropTargeted)
         XCTAssertTrue(recorder.emitted.isEmpty)
+        XCTAssertTrue(transport.paths.isEmpty)
     }
 
-    func testCancelClearsDropTarget() {
+    /// EOP-002: cancel terminal path는 stale transport를 정리한다.
+    func testCancelClearsStaleTransport() {
         let transport = DragTransport(paths: ["/stale/internal"])
         let store = makeStore(transport: transport, recorder: DropRecorder())
         let grid = EntryGridCoordinator(store: store)
@@ -366,23 +291,42 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(store.state.isDropTargeted)
     }
 
+    /// EOP-002 (FIX 7): 외부 session 진입(List validateDrop)은 stale transport를 정리해 다음 session 격리를 보장한다.
+    func testExternalEntryClearsStaleTransport() {
+        let transport = DragTransport(paths: ["/stale/internal"])
+        let store = makeStore(transport: transport, recorder: DropRecorder(), currentPath: "/current")
+        let list = EntryListCoordinator(store: store)
+
+        let externalURL = URL(fileURLWithPath: "/external/entry.txt")
+        let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        withDependencies {
+            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+        } operation: {
+            _ = list.outlineView(NSOutlineView(), validateDrop: info, proposedItem: nil, proposedChildIndex: 0)
+        }
+
+        XCTAssertTrue(
+            transport.paths.isEmpty,
+            "외부 session 진입 시 stale transport를 무효화해야 한다",
+        )
+    }
+
     // MARK: - EOP-002-drop_external_entries_on_directory_page (destination routing + parity)
 
-    /// EOP-002-drop_external_entries_on_directory_page: blank target은 Grid/List 모두 currentPath로 route한다.
-    /// - 검증 내용: 빈 영역 drop에서 Grid와 List가 같은 `state.currentPath` destination을 emit한다.
-    /// - 사전 조건: currentPath가 `/current`이고 빈 영역에 외부 file URL이 drop된다.
-    /// - 기대 결과: Grid와 List 모두 destination이 `/current`이고 source/operation이 같다.
-    func testBlankDestinationRoutingMatchesGridAndList() {
+    /// EOP-002: blank target은 Grid/List 모두 currentPath로 route한다.
+    func testBlankDestinationRoutingMatchesGridAndList() throws {
         let transport = DragTransport(paths: [])
         let externalURL = URL(fileURLWithPath: "/external/blank.txt")
 
-        let gridEmit = driveGridAccept(
+        let gridEmit = try driveGridAccept(
             transport: transport,
             currentPath: "/current",
             itemPath: nil,
             externalURL: externalURL,
         )
-        let listEmit = driveListAccept(
+        let listEmit = try driveListAccept(
             transport: transport,
             currentPath: "/current",
             itemPath: nil,
@@ -395,21 +339,18 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(gridEmit.isOptionDrag, listEmit.isOptionDrag)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: Directory Entry target은 Grid/List 모두 entry.fullPath로 route한다.
-    /// - 검증 내용: 폴더 entry 위 drop에서 Grid와 List가 같은 entry.fullPath destination을 emit한다.
-    /// - 사전 조건: currentPath가 `/current`이고 `/dest/folder` 폴더 entry에 외부 file URL이 drop된다.
-    /// - 기대 결과: Grid와 List 모두 destination이 `/dest/folder`이고 source/operation이 같다.
-    func testDirectoryDestinationRoutingMatchesGridAndList() {
+    /// EOP-002: Directory Entry target은 Grid/List 모두 entry.fullPath로 route한다.
+    func testDirectoryDestinationRoutingMatchesGridAndList() throws {
         let transport = DragTransport(paths: [])
         let externalURL = URL(fileURLWithPath: "/external/folder-drop.txt")
 
-        let gridEmit = driveGridAccept(
+        let gridEmit = try driveGridAccept(
             transport: transport,
             currentPath: "/current",
             itemPath: "/dest/folder",
             externalURL: externalURL,
         )
-        let listEmit = driveListAccept(
+        let listEmit = try driveListAccept(
             transport: transport,
             currentPath: "/current",
             itemPath: "/dest/folder",
@@ -422,15 +363,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(gridEmit.isOptionDrag, listEmit.isOptionDrag)
     }
 
-    /// EOP-002-drop_external_entries_on_directory_page: package directory는 destination에서 제외한다.
-    /// package directory entry 위 drop은 해당 path로 route하지 않는다.
-    /// - 검증 내용: List accept가 package directory entry를 currentPath로 fallback한다.
-    /// - 사전 조건: `/pkg.app` package folder entry 위에 외부 file URL이 drop된다.
-    /// - 기대 결과: destination이 package path가 아니라 currentPath이다.
+    /// EOP-002: package directory는 destination에서 제외해 currentPath로 route한다.
     func testPackageDirectoryIsExcludedFromListDestination() {
         let transport = DragTransport(paths: [])
-        let externalURL = URL(fileURLWithPath: "/external/pkg.txt")
         let recorder = DropRecorder()
+        let externalURL = URL(fileURLWithPath: "/external/pkg.txt")
         let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current")
         let list = EntryListCoordinator(store: store)
 
@@ -439,15 +376,16 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
         let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
 
-        var accepted = false
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            accepted = list.outlineView(NSOutlineView(), acceptDrop: info, item: outlineItem, childIndex: 0)
-        }
+        let accepted = driveListAccept(list: list, info: info, item: outlineItem, transport: transport)
 
         XCTAssertTrue(accepted)
-        XCTAssertEqual(recorder.emitted.first?.destinationPath, "/current")
+        XCTAssertEqual(recorder.emitted.count, 1)
+        XCTAssertEqual(recorder.emitted.first?.sourcePaths, [externalURL.path])
+        XCTAssertEqual(
+            recorder.emitted.first?.destinationPath,
+            "/current",
+            "package directory는 destination으로 route하지 않아야 한다",
+        )
     }
 }
 
@@ -504,12 +442,49 @@ private extension EOP002ArrangeEntriesTests {
         )
     }
 
+    @discardableResult
+    func driveGridAccept(
+        grid: EntryGridCoordinator,
+        info: any NSDraggingInfo,
+        transport: DragTransport,
+        collectionView: NSCollectionView = NSCollectionView(),
+    ) -> Bool {
+        var accepted = false
+        withDependencies {
+            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+        } operation: {
+            accepted = grid.collectionView(
+                collectionView,
+                acceptDrop: info,
+                indexPath: IndexPath(item: 0, section: 0),
+                dropOperation: .on,
+            )
+        }
+        return accepted
+    }
+
+    @discardableResult
+    func driveListAccept(
+        list: EntryListCoordinator,
+        info: any NSDraggingInfo,
+        item: Any?,
+        transport: DragTransport,
+    ) -> Bool {
+        var accepted = false
+        withDependencies {
+            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+        } operation: {
+            accepted = list.outlineView(NSOutlineView(), acceptDrop: info, item: item, childIndex: 0)
+        }
+        return accepted
+    }
+
     func driveGridAccept(
         transport: DragTransport,
         currentPath: String,
         itemPath: String?,
         externalURL: URL,
-    ) -> EmittedDrop {
+    ) throws -> EmittedDrop {
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder, currentPath: currentPath)
         let grid = EntryGridCoordinator(store: store)
@@ -518,18 +493,10 @@ private extension EOP002ArrangeEntriesTests {
         let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
         let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = grid.collectionView(
-                NSCollectionView(),
-                acceptDrop: info,
-                indexPath: IndexPath(item: 0, section: 0),
-                dropOperation: .on,
-            )
-        }
-
-        return recorder.emitted.first ?? EmittedDrop(sourcePaths: [], destinationPath: "", isOptionDrag: false)
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(recorder.emitted.count, 1)
+        return try XCTUnwrap(recorder.emitted.first)
     }
 
     func driveListAccept(
@@ -537,7 +504,7 @@ private extension EOP002ArrangeEntriesTests {
         currentPath: String,
         itemPath: String?,
         externalURL: URL,
-    ) -> EmittedDrop {
+    ) throws -> EmittedDrop {
         let recorder = DropRecorder()
         let store = makeStore(transport: transport, recorder: recorder, currentPath: currentPath)
         let list = EntryListCoordinator(store: store)
@@ -553,13 +520,10 @@ private extension EOP002ArrangeEntriesTests {
         let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [externalURL])
         let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
 
-        withDependencies {
-            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
-        } operation: {
-            _ = list.outlineView(NSOutlineView(), acceptDrop: info, item: outlineItem, childIndex: 0)
-        }
-
-        return recorder.emitted.first ?? EmittedDrop(sourcePaths: [], destinationPath: "", isOptionDrag: false)
+        let accepted = driveListAccept(list: list, info: info, item: outlineItem, transport: transport)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(recorder.emitted.count, 1)
+        return try XCTUnwrap(recorder.emitted.first)
     }
 }
 
