@@ -75,14 +75,11 @@ Objective.
 
 - Use the `commit-message` skill.
 
-## TODOs
+## Implementation
 
-- [ ] 1. Fixture task
-  - **What to do**: Do it.
-  - **Must NOT do**: Do anything else.
-  - **Acceptance**: It is done. Evidence: validator output.
-  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.
-  - **Commit**: NO.
+### 1. Fixture task
+
+Implementation steps.
 """
 
 
@@ -145,22 +142,6 @@ class AgentValidationTests(unittest.TestCase):
             result, payload = self.run_cli(VALIDATE, root, "--all")
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
-
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            mixed_plan = PLAN.replace(
-                "Context.", "Context. No executable behavior changes in docs tasks."
-            ).replace(
-                "RED evidence fails before implementation; GREEN evidence passes after implementation.",
-                "Run tests.",
-            )
-            self.write(root, ".sisyphus/plans/fixture.md", mixed_plan)
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "PLAN_TODO_TDD_EVIDENCE",
-                [item["code"] for item in payload["diagnostics"]],
-            )
 
     def test_invalid_harness_fixtures_have_exact_diagnostics(self) -> None:
         cases = {
@@ -462,55 +443,13 @@ class AgentValidationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(payload["mode"], "base-ref")
 
-    def test_plan_fixtures_are_structural_only(self) -> None:
+    def test_plan_tasks_do_not_require_checkbox_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.write(root, ".sisyphus/plans/valid.md", PLAN)
             result, payload = self.run_cli(VERIFY, root, "--all")
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
-            self.write(
-                root,
-                ".sisyphus/plans/valid.md",
-                PLAN.replace("- [ ] 1. Fixture task", "  - [ ] 1. Fixture task"),
-            )
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assertEqual(result.returncode, 0)
-            self.assertEqual(payload["diagnostics"], [])
-            self.write(
-                root,
-                ".sisyphus/plans/invalid.md",
-                PLAN.replace(
-                    "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                    "",
-                ),
-            )
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
-
-            self.write(
-                root,
-                ".sisyphus/plans/invalid.md",
-                PLAN.replace(
-                    "- [ ] 1. Fixture task", "  - [ ] Implement feature"
-                ).replace(
-                    "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                    "",
-                ),
-            )
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_NUMBERING")
-
-            self.write(
-                root,
-                ".sisyphus/plans/invalid.md",
-                PLAN.replace(
-                    "  - **Acceptance**: It is done. Evidence: validator output.",
-                    "  Acceptance prose mentions **Acceptance** and evidence.",
-                ),
-            )
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
 
     def test_every_emitted_diagnostic_has_an_exact_fixture(self) -> None:
         harness_cases = {
@@ -586,12 +525,8 @@ class AgentValidationTests(unittest.TestCase):
         plan_cases = {
             "PLAN_MISSING_TITLE": PLAN.replace("# Fixture Plan", "Fixture Plan"),
             "PLAN_MISSING_SECTION": PLAN.replace("## Context", "## Background"),
-            "PLAN_TODO_CONTRACT": PLAN.replace(
-                "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                "",
-            ),
-            "PLAN_TODO_NUMBERING": PLAN.replace(
-                "- [ ] 1. Fixture task", "- [ ] Implement feature"
+            "PLAN_CHECKBOX_TODO_RETIRED": PLAN.replace(
+                "Implementation steps.", "- [ ] Legacy task"
             ),
             "PLAN_MISSING_QUALITY_SECTION": PLAN.replace(
                 "## Test Ownership", "## Test Assignment"
@@ -605,12 +540,6 @@ class AgentValidationTests(unittest.TestCase):
             ),
             "PLAN_COMMIT_STRATEGY": PLAN.replace(
                 "`commit-message` skill", "normal Git workflow"
-            ),
-            "PLAN_ACCEPTANCE_EVIDENCE": PLAN.replace(
-                " Evidence: validator output.", ""
-            ),
-            "PLAN_TODO_TDD_EVIDENCE": PLAN.replace(
-                "RED evidence fails before implementation; ", ""
             ),
         }
         for code, content in plan_cases.items():
@@ -626,9 +555,6 @@ class AgentValidationTests(unittest.TestCase):
             no_source_plan = PLAN.replace(
                 "- RED evidence: failing fixture command.\n- GREEN evidence: passing fixture command.",
                 "- Source changes: no. No executable behavior changes; RED/GREEN evidence omitted.",
-            ).replace(
-                "RED evidence fails before implementation; GREEN evidence passes after implementation.",
-                "No executable behavior changes.",
             )
             self.write(root, ".sisyphus/plans/fixture.md", no_source_plan)
             result, payload = self.run_cli(VERIFY, root, "--all")
@@ -742,10 +668,7 @@ class AgentValidationTests(unittest.TestCase):
         self.write(
             root,
             relative,
-            PLAN.replace(
-                "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                "",
-            ),
+            PLAN.replace("## Test Ownership", "## Test Assignment"),
         )
         result, payload = self.run_cli(VERIFY, root, "--working-tree")
         self.assertNotEqual(result.returncode, 0)

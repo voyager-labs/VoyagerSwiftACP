@@ -28,16 +28,14 @@ V2_HEADINGS = [
     "Stop Conditions",
     "Verification",
 ]
-PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
+PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives"]
 PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
-PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
 SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+\.md)`")
 BARE_REFERENCE_LITERAL = re.compile(
     r"(?:see|refer to|load|read)\s+`([^`\s*]+\.md)`", re.IGNORECASE
 )
-CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
-TODO = re.compile(r"^\s{0,3}- \[[ xX]] \d+\. .+")
+LEGACY_CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
 LOCAL_ARTIFACT_PREFIXES = (".omo/", ".omx/", ".sisyphus/", ".codegraph/")
 
 
@@ -419,6 +417,17 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
             for index, line in enumerate(lines, 1)
             if line.startswith("## ")
         }
+        for index, line in enumerate(lines, 1):
+            if LEGACY_CHECKBOX_TODO.match(line):
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index,
+                        "PLAN_CHECKBOX_TODO_RETIRED",
+                        "plan checkbox TODOs are retired; keep execution status in runtime artifacts",
+                    )
+                )
         for section in PLAN_SECTIONS:
             if section not in headings:
                 diagnostics.append(
@@ -499,86 +508,6 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                     "Commit Strategy must reference commit-message or justify an alternative",
                 )
             )
-        todo_start = headings.get("TODOs")
-        if todo_start is None:
-            continue
-        todo_end = min(
-            (line for line in headings.values() if line > todo_start),
-            default=len(lines) + 1,
-        )
-        todo_indexes = [
-            index
-            for index in range(todo_start, todo_end - 1)
-            if CHECKBOX_TODO.match(lines[index])
-        ]
-        for index in todo_indexes:
-            if not TODO.match(lines[index]):
-                diagnostics.append(
-                    diagnostic(
-                        path,
-                        root,
-                        index + 1,
-                        "PLAN_TODO_NUMBERING",
-                        "TODO checkbox must start with a numeric task identifier",
-                    )
-                )
-                continue
-            next_todo = next(
-                (offset for offset in todo_indexes if offset > index),
-                todo_end - 1,
-            )
-            block = "\n".join(lines[index + 1 : next_todo])
-            fields = {
-                field: plan_field_text(block, field) for field in PLAN_TODO_FIELDS
-            }
-            for field, value in fields.items():
-                if value is None:
-                    diagnostics.append(
-                        diagnostic(
-                            path,
-                            root,
-                            index + 1,
-                            "PLAN_TODO_CONTRACT",
-                            f"TODO is missing **{field}**",
-                        )
-                    )
-            acceptance = fields["Acceptance"]
-            if acceptance is not None and "evidence" not in acceptance.lower():
-                diagnostics.append(
-                    diagnostic(
-                        path,
-                        root,
-                        index + 1,
-                        "PLAN_ACCEPTANCE_EVIDENCE",
-                        "TODO Acceptance must name required evidence",
-                    )
-                )
-            qa = fields["QA"]
-            todo_has_no_source_changes = bool(
-                qa
-                and re.search(
-                    r"source changes:\s*no|no executable behavior changes",
-                    qa,
-                    re.IGNORECASE,
-                )
-            )
-            if (
-                qa is not None
-                and not todo_has_no_source_changes
-                and not (
-                    re.search(r"\bRED\b", qa, re.IGNORECASE)
-                    and re.search(r"\bGREEN\b", qa, re.IGNORECASE)
-                )
-            ):
-                diagnostics.append(
-                    diagnostic(
-                        path,
-                        root,
-                        index + 1,
-                        "PLAN_TODO_TDD_EVIDENCE",
-                        "TODO QA must name RED and GREEN evidence",
-                    )
-                )
     return diagnostics
 
 
@@ -592,15 +521,6 @@ def plan_section_text(
         (line for line in headings.values() if line > start), default=len(lines) + 1
     )
     return "\n".join(lines[start : end - 1]).strip()
-
-
-def plan_field_text(block: str, field: str) -> str | None:
-    match = re.search(
-        rf"^\s*- \*\*{re.escape(field)}\*\*:\s*(.*?)(?=^\s*- \*\*|\Z)",
-        block,
-        re.MULTILINE | re.DOTALL,
-    )
-    return match.group(1).strip() if match else None
 
 
 def json_result(name: str, diagnostics: list[Diagnostic], mode: str) -> str:
