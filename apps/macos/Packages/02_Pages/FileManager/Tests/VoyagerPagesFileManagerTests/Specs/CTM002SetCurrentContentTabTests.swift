@@ -44,8 +44,6 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         state.selectedTabIDs = [homeID, collectionID]
         state.selectionAnchorID = directoryID
         let expectedTabs = state.tabs
-        let expectedSelectedTabIDs = state.selectedTabIDs
-        let expectedSelectionAnchorID = state.selectionAnchorID
         let store = TestStore(initialState: state) {
             ContentTabFeature()
         }
@@ -53,18 +51,26 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         await store.send(.setCurrent(collectionID)) {
             $0.previousActiveTabID = homeID
             $0.activeTabID = collectionID
+            $0.recentlyUsedTabIDs = [collectionID, homeID]
         }
-        XCTAssertEqual(store.state.tabs, expectedTabs)
-        XCTAssertEqual(store.state.selectedTabIDs, expectedSelectedTabIDs)
-        XCTAssertEqual(store.state.selectionAnchorID, expectedSelectionAnchorID)
+        assertTabSelectionPreserved(
+            store.state,
+            tabs: expectedTabs,
+            selected: [homeID, collectionID],
+            anchor: directoryID,
+        )
 
         await store.send(.setCurrent(directoryID)) {
             $0.previousActiveTabID = collectionID
             $0.activeTabID = directoryID
+            $0.recentlyUsedTabIDs = [directoryID, collectionID, homeID]
         }
-        XCTAssertEqual(store.state.tabs, expectedTabs)
-        XCTAssertEqual(store.state.selectedTabIDs, expectedSelectedTabIDs)
-        XCTAssertEqual(store.state.selectionAnchorID, expectedSelectionAnchorID)
+        assertTabSelectionPreserved(
+            store.state,
+            tabs: expectedTabs,
+            selected: [homeID, collectionID],
+            anchor: directoryID,
+        )
     }
 
     /// CTM-002-set_current_content_tab_by_index: 존재하지 않는 Content Tab 선택은 전체 상태 no-op
@@ -389,6 +395,222 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
             XCTAssertEqual(store.state, state)
         }
     }
+
+    // MARK: - CTM-002-set_current_content_tab_to_last_used
+
+    /// CTM-002-set_current_content_tab_to_last_used: 최근 사용 순서의 첫 유효 후보로 즉시 전환
+    /// Ctrl-Tab 명령이 window-local MRU 순서를 사용하고 반복 입력 시 두 최근 탭을 왕복하는지 검증한다.
+    /// - 검증 내용: C/B/A MRU에서 B 활성화 후 B/C/A로 갱신되고 다음 명령이 C를 활성화함
+    /// - 사전 조건: A→B→C 사용 순서와 C active인 세 Directory Content Tab
+    /// - 기대 결과: 첫 명령은 B, 다음 명령은 C를 활성화하며 기존 runtime handoff 경로를 재사용함
+    func testSelectMostRecentlyUsedContentTab_togglesFirstValidCandidate() async {
+        let tabA = ContentTabID(rawValue: "mru-A")
+        let tabB = ContentTabID(rawValue: "mru-B")
+        let tabC = ContentTabID(rawValue: "mru-C")
+        var state = makePositionWindowState(
+            tabs: [makePositionTab(id: tabA), makePositionTab(id: tabB), makePositionTab(id: tabC)],
+            activeTabID: tabC,
+        )
+        state.contentTabs.recentlyUsedTabIDs = [tabC, tabB, tabA]
+        let store = makePositionStore(initialState: state)
+        // store.exhaustivity = .off: 기존 active Content Tab runtime handoff의 세부 action보다 MRU identity 전환을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.selectMostRecentlyUsedContentTab))
+        await store.receive(\.contentTabs.setCurrent, tabB)
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(store.state.contentTabs.recentlyUsedTabIDs, [tabB, tabC, tabA])
+
+        await store.send(.request(.selectMostRecentlyUsedContentTab))
+        await store.receive(\.contentTabs.setCurrent, tabC)
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabC)
+        XCTAssertEqual(store.state.contentTabs.recentlyUsedTabIDs, [tabC, tabB, tabA])
+        await store.finish()
+    }
+
+    /// CTM-002-set_current_content_tab_to_last_used: stale 최근 후보를 제거하고 다음 유효 후보로 전환
+    /// 닫히거나 이동된 identity가 MRU 선두에 남아도 명령 경계에서 정리하고 탐색을 계속하는지 검증한다.
+    /// - 검증 내용: stale ID 제거와 다음 live B 후보의 setCurrent/runtime handoff
+    /// - 사전 조건: C active, MRU C/stale/B, live tabs B/C
+    /// - 기대 결과: stale ID가 MRU에서 제거되고 B가 active가 됨
+    func testSelectMostRecentlyUsedContentTab_prunesStaleCandidateAndSelectsNextLiveTab() async {
+        let tabB = ContentTabID(rawValue: "mru-live-B")
+        let tabC = ContentTabID(rawValue: "mru-live-C")
+        let staleID = ContentTabID(rawValue: "mru-stale")
+        var state = makePositionWindowState(
+            tabs: [makePositionTab(id: tabB), makePositionTab(id: tabC)],
+            activeTabID: tabC,
+        )
+        state.contentTabs.recentlyUsedTabIDs = [tabC, staleID, tabB]
+        let store = makePositionStore(initialState: state)
+        // store.exhaustivity = .off: 기존 runtime handoff보다 stale prune와 선택된 identity를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.selectMostRecentlyUsedContentTab)) {
+            $0.contentTabs.recentlyUsedTabIDs = [tabC, tabB]
+        }
+        await store.receive(\.contentTabs.setCurrent, tabB)
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(store.state.contentTabs.recentlyUsedTabIDs, [tabB, tabC])
+        await store.finish()
+    }
+
+    /// CTM-002-set_current_content_tab_to_last_used: 유효한 최근 후보가 없으면 현재 탭을 유지하고 실패 피드백 표시
+    /// 모든 MRU 후보가 stale일 때 조용히 실패하지 않고 사용자에게 전환 불가를 알리는지 검증한다.
+    /// - 검증 내용: stale history 정리, active/runtime 불변, collectionAlertClient 피드백
+    /// - 사전 조건: C만 열린 상태와 stale ID만 가진 MRU
+    /// - 기대 결과: C가 계속 active이고 "Cannot Switch Tabs" 경고가 한 번 표시됨
+    func testSelectMostRecentlyUsedContentTab_allCandidatesStalePreservesActiveAndShowsFeedback() async {
+        let tabC = ContentTabID(rawValue: "mru-only-live-C")
+        let staleID = ContentTabID(rawValue: "mru-only-stale")
+        var state = makePositionWindowState(tabs: [makePositionTab(id: tabC)], activeTabID: tabC)
+        state.contentTabs.recentlyUsedTabIDs = [staleID]
+        let alerts = LockIsolated<[(title: String, message: String)]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+
+        await store.send(.request(.selectMostRecentlyUsedContentTab)) {
+            $0.contentTabs.recentlyUsedTabIDs = []
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabC)
+        XCTAssertEqual(alerts.value.map(\.title), ["Cannot Switch Tabs"])
+        XCTAssertEqual(alerts.value.map(\.message), ["No recently used tab is available."])
+    }
+
+    /// CTM-002-set_current_content_tab_to_last_used: topology transaction busy 동안 최근 사용 전환 차단
+    /// topology transaction이 identity ownership을 변경하는 동안 MRU 전환이 끼어들지 않는지 검증한다.
+    /// - 검증 내용: teardown, move 준비/참여, pinned persistence, top navigation, window close의 whole-state no-op
+    /// - 사전 조건: A/B live tabs, B active, B/A MRU와 각 busy sentinel
+    /// - 기대 결과: 모든 busy 상태에서 active/MRU/runtime이 유지되고 수신 action이 없음
+    func testSelectMostRecentlyUsedContentTab_topologyBusyStatesAreWholeStateNoOps() async throws {
+        let tabA = ContentTabID(rawValue: "mru-busy-A")
+        let tabB = ContentTabID(rawValue: "mru-busy-B")
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000464"))
+        let ownerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000465"))
+        var baseState = makePositionWindowState(
+            tabs: [makePositionTab(id: tabA), makePositionTab(id: tabB)],
+            activeTabID: tabB,
+        )
+        baseState.contentTabs.recentlyUsedTabIDs = [tabB, tabA]
+
+        var teardownState = baseState
+        teardownState.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: requestID,
+            tabID: tabB,
+            ownerID: ownerID,
+        )
+        var transferState = baseState
+        transferState.contentTabMoveParticipantRequestID = requestID
+        let moveRequest = ContentTabMoveRequest(
+            requestID: requestID,
+            sourceWindowID: ownerID,
+            tabID: tabB,
+            targetWindowID: UUID(),
+        )
+        var pendingMoveState = baseState
+        pendingMoveState.pendingContentTabMove = .init(request: moveRequest, lifecycle: .inFlight)
+        var pinPersistenceState = baseState
+        pinPersistenceState.contentTabs.pendingPinnedRecordIDs = [tabB]
+        var topNavigationState = baseState
+        topNavigationState.pendingTopNavigationIntents = [
+            .init(
+                token: FileManagerTopNavigationOperationToken(value: requestID),
+                intent: .close(tabA),
+            ),
+        ]
+        var closingState = baseState
+        closingState.isClosing = true
+
+        for state in [
+            teardownState,
+            transferState,
+            pendingMoveState,
+            pinPersistenceState,
+            topNavigationState,
+            closingState,
+        ] {
+            let store = makePositionStore(initialState: state)
+            await store.send(.request(.selectMostRecentlyUsedContentTab))
+            XCTAssertEqual(store.state, state)
+        }
+    }
+}
+
+extension CTM002SetCurrentContentTabTests {
+    /// CTM-002-set_current_content_tab_to_last_used: 외부 overflow Window 생성 직후 최근 탭 전환
+    /// 외부 항목 reservation 순서가 새 Window의 초기 MRU로 이어지는지 검증한다.
+    /// - 검증 내용: makeExternalInitial의 newest-first MRU와 첫 Ctrl-Tab의 setCurrent/runtime handoff
+    /// - 사전 조건: A, B 외부 항목이 순서대로 예약되고 B가 active인 새 Window
+    /// - 기대 결과: 초기 MRU가 B/A이며 첫 최근 사용 전환이 A를 활성화함
+    func testSelectMostRecentlyUsedContentTab_externalInitialWindowSwitchesOnFirstCommand() async throws {
+        try await assertExternalRecentlyUsedWindowStateAndCommand()
+    }
+}
+
+private struct ExternalRecentlyUsedWindowScenario {
+    let state: FileManagerWindowState
+    let firstTabID: ContentTabID
+    let activeTabID: ContentTabID
+}
+
+private func assertTabSelectionPreserved(
+    _ state: ContentTabState,
+    tabs: IdentifiedArrayOf<ContentTabItem>,
+    selected: Set<ContentTabID>,
+    anchor: ContentTabID,
+) {
+    XCTAssertEqual(state.tabs, tabs)
+    XCTAssertEqual(state.selectedTabIDs, selected)
+    XCTAssertEqual(state.selectionAnchorID, anchor)
+}
+
+private func makeExternalRecentlyUsedWindowState() throws -> ExternalRecentlyUsedWindowScenario {
+    let firstTabID = ContentTabID(rawValue: "external-mru-A")
+    let activeTabID = ContentTabID(rawValue: "external-mru-B")
+    let state = try XCTUnwrap(FileManagerWindowState.makeExternalInitial(reservations: [
+        ExternalContentTabReservation(id: firstTabID, anchor: .directory(path: "/external/A")),
+        ExternalContentTabReservation(id: activeTabID, anchor: .directory(path: "/external/B")),
+    ]))
+    return ExternalRecentlyUsedWindowScenario(
+        state: state,
+        firstTabID: firstTabID,
+        activeTabID: activeTabID,
+    )
+}
+
+@MainActor
+private func assertExternalRecentlyUsedWindowStateAndCommand() async throws {
+    let scenario = try makeExternalRecentlyUsedWindowState()
+    XCTAssertEqual(scenario.state.contentTabs.activeTabID, scenario.activeTabID)
+    XCTAssertEqual(scenario.state.contentTabs.previousActiveTabID, scenario.firstTabID)
+    XCTAssertEqual(
+        scenario.state.contentTabs.recentlyUsedTabIDs,
+        [scenario.activeTabID, scenario.firstTabID],
+    )
+    guard scenario.state.contentTabs.recentlyUsedTabIDs == [scenario.activeTabID, scenario.firstTabID] else { return }
+
+    let store = makePositionStore(initialState: scenario.state)
+    // store.exhaustivity = .off: 외부 Window 초기 MRU가 기존 runtime handoff로 연결되는 identity를 검증한다.
+    store.exhaustivity = .off
+
+    await store.send(.request(.selectMostRecentlyUsedContentTab))
+    await store.receive(\.contentTabs.setCurrent, scenario.firstTabID)
+    await store.skipReceivedActions(strict: false)
+
+    XCTAssertEqual(store.state.contentTabs.activeTabID, scenario.firstTabID)
+    XCTAssertEqual(store.state.contentTabs.recentlyUsedTabIDs, [scenario.firstTabID, scenario.activeTabID])
+    await store.finish()
 }
 
 private func makeStaleTargetWindowState(

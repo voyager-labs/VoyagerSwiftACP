@@ -71,6 +71,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.quickLook, .file(.quickLook)),
             (.restoreLastClosedTab, .file(.restoreLastClosedTab)),
             (.duplicateTab, .file(.duplicateTab)),
+            (.selectMostRecentlyUsedContentTab, .file(.selectMostRecentlyUsedContentTab)),
         ]
 
         for (command, expected) in appCases {
@@ -678,7 +679,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
                  (.file(.open), .file(.open)),
                  (.file(.quickLook), .file(.quickLook)),
                  (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)),
-                 (.file(.duplicateTab), .file(.duplicateTab)):
+                 (.file(.duplicateTab), .file(.duplicateTab)),
+                 (.file(.selectMostRecentlyUsedContentTab), .file(.selectMostRecentlyUsedContentTab)):
                 return true
             default:
                 return false

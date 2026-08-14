@@ -915,18 +915,19 @@ private extension ContentTabTransfer {
         var source = original
         let originalDisplayOrder = original.contentTabSelectionOrderedIDs
         removeSourceWorkUnits(&source, workUnits: workUnits, movedTabIDs: movedTabIDs)
-
         let survivorIDs = Set(source.contentTabs.tabs.ids)
         let finalActiveID = sourceActiveFallback(
             original: original,
             originalDisplayOrder: originalDisplayOrder,
             survivorIDs: survivorIDs,
         )
-        source.contentTabs.activeTabID = finalActiveID
+        source.contentTabs.projectActivation(
+            activeTabID: finalActiveID,
+            recentlyUsedTabIDs: original.contentTabs.recentlyUsedTabIDs,
+        )
         source.contentTabs.previousActiveTabID = original.contentTabs.previousActiveTabID.flatMap {
             survivorIDs.contains($0) && $0 != finalActiveID ? $0 : nil
         }
-
         var survivingSelection = original.contentTabs.selectedTabIDs.intersection(survivorIDs)
         if survivingSelection.isEmpty, let finalActiveID {
             survivingSelection = [finalActiveID]
@@ -1010,7 +1011,6 @@ private extension ContentTabTransfer {
         semantics: TransferSemantics,
     ) -> FileManagerWindowState {
         var target = prepared
-
         switch semantics {
         case .preserveDomain:
             var pinnedInsertionIndex = target.contentTabs.tabs.lastIndex(where: \.isPinned).map { $0 + 1 } ?? 0
@@ -1049,6 +1049,7 @@ private extension ContentTabTransfer {
         target.contentTabs.previousActiveTabID = originalTargetActiveID.flatMap {
             $0 != primaryTabID && target.contentTabs.tabs[id: $0] != nil ? $0 : nil
         }
+        target.contentTabs.recordActivation(primaryTabID)
         target.contentTabs.selectedTabIDs = Set(workUnits.map(\.item.id))
         target.contentTabs.selectionAnchorID = primaryTabID
         if let primaryContent = target.tabContentStates[primaryTabID] {

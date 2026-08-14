@@ -568,8 +568,9 @@ struct FileManagerWindowCommandRoutingReducer {
 
         switch command {
         case .openNewContentTab,
-             .selectContentTab:
-            return handleContentTabCommand(command, state: state)
+             .selectContentTab,
+             .selectMostRecentlyUsedContentTab:
+            return handleContentTabCommand(command, state: &state)
 
         case .closeActiveContentTab:
             return state.contentTabs.activeTabID
@@ -642,7 +643,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func handleContentTabCommand(
         _ command: Action.WindowCommand,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
         switch command {
         case .openNewContentTab:
@@ -661,8 +662,36 @@ struct FileManagerWindowCommandRoutingReducer {
             if case .tearingDownTab = state.undoRedoPhase { return .none }
             return .send(.contentTabs(.setCurrent(targetID)))
 
+        case .selectMostRecentlyUsedContentTab:
+            guard !state.isClosing,
+                  state.pendingSelectedContentTabClose == nil,
+                  state.pendingContentTabClose == nil,
+                  state.pendingContentTabTeardown == nil,
+                  state.pendingSelectedContentTabPinMutation == nil,
+                  state.pendingContentTabMove == nil,
+                  state.contentTabMoveParticipantRequestID == nil,
+                  state.pendingTopNavigationIntents.isEmpty,
+                  state.contentTabs.pendingPinnedRecordIDs.isEmpty
+            else { return .none }
+            if case .tearingDownTab = state.undoRedoPhase { return .none }
+
+            guard let targetID = state.contentTabs.takeMostRecentlyUsedInactiveTabID() else {
+                return unavailableRecentlyUsedContentTabFeedbackEffect()
+            }
+            return .send(.contentTabs(.setCurrent(targetID)))
+
         default:
             return .none
+        }
+    }
+
+    private func unavailableRecentlyUsedContentTabFeedbackEffect() -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Switch Tabs",
+                "No recently used tab is available.",
+            )
         }
     }
 

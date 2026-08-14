@@ -366,6 +366,49 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         XCTAssertEqual(store.state.windows[id: backgroundID], backgroundBefore)
     }
 
+    // MARK: - CTM-002-set_current_content_tab_to_last_used
+
+    /// CTM-002-set_current_content_tab_to_last_used: 최근 사용 전환 명령을 AppRoot와 focused window로 전달
+    /// Go 메뉴의 Ctrl-Tab 의미 명령이 숫자 위치 없이 focused File Manager session까지 보존되는지 검증한다.
+    /// - 검증 내용: MenuCommands delegate, WindowManager file command, exact window request의 연속 라우팅
+    /// - 사전 조건: focused live File Manager window 한 개와 semantic recently-used app command
+    /// - 기대 결과: focused session이 `.selectMostRecentlyUsedContentTab` request를 한 번 수신함
+    func testMostRecentlyUsedCommandRoutesThroughAppRootToFocusedWindow() async {
+        let appStore = TestStore(initialState: AppRootState()) {
+            AppRootFeature()
+        }
+
+        await appStore.send(.menuCommands(.view(.app(.selectMostRecentlyUsedContentTab))))
+        await appStore.receive {
+            guard case .menuCommands(.delegate(.windowManager(.file(.selectMostRecentlyUsedContentTab)))) = $0 else {
+                return false
+            }
+            return true
+        }
+        await appStore.receive {
+            guard case .windowManager(.file(.selectMostRecentlyUsedContentTab)) = $0 else { return false }
+            return true
+        }
+
+        let focusedID = UUID()
+        let windowStore = makeWindowManagerStore(initialState: makeWindowManagerState(
+            focusedID: focusedID,
+            windows: [(focusedID, "/focused")],
+        ))
+        // store.exhaustivity = .off: app 라우팅 이후 package reducer의 MRU 상태 변경은 package spec suite가 검증한다.
+        windowStore.exhaustivity = .off
+
+        await windowStore.send(.file(.selectMostRecentlyUsedContentTab))
+        await windowStore.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(command)))) = action,
+                  case .selectMostRecentlyUsedContentTab = command
+            else {
+                return false
+            }
+            return id == focusedID
+        }
+    }
+
     private func makeWindowManagerStore(
         initialState: WindowManagerFeature.State,
     ) -> TestStore<WindowManagerFeature.State, WindowManagerFeature.Action> {
