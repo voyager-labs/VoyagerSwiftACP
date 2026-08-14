@@ -43,18 +43,19 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.onWillClose = onWillClose
         self.initialWindowSizeProvider = initialWindowSizeProvider
 
-        let window = Self.makeWindow(
+        let window = Self.makeWindow(WindowConfiguration(
             store: store,
             path: path,
             workspaceClient: workspaceClient,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
             materialOverride: nil,
-        )
+        ))
 
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
         window.delegate = self
+        store.send(.internal(.undoManagerWindowIDChanged(windowID)))
         FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
@@ -68,7 +69,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         initialWindowSizeProvider: (() -> NSSize?)? = nil,
-        materialOverride: FileManagerWindowMaterialOverride?,
+        materialOverride: FileManagerWindowMaterialOverride? = nil,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         self.windowID = windowID
@@ -84,18 +85,19 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.onWillClose = onWillClose
         self.initialWindowSizeProvider = initialWindowSizeProvider
 
-        let window = Self.makeWindow(
+        let window = Self.makeWindow(WindowConfiguration(
             store: store,
             path: path,
             workspaceClient: workspaceClient,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
             materialOverride: materialOverride,
-        )
+        ))
 
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
         window.delegate = self
+        store.send(.internal(.undoManagerWindowIDChanged(windowID)))
         FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
@@ -125,6 +127,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
         if duplicateState == nil {
             store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))))
+            store.send(.internal(.sidebarEntryDrop(.lifecycle(.windowIDChanged(windowID)))))
         }
 
         self.windowID = windowID
@@ -140,14 +143,14 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.onWillClose = onWillClose
         self.initialWindowSizeProvider = initialWindowSizeProvider
 
-        let window = Self.makeWindow(
+        let window = Self.makeWindow(WindowConfiguration(
             store: store,
             path: path,
             workspaceClient: workspaceClient,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
             materialOverride: nil,
-        )
+        ))
 
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
@@ -176,7 +179,11 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
                 guard var tabContent = state.tabContentStates[tabID]
                     ?? (tabID == state.contentTabs.activeTabID ? state.content : nil)
                 else { continue }
-                tabContent.entryViewLayout.entryOperations.resetForDuplicate(windowID: windowID)
+                tabContent.entryViewLayout.entryOperations.resetForDuplicate(
+                    windowID: windowID,
+                    loadingCancellationOwnerID: UUID(),
+                    undoOwnerID: UUID(),
+                )
                 tabContent.entryViewLayout.selectedIds = []
                 tabContent.entryViewLayout.lastSelectedId = nil
                 tabContent.entryViewLayout.rangeAnchorId = nil
@@ -222,28 +229,35 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         }
     }
 
-    private static func makeWindow(
-        store: StoreOf<FileManagerFeature>,
-        path: String?,
-        workspaceClient: WorkspaceClient,
-        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
-        initialWindowSizeProvider: (() -> NSSize?)?,
-        materialOverride: FileManagerWindowMaterialOverride?,
-    ) -> NSWindow {
-        let contentViewController: NSViewController = if let makeContentViewController {
-            makeContentViewController(store, path)
+    private struct WindowConfiguration {
+        let store: StoreOf<FileManagerFeature>
+        let path: String?
+        let workspaceClient: WorkspaceClient
+        let makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?
+        let initialWindowSizeProvider: (() -> NSSize?)?
+        let materialOverride: FileManagerWindowMaterialOverride?
+    }
+
+    private static func makeWindow(_ configuration: WindowConfiguration) -> NSWindow {
+        let contentViewController: NSViewController = if let makeContentViewController = configuration
+            .makeContentViewController
+        {
+            makeContentViewController(configuration.store, configuration.path)
         } else {
             FileManagerWindowSplitCoordinator(
-                store: store,
+                store: configuration.store,
                 isDark: FileManagerWindowChrome.currentIsDark,
-                workspaceClient: workspaceClient,
-                materialOverride: materialOverride,
+                workspaceClient: configuration.workspaceClient,
+                materialOverride: configuration.materialOverride,
             )
         }
 
         let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowChrome.configureWindowStyle(window)
-        FileManagerWindowChrome.applyInitialFrame(window, initialWindowSizeProvider: initialWindowSizeProvider)
+        FileManagerWindowChrome.applyInitialFrame(
+            window,
+            initialWindowSizeProvider: configuration.initialWindowSizeProvider,
+        )
         return window
     }
 

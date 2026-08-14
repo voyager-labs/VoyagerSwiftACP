@@ -346,7 +346,9 @@ extension AiChatFeature {
         restoreFailure: AiChatSessionRestoreFailure?,
         state: inout State,
     ) -> Effect<Action> {
-        guard state.restoreSessionID == requestedSessionID else { return .none }
+        guard state.sessionStatus == .restoring,
+              state.restoreSessionID == requestedSessionID
+        else { return .none }
         let isSessionListRestore = state.mode == .sessions && state.sessionList
             .selectedSessionID == requestedSessionID
         if isSessionListRestore,
@@ -355,6 +357,7 @@ extension AiChatFeature {
         {
             state.sessionList.selectedSessionID = nil
             state.sessionList.errorMessage = sessionRestoreFailureMessage(for: restoreFailure)
+            state.settleCancelledSessionRestoreIfNeeded()
             return .none
         }
         applyRestoreOutcome(result, restoreFailure: restoreFailure, state: &state)

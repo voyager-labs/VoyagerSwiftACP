@@ -302,6 +302,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionList.errorMessage = nil
         if let restoreSessionID, restoreSessionID != sessionID {
             self.restoreSessionID = nil
+            settleCancelledSessionRestoreIfNeeded()
             if sessionList.selectedSessionID == restoreSessionID {
                 sessionList.selectedSessionID = nil
             }
@@ -335,7 +336,7 @@ public struct AiChatState: Equatable, Sendable {
               deferredChatSessionRestoreID == sessionID
         else { return false }
         deferredChatSessionRestoreID = nil
-        restoreSessionID = sessionID
+        beginSessionRestore(for: sessionID)
         sessionList.selectedSessionID = sessionID
         restoreOutcome = nil
         restoreFailure = nil
@@ -392,6 +393,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionList.selectedSessionID = sessionID
         guard let restoreSessionID, restoreSessionID != sessionID else { return false }
         self.restoreSessionID = nil
+        settleCancelledSessionRestoreIfNeeded()
         return true
     }
 
@@ -714,6 +716,16 @@ public struct AiChatState: Equatable, Sendable {
 }
 
 public extension AiChatState {
+    mutating func beginSessionRestore(for sessionID: AiChatSessionID) {
+        restoreSessionID = sessionID
+        sessionStatus = .restoring
+    }
+
+    mutating func settleCancelledSessionRestoreIfNeeded() {
+        guard sessionStatus == .restoring else { return }
+        sessionStatus = sessionID == nil || emptyDraftSessionID == sessionID ? .idle : .active
+    }
+
     /// 동일 session에서 마지막 persisted 기준 이후 사용자 또는 navigation 변경이 발생했는지 반환한다.
     func hasInspectorReopenUserMutation(for sessionID: AiChatSessionID) -> Bool {
         self.sessionID == sessionID

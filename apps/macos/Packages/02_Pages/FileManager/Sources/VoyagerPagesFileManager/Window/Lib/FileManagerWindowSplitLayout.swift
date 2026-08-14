@@ -103,17 +103,24 @@ enum FileManagerWindowSplitLayout {
     ) -> NSHostingController<AnyView> {
         let rootView = AnyView(
             SidebarView(
-                store: store.scope(state: \.sidebar, action: \.sidebar),
+                sidebarStore: store.scope(state: \.sidebar, action: \.sidebar),
+                contentTabStore: store.scope(state: \.contentTabs, action: \.contentTabs),
+                interactionStore: store.scope(
+                    state: \.contentTabRowInteractionSurface,
+                    action: \.sidebar,
+                ),
                 workspaceClient: workspaceClient,
             )
             .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
         let sidebarHosting = NSHostingController(rootView: rootView)
+        let sidebarSurface = SidebarHostingView(rootView: rootView)
         if #available(macOS 13.3, *) {
-            sidebarHosting.safeAreaRegions = []
+            sidebarSurface.safeAreaRegions = []
         }
-        sidebarHosting.view.wantsLayer = true
-        sidebarHosting.view.layer?.backgroundColor = NSColor.clear.cgColor
+        sidebarSurface.wantsLayer = true
+        sidebarSurface.layer?.backgroundColor = NSColor.clear.cgColor
+        sidebarHosting.view = sidebarSurface
 
         splitView.addArrangedSubview(sidebarHosting.view)
         splitView.setHoldingPriority(.defaultLow - 1, forSubviewAt: 0)

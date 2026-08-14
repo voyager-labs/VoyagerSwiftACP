@@ -1,4 +1,5 @@
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -6,6 +7,39 @@ import XCTest
 
 @MainActor
 final class FMW002SidebarSurfaceTests: XCTestCase {
+    // MARK: - FMW-002-adjust_sidebar_width
+
+    /// FMW-002-adjust_sidebar_width: 실제 Sidebar hosting surface는 background window drag를 거부한다.
+    /// split layout이 hit-tested hosting view를 첫 arranged subview와 sidebarSurface로 함께 소유하는지 검증한다.
+    /// - 검증 내용: SidebarHostingView 타입, mouseDownCanMoveWindow false, arranged/sidebar identity.
+    /// - 사전 조건: 기본 FileManager store와 실제 FileManagerWindowSplitLayout 조립 경로가 있다.
+    /// - 기대 결과: Sidebar만 window background movement에서 제외되고 동일 surface가 width sync 기준으로 유지된다.
+    func testSidebarHostingSurfaceOwnsHitTestingAndRejectsBackgroundWindowMovement() {
+        let store = Store(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        }
+        let focusCoordinator = FileManagerKeyCommandFocusCoordinator()
+        let components = FileManagerWindowSplitLayout.build(
+            store: store,
+            workspaceClient: .testValue,
+            keyCommandFocusCoordinator: focusCoordinator,
+            mainContainerRootView: FileManagerWindowMainContainerView(
+                store: store,
+                isDark: false,
+                materialOverride: nil,
+                keyCommandFocusCoordinator: focusCoordinator,
+            ),
+            materialOverride: nil,
+            contentVerticalMargin: 4,
+            isSidebarVisible: true,
+        )
+
+        XCTAssertIdentical(components.sidebarSurface, components.sidebarHosting.view)
+        XCTAssertIdentical(components.splitView.arrangedSubviews.first, components.sidebarSurface)
+        XCTAssertTrue(components.sidebarSurface is SidebarHostingView)
+        XCTAssertFalse(components.sidebarSurface.mouseDownCanMoveWindow)
+    }
+
     /// FMW-002-adjust_sidebar_width: 투명 surface가 실제 Sidebar pane의 visibility 기준이다.
     /// hosted content는 arranged subview가 아니므로 collapse 판정 대상으로 허용하지 않는다.
     func test_sidebarSurfaceIsClearVisibilityTarget() {

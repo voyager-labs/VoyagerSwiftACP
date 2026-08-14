@@ -198,6 +198,18 @@ class MacOSTestFlowTests(unittest.TestCase):
             ["onb.access_unlock", "onb.permission_readiness"],
         )
 
+    def test_category_discovers_ctm_content_tab_browsing_mapping(self) -> None:
+        self.add_doc("ctm", "content_tab_browsing")
+        self.add_suite("ctm", "content_tab_browsing")
+
+        self.assertEqual(
+            macos_test_flow.category_mappings("ctm", self.tests_root),
+            ["ctm.content_tab_browsing"],
+        )
+        self.assertEqual(
+            macos_test_flow.check_structure(self.docs_root, self.tests_root), []
+        )
+
     def test_category_rejects_unknown_regex_valid_category(self) -> None:
         result, stdout, stderr = self.run_main(["--category", "onbb", "--dry-run"])
 

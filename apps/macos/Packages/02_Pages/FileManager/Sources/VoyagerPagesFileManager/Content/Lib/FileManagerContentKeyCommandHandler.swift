@@ -15,6 +15,8 @@ enum FileManagerContentKeyCommandHandler {
     static func effect(
         for command: KeyCommand,
         state: FileManagerContentState,
+        consumeNativeUndo: (() -> Bool)? = nil,
+        consumeNativeRedo: (() -> Bool)? = nil,
         textResponderIsEditing: Bool? = nil,
     ) -> Effect<FileManagerContentAction> {
         if let effect = quickLookKeyEffect(for: command, state: state) { return effect }
@@ -24,6 +26,8 @@ enum FileManagerContentKeyCommandHandler {
         if let effect = commandModifierEffect(
             for: command,
             state: state,
+            consumeNativeUndo: consumeNativeUndo,
+            consumeNativeRedo: consumeNativeRedo,
             textResponderIsEditing: textResponderIsEditing,
         ) { return effect }
         return .none
@@ -92,6 +96,8 @@ enum FileManagerContentKeyCommandHandler {
     private static func commandModifierEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
+        consumeNativeUndo: (() -> Bool)?,
+        consumeNativeRedo: (() -> Bool)?,
         textResponderIsEditing: Bool?,
     ) -> Effect<FileManagerContentAction>? {
         guard command.modifiers.contains(.command) else { return nil }
@@ -102,7 +108,10 @@ enum FileManagerContentKeyCommandHandler {
             return undoRedoEffect(
                 for: command,
                 state: state,
-                textResponderIsEditing: textResponderIsEditing ?? isTextEditingResponder(),
+                consumeNativeUndo: consumeNativeUndo,
+                consumeNativeRedo: consumeNativeRedo,
+                textResponderIsEditing: textResponderIsEditing
+                    ?? ((consumeNativeUndo == nil && consumeNativeRedo == nil) ? isTextEditingResponder() : false),
             )
         }
 
@@ -147,7 +156,7 @@ enum FileManagerContentKeyCommandHandler {
             )))))
 
         case "d":
-            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))
+            return .send(.delegate(.requestDuplicate))
 
         default:
             return nil
@@ -157,6 +166,8 @@ enum FileManagerContentKeyCommandHandler {
     private static func undoRedoEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
+        consumeNativeUndo: (() -> Bool)?,
+        consumeNativeRedo: (() -> Bool)?,
         textResponderIsEditing: Bool,
     ) -> Effect<FileManagerContentAction> {
         if state.composer.isPresented {
@@ -165,21 +176,23 @@ enum FileManagerContentKeyCommandHandler {
 
         if command.modifiers.contains(.shift) {
             if textResponderIsEditing {
-                _ = NSApp.sendAction(redoSelector, to: nil, from: nil)
+                _ = consumeNativeRedo?() ?? sendNativeAction(redoSelector)
                 return .none
             }
-            return .send(.entryViewLayout(.entryOperations(.undoRedo(
-                EntryOperationsAction.UndoRedo.requestRedo,
-            ))))
+            if consumeNativeRedo?() == true {
+                return .none
+            }
+            return .send(.delegate(.requestUndoRedo(.redo)))
         }
 
         if textResponderIsEditing {
-            _ = NSApp.sendAction(undoSelector, to: nil, from: nil)
+            _ = consumeNativeUndo?() ?? sendNativeAction(undoSelector)
             return .none
         }
-        return .send(.entryViewLayout(.entryOperations(.undoRedo(
-            EntryOperationsAction.UndoRedo.requestUndo,
-        ))))
+        if consumeNativeUndo?() == true {
+            return .none
+        }
+        return .send(.delegate(.requestUndoRedo(.undo)))
     }
 
     private static func selectionMovementEffect(
@@ -228,8 +241,16 @@ enum FileManagerContentKeyCommandHandler {
         ))))
     }
 
+    private static func sendNativeAction(_ selector: Selector) -> Bool {
+        MainActor.assumeIsolated {
+            NSApp.sendAction(selector, to: nil, from: nil)
+        }
+    }
+
     private static func isTextEditingResponder() -> Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
-        return responder is NSTextView || responder is NSTextField
+        MainActor.assumeIsolated {
+            guard let responder = NSApp?.keyWindow?.firstResponder else { return false }
+            return responder is NSTextView || responder is NSTextField
+        }
     }
 }

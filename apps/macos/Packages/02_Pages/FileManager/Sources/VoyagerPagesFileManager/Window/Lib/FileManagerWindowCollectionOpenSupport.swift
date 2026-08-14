@@ -40,6 +40,7 @@ func makeWindowCollectionNavigation(
 func hydrateOpenedCollectionSnapshot(
     payload: CollectionHydratedOpenPayload,
     navigation: ContentPageCollectionNavigation,
+    activeTabID: ContentTabID,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
     state.content.composer.applyHydratedCollectionOpenComposerPayload(
@@ -52,20 +53,31 @@ func hydrateOpenedCollectionSnapshot(
 
     return [
         .run { send in
-            await send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation)))))))
-            await send(.content(.internal(.applyNavigationState(.collection(navigation)))))
-            await send(.content(.entryViewLayout(.internal(.setCollectionMode(true)))))
-            await send(.content(.composer(.syncCollectionState(
+            await send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))),
+            ))
+            await send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.applyNavigationState(.collection(navigation))),
+            ))
+            await send(.tabContent(
+                tabID: activeTabID,
+                action: .entryViewLayout(.internal(.setCollectionMode(true))),
+            ))
+            await send(.tabContent(tabID: activeTabID, action: .composer(.syncCollectionState(
                 context: navigation.context,
                 url: collectionURL,
                 compatibility: navigation.compatibility,
                 isCollectionMode: true,
             ))))
-            await send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
-                paths: payload.snapshotPaths,
-                showHidden: showHidden,
-            )))))
-            await send(.content(.composer(.searchListApplied)))
+            await send(.tabContent(tabID: activeTabID, action: .entryViewLayout(
+                .internal(.applyCollectionSearchPaths(
+                    paths: payload.snapshotPaths,
+                    showHidden: showHidden,
+                )),
+            )))
+            await send(.tabContent(tabID: activeTabID, action: .composer(.searchListApplied)))
         },
     ]
 }
@@ -75,11 +87,13 @@ func makeHydratedCollectionOpenEffects(
     collectionAlertClient: CollectionAlertClient,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    guard let navigationPayload = payload.navigation,
+    guard let activeTabID = state.contentTabs.activeTabID,
+          let navigationPayload = payload.navigation,
           let hydratedOpenPayload = payload.hydratedOpenPayload,
           let hydrationEffects = hydrateOpenedCollectionSnapshot(
               payload: hydratedOpenPayload,
               navigation: makeWindowCollectionNavigation(navigationPayload, state: state),
+              activeTabID: activeTabID,
               state: &state,
           )
     else {
@@ -104,12 +118,16 @@ func makeCollectionOpenFollowupEffects(
     var effects: [Effect<FileManagerWindowAction>] = []
 
     if payload.shouldRestoreStaleNavigation,
+       let activeTabID = state.contentTabs.activeTabID,
        let navigationPayload = payload.navigation
     {
         let navigation = makeWindowCollectionNavigation(navigationPayload, state: state)
         effects.append(contentsOf: [
             .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
-            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
+            .send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.applyNavigationState(.collection(navigation))),
+            )),
             .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
             .send(.content(.composer(.syncCollectionState(
                 context: navigation.context,

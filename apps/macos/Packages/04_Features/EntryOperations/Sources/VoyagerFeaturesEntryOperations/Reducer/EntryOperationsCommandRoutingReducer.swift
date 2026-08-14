@@ -31,31 +31,38 @@ struct EntryOperationsCommandRoutingReducer {
                 entryFileOpsClient.saveDragWithOption(entryFileOpsClient.loadDragWithOption())
                 return .none
 
-            case let .routing(.handleDrop(providers: _, destinationPath)):
-                let internalPaths = entryFileOpsClient.loadDragPaths()
-                guard !internalPaths.isEmpty else { return .none }
-                let operation: ClipboardOperation = entryFileOpsClient.loadDragWithOption() ? .copy : .cut
-                let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
-                return .send(.clipboard(.pasteItems(
-                    sourcePaths: internalPaths,
-                    destinationPath: destinationPath,
-                    operation: operation,
-                    operationKind: operationKind,
-                )))
+            case let .routing(.handleDrop(providers, destinationPath, isOptionDrag)):
+                return .run { @MainActor send in
+                    let sourcePaths = await resolveEntryDroppedPaths(from: providers)
+                    guard !sourcePaths.isEmpty else { return }
+                    await send(.routing(.dropItems(
+                        sourcePaths: sourcePaths,
+                        destinationPath: destinationPath,
+                        isOptionDrag: isOptionDrag,
+                    )))
+                }
+
+            case let .routing(.handleDropToTrash(providers)):
+                return .run { @MainActor send in
+                    let paths = await resolveEntryDroppedPaths(from: providers)
+                    guard !paths.isEmpty else { return }
+                    send(.trash(.moveToTrash(paths: paths)))
+                }
 
             case let .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
-                let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
-                let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
-                return .send(.clipboard(.pasteItems(
+                guard isOptionDrag || isAllowedMoveDrop(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
-                    operation: operation,
-                    operationKind: operationKind,
+                ) else { return .none }
+                return .send(.clipboard(.performDrop(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    isOptionDrag: isOptionDrag,
                 )))
 
             case let .routing(.handleDropToTag(providers, tagName)):
                 return .run { @MainActor send in
-                    let paths = await resolveEntryOperationDroppedPaths(from: providers)
+                    let paths = await resolveEntryDroppedPaths(from: providers)
                     guard !paths.isEmpty else { return }
                     send(.tagging(.requestTagMutation(request: .init(
                         mode: .add,
@@ -84,33 +91,15 @@ struct EntryOperationsCommandRoutingReducer {
         let sourcePaths = context.sourcePaths
         let isInternalDrag = !sourcePaths.isEmpty
 
-        if isInternalDrag, !context.prefersCopy {
-            guard let sourcePath = sourcePaths.first else {
-                return .init(
-                    destinationPath: destinationPath,
-                    resolvedOperation: .none,
-                    isOptionDrag: false,
-                )
-            }
-
-            let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
-            if sourceParent == destinationPath {
-                return .init(
-                    destinationPath: destinationPath,
-                    resolvedOperation: .none,
-                    isOptionDrag: false,
-                )
-            }
-
-            for sourcePath in sourcePaths {
-                if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
-                    return .init(
-                        destinationPath: destinationPath,
-                        resolvedOperation: .none,
-                        isOptionDrag: false,
-                    )
-                }
-            }
+        if isInternalDrag,
+           !context.prefersCopy,
+           !isAllowedMoveDrop(sourcePaths: sourcePaths, destinationPath: destinationPath)
+        {
+            return .init(
+                destinationPath: destinationPath,
+                resolvedOperation: .none,
+                isOptionDrag: false,
+            )
         }
 
         let allowedOperations = NSDragOperation(rawValue: context.allowedOperationsRawValue)
@@ -138,6 +127,15 @@ struct EntryOperationsCommandRoutingReducer {
         )
     }
 
+    private func isAllowedMoveDrop(sourcePaths: [String], destinationPath: String) -> Bool {
+        guard let sourcePath = sourcePaths.first else { return false }
+        let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+        guard !EntryDropPathPolicy.areEquivalent(sourceParent, destinationPath) else { return false }
+        return !sourcePaths.contains {
+            EntryDropPathPolicy.isSameOrDescendant(destinationPath, of: $0)
+        }
+    }
+
     private func contains(_ allowed: NSDragOperation, _ operation: EntryDropResolvedOperation) -> Bool {
         switch operation {
         case .none:
@@ -146,66 +144,6 @@ struct EntryOperationsCommandRoutingReducer {
             allowed.contains(.copy)
         case .move:
             allowed.contains(.move)
-        }
-    }
-
-    private func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
-        let destinationComponents = URL(fileURLWithPath: destinationPath)
-            .standardizedFileURL.pathComponents
-        let sourceComponents = URL(fileURLWithPath: sourcePath)
-            .standardizedFileURL.pathComponents
-
-        guard destinationComponents.count > sourceComponents.count else {
-            return false
-        }
-
-        return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
-    }
-}
-
-private func resolveEntryOperationDroppedPaths(from providers: [NSItemProvider]) async -> [String] {
-    var paths: [String] = []
-    for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-        if let path = await resolveEntryOperationDroppedPath(from: provider) {
-            paths.append(path)
-        }
-    }
-    return paths
-}
-
-private func resolveEntryOperationDroppedPath(from provider: NSItemProvider) async -> String? {
-    await withCheckedContinuation { continuation in
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            if let url = item as? URL {
-                continuation.resume(returning: url.path)
-                return
-            }
-
-            if let data = item as? Data {
-                if let urlString = String(data: data, encoding: .utf8),
-                   let url = URL(string: urlString)
-                {
-                    continuation.resume(returning: url.path)
-                    return
-                }
-
-                if let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    continuation.resume(returning: url.path)
-                    return
-                }
-
-                continuation.resume(returning: nil)
-                return
-            }
-
-            if let urlString = item as? String,
-               let url = URL(string: urlString)
-            {
-                continuation.resume(returning: url.path)
-                return
-            }
-
-            continuation.resume(returning: nil)
         }
     }
 }

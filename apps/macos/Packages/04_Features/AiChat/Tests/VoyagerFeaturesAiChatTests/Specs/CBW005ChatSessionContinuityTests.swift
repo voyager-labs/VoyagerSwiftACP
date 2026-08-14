@@ -412,6 +412,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             restoreSessionID: restoreTargetID,
             mode: .chat,
             sessionID: setupTargetID,
+            sessionStatus: .restoring,
             transcriptSearch: makeCBW005ActiveTranscriptSearch(),
         )) { AiChatFeature() }
         restoreStore.exhaustivity = .off(showSkippedAssertions: false)
@@ -2296,7 +2297,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 selectedSessionID: restoringSessionID,
             ),
             sessionID: currentSessionID,
-            sessionStatus: .active,
+            sessionStatus: .restoring,
             transcriptHistory: restoredTranscript,
         )) {
             AiChatFeature()
@@ -2307,6 +2308,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.selectedSessionID = nil
             state.restoreOutcome = nil
             state.restoreFailure = nil
+            state.sessionStatus = .active
             state.mode = .chat
         }
 
@@ -2321,6 +2323,190 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptHistory, restoredTranscript)
         XCTAssertNil(store.state.restoreSessionID)
         XCTAssertNil(store.state.sessionList.selectedSessionID)
+    }
+
+    /// CBW-005-restore_chat_conversation_session: 취소로 settled 된 same-ID restore의 late terminal은 무시한다.
+    /// restoreSessionID가 provenance로 남아도 active restore status가 아니면 terminal이 semantic state를 바꾸지 않는지 검증합니다.
+    /// - 검증 내용: return cancellation 뒤 same-ID restored outcome의 no-op 처리
+    /// - 사전 조건: B restore가 진행 중이고 B chat으로 돌아오며 identity는 유지된다.
+    /// - 기대 결과: status는 active로 정착하고 late B snapshot은 기존 transcript와 outcome을 바꾸지 않는다.
+    func testLateSameIdentityRestoreOutcomeIsIgnoredAfterCancellationSettlesStatus() async {
+        let sessionID = makeCBW005SessionID("25252525-2525-2525-2525-252525252525")
+        let staleSnapshot = makeCBW005Snapshot(
+            sessionID: sessionID,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "late restore")],
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: sessionID),
+            sessionID: sessionID,
+            sessionStatus: .restoring,
+            transcriptHistory: restoredTranscript,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.returnToChatTapped) { state in
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionStatus = .active
+            state.mode = .chat
+        }
+        await store.send(.restoreOutcome(
+            requestedSessionID: sessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        ))
+
+        XCTAssertEqual(store.state.restoreSessionID, sessionID)
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.sessionStatus, .active)
+        XCTAssertEqual(store.state.transcriptHistory, restoredTranscript)
+        XCTAssertNil(store.state.restoreOutcome)
+        await store.finish()
+    }
+
+    /// CBW-005-open_chat_conversation_session: current processing row 선택은 다른 restore를 supersede한다.
+    /// A processing runtime이 authoritative한 동안 B restore를 취소하고 late B terminal을 차단하는지 검증합니다.
+    /// - 검증 내용: current A row 선택의 B tracking/status 정리, restore cancellation, processing 보존
+    /// - 사전 조건: A가 processing이고 sessions 화면에서 B restore가 진행 중이다.
+    /// - 기대 결과: A가 chat으로 복귀하며 processing을 유지하고 late B outcome은 semantic state를 바꾸지 않는다.
+    func testCurrentProcessingSessionRowSupersedesDifferentRestoreAndIgnoresLateTerminal() async {
+        let catalogRows = makeCatalogRows()
+        let currentSessionID = makeCBW005SessionID("26262626-2626-2626-2626-262626262626")
+        let restoringSessionID = makeCBW005SessionID("27272727-2727-2727-2727-272727272727")
+        let processingLock = makeCBW005RequestLock(sessionID: currentSessionID, modelRow: catalogRows[0])
+        let staleSnapshot = makeCBW005Snapshot(
+            sessionID: restoringSessionID,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "late B restore")],
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoringSessionID,
+            mode: .sessions,
+            sessionList: .init(
+                allRows: [
+                    makeCBW005SessionSummary(sessionID: currentSessionID),
+                    makeCBW005SessionSummary(sessionID: restoringSessionID),
+                ],
+                selectedSessionID: restoringSessionID,
+            ),
+            sessionID: currentSessionID,
+            sessionStatus: .restoring,
+            transcriptHistory: restoredTranscript,
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: catalogRows[0].handle,
+            executionPhase: .processing(processingLock),
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.sessionRowTapped(currentSessionID)) { state in
+            state.sessionList.selectedSessionID = currentSessionID
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionStatus = .active
+            state.mode = .chat
+        }
+        await store.send(.restoreOutcome(
+            requestedSessionID: restoringSessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        ))
+
+        XCTAssertEqual(store.state.sessionID, currentSessionID)
+        XCTAssertEqual(store.state.sessionStatus, .active)
+        XCTAssertEqual(store.state.transcriptHistory, restoredTranscript)
+        XCTAssertEqual(store.state.executionPhase, .processing(processingLock))
+        XCTAssertNil(store.state.restoreSessionID)
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, currentSessionID)
+        await store.finish()
+    }
+
+    /// CBW-005-restore_chat_conversation_session: route/deferred restore는 effect 시작과 동시에 restoring을 소유한다.
+    /// setup과 session row 외 진입 경로도 restore identity와 process status를 원자적으로 설정하는지 검증합니다.
+    /// - 검증 내용: known list-row 및 deferred route의 즉시 `.restoring` 전이와 restored terminal `.active`
+    /// - 사전 조건: persistence가 target snapshot을 반환하고 current chat 또는 deferred intent가 존재한다.
+    /// - 기대 결과: effect가 시작된 send 경계는 restoring이고 terminal outcome 뒤 active로 정착한다.
+    func testListAndDeferredRestoreStartsTruthfullySetRestoringUntilTerminal() async {
+        let targetSessionID = makeCBW005SessionID("18181818-1818-1818-1818-181818181818")
+        let currentSessionID = makeCBW005SessionID("19191919-1919-1919-1919-191919191919")
+        let snapshot = makeCBW005Snapshot(
+            sessionID: targetSessionID,
+            transcriptHistory: restoredTranscript,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        func makeStore(_ state: AiChatFeature.State) -> TestStoreOf<AiChatFeature> {
+            TestStore(initialState: state) { AiChatFeature() } withDependencies: {
+                $0.uuid = .incrementing
+                $0.aiChatSessionPersistenceClient.loadSession = { _ in snapshot }
+            }
+        }
+
+        let listStore = makeStore(AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [summary]),
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+        ))
+        // store.exhaustivity = .off: restore outcome의 세부 hydration보다 start/terminal status 경계를 검증한다.
+        listStore.exhaustivity = .off
+        await listStore.send(.routeToChatSession(targetSessionID)) { state in
+            state.sessionList.selectedSessionID = targetSessionID
+            state.restoreSessionID = targetSessionID
+            state.sessionStatus = .restoring
+        }
+        await listStore.skipReceivedActions()
+        await listStore.finish()
+        XCTAssertEqual(listStore.state.sessionStatus, .active)
+
+        let deferredStore = makeStore(AiChatFeature.State(
+            deferredChatSessionRestoreID: targetSessionID,
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: targetSessionID),
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+        ))
+        // store.exhaustivity = .off: deferred restore outcome보다 start/terminal status 경계를 검증한다.
+        deferredStore.exhaustivity = .off
+        await deferredStore.send(.routeToChatSession(targetSessionID)) { state in
+            state.deferredChatSessionRestoreID = nil
+            state.restoreSessionID = targetSessionID
+            state.sessionStatus = .restoring
+        }
+        await deferredStore.skipReceivedActions()
+        await deferredStore.finish()
+        XCTAssertEqual(deferredStore.state.sessionStatus, .active)
+    }
+
+    /// CBW-005-restore_chat_conversation_session: restore 취소는 stale restoring 상태를 남기지 않는다.
+    /// History로 돌아가 restore effect를 취소할 때 현재 durable chat의 settled 상태를 복구하는지 검증합니다.
+    /// - 검증 내용: backToSessions cancellation의 restore tracking 정리와 sessionStatus 정상화
+    /// - 사전 조건: active session을 보유한 채 다른 session restore가 진행 중이다.
+    /// - 기대 결과: restore ID는 정리되고 기존 session status는 active로 정착한다.
+    func testBackToSessionsCancellationClearsRestoringStatus() async {
+        let currentSessionID = makeCBW005SessionID("20202020-2020-2020-2020-202020202020")
+        let restoringSessionID = makeCBW005SessionID("21212121-2121-2121-2121-212121212121")
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoringSessionID,
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: restoringSessionID),
+            sessionID: currentSessionID,
+            sessionStatus: .restoring,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionStatus = .active
+        }
+        await store.finish()
     }
 
     // MARK: - CBW-005-open_chat_conversation_session
@@ -2789,6 +2975,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         state.sessionList.errorMessage = nil
         state.currentContextFolderStructureModes = [:]
         state.restoreSessionID = sessionID
+        state.sessionStatus = .restoring
     }
 
     private func applyOpenedRestoredSessionState(
@@ -2840,6 +3027,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         state.sessionList.selectedSessionID = sessionID
         state.sessionList.errorMessage = nil
         state.restoreSessionID = sessionID
+        state.sessionStatus = .restoring
     }
 
     private func makeRebindRequiredStore(
@@ -2967,6 +3155,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
     ) {
         state.sessionList.selectedSessionID = nil
         state.sessionList.errorMessage = message
+        state.sessionStatus = .active
     }
 
     private func applyRebindRequiredState(
@@ -4224,6 +4413,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.restoreSessionID = sessionID
+            state.sessionStatus = .restoring
             state.mode = .sessions
         }
         await store.receive(.restoreOutcome(
@@ -4478,6 +4668,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.restoreSessionID = targetSessionID
+            state.sessionStatus = .restoring
             state.mode = .sessions
         }
         await store.receive(.restoreOutcome(
@@ -4586,6 +4777,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.restoreSessionID = sessionID
+            state.sessionStatus = .restoring
             state.mode = .sessions
         }
         await store.receive(.restoreOutcome(
@@ -4942,6 +5134,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.restoreSessionID = sessionID
+            state.sessionStatus = .restoring
             state.mode = .sessions
         }
         await store.receive(.restoreOutcome(
@@ -5040,6 +5233,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.restoreSessionID = sessionID
+            state.sessionStatus = .restoring
             state.mode = .sessions
         }
         await store.receive(.restoreOutcome(
@@ -7821,7 +8015,7 @@ private func makeLateSnapshotStore(
             selectedSessionID: targetSessionID,
         ),
         sessionID: activeSessionID,
-        sessionStatus: .active,
+        sessionStatus: .restoring,
         catalogRows: catalogRows,
         modelListState: .loaded(makeProviderModels()),
         selectedModelHandle: catalogRows[0].handle,

@@ -362,40 +362,16 @@ private func handleCollectionFileLoaded(
 
     switch result {
     case let .success(loadResult):
-        let file = loadResult.file
-        var isStale = false
-        let canonicalPath = request.url.standardizedFileURL.path
-        let hasPersistedInvalidation = environment.collectionStalenessClient.record(canonicalPath)?
-            .lastInvalidatedAt != nil
-        let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
-        isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
-        state.content.collection.prepareOpenTransition(
-            at: request.url,
-            reopenContext: state.content.collection.collectionContext,
-            isAlreadyStale: hasPersistedInvalidation,
+        let prepared = prepareCollectionFileLoadedSuccess(
+            loadResult: loadResult,
+            request: request,
+            state: &state,
+            collectionStalenessClient: environment.collectionStalenessClient,
         )
-        environment.collectionStalenessClient.registerCollection(
-            canonicalPath,
-            file.scopes,
-            file.excludedScopes,
-            file.includeSubfolders,
-        )
-        if hasScopeRootChangedSinceSnapshot {
-            environment.collectionStalenessClient.upsertRecord(
-                canonicalPath,
-                .init(
-                    definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
-                    relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
-                    excludedScopes: file.excludedScopes,
-                    includeSubfolders: file.includeSubfolders,
-                    lastInvalidatedAt: Date(),
-                ),
-            )
-        }
         return handleCollectionFileLoadedSuccess(
-            file,
-            compatibility: loadResult.compatibility,
-            isStale: isStale,
+            prepared.file,
+            compatibility: prepared.compatibility,
+            isStale: prepared.isStale,
             state: &state,
             environment: environment,
         )
@@ -409,10 +385,59 @@ private func handleCollectionFileLoaded(
     }
 }
 
+private struct CollectionFileLoadedPreparation {
+    let file: VoyagerCollectionFile
+    let compatibility: CollectionFileCompatibilityMetadata
+    let isStale: Bool
+}
+
+private func prepareCollectionFileLoadedSuccess(
+    loadResult: CollectionFileLoadResult,
+    request: ContentPageCollectionOpenRequest,
+    state: inout FileManagerWindowState,
+    collectionStalenessClient: CollectionStalenessClient,
+) -> CollectionFileLoadedPreparation {
+    let file = loadResult.file
+    let canonicalPath = request.url.standardizedFileURL.path
+    let hasPersistedInvalidation = collectionStalenessClient.record(canonicalPath)?
+        .lastInvalidatedAt != nil
+    let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
+    let isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
+    state.content.collection.prepareOpenTransition(
+        at: request.url,
+        reopenContext: state.content.collection.collectionContext,
+        isAlreadyStale: hasPersistedInvalidation,
+    )
+    collectionStalenessClient.registerCollection(
+        canonicalPath,
+        file.scopes,
+        file.excludedScopes,
+        file.includeSubfolders,
+    )
+    if hasScopeRootChangedSinceSnapshot {
+        collectionStalenessClient.upsertRecord(
+            canonicalPath,
+            .init(
+                definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
+                relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                excludedScopes: file.excludedScopes,
+                includeSubfolders: file.includeSubfolders,
+                lastInvalidatedAt: Date(),
+            ),
+        )
+    }
+    return CollectionFileLoadedPreparation(
+        file: file,
+        compatibility: loadResult.compatibility,
+        isStale: isStale,
+    )
+}
+
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
-    state _: inout FileManagerWindowState,
+    state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID else { return .none }
     let (openedURL, openedName): (URL?, String?) = switch navigation.kind {
     case .temporary:
         (nil, nil)
@@ -437,21 +462,24 @@ private func handleNavigateToCollection(
     )
 
     let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let queryEffect: Effect<FileManagerWindowAction> = trimmedQuery.isEmpty
-        ? .send(.content(.composer(.applyFilters)))
-        : .send(.content(.composer(.submit)))
+    let queryAction: FileManagerContentAction = trimmedQuery.isEmpty
+        ? .composer(.applyFilters)
+        : .composer(.submit)
     return .concatenate(
-        .send(.content(.collection(.navigationStateApplied(payload)))),
-        .send(.content(.composer(.applyCollectionNavigationComposer(payload)))),
-        .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
-        .send(.content(.composer(.syncCollectionState(
+        .send(.tabContent(tabID: activeTabID, action: .collection(.navigationStateApplied(payload)))),
+        .send(.tabContent(tabID: activeTabID, action: .composer(.applyCollectionNavigationComposer(payload)))),
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.setCollectionMode(true))),
+        )),
+        .send(.tabContent(tabID: activeTabID, action: .composer(.syncCollectionState(
             context: payload.context,
             url: payload.document?.url,
             compatibility: payload.document?.compatibility,
             isCollectionMode: true,
         )))),
-        .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
-        queryEffect,
+        .send(.tabContent(tabID: activeTabID, action: .entryViewLayout(.entryArrangements(.reapply)))),
+        .send(.tabContent(tabID: activeTabID, action: queryAction)),
     )
 }
 

@@ -4,6 +4,16 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerShared
 
+struct FileManagerWindowSplitObservationInput: Equatable {
+    let sidebarVisible: Bool
+    let sidebarWidth: CGFloat
+
+    init(state: FileManagerWindowState) {
+        sidebarVisible = state.sidebar.sidebarVisible
+        sidebarWidth = state.sidebar.sidebarWidth
+    }
+}
+
 @MainActor
 final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
@@ -167,14 +177,15 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     }
 
     private func observeSidebarState() {
-        store.publisher.sidebar
+        store.publisher
+            .map(FileManagerWindowSplitObservationInput.init)
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] sidebarState in
+            .sink { [weak self] input in
                 guard let self else { return }
                 applySidebarState(
-                    sidebarVisible: sidebarState.sidebarVisible,
-                    sidebarWidth: sidebarState.sidebarWidth,
+                    sidebarVisible: input.sidebarVisible,
+                    sidebarWidth: input.sidebarWidth,
                 )
             }
             .store(in: &cancellables)

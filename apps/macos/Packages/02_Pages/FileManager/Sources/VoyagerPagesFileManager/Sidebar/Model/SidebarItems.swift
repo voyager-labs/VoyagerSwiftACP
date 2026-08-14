@@ -1,16 +1,42 @@
 import Foundation
 import VoyagerEntitiesCollection
 
+public enum FileManagerSidebarTopNavigationItem: Equatable, Sendable, Identifiable {
+    case location(FileManagerFixedLocationItem)
+    case contentTab(ContentTabProjection.ContentTabSidebarItem)
+
+    public var id: FileManagerTopNavigationItemID {
+        switch self {
+        case let .location(item):
+            .location(item.id)
+        case let .contentTab(item):
+            .contentTab(item.id)
+        }
+    }
+}
+
 public enum SidebarItems {
     public struct LocationItem: Equatable, Sendable {
+        public enum Kind: Equatable, Sendable {
+            case directory
+            case trash
+        }
+
         public let name: String
         public let url: URL
         public let iconName: String
+        public let kind: Kind
 
-        nonisolated public init(name: String, url: URL, iconName: String) {
+        nonisolated public init(
+            name: String,
+            url: URL,
+            iconName: String,
+            kind: Kind = .directory,
+        ) {
             self.name = name
             self.url = url
             self.iconName = iconName
+            self.kind = kind
         }
 
         nonisolated public var isComputer: Bool {

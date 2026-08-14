@@ -48,15 +48,46 @@ public struct ClosedContentTabSnapshot: Equatable, Sendable, Codable {
     public var iconName: String?
 }
 
+private struct ContentTabRecordValidationResult {
+    let records: [(record: ContentTabPinnedRecord, newID: ContentTabID)]
+    let didCompact: Bool
+    let droppedCount: Int
+}
+
 @ObservableState
 public struct ContentTabState: Equatable, Sendable {
-    public var tabs: IdentifiedArrayOf<ContentTabItem> = []
-    public var activeTabID: ContentTabID?
+    public var tabs: IdentifiedArrayOf<ContentTabItem> = [] {
+        didSet { reconcileSelection() }
+    }
+
+    public var activeTabID: ContentTabID? {
+        didSet { reconcileSelection() }
+    }
+
     public var previousActiveTabID: ContentTabID?
     public var recentlyClosed: ClosedContentTabSnapshot?
     public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingPinnedRecordIDs: Set<ContentTabID> = []
     public var pinnedRecordPersistenceError: String?
+    let pinnedRecordPersistenceScopeID = UUID()
+    public internal(set) var selectedTabIDs: Set<ContentTabID> = []
+    var selectionAnchorID: ContentTabID?
+
+    public var selectedTabCount: Int {
+        orderedValidSelectedTabIDs.count
+    }
+
+    public var isBulkActionEnabled: Bool {
+        selectedTabCount > 1
+    }
+
+    public var orderedValidSelectedTabIDs: [ContentTabID] {
+        selectionOrderedTabIDs.filter(selectedTabIDs.contains)
+    }
+
+    var selectionOrderedTabIDs: [ContentTabID] {
+        tabs.filter(\.isPinned).map(\.id) + tabs.filter { !$0.isPinned }.map(\.id)
+    }
 
     public init(
         tabs: IdentifiedArrayOf<ContentTabItem> = [],
@@ -74,6 +105,43 @@ public struct ContentTabState: Equatable, Sendable {
         self.pinnedRecords = pinnedRecords
         self.pendingPinnedRecordIDs = pendingPinnedRecordIDs
         self.pinnedRecordPersistenceError = pinnedRecordPersistenceError
+        reconcileSelection()
+    }
+
+    mutating func reconcileSelection() {
+        let currentTabIDs = Set(tabs.ids)
+        selectedTabIDs.formIntersection(currentTabIDs)
+        if let selectionAnchorID, !currentTabIDs.contains(selectionAnchorID) {
+            self.selectionAnchorID = nil
+        }
+    }
+
+    mutating func collapseSelectionToActive() {
+        guard let activeTabID, tabs[id: activeTabID] != nil else {
+            selectedTabIDs.removeAll()
+            selectionAnchorID = nil
+            return
+        }
+        selectedTabIDs = [activeTabID]
+        selectionAnchorID = activeTabID
+    }
+
+    public func markLatestPinnedRecordPersistenceIntent(for tabID: ContentTabID) -> UUID {
+        PinnedRecordPersistenceIntent.markLatest(
+            scopeID: pinnedRecordPersistenceScopeID,
+            tabID: tabID,
+        )
+    }
+
+    public func isCurrentPinnedRecordPersistenceIntent(
+        tabID: ContentTabID,
+        intentID: UUID,
+    ) -> Bool {
+        PinnedRecordPersistenceIntent.isCurrent(
+            scopeID: pinnedRecordPersistenceScopeID,
+            tabID: tabID,
+            intentID: intentID,
+        )
     }
 }
 
@@ -81,14 +149,16 @@ public extension ContentTabState {
     static func withHomeTab() -> ContentTabState {
         let id = ContentTabID()
         return ContentTabState(
-            tabs: [ContentTabItem(
-                id: id,
-                page: .home,
-                anchor: .homeDefault,
-                isPinned: false,
-                title: "Home",
-                iconName: "house",
-            )],
+            tabs: [
+                ContentTabItem(
+                    id: id,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
             activeTabID: id,
             previousActiveTabID: nil,
             recentlyClosed: nil,
@@ -122,55 +192,68 @@ public extension ContentTabState {
         maxTabs: Int = ContentTabConstants.maxTabs,
         isRestorableAnchor: (ContentTabPageAnchor) -> Bool = { _ in true },
     ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
+        let validation = validateRestorableRecords(
+            store.records,
+            maxTabs: maxTabs,
+            isRestorableAnchor: isRestorableAnchor,
+        )
+
+        guard !validation.records.isEmpty else {
+            return (
+                state: .withHomeTab(),
+                didCompact: validation.didCompact,
+                droppedCount: validation.droppedCount,
+            )
+        }
+
+        let state = makeRestoredState(from: validation.records)
+
+        return (
+            state: state,
+            didCompact: validation.didCompact,
+            droppedCount: validation.droppedCount,
+        )
+    }
+
+    private static func validateRestorableRecords(
+        _ records: [ContentTabPinnedRecord],
+        maxTabs: Int,
+        isRestorableAnchor: (ContentTabPageAnchor) -> Bool,
+    ) -> ContentTabRecordValidationResult {
         var seenIDs = Set<String>()
         var validRecords: [(record: ContentTabPinnedRecord, newID: ContentTabID)] = []
         var didCompact = false
-        var totalExcluded = 0
+        var droppedCount = 0
 
-        for record in store.records {
-            if record.id.isEmpty {
+        for record in records {
+            guard !record.id.isEmpty,
+                  record.isPageAnchorCompatible,
+                  isRestorableAnchor(record.anchor),
+                  seenIDs.insert(record.id).inserted,
+                  validRecords.count < maxTabs
+            else {
                 didCompact = true
-                totalExcluded += 1
+                droppedCount += 1
                 continue
             }
-
-            guard record.isPageAnchorCompatible else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard isRestorableAnchor(record.anchor) else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard seenIDs.insert(record.id).inserted else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard validRecords.count < maxTabs else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            let newID = ContentTabID(rawValue: record.id)
-            validRecords.append((record, newID))
+            validRecords.append((record, ContentTabID(rawValue: record.id)))
         }
+        return ContentTabRecordValidationResult(
+            records: validRecords,
+            didCompact: didCompact,
+            droppedCount: droppedCount,
+        )
+    }
 
-        guard !validRecords.isEmpty else {
-            return (state: .withHomeTab(), didCompact: didCompact, droppedCount: totalExcluded)
-        }
-
+    private static func makeRestoredState(
+        from records: [(record: ContentTabPinnedRecord, newID: ContentTabID)],
+    ) -> ContentTabState {
         var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
         var tabs: IdentifiedArrayOf<ContentTabItem> = []
-
-        for (record, newID) in validRecords {
-            let normalizedRecord = ContentTabPinnedRecord(
+        for validRecord in records {
+            let record = validRecord.record
+            let newID = validRecord.newID
+            pinnedRecords[newID] = ContentTabPinnedRecord(
                 id: newID.rawValue,
                 page: record.page,
                 anchor: record.anchor,
@@ -178,19 +261,15 @@ public extension ContentTabState {
                 iconName: record.iconName,
                 pinnedAt: record.pinnedAt,
             )
-            pinnedRecords[newID] = normalizedRecord
-
-            let item = ContentTabItem(
+            tabs.append(ContentTabItem(
                 id: newID,
                 page: record.page,
                 anchor: record.anchor,
                 isPinned: true,
                 title: record.title,
                 iconName: record.iconName,
-            )
-            tabs.append(item)
+            ))
         }
-
         let homeID = ContentTabID()
         tabs.append(ContentTabItem(
             id: homeID,
@@ -200,14 +279,7 @@ public extension ContentTabState {
             title: "Home",
             iconName: "house",
         ))
-
-        let state = ContentTabState(
-            tabs: tabs,
-            activeTabID: homeID,
-            pinnedRecords: pinnedRecords,
-        )
-
-        return (state: state, didCompact: didCompact, droppedCount: totalExcluded)
+        return ContentTabState(tabs: tabs, activeTabID: homeID, pinnedRecords: pinnedRecords)
     }
 }
 

@@ -447,6 +447,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             $0.searchClient = .testValue
             $0.userDefaultsClient = .testValue
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ImmediateClock()
         }
         store.exhaustivity = .off
         return store
@@ -754,12 +755,32 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             result: .success(loadResult),
         ))))
         await store.receive(\.content.composer.view.setPresented)
-        await store.receive(\.content.internal.requestNavigation)
-        await store.receive(\.content.internal.applyNavigationState)
-        await store.receive(\.content.entryViewLayout.internal.setCollectionMode)
-        await store.receive(\.content.composer.internal.syncCollectionState)
-        await store.receive(\.content.entryViewLayout.internal.applyCollectionSearchPaths)
-        await store.receive(\.content.composer.internal.searchListApplied)
+        await store.receive { action in
+            guard case .tabContent(_, .internal(.requestNavigation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .internal(.applyNavigationState)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.internal(.setCollectionMode))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .composer(.internal(.syncCollectionState))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.internal(.applyCollectionSearchPaths))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .composer(.internal(.searchListApplied))) = action else { return false }
+            return true
+        }
         await store.finish()
     }
 
