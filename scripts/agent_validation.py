@@ -38,6 +38,13 @@ PLAN_TASK_FIELD = re.compile(
 PLAN_INLINE_EVIDENCE = re.compile(
     r"(?:evidence|증거)\s*:\s*(?P<value>\S.*)", re.IGNORECASE
 )
+PLAN_RED_EVIDENCE = re.compile(r"\bRED\b", re.IGNORECASE)
+PLAN_GREEN_EVIDENCE = re.compile(r"\bGREEN\b", re.IGNORECASE)
+PLAN_NO_SOURCE_CHANGES = re.compile(
+    r"no\s+source\s+changes|source\s+changes\s*:\s*no|"
+    r"no\s+executable\s+behavior\s+changes|docs?-only|문서[- ]?only|문서 변경만",
+    re.IGNORECASE,
+)
 PLAN_ACCEPTANCE_LABELS = {
     "acceptance",
     "acceptance criteria",
@@ -475,7 +482,8 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                 ),
                 len(lines),
             )
-            task_fields = plan_task_fields("\n".join(lines[index + 1 : task_end]))
+            task_block = "\n".join(lines[index + 1 : task_end])
+            task_fields = plan_task_fields(task_block)
             acceptance = task_fields["acceptance"]
             evidence = task_fields["evidence"]
             if not acceptance:
@@ -496,6 +504,16 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                         index + 1,
                         "PLAN_ACCEPTANCE_EVIDENCE",
                         "task acceptance criteria must name required evidence",
+                    )
+                )
+            if not plan_task_has_tdd_evidence(task_block):
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_TODO_TDD_EVIDENCE",
+                        "numbered task must name RED and GREEN evidence or an explicit no-source-change rationale",
                     )
                 )
         for section in PLAN_SECTIONS:
@@ -611,6 +629,12 @@ def plan_task_fields(block: str) -> dict[str, str]:
         elif label in PLAN_EVIDENCE_LABELS:
             fields["evidence"] = value
     return fields
+
+
+def plan_task_has_tdd_evidence(block: str) -> bool:
+    if PLAN_NO_SOURCE_CHANGES.search(block):
+        return True
+    return bool(PLAN_RED_EVIDENCE.search(block) and PLAN_GREEN_EVIDENCE.search(block))
 
 
 def json_result(name: str, diagnostics: list[Diagnostic], mode: str) -> str:

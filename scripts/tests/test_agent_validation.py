@@ -81,6 +81,7 @@ Objective.
 
 Implementation steps.
 
+**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.
 **Acceptance Criteria**: The validator accepts this task.
 **Evidence**: Validator output has no diagnostics.
 """
@@ -507,12 +508,34 @@ class AgentValidationTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assert_exact_diagnostic(result, payload, "PLAN_ACCEPTANCE_EVIDENCE")
 
+        missing_tdd = PLAN.replace(
+            "**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.",
+            "**QA**: Test output is recorded.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/missing-tdd.md", missing_tdd)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_TDD_EVIDENCE")
+
+        docs_only = PLAN.replace(
+            "**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.",
+            "**QA**: No executable behavior changes; docs-only validation is recorded.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/docs-only.md", docs_only)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
+
         two_tasks = PLAN.replace(
             "### 1. Fixture task",
-            "### 1. Fixture task\n\n**Acceptance**: First task is covered.\n**Evidence**: First test output.\n\n### 2. Second task",
+            "### 1. Fixture task\n\n**QA**: RED evidence fails; GREEN evidence passes.\n**Acceptance**: First task is covered.\n**Evidence**: First test output.\n\n### 2. Second task",
         ).replace(
             "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
-            "**Acceptance**: Second task is covered.",
+            "**QA**: RED evidence fails; GREEN evidence passes.\n**Acceptance**: Second task is covered.",
         )
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -602,6 +625,10 @@ class AgentValidationTests(unittest.TestCase):
             ),
             "PLAN_ACCEPTANCE_EVIDENCE": PLAN.replace(
                 "**Evidence**: Validator output has no diagnostics.", ""
+            ),
+            "PLAN_TODO_TDD_EVIDENCE": PLAN.replace(
+                "**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.",
+                "**QA**: Test output is recorded.",
             ),
             "PLAN_CHECKBOX_TODO_RETIRED": PLAN.replace(
                 "Implementation steps.", "- [ ] Legacy task"
