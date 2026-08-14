@@ -351,6 +351,7 @@ public struct FileManagerWindowState: Equatable {
                 tabs: tabs,
                 activeTabID: activeReservation.id,
                 previousActiveTabID: previousActiveTabID,
+                recentlyUsedTabIDs: reservations.reversed().map(\.id),
             ),
             externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
             windowID: windowID,
@@ -1163,6 +1164,10 @@ extension FileManagerWindowState {
             restoreInspectorStateForActiveTab()
         }
 
+        contentTabs.pruneRecentlyUsedTabIDs()
+        if let activeTabID = contentTabs.activeTabID {
+            contentTabs.recordActivation(activeTabID)
+        }
         contentTabs.recentlyClosed = recentlyClosed
         contentTabs.reconcileSelection()
         syncContentTabSidebarItems()
