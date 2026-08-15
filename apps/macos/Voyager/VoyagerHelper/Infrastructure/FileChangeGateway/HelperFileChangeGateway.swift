@@ -168,6 +168,7 @@ final class HelperFileChangeGateway {
         guard !filteredEvents.isEmpty else { return }
 
         let isNewPendingBatch = pendingDeliveryChainToken == nil
+        let didEstablishBatchToken = isNewPendingBatch || !pendingDeliveryIsCoalesced
         if isNewPendingBatch {
             pendingDeliveryChainToken = deliveryBatch.chainToken
             pendingDeliveryCallbackAt = deliveryBatch.callbackAt
@@ -181,12 +182,21 @@ final class HelperFileChangeGateway {
             )
         } else if !pendingDeliveryIsCoalesced {
             // 두 번째 callback이 debounce 동안 병합되면, 병합된 batch를 첫 callback의 token으로
-            // 오인하지 않도록 coalesced notification에 새 token을 부여한다.
+            // 오인하지 않도록 coalesced token과 timestamp를 발급하고, 그 token으로 callback/enqueue
+            // marker를 기록해 token 상관관계를 보존한다.
             pendingDeliveryChainToken = deliveryBatch.chainToken
+            pendingDeliveryCallbackAt = deliveryBatch.callbackAt
             pendingDeliveryIsCoalesced = true
+            logDeliveryMarker(
+                "fs_callback_received",
+                timestamp: deliveryBatch.callbackAt,
+                events: filteredEvents,
+                chainToken: deliveryBatch.chainToken,
+                latencyFrom: deliveryBatch.callbackAt,
+            )
         }
         enqueue(filteredEvents)
-        if isNewPendingBatch {
+        if didEstablishBatchToken {
             logDeliveryMarker(
                 "fs_event_enqueued",
                 events: Array(pendingEventsByPath.values),
