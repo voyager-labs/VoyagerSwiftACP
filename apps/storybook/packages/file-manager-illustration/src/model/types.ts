@@ -107,7 +107,7 @@ export type Entry = {
 
 export type ChatMessage = {
   readonly id: string
-  readonly role: "user" | "assistant"
+  readonly role: "user" | "assistant" | "system" | "tool"
   readonly content: string
   readonly timestamp?: {
     readonly label: string

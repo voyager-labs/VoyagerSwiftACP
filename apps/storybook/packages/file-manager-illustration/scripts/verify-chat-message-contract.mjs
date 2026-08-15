@@ -71,6 +71,15 @@ export function verifyChatMessageContract(packageRoot, css) {
   assert.match(conversationSource, /data-chat-role="assistant"/)
   assert.match(conversationSource, /className="chat-regenerate-label"/)
   assert.match(conversationSource, /className="chat-user-bubble-frame"/)
+  assert.match(chatTypesSource, /readonly role: "user" \| "assistant" \| "system" \| "tool"/)
+  assert.match(chatFixtureSource, /role: "system"/)
+  assert.match(chatFixtureSource, /role: "tool"/)
+  assert.match(
+    chatFixtureSource,
+    /System context: selected research PDFs are available for analysis\./,
+  )
+  assert.match(chatFixtureSource, /Tool result: grouped 6 PDFs into 3 recurring themes\./)
+  assert.match(conversationSource, /className="chat-status-row"/)
   assert.match(
     chatTypesSource,
     /readonly timestamp\?:\s*\{[^}]*readonly label: string[^}]*readonly isTimestampVisuallySuppressed\?: boolean/s,

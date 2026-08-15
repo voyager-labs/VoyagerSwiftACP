@@ -95,6 +95,18 @@ export const chatTranscriptMessages: readonly ChatMessage[] = [
       "Created three collections. Two likely duplicates found in the citation group: IDC2020 and Fitchett2014 share 78% referenced works. I kept the longer survey and flagged the other.",
     timestamp: { label: "10:26" },
   },
+  {
+    id: "m6",
+    role: "system",
+    content: "System context: selected research PDFs are available for analysis.",
+    timestamp: { label: "10:26" },
+  },
+  {
+    id: "m7",
+    role: "tool",
+    content: "Tool result: grouped 6 PDFs into 3 recurring themes.",
+    timestamp: { label: "10:26" },
+  },
 ]
 
 export const chatStreamingAssistant: ChatStreamingAssistant = {
