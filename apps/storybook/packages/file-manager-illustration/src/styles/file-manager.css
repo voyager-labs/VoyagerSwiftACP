@@ -1789,7 +1789,9 @@
 [data-file-manager-illustration] .path-breadcrumb-item {
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  /* native는 HStack(spacing: 0) + AppKit 심볼 사이드 베어링 ≈2px.
+     웹 폰트 베어링이 더 타이트해 동일 시각 간격을 명시적 2px로 보정 */
+  gap: 2px;
   min-width: 0;
   max-width: 100%;
 }
