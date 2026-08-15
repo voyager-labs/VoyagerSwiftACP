@@ -21,11 +21,16 @@ export type ComposerScopeFeedback = {
   readonly showsRedo?: boolean
 }
 
-// 네이티브 ComposerScopeTreeRow의 depth/visualState 계약 반영
+// 네이티브 ComposerScopeTreeRow의 depth/kind/visualState/ruleSource/availableActions 계약 반영
 export type ComposerScopeItem = {
   readonly path: string
   readonly depth: number
+  readonly displayName?: string
   readonly status: "included" | "excluded" | "available"
+  readonly kind: "root" | "base" | "exception" | "candidate"
+  readonly ruleSource?: "direct" | "inherited"
+  readonly inheritedFrom?: string
+  readonly actions: readonly ("include" | "exclude" | "clearDirectRule")[]
 }
 
 export type ComposerPropertyPicker = {
@@ -168,8 +173,21 @@ export const composerFixtures = {
       includeSubfolders: true,
       sectionTitle: "Current scope",
       items: [
-        { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
-        { path: "/VoyagerFixtures/Projects", depth: 0, status: "available" },
+        {
+          path: "/VoyagerFixtures/Documents",
+          depth: 0,
+          status: "included",
+          kind: "base",
+          ruleSource: "direct",
+          actions: ["clearDirectRule"],
+        },
+        {
+          path: "/VoyagerFixtures/Projects",
+          depth: 0,
+          status: "available",
+          kind: "candidate",
+          actions: ["include"],
+        },
       ],
       feedback: { phase: "Applied", title: "Scope updated to Documents", showsUndo: true },
     },
@@ -183,9 +201,30 @@ export const composerFixtures = {
       includeSubfolders: true,
       sectionTitle: "Current scope",
       items: [
-        { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
-        { path: "/VoyagerFixtures/Projects", depth: 0, status: "included" },
-        { path: "/VoyagerFixtures/Projects/Legacy", depth: 1, status: "excluded" },
+        {
+          path: "/VoyagerFixtures/Documents",
+          depth: 0,
+          status: "included",
+          kind: "base",
+          ruleSource: "direct",
+          actions: ["clearDirectRule"],
+        },
+        {
+          path: "/VoyagerFixtures/Projects",
+          depth: 0,
+          status: "included",
+          kind: "base",
+          ruleSource: "direct",
+          actions: ["clearDirectRule"],
+        },
+        {
+          path: "/VoyagerFixtures/Projects/Legacy",
+          depth: 1,
+          status: "excluded",
+          kind: "exception",
+          ruleSource: "direct",
+          actions: ["clearDirectRule"],
+        },
       ],
       feedback: { phase: "Applying", title: "Updating scope" },
     },
@@ -199,9 +238,30 @@ export const composerFixtures = {
       includeSubfolders: true,
       sectionTitle: "Current scope",
       items: [
-        { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
-        { path: "/VoyagerFixtures/Projects", depth: 0, status: "included" },
-        { path: "/VoyagerFixtures/Inbox", depth: 0, status: "available" },
+        {
+          path: "/VoyagerFixtures/Documents",
+          depth: 0,
+          status: "included",
+          kind: "base",
+          ruleSource: "direct",
+          actions: ["clearDirectRule"],
+        },
+        {
+          path: "/VoyagerFixtures/Projects",
+          depth: 0,
+          status: "included",
+          kind: "base",
+          ruleSource: "inherited",
+          inheritedFrom: "/VoyagerFixtures",
+          actions: [],
+        },
+        {
+          path: "/VoyagerFixtures/Inbox",
+          depth: 0,
+          status: "available",
+          kind: "candidate",
+          actions: ["include", "exclude"],
+        },
       ],
       feedback: {
         phase: "Failed",

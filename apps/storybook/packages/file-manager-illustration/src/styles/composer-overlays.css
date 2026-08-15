@@ -375,12 +375,101 @@
 [data-file-manager-illustration] .collection-composer-scope-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  padding: var(--fm-space-2);
+  gap: var(--fm-space-2);
+  padding: 10px 12px;
 }
 
-[data-file-manager-illustration] .collection-composer-picker-list button,
-[data-file-manager-illustration] .collection-composer-scope-list button {
+/* 네이티브 ScopeTreeRowView: 행 컨테이너 10/8 패딩 + 6 반경 + 상태별 배경/보더 */
+[data-file-manager-illustration] .collection-composer-scope-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  border: 0.5px solid var(--fm-composer-chip-item-border);
+  border-radius: 6px;
+  background: var(--fm-composer-chip-item-background);
+  padding: var(--fm-space-4) 10px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.included {
+  border-color: color-mix(in srgb, var(--macos-control-accent-color) 35%, transparent);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.excluded {
+  border-color: color-mix(in srgb, var(--fm-text-secondary) 20%, transparent);
+  background: color-mix(in srgb, var(--fm-composer-chip-item-background) 70%, transparent);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.excluded strong {
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.kind-base strong {
+  font-weight: 600;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-tree-row.included
+  > .collection-composer-scope-tree-body
+  > .sf-symbol {
+  color: var(--macos-control-accent-color);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  align-items: center;
+  gap: var(--fm-space-4);
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-body:hover {
+  background: transparent;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row:hover {
+  background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 0.5px solid var(--fm-composer-chip-item-border);
+  border-radius: var(--fm-radius-round);
+  align-items: center;
+  gap: 0;
+  background: color-mix(in srgb, var(--fm-composer-chip-item-background) 95%, transparent);
+  padding: var(--fm-space-3) 6px;
+  color: var(--fm-text-primary);
+  font-size: 10px;
+  font-weight: 500;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-action span {
+  display: none;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-tree-row:hover
+  .collection-composer-scope-action {
+  gap: 4px;
+  padding-inline: var(--fm-space-4);
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-tree-row:hover
+  .collection-composer-scope-action
+  span {
+  display: inline;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button {
   display: flex;
   border: 0;
   border-radius: var(--fm-radius-sm);
@@ -429,13 +518,13 @@
 }
 
 /* 네이티브 VoyagerDS.Interaction.hoverFill = white 8% / black 6% — 텍스트 색은 유지 */
-[data-file-manager-illustration] .collection-composer-picker-list button:hover,
-[data-file-manager-illustration] .collection-composer-scope-list button:hover {
+[data-file-manager-illustration] .collection-composer-picker-list button:hover {
   background: var(--fm-composer-hover-background);
 }
 
 [data-file-manager-illustration] .collection-composer-picker-list button:focus-visible,
-[data-file-manager-illustration] .collection-composer-scope-list button:focus-visible,
+[data-file-manager-illustration] .collection-composer-scope-tree-body:focus-visible,
+[data-file-manager-illustration] .collection-composer-scope-action:focus-visible,
 [data-file-manager-illustration] .collection-composer-token-suggestions button:focus-visible,
 [data-file-manager-illustration] .collection-composer-token-field button:focus-visible {
   outline: 0;
@@ -626,10 +715,6 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.2px;
-}
-
-[data-file-manager-illustration] .collection-composer-scope-list button {
-  padding-block: var(--fm-space-4);
 }
 
 [data-file-manager-illustration] .collection-composer-toast {

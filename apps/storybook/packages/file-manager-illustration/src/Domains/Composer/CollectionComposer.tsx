@@ -23,6 +23,7 @@ export type CollectionComposerProps = {
   readonly onEditScope?: () => void
   readonly onScopeSelect?: (item: string) => void
   readonly onScopeRemove?: (path: string) => void
+  readonly onScopeAction?: (path: string, action: "include" | "exclude" | "clearDirectRule") => void
   readonly onToggleSubfolders?: () => void
   readonly onScopeFeedbackAction?: (action: "Undo" | "Redo") => void
   readonly onSubmit?: () => void
@@ -62,6 +63,7 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
   onEditScope,
   onScopeSelect,
   onScopeRemove,
+  onScopeAction,
   onToggleSubfolders,
   onScopeFeedbackAction,
   onSubmit,
@@ -187,6 +189,7 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         <ScopePicker
           picker={fixture.picker}
           onSelect={onScopeSelect}
+          onAction={onScopeAction}
           onToggleSubfolders={onToggleSubfolders}
           onFeedbackAction={onScopeFeedbackAction}
         />
@@ -240,12 +243,29 @@ const ComposerTextButton: FC<{
   </button>
 )
 
+type ScopeAction = "include" | "exclude" | "clearDirectRule"
+
+// 네이티브 ScopeTreeRowView의 액션 심볼/라벨 매핑
+const scopeActionSymbol = (action: ScopeAction, kind: ComposerScopeItem["kind"]): string => {
+  if (action === "include") return "checkmark"
+  if (action === "exclude") return "minus"
+  return kind === "exception" ? "arrow.uturn.backward" : "xmark"
+}
+
+const scopeActionLabel = (item: ComposerScopeItem, action: ScopeAction): string => {
+  if (action === "include") return "Include scope"
+  if (action === "exclude") return "Exclude scope"
+  if (item.kind === "exception") return "Restore scope"
+  return "Remove direct rule"
+}
+
 const ScopePicker: FC<{
   readonly picker: ComposerScopePicker
   readonly onSelect?: (item: string) => void
+  readonly onAction?: (path: string, action: "include" | "exclude" | "clearDirectRule") => void
   readonly onToggleSubfolders?: () => void
   readonly onFeedbackAction?: (action: "Undo" | "Redo") => void
-}> = ({ picker, onSelect, onToggleSubfolders, onFeedbackAction }) => {
+}> = ({ picker, onSelect, onAction, onToggleSubfolders, onFeedbackAction }) => {
   const [queryValue, setQueryValue] = useState(picker.query)
   const searchFieldRef = useRef<HTMLInputElement>(null)
 
@@ -261,27 +281,51 @@ const ScopePicker: FC<{
   )
 
   const scopeRow = (item: ComposerScopeItem) => {
-    const name = item.path.split("/").at(-1) ?? item.path
+    const name = item.displayName ?? item.path.split("/").at(-1) ?? item.path
+    // 네이티브 handleTreeRowBodyTap: base=편집기 오픈, candidate=단일 액션 즉시 실행, exception/root=무시
+    const bodyTap = () => {
+      if (item.kind === "base") onSelect?.(item.path)
+      else if (item.kind === "candidate" && item.actions.length === 1)
+        onAction?.(item.path, item.actions[0])
+    }
+    const primaryAction = item.actions[0]
     return (
-      <button
-        type="button"
+      <div
+        className={`collection-composer-scope-tree-row ${item.status} kind-${item.kind}`}
         key={item.path}
-        style={{ paddingInlineStart: `${8 + item.depth * 16}px` }}
-        onClick={() => onSelect?.(item.path)}
+        title={item.ruleSource === "inherited" ? `Inherited from ${item.inheritedFrom}` : undefined}
       >
-        <SFSymbol name="folder" size={12} />
-        <span className="collection-composer-scope-row-copy">
-          <strong>{name}</strong>
-          <small title={item.path}>{item.path}</small>
-        </span>
-        <span className={`collection-composer-scope-row-badge ${item.status}`}>
-          {item.status === "included"
-            ? "Included"
-            : item.status === "excluded"
-              ? "Excluded"
-              : "Available"}
-        </span>
-      </button>
+        <button
+          type="button"
+          className="collection-composer-scope-tree-body"
+          style={{ paddingInlineStart: `${10 + item.depth * 16}px` }}
+          onClick={bodyTap}
+        >
+          <SFSymbol name="folder" size={12} />
+          <span className="collection-composer-scope-row-copy">
+            <strong>{name}</strong>
+            <small title={item.path}>{item.path}</small>
+          </span>
+          <span className={`collection-composer-scope-row-badge ${item.status}`}>
+            {item.status === "included"
+              ? "Included"
+              : item.status === "excluded"
+                ? "Excluded"
+                : "Available"}
+          </span>
+        </button>
+        {primaryAction != null && (
+          <button
+            type="button"
+            className="collection-composer-scope-action"
+            aria-label={scopeActionLabel(item, primaryAction)}
+            onClick={() => onAction?.(item.path, primaryAction)}
+          >
+            <SFSymbol name={scopeActionSymbol(primaryAction, item.kind)} size={9} weight={600} />
+            <span>{scopeActionLabel(item, primaryAction)}</span>
+          </button>
+        )}
+      </div>
     )
   }
 

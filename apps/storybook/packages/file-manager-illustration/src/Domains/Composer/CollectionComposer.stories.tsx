@@ -126,6 +126,22 @@ const ComposerSelectionFlow = ({
     setScopePickerOpen(false)
   }
 
+  const scopeAction = (path: string, action: "include" | "exclude" | "clearDirectRule") => {
+    if (action === "include") {
+      commit({ ...draft, scopes: [...draft.scopes, path] })
+      setToast({ type: "info", message: `Scope added: ${path.split("/").at(-1)}` })
+      return
+    }
+    if (action === "exclude") {
+      setToast({ type: "error", message: `Scope excluded: ${path.split("/").at(-1)}` })
+      return
+    }
+    commit({
+      ...draft,
+      scopes: draft.scopes.filter((scope) => scope !== path && !scope.startsWith(`${path}/`)),
+    })
+  }
+
   const editingCondition =
     property == null
       ? undefined
@@ -169,10 +185,36 @@ const ComposerSelectionFlow = ({
                   rootOnly: draft.scopes.length === 0,
                   sectionTitle: "Current scope",
                   items: [
-                    { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
-                    { path: "/VoyagerFixtures/Projects", depth: 0, status: "available" },
-                    { path: "/VoyagerFixtures/Projects/Legacy", depth: 1, status: "excluded" },
-                    { path: "/VoyagerFixtures/Inbox", depth: 0, status: "available" },
+                    {
+                      path: "/VoyagerFixtures/Documents",
+                      depth: 0,
+                      status: "included",
+                      kind: "base",
+                      ruleSource: "direct",
+                      actions: ["clearDirectRule"],
+                    },
+                    {
+                      path: "/VoyagerFixtures/Projects",
+                      depth: 0,
+                      status: "available",
+                      kind: "candidate",
+                      actions: ["include", "exclude"],
+                    },
+                    {
+                      path: "/VoyagerFixtures/Projects/Legacy",
+                      depth: 1,
+                      status: "excluded",
+                      kind: "exception",
+                      ruleSource: "direct",
+                      actions: ["clearDirectRule"],
+                    },
+                    {
+                      path: "/VoyagerFixtures/Inbox",
+                      depth: 0,
+                      status: "available",
+                      kind: "candidate",
+                      actions: ["include"],
+                    },
                   ],
                 }
               : undefined,
@@ -191,6 +233,7 @@ const ComposerSelectionFlow = ({
       }}
       onScopeSelect={selectScope}
       onScopeRemove={removeScope}
+      onScopeAction={scopeAction}
       onToggleSubfolders={() => setIncludeSubfolders((current) => !current)}
       onScopeFeedbackAction={(action) =>
         setToast({ type: "info", message: `${action} scope change.` })
