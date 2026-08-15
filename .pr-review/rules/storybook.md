@@ -35,6 +35,25 @@ A finding that a rendered control is genuinely broken **in the built Storybook**
 is between "the rendered surface is wrong" (in scope) and "the real app would
 behave differently at runtime" (out of scope).
 
+**Interactive flow stories are state simulations, not native reducer ports.**
+A story that wires buttons to a local draft/history state machine (for example a
+selection flow, undo/redo, scope edits, or picker staging) demonstrates a
+sequence of states for review. It is **not** required to reproduce the native
+reducer's every invariant, history snapshot, or intermediate transition. Do not
+raise P1 for a flow-local state that diverges from a native reducer **unless**
+the rendered outcome is wrong for the fixture — e.g. a control is unclickable,
+a committed value is corrupted, or two visible elements claim contradictory
+states. A missing native transition that does not change the rendered result is
+a follow-up, not a blocking finding.
+
+**Fixture data semantics are not product behavior.** A static fixture's literal
+value (a date string, a label, a scope path) is a deterministic input for the
+story, not a claim about real runtime data. Do not re-file a fixture value's
+semantics (e.g. "this date means 30 days, not this calendar month") as a P1 on
+successive passes. If the fixture value makes the rendered story incoherent
+(blank field, split token, mismatched operator), that is in scope; if it merely
+represents a different-but-valid literal, record it once and stop.
+
 ## Review priorities
 
 Prioritize these checks over generic frontend advice:
