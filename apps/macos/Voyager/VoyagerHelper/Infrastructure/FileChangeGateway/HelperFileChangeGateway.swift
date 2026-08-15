@@ -30,6 +30,7 @@ final class HelperFileChangeGateway {
     private var pendingEventFlushTask: Task<Void, Never>?
     private var pendingDeliveryChainToken: String?
     private var pendingDeliveryCallbackAt: Date?
+    private var pendingDeliveryIsCoalesced = false
     private let eventBatchInterval: Duration
     private let maxEventsPerBatch: Int
 
@@ -170,6 +171,7 @@ final class HelperFileChangeGateway {
         if isNewPendingBatch {
             pendingDeliveryChainToken = deliveryBatch.chainToken
             pendingDeliveryCallbackAt = deliveryBatch.callbackAt
+            pendingDeliveryIsCoalesced = false
             logDeliveryMarker(
                 "fs_callback_received",
                 timestamp: deliveryBatch.callbackAt,
@@ -177,6 +179,11 @@ final class HelperFileChangeGateway {
                 chainToken: deliveryBatch.chainToken,
                 latencyFrom: deliveryBatch.callbackAt,
             )
+        } else if !pendingDeliveryIsCoalesced {
+            // 두 번째 callback이 debounce 동안 병합되면, 병합된 batch를 첫 callback의 token으로
+            // 오인하지 않도록 coalesced notification에 새 token을 부여한다.
+            pendingDeliveryChainToken = deliveryBatch.chainToken
+            pendingDeliveryIsCoalesced = true
         }
         enqueue(filteredEvents)
         if isNewPendingBatch {
@@ -236,6 +243,7 @@ final class HelperFileChangeGateway {
         let callbackAt = pendingDeliveryCallbackAt
         pendingDeliveryChainToken = nil
         pendingDeliveryCallbackAt = nil
+        pendingDeliveryIsCoalesced = false
         guard !events.isEmpty, let chainToken else { return }
 
         logDeliveryMarker(
