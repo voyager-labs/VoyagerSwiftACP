@@ -12,6 +12,7 @@ export interface FileManagerPrimaryContentProps {
   readonly selectedEntryIds: readonly string[]
   readonly viewMode: EntryViewMode
   readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
+  readonly onClearSelection?: () => void
   readonly onFavoriteSelect: (favorite: HomeFavorite) => void
   readonly onLocationSelect: (location: HomeLocation) => void
 }
@@ -26,6 +27,7 @@ export const FileManagerPrimaryContent: FC<FileManagerPrimaryContentProps> = ({
   selectedEntryIds,
   viewMode,
   onToggleEntry,
+  onClearSelection,
   onFavoriteSelect,
   onLocationSelect,
 }) => {
@@ -39,6 +41,7 @@ export const FileManagerPrimaryContent: FC<FileManagerPrimaryContentProps> = ({
           selectedEntryIds={selectedEntryIds}
           viewMode={viewMode}
           onToggleEntry={onToggleEntry}
+          onClearSelection={onClearSelection}
         />
       )
     default:

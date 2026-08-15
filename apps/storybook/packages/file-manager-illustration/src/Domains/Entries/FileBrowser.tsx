@@ -36,6 +36,7 @@ export interface FileBrowserProps {
   readonly selectedEntryIds: readonly string[]
   readonly viewMode: EntryViewMode
   readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
+  readonly onClearSelection?: () => void
 }
 
 export const FileBrowser: FC<FileBrowserProps> = ({
@@ -43,6 +44,7 @@ export const FileBrowser: FC<FileBrowserProps> = ({
   selectedEntryIds,
   viewMode,
   onToggleEntry,
+  onClearSelection,
 }) => {
   const gridEntries = useMemo(() => entries.map(toGridEntry), [entries])
   const listEntries = useMemo(() => entries.map(toListEntry), [entries])
@@ -60,6 +62,7 @@ export const FileBrowser: FC<FileBrowserProps> = ({
           entries={listEntries}
           selectedEntryIds={selectedEntryIds}
           onToggleEntry={onToggleEntry}
+          onClearSelection={onClearSelection}
         />
       )}
     </section>

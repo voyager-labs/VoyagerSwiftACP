@@ -60,7 +60,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
 
       <div className="toolbar-right">
         {onNewChat && (
-          <IconButton className="subtle" aria-label="New Chat" onClick={onNewChat}>
+          <IconButton className="subtle toolbar-new-chat" aria-label="New Chat" onClick={onNewChat}>
             <SFSymbol name="sidebar.trailing" size={13} weight={500} />
           </IconButton>
         )}

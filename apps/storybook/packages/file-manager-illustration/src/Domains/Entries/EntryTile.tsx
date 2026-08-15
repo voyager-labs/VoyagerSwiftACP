@@ -33,7 +33,9 @@ export const EntryTile: FC<EntryTileProps> = ({ entry, selected, onToggle }) => 
       aria-selected={selected}
       onClick={handleClick}
     >
-      <EntryThumbnail entry={entry} />
+      <span className="entry-tile-icon">
+        <EntryThumbnail entry={entry} />
+      </span>
       <span className="entry-name">{entry.name}</span>
       {entry.meta || entry.count ? (
         <span className="entry-meta">{entry.meta ?? entry.count}</span>

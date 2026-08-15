@@ -93,6 +93,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
       dispatch({ type: "TOGGLE_ENTRY", entryId, intent }),
     [],
   )
+  const handleClearSelection = useCallback(() => dispatch({ type: "SELECT_ENTRIES", ids: [] }), [])
   const handleViewModeChange = useCallback(
     (mode: "grid" | "list") => dispatch({ type: "SET_VIEW_MODE", mode }),
     [],
@@ -210,6 +211,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 selectedEntryIds={state.selectedEntryIds}
                 viewMode={state.viewMode}
                 onToggleEntry={handleToggleEntry}
+                onClearSelection={handleClearSelection}
                 onFavoriteSelect={handleHomeFavoriteSelect}
                 onLocationSelect={handleHomeLocationSelect}
               />

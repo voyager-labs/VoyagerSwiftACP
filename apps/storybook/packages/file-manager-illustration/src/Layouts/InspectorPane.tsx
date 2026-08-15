@@ -51,7 +51,7 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
             <span className="inspector-header-title">Chat History</span>
             <div className="inspector-header-actions">
               <button
-                className="inspector-header-btn"
+                className="inspector-header-btn inspector-new-chat-pill"
                 type="button"
                 aria-label="Start New Chat"
                 onClick={onOpenNewChat}

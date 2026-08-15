@@ -1,4 +1,4 @@
-import type { FC } from "react"
+import type { FC, KeyboardEvent, MouseEvent } from "react"
 import type { EntryKind, EntrySelectionIntent } from "../../model/types"
 import { EntryListRow } from "./EntryListRow"
 import type { EntryListRowEntry } from "./EntryListRow"
@@ -14,9 +14,23 @@ export interface EntryListProps {
   readonly entries: readonly EntryListEntry[]
   readonly selectedEntryIds: readonly string[]
   readonly onToggleEntry: (entryId: string, intent: EntrySelectionIntent) => void
+  readonly onClearSelection?: () => void
 }
 
-export const EntryList: FC<EntryListProps> = ({ entries, selectedEntryIds, onToggleEntry }) => {
+export const EntryList: FC<EntryListProps> = ({
+  entries,
+  selectedEntryIds,
+  onToggleEntry,
+  onClearSelection,
+}) => {
+  function handleBodyClick(event: MouseEvent<HTMLTableSectionElement>) {
+    if (event.target === event.currentTarget) onClearSelection?.()
+  }
+
+  function handleBodyKeyDown(event: KeyboardEvent<HTMLTableSectionElement>) {
+    if (event.key === "Escape") onClearSelection?.()
+  }
+
   return (
     <table className="entry-list" aria-label="Files">
       <thead>
@@ -27,7 +41,7 @@ export const EntryList: FC<EntryListProps> = ({ entries, selectedEntryIds, onTog
           <th scope="col">Kind</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody onClick={handleBodyClick} onKeyDown={handleBodyKeyDown}>
         {entries.map((entry) => (
           <EntryListRow
             key={entry.id}
