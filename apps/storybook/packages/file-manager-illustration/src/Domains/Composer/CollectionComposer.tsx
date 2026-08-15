@@ -16,6 +16,13 @@ import type {
 
 export type CollectionComposerProps = {
   readonly fixture: ComposerFixture
+  readonly onUndo?: () => void
+  readonly onRedo?: () => void
+  readonly onClear?: () => void
+  readonly onSave?: () => void
+  readonly onEditScope?: () => void
+  readonly onScopeSelect?: (item: string) => void
+  readonly onSubmit?: () => void
   readonly onAddCondition?: () => void
   readonly onOperatorClick?: () => void
   readonly onPropertySelect?: (property: string) => void
@@ -47,6 +54,13 @@ const saveButtonContent = (
 
 export const CollectionComposer: FC<CollectionComposerProps> = ({
   fixture,
+  onUndo,
+  onRedo,
+  onClear,
+  onSave,
+  onEditScope,
+  onScopeSelect,
+  onSubmit,
   onAddCondition,
   onOperatorClick,
   onPropertySelect,
@@ -65,11 +79,13 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
             symbol="arrow.uturn.backward"
             label="Undo"
             disabled={!fixture.canUndo}
+            onClick={onUndo}
           />
           <ComposerSymbolButton
             symbol="arrow.uturn.forward"
             label="Redo"
             disabled={!fixture.canRedo}
+            onClick={onRedo}
           />
           <label className="collection-composer-query">
             <input
@@ -84,13 +100,19 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
               label={fixture.isProcessing ? "Stop" : "Submit"}
               accent
               disabled={!fixture.isProcessing && fixture.query.trim().length === 0}
+              onClick={onSubmit}
             />
           </label>
-          <ComposerTextButton symbol={clearContent.symbol} label={clearContent.label} />
+          <ComposerTextButton
+            symbol={clearContent.symbol}
+            label={clearContent.label}
+            onClick={onClear}
+          />
           <ComposerTextButton
             symbol={saveContent.symbol}
             label={saveContent.label}
             disabled={!fixture.canSave}
+            onClick={onSave}
           />
         </div>
 
@@ -112,7 +134,12 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
                 ))
               )}
             </div>
-            <ComposerSymbolButton symbol="chevron.down" label="Edit scopes" compact />
+            <ComposerSymbolButton
+              symbol="chevron.down"
+              label="Edit scopes"
+              compact
+              onClick={onEditScope}
+            />
           </div>
 
           <div className="collection-composer-condition-row" aria-label="Collection conditions">
@@ -146,7 +173,9 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         {fixture.picker?.kind === "value" && (
           <ComposerValuePicker picker={fixture.picker} onCommit={onValueCommit} />
         )}
-        {fixture.picker?.kind === "scope" && <ScopePicker picker={fixture.picker} />}
+        {fixture.picker?.kind === "scope" && (
+          <ScopePicker picker={fixture.picker} onSelect={onScopeSelect} />
+        )}
 
         {fixture.transientFeedback != null && (
           <output className={`collection-composer-toast ${fixture.transientFeedback.type}`}>
@@ -188,14 +217,23 @@ const ComposerTextButton: FC<{
   readonly symbol: string
   readonly label: string
   readonly disabled?: boolean
-}> = ({ symbol, label, disabled }) => (
-  <button type="button" className="collection-composer-text-button" disabled={disabled}>
+  readonly onClick?: () => void
+}> = ({ symbol, label, disabled, onClick }) => (
+  <button
+    type="button"
+    className="collection-composer-text-button"
+    disabled={disabled}
+    onClick={onClick}
+  >
     <SFSymbol name={symbol} size={11} weight={500} />
     {label}
   </button>
 )
 
-const ScopePicker: FC<{ readonly picker: ComposerScopePicker }> = ({ picker }) => (
+const ScopePicker: FC<{
+  readonly picker: ComposerScopePicker
+  readonly onSelect?: (item: string) => void
+}> = ({ picker, onSelect }) => (
   <dialog className="collection-composer-scope-picker" open aria-label="Scope picker">
     <div className="collection-composer-picker-search">
       <SFSymbol name="magnifyingglass" size={12} />
@@ -228,7 +266,7 @@ const ScopePicker: FC<{ readonly picker: ComposerScopePicker }> = ({ picker }) =
     <div className="collection-composer-scope-list">
       <small>{picker.sectionTitle}</small>
       {picker.items.map((item) => (
-        <button type="button" key={item}>
+        <button type="button" key={item} onClick={() => onSelect?.(item)}>
           <SFSymbol name="folder" size={12} />
           {item}
         </button>
