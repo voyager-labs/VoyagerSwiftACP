@@ -942,6 +942,36 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: root snapshot 재조정의 선택 제거를 delegate로 전달
+    /// 사라진 root 항목이 선택돼 있을 때 root snapshot 재조정 후 selectionChanged가 발행되는지 검증한다.
+    /// - 검증 내용: rootSnapshotCompleted 후 `.delegate(.selectionChanged)` 수신
+    /// - 사전 조건: 새 root snapshot에 없는 root folder가 선택돼 있다.
+    /// - 기대 결과: 선택이 제거되며 selectionChanged delegate가 발행됨
+    func testRootSnapshotCompletionEmitsSelectionChangedWhenRootItemLeavesProjection() async {
+        let removed = EntryModel.temporaryFolder(id: "/root/removed", name: "removed")
+        let replacement = EntryModel.temporaryFolder(id: "/root/replacement", name: "replacement")
+        var state = EntryViewLayoutState()
+        state.entries = [replacement]
+        state.selectedIds = [removed.id]
+        state.lastSelectedId = removed.id
+        state.rangeAnchorId = removed.id
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            removed.id: .init(children: [], loadPhase: .loaded, generation: 3),
+        ]
+        state.hierarchy.setExpandedIDs([removed.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.rootSnapshotCompleted(
+            rootContextGeneration: 0,
+            rootFolders: [replacement],
+        )))
+        await store.receive(\.delegate.selectionChanged)
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: 동일 root reload는 hierarchy와 selection을 보존함
     /// canonical path가 같은 rootContextChanged가 펼침 상태와 child cache를 초기화하지 않는지 검증한다.
     /// - 검증 내용: same-root action 처리 후 hierarchy generation, expansion, cache, selection 유지

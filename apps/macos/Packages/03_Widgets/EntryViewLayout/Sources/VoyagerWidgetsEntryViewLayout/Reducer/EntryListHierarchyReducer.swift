@@ -48,6 +48,7 @@ struct EntryListHierarchyReducer {
             case let .rootSnapshotCompleted(rootContextGeneration, rootFolders):
                 // generation이 일치하지 않으면 NO-OP: stale root completion을 무시한다.
                 guard rootContextGeneration == state.hierarchy.rootContextGeneration else { return .none }
+                let previousSelectedIds = state.selectedIds
                 let rootFolderIDs = Set(rootFolders.map(\.id))
                 var removedPrefixes: [String] = []
                 for id in state.hierarchy.nodesByID.keys {
@@ -99,6 +100,9 @@ struct EntryListHierarchyReducer {
                     if !visibleIDs.contains(renamingID) {
                         renameEffects.append(.send(.delegate(.renameCanceled)))
                     }
+                }
+                if previousSelectedIds != state.selectedIds {
+                    renameEffects.append(.send(.delegate(.selectionChanged)))
                 }
                 return .merge(effects + renameEffects)
 
@@ -171,9 +175,9 @@ struct EntryListHierarchyReducer {
                 else { return .none }
 
                 let previousRevision = state.outlineProjectionRevision
+                let previousSelectedIds = state.selectedIds
                 let wasCoreFinished = nodeState.folder.coreFinished
                 guard apply(response: response, to: &nodeState.folder) else { return .none }
-
                 // Update load phase based on response type
                 switch response {
                 case .event(.coreFinished):
@@ -229,7 +233,8 @@ struct EntryListHierarchyReducer {
                         if state.outlineProjectionRevision == previousRevision {
                             state.advanceOutlineProjectionRevision()
                         }
-                        return .none
+                        guard previousSelectedIds != state.selectedIds else { return .none }
+                        return .send(.delegate(.selectionChanged))
                     }
                 }
 
@@ -237,7 +242,8 @@ struct EntryListHierarchyReducer {
                 if state.outlineProjectionRevision == previousRevision {
                     state.advanceOutlineProjectionRevision()
                 }
-                return .none
+                guard previousSelectedIds != state.selectedIds else { return .none }
+                return .send(.delegate(.selectionChanged))
             }
         }
     }
