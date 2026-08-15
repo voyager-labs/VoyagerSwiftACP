@@ -1776,14 +1776,14 @@
   flex-shrink: 0;
 }
 
-/* PathBreadcrumb 컴포넌트 자체 지오메트리 — 스크린샷 대비 축소한 내부 높이 18px, 4px 요소 간격 */
+/* PathBreadcrumb 컴포넌트 자체 지오메트리 — native PathBreadcrumbView: 높이 20, 요소 간격 4 */
 [data-file-manager-illustration] .path-breadcrumb {
   display: flex;
   align-items: center;
   overflow: hidden;
   min-width: 0;
   gap: 4px;
-  height: 18px;
+  height: 20px;
 }
 
 [data-file-manager-illustration] .path-breadcrumb-item {
@@ -1798,8 +1798,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 9px;
-  height: 13px;
+  width: 10px;
+  height: 14px;
   flex-shrink: 0;
 }
 
@@ -1813,7 +1813,7 @@
   white-space: nowrap;
   min-width: 0;
   color: var(--fm-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: var(--fm-weight-regular);
   line-height: 1;
 }
