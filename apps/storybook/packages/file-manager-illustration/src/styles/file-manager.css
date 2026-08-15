@@ -74,7 +74,7 @@
   font-family: "Voyager SF Pro Symbols";
   font-display: swap;
   font-style: normal;
-  font-weight: 400;
+  font-weight: 1 1000;
   src: local(".SF Symbols"), local("SF Pro Symbols"), url("/fonts/sf-pro/SF-Pro-Symbols.otf")
     format("opentype");
 }
@@ -1789,9 +1789,7 @@
 [data-file-manager-illustration] .path-breadcrumb-item {
   display: inline-flex;
   align-items: center;
-  /* native는 HStack(spacing: 0) + AppKit 심볼 사이드 베어링 ≈2px.
-     웹 폰트 베어링이 더 타이트해 동일 시각 간격을 명시적 2px로 보정 */
-  gap: 2px;
+  gap: 0;
   min-width: 0;
   max-width: 100%;
 }

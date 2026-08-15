@@ -8,7 +8,7 @@ export interface PathBreadcrumbItemProps {
 
 export const PathBreadcrumbItem: FC<PathBreadcrumbItemProps> = ({ label, symbolName }) => (
   <span className="path-breadcrumb-item">
-    <SFSymbol name={symbolName} size={14} />
+    <SFSymbol name={symbolName} size={14} weight={300} />
     <span className="path-breadcrumb-label">{label}</span>
   </span>
 )
