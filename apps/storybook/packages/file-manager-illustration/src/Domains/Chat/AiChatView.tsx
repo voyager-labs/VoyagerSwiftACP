@@ -2,6 +2,7 @@ import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import type {
   AiChatInputBarActions,
+  AiChatInputBarPresentation,
   ChatConnectionError,
   ChatSurfaceState,
 } from "../../model/types"
@@ -59,7 +60,9 @@ export const AiChatView: FC<AiChatViewProps> = ({
           canRegenerate={state.canRegenerate}
           requestText={requestText}
           onRequestTextChange={onRequestTextChange}
-          inputPresentation={state.inputBar}
+          inputPresentation={
+            state.rebindRequired === true ? disableSubmit(state.inputBar) : state.inputBar
+          }
           inputActions={inputActions}
           onErrorRecovery={onErrorRecovery}
           onRegenerate={onRegenerate}
@@ -128,6 +131,17 @@ export const AiChatView: FC<AiChatViewProps> = ({
 }
 
 AiChatView.displayName = "AiChatView"
+
+// native AiChatStateDisplayModelBuilder.canSubmit: sessionStatus == .rebindRequired → false.
+function disableSubmit(presentation: AiChatInputBarPresentation): AiChatInputBarPresentation {
+  if (presentation.action.kind !== "submit" || !presentation.action.isEnabled) {
+    return presentation
+  }
+  return {
+    ...presentation,
+    action: { ...presentation.action, isEnabled: false },
+  }
+}
 
 interface AiChatCompactConnectionCtaProps {
   readonly cta: ChatConnectionError

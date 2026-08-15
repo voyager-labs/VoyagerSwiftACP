@@ -182,6 +182,7 @@ export const Rebind: Story = {
 
     expect(banner.compareDocumentPosition(messageInput) & 4).toBe(4)
     expect(canvas.getByText("Session needs rebind")).toBeVisible()
+    expect(canvas.getByRole("button", { name: "Send" })).toBeDisabled()
 
     await userEvent.click(canvas.getByRole("button", { name: "Rebind context" }))
     await expect(args.onRebindContext).toHaveBeenCalledTimes(1)
