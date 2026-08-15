@@ -32,7 +32,7 @@ const baseDraft = (): DraftState => ({
       id: "modification_date",
       property: "Content modification date",
       propertySymbol: "calendar.badge.clock",
-      operator: "is after",
+      operator: "Is greater than",
       value: "This month",
     },
   ],
@@ -140,10 +140,11 @@ const ComposerSelectionFlow = ({
   }
 
   const selectScope = (item: string) => {
-    commit({
-      ...draft,
-      scopes: [item.startsWith("/") ? item : `/VoyagerFixtures/${item}`],
-    })
+    const resolved = item.startsWith("/") ? item : `/VoyagerFixtures/${item}`
+    // 네이티브 pushHistory 계약: 동일 scope 재선택 시 빈 Undo 스냅샷을 만들지 않는다
+    if (draft.scopes.length !== 1 || draft.scopes[0] !== resolved) {
+      commit({ ...draft, scopes: [resolved] })
+    }
     setScopePickerOpen(false)
   }
 
