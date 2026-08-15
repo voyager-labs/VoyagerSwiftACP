@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react"
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { FC } from "react"
-import { chatSurfaceHistory, chatSurfaceInspectorEmpty } from "./Domains/Chat/chat-fixtures"
+import {
+  chatSurfaceConversation,
+  chatSurfaceHistory,
+  chatSurfaceInspectorEmpty,
+} from "./Domains/Chat/chat-fixtures"
 import { FileBrowser } from "./Domains/Entries/FileBrowser"
 import { FileManagerPrimaryContent } from "./Layouts/FileManagerPrimaryContent"
 import { FileManagerWindowLayout } from "./Layouts/FileManagerWindowLayout"
@@ -16,7 +20,7 @@ import {
   propsToInitialParams,
 } from "./lib/file-manager-adapter"
 import { locationShortcuts } from "./lib/navigation-data"
-import type { HomeFavorite, HomeLocation } from "./model/home"
+import type { HomeChat, HomeFavorite, HomeLocation } from "./model/home"
 import { createInitialState, getContentRoute, reducer } from "./model/reducer"
 import type {
   EntrySelectionIntent,
@@ -40,6 +44,8 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
   const { files, contentContext, initialPresentation } = props
   const initial = propsToInitialParams(props)
   const [state, dispatch] = useReducer(reducer, initial, createInitialState)
+  // 네이티브 FileManagerHomePageView: 최근 채팅 행 선택 시 해당 세션 대화를 연다
+  const [selectedHomeChat, setSelectedHomeChat] = useState<HomeChat | null>(null)
 
   const prevFilesRef = useRef(files)
   const prevCtxRef = useRef(contentContext)
@@ -145,6 +151,11 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
   const handleOpenChatHistory = useCallback(() => dispatch({ type: "OPEN_CHAT_HISTORY" }), [])
   const handleOpenNewChat = useCallback(() => dispatch({ type: "OPEN_NEW_CHAT" }), [])
   const handleCloseChat = useCallback(() => dispatch({ type: "CLOSE_CHAT" }), [])
+  // 네이티브 FileManagerHomePageView .chatHistory(sessionID): 선택한 세션 대화로 열고 inspector를 켠다
+  const handleHomeChatSelect = useCallback((chat: HomeChat) => {
+    setSelectedHomeChat(chat)
+    dispatch({ type: "OPEN_NEW_CHAT" })
+  }, [])
   const handleNoop = useCallback(() => undefined, [])
   const handleChatErrorRecovery = props.chatOnErrorRecovery ?? handleNoop
   const handleChatRebindContext = props.chatOnRebindContext ?? handleNoop
@@ -159,10 +170,14 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
       : "chat"
     : state.inspectorChatHeader
   // 네이티브 InspectorPaneView: 열린 chat 모드에서는 항상 AiChatView를 렌더한다.
-  // controlled chatSurface가 없으면 결정적 기본 표면(세션/빈)을 제공한다.
+  // controlled chatSurface가 없으면 결정적 기본 표면(세션/빈/선택한 대화)을 제공한다.
   const resolvedChatSurface =
     props.chatSurface ??
-    (effectiveChatHeader === "sessions" ? chatSurfaceHistory : chatSurfaceInspectorEmpty)
+    (selectedHomeChat != null
+      ? chatSurfaceConversation
+      : effectiveChatHeader === "sessions"
+        ? chatSurfaceHistory
+        : chatSurfaceInspectorEmpty)
   // native InspectorPaneView.chatHeaderTitle 과 대칭: sessions → "Chat History",
   // 그 외는 첫 사용자 메시지 접두(80자) → "New Chat".
   const chatSurfaceTitle = controlledChat ? deriveChatTitle(props.chatSurface) : null
@@ -221,7 +236,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onFavoriteSelect={handleHomeFavoriteSelect}
                 onLocationSelect={handleHomeLocationSelect}
                 onNewChat={handleOpenContextualChat}
-                onChatSelect={handleOpenChatHistory}
+                onChatSelect={handleHomeChatSelect}
               />
             }
             inspector={

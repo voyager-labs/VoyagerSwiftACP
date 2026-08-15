@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import type { FC } from "react"
+import type { FC, KeyboardEvent, MouseEvent } from "react"
 import type { EntryViewMode } from "../../Patterns/Content/FileToolbar"
 import type { Entry, EntrySelectionIntent } from "../../model/types"
 import { EntryGrid } from "./EntryGrid"
@@ -49,8 +49,25 @@ export const FileBrowser: FC<FileBrowserProps> = ({
   const gridEntries = useMemo(() => entries.map(toGridEntry), [entries])
   const listEntries = useMemo(() => entries.map(toListEntry), [entries])
 
+  // 네이티브 mouseDown deselectAll: 브라우저 표면의 빈 영역(엔트리가 아닌 곳) 클릭과 Escape로 선택을 해제한다
+  function handleBackgroundClick(event: MouseEvent) {
+    if (onClearSelection == null) return
+    const target = event.target as HTMLElement
+    if (target.closest(".entry-tile, .entry-list-row") != null) return
+    onClearSelection()
+  }
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape") onClearSelection?.()
+  }
+
   return (
-    <section className="file-browser" aria-label="Entries">
+    <section
+      className="file-browser"
+      aria-label="Entries"
+      onClick={handleBackgroundClick}
+      onKeyDown={handleKeyDown}
+    >
       {viewMode === "grid" ? (
         <EntryGrid
           entries={gridEntries}

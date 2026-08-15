@@ -1524,6 +1524,7 @@
 
 [data-file-manager-illustration] .entry-grid {
   display: grid;
+  flex: 1;
   min-height: 0;
   align-content: start;
   grid-template-columns: repeat(auto-fill, 120px);
