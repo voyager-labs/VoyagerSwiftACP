@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { CollectionComposer } from "./CollectionComposer"
 import {
   type ComposerOperatorOption,
@@ -57,6 +57,13 @@ const ComposerSelectionFlow = ({
   >()
   const [duplicateMessage, setDuplicateMessage] = useState<string>()
   const [editingPropertyId, setEditingPropertyId] = useState<string>()
+
+  // 네이티브 ComposerSearchLifecycleMetricLogging: 토스트 4초 후 자동 해제
+  useEffect(() => {
+    if (toast == null) return
+    const timer = window.setTimeout(() => setToast(undefined), 4000)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   const commit = (next: DraftState) => {
     setHistory((current) => [...current, draft])

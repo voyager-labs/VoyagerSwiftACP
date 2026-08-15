@@ -415,12 +415,20 @@ const ScopePicker: FC<{
           <strong>{picker.feedback.title}</strong>
           <span>{picker.feedback.phase}</span>
           {picker.feedback.showsUndo && (
-            <button type="button" onClick={() => onFeedbackAction?.("Undo")}>
+            <button
+              type="button"
+              aria-label="Undo latest scope change"
+              onClick={() => onFeedbackAction?.("Undo")}
+            >
               Undo
             </button>
           )}
           {picker.feedback.showsRedo && (
-            <button type="button" onClick={() => onFeedbackAction?.("Redo")}>
+            <button
+              type="button"
+              aria-label="Redo latest scope change"
+              onClick={() => onFeedbackAction?.("Redo")}
+            >
               Redo
             </button>
           )}
