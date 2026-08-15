@@ -1395,7 +1395,7 @@
   align-content: start;
   grid-auto-rows: min-content;
   overflow: auto;
-  background: var(--fm-content);
+  background: transparent;
   padding: 0 0 var(--fm-space-9);
 }
 
@@ -1419,7 +1419,7 @@
   box-sizing: border-box;
   height: 28px;
   border-bottom: 1px solid var(--fm-separator);
-  background: var(--fm-content);
+  background: transparent;
   color: var(--fm-text-tertiary);
   font-size: var(--fm-font-size-caption-2);
   font-weight: var(--fm-weight-regular);
