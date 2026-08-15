@@ -20,6 +20,8 @@ export interface InspectorPaneProps {
   readonly onOpenSettings?: () => void
   readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
+  readonly onRebindContext?: () => void
+  readonly onStartNewChatFromRebind?: () => void
   readonly chatInputActions?: AiChatInputBarActions
   // 제공 시 inspector 본문이 AiChatView가 된다. 생략 시 기본 composer 본문.
   readonly chatSurface?: ChatSurfaceState
@@ -39,6 +41,8 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
   onOpenSettings,
   onErrorRecovery,
   onRegenerate,
+  onRebindContext,
+  onStartNewChatFromRebind,
   chatInputActions,
   chatSurface,
 }) => {
@@ -102,6 +106,8 @@ export const InspectorPane: FC<InspectorPaneProps> = ({
           onOpenSettings={onOpenSettings}
           onErrorRecovery={onErrorRecovery}
           onRegenerate={onRegenerate}
+          onRebindContext={onRebindContext}
+          onStartNewChatFromRebind={onStartNewChatFromRebind}
           inputActions={chatInputActions}
         />
       ) : (

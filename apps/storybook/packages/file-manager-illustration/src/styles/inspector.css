@@ -721,9 +721,14 @@
   flex: 1;
   align-items: center;
   justify-content: center;
-  gap: var(--fm-space-4);
+  gap: var(--fm-space-2);
   color: var(--fm-text-secondary);
   text-align: center;
+}
+
+/* native loadingPlaceholder는 spacing 8, empty 상태는 spacing 4로 상이 */
+[data-file-manager-illustration] .chat-sessions-loading {
+  gap: var(--fm-space-4);
 }
 
 [data-file-manager-illustration] .chat-sessions-empty {
@@ -763,15 +768,16 @@
   font-weight: var(--fm-weight-semibold);
 }
 
+/* AiChatSessionsView row: vertical 8 / leading 10, 텍스트 간격 2 (native displayRow) */
 [data-file-manager-illustration] .chat-sessions-row {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   width: 100%;
   border: 0;
   border-radius: var(--fm-radius-md);
   background: transparent;
-  padding: var(--fm-space-3) var(--fm-space-4);
+  padding: var(--fm-space-4) var(--fm-space-5);
   text-align: left;
   cursor: default;
   transition: background-color var(--fm-motion-fast) ease;
@@ -789,12 +795,12 @@
 [data-file-manager-illustration] .chat-sessions-row-title {
   color: var(--fm-text-primary);
   font-size: var(--fm-font-size-body);
-  font-weight: var(--fm-weight-medium);
+  font-weight: var(--fm-weight-semibold);
 }
 
 [data-file-manager-illustration] .chat-sessions-row-detail {
   color: var(--fm-text-tertiary);
-  font-size: var(--fm-font-size-caption-2);
+  font-size: var(--fm-font-size-caption);
 }
 
 /* AiChatConversationSurface transcript: ScrollView VStack spacing 12, padding h10/t10/b8 */
@@ -1232,6 +1238,148 @@
   }
 }
 
+/* 명시적 다크 모드(data-voyager-color-scheme="dark")에서도 다크 구문 팔레트 적용
+   — OS 라이트 + 툴바 Dark 선택 시 prefers-color-scheme 미디어쿼리는 비활성화되므로 별도 블록 필요 */
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-comment,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-code,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-formula {
+  color: #8b949e;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-keyword,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-doctag,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-template-tag,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-template-variable,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-type,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-variable.language_ {
+  color: #ff7b72;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-title,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-title.class_,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-title.function_ {
+  color: #d2a8ff;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-attr,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-attribute,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-literal,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-meta,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-number,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-operator,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-variable,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-attr,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-class,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-id {
+  color: #79c0ff;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-regexp,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-string,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-meta
+  .hljs-string {
+  color: #a5d6ff;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-built_in,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-symbol {
+  color: #ffa657;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-name,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-quote,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-tag,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-pseudo {
+  color: #7ee787;
+}
+
 [data-file-manager-illustration] .chat-inline-code {
   border-radius: var(--fm-radius-sm);
   background: var(--fm-chat-input-bg);
@@ -1413,7 +1561,9 @@
   opacity: 1;
 }
 
-/* centeredEmpty + compactConnectionCTA: native AiChatView chatView */
+/* centeredEmpty: native FileManagerAiChatPageView AiChatEmptyStateContent
+   (icon 56/radius12, title 22 semibold, detail 13 + lineSpacing 4, spacing 16, maxWidth 300).
+   chatView 수준 간격 20 / vertical padding 40은 .chat-empty가 담당. */
 [data-file-manager-illustration] .chat-empty {
   align-items: stretch;
   justify-content: center;
@@ -1425,7 +1575,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--fm-space-8);
+  gap: 20px;
   padding: 0 var(--fm-space-8);
 }
 
@@ -1433,29 +1583,47 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--fm-space-3);
+  gap: 16px;
+  max-width: 300px;
   text-align: center;
+}
+
+[data-file-manager-illustration] .chat-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  color: var(--fm-text-secondary);
+  background: var(--fm-chat-input-bg);
 }
 
 [data-file-manager-illustration] .chat-empty-content strong {
   color: var(--fm-text-primary);
-  font-size: 15px;
+  font-size: 22px;
   font-weight: var(--fm-weight-semibold);
 }
 
 [data-file-manager-illustration] .chat-empty-content p {
   margin: 0;
-  max-width: 260px;
+  max-width: 300px;
   color: var(--fm-text-secondary);
-  font-size: 13px;
+  font-size: var(--fm-font-size-body);
+  line-height: 17px;
 }
 
+/* compactConnectionCTA: native AiChatView.swift — HStack(spacing 12) padding h14/v12 */
 [data-file-manager-illustration] .chat-connection-cta {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: var(--fm-space-6);
+  gap: 12px;
   width: 100%;
-  max-width: 320px;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-lg);
+  background: var(--fm-chat-popover-bg);
+  padding: 12px 14px;
   color: var(--fm-text-secondary);
 }
 
@@ -1463,8 +1631,9 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  text-align: left;
 }
 
 [data-file-manager-illustration] .chat-connection-cta-copy strong {
@@ -1474,12 +1643,18 @@
 }
 
 [data-file-manager-illustration] .chat-connection-cta-copy p {
+  display: -webkit-box;
+  overflow: hidden;
   margin: 0;
   color: var(--fm-text-secondary);
   font-size: 12px;
+  line-height: var(--fm-chat-line-caption);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 [data-file-manager-illustration] .chat-connection-cta-action {
+  flex: none;
   border: 1px solid var(--fm-chat-input-border);
   border-radius: var(--fm-radius-md);
   background: var(--fm-chat-input-bg);
@@ -1488,9 +1663,81 @@
   color: var(--fm-text-primary);
   font-size: 12px;
   font-weight: var(--fm-weight-semibold);
-  cursor: default;
+  cursor: pointer;
 }
 
 [data-file-manager-illustration] .chat-connection-cta-action:hover {
   background: var(--fm-chat-control-hover-fill);
+}
+
+[data-file-manager-illustration] .chat-connection-cta-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* AiChatStatusBanner/AiChatRebindRecoveryBanner 공통 카드 */
+[data-file-manager-illustration] .chat-status-banner {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--fm-space-6);
+  width: 100%;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-lg);
+  background: var(--fm-chat-popover-bg);
+  padding: 14px;
+}
+
+[data-file-manager-illustration] .chat-status-banner-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+[data-file-manager-illustration] .chat-status-banner-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .chat-status-banner-copy strong {
+  color: var(--fm-text-primary);
+  font-size: 14px;
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-status-banner-copy p {
+  margin: 0;
+  color: var(--fm-text-secondary);
+  font-size: 12px;
+  line-height: var(--fm-chat-line-caption);
+}
+
+[data-file-manager-illustration] .chat-status-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-status-banner-action {
+  border: 1px solid var(--fm-chat-input-border);
+  border-radius: var(--fm-radius-round);
+  background: var(--fm-chat-input-bg);
+  padding: 8px 12px;
+  color: var(--fm-text-primary);
+  font-size: 12px;
+  font-weight: var(--fm-weight-semibold);
+  cursor: pointer;
+}
+
+[data-file-manager-illustration] .chat-status-banner-action:hover {
+  background: var(--fm-chat-control-hover-fill);
+}
+
+[data-file-manager-illustration] .chat-status-banner-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }

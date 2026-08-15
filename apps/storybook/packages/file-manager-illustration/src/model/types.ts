@@ -251,20 +251,43 @@ export type ChatSurfaceState =
       readonly isProcessing?: boolean
       readonly statusText?: string
       readonly canRegenerate?: boolean
+      /** native sessionStatus == .rebindRequired — 최상단 rebind 배너 렌더링 */
+      readonly rebindRequired?: boolean
     }
   | {
       readonly kind: "centeredEmpty"
       readonly emptyTitle: string
       readonly emptyDetail: string
       readonly inputBar: AiChatInputBarPresentation
+      /** content page의 compactConnectionCTA — unconnected/error surface에서만 표시 */
       readonly connectionError?: ChatConnectionError
+    }
+  | {
+      readonly kind: "unconnected"
+      readonly inputBar: AiChatInputBarPresentation
+      readonly connectionError: ChatConnectionError
+      /** native transcriptSectionIfNeeded — 배너 하단에 기존 대화 기록 유지 */
+      readonly messages?: readonly ChatMessage[]
+      readonly canRegenerate?: boolean
+      readonly statusText?: string
+    }
+  | {
+      readonly kind: "connectionError"
+      readonly inputBar: AiChatInputBarPresentation
+      readonly connectionError: ChatConnectionError
+      /** native transcriptSectionIfNeeded — 배너 하단에 기존 대화 기록 유지 */
+      readonly messages?: readonly ChatMessage[]
+      readonly canRegenerate?: boolean
+      readonly statusText?: string
     }
 
 export type FileManagerIllustrationProps = {
   readonly files: readonly FileEntry[]
   readonly contentContext: ContentContext
-  // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/streaming/error/recovery)을 root에서 재현한다.
+  // 생략 시 inspector는 기본 composer-only 본문을 렌더링한다. 지정 시 해당 채팅 프레젠테이션(sessions/transcript/empty/unconnected/streaming/error/recovery)을 root에서 재현한다.
   readonly chatSurface?: ChatSurfaceState
   readonly chatInputActions?: AiChatInputBarActions
   readonly chatOnErrorRecovery?: () => void
+  readonly chatOnRebindContext?: () => void
+  readonly chatOnStartNewChat?: () => void
 }

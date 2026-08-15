@@ -93,7 +93,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 #### Contextual Inspector
 
 - **Structure:** 40px chat-only header and chat body.
-- **States:** Chat History, conversation, closed.
+- **States:** Chat History, connected empty (blank body + bottom composer), unconnected provider setup (top status banner), connection error (top banner + Retry), rebind required (top banner + two actions), conversation, closed. The content-page centered empty ("Ask Voyager" + optional compactConnectionCTA) is modeled only as an isolated AiChatView specimen, never in the inspector root.
 
 ### Patterns
 
@@ -111,7 +111,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Current structure:** optional request-context sections, dynamically sized message field, plain text `+` attachment button, borderless native-menu model and thinking selectors, and one plain submit-or-stop button with the native SF Symbol glyph container.
 - **Geometry:** 8px internal padding and spacing, 46–160px message field height, 24×24px action control, 8px action radius, and a 16px Tahoe / 10px Sequoia composer radius.
 - **Placement:** conversation uses 10px horizontal, 8px top, and 10px bottom outer padding; centered-empty uses the input bar without that outer inset.
-- **States:** empty submit-disabled, draft submit-enabled, pending-resolution editing-disabled with stop, processing next-turn editing with stop, stop-disabled, unavailable model, populated request context, multiline maximum height, and 230px minimum inspector width.
+- **States:** empty submit-disabled, unconnected no-model selectors with submit-disabled, draft submit-enabled, pending-resolution editing-disabled with stop, processing next-turn editing with stop, stop-disabled, unavailable model, populated request context, multiline maximum height, and 230px minimum inspector width.
 - **Tokens:** `current` preserves the native solid chat input background through `--macos-chat-input-background-color` → `--fm-chat-composer-bg`.
 
 #### VOY-721 input comparison decision

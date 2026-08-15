@@ -25,6 +25,24 @@ const defaultThinkingSelector = {
   ],
 } as const
 
+const noModelsSelector = {
+  label: "No models",
+  accessibilityLabel: "Model",
+  accessibilityValue: "No models",
+  isDisabled: true,
+  value: "no-models",
+  options: [{ value: "no-models", label: "No models", disabled: true }],
+} as const
+
+const noSelectionThinkingSelector = {
+  label: "Thinking",
+  accessibilityLabel: "Thinking",
+  accessibilityValue: "No selection",
+  isDisabled: true,
+  value: "no-selection",
+  options: [{ value: "no-selection", label: "No selection", disabled: true }],
+} as const
+
 export const aiChatInputReadyEmpty = {
   placeholder: "Ask anything…",
   inputAccessibilityLabel: "Chat message",
@@ -40,6 +58,12 @@ export const aiChatInputReadyEmpty = {
   },
   isComposerEditingDisabled: false,
   contextSections: [],
+} satisfies AiChatInputBarPresentation
+
+export const aiChatInputUnconnected = {
+  ...aiChatInputReadyEmpty,
+  modelSelector: noModelsSelector,
+  thinkingSelector: noSelectionThinkingSelector,
 } satisfies AiChatInputBarPresentation
 
 export const aiChatInputReadyDraft = {

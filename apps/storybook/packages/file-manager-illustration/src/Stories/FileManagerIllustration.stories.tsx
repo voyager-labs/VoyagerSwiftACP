@@ -1,12 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { expect, fn, userEvent, within } from "storybook/test"
 import {
+  chatSurfaceConnectionError,
   chatSurfaceConversation,
-  chatSurfaceEmpty,
   chatSurfaceError,
   chatSurfaceHistory,
+  chatSurfaceInspectorEmpty,
+  chatSurfaceRebind,
   chatSurfaceRecovery,
   chatSurfaceStreaming,
+  chatSurfaceUnconnected,
 } from "../Domains/Chat/chat-fixtures"
 import { FileManagerIllustration } from "../FileManagerIllustration"
 import { publicFiles } from "../data/mock-data"
@@ -115,7 +118,42 @@ export const ChatEmpty: Story = {
   args: {
     files: publicFiles,
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
-    chatSurface: chatSurfaceEmpty,
+    chatSurface: chatSurfaceInspectorEmpty,
+  },
+}
+
+export const ChatUnconnected: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceUnconnected,
+  },
+}
+
+export const ChatConnectionError: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceConnectionError,
+    chatOnErrorRecovery: fn(),
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }))
+    await expect(args.chatOnErrorRecovery).toHaveBeenCalled()
+  },
+}
+
+export const ChatRebind: Story = {
+  args: {
+    files: publicFiles,
+    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
+    chatSurface: chatSurfaceRebind,
+    chatOnRebindContext: fn(),
+    chatOnStartNewChat: fn(),
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Rebind context" }))
+    await expect(args.chatOnRebindContext).toHaveBeenCalled()
   },
 }
 
