@@ -14,12 +14,14 @@ type SelectionStep = "property" | "operator" | "value" | "complete"
 type DraftState = {
   readonly query: string
   readonly scopes: readonly string[]
+  readonly includeSubfolders: boolean
   readonly conditions: readonly ComposerCondition[]
 }
 
 const baseDraft = (): DraftState => ({
   query: "Find PDFs modified this month",
   scopes: ["/VoyagerFixtures/Documents"],
+  includeSubfolders: true,
   conditions: [
     {
       id: "file_kind",
@@ -61,7 +63,6 @@ const ComposerSelectionFlow = ({
   })
   const [isProcessing, setIsProcessing] = useState(false)
   const [scopePickerOpen, setScopePickerOpen] = useState(false)
-  const [includeSubfolders, setIncludeSubfolders] = useState(true)
   const [toast, setToast] = useState<
     { readonly type: "info" | "error"; readonly message: string } | undefined
   >()
@@ -103,7 +104,7 @@ const ComposerSelectionFlow = ({
   }
 
   const clear = () => {
-    commit({ query: "", scopes: [], conditions: [] })
+    commit({ query: "", scopes: [], includeSubfolders: true, conditions: [] })
     setStep("complete")
     setScopePickerOpen(false)
   }
@@ -236,7 +237,7 @@ const ComposerSelectionFlow = ({
                   kind: "scope",
                   query: "",
                   currentSummary: draft.scopes[0]?.split("/").at(-1) ?? "This Mac",
-                  includeSubfolders,
+                  includeSubfolders: draft.includeSubfolders,
                   rootOnly: draft.scopes.length === 0,
                   // 네이티브 makeScopeSections: 행 상태를 현재 selection에서 파생한다
                   items: [
@@ -250,7 +251,7 @@ const ComposerSelectionFlow = ({
                     const isDirect = draft.scopes.includes(path)
                     const inherited =
                       !isDirect && draft.scopes.some((scope) => path.startsWith(`${scope}/`))
-                    const included = isDirect || (inherited && includeSubfolders)
+                    const included = isDirect || (inherited && draft.includeSubfolders)
                     const actions = isDirect
                       ? (["clearDirectRule"] as const)
                       : included
@@ -288,7 +289,7 @@ const ComposerSelectionFlow = ({
       onScopeSelect={selectScope}
       onScopeRemove={removeScope}
       onScopeAction={scopeAction}
-      onToggleSubfolders={() => setIncludeSubfolders((current) => !current)}
+      onToggleSubfolders={() => commit({ ...draft, includeSubfolders: !draft.includeSubfolders })}
       onScopeFeedbackAction={(action) =>
         setToast({ type: "info", message: `${action} scope change.` })
       }
