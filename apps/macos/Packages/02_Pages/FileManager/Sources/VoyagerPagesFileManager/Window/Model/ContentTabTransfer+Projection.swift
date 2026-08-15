@@ -127,7 +127,10 @@ extension ContentTabTransfer {
             originalDisplayOrder: originalDisplayOrder,
             survivorIDs: survivorIDs,
         )
-        source.contentTabs.activeTabID = finalActiveID
+        source.contentTabs.projectActivation(
+            activeTabID: finalActiveID,
+            recentlyUsedTabIDs: original.contentTabs.recentlyUsedTabIDs,
+        )
         source.contentTabs.previousActiveTabID = original.contentTabs.previousActiveTabID.flatMap {
             survivorIDs.contains($0) && $0 != finalActiveID ? $0 : nil
         }
@@ -259,6 +262,7 @@ extension ContentTabTransfer {
         target.contentTabs.previousActiveTabID = projection.originalActiveID.flatMap {
             $0 != projection.primaryTabID && target.contentTabs.tabs[id: $0] != nil ? $0 : nil
         }
+        target.contentTabs.recordActivation(projection.primaryTabID)
         target.contentTabs.selectedTabIDs = Set(workUnits.map(\.item.id))
         target.contentTabs.selectionAnchorID = projection.primaryTabID
         if let primaryContent = target.tabContentStates[projection.primaryTabID] {

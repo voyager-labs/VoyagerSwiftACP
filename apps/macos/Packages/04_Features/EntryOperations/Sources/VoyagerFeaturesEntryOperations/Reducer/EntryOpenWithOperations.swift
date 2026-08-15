@@ -10,10 +10,6 @@ struct EntryOpenWithOperationsReducer {
     typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
 
-    private enum CancelID {
-        case commonApplications
-    }
-
     @Dependency(\.entryOpenClient)
     var entryOpenClient
     @Dependency(\.workspaceClient)
@@ -95,15 +91,22 @@ struct EntryOpenWithOperationsReducer {
                 )
 
             case let .lifecycle(.operationFinished(filePath, .setDefaultApp, .success)):
-                state.applicationsForItems[filePath] = nil
                 let url = URL(fileURLWithPath: filePath)
                 let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 guard !isDirectory else { return .none }
                 let fileExtension = url.pathExtension
                 let fileType = UTType(filenameExtension: fileExtension) ?? .data
+                state.applicationsForTypes[fileType.identifier] = nil
+                state.openWithCommonRequestGeneration += 1
+                state.commonApplicationsForSelectedFiles = []
+                state.openWithCommonTypeGenerations[fileType.identifier] = nil
+                let generation = state.openWithTypeRequestGenerations[fileType.identifier, default: 0] + 1
+                state.openWithTypeRequestGenerations[fileType.identifier] = generation
+                state.openWithInFlightTypeIDs.insert(fileType.identifier)
 
                 return .run { [entryOpenClient] send in
-                    let apps = await entryOpenClient.applicationsForFile(url)
+                    await entryOpenClient.invalidateApplicationsForType(fileType.identifier)
+                    let apps = await entryOpenClient.applicationsForType(fileType, url)
                     let defaultApp = await entryOpenClient.defaultApplication(fileType)
 
                     let appsWithDefaultFlag = apps.map { app in
@@ -113,47 +116,109 @@ struct EntryOpenWithOperationsReducer {
                             name: app.name,
                             bundleID: app.bundleID,
                             isDefault: isDefault,
+                            applicationURL: app.applicationURL,
                         )
                     }
 
                     let finalApps = await MainActor.run {
                         EntryOperationsExecutionSupport.finalizeApplicationList(appsWithDefaultFlag)
                     }
-                    await send(.openWith(.applicationsLoaded(filePath, finalApps)))
+                    await send(.openWith(.applicationsLoaded(
+                        typeID: fileType.identifier,
+                        generation: generation,
+                        finalApps,
+                    )))
                 }
 
             case let .openWith(.loadApplicationsForFile(file)):
                 guard !file.isFolder else { return .none }
                 let filePath = file.fullPath
-
-                guard state.applicationsForItems[filePath] == nil else {
-                    return .none
-                }
-
-                let url = URL(fileURLWithPath: filePath)
                 let fileType = UTType(filenameExtension: file.fileExtension) ?? .data
 
+                let typeID = fileType.identifier
+                guard state.applicationsForTypes[typeID] == nil,
+                      state.openWithInFlightTypeIDs.insert(typeID).inserted
+                else {
+                    return .none
+                }
+                let generation = state.openWithTypeRequestGenerations[typeID, default: 0] + 1
+                state.openWithTypeRequestGenerations[typeID] = generation
+
+                let url = URL(fileURLWithPath: filePath)
                 return EntryOpenWithOperationsSupport.loadApplications(
                     for: filePath,
                     url: url,
                     fileType: fileType,
+                    generation: generation,
                     entryOpenClient: entryOpenClient,
                 )
 
-            case let .openWith(.applicationsLoaded(filePath, apps)):
-                state.applicationsForItems[filePath] = apps
+            case let .openWith(.applicationsLoaded(typeID, generation, apps)):
+                guard state.openWithTypeRequestGenerations[typeID] == generation else { return .none }
+                state.applicationsForTypes[typeID] = apps
+                state.openWithInFlightTypeIDs.remove(typeID)
                 return .none
 
             case let .openWith(.loadCommonApplicationsForFiles(files)):
+                state.openWithCommonRequestGeneration += 1
+                let generation = state.openWithCommonRequestGeneration
+                let typeIDs = Set(files.map {
+                    (UTType(filenameExtension: $0.fileExtension) ?? .data).identifier
+                })
                 state.commonApplicationsForSelectedFiles = []
+                for typeID in typeIDs {
+                    state.openWithCommonTypeGenerations[typeID] = generation
+                    state.openWithInFlightTypeIDs.insert(typeID)
+                }
+                let unresolvedTypeIDs = typeIDs.subtracting(state.applicationsForTypes.keys)
+                guard !typeIDs.isEmpty else { return .none }
+                if unresolvedTypeIDs.isEmpty {
+                    let appMaps = typeIDs.compactMap { typeID -> [String: ApplicationInfo]? in
+                        guard let apps = state.applicationsForTypes[typeID] else { return nil }
+                        return Dictionary(uniqueKeysWithValues: apps.compactMap { app in
+                            app.bundleID.map { ($0, app) }
+                        })
+                    }
+                    if let firstMap = appMaps.first {
+                        let commonIDs = appMaps.dropFirst().reduce(Set(firstMap.keys)) {
+                            $0.intersection($1.keys)
+                        }
+                        let commonApps = EntryOperationsExecutionSupport.finalizeApplicationList(
+                            commonIDs.compactMap { firstMap[$0] },
+                        )
+                        let applicationsByType = Dictionary(uniqueKeysWithValues: typeIDs.compactMap { typeID in
+                            state.applicationsForTypes[typeID].map { (typeID, $0) }
+                        })
+                        state.commonApplicationsForSelectedFiles = commonApps
+                        for typeID in applicationsByType.keys {
+                            state.openWithCommonTypeGenerations[typeID] = nil
+                            state.openWithInFlightTypeIDs.remove(typeID)
+                        }
+                    }
+                    return .none
+                }
                 return EntryOpenWithOperationsSupport.loadCommonApplications(
                     for: files,
+                    generation: generation,
                     entryOpenClient: entryOpenClient,
                 )
-                .cancellable(id: CancelID.commonApplications, cancelInFlight: true)
 
-            case let .openWith(.commonApplicationsLoaded(apps)):
+            case let .openWith(.commonApplicationsLoaded(generation, typeIDs, applicationsByType, apps)):
+                guard generation == state.openWithCommonRequestGeneration else {
+                    for typeID in typeIDs where state.openWithCommonTypeGenerations[typeID] == generation {
+                        state.openWithCommonTypeGenerations[typeID] = nil
+                        state.openWithInFlightTypeIDs.remove(typeID)
+                    }
+                    return .none
+                }
+                for (typeID, apps) in applicationsByType {
+                    state.applicationsForTypes[typeID] = apps
+                }
                 state.commonApplicationsForSelectedFiles = apps
+                for typeID in typeIDs where state.openWithCommonTypeGenerations[typeID] == generation {
+                    state.openWithCommonTypeGenerations[typeID] = nil
+                    state.openWithInFlightTypeIDs.remove(typeID)
+                }
                 return .none
 
             default:
@@ -202,6 +267,12 @@ struct EntryOpenWithOperationsReducer {
 }
 
 private enum EntryOpenWithOperationsSupport {
+    private struct CommonApplicationsResult {
+        let typeIDs: Set<String>
+        let applications: [ApplicationInfo]
+        let applicationsByType: [String: [ApplicationInfo]]
+    }
+
     static func validateDefaultAppSetting(file: EntryModel) -> FileOpError? {
         guard !file.isFolder else {
             return .unsupportedType
@@ -210,13 +281,14 @@ private enum EntryOpenWithOperationsSupport {
     }
 
     static func loadApplications(
-        for filePath: String,
+        for _: String,
         url: URL,
         fileType: UTType,
+        generation: Int,
         entryOpenClient: EntryOpenClient,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
-            let apps = await entryOpenClient.applicationsForFile(url)
+            let apps = await entryOpenClient.applicationsForType(fileType, url)
             let defaultApp = await entryOpenClient.defaultApplication(fileType)
 
             let appsWithDefaultFlag = apps.map { app in
@@ -226,54 +298,86 @@ private enum EntryOpenWithOperationsSupport {
                     name: app.name,
                     bundleID: app.bundleID,
                     isDefault: isDefault,
+                    applicationURL: app.applicationURL,
                 )
             }
 
             let finalApps = await MainActor.run {
                 EntryOperationsExecutionSupport.finalizeApplicationList(appsWithDefaultFlag)
             }
-            await send(.openWith(.applicationsLoaded(filePath, finalApps)))
+            await send(.openWith(.applicationsLoaded(
+                typeID: fileType.identifier,
+                generation: generation,
+                finalApps,
+            )))
         }
     }
 
     static func loadCommonApplications(
         for files: [EntryModel],
+        generation: Int,
         entryOpenClient: EntryOpenClient,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
-            let commonApps = await computeCommonApplications(files: files, entryOpenClient: entryOpenClient)
+            let result = await computeCommonApplications(
+                files: files,
+                entryOpenClient: entryOpenClient,
+            )
             let finalApps = await MainActor.run {
-                EntryOperationsExecutionSupport.finalizeApplicationList(commonApps)
+                EntryOperationsExecutionSupport.finalizeApplicationList(result.applications)
             }
-            await send(.openWith(.commonApplicationsLoaded(finalApps)))
+            await send(.openWith(.commonApplicationsLoaded(
+                generation: generation,
+                typeIDs: result.typeIDs,
+                applicationsByType: result.applicationsByType,
+                finalApps,
+            )))
         }
     }
 
     private static func computeCommonApplications(
         files: [EntryModel],
         entryOpenClient: EntryOpenClient,
-    ) async -> [ApplicationInfo] {
+    ) async -> CommonApplicationsResult {
         let fileInfos = prepareFileInfos(from: files)
-        guard !fileInfos.isEmpty else { return [] }
+        guard !fileInfos.isEmpty else {
+            return CommonApplicationsResult(typeIDs: [], applications: [], applicationsByType: [:])
+        }
 
-        let allAppMaps = await collectApplicationMaps(fileInfos: fileInfos, entryOpenClient: entryOpenClient)
-        guard !allAppMaps.isEmpty else { return [] }
+        let representatives = Dictionary(grouping: fileInfos, by: { $0.fileType.identifier }).compactMapValues(\.first)
+        let allAppMaps = await collectApplicationMaps(
+            fileInfos: Array(representatives.values),
+            entryOpenClient: entryOpenClient,
+        )
+        guard !allAppMaps.isEmpty else {
+            return CommonApplicationsResult(
+                typeIDs: Set(fileInfos.map(\.fileType.identifier)),
+                applications: [],
+                applicationsByType: [:],
+            )
+        }
 
-        let commonBundleIDs = findCommonBundleIDs(from: allAppMaps)
+        let commonBundleIDs = findCommonBundleIDs(from: allAppMaps.map(\.1))
         let fileTypeToDefaultApp = await loadDefaultApps(fileInfos: fileInfos, entryOpenClient: entryOpenClient)
-        return buildCommonApps(
-            bundleIDs: commonBundleIDs,
-            appMaps: allAppMaps,
-            fileInfos: fileInfos,
-            fileTypeToDefaultApp: fileTypeToDefaultApp,
+        let appsByType = Dictionary(uniqueKeysWithValues: allAppMaps.map { typeID, appMap in
+            (typeID, Array(appMap.values))
+        })
+        return CommonApplicationsResult(
+            typeIDs: Set(fileInfos.map(\.fileType.identifier)),
+            applications: buildCommonApps(
+                bundleIDs: commonBundleIDs,
+                appMaps: allAppMaps.map(\.1),
+                fileInfos: fileInfos,
+                fileTypeToDefaultApp: fileTypeToDefaultApp,
+            ),
+            applicationsByType: appsByType,
         )
     }
 
     private static func prepareFileInfos(from files: [EntryModel]) -> [EntryOperationsExecutionSupport.FileInfo] {
         files.compactMap { file in
-            guard !file.isFolder,
-                  let fileType = UTType(filenameExtension: file.fileExtension)
-            else { return nil }
+            guard !file.isFolder else { return nil }
+            let fileType = UTType(filenameExtension: file.fileExtension) ?? .data
             return EntryOperationsExecutionSupport.FileInfo(
                 file: file,
                 fileType: fileType,
@@ -285,26 +389,25 @@ private enum EntryOpenWithOperationsSupport {
     private static func collectApplicationMaps(
         fileInfos: [EntryOperationsExecutionSupport.FileInfo],
         entryOpenClient: EntryOpenClient,
-    ) async -> [[String: ApplicationInfo]] {
-        var allAppMaps: [[String: ApplicationInfo]] = []
-        await withTaskGroup(of: [String: ApplicationInfo]?.self) { group in
-            for fileInfo in fileInfos {
+    ) async -> [(String, [String: ApplicationInfo])] {
+        var allAppMaps: [(String, [String: ApplicationInfo])] = []
+        let representatives = Dictionary(grouping: fileInfos, by: { $0.fileType.identifier }).compactMapValues(\.first)
+        await withTaskGroup(of: (String, [String: ApplicationInfo]).self) { group in
+            for fileInfo in representatives.values {
                 group.addTask {
-                    let apps = await entryOpenClient.applicationsForFile(fileInfo.url)
+                    let apps = await entryOpenClient.applicationsForType(fileInfo.fileType, fileInfo.url)
                     var appMap: [String: ApplicationInfo] = [:]
                     for app in apps {
                         if let bundleID = app.bundleID {
                             appMap[bundleID] = app
                         }
                     }
-                    return appMap
+                    return (fileInfo.fileType.identifier, appMap)
                 }
             }
 
             for await appMap in group {
-                if let appMap {
-                    allAppMaps.append(appMap)
-                }
+                allAppMaps.append(appMap)
             }
         }
         return allAppMaps
@@ -324,8 +427,9 @@ private enum EntryOpenWithOperationsSupport {
         entryOpenClient: EntryOpenClient,
     ) async -> [String: String] {
         var fileTypeToDefaultApp: [String: String] = [:]
+        let uniqueInfos = Dictionary(grouping: fileInfos, by: { $0.fileType.identifier }).compactMapValues(\.first)
         await withTaskGroup(of: (String, String?)?.self) { group in
-            for fileInfo in fileInfos {
+            for fileInfo in uniqueInfos.values {
                 group.addTask {
                     let defaultApp = await entryOpenClient.defaultApplication(fileInfo.fileType)
                     return (fileInfo.fileType.identifier, defaultApp?.bundleID)
@@ -362,6 +466,7 @@ private enum EntryOpenWithOperationsSupport {
                 name: app.name,
                 bundleID: app.bundleID,
                 isDefault: isDefault,
+                applicationURL: app.applicationURL,
             ))
         }
         return commonApps

@@ -516,6 +516,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         } assert: {
             $0.contentTabs.activeTabID = tabB
             $0.contentTabs.previousActiveTabID = tabA
+            $0.contentTabs.recentlyUsedTabIDs = [tabB, tabA]
             $0.contentTabs.selectedTabIDs = [tabA, tabB]
         }
         await store.receive(\.contentTabs.collapseSelectionToActive) {

@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import Dependencies
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
@@ -8,6 +9,8 @@ enum EntryContextMenuBuilder {
         let target: EntryContextMenuCoordinator
         let selectedCount: Int
         let rowEntryPathForOpenInNewWindow: String?
+        let openInNewTabPaths: [String]?
+        let serviceNames: [String]
         let canPaste: Bool
         let showCompress: Bool
         let showExtract: Bool
@@ -18,15 +21,57 @@ enum EntryContextMenuBuilder {
         let paletteTags: [EntryContextMenuTagSpec]
         let knownTags: [EntryContextMenuTagSpec]
         let canPerformEntryCommands: Bool
+        let isOpenWithApplicationsLoading: Bool
+
+        init(
+            target: EntryContextMenuCoordinator,
+            selectedCount: Int,
+            rowEntryPathForOpenInNewWindow: String?,
+            openInNewTabPaths: [String]?,
+            serviceNames: [String],
+            canPaste: Bool,
+            showCompress: Bool,
+            showExtract: Bool,
+            isTrashFolder: Bool,
+            canPutBack: Bool,
+            openWithApplications: [ApplicationInfo],
+            showOpenWith: Bool,
+            paletteTags: [EntryContextMenuTagSpec],
+            knownTags: [EntryContextMenuTagSpec],
+            canPerformEntryCommands: Bool,
+            isOpenWithApplicationsLoading: Bool = false,
+        ) {
+            self.target = target
+            self.selectedCount = selectedCount
+            self.rowEntryPathForOpenInNewWindow = rowEntryPathForOpenInNewWindow
+            self.openInNewTabPaths = openInNewTabPaths
+            self.serviceNames = serviceNames
+            self.canPaste = canPaste
+            self.showCompress = showCompress
+            self.showExtract = showExtract
+            self.isTrashFolder = isTrashFolder
+            self.canPutBack = canPutBack
+            self.openWithApplications = openWithApplications
+            self.showOpenWith = showOpenWith
+            self.paletteTags = paletteTags
+            self.knownTags = knownTags
+            self.canPerformEntryCommands = canPerformEntryCommands
+            self.isOpenWithApplicationsLoading = isOpenWithApplicationsLoading
+        }
     }
 
+    /// Open With 아이콘은 프로세스 수명 동안 standardized 앱 URL을 key로 재사용한다.
+    /// 메뉴 생성은 MainActor에서 직렬화되므로 추가 동기화는 필요하지 않다.
+    nonisolated(unsafe) private static let openWithIconCache = NSCache<NSURL, NSImage>()
+
+    @MainActor
     static func makeMenu(configuration: Configuration) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.delegate = configuration.target
 
         addOpenItems(to: menu, configuration: configuration)
-        addInfoItems(to: menu, target: configuration.target)
+        addInfoItems(to: menu, configuration: configuration)
         addClipboardItems(to: menu, configuration: configuration)
         addRenameItems(to: menu, configuration: configuration)
         addDuplicateItems(to: menu, target: configuration.target)
@@ -41,6 +86,47 @@ enum EntryContextMenuBuilder {
         return menu
     }
 
+    @MainActor
+    static func updateOpenWithMenu(
+        _ menu: NSMenu,
+        applications: [ApplicationInfo],
+        isLoading: Bool,
+        target: EntryContextMenuCoordinator,
+    ) {
+        menu.removeAllItems()
+
+        if isLoading {
+            let loadingItem = NSMenuItem(title: "Loading Applications…", action: nil, keyEquivalent: "")
+            loadingItem.isEnabled = false
+            menu.addItem(loadingItem)
+        } else if !applications.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for app in applications {
+                let item = menuItem(
+                    title: app.name,
+                    action: #selector(EntryContextMenuCoordinator.contextMenuOpenWithApp(_:)),
+                    target: target,
+                )
+                item.representedObject = app.bundleID
+                item.state = app.isDefault ? .on : .off
+                if let url = app.applicationURL {
+                    loadOpenWithIcon(for: url, into: item)
+                }
+                menu.addItem(item)
+            }
+        }
+
+        if !applications.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+        menu.addItem(menuItem(
+            title: "Other…",
+            action: #selector(EntryContextMenuCoordinator.contextMenuOpenWithOther),
+            target: target,
+        ))
+    }
+
+    @MainActor
     private static func addOpenItems(to menu: NSMenu, configuration: Configuration) {
         let open = menuItem(
             title: "Open",
@@ -50,6 +136,16 @@ enum EntryContextMenuBuilder {
         open.keyEquivalent = keyEquivalent(for: NSDownArrowFunctionKey)
         open.keyEquivalentModifierMask = .command
         menu.addItem(open)
+
+        if let openInNewTabPaths = configuration.openInNewTabPaths, !openInNewTabPaths.isEmpty {
+            let openInNewTab = menuItem(
+                title: "Open in New Tab",
+                action: #selector(EntryContextMenuCoordinator.contextMenuOpenInNewTab(_:)),
+                target: configuration.target,
+            )
+            openInNewTab.representedObject = openInNewTabPaths
+            menu.addItem(openInNewTab)
+        }
 
         if let path = configuration.rowEntryPathForOpenInNewWindow {
             let openInNewWindow = menuItem(
@@ -78,11 +174,11 @@ enum EntryContextMenuBuilder {
         menu.addItem(NSMenuItem.separator())
     }
 
-    private static func addInfoItems(to menu: NSMenu, target: EntryContextMenuCoordinator) {
+    private static func addInfoItems(to menu: NSMenu, configuration: Configuration) {
         let getInfo = menuItem(
             title: "Get Info",
             action: #selector(EntryContextMenuCoordinator.contextMenuGetInfoForSelectedItems),
-            target: target,
+            target: configuration.target,
         )
         getInfo.keyEquivalent = "i"
         getInfo.keyEquivalentModifierMask = .command
@@ -90,12 +186,28 @@ enum EntryContextMenuBuilder {
         menu.addItem(menuItem(
             title: "Share…",
             action: #selector(EntryContextMenuCoordinator.contextMenuShareSelectedItems),
-            target: target,
+            target: configuration.target,
         ))
+        if configuration.selectedCount > 0, !configuration.serviceNames.isEmpty {
+            let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+            let servicesMenu = NSMenu()
+            servicesMenu.autoenablesItems = false
+            for serviceName in configuration.serviceNames {
+                let serviceItem = menuItem(
+                    title: serviceName,
+                    action: #selector(EntryContextMenuCoordinator.contextMenuPerformService(_:)),
+                    target: configuration.target,
+                )
+                serviceItem.representedObject = serviceName
+                servicesMenu.addItem(serviceItem)
+            }
+            servicesItem.submenu = servicesMenu
+            menu.addItem(servicesItem)
+        }
         menu.addItem(menuItem(
             title: "Reveal in Finder",
             action: #selector(EntryContextMenuCoordinator.contextMenuRevealSelectedItemsInFinder),
-            target: target,
+            target: configuration.target,
         ))
         menu.addItem(NSMenuItem.separator())
     }
@@ -265,31 +377,48 @@ enum EntryContextMenuBuilder {
         }
     }
 
+    @MainActor
     private static func buildOpenWithMenu(configuration: Configuration) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        menu.addItem(menuItem(
-            title: "Other…",
-            action: #selector(EntryContextMenuCoordinator.contextMenuOpenWithOther),
+        updateOpenWithMenu(
+            menu,
+            applications: configuration.openWithApplications,
+            isLoading: configuration.isOpenWithApplicationsLoading,
             target: configuration.target,
-        ))
+        )
+        return menu
+    }
 
-        if !configuration.openWithApplications.isEmpty {
-            menu.addItem(NSMenuItem.separator())
-            for app in configuration.openWithApplications {
-                let item = menuItem(
-                    title: app.name,
-                    action: #selector(EntryContextMenuCoordinator.contextMenuOpenWithApp(_:)),
-                    target: configuration.target,
-                )
-                item.representedObject = app.bundleID
-                item.state = app.isDefault ? .on : .off
-                menu.addItem(item)
-            }
+    @MainActor
+    private static func loadOpenWithIcon(for url: URL, into item: NSMenuItem) {
+        let key = url.standardizedFileURL as NSURL
+        if let cached = openWithIconCache.object(forKey: key) {
+            item.image = cached
+            return
         }
 
-        return menu
+        @Dependency(\.workspaceClient)
+        var workspaceClient
+        Task { @MainActor [weak item] in
+            let icon = await workspaceClient.iconForFileAsync(url.path)
+            let resized = resize(icon, to: NSSize(width: 16, height: 16))
+            resized.isTemplate = false
+            openWithIconCache.setObject(resized, forKey: key)
+            await MainActor.run {
+                guard let item, item.representedObject != nil else { return }
+                item.image = resized
+            }
+        }
+    }
+
+    private static func resize(_ image: NSImage, to size: NSSize) -> NSImage {
+        let resized = NSImage(size: size)
+        resized.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: size))
+        resized.unlockFocus()
+        return resized
     }
 
     private static func menuItem(title: String, action: Selector, target: AnyObject) -> NSMenuItem {

@@ -210,6 +210,7 @@ extension ContentTabFeature {
         )
         state.tabs.append(item)
         state.previousActiveTabID = previousActiveTabID
+        state.recordActivation(item.id)
         state.activeTabID = item.id
         return .none
     }
@@ -221,6 +222,7 @@ extension ContentTabFeature {
             return .none
         }
         state.previousActiveTabID = state.activeTabID
+        state.recordActivation(id)
         state.activeTabID = id
         return .none
     }
@@ -267,6 +269,9 @@ extension ContentTabFeature {
 
         if wasActive {
             state.previousActiveTabID = id
+            if let fallbackTabID {
+                state.recordActivation(fallbackTabID)
+            }
             state.activeTabID = fallbackTabID
         } else {
             state.previousActiveTabID = nil
@@ -312,6 +317,8 @@ extension ContentTabFeature {
         )
         state.tabs.remove(id: id)
         state.tabs.append(homeTab)
+        state.pruneRecentlyUsedTabIDs()
+        state.recordActivation(homeTab.id)
         state.activeTabID = homeTab.id
         state.selectedTabIDs = [homeTab.id]
         state.selectionAnchorID = homeTab.id
@@ -389,6 +396,7 @@ extension ContentTabFeature {
         )
         state.tabs.append(item)
         state.previousActiveTabID = state.activeTabID
+        state.recordActivation(item.id)
         state.activeTabID = item.id
         state.recentlyClosed = nil
         return .none

@@ -236,6 +236,9 @@ extension FileManagerWindowCommandRoutingReducer {
         case .duplicateSelectedContentTabs:
             return handleDuplicateSelectedContentTabsRequested(state: &state)
 
+        case .selectMostRecentlyUsedContentTab:
+            return handleSelectMostRecentlyUsedContentTab(state: &state)
+
         default:
             return nil
         }
@@ -392,6 +395,35 @@ extension FileManagerWindowCommandRoutingReducer {
             await collectionAlertClient.showCollectionOpenErrorAlert(
                 "Cannot Pin Collection",
                 "Save the collection before pinning it as a tab.",
+            )
+        }
+    }
+
+    func handleSelectMostRecentlyUsedContentTab(state: inout State) -> Effect<Action> {
+        guard !state.isClosing,
+              state.pendingSelectedContentTabClose == nil,
+              state.pendingContentTabClose == nil,
+              state.pendingContentTabTeardown == nil,
+              state.pendingSelectedContentTabPinMutation == nil,
+              state.pendingContentTabMove == nil,
+              state.contentTabMoveParticipantRequestID == nil,
+              state.pendingTopNavigationIntents.isEmpty,
+              state.contentTabs.pendingPinnedRecordIDs.isEmpty
+        else { return .none }
+        if case .tearingDownTab = state.undoRedoPhase { return .none }
+
+        guard let targetID = state.contentTabs.takeMostRecentlyUsedInactiveTabID() else {
+            return unavailableRecentlyUsedContentTabFeedbackEffect()
+        }
+        return .send(.contentTabs(.setCurrent(targetID)))
+    }
+
+    func unavailableRecentlyUsedContentTabFeedbackEffect() -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Switch Tabs",
+                "No recently used tab is available.",
             )
         }
     }

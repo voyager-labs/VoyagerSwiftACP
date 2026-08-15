@@ -59,6 +59,7 @@ public struct ContentTabState: Equatable, Sendable {
     }
 
     public var previousActiveTabID: ContentTabID?
+    public internal(set) var recentlyUsedTabIDs: [ContentTabID]
     public var recentlyClosed: ClosedContentTabSnapshot?
     public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingPinnedRecordIDs: Set<ContentTabID> = []
@@ -87,6 +88,7 @@ public struct ContentTabState: Equatable, Sendable {
         tabs: IdentifiedArrayOf<ContentTabItem> = [],
         activeTabID: ContentTabID? = nil,
         previousActiveTabID: ContentTabID? = nil,
+        recentlyUsedTabIDs: [ContentTabID] = [],
         recentlyClosed: ClosedContentTabSnapshot? = nil,
         pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:],
         pendingPinnedRecordIDs: Set<ContentTabID> = [],
@@ -95,6 +97,7 @@ public struct ContentTabState: Equatable, Sendable {
         self.tabs = tabs
         self.activeTabID = activeTabID
         self.previousActiveTabID = previousActiveTabID
+        self.recentlyUsedTabIDs = recentlyUsedTabIDs
         self.recentlyClosed = recentlyClosed
         self.pinnedRecords = pinnedRecords
         self.pendingPinnedRecordIDs = pendingPinnedRecordIDs
@@ -108,6 +111,42 @@ public struct ContentTabState: Equatable, Sendable {
         if let selectionAnchorID, !currentTabIDs.contains(selectionAnchorID) {
             self.selectionAnchorID = nil
         }
+    }
+
+    mutating func recordActivation(_ tabID: ContentTabID) {
+        guard tabs[id: tabID] != nil else { return }
+
+        let candidates = [tabID, activeTabID].compactMap(\.self) + recentlyUsedTabIDs
+        let liveTabIDs = Set(tabs.ids)
+        var seenTabIDs = Set<ContentTabID>()
+        recentlyUsedTabIDs = candidates.filter {
+            liveTabIDs.contains($0) && seenTabIDs.insert($0).inserted
+        }
+    }
+
+    mutating func pruneRecentlyUsedTabIDs() {
+        let liveTabIDs = Set(tabs.ids)
+        var seenTabIDs = Set<ContentTabID>()
+        recentlyUsedTabIDs = recentlyUsedTabIDs.filter {
+            liveTabIDs.contains($0) && seenTabIDs.insert($0).inserted
+        }
+    }
+
+    mutating func projectActivation(
+        activeTabID: ContentTabID?,
+        recentlyUsedTabIDs: [ContentTabID],
+    ) {
+        self.activeTabID = activeTabID
+        self.recentlyUsedTabIDs = recentlyUsedTabIDs
+        pruneRecentlyUsedTabIDs()
+        if let activeTabID {
+            recordActivation(activeTabID)
+        }
+    }
+
+    mutating func takeMostRecentlyUsedInactiveTabID() -> ContentTabID? {
+        pruneRecentlyUsedTabIDs()
+        return recentlyUsedTabIDs.first { $0 != activeTabID }
     }
 
     mutating func collapseSelectionToActive() {
@@ -155,6 +194,7 @@ public extension ContentTabState {
             ],
             activeTabID: id,
             previousActiveTabID: nil,
+            recentlyUsedTabIDs: [id],
             recentlyClosed: nil,
         )
     }
@@ -176,6 +216,7 @@ public extension ContentTabState {
             tabs: restoredTabs,
             activeTabID: active,
             previousActiveTabID: nil,
+            recentlyUsedTabIDs: [active],
             recentlyClosed: nil,
             pinnedRecords: pinnedRecords,
         )

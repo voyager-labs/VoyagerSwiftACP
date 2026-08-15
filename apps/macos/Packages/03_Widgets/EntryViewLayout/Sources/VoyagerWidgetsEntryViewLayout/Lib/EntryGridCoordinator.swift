@@ -53,6 +53,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.entryOpenClient)
+    var entryOpenClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12

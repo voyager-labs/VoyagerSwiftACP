@@ -198,6 +198,8 @@ public final class EntryListCoordinator: NSObject {
     var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.entryOpenClient)
+    var entryOpenClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     init(store: StoreOf<EntryViewLayoutFeature>) {

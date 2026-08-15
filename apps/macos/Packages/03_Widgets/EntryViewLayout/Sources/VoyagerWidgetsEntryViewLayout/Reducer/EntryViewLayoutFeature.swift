@@ -257,6 +257,12 @@ public struct EntryViewLayoutFeature {
             case let .view(.openPathInNewWindow(path)):
                 return .send(.delegate(.openPathInNewWindow(path)))
 
+            case let .view(.openInNewTab(paths)):
+                return .send(.delegate(.openInNewTab(paths)))
+
+            case let .view(.performService(serviceName)):
+                return .send(.delegate(.performService(serviceName: serviceName)))
+
             case let .view(.startRename(item, text)):
                 return .send(.delegate(.startRename(item: item, text: text)))
 

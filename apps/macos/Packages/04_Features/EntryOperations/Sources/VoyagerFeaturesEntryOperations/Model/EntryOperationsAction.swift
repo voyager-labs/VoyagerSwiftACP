@@ -29,6 +29,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case folderLoadEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
         case folderLoadFinished(request: EntryFolderLoadRequest)
         case folderLoadFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
+        case openInNewTab([String])
     }
 
     @CasePathable
@@ -105,9 +106,14 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case setDefaultAppWithOther(file: EntryModel)
         case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
         case loadApplicationsForFile(file: EntryModel)
-        case applicationsLoaded(String, [ApplicationInfo])
+        case applicationsLoaded(typeID: String, generation: Int, [ApplicationInfo])
         case loadCommonApplicationsForFiles(files: [EntryModel])
-        case commonApplicationsLoaded([ApplicationInfo])
+        case commonApplicationsLoaded(
+            generation: Int,
+            typeIDs: Set<String>,
+            applicationsByType: [String: [ApplicationInfo]],
+            [ApplicationInfo],
+        )
     }
 
     @CasePathable

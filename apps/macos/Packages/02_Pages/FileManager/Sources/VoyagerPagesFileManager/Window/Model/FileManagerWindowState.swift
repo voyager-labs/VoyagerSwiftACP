@@ -351,6 +351,7 @@ public struct FileManagerWindowState: Equatable {
                 tabs: tabs,
                 activeTabID: activeReservation.id,
                 previousActiveTabID: previousActiveTabID,
+                recentlyUsedTabIDs: reservations.reversed().map(\.id),
             ),
             externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
             windowID: windowID,

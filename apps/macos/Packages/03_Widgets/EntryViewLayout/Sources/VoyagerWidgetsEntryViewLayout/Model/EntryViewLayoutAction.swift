@@ -64,6 +64,8 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case openSelectedItem
         case executeCommand(String)
         case openPathInNewWindow(String)
+        case openInNewTab([String])
+        case performService(serviceName: String)
         case startRename(item: EntryModel, text: String)
         case commitRename(itemID: EntryModel.ID, newName: String)
         case openEntry(EntryModel)
@@ -85,6 +87,8 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     public enum Delegate: Sendable {
         case executeCommand(String)
         case openPathInNewWindow(String)
+        case openInNewTab([String])
+        case performService(serviceName: String)
         case startRename(item: EntryModel, text: String)
         case saveScrollOffset(CGPoint, forPath: String)
         case selectionChanged

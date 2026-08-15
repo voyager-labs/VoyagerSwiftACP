@@ -139,6 +139,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .openPathInNewWindow(path):
             return .send(.delegate(.openPathInNewWindow(path)))
 
+        case let .openInNewTab(paths):
+            return .send(.delegate(.openInNewTab(paths)))
+
         case .selectionChanged:
             let currentContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
             return .concatenate(
@@ -231,6 +234,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             case let .openCollectionFile(url):
                 let navigationAction: ContentPageNavigationAction = .view(.openCollectionFile(url))
                 return .send(.internal(.requestNavigation(navigationAction)))
+
+            case let .openInNewTab(paths):
+                return .send(.delegate(.openInNewTab(paths)))
 
             case let .folderLoadEvent(request, event):
                 return .send(.entryViewLayout(.hierarchy(.folderChildrenResponse(

@@ -1,5 +1,7 @@
 @preconcurrency import AppKit
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator {
     func preloadOpenWithApplications(selectedEntries: [EntryModel]) {

@@ -107,10 +107,11 @@ extension EVM002FileManagerPagePresentationTests {
             FileManagerContentFeature()
         } withDependencies: {
             $0.entryOpenClient = .testValue
-            $0.entryOpenClient.applicationsForFile = { _ in [] }
+            $0.entryOpenClient.applicationsForType = { _, _ in [] }
             $0.entryOpenClient.defaultApplication = { _ in nil }
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
+        // store.exhaustivity = .off: child reducer의 projection chain 중 이 AC가 소유한 action만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.delegate(.preloadOpenWithApplications([file]))))

@@ -59,12 +59,15 @@ public enum TagMutationMode: String, Sendable, Equatable {
 struct EntryContextMenuSpec {
     let selectedCount: Int
     let rowEntryPathForOpenInNewWindow: String?
+    let openInNewTabPaths: [String]?
+    let serviceNames: [String]
     let canPaste: Bool
     let showCompress: Bool
     let showExtract: Bool
     let isTrashFolder: Bool
     let canPutBack: Bool
     let openWithApplications: [ApplicationInfo]
+    let isOpenWithApplicationsLoading: Bool
     let showOpenWith: Bool
     let paletteTags: [EntryContextMenuTagSpec]
     let knownTags: [EntryContextMenuTagSpec]
@@ -81,6 +84,8 @@ enum EntryContextMenuSpecFactory {
         canPaste: Bool,
         favoriteTags: [Tag],
         openWithApplications: [ApplicationInfo],
+        isOpenWithApplicationsLoading: Bool = false,
+        serviceNames: [String] = [],
     ) -> EntryContextMenuSpec {
         let effectiveSelectedCount: Int = if !selectedIds.isEmpty {
             selectedIds.count
@@ -93,10 +98,13 @@ enum EntryContextMenuSpecFactory {
         let (showCompress, showExtract) = resolveCompressExtract(selectedEntries: selectedEntries)
         let favoriteNames = favoriteTags.map(\.name)
         let selectedTagNames = selectedEntries.flatMap { $0.facets.tags?.map(\.name) ?? [] }
+        let openInNewTabPaths = resolveOpenInNewTabPaths(selectedEntries: selectedEntries)
 
         return .init(
             selectedCount: effectiveSelectedCount,
             rowEntryPathForOpenInNewWindow: rowEntry?.isFolder == true ? rowEntry?.fullPath : nil,
+            openInNewTabPaths: openInNewTabPaths,
+            serviceNames: serviceNames,
             canPaste: canPaste,
             showCompress: showCompress,
             showExtract: showExtract,
@@ -105,6 +113,7 @@ enum EntryContextMenuSpecFactory {
                 && !selectedEntries.isEmpty
                 && selectedEntries.allSatisfy { restorableTrashPaths.contains($0.fullPath) },
             openWithApplications: openWithApplications,
+            isOpenWithApplicationsLoading: isOpenWithApplicationsLoading,
             showOpenWith: showOpenWith,
             paletteTags: resolveTags(
                 names: stableDeduplicated(favoriteTags.prefix(7).map(\.name)),
@@ -123,6 +132,16 @@ enum EntryContextMenuSpecFactory {
         let containsZipFiles = selectedEntries.contains { $0.fileExtension.lowercased() == "zip" }
         let containsNonZipFiles = selectedEntries.contains { $0.fileExtension.lowercased() != "zip" }
         return (!containsZipFiles, containsZipFiles && !containsNonZipFiles)
+    }
+
+    /// 모든 선택 항목이 폴더일 때만 display 순서의 폴더 경로를 반환하고, 그 외에는 nil이다.
+    private static func resolveOpenInNewTabPaths(selectedEntries: [EntryModel]) -> [String]? {
+        guard !selectedEntries.isEmpty,
+              selectedEntries.allSatisfy(\.isFolder)
+        else {
+            return nil
+        }
+        return selectedEntries.map(\.fullPath)
     }
 
     private static func resolveTags(

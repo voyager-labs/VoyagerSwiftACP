@@ -70,6 +70,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case composerCollectionSearchSucceeded
         case composerCollectionSearchFailed
         case openPathInNewWindow(String)
+        case openInNewTab([String])
         case closeWindow
         case newChatRequested
         case durableNewChatRequested

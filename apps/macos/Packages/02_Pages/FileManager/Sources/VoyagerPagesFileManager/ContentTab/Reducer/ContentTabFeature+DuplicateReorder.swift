@@ -27,6 +27,7 @@ extension ContentTabFeature {
             guard let sourceIndex = state.tabs.index(id: sourceID) else { return .none }
             state.tabs.insert(duplicateItem, at: sourceIndex + 1)
             state.previousActiveTabID = state.activeTabID
+            state.recordActivation(duplicateID)
             state.activeTabID = duplicateID
         }
 
@@ -83,6 +84,7 @@ extension ContentTabFeature {
         }
         state.tabs = .init(uniqueElements: updatedTabs)
         state.previousActiveTabID = preOperationActiveID
+        state.recordActivation(successfulRequests[0].duplicate.id)
         state.activeTabID = successfulRequests[0].duplicate.id
         state.reconcileSelection()
         return .none
