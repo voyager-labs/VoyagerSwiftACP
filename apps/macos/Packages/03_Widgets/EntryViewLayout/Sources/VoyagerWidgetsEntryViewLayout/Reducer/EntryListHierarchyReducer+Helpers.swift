@@ -274,8 +274,10 @@ extension EntryListHierarchyReducer {
     }
 
     func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
-        let candidateComponents = pathComponents(for: path)
-        let ancestorComponents = pathComponents(for: ancestor)
+        // 이벤트 경로는 canonical(real)일 수 있으므로 양쪽을 symlink-resolve한 공간에서 비교한다.
+        // node/request ID 자체는 lexical 경로로 보존된다.
+        let candidateComponents = pathComponents(for: normalizedPath(path))
+        let ancestorComponents = pathComponents(for: normalizedPath(ancestor))
         return candidateComponents.starts(with: ancestorComponents)
     }
 
