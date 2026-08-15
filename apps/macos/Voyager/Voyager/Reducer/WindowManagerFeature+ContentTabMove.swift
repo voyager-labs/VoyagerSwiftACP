@@ -171,6 +171,7 @@ extension WindowManagerFeature {
                 request: request,
                 teardownIntents: postCommit.teardownIntents,
                 rebindIntents: postCommit.rebinds,
+                target: postCommit.target,
             ),
             .send(.contentTabMoveLifecycleCompleted(request: request)),
             .send(.contentTabMoveNativeEffectsRequested(request: request)),
@@ -280,6 +281,7 @@ extension WindowManagerFeature {
                     ? pendingPersistence.postCommit.unavailableTargetFallbackTeardownIntents
                     : pendingPersistence.postCommit.teardownIntents,
                 rebindIntents: usesUnavailableTargetFallback ? [] : pendingPersistence.postCommit.rebinds,
+                target: pendingPersistence.postCommit.target,
             ),
             .send(.contentTabMoveLifecycleCompleted(request: request)),
             .send(.contentTabMoveNativeEffectsRequested(request: request)),
@@ -446,13 +448,23 @@ extension WindowManagerFeature {
         request: ContentTabMoveRequest,
         teardownIntents: [ContentTabTransfer.TeardownIntent],
         rebindIntents: [ContentTabTransfer.RebindIntent],
+        target: FileManagerWindowState,
     ) -> Effect<Action> {
         .concatenate(
             contentTabMoveTeardownEffect(
                 teardownIntents,
                 targetWindowID: request.targetWindowID,
             ),
+            contentTabMoveFolderTeardownEffect(
+                request: request,
+                rebindIntents,
+                target: target,
+            ),
             contentTabMoveOwnerRebindEffect(
+                request: request,
+                rebindIntents,
+            ),
+            contentTabMoveHierarchyRestartEffect(
                 request: request,
                 rebindIntents,
             ),
@@ -461,6 +473,67 @@ extension WindowManagerFeature {
                 rebindIntents,
             ),
         )
+    }
+
+    private func contentTabMoveFolderTeardownEffect(
+        request: ContentTabMoveRequest,
+        _ intents: [ContentTabTransfer.RebindIntent],
+        target: FileManagerWindowState,
+    ) -> Effect<Action> {
+        // projectTarget가 commit 시점에 moved tab의 entryOperations.windowID를 이미 target으로 재지정하므로,
+        // 이 시점의 cancelAllFolderItems는 target-keyed cancel ID만 만들어 원본 source-keyed folder stream을
+        // 놓친다. 따라서 postCommit.target에 복사된 folderLoadingContexts의 requestID와, 각 rebind의
+        // sourceWindowID 및 복사된 stable loadingCancellationOwnerID를 조합해 source-keyed cancel ID를
+        // 명시적으로 먼저 발행한다. 그 뒤의 cancelAllFolderItems가 복사된 folderLoadingContexts를 비운다.
+        var sourceKeyedCancelIDs = Set<EntryOperationsFolderLoadingCancelID>()
+        for intent in intents {
+            guard let entryOperations = movedEntryOperations(for: intent.tabID, in: target) else { continue }
+            let ownerID = entryOperations.loadingCancellationOwnerID
+            for requestID in entryOperations.folderLoadingContexts.keys {
+                sourceKeyedCancelIDs.insert(.loadFolderItems(
+                    requestID: requestID,
+                    windowID: intent.sourceWindowID,
+                    ownerID: ownerID,
+                ))
+            }
+        }
+        let clearEffects = intents.map { intent in
+            contentTabMoveWindowActionEffect(
+                request: request,
+                windowID: intent.targetWindowID,
+                action: .tabContent(
+                    tabID: intent.tabID,
+                    action: .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))),
+                ),
+            )
+        }
+        return .concatenate(sourceKeyedCancelIDs.map { .cancel(id: $0) } + clearEffects)
+    }
+
+    private func movedEntryOperations(
+        for tabID: ContentTabID,
+        in target: FileManagerWindowState,
+    ) -> EntryOperationsState? {
+        if target.contentTabs.activeTabID == tabID {
+            return target.content.entryViewLayout.entryOperations
+        }
+        return target.tabContentStates[tabID]?.entryViewLayout.entryOperations
+    }
+
+    private func contentTabMoveHierarchyRestartEffect(
+        request: ContentTabMoveRequest,
+        _ intents: [ContentTabTransfer.RebindIntent],
+    ) -> Effect<Action> {
+        .concatenate(intents.map { intent in
+            contentTabMoveWindowActionEffect(
+                request: request,
+                windowID: intent.targetWindowID,
+                action: .tabContent(
+                    tabID: intent.tabID,
+                    action: .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads)),
+                ),
+            )
+        })
     }
 
     private func contentTabMoveOwnerRebindEffect(

@@ -516,7 +516,9 @@ public struct FileManagerFeature {
 
         case .tabContent(_, .internal(.applyNavigationState)),
              .tabContent(_, .internal(.startObservingSystemNotifications)),
-             .tabContent(_, .internal(.stopObservingSystemNotifications)):
+             .tabContent(_, .internal(.stopObservingSystemNotifications)),
+             .tabContent(_, .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads))),
+             .tabContent(_, .entryViewLayout(.delegate(.expandRequested))):
             true
 
         case .internal(.entryActionCompleted):
@@ -534,7 +536,8 @@ public struct FileManagerFeature {
 
     private func isEntryOperationsCompletionActionAllowed(_ action: EntryOperationsAction) -> Bool {
         switch action {
-        case .lifecycle(.windowIDChanged),
+        case .loading(.loadFolderItems),
+             .lifecycle(.windowIDChanged),
              .lifecycle(.operationStarted),
              .lifecycle(.operationFinished),
              .lifecycle(.dropOperationFinished),
@@ -543,7 +546,8 @@ public struct FileManagerFeature {
              .lifecycle(.pathsMutated),
              .outcome(.entriesMutated),
              .outcome(.undoManagerAvailabilityChanged),
-             .outcome(.entryActionReplayFinished):
+             .outcome(.entryActionReplayFinished),
+             .loading(.cancelAllFolderItems):
             true
 
         default:
