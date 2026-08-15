@@ -329,6 +329,7 @@ public struct EntryViewLayoutFeature {
                 return Self.setShowHiddenFiles(!state.showHiddenFiles, state: &state)
 
             case let .view(.applyContentProjection(projection)):
+                let previousSelectedIds = state.selectedIds
                 state.entries = projection.entries
                 state.trashDirectoryPath = projection.trashDirectoryPath
                 state.entryOperations.isLoading = projection.isLoading
@@ -337,7 +338,17 @@ public struct EntryViewLayoutFeature {
                 state.entryOperations.windowID = projection.collectionWindowID
                 state.entryOperations.loadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
                 state.reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
-                return .none
+                var reconcileEffects: [Effect<Action>] = []
+                if let renamingId = state.entryOperations.renamingItemId,
+                   previousSelectedIds.contains(renamingId),
+                   !state.selectedIds.contains(renamingId)
+                {
+                    reconcileEffects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelectedIds != state.selectedIds {
+                    reconcileEffects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .merge(reconcileEffects)
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode

@@ -114,6 +114,7 @@ struct EntryListHierarchyReducer {
                 // target window/owner에서 unfinished(.loadingCore/.enriching) expanded folder만 재시작한다.
                 // startLoad가 generation 증가 + partial stream snapshot 초기화를 수행하며,
                 // .loaded 노드의 캐시와 parent/expansion 상태는 그대로 보존한다.
+                let previousSelectedIds = state.selectedIds
                 var effects: [Effect<Action>] = []
                 for id in state.hierarchy.nodesByID.keys {
                     guard let nodeState = state.hierarchy.nodesByID[id],
@@ -123,7 +124,17 @@ struct EntryListHierarchyReducer {
                     else { continue }
                     effects.append(startLoad(folder: folder, id: id, state: &state))
                 }
-                return .merge(effects)
+                var reconcileEffects: [Effect<Action>] = []
+                if let renamingID = state.entryOperations.renamingItemId,
+                   previousSelectedIds.contains(renamingID),
+                   !state.selectedIds.contains(renamingID)
+                {
+                    reconcileEffects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelectedIds != state.selectedIds {
+                    reconcileEffects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .merge(effects + reconcileEffects)
 
             case let .folderExpansionRequested(id):
                 guard hierarchyInteractionsAreEnabled(in: state) else { return .none }

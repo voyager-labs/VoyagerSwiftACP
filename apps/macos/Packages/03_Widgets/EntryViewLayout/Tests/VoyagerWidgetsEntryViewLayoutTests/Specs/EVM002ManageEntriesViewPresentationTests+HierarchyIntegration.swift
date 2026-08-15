@@ -819,6 +819,38 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(nestedLoaded.id))
     }
 
+    /// restartUnfinishedExpandedFolderLoads: 재시작으로 evicted된 선택을 delegate로 전달
+    /// 재시작 대상 folder의 partial child가 선택돼 있을 때 selectionChanged가 발행되는지 검증한다.
+    /// - 검증 내용: restartUnfinishedExpandedFolderLoads 후 `.delegate(.selectionChanged)` 수신
+    /// - 사전 조건: loading folder의 evicted child가 선택돼 있다.
+    /// - 기대 결과: 선택이 제거되며 selectionChanged delegate가 발행됨
+    func testRestartUnfinishedExpandedFolderLoadsEmitsSelectionChanged() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let partialChild = makeHierarchyIntegrationEntry(id: "/root/A/partial.txt", name: "partial.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.selectedIds = [partialChild.id]
+        state.lastSelectedId = partialChild.id
+        state.rangeAnchorId = partialChild.id
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [partialChild],
+                loadPhase: .loadingCore,
+                generation: 2,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.restartUnfinishedExpandedFolderLoads))
+        await store.receive(\.delegate.expandRequested, folder.id)
+        await store.receive(\.delegate.selectionChanged)
+    }
+
     /// EVM-002-update_entry_selection: nested child context menu는 visible hierarchy row를 현재 대상으로 사용한다.
     /// expanded child를 우클릭한 뒤 Rename이 root-only snapshot 때문에 no-op 되지 않는지 검증한다.
     /// - 검증 내용: child row context menu target의 Rename delegate action
@@ -942,6 +974,32 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         XCTAssertNil(store.state.entryOperations.renamingItemId)
         XCTAssertEqual(store.state.entries, [replacement])
+    }
+
+    /// EVM-002-update_entry_selection: content projection 재조정의 선택 제거를 delegate로 전달
+    /// projection entries에서 사라진 root 선택이 있을 때 selectionChanged가 발행되는지 검증한다.
+    /// - 검증 내용: applyContentProjection 후 `.delegate(.selectionChanged)` 수신
+    /// - 사전 조건: 새 projection entries에 없는 root 항목이 선택돼 있다.
+    /// - 기대 결과: 선택이 제거되며 selectionChanged delegate가 발행됨
+    func testApplyContentProjectionEmitsSelectionChangedWhenRootLeavesProjection() async {
+        let removed = makeHierarchyIntegrationEntry(id: "/root/removed.txt", name: "removed.txt")
+        let replacement = makeHierarchyIntegrationEntry(id: "/root/replacement.txt", name: "replacement.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [removed]
+        state.selectedIds = [removed.id]
+        state.lastSelectedId = removed.id
+        state.rangeAnchorId = removed.id
+        let store = TestStore(initialState: state) {
+            EntryViewLayoutFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.view(.applyContentProjection(makeHierarchyContentProjection(
+            entries: [replacement],
+            isLoading: false,
+            renamingItemId: nil,
+        ))))
+        await store.receive(\.delegate.selectionChanged)
     }
 
     /// EVM-002-rename_entry: root snapshot 완료 시 projection에서 사라진 renamed root 항목 취소
