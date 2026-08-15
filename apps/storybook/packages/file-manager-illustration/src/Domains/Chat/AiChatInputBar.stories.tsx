@@ -46,10 +46,30 @@ const meta = {
   },
   render: function Render(args) {
     const [requestText, setRequestText] = useState(args.requestText)
+    const [modelSelector, setModelSelector] = useState(args.presentation.modelSelector)
+    const [thinkingSelector, setThinkingSelector] = useState(args.presentation.thinkingSelector)
 
     function handleRequestTextChange(value: string) {
       setRequestText(value)
       args.onRequestTextChange(value)
+    }
+
+    function handleModelSelected(value: string) {
+      setModelSelector((prev) => ({
+        ...prev,
+        value,
+        accessibilityValue: prev.options.find((option) => option.value === value)?.label ?? value,
+      }))
+      args.actions?.onModelSelected?.(value)
+    }
+
+    function handleThinkingSelected(value: string) {
+      setThinkingSelector((prev) => ({
+        ...prev,
+        value,
+        accessibilityValue: prev.options.find((option) => option.value === value)?.label ?? value,
+      }))
+      args.actions?.onThinkingSelected?.(value)
     }
 
     return (
@@ -57,6 +77,16 @@ const meta = {
         {...args}
         requestText={requestText}
         onRequestTextChange={handleRequestTextChange}
+        presentation={{
+          ...args.presentation,
+          modelSelector,
+          thinkingSelector,
+        }}
+        actions={{
+          ...args.actions,
+          onModelSelected: handleModelSelected,
+          onThinkingSelected: handleThinkingSelected,
+        }}
       />
     )
   },
