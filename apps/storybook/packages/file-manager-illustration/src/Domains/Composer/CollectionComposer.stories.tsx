@@ -48,7 +48,17 @@ const ComposerSelectionFlow = ({
   const [future, setFuture] = useState<readonly DraftState[]>([])
   const [step, setStep] = useState<SelectionStep>(initialProperty == null ? "property" : "operator")
   const [property, setProperty] = useState<ComposerPropertyOption | undefined>(initialProperty)
-  const [operator, setOperator] = useState<ComposerOperatorOption | undefined>()
+  // 네이티브 초기화: initialProperty면 baseDraft 대상 조건의 operator를 복원한다
+  const [operator, setOperator] = useState<ComposerOperatorOption | undefined>(() => {
+    if (initialProperty == null) return undefined
+    const initialCondition = baseDraft().conditions.find(
+      (condition) =>
+        condition.id === initialProperty.key || condition.property === initialProperty.label,
+    )
+    return initialCondition == null
+      ? undefined
+      : initialProperty.operators.find((option) => option.label === initialCondition.operator)
+  })
   const [isProcessing, setIsProcessing] = useState(false)
   const [scopePickerOpen, setScopePickerOpen] = useState(false)
   const [includeSubfolders, setIncludeSubfolders] = useState(true)
@@ -235,13 +245,17 @@ const ComposerSelectionFlow = ({
                     "/VoyagerFixtures/Projects/Legacy",
                     "/VoyagerFixtures/Inbox",
                   ].map((path) => {
-                    // 네이티브 makeScopeSections: 상위 scope를 포함하면 하위 scope는 included 계열로 파생
-                    const included = draft.scopes.some(
-                      (scope) => scope === path || path.startsWith(`${scope}/`),
-                    )
-                    const actions = included
+                    // 네이티브 resolvedCandidateState: direct base는 included+clearDirectRule,
+                    // 상속 하위는 subfolders on일 때만 included(상속)이며 exclude를 제공한다
+                    const isDirect = draft.scopes.includes(path)
+                    const inherited =
+                      !isDirect && draft.scopes.some((scope) => path.startsWith(`${scope}/`))
+                    const included = isDirect || (inherited && includeSubfolders)
+                    const actions = isDirect
                       ? (["clearDirectRule"] as const)
-                      : (["include", "exclude"] as const)
+                      : included
+                        ? (["exclude"] as const)
+                        : (["include", "exclude"] as const)
                     return {
                       path,
                       depth: Math.max(
@@ -251,8 +265,8 @@ const ComposerSelectionFlow = ({
                           1,
                       ),
                       status: included ? ("included" as const) : ("available" as const),
-                      kind: included ? ("base" as const) : ("candidate" as const),
-                      ruleSource: included ? ("direct" as const) : undefined,
+                      kind: isDirect ? ("base" as const) : ("candidate" as const),
+                      ruleSource: isDirect ? ("direct" as const) : undefined,
                       actions,
                     }
                   }),

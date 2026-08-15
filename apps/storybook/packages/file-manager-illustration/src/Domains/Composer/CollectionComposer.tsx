@@ -128,7 +128,7 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
 
       <div className="collection-composer-separator" />
 
-      <div className="collection-composer-chip-area">
+      <div className={`collection-composer-chip-area${fixture.isProcessing ? " locked" : ""}`}>
         <div className="collection-composer-scope-row" aria-label="Collection scope">
           <div className="collection-composer-scope-tokens">
             {fixture.scopes.length === 0 ? (
@@ -181,24 +181,24 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         </div>
       </div>
 
-      {fixture.picker?.kind === "property" && (
+      {!fixture.isProcessing && fixture.picker?.kind === "property" && (
         <ComposerPropertyPicker
           picker={fixture.picker}
           onSelect={onPropertySelect}
           onDismissDuplicate={onDismissDuplicate}
         />
       )}
-      {fixture.picker?.kind === "operator" && (
+      {!fixture.isProcessing && fixture.picker?.kind === "operator" && (
         <ComposerOperatorPicker picker={fixture.picker} onSelect={onOperatorSelect} />
       )}
-      {fixture.picker?.kind === "value" && (
+      {!fixture.isProcessing && fixture.picker?.kind === "value" && (
         <ComposerValuePicker
           key={fixture.picker.conditionID}
           picker={fixture.picker}
           onCommit={onValueCommit}
         />
       )}
-      {fixture.picker?.kind === "scope" && (
+      {!fixture.isProcessing && fixture.picker?.kind === "scope" && (
         <ScopePicker
           picker={fixture.picker}
           onSelect={onScopeSelect}
