@@ -1190,6 +1190,10 @@
   :root:not([data-voyager-color-scheme="light"])
     [data-file-manager-illustration]
     .chat-markdown-code
+    .hljs-section,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
     .hljs-selector-id {
     color: #79c0ff;
   }
@@ -1330,6 +1334,10 @@
   [data-file-manager-illustration]
   .chat-markdown-code
   .hljs-selector-class,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-section,
 :root[data-voyager-color-scheme="dark"]
   [data-file-manager-illustration]
   .chat-markdown-code
