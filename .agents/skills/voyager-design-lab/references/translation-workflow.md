@@ -29,12 +29,12 @@ Read this reference when moving structure, state, geometry, or style between nat
 
 The illustration is one window; every component belongs to a window region or feature domain. Organize top-level source folders by region, mirroring native `Pages`/`Features` structure, not by a vague "patterns" catch-all:
 
-- `Window/` (window skeleton), `Sidebar/`, `Content/`, `Entries/` (file entry domain), `Inspector/`, `Chat/` (AI chat feature domain), `Overlays/`, plus `Foundations/`, `UI/` (atoms), `Stories/` (root composition).
+- `Layouts/` (window skeleton and primary panes), `Domains/Entries/` (file entry domain), `Domains/Chat/` (AI chat feature domain), `Patterns/Sidebar/`, `Patterns/Content/`, `Patterns/Inspector/`, `Patterns/Overlays/`, plus `Foundations/`, `UI/` (atoms), `Stories/` (root composition).
 
 Rules:
 
 - The root composition (`FileManagerIllustration`) is the only canonical integration point. Region folders hold specimens of one surface, not parallel roots.
-- A feature domain with its own native package (e.g. Chat ↔ `VoyagerFeaturesAiChat`) gets its own top-level folder, parallel to `Entries/`.
+- A feature domain with its own native package (e.g. Chat ↔ `VoyagerFeaturesAiChat`) gets its own folder under `Domains/`, parallel to `Domains/Entries/`.
 - Composite UI that belongs to one window region lives in that region's folder, not in a shared dumping ground.
 - Apply `authority-and-state-contract.md` to each region story: root consumer, reusable specimen, or experiment.
 
