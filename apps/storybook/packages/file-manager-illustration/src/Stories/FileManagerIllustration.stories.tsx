@@ -7,7 +7,6 @@ import {
   chatSurfaceHistory,
   chatSurfaceInspectorEmpty,
   chatSurfaceRebind,
-  chatSurfaceRecovery,
   chatSurfaceStreaming,
   chatSurfaceUnconnected,
 } from "../Domains/Chat/chat-fixtures"
@@ -170,18 +169,5 @@ export const ChatErrorState: Story = {
     files: publicFiles,
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
     chatSurface: chatSurfaceError,
-  },
-}
-
-export const ChatRecovery: Story = {
-  args: {
-    files: publicFiles,
-    contentContext: { tabs: defaultTabs, activeTabId: "directory" },
-    chatSurface: chatSurfaceRecovery,
-    chatOnErrorRecovery: fn(),
-  },
-  play: async ({ args, canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Retry" }))
-    await expect(args.chatOnErrorRecovery).toHaveBeenCalled()
   },
 }

@@ -32,9 +32,17 @@ export function verifyChatInteractionContract(packageRoot) {
   assert.match(inputStorySource, /export const WithRequestContext[\s\S]*?play:/)
 
   assert.match(conversationSource, /failure: streamingAssistant\.failure/)
-  assert.match(conversationSource, /onErrorRecovery=\{onErrorRecovery\}/)
-  assert.match(viewSource, /onErrorRecovery=\{onErrorRecovery\}/)
+  // assistant-card 인라인 실패 Retry는 네이티브 미지원이므로 제거 — recoveryLabel/chat-failure-recovery 부재를 보장.
+  assert.doesNotMatch(conversationSource, /onErrorRecovery/)
+  assert.doesNotMatch(conversationSource, /recoveryLabel/)
+  assert.doesNotMatch(conversationSource, /chat-failure-recovery/)
+  // surface-level ConnectionError Retry(에러 배너)는 유지 — onConnectionAction 경로.
+  assert.match(viewSource, /onConnectionAction=\{onErrorRecovery\}/)
+  assert.doesNotMatch(viewSource, /onErrorRecovery=\{onErrorRecovery\}/)
   assert.match(rootSource, /chatOnErrorRecovery/)
-  assert.match(rootStorySource, /export const ChatRecovery[\s\S]*?chatOnErrorRecovery/)
-  assert.match(viewStorySource, /export const Recovery[\s\S]*?onErrorRecovery/)
+  // 인라인 실패 Recovery 스토리는 제거, surface-level ConnectionError 스토리는 유지.
+  assert.doesNotMatch(rootStorySource, /export const ChatRecovery/)
+  assert.match(rootStorySource, /export const ChatConnectionError[\s\S]*?chatOnErrorRecovery/)
+  assert.doesNotMatch(viewStorySource, /export const Recovery/)
+  assert.match(viewStorySource, /export const ConnectionError[\s\S]*?onErrorRecovery/)
 }

@@ -12,26 +12,19 @@ import { AiChatWaitingIndicator } from "./AiChatWaitingIndicator"
 
 export interface AiChatAssistantCardProps {
   readonly presentation: AiChatAssistantPresentation
-  readonly onErrorRecovery?: () => void
 }
 
-export const AiChatAssistantCard: FC<AiChatAssistantCardProps> = ({
-  presentation,
-  onErrorRecovery,
-}) => {
+export const AiChatAssistantCard: FC<AiChatAssistantCardProps> = ({ presentation }) => {
   return (
     <article className="chat-assistant-card" data-chat-state={presentation.kind}>
-      {renderPresentation(presentation, onErrorRecovery)}
+      {renderPresentation(presentation)}
     </article>
   )
 }
 
 AiChatAssistantCard.displayName = "AiChatAssistantCard"
 
-function renderPresentation(
-  presentation: AiChatAssistantPresentation,
-  onErrorRecovery?: () => void,
-): ReactNode {
+function renderPresentation(presentation: AiChatAssistantPresentation): ReactNode {
   switch (presentation.kind) {
     case "waiting":
       return (
@@ -46,11 +39,11 @@ function renderPresentation(
       return (
         <>
           <AiChatAssistantMarkdownText content={presentation.content} />
-          <AssistantFailure failure={presentation.failure} onRecovery={onErrorRecovery} />
+          <AssistantFailure failure={presentation.failure} />
         </>
       )
     case "terminal-failure":
-      return <AssistantFailure failure={presentation.failure} onRecovery={onErrorRecovery} />
+      return <AssistantFailure failure={presentation.failure} />
     case "completed":
       return (
         <>
@@ -61,7 +54,7 @@ function renderPresentation(
             <AiChatAssistantMarkdownText content={presentation.content} />
           )}
           {presentation.failure == null ? null : (
-            <AssistantFailure failure={presentation.failure} onRecovery={onErrorRecovery} />
+            <AssistantFailure failure={presentation.failure} />
           )}
         </>
       )
@@ -84,26 +77,12 @@ const AssistantHeader: FC<{ readonly presentation: AiChatAssistantHeaderPresenta
   </header>
 )
 
-const AssistantFailure: FC<{
-  readonly failure: ChatFailure
-  readonly onRecovery?: () => void
-}> = ({ failure, onRecovery }) => (
+const AssistantFailure: FC<{ readonly failure: ChatFailure }> = ({ failure }) => (
   <div className="chat-failure" role="alert">
     <span className="chat-failure-icon">
       <SFSymbol name="exclamationmark.triangle.fill" size={10} />
     </span>
     <span className="chat-failure-message">{failure.message}</span>
-    {failure.recoveryLabel == null ? null : (
-      <button
-        type="button"
-        className="chat-failure-recovery"
-        disabled={onRecovery == null}
-        aria-label={failure.recoveryLabel}
-        onClick={onRecovery}
-      >
-        {failure.recoveryLabel}
-      </button>
-    )}
   </div>
 )
 

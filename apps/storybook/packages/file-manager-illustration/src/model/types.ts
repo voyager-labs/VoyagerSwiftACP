@@ -117,7 +117,6 @@ export type ChatMessage = {
 
 export type ChatFailure = {
   readonly message: string
-  readonly recoveryLabel?: string
 }
 
 export type ChatStreamingAssistant = {

@@ -353,7 +353,7 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 200)
+assert.equal(fileManagerStories.length, 198)
 assert.equal(fileManagerPaths.size, 43)
 assert.equal(nonFileManagerStories.length, 0)
 for (const storyName of ["Centered Empty", "Centered Unconnected", "Connection Error", "Rebind"]) {

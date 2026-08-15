@@ -64,7 +64,6 @@ export const AiChatView: FC<AiChatViewProps> = ({
             state.rebindRequired === true ? disableSubmit(state.inputBar) : state.inputBar
           }
           inputActions={inputActions}
-          onErrorRecovery={onErrorRecovery}
           onRegenerate={onRegenerate}
           rebindRequired={state.rebindRequired}
           onRebindContext={onRebindContext}

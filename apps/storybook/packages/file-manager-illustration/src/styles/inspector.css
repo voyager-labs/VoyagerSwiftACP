@@ -1464,31 +1464,6 @@
   overflow-wrap: anywhere;
 }
 
-[data-file-manager-illustration] .chat-failure-recovery {
-  flex: none;
-  border: 1px solid var(--fm-red);
-  border-radius: var(--fm-radius-md);
-  background: transparent;
-  padding: 2px var(--fm-space-4);
-  color: var(--fm-red);
-  font: inherit;
-  font-size: var(--fm-font-size-caption-2);
-  font-weight: var(--fm-weight-semibold);
-}
-
-[data-file-manager-illustration] .chat-failure-recovery:hover:not(:disabled) {
-  background: var(--fm-chat-control-hover-fill);
-}
-
-[data-file-manager-illustration] .chat-failure-recovery:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--fm-focus-ring);
-}
-
-[data-file-manager-illustration] .chat-failure-recovery:disabled {
-  opacity: 0.5;
-}
-
 /* regenerateAction: 28x28 circle, arrow.clockwise 12pt semibold secondary; controlHoverFill+inputBorder on hover */
 [data-file-manager-illustration] .chat-regenerate {
   display: inline-flex;
