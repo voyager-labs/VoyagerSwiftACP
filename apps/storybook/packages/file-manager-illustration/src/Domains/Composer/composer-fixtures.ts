@@ -59,7 +59,6 @@ export type ComposerScopePicker = {
   readonly currentSummary: string
   readonly includeSubfolders: boolean
   readonly rootOnly?: boolean
-  readonly sectionTitle: string
   readonly items: readonly ComposerScopeItem[]
   readonly feedback?: ComposerScopeFeedback
 }
@@ -171,7 +170,6 @@ export const composerFixtures = {
       query: "",
       currentSummary: "Documents",
       includeSubfolders: true,
-      sectionTitle: "Current scope",
       items: [
         {
           path: "/VoyagerFixtures/Documents",
@@ -199,7 +197,6 @@ export const composerFixtures = {
       query: "",
       currentSummary: "Documents, Projects",
       includeSubfolders: true,
-      sectionTitle: "Current scope",
       items: [
         {
           path: "/VoyagerFixtures/Documents",
@@ -236,7 +233,6 @@ export const composerFixtures = {
       query: "",
       currentSummary: "Documents, Projects",
       includeSubfolders: true,
-      sectionTitle: "Current scope",
       items: [
         {
           path: "/VoyagerFixtures/Documents",

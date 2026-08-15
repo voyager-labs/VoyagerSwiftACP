@@ -275,10 +275,31 @@ const ScopePicker: FC<{
   }, [picker.query])
 
   const query = queryValue.trim()
-  const showsSearchResults = query.length > 0
-  const searchResults = picker.items.filter((item) =>
-    item.path.toLowerCase().includes(query.toLowerCase()),
-  )
+  const matches = (item: ComposerScopeItem) =>
+    query.length === 0 ||
+    item.path.toLowerCase().includes(query.toLowerCase()) ||
+    (item.displayName ?? "").toLowerCase().includes(query.toLowerCase())
+  const filtered = picker.items.filter(matches)
+
+  // 네이티브 makeScopeSections: Current scope(root/base/exception) + candidate 섹션,
+  // 검색 중에는 candidate 섹션이 먼저 오고 결과가 없으면 No Results 푸터를 렌더
+  const currentRows = filtered.filter((item) => item.kind !== "candidate")
+  const candidateRows = filtered.filter((item) => item.kind === "candidate")
+  const noResults = query.length > 0 && filtered.length === 0
+  const candidateSection = {
+    title: noResults
+      ? `No Results for "${query}"`
+      : query.length > 0
+        ? `Search Results for "${query}"`
+        : "Suggested locations",
+    rows: candidateRows,
+    noResults,
+  }
+  const currentSection = { title: "Current scope", rows: currentRows, noResults: false }
+  // 네이티브 isCandidateSectionPrimary: 검색 중에만 candidate 섹션이 먼저 온다
+  const sections =
+    query.length > 0 ? [candidateSection, currentSection] : [currentSection, candidateSection]
+  const visibleSections = sections.filter((section) => section.rows.length > 0 || section.noResults)
 
   const scopeRow = (item: ComposerScopeItem) => {
     const name = item.displayName ?? item.path.split("/").at(-1) ?? item.path
@@ -400,12 +421,22 @@ const ScopePicker: FC<{
         </div>
       )}
       <div className="collection-composer-scope-list">
-        <small>{showsSearchResults ? `Search results for "${query}"` : picker.sectionTitle}</small>
-        {showsSearchResults && searchResults.length === 0 ? (
-          <div className="collection-composer-scope-empty">No matching directories</div>
-        ) : (
-          (showsSearchResults ? searchResults : picker.items).map(scopeRow)
-        )}
+        {visibleSections.map((section, index) => (
+          <div className="collection-composer-scope-section" key={section.title}>
+            {index > 0 && <div className="collection-composer-scope-section-divider" />}
+            <small className="collection-composer-scope-section-header">{section.title}</small>
+            {section.rows.map(scopeRow)}
+            {section.noResults && (
+              <div className="collection-composer-scope-no-results">
+                <strong>No Results</strong>
+                <span>No directories found for &quot;{query}&quot;.</span>
+                <small>
+                  Try another search or clear the search to return to the previous list.
+                </small>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </dialog>
   )

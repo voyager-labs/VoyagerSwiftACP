@@ -183,7 +183,6 @@ const ComposerSelectionFlow = ({
                   currentSummary: draft.scopes[0]?.split("/").at(-1) ?? "This Mac",
                   includeSubfolders,
                   rootOnly: draft.scopes.length === 0,
-                  sectionTitle: "Current scope",
                   items: [
                     {
                       path: "/VoyagerFixtures/Documents",

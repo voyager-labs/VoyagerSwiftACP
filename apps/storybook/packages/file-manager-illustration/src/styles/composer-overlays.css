@@ -371,6 +371,49 @@
   text-align: center;
 }
 
+/* 네이티브 scopeSectionHeader: 10pt medium secondary(0.85), 수평 2 패딩 */
+[data-file-manager-illustration] .collection-composer-scope-section {
+  display: grid;
+  gap: var(--fm-space-2);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-section-header {
+  padding: 0 2px;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-section-divider {
+  height: 1px;
+  margin: var(--fm-space-3) 2px;
+  background: var(--fm-separator);
+  opacity: 0.8;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results {
+  display: grid;
+  gap: 2px;
+  padding-block: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results strong {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+  font-weight: 600;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results span {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results small {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+}
+
 [data-file-manager-illustration] .collection-composer-picker-list,
 [data-file-manager-illustration] .collection-composer-scope-list {
   display: flex;
@@ -707,14 +750,6 @@
 
 [data-file-manager-illustration] .collection-composer-scope-feedback.failed strong {
   color: var(--fm-composer-error);
-}
-
-[data-file-manager-illustration] .collection-composer-scope-list small {
-  padding: 2px 12px 4px;
-  color: var(--fm-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
 }
 
 [data-file-manager-illustration] .collection-composer-toast {
