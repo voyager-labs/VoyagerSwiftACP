@@ -156,9 +156,19 @@ export const composerFixtures = {
   },
   valuePickerOpen: {
     ...populatedDraft,
+    conditions: [
+      ...populatedDraft.conditions,
+      {
+        id: "is_invisible",
+        property: "Is hidden",
+        propertySymbol: "eye.slash",
+        operator: "Is",
+        value: "True",
+      },
+    ],
     picker: {
       kind: "value",
-      conditionID: "kind",
+      conditionID: "is_invisible",
       editor: { kind: "boolean" },
       selectedValue: "True",
     },

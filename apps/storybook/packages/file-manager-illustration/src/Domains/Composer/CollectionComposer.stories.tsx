@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { CollectionComposer } from "./CollectionComposer"
 import {
   type ComposerOperatorOption,
@@ -57,6 +57,8 @@ const ComposerSelectionFlow = ({
   >()
   const [duplicateMessage, setDuplicateMessage] = useState<string>()
   const [editingPropertyId, setEditingPropertyId] = useState<string>()
+  // 네이티브 cancelSearch/cancelFilters: Stop은 진행 중 타이머를 취소한다
+  const submitTimer = useRef<number | undefined>(undefined)
 
   // 네이티브 ComposerSearchLifecycleMetricLogging: 토스트 4초 후 자동 해제
   useEffect(() => {
@@ -101,10 +103,16 @@ const ComposerSelectionFlow = ({
   }
 
   const submit = () => {
-    if (isProcessing || draft.query.trim().length === 0) return
+    if (isProcessing) {
+      window.clearTimeout(submitTimer.current)
+      setIsProcessing(false)
+      setToast(undefined)
+      return
+    }
+    if (draft.query.trim().length === 0) return
     setIsProcessing(true)
     setToast(undefined)
-    window.setTimeout(() => {
+    submitTimer.current = window.setTimeout(() => {
       setIsProcessing(false)
       setToast({ type: "info", message: "Collection query completed." })
     }, 900)
@@ -288,12 +296,35 @@ const ComposerSelectionFlow = ({
         setProperty(selectedProperty)
         setOperator(undefined)
         setDuplicateMessage(undefined)
-        upsertCondition({
-          id: selectedProperty.key,
-          property: selectedProperty.label,
-          propertySymbol: selectedProperty.symbol,
-          operator: "",
-          value: "",
+        // 네이티브 startEditing: 편집 컨텍스트에서는 기존 조건을 교체한다
+        const replacing =
+          editingPropertyId != null
+            ? draft.conditions.find((condition) => condition.id === editingPropertyId)
+            : undefined
+        commit({
+          ...draft,
+          conditions: replacing
+            ? draft.conditions.map((condition) =>
+                condition.id === editingPropertyId
+                  ? {
+                      id: selectedProperty.key,
+                      property: selectedProperty.label,
+                      propertySymbol: selectedProperty.symbol,
+                      operator: "",
+                      value: "",
+                    }
+                  : condition,
+              )
+            : [
+                ...draft.conditions,
+                {
+                  id: selectedProperty.key,
+                  property: selectedProperty.label,
+                  propertySymbol: selectedProperty.symbol,
+                  operator: "",
+                  value: "",
+                },
+              ],
         })
         setEditingPropertyId(undefined)
         setStep("operator")
@@ -328,9 +359,19 @@ const ComposerSelectionFlow = ({
         setStep(selectedOperator.editor.kind === "none" ? "complete" : "value")
       }}
       onValueClick={(id) => {
-        if (operator?.editor.kind === "none") return
         setEditingPropertyId(id)
-        setStep("value")
+        const target = draft.conditions.find((condition) => condition.id === id)
+        const selectedProperty =
+          composerPropertyOption(id) ??
+          composerPropertyOptions.find(
+            (property) =>
+              property.label === target?.property || property.symbol === target?.propertySymbol,
+          )
+        if (target != null && selectedProperty != null) {
+          setProperty(selectedProperty)
+          setOperator(selectedProperty.operators.find((option) => option.label === target.operator))
+          setStep("value")
+        }
       }}
       onValueCommit={(value) => {
         const target = editingCondition ?? {
