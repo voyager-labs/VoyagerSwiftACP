@@ -87,10 +87,39 @@ struct EntryListHierarchyReducer {
                     effects.append(.send(.delegate(.expandRequested(folder.id))))
                 }
                 state.reconcileSelectionWithVisibleEntries()
-                return .merge(effects)
+
+                // root snapshot 재조정 후 rename 대상이 최종 visible hierarchy projection에
+                // 더 이상 없으면 rename을 취소한다. root-only snapshot은 중첩 child 가시성을
+                // 알 수 없으므로, expanded·loaded child가 여전히 visible하면 rename을 보존한다.
+                var renameEffects: [Effect<Action>] = []
+                if let renamingID = state.entryOperations.renamingItemId {
+                    let visibleIDs = Set(state.visibleSelectableEntryIDs(
+                        isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
+                    ))
+                    if !visibleIDs.contains(renamingID) {
+                        renameEffects.append(.send(.delegate(.renameCanceled)))
+                    }
+                }
+                return .merge(effects + renameEffects)
 
             case .coarseHierarchyRefreshRequested:
                 return reloadFoldersForPresentationChange(state: &state)
+
+            case .restartUnfinishedExpandedFolderLoads:
+                // cross-window content tab 이동 등으로 소스 window의 folder load가 취소된 뒤,
+                // target window/owner에서 unfinished(.loadingCore/.enriching) expanded folder만 재시작한다.
+                // startLoad가 generation 증가 + partial stream snapshot 초기화를 수행하며,
+                // .loaded 노드의 캐시와 parent/expansion 상태는 그대로 보존한다.
+                var effects: [Effect<Action>] = []
+                for id in state.hierarchy.nodesByID.keys {
+                    guard let nodeState = state.hierarchy.nodesByID[id],
+                          nodeState.expansionIntent,
+                          nodeState.loadPhase == .loadingCore || nodeState.loadPhase == .enriching,
+                          let folder = folder(id: id, in: state)
+                    else { continue }
+                    effects.append(startLoad(folder: folder, id: id, state: &state))
+                }
+                return .merge(effects)
 
             case let .folderExpansionRequested(id):
                 guard hierarchyInteractionsAreEnabled(in: state) else { return .none }

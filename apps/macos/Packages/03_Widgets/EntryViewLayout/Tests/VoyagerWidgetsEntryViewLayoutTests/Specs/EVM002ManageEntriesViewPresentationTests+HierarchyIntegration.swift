@@ -648,6 +648,111 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.finish()
     }
 
+    // MARK: - EVM-002-cross_window_folder_load_restart
+
+    /// restartUnfinishedExpandedFolderLoads: unfinished expanded folder만 재시작한다.
+    /// cross-window 이동 등으로 취소된 .loadingCore/.enriching expanded folder만 generation 증가·partial snapshot
+    /// 초기화 후 재시작하고, .loaded 노드의 캐시와 idle/failed 노드·expansion 상태는 보존하는지 검증한다.
+    func testRestartUnfinishedExpandedFolderLoadsRestartsOnlyLoadingNodes() async {
+        let loadingFolder = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let enrichingFolder = EntryModel.temporaryFolder(id: "/root/B", name: "B")
+        let loadedFolder = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let idleFolder = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let failedFolder = EntryModel.temporaryFolder(id: "/root/E", name: "E")
+        let (state, loadedChild) = makeRestartUnfinishedLoadingNodesState(
+            loadingFolder: loadingFolder,
+            enrichingFolder: enrichingFolder,
+            loadedFolder: loadedFolder,
+            idleFolder: idleFolder,
+            failedFolder: failedFolder,
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: effect 순서보다 state 전환 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.restartUnfinishedExpandedFolderLoads)) {
+            $0.hierarchy.nodesByID[loadingFolder.id as String] = .init(
+                expansionIntent: true,
+                generation: 3,
+                loadPhase: .loadingCore,
+            )
+            $0.hierarchy.nodesByID[enrichingFolder.id as String] = .init(
+                expansionIntent: true,
+                generation: 4,
+                loadPhase: .loadingCore,
+            )
+            $0.hierarchy.nodesByID[loadedFolder.id as String] = FolderNodeState(
+                folder: FolderSnapshot(children: [loadedChild]),
+                expansionIntent: true,
+                generation: 4,
+                loadPhase: .loaded,
+            )
+        }
+        let restarted = await collectExpandRequests(count: 2, from: store)
+        XCTAssertEqual(restarted, [loadingFolder.id, enrichingFolder.id])
+        XCTAssertEqual(store.state.hierarchy.nodesByID[loadingFolder.id]?.folder.children, [])
+        XCTAssertEqual(store.state.hierarchy.nodesByID[enrichingFolder.id]?.folder.children, [])
+        XCTAssertEqual(store.state.hierarchy.nodesByID[loadingFolder.id]?.generation, 3)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[enrichingFolder.id]?.generation, 4)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[loadedFolder.id]?.folder.children, [loadedChild])
+        XCTAssertEqual(store.state.hierarchy.nodesByID[loadedFolder.id]?.generation, 4)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[idleFolder.id]?.generation, 5)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[idleFolder.id]?.loadPhase, .idle)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[failedFolder.id]?.loadPhase, .failed(.permissionDenied))
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(loadingFolder.id))
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(enrichingFolder.id))
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(loadedFolder.id))
+    }
+
+    /// restartUnfinishedExpandedFolderLoads: 중첩 loading folder의 parentID와 collapsed 노드를 보존한다.
+    /// parent가 loaded 상태일 때 그 children에 있는 unfinished expanded folder만 재시작하며, parentID와
+    /// collapsed(expansionIntent = false) 노드의 상태는 그대로 유지되는지 검증한다.
+    func testRestartUnfinishedExpandedFolderLoadsPreservesParentAndSkipsCollapsed() async {
+        let parent = EntryModel.temporaryFolder(id: "/root/P", name: "P")
+        let nestedLoading = EntryModel.temporaryFolder(id: "/root/P/A", name: "A")
+        let nestedLoaded = EntryModel.temporaryFolder(id: "/root/P/B", name: "B")
+        let nestedChild = makeHierarchyIntegrationEntry(id: "/root/P/A/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [parent]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            parent.id: .init(children: [nestedLoading, nestedLoaded], loadPhase: .loaded, generation: 1),
+            nestedLoading.id: FolderNodeState(
+                folder: FolderSnapshot(children: [nestedChild], expectedBatchIndex: 1),
+                parentID: parent.id,
+                expansionIntent: true,
+                generation: 2,
+                loadPhase: .loadingCore,
+            ),
+            nestedLoaded.id: .init(parentID: parent.id, generation: 3, loadPhase: .loaded),
+        ]
+        state.hierarchy.setExpandedIDs([parent.id, nestedLoading.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: effect 순서보다 state 전환 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.restartUnfinishedExpandedFolderLoads)) {
+            $0.hierarchy.nodesByID[nestedLoading.id as String] = .init(
+                parentID: parent.id,
+                expansionIntent: true,
+                generation: 3,
+                loadPhase: .loadingCore,
+            )
+        }
+        await store.receive(\.delegate.expandRequested, nestedLoading.id)
+
+        XCTAssertEqual(store.state.hierarchy.nodesByID[nestedLoading.id]?.parentID, parent.id)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[nestedLoading.id]?.folder.children, [])
+        XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(nestedLoading.id))
+        XCTAssertEqual(store.state.hierarchy.nodesByID[nestedLoaded.id]?.loadPhase, .loaded)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[nestedLoaded.id]?.generation, 3)
+        XCTAssertFalse(store.state.hierarchy.expandedFolderIDs.contains(nestedLoaded.id))
+    }
+
     /// EVM-002-update_entry_selection: nested child context menu는 visible hierarchy row를 현재 대상으로 사용한다.
     /// expanded child를 우클릭한 뒤 Rename이 root-only snapshot 때문에 no-op 되지 않는지 검증한다.
     /// - 검증 내용: child row context menu target의 Rename delegate action
@@ -771,6 +876,70 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         XCTAssertNil(store.state.entryOperations.renamingItemId)
         XCTAssertEqual(store.state.entries, [replacement])
+    }
+
+    /// EVM-002-rename_entry: root snapshot 완료 시 projection에서 사라진 renamed root 항목 취소
+    /// accepted root snapshot 재조정 뒤 rename 대상이 최종 visible hierarchy projection에 없으면
+    /// rename이 취소되는지 검증한다.
+    ///
+    /// - 검증 내용: rootSnapshotCompleted 후 `.delegate(.renameCanceled)` 수신
+    /// - 사전 조건: renamed root folder가 expansion·rename 중이고 새 root snapshot에 그 folder가 없다.
+    /// - 기대 결과: evict된 renamed folder가 projection에서 제거되어 renameCanceled delegate가 발행됨
+    func testRootSnapshotCompletionCancelsRenameWhenRootItemLeavesProjection() async {
+        let renamed = EntryModel.temporaryFolder(id: "/root/renamed", name: "renamed")
+        let replacement = EntryModel.temporaryFolder(id: "/root/replacement", name: "replacement")
+        var state = EntryViewLayoutState()
+        state.entries = [replacement]
+        state.entryOperations.renamingItemId = renamed.id
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            renamed.id: .init(children: [], loadPhase: .loaded, generation: 3),
+        ]
+        state.hierarchy.setExpandedIDs([renamed.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: root snapshot 재조정과 rename visibility 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.rootSnapshotCompleted(
+            rootContextGeneration: 0,
+            rootFolders: [replacement],
+        )))
+        await store.receive(\.delegate.renameCanceled)
+    }
+
+    /// EVM-002-rename_entry: root snapshot 완료 후에도 visible nested child rename 유지
+    /// accepted root snapshot 재조정 뒤 expanded·loaded child가 최종 visible hierarchy projection에
+    /// 남아 있으면 rename이 취소되지 않는지 검증한다.
+    ///
+    /// - 검증 내용: rootSnapshotCompleted 후 renameCanceled 미수신 및 renamingItemId 유지
+    /// - 사전 조건: expanded·loaded folder child가 visible하고 rename 중임, root snapshot에 그 folder 포함
+    /// - 기대 결과: child가 projection에 남아 rename이 유지됨
+    func testRootSnapshotCompletionPreservesRenameForVisibleNestedChild() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.entryOperations.renamingItemId = child.id
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(children: [child], loadPhase: .loaded, generation: 0),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: root snapshot 재조정과 rename visibility 계약만 검증한다.
+        store.exhaustivity = .off
+
+        // no renameCanceled delegate가 발행되지 않아 received action이 없다. (skip 호출 불필요)
+        await store.send(.hierarchy(.rootSnapshotCompleted(
+            rootContextGeneration: 0,
+            rootFolders: [folder],
+        )))
+
+        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: 동일 root reload는 hierarchy와 selection을 보존함
@@ -1083,6 +1252,48 @@ extension EVM002ManageEntriesViewPresentationTests {
             collectionWindowID: nil,
             collectionLoadingCancellationOwnerID: UUID(),
         )
+    }
+
+    private func makeRestartUnfinishedLoadingNodesState(
+        loadingFolder: EntryModel,
+        enrichingFolder: EntryModel,
+        loadedFolder: EntryModel,
+        idleFolder: EntryModel,
+        failedFolder: EntryModel,
+    ) -> (state: EntryViewLayoutState, loadedChild: EntryModel) {
+        let loadedChild = makeHierarchyIntegrationEntry(id: loadedFolder.id + "/child.txt", name: "child.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [loadingFolder, enrichingFolder, loadedFolder, idleFolder, failedFolder]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            loadingFolder.id: .init(
+                children: [makeHierarchyIntegrationEntry(id: loadingFolder.id + "/partial.txt", name: "partial.txt")],
+                loadPhase: .loadingCore,
+                generation: 2,
+                expectedBatchIndex: 1,
+            ),
+            enrichingFolder.id: .init(generation: 3, loadPhase: .enriching),
+            loadedFolder.id: .init(children: [loadedChild], loadPhase: .loaded, generation: 4),
+            idleFolder.id: .init(generation: 5, loadPhase: .idle),
+            failedFolder.id: .init(generation: 6, loadPhase: .failed(.permissionDenied)),
+        ]
+        state.hierarchy.setExpandedIDs([loadingFolder.id, enrichingFolder.id, loadedFolder.id])
+        return (state, loadedChild)
+    }
+
+    private func collectExpandRequests(
+        count: Int,
+        from store: TestStore<EntryViewLayoutState, EntryViewLayoutAction>,
+    ) async -> Set<String> {
+        var received = Set<String>()
+        for _ in 0 ..< count {
+            await store.receive { action in
+                guard case let .delegate(.expandRequested(id)) = action else { return false }
+                received.insert(id)
+                return true
+            }
+        }
+        return received
     }
 }
 
