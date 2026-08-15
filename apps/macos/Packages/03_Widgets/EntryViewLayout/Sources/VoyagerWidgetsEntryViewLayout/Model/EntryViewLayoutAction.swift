@@ -147,6 +147,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case collectionAppendFailed(epoch: Int, token: Int, message: String)
         case removeCollectionPaths([String])
         case cancelCollectionMaterialization
+        case restartCollectionMaterialization
         case clearCollectionPresentation
         case reconcileHierarchySelection
     }

@@ -528,6 +528,31 @@ public struct EntryViewLayoutFeature {
                 state.isCollectionContentLoading = false
                 return .merge(cancellationEffects + [.cancel(id: replaceCancelID)])
 
+            case .internal(.restartCollectionMaterialization):
+                let replacePaths = state.activeCollectionReplacePaths
+                let appendPaths = state.activeCollectionAppendExpectedBatchIndices.keys
+                    .sorted()
+                    .compactMap { state.activeCollectionAppendPaths[$0] }
+                    .filter { !$0.isEmpty }
+                guard !replacePaths.isEmpty || !appendPaths.isEmpty else { return .none }
+
+                let showHidden = state.showHiddenFiles
+                let priority = Self.collectionMetadataPriority(for: state)
+                var effects: [Effect<Action>] = [
+                    .send(.internal(.cancelCollectionMaterialization)),
+                ]
+                if !replacePaths.isEmpty {
+                    effects.append(.send(.internal(.applyCollectionSearchPaths(
+                        paths: replacePaths,
+                        showHidden: showHidden,
+                        priority: priority,
+                    ))))
+                }
+                effects.append(contentsOf: appendPaths.map {
+                    .send(.internal(.addCollectionPaths($0)))
+                })
+                return .concatenate(effects)
+
             case .internal(.clearCollectionPresentation):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
                     Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))

@@ -460,6 +460,10 @@ extension WindowManagerFeature {
                 rebindIntents,
                 target: target,
             ),
+            contentTabMoveCollectionTeardownEffect(
+                rebindIntents,
+                target: target,
+            ),
             contentTabMoveOwnerRebindEffect(
                 request: request,
                 rebindIntents,
@@ -467,6 +471,11 @@ extension WindowManagerFeature {
             contentTabMoveHierarchyRestartEffect(
                 request: request,
                 rebindIntents,
+            ),
+            contentTabMoveCollectionRestartEffect(
+                request: request,
+                rebindIntents,
+                target: target,
             ),
             contentTabMoveObservationRebindEffect(
                 request: request,
@@ -514,10 +523,39 @@ extension WindowManagerFeature {
         for tabID: ContentTabID,
         in target: FileManagerWindowState,
     ) -> EntryOperationsState? {
+        movedEntryViewLayout(for: tabID, in: target)?.entryOperations
+    }
+
+    private func movedEntryViewLayout(
+        for tabID: ContentTabID,
+        in target: FileManagerWindowState,
+    ) -> EntryViewLayoutState? {
         if target.contentTabs.activeTabID == tabID {
-            return target.content.entryViewLayout.entryOperations
+            return target.content.entryViewLayout
         }
-        return target.tabContentStates[tabID]?.entryViewLayout.entryOperations
+        return target.tabContentStates[tabID]?.entryViewLayout
+    }
+
+    private func contentTabMoveCollectionTeardownEffect(
+        _ intents: [ContentTabTransfer.RebindIntent],
+        target: FileManagerWindowState,
+    ) -> Effect<Action> {
+        var cancelIDs = Set<EntryViewLayoutCollectionCancelID>()
+        for intent in intents {
+            guard let layout = movedEntryViewLayout(for: intent.tabID, in: target) else { continue }
+            let ownerID = layout.entryOperations.loadingCancellationOwnerID
+            if !layout.activeCollectionReplacePaths.isEmpty {
+                cancelIDs.insert(.replace(windowID: intent.sourceWindowID, ownerID: ownerID))
+            }
+            for token in layout.activeCollectionAppendExpectedBatchIndices.keys {
+                cancelIDs.insert(.append(
+                    token: token,
+                    windowID: intent.sourceWindowID,
+                    ownerID: ownerID,
+                ))
+            }
+        }
+        return .concatenate(cancelIDs.map { .cancel(id: $0) })
     }
 
     private func contentTabMoveHierarchyRestartEffect(
@@ -531,6 +569,27 @@ extension WindowManagerFeature {
                 action: .tabContent(
                     tabID: intent.tabID,
                     action: .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads)),
+                ),
+            )
+        })
+    }
+
+    private func contentTabMoveCollectionRestartEffect(
+        request: ContentTabMoveRequest,
+        _ intents: [ContentTabTransfer.RebindIntent],
+        target: FileManagerWindowState,
+    ) -> Effect<Action> {
+        .concatenate(intents.compactMap { intent in
+            guard let layout = movedEntryViewLayout(for: intent.tabID, in: target),
+                  !layout.activeCollectionReplacePaths.isEmpty
+                  || !layout.activeCollectionAppendExpectedBatchIndices.isEmpty
+            else { return nil }
+            return contentTabMoveWindowActionEffect(
+                request: request,
+                windowID: intent.targetWindowID,
+                action: .tabContent(
+                    tabID: intent.tabID,
+                    action: .entryViewLayout(.internal(.restartCollectionMaterialization)),
                 ),
             )
         })

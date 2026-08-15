@@ -163,6 +163,7 @@ private enum ContentTabMoveFolderLifecycleEvent: String {
     case folderCancel = "folder-cancel"
     case windowRebind = "window-rebind"
     case hierarchyRestart = "hierarchy-restart"
+    case collectionRestart = "collection-restart"
     case rebindComplete = "rebind-complete"
 }
 
@@ -176,6 +177,8 @@ private func contentTabMoveFolderLifecycleEvent(
         .windowRebind
     case .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads)):
         .hierarchyRestart
+    case .entryViewLayout(.internal(.restartCollectionMaterialization)):
+        .collectionRestart
     case .internal(.applyNavigationState):
         .rebindComplete
     default:
@@ -8041,7 +8044,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         ])
     }
 
-    /// CTM-001-move_content_tab_to_another_window: cross-window folder load lifecycle를 보장한다.
+    /// CTM-001-move_content_tab_to_another_window: cross-window folder·collection load lifecycle를 보장한다.
     /// projectTarget가 moved tab의 entryOperations.windowID를 이미 target으로 재지정한 뒤에도, 복사된
     /// folderLoadingContexts에서 유도한 source-keyed cancel이 원본 source folder stream을 실제로 취소하고,
     /// 그 후 cancelAllFolderItems가 target의 folderLoadingContexts를 비우며, restart·observation rebind 순서를
@@ -8050,8 +8053,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     ///   folder-cancel → window-rebind → hierarchy-restart → observation rebind 순서
     /// - 사전 조건: moved tab과 무관 fallback tab이 각각 held folder stream을 갖고 move가 성공한다.
     /// - 기대 결과: moved tab의 source-keyed stream이 취소되고, fallback stream은 유지되며, target moved tab의
-    ///   folderLoadingContexts가 비워지고, restart/rebind 순서가 지켜진다.
-    func testContentTabMoveOrdersFolderCancelBeforeOwnerRebindAndRestartAfter() async throws {
+    ///   folderLoadingContexts가 비워지고, hierarchy·collection restart/rebind 순서가 지켜진다.
+    func testContentTabMoveOrdersLoadingCancellationBeforeOwnerRebindAndRestartsAfter() async throws {
         let sourceID = UUID(4560)
         let targetID = UUID(4561)
         let movedTabID = ContentTabID(rawValue: "folder-lifecycle-moved")
@@ -8092,6 +8095,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         var movedContent = source.window.content
         movedContent.entryViewLayout.entryOperations.windowID = sourceID
         movedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = movedOwnerID
+        movedContent.entryViewLayout.isCollectionMode = true
+        movedContent.entryViewLayout.collectionReplaceEpoch = 3
+        movedContent.entryViewLayout.activeCollectionReplacePaths = ["/collection-lifecycle/replace.txt"]
+        movedContent.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 0]
+        movedContent.entryViewLayout.activeCollectionAppendPaths = [7: ["/collection-lifecycle/append.txt"]]
+        movedContent.entryViewLayout.nextCollectionAppendToken = 7
         // target restart가 같은 moved URL을 두 번째로 재호출하도록, moved folder를 expanded .loadingCore로 시드한다.
         // folderGeneration은 source request(movedFolderRequest.folderGeneration == 1)와 일치시킨다.
         let movedFolder = EntryModel.temporaryFolder(
@@ -8233,9 +8242,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             "folder-cancel",
             "window-rebind",
             "hierarchy-restart",
+            "collection-restart",
             "rebind-complete",
         ])
         XCTAssertEqual(movedCancellationCount.value, 1)
+        let movedLayout = try XCTUnwrap(store.state.windows[id: targetID]?.window.content.entryViewLayout)
+        XCTAssertEqual(movedLayout.collectionReplaceEpoch, 5)
+        XCTAssertEqual(movedLayout.nextCollectionAppendToken, 8)
     }
 
     /// CTM-001-move_content_tab_to_another_window: inactive move는 source active lifecycle을 rebind하지 않는다.

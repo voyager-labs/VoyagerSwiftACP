@@ -517,6 +517,16 @@ public struct FileManagerFeature {
         case .tabContent(_, .internal(.applyNavigationState)),
              .tabContent(_, .internal(.startObservingSystemNotifications)),
              .tabContent(_, .internal(.stopObservingSystemNotifications)),
+             .tabContent(_, .entryViewLayout(.internal(.restartCollectionMaterialization))),
+             .tabContent(_, .entryViewLayout(.internal(.cancelCollectionMaterialization))),
+             .tabContent(_, .entryViewLayout(.internal(.applyCollectionSearchPaths))),
+             .tabContent(_, .entryViewLayout(.internal(.addCollectionPaths))),
+             .tabContent(_, .entryViewLayout(.internal(.collectionReplaceEvent))),
+             .tabContent(_, .entryViewLayout(.internal(.collectionReplaceStreamCompleted))),
+             .tabContent(_, .entryViewLayout(.internal(.collectionReplaceFailed))),
+             .tabContent(_, .entryViewLayout(.internal(.collectionAppendEvent))),
+             .tabContent(_, .entryViewLayout(.internal(.collectionAppendStreamCompleted))),
+             .tabContent(_, .entryViewLayout(.internal(.collectionAppendFailed))),
              .tabContent(_, .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads))),
              .tabContent(_, .entryViewLayout(.delegate(.expandRequested))):
             true
