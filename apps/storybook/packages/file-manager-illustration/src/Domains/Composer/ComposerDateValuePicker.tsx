@@ -1,4 +1,11 @@
 import { type FC, useState } from "react"
+import {
+  type ParsedRelativeLiteral,
+  encodeRelativeLiteral,
+  parseRelativeLiteral,
+  relativeDisplay,
+  todayLiteral,
+} from "./composer-date-literal"
 
 const relativePresets = [
   "Custom",
@@ -19,30 +26,106 @@ export type ComposerDateValuePickerProps = {
 
 const relativeUnits = ["Day", "Week", "Month", "Year"] as const
 
-const parseInitialValue = (
-  value: string | undefined,
-): {
+type RelativeUnit = (typeof relativeUnits)[number]
+
+const presetAmounts: Record<
+  Exclude<(typeof relativePresets)[number], "Custom" | "Today">,
+  number
+> = {
+  Yesterday: 1,
+  "7 days ago": 7,
+  "30 days ago": 30,
+  "3 months ago": 3,
+  "1 year ago": 1,
+}
+
+const presetUnits: Record<
+  Exclude<(typeof relativePresets)[number], "Custom" | "Today">,
+  RelativeUnit
+> = {
+  Yesterday: "Day",
+  "7 days ago": "Day",
+  "30 days ago": "Day",
+  "3 months ago": "Month",
+  "1 year ago": "Year",
+}
+
+const unitToNative: Record<RelativeUnit, ParsedRelativeLiteral["unit"]> = {
+  Day: "day",
+  Week: "week",
+  Month: "month",
+  Year: "year",
+}
+
+const nativeToUnit: Record<ParsedRelativeLiteral["unit"], RelativeUnit> = {
+  day: "Day",
+  week: "Week",
+  month: "Month",
+  year: "Year",
+}
+
+type InitialState = {
   dateMode: "absolute" | "relative"
   preset: (typeof relativePresets)[number]
   amount: string
-  unit: (typeof relativeUnits)[number]
+  unit: RelativeUnit
+  direction: "past" | "future"
   values: readonly string[]
-} => {
+}
+
+const parseInitialValue = (value: string | undefined): InitialState => {
   const trimmed = value?.trim() ?? ""
-  const preset = relativePresets.find(
+  // 네이티브 정규 리터럴 우선 파싱
+  const literal = parseRelativeLiteral(trimmed)
+  if (literal != null) {
+    const matchedPreset = (
+      Object.keys(presetAmounts) as readonly (keyof typeof presetAmounts)[]
+    ).find(
+      (preset) =>
+        presetAmounts[preset] === literal.amount &&
+        presetUnits[preset] === nativeToUnit[literal.unit],
+    )
+    return {
+      dateMode: "relative",
+      preset: matchedPreset ?? "Custom",
+      amount: String(literal.amount),
+      unit: nativeToUnit[literal.unit],
+      direction: literal.direction,
+      values: [],
+    }
+  }
+  if (trimmed === todayLiteral()) {
+    return {
+      dateMode: "relative",
+      preset: "Today",
+      amount: "1",
+      unit: "Day",
+      direction: "past",
+      values: [],
+    }
+  }
+  const legacyPreset = relativePresets.find(
     (candidate) => candidate !== "Custom" && candidate === trimmed,
   )
-  if (preset != null) {
-    return { dateMode: "relative", preset, amount: "1", unit: "Day", values: [] }
+  if (legacyPreset != null) {
+    return {
+      dateMode: "relative",
+      preset: legacyPreset,
+      amount: "1",
+      unit: "Day",
+      direction: "past",
+      values: [],
+    }
   }
   const custom = /^(\d+) (day|week|month|year)s? ago$/.exec(trimmed)
   if (custom != null) {
-    const unit = relativeUnits.find((candidate) => candidate.toLowerCase() === custom[2])
+    const native = custom[2] as ParsedRelativeLiteral["unit"]
     return {
       dateMode: "relative",
       preset: "Custom",
       amount: custom[1] ?? "1",
-      unit: unit ?? "Day",
+      unit: nativeToUnit[native],
+      direction: "past",
       values: [],
     }
   }
@@ -51,6 +134,7 @@ const parseInitialValue = (
     preset: "7 days ago",
     amount: "1",
     unit: "Day",
+    direction: "past",
     values: trimmed.length > 0 ? trimmed.split(" - ") : [],
   }
 }
@@ -71,10 +155,12 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
     initial.preset,
   )
   const [relativeAmount, setRelativeAmount] = useState(initial.amount)
-  const [relativeUnit, setRelativeUnit] = useState<(typeof relativeUnits)[number]>(initial.unit)
+  const [relativeUnit, setRelativeUnit] = useState<RelativeUnit>(initial.unit)
+  // 네이티브는 future 방향 상태를 유지한다(프리셋 UI는 past 전용)
+  const [relativeDirection] = useState<"past" | "future">(initial.direction)
   const [error, setError] = useState<string | undefined>(initialError)
 
-  const commit = (nextValues: readonly string[]) => {
+  const commitAbsolute = (nextValues: readonly string[]) => {
     if (nextValues.some((value) => value.trim().length === 0)) {
       setError("Value is required.")
       return
@@ -96,10 +182,20 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       Number.isInteger(Number(relativeAmount)) &&
       Number(relativeAmount) > 0)
 
-  const relativePreview =
+  const customAmount = relativePreset === "Custom" ? Number(relativeAmount) : undefined
+  const resolvedAmount =
+    customAmount ?? presetAmounts[relativePreset as keyof typeof presetAmounts] ?? 1
+  const resolvedUnit =
     relativePreset === "Custom"
-      ? `${relativeAmount} ${relativeUnit.toLowerCase()}${relativeAmount === "1" ? "" : "s"} ago`
-      : relativePreset
+      ? relativeUnit
+      : (presetUnits[relativePreset as keyof typeof presetUnits] ?? "Day")
+
+  // 네이티브 displayText: 프리셋 라벨이 아니라 "N unit(s) ago" 형식으로 표시한다
+  const relativePreview = relativeDisplay(
+    relativeDirection,
+    resolvedAmount,
+    unitToNative[resolvedUnit],
+  )
 
   const submit = () => {
     if (kind === "date" && dateMode === "relative") {
@@ -107,10 +203,26 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
         setError("Enter a positive whole number of units.")
         return
       }
-      commit([relativePreview])
+      // 네이티브 today 모드: raw = 오늘 날짜, 표시 = "Today"
+      if (relativePreset === "Today") {
+        setError(undefined)
+        onCommit?.(todayLiteral())
+        return
+      }
+      const literal = encodeRelativeLiteral(
+        relativeDirection,
+        resolvedAmount,
+        unitToNative[resolvedUnit],
+      )
+      if (literal == null) {
+        setError("Enter a positive whole number of units.")
+        return
+      }
+      setError(undefined)
+      onCommit?.(literal)
       return
     }
-    commit(values)
+    commitAbsolute(values)
   }
 
   return (

@@ -1,5 +1,6 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
+import { displayValueForLiteral } from "./composer-date-literal"
 import type { ComposerCondition } from "./composer-fixtures"
 
 export type ComposerConditionChipProps = {
@@ -62,7 +63,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
               aria-expanded={valueExpanded}
               onClick={onValueClick}
             >
-              {part}
+              {displayValueForLiteral(part)}
             </button>
           </span>
         ))}

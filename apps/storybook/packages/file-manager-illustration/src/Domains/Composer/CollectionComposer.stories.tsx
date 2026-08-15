@@ -149,6 +149,21 @@ const ComposerSelectionFlow = ({
           (condition) => condition.id === property.key || condition.property === property.label,
         )
 
+  // 네이티브 조건 편집: 일치하는 조건을 갱신하고 없으면 추가한다
+  const upsertCondition = (next: ComposerCondition) => {
+    const matches = draft.conditions.some(
+      (condition) => condition.id === next.id || condition.property === next.property,
+    )
+    commit({
+      ...draft,
+      conditions: matches
+        ? draft.conditions.map((condition) =>
+            condition.id === next.id || condition.property === next.property ? next : condition,
+          )
+        : [...draft.conditions, next],
+    })
+  }
+
   const fixture: ComposerFixture = {
     ...composerFixtures.emptyDraft,
     query: draft.query,
@@ -266,19 +281,14 @@ const ComposerSelectionFlow = ({
       onOperatorClick={() => setStep("operator")}
       onOperatorSelect={(operatorCode) => {
         const selectedOperator = property?.operators.find((option) => option.code === operatorCode)
-        if (selectedOperator == null) return
+        if (selectedOperator == null || property == null) return
         setOperator(selectedOperator)
-        commit({
-          ...draft,
-          conditions: draft.conditions.map((condition) =>
-            condition.id === property?.key || condition.property === property?.label
-              ? {
-                  ...condition,
-                  operator: selectedOperator.label,
-                  value: selectedOperator.editor.kind === "none" ? "" : "",
-                }
-              : condition,
-          ),
+        upsertCondition({
+          id: property.key,
+          property: property.label,
+          propertySymbol: property.symbol,
+          operator: selectedOperator.label,
+          value: "",
         })
         setStep(selectedOperator.editor.kind === "none" ? "complete" : "value")
       }}
@@ -286,14 +296,14 @@ const ComposerSelectionFlow = ({
         if (operator?.editor.kind !== "none") setStep("value")
       }}
       onValueCommit={(value) => {
-        commit({
-          ...draft,
-          conditions: draft.conditions.map((condition) =>
-            condition.id === property?.key || condition.property === property?.label
-              ? { ...condition, value }
-              : condition,
-          ),
-        })
+        const target = editingCondition ?? {
+          id: property?.key ?? "condition",
+          property: property?.label ?? "Property",
+          propertySymbol: property?.symbol ?? "questionmark",
+          operator: operator?.label ?? "Operator",
+          value: "",
+        }
+        upsertCondition({ ...target, value })
         setStep("complete")
       }}
     />
