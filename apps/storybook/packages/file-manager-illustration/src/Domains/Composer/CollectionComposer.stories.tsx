@@ -22,15 +22,15 @@ const baseDraft = (): DraftState => ({
   scopes: ["/VoyagerFixtures/Documents"],
   conditions: [
     {
-      id: "kind",
+      id: "file_kind",
       property: "Kind",
       propertySymbol: "tag",
-      operator: "Equals",
-      value: "pdf",
+      operator: "Contains any",
+      value: "PDF",
     },
     {
-      id: "modified",
-      property: "Modified",
+      id: "modification_date",
+      property: "Content modification date",
       propertySymbol: "calendar.badge.clock",
       operator: "is after",
       value: "This month",
@@ -119,7 +119,7 @@ const ComposerSelectionFlow = ({
   }
 
   const addCondition = () => {
-    commit({ ...draft })
+    // 네이티브 ComposerHistoryReducer: 실제 변경 시에만 스냅샷을 기록한다 (피커 열기는 step만 변경)
     setDuplicateMessage(undefined)
     setEditingPropertyId(undefined)
     setStep("property")
