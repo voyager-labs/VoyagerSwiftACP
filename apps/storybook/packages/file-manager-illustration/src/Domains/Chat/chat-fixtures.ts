@@ -112,14 +112,6 @@ export const chatStreamingFailure: ChatStreamingAssistant = {
   },
 }
 
-export const chatStreamingRecovery: ChatStreamingAssistant = {
-  ...chatStreamingFailure,
-  failure: {
-    message: "Connection lost while generating the response. Retry to continue.",
-    recoveryLabel: "Retry",
-  },
-}
-
 export const chatConnectionError: ChatConnectionError = {
   title: "Connect an AI provider",
   detail: "Set up a provider in Settings to chat with this context.",
@@ -159,11 +151,6 @@ export const chatSurfaceError: ChatSurfaceState = {
   inputBar: aiChatInputReadyEmpty,
   streamingAssistant: chatStreamingFailure,
   canRegenerate: true,
-}
-
-export const chatSurfaceRecovery: ChatSurfaceState = {
-  ...chatSurfaceError,
-  streamingAssistant: chatStreamingRecovery,
 }
 
 // 원본: FileManagerAiChatPageView.swift AiChatEmptyStateContent ("Ask Voyager").

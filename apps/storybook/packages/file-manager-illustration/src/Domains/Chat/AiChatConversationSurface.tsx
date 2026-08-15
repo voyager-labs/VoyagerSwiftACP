@@ -25,7 +25,6 @@ export interface AiChatConversationSurfaceProps {
   readonly onRequestTextChange: (value: string) => void
   readonly inputPresentation: AiChatInputBarPresentation
   readonly inputActions?: AiChatInputBarActions
-  readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
   readonly connectionError?: ChatConnectionError
   readonly onConnectionAction?: () => void
@@ -44,7 +43,6 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
   onRequestTextChange,
   inputPresentation,
   inputActions,
-  onErrorRecovery,
   onRegenerate,
   connectionError,
   onConnectionAction,
@@ -103,7 +101,6 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
                 isProcessing,
                 failure: streamingAssistant.failure,
               })}
-              onErrorRecovery={onErrorRecovery}
             />
           </div>
         ) : isProcessing === true ? (

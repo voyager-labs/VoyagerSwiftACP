@@ -115,14 +115,7 @@ function normalizeFailure(value: string | ChatFailure | undefined): ChatFailure 
   }
 
   const message = nonEmpty(value.message)
-  return message == null
-    ? undefined
-    : {
-        message,
-        ...(value.recoveryLabel == null || value.recoveryLabel.trim() === ""
-          ? {}
-          : { recoveryLabel: value.recoveryLabel }),
-      }
+  return message == null ? undefined : { message }
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

@@ -14,7 +14,6 @@ import {
   chatSurfaceHistory,
   chatSurfaceInspectorEmpty,
   chatSurfaceRebind,
-  chatSurfaceRecovery,
   chatSurfaceStreaming,
   chatSurfaceUnconnected,
 } from "./chat-fixtures"
@@ -251,15 +250,5 @@ export const Streaming: Story = {
 export const ErrorState: Story = {
   args: {
     chatSurface: chatSurfaceError,
-  },
-}
-
-export const Recovery: Story = {
-  args: {
-    chatSurface: chatSurfaceRecovery,
-  },
-  play: async ({ args, canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Retry" }))
-    await expect(args.onErrorRecovery).toHaveBeenCalled()
   },
 }

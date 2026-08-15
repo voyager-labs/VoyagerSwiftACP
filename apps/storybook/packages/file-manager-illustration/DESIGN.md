@@ -189,7 +189,7 @@ The provenance snapshot lives in `src/assets/entry-thumbnails/provenance.json`. 
 
 ### Renderer precedence
 
-The `EntryThumbnail` component (`src/Entries/EntryThumbnail.tsx`) evaluates in this order:
+The `EntryThumbnail` component (`src/Domains/Entries/EntryThumbnail.tsx`) evaluates in this order:
 
 1. **`thumbnailSrc` present** — renders an `<img>` with the provided URL/import path, including folder fixtures.
 2. **No thumbnailSrc** — falls back to the kind-specific SVG icon (`FolderIcon`, `PdfIcon`, `ImageIcon`, `SheetIcon`, `VideoIcon`, `ArchiveIcon`, or generic `FileIcon`).
