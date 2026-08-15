@@ -95,7 +95,11 @@ function ContentPageAiChatView({
   return (
     <div data-file-manager-illustration>
       <main className="stage">
-        <section className="content-pane-review" aria-label="Chat Content Page">
+        <section
+          className="content-pane-review"
+          aria-label="Chat Content Page"
+          style={{ boxSizing: "border-box", paddingInline: "clamp(72px, 12%, 176px)" }}
+        >
           <AiChatView
             state={state}
             requestText={requestText}
