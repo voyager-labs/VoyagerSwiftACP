@@ -31,10 +31,10 @@ export type CollectionComposerProps = {
   readonly onRemoveCondition?: (id: string) => void
   readonly onPropertyClick?: (id: string) => void
   readonly onDismissDuplicate?: () => void
-  readonly onOperatorClick?: () => void
+  readonly onOperatorClick?: (id: string) => void
   readonly onPropertySelect?: (property: string) => void
   readonly onOperatorSelect?: (operator: string) => void
-  readonly onValueClick?: () => void
+  readonly onValueClick?: (id: string) => void
   readonly onValueCommit?: (value: string) => void
 }
 
@@ -164,8 +164,8 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
                 fixture.picker?.kind === "value" && fixture.picker.conditionID === condition.id
               }
               onPropertyClick={() => onPropertyClick?.(condition.id)}
-              onOperatorClick={onOperatorClick}
-              onValueClick={onValueClick}
+              onOperatorClick={() => onOperatorClick?.(condition.id)}
+              onValueClick={() => onValueClick?.(condition.id)}
               onRemove={() => onRemoveCondition?.(condition.id)}
             />
           ))}

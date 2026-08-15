@@ -39,7 +39,15 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
     ? editor.units?.find((unit) => initial.endsWith(` ${unit}`))
     : undefined
   const initialBody = initialUnit == null ? initial : initial.slice(0, -initialUnit.length - 1)
-  const initialParts = initialBody.length > 0 ? initialBody.split(" - ") : []
+  // 범위 구분자 분해는 numberRange 전용: 단일 값 editor는 원문 전체를 보존한다
+  const initialParts =
+    editor.kind === "numberRange"
+      ? initialBody.length > 0
+        ? initialBody.split(" - ")
+        : []
+      : initialBody.length > 0
+        ? [initialBody]
+        : []
   const [values, setValues] = useState<readonly string[]>(() =>
     Array.from({ length: fieldCount }, (_, index) => initialParts[index] ?? ""),
   )

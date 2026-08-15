@@ -73,18 +73,19 @@ const ComposerSelectionFlow = ({
 
   const undo = () => {
     setFuture((current) => [draft, ...current])
+    // 네이티브 ComposerHistoryReducer와 동일한 LIFO: 마지막 스냅샷을 복원한다
     setHistory((current) => {
-      const [latest, ...rest] = current
-      if (latest != null) setDraft(latest)
-      return rest
+      const last = current.at(-1)
+      if (last != null) setDraft(last)
+      return current.slice(0, -1)
     })
   }
 
   const redo = () => {
     setHistory((current) => [...current, draft])
     setFuture((current) => {
-      const [latest, ...rest] = current
-      if (latest != null) setDraft(latest)
+      const [next, ...rest] = current
+      if (next != null) setDraft(next)
       return rest
     })
   }
@@ -218,38 +219,31 @@ const ComposerSelectionFlow = ({
                   currentSummary: draft.scopes[0]?.split("/").at(-1) ?? "This Mac",
                   includeSubfolders,
                   rootOnly: draft.scopes.length === 0,
+                  // 네이티브 makeScopeSections: 행 상태를 현재 selection에서 파생한다
                   items: [
-                    {
-                      path: "/VoyagerFixtures/Documents",
-                      depth: 0,
-                      status: "included",
-                      kind: "base",
-                      ruleSource: "direct",
-                      actions: ["clearDirectRule"],
-                    },
-                    {
-                      path: "/VoyagerFixtures/Projects",
-                      depth: 0,
-                      status: "available",
-                      kind: "candidate",
-                      actions: ["include", "exclude"],
-                    },
-                    {
-                      path: "/VoyagerFixtures/Projects/Legacy",
-                      depth: 1,
-                      status: "excluded",
-                      kind: "exception",
-                      ruleSource: "direct",
-                      actions: ["clearDirectRule"],
-                    },
-                    {
-                      path: "/VoyagerFixtures/Inbox",
-                      depth: 0,
-                      status: "available",
-                      kind: "candidate",
-                      actions: ["include"],
-                    },
-                  ],
+                    "/VoyagerFixtures/Documents",
+                    "/VoyagerFixtures/Projects",
+                    "/VoyagerFixtures/Projects/Legacy",
+                    "/VoyagerFixtures/Inbox",
+                  ].map((path) => {
+                    const included = draft.scopes.includes(path)
+                    const actions = included
+                      ? (["clearDirectRule"] as const)
+                      : (["include", "exclude"] as const)
+                    return {
+                      path,
+                      depth: Math.max(
+                        0,
+                        path.split("/").filter(Boolean).length -
+                          "/VoyagerFixtures".split("/").filter(Boolean).length -
+                          1,
+                      ),
+                      status: included ? ("included" as const) : ("available" as const),
+                      kind: included ? ("base" as const) : ("candidate" as const),
+                      ruleSource: included ? ("direct" as const) : undefined,
+                      actions,
+                    }
+                  }),
                 }
               : undefined,
   }
@@ -304,7 +298,22 @@ const ComposerSelectionFlow = ({
         setEditingPropertyId(undefined)
         setStep("operator")
       }}
-      onOperatorClick={() => setStep("operator")}
+      onOperatorClick={(id) => {
+        setEditingPropertyId(id)
+        const target = draft.conditions.find((condition) => condition.id === id)
+        // baseDraft 칩은 레지스트리 키가 아닌 표시 id를 쓰므로 라벨/심볼로 폴백 매핑한다
+        const selectedProperty =
+          composerPropertyOption(id) ??
+          composerPropertyOptions.find(
+            (property) =>
+              property.label === target?.property || property.symbol === target?.propertySymbol,
+          )
+        if (target != null && selectedProperty != null) {
+          setProperty(selectedProperty)
+          setOperator(selectedProperty.operators.find((option) => option.label === target.operator))
+          setStep("operator")
+        }
+      }}
       onOperatorSelect={(operatorCode) => {
         const selectedOperator = property?.operators.find((option) => option.code === operatorCode)
         if (selectedOperator == null || property == null) return
@@ -318,8 +327,10 @@ const ComposerSelectionFlow = ({
         })
         setStep(selectedOperator.editor.kind === "none" ? "complete" : "value")
       }}
-      onValueClick={() => {
-        if (operator?.editor.kind !== "none") setStep("value")
+      onValueClick={(id) => {
+        if (operator?.editor.kind === "none") return
+        setEditingPropertyId(id)
+        setStep("value")
       }}
       onValueCommit={(value) => {
         const target = editingCondition ?? {
