@@ -256,8 +256,20 @@ struct EntryListHierarchyReducer {
                         if state.outlineProjectionRevision == previousRevision {
                             state.advanceOutlineProjectionRevision()
                         }
-                        guard previousSelectedIds != state.selectedIds else { return .none }
-                        return .send(.delegate(.selectionChanged))
+                        var reconcileEffects: [Effect<Action>] = []
+                        let visibleIDs = Set(state.visibleSelectableEntryIDs(
+                            isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
+                        ))
+                        if let renamingID = state.entryOperations.renamingItemId,
+                           !visibleIDs.contains(renamingID)
+                        {
+                            reconcileEffects.append(.send(.delegate(.renameCanceled)))
+                        }
+                        if previousSelectedIds != state.selectedIds {
+                            reconcileEffects.append(.send(.delegate(.selectionChanged)))
+                        }
+                        guard !reconcileEffects.isEmpty else { return .none }
+                        return .merge(reconcileEffects)
                     }
                 }
 

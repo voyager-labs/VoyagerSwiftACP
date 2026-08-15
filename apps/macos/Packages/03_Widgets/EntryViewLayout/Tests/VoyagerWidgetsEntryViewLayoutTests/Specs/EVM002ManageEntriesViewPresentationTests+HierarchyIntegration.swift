@@ -674,6 +674,47 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.delegate.selectionChanged)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: folder eviction의 리네임 제거를 delegate로 전달
+    /// stale descendant로 evict된 rename 대상이 있을 때 renameCanceled가 발행되는지 검증한다.
+    /// - 검증 내용: folderChildrenResponse coreFinished eviction 후 `.delegate(.renameCanceled)` 수신
+    /// - 사전 조건: renamed stale child가 eviction 대상이다.
+    /// - 기대 결과: rename이 취소되며 renameCanceled delegate가 발행됨
+    func testFolderChildrenResponseEvictionEmitsRenameCanceled() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = EntryModel.temporaryFolder(id: "/root/a/b", name: "b")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.entryOperations.renamingItemId = staleChild.id
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [],
+                loadPhase: .loadingCore,
+                generation: 1,
+                coreFinished: false,
+            ),
+            staleChild.id: .init(
+                children: [],
+                loadPhase: .loaded,
+                generation: 4,
+                coreFinished: true,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: folder.id,
+            folderGeneration: 1,
+            .event(.coreFinished(batchCount: 0)),
+        )))
+        await store.receive(\.delegate.renameCanceled)
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: coarse invalidation은 expanded descendant cache를 모두 재로드한다.
     /// ancestor path만 보고된 rescan에서도 중첩 folder snapshot이 stale로 남지 않는지 검증한다.
     /// - 검증 내용: cached folder 전체 generation 증가와 expanded A/B loading 전환
