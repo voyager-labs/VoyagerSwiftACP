@@ -6,6 +6,7 @@ import type { ComposerPropertyPicker as ComposerPropertyPickerFixture } from "./
 export type ComposerPropertyPickerProps = {
   readonly picker: ComposerPropertyPickerFixture
   readonly onSelect?: (key: string) => void
+  readonly onDismissDuplicate?: () => void
 }
 
 const categoryMeta = {
@@ -17,7 +18,11 @@ const categoryMeta = {
 
 type CategoryKey = keyof typeof categoryMeta
 
-export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker, onSelect }) => {
+export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({
+  picker,
+  onSelect,
+  onDismissDuplicate,
+}) => {
   const [query, setQuery] = useState("")
   const [category, setCategory] = useState<CategoryKey | null>(null)
   const searchFieldRef = useRef<HTMLInputElement>(null)
@@ -29,12 +34,18 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
 
   const matches = (label: string) => search.length === 0 || label.toLowerCase().includes(search)
 
-  const recommended = picker.items.filter((item) => item.pinned && matches(item.label))
+  // 네이티브 filteredProperties: 이미 사용 중인 property는 숨기되 편집 대상은 예외
+  const available = picker.items.filter(
+    (item) =>
+      picker.editingKey === item.key ||
+      !(picker.existingKeys ?? []).some((key) => key === item.key),
+  )
+  const recommended = available.filter((item) => item.pinned && matches(item.label))
   const categories = (Object.keys(categoryMeta) as readonly CategoryKey[])
     .map((key) => ({
       key,
       ...categoryMeta[key],
-      items: picker.items.filter((item) => item.category === key && matches(item.label)),
+      items: available.filter((item) => item.category === key && matches(item.label)),
     }))
     .filter((group) => group.items.length > 0)
 
@@ -43,7 +54,7 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
   const categoryItems =
     category == null
       ? []
-      : picker.items.filter((item) => item.category === category && matches(item.label))
+      : available.filter((item) => item.category === category && matches(item.label))
 
   const propertyRow = (item: ComposerPropertyOption) => (
     <button type="button" key={item.key} onClick={() => onSelect?.(item.key)}>
@@ -79,6 +90,15 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
           </button>
         )}
       </div>
+      {picker.duplicateMessage != null && (
+        <div className="collection-composer-duplicate-warning">
+          <SFSymbol name="exclamationmark.triangle.fill" size={12} />
+          <span>{picker.duplicateMessage}</span>
+          <button type="button" aria-label="Dismiss warning" onClick={onDismissDuplicate}>
+            <SFSymbol name="xmark.circle.fill" size={12} />
+          </button>
+        </div>
+      )}
       {category != null ? (
         <div className="collection-composer-picker-list">
           <button

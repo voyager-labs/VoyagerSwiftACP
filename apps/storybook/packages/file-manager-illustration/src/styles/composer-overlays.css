@@ -21,7 +21,49 @@
   display: grid;
   width: 200px;
   max-height: 320px;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+/* 네이티브 duplicateWarning: 노란 삼각형 + popover search 배경 + 12/6 패딩 */
+[data-file-manager-illustration] .collection-composer-duplicate-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  border-bottom: 1px solid var(--fm-separator);
+  background: var(--fm-composer-popover-search-background);
+  padding: var(--fm-space-3) 12px;
+  font-size: var(--fm-font-size-body);
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > .sf-symbol {
+  color: var(--fm-composer-warning);
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-secondary);
+  padding: 0;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > button:hover {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > button:focus-visible {
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+  border-radius: 4px;
 }
 
 [data-file-manager-illustration]

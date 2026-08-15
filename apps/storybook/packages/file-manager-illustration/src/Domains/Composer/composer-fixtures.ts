@@ -36,6 +36,9 @@ export type ComposerScopeItem = {
 export type ComposerPropertyPicker = {
   readonly kind: "property"
   readonly items: readonly ComposerPropertyOption[]
+  readonly existingKeys?: readonly string[]
+  readonly editingKey?: string
+  readonly duplicateMessage?: string
 }
 
 export type ComposerOperatorPicker = {
@@ -138,6 +141,7 @@ export const composerFixtures = {
     picker: {
       kind: "property",
       items: composerPropertyOptions,
+      existingKeys: ["file_kind", "modification_date"],
     },
   },
   operatorPickerOpen: {

@@ -55,6 +55,8 @@ const ComposerSelectionFlow = ({
   const [toast, setToast] = useState<
     { readonly type: "info" | "error"; readonly message: string } | undefined
   >()
+  const [duplicateMessage, setDuplicateMessage] = useState<string>()
+  const [editingPropertyId, setEditingPropertyId] = useState<string>()
 
   const commit = (next: DraftState) => {
     setHistory((current) => [...current, draft])
@@ -102,11 +104,14 @@ const ComposerSelectionFlow = ({
 
   const addCondition = () => {
     commit({ ...draft })
+    setDuplicateMessage(undefined)
+    setEditingPropertyId(undefined)
     setStep("property")
   }
 
   const removeCondition = (id: string) => {
     commit({ ...draft, conditions: draft.conditions.filter((condition) => condition.id !== id) })
+    if (editingPropertyId === id) setEditingPropertyId(undefined)
     if (property?.key === id) {
       setProperty(undefined)
       setOperator(undefined)
@@ -176,7 +181,15 @@ const ComposerSelectionFlow = ({
     transientFeedback: toast,
     picker:
       step === "property"
-        ? { kind: "property", items: composerPropertyOptions }
+        ? {
+            kind: "property",
+            items: composerPropertyOptions,
+            existingKeys: draft.conditions
+              .map((condition) => condition.id)
+              .filter((id) => id !== editingPropertyId),
+            editingKey: editingPropertyId,
+            duplicateMessage,
+          }
         : step === "operator" && property != null
           ? {
               kind: "operator",
@@ -255,27 +268,33 @@ const ComposerSelectionFlow = ({
       onSubmit={submit}
       onAddCondition={addCondition}
       onRemoveCondition={removeCondition}
-      onPropertyClick={() => setStep("property")}
+      onPropertyClick={(id) => {
+        setEditingPropertyId(id)
+        setStep("property")
+      }}
+      onDismissDuplicate={() => setDuplicateMessage(undefined)}
       onPropertySelect={(propertyKey) => {
         const selectedProperty = composerPropertyOption(propertyKey)
         if (selectedProperty == null) return
+        // 네이티브 handleAddCondition: 중복 키면 경고를 띄우고 picker를 유지한다 (편집 대상은 예외)
+        if (
+          propertyKey !== editingPropertyId &&
+          draft.conditions.some((condition) => condition.id === propertyKey)
+        ) {
+          setDuplicateMessage(`"${selectedProperty.label}" is already added.`)
+          return
+        }
         setProperty(selectedProperty)
         setOperator(undefined)
-        // 네이티브 ComposerConditionEditingReducer는 신규 조건을 append 한다
-        const id = `${selectedProperty.key}-${draft.conditions.length + 1}`
-        commit({
-          ...draft,
-          conditions: [
-            ...draft.conditions,
-            {
-              id,
-              property: selectedProperty.label,
-              propertySymbol: selectedProperty.symbol,
-              operator: "",
-              value: "",
-            },
-          ],
+        setDuplicateMessage(undefined)
+        upsertCondition({
+          id: selectedProperty.key,
+          property: selectedProperty.label,
+          propertySymbol: selectedProperty.symbol,
+          operator: "",
+          value: "",
         })
+        setEditingPropertyId(undefined)
         setStep("operator")
       }}
       onOperatorClick={() => setStep("operator")}
