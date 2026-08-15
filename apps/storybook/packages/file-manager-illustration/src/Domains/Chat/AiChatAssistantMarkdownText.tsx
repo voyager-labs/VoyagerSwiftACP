@@ -161,8 +161,14 @@ function renderInlineToken(token: string, key: string): ReactNode {
   }
   const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token)
   if (link?.[1] != null && link[2] != null && isSafeLink(link[2])) {
+    const isExternal = /^https:/i.test(link[2])
     return (
-      <a key={key} className="chat-inline-link" href={link[2]}>
+      <a
+        key={key}
+        className="chat-inline-link"
+        href={link[2]}
+        {...(isExternal ? { target: "_blank", rel: "noreferrer" } : {})}
+      >
         {renderInline(link[1], key)}
       </a>
     )
