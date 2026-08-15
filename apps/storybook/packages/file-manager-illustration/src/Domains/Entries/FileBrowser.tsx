@@ -56,6 +56,7 @@ export const FileBrowser: FC<FileBrowserProps> = ({
           entries={gridEntries}
           selectedEntryIds={selectedEntryIds}
           onToggleEntry={onToggleEntry}
+          onClearSelection={onClearSelection}
         />
       ) : (
         <EntryList

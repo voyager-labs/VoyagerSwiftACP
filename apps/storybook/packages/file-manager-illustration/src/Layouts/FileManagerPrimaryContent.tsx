@@ -2,7 +2,7 @@ import type { FC } from "react"
 import { FileBrowser } from "../Domains/Entries/FileBrowser"
 import type { EntryViewMode } from "../Patterns/Content/FileToolbar"
 import type { ContentRoute } from "../model/content-route"
-import type { HomeFavorite, HomeLocation } from "../model/home"
+import type { HomeChat, HomeFavorite, HomeLocation } from "../model/home"
 import type { Entry, EntrySelectionIntent } from "../model/types"
 import { Home } from "./Home"
 
@@ -15,6 +15,8 @@ export interface FileManagerPrimaryContentProps {
   readonly onClearSelection?: () => void
   readonly onFavoriteSelect: (favorite: HomeFavorite) => void
   readonly onLocationSelect: (location: HomeLocation) => void
+  readonly onNewChat?: () => void
+  readonly onChatSelect?: (chat: HomeChat) => void
 }
 
 function assertNeverRoute(route: never): never {
@@ -30,10 +32,19 @@ export const FileManagerPrimaryContent: FC<FileManagerPrimaryContentProps> = ({
   onClearSelection,
   onFavoriteSelect,
   onLocationSelect,
+  onNewChat,
+  onChatSelect,
 }) => {
   switch (route.kind) {
     case "home":
-      return <Home onFavoriteSelect={onFavoriteSelect} onLocationSelect={onLocationSelect} />
+      return (
+        <Home
+          onFavoriteSelect={onFavoriteSelect}
+          onLocationSelect={onLocationSelect}
+          onNewChat={onNewChat}
+          onChatSelect={onChatSelect}
+        />
+      )
     case "browser":
       return (
         <FileBrowser

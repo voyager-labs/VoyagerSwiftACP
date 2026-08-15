@@ -26,6 +26,7 @@ export const Empty: Story = {
   args: {
     favorites: [],
     locations: [],
+    recentChats: [],
   },
 }
 

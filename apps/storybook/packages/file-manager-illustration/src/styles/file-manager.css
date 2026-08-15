@@ -660,7 +660,7 @@
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):hover {
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):not(:disabled):hover {
   background: color-mix(in srgb, var(--fm-control-hover) 40%, transparent);
   color: var(--fm-text-primary);
 }
@@ -671,7 +671,7 @@
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):active {
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):not(:disabled):active {
   background: color-mix(in srgb, var(--fm-control-pressed) 52%, transparent);
   color: var(--fm-text-primary);
 }
@@ -1564,7 +1564,7 @@
   box-sizing: border-box;
   height: 28px;
   border-bottom: 1px solid var(--fm-separator);
-  background: transparent;
+  background: var(--fm-content);
   color: var(--fm-text-tertiary);
   font-size: var(--fm-font-size-caption-2);
   font-weight: var(--fm-weight-regular);
@@ -1700,16 +1700,28 @@
 }
 
 [data-file-manager-illustration] .thumb-small {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   align-self: center;
   border-radius: var(--fm-entry-radius-small);
 }
 
 [data-file-manager-illustration] .thumb-small .entry-svg-icon {
+  width: 28px;
+  height: 28px;
+  filter: var(--fm-entry-shadow-small);
+}
+
+/* 목록 전용 20px tier: 네이티브 EntryListView 20px 썸네일. 공유 small(24/28)은 보존한다 */
+[data-file-manager-illustration] .entry-list-row .thumb-small {
   width: 20px;
   height: 20px;
-  filter: var(--fm-entry-shadow-small);
+}
+
+[data-file-manager-illustration] .entry-list-row .thumb-small .entry-svg-icon,
+[data-file-manager-illustration] .entry-list-row .thumb-small .entry-thumbnail-image {
+  width: 20px;
+  height: 20px;
 }
 
 [data-file-manager-illustration] .entry-thumbnail-image {
@@ -1720,8 +1732,8 @@
 }
 
 [data-file-manager-illustration] .thumb-small .entry-thumbnail-image {
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   filter: var(--fm-entry-shadow-small);
 }

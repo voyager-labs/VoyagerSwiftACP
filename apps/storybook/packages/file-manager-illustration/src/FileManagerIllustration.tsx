@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react"
 import type { FC } from "react"
+import { chatSurfaceHistory, chatSurfaceInspectorEmpty } from "./Domains/Chat/chat-fixtures"
 import { FileBrowser } from "./Domains/Entries/FileBrowser"
 import { FileManagerPrimaryContent } from "./Layouts/FileManagerPrimaryContent"
 import { FileManagerWindowLayout } from "./Layouts/FileManagerWindowLayout"
@@ -157,6 +158,11 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
       ? "sessions"
       : "chat"
     : state.inspectorChatHeader
+  // 네이티브 InspectorPaneView: 열린 chat 모드에서는 항상 AiChatView를 렌더한다.
+  // controlled chatSurface가 없으면 결정적 기본 표면(세션/빈)을 제공한다.
+  const resolvedChatSurface =
+    props.chatSurface ??
+    (effectiveChatHeader === "sessions" ? chatSurfaceHistory : chatSurfaceInspectorEmpty)
   // native InspectorPaneView.chatHeaderTitle 과 대칭: sessions → "Chat History",
   // 그 외는 첫 사용자 메시지 접두(80자) → "New Chat".
   const chatSurfaceTitle = controlledChat ? deriveChatTitle(props.chatSurface) : null
@@ -214,6 +220,8 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onClearSelection={handleClearSelection}
                 onFavoriteSelect={handleHomeFavoriteSelect}
                 onLocationSelect={handleHomeLocationSelect}
+                onNewChat={handleOpenContextualChat}
+                onChatSelect={handleOpenChatHistory}
               />
             }
             inspector={
@@ -232,7 +240,7 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onRebindContext={handleChatRebindContext}
                 onStartNewChatFromRebind={handleChatStartNewChatFromRebind}
                 chatInputActions={props.chatInputActions}
-                chatSurface={props.chatSurface}
+                chatSurface={resolvedChatSurface}
               />
             }
           />
