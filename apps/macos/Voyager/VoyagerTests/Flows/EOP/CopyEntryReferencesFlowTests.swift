@@ -40,9 +40,10 @@ final class CopyEntryReferencesFlowTests: XCTestCase {
         let initialSelection = store.state.entryViewLayout.selectedIds
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths"))))
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.receive { action in
-            guard case let .entryOperations(.clipboard(.copyAbsolutePaths(paths))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.clipboard(.copyAbsolutePaths(paths)))) = action
+            else { return false }
             return paths == [sandbox.fileURL.path]
         }
         await store.finish()
@@ -107,7 +108,7 @@ final class CopyEntryReferencesFlowTests: XCTestCase {
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryOperations.items = IdentifiedArray(uniqueElements: entries)
+        state.entryViewLayout.entryOperations.items = IdentifiedArray(uniqueElements: entries)
         state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = selectedIDs
 

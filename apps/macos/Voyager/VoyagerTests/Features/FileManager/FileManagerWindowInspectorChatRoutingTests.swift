@@ -982,7 +982,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     func testShowChatHistoryOpensClosedInspectorWithCurrentContext() async {
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
-        initialState.content.entryOperations.items = [selectedEntry]
+        initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
         initialState.content.entryViewLayout.entries = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
 
@@ -2082,6 +2082,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.inspector.activeMode = .chat
         initialState.inspector.aiChat.sessionID = sessionID
         initialState.inspector.aiChat.sessionStatus = .active
+        initialState.syncActiveTabInspectorState()
 
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
@@ -2089,6 +2090,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         await store.send(.inspector(.closeChat)) {
             $0.inspector.inspectorVisible = false
+            $0.syncActiveTabInspectorState()
         }
 
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
@@ -2105,6 +2107,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.inspector.aiChat.mode = .chat
         initialState.inspector.aiChat.sessionID = sessionID
         initialState.inspector.aiChat.sessionStatus = .active
+        initialState.syncActiveTabInspectorState()
 
         let store = makeStore(
             initialState: initialState,
@@ -2114,6 +2117,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         await store.send(.inspector(.closeChat)) {
             $0.inspector.inspectorVisible = false
+            $0.syncActiveTabInspectorState()
         }
 
         await store.send(.request(.showChatHistory))
@@ -2134,7 +2138,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000010")
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
-        initialState.content.entryOperations.items = [selectedEntry]
+        initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
         initialState.content.entryViewLayout.entries = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
         let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
@@ -2192,7 +2196,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         let firstEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         let secondEntry = makeEntry(name: "Notes.md", fullPath: "/Users/test/Documents/Notes.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
-        initialState.content.entryOperations.items = [firstEntry, secondEntry]
+        initialState.content.entryViewLayout.entryOperations.items = [firstEntry, secondEntry]
         initialState.content.entryViewLayout.entries = [firstEntry, secondEntry]
         initialState.content.entryViewLayout.selectedIds = [firstEntry.id]
         let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)

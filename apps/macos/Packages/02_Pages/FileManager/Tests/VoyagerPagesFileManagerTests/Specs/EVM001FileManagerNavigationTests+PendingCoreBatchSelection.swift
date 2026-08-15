@@ -19,8 +19,8 @@ extension EVM001FileManagerNavigationTests {
         let targetEntry = EntryModel.temporaryFolder(id: "/tmp/pending-selection", name: "pending-selection")
         var state = FileManagerContentState()
         state.pendingSelectEntryID = targetEntry.id
-        state.entryOperations.loadingContext.generation = 7
-        state.entryOperations.loadingContext.expectedCoreBatchIndex = 3
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 3
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -30,17 +30,17 @@ extension EVM001FileManagerNavigationTests {
         // store.exhaustivity = .off: EntryViewLayout progressive loading의 부수 상태는 stale event의 선택 불변성 범위가 아님
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 6,
             event: .coreBatch(items: [targetEntry], batchIndex: 3),
-        )))))
+        ))))))
         XCTAssertEqual(store.state.pendingSelectEntryID, targetEntry.id)
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
 
-        await store.send(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 7,
             event: .coreBatch(items: [targetEntry], batchIndex: 2),
-        )))))
+        ))))))
         XCTAssertEqual(store.state.pendingSelectEntryID, targetEntry.id)
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         await store.finish()
@@ -56,8 +56,8 @@ extension EVM001FileManagerNavigationTests {
         let targetEntry = EntryModel.temporaryFolder(id: "/tmp/pending-selection", name: "pending-selection")
         var state = FileManagerContentState()
         state.pendingSelectEntryID = targetEntry.id
-        state.entryOperations.loadingContext.generation = 7
-        state.entryOperations.loadingContext.expectedCoreBatchIndex = 3
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 3
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -67,10 +67,10 @@ extension EVM001FileManagerNavigationTests {
         // store.exhaustivity = .off: EntryViewLayout progressive loading의 부수 상태는 pending selection 복원 범위가 아님
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 7,
             event: .coreBatch(items: [targetEntry], batchIndex: 3),
-        ))))) {
+        )))))) {
             $0.pendingSelectEntryID = nil
             $0.entryViewLayout.selectedIds = [targetEntry.id]
             $0.entryViewLayout.lastSelectedId = targetEntry.id

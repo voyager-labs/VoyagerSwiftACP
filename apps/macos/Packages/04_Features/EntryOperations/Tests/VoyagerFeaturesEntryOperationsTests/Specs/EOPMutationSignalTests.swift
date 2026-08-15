@@ -157,8 +157,23 @@ extension EOP003ManageEntryLifecycleTests {
                 return true
             }
             await store.receive { action in
-                guard case .undoRedo(.entryActionApplied) = action else { return false }
-                return true
+                guard case let .undoRedo(.replaySucceeded(
+                    replayDirection,
+                    sourceRecordID,
+                    updatedRecord,
+                )) = action else { return false }
+                return replayDirection == direction
+                    && sourceRecordID == record.id
+                    && updatedRecord.targets == record.targets
+            }
+            await store.receive { action in
+                guard case let .outcome(.entryActionReplayFinished(
+                    replayDirection,
+                    terminal: .failure(reason: reason, appliedTargets: appliedTargets),
+                )) = action else { return false }
+                return replayDirection == direction
+                    && reason == .ownerRecordMismatch
+                    && appliedTargets.isEmpty
             }
             await store.finish()
         }

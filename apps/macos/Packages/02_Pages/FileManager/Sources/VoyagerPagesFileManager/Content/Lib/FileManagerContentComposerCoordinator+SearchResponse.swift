@@ -175,14 +175,15 @@ extension FileManagerContentComposerCoordinator {
         let proposedNextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                 state.collection.makeNavigationPresentationPayload(context: resolvedContext),
-                sortKey: state.entryArrangements.sortKey,
-                sortOrder: state.entryArrangements.sortOrder,
+                sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
                 viewLayout: state.entryViewLayout.mode,
             ),
         )
         let showHidden = state.entryViewLayout.showHiddenFiles
         let paths = searchResultPaths(from: items)
-        let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
+        let priority = FileManagerContentEntryOpsCoordinator
+            .rootMetadataPriority(for: state.entryViewLayout.entryArrangements)
 
         return .concatenate(
             .send(.composer(.clearPendingSearchQuery)),

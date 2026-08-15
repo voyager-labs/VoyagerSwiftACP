@@ -209,7 +209,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     }
 
     func syncRenamingFromStore() {
-        let renamingItemId = state.renamingItemId
+        let renamingItemId = state.entryOperations.renamingItemId
         let previousRenamingItemId = lastRenamingItemId
         lastRenamingItemId = renamingItemId
         if let previousRenamingItemId, let previousIndexPath = indexPathByEntryId[previousRenamingItemId] {

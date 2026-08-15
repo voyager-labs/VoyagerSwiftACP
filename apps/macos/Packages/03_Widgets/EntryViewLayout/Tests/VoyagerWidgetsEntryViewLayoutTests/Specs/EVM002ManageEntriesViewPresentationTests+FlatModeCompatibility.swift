@@ -16,7 +16,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let recorder = EntryListHierarchyLoadRecorder()
         let store = flatModeCompatibilityStore(roots: [folder], recorder: recorder) { state in
-            state.groupKey = .kind
+            state.entryArrangements.groupKey = .kind
             state.selectedIds = [folder.id]
             state.lastSelectedId = folder.id
             state.rangeAnchorId = folder.id

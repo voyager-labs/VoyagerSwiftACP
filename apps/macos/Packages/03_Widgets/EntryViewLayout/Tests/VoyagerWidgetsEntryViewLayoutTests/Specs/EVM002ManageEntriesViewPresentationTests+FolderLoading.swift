@@ -210,7 +210,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         state.hierarchy.setExpandedIDs([expanded.id])
         state.showHiddenFiles = true
-        state.sortKey = .kind
+        state.entryArrangements.sortKey = .kind
         let store = TestStore(initialState: state) { EntryListHierarchyReducer() }
 
         await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
@@ -462,7 +462,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = hierarchyState(roots: [folder])
         state.hierarchy.setExpandedIDs([folder.id as String])
         state.hierarchy.nodesByID[folder.id as String] = .init(
-            children: [first, second], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1,
+            children: [first, second],
+            loadPhase: .loadingCore,
+            generation: 1,
+            expectedBatchIndex: 1,
             coreFinished: true,
         )
 
@@ -508,9 +511,12 @@ extension EVM002ManageEntriesViewPresentationTests {
         let first = hierarchyFile(id: "/root/a/first", name: "first")
         let second = hierarchyFile(id: "/root/a/second", name: "second")
         var state = hierarchyState(roots: [folder])
-        state.sortKey = .kind
+        state.entryArrangements.sortKey = .kind
         state.hierarchy.nodesByID[folder.id as String] = .init(
-            children: [first, second], loadPhase: .loadingCore, generation: 1, expectedBatchIndex: 1,
+            children: [first, second],
+            loadPhase: .loadingCore,
+            generation: 1,
+            expectedBatchIndex: 1,
             coreFinished: true,
         )
         state.hierarchy.setExpandedIDs([folder.id as String])

@@ -29,6 +29,17 @@ private struct FileManagerNavigationBridgeReducer {
                 guard tabID == state.contentTabs.activeTabID else { return .none }
                 return .send(.navigation(navigationAction))
 
+            case let .performBatchCloseContentAction(
+                operationID,
+                tabID,
+                .internal(.requestNavigation(navigationAction)),
+            ):
+                return .send(.performBatchCloseNavigationAction(
+                    operationID: operationID,
+                    tabID: tabID,
+                    action: navigationAction,
+                ))
+
             case let .tabContent(tabID, .internal(.applyNavigationState(navigationState))):
                 guard let originContent = fileManagerContentState(for: tabID, state: state) else { return .none }
                 return syncContentTabEffect(
@@ -60,16 +71,18 @@ private struct FileManagerNavigationBridgeReducer {
 
 func handleNavigateToState(
     _ navigationState: ContentPageNavigationRoute,
-    state _: inout FileManagerWindowState,
+    state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
-    switch navigationState {
-    case let .collection(navigation):
-        .concatenate(
-            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
-            .send(.navigation(.internal(.navigateToCollection(navigation)))),
-        )
-
-    default:
-        .send(.content(.internal(.applyNavigationState(navigationState))))
+    guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+    let applyNavigationStateEffect: Effect<FileManagerWindowAction> = .send(.tabContent(
+        tabID: activeTabID,
+        action: .internal(.applyNavigationState(navigationState)),
+    ))
+    guard case let .collection(navigation) = navigationState else {
+        return applyNavigationStateEffect
     }
+    return .concatenate(
+        applyNavigationStateEffect,
+        .send(.navigation(.internal(.navigateToCollection(navigation)))),
+    )
 }

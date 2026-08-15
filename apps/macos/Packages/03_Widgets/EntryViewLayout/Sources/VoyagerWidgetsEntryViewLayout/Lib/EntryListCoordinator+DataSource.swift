@@ -106,7 +106,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
 
 extension EntryListCoordinator: NSTextFieldDelegate {
     public func controlTextDidChange(_ notification: Notification) {
-        guard let renamingItemId = state.renamingItemId else { return }
+        guard let renamingItemId = state.entryOperations.renamingItemId else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
         guard let renamingItem = state.entries.first(where: { $0.id == renamingItemId }) else { return }
@@ -114,12 +114,15 @@ extension EntryListCoordinator: NSTextFieldDelegate {
     }
 
     public func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard state.renamingItemId != nil else { return false }
+        guard state.entryOperations.renamingItemId != nil else { return false }
         guard let textField = control as? NSTextField else { return false }
         guard (textField.delegate as AnyObject?) === self else { return false }
 
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            store.send(.view(.commitRename(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
+            store.send(.view(.commitRename(
+                itemID: state.entryOperations.renamingItemId ?? "",
+                newName: textField.stringValue,
+            )))
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
@@ -132,7 +135,10 @@ extension EntryListCoordinator: NSTextFieldDelegate {
             return true
         }
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
-            store.send(.view(.commitRename(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
+            store.send(.view(.commitRename(
+                itemID: state.entryOperations.renamingItemId ?? "",
+                newName: textField.stringValue,
+            )))
             return true
         }
 
@@ -140,9 +146,12 @@ extension EntryListCoordinator: NSTextFieldDelegate {
     }
 
     public func controlTextDidEndEditing(_ notification: Notification) {
-        guard state.renamingItemId != nil else { return }
+        guard state.entryOperations.renamingItemId != nil else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
-        store.send(.view(.commitRename(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
+        store.send(.view(.commitRename(
+            itemID: state.entryOperations.renamingItemId ?? "",
+            newName: textField.stringValue,
+        )))
     }
 }

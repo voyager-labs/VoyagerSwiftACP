@@ -18,13 +18,15 @@ struct FileManagerWindowPreferencesReducer {
 
                 applyContentPreferences(preferences, to: &state.content)
                 for tabID in state.tabContentStates.keys {
-                    applyContentPreferences(preferences, to: &state.tabContentStates[tabID]!)
+                    guard var content = state.tabContentStates[tabID] else { continue }
+                    applyContentPreferences(preferences, to: &content)
+                    state.tabContentStates[tabID] = content
                 }
 
                 return .merge(
-                    .send(.content(.entryArrangements(.setSortKey(preferences.sortKey)))),
-                    .send(.content(.entryArrangements(.setSortOrder(preferences.sortOrder)))),
-                    .send(.content(.entryArrangements(.setGroupKey(preferences.groupKey)))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(preferences.sortKey))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(preferences.sortOrder))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey))))),
                 )
 
             default:
@@ -44,8 +46,8 @@ private func applyContentPreferences(
     content.entryViewLayout.listTextSize = preferences.listTextSize
     content.entryViewLayout.gridTextSize = preferences.gridTextSize
     content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
-    content.entryArrangements.updateSortKey(preferences.sortKey)
-    content.entryArrangements.updateSortOrder(preferences.sortOrder)
-    content.entryArrangements.updateGroupKey(preferences.groupKey)
+    content.entryViewLayout.entryArrangements.updateSortKey(preferences.sortKey)
+    content.entryViewLayout.entryArrangements.updateSortOrder(preferences.sortOrder)
+    content.entryViewLayout.entryArrangements.updateGroupKey(preferences.groupKey)
     content.syncComposerCollectionState()
 }

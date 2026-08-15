@@ -13,7 +13,7 @@ final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
         let state = FileManagerHostFixture.makeState(preset: .default, windowID: windowID)
 
         XCTAssertEqual(
-            state.content.entryOperations.windowID,
+            state.content.entryViewLayout.entryOperations.windowID,
             windowID,
         )
         XCTAssertEqual(state.content.composer.cancellationOwnerID, windowID)
@@ -62,7 +62,8 @@ final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
             state.tabContentStates[aiChatTab.id]?.navigation.navigationState,
             .aiChat("00000000-0000-0000-0000-000000000001"),
         )
-        XCTAssertTrue(state.tabContentStates.values.allSatisfy { $0.entryOperations.windowID == windowID })
+        XCTAssertTrue(state.tabContentStates.values
+            .allSatisfy { $0.entryViewLayout.entryOperations.windowID == windowID })
     }
 
     func testFocusedScenarioFixturesKeepSingleHomeTab() {

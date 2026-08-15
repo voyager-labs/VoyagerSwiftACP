@@ -45,17 +45,19 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
             displayEntries: displayEntries,
             selectedIds: store.state.selectedIds,
         )
-            && (!store.state.isLoading || store.state.isCollectionMode)
-            && !target.containsBusyEntry(busyEntryPaths: store.state.busyEntryPaths)
+            && (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && !target.containsBusyEntry(
+                busyEntryPaths: Set(store.state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
+            )
     }
 
     private var canPaste: Bool {
-        (!store.state.isLoading || store.state.isCollectionMode)
-            && store.state.hasClipboardItems
+        (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && !store.state.entryOperations.clipboardItems.isEmpty
     }
 
     private var canSelectAll: Bool {
-        (!store.state.isLoading || store.state.isCollectionMode)
+        (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
             && !store.state.entries.isEmpty
     }
 
@@ -96,8 +98,8 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     }
 
     private var canPerformCurrentPathCommand: Bool {
-        (!store.state.isLoading || store.state.isCollectionMode)
-            && !store.state.busyEntryPaths.contains(store.state.currentPath)
+        (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && !store.state.entryOperations.itemStates[store.state.currentPath, default: .init()].isBusy
     }
 
     @objc

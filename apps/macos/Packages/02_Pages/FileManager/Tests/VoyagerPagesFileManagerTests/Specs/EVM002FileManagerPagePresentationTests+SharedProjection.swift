@@ -14,10 +14,10 @@ extension EVM002FileManagerPagePresentationTests {
     /// - 기대 결과: 첫 batch 전에도 ContentProjection이 빈/로딩 상태를 투영할 수 있다.
     func testRootLoadStartsTriggerContentProjection() {
         let actions: [FileManagerContentAction] = [
-            .entryOperations(.loading(.loadItems(path: "/next", showHidden: false))),
-            .entryOperations(.loading(.loadRecentItems(showHidden: false))),
-            .entryOperations(.loading(.loadTagItems(tagName: "Blue", showHidden: false))),
-            .entryOperations(.loading(.loadComputerItems)),
+            .entryViewLayout(.entryOperations(.loading(.loadItems(path: "/next", showHidden: false)))),
+            .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: false)))),
+            .entryViewLayout(.entryOperations(.loading(.loadTagItems(tagName: "Blue", showHidden: false)))),
+            .entryViewLayout(.entryOperations(.loading(.loadComputerItems))),
         ]
 
         XCTAssertTrue(actions.allSatisfy(FileManagerContentFeature.shouldProjectContent))
@@ -37,14 +37,14 @@ extension EVM002FileManagerPagePresentationTests {
             isDefault: true,
         )
         var state = FileManagerContentState()
-        state.entryOperations.items = [folder, file]
-        state.entryOperations.commonApplicationsForSelectedFiles = [application]
-        state.entryArrangements.groupKey = .kind
-        state.entryArrangements.groupedItems = [
+        state.entryViewLayout.entryOperations.items = [folder, file]
+        state.entryViewLayout.entryOperations.commonApplicationsForSelectedFiles = [application]
+        state.entryViewLayout.entryArrangements.groupKey = .kind
+        state.entryViewLayout.entryArrangements.groupedItems = [
             GroupedItems(groupName: "Folders", items: [folder]),
             GroupedItems(groupName: "Text", items: [file]),
         ]
-        state.entryArrangements.collapsedGroups = ["Text"]
+        state.entryViewLayout.entryArrangements.collapsedGroups = ["Text"]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -79,8 +79,8 @@ extension EVM002FileManagerPagePresentationTests {
             openWithApplications: [application],
             restorableTrashPaths: [],
             trashDirectoryPath: nil,
-            collectionWindowID: state.entryOperations.windowID,
-            collectionLoadingCancellationOwnerID: state.entryOperations.loadingCancellationOwnerID,
+            collectionWindowID: state.entryViewLayout.entryOperations.windowID,
+            collectionLoadingCancellationOwnerID: state.entryViewLayout.entryOperations.loadingCancellationOwnerID,
         )
         await store.send(.entryViewLayout(.view(.applyContentProjection(projection))))
 
@@ -102,8 +102,7 @@ extension EVM002FileManagerPagePresentationTests {
             isDefault: false,
         )
         var state = FileManagerContentState()
-        state.entryOperations.commonApplicationsForSelectedFiles = [staleApplication]
-        state.entryViewLayout.openWithApplications = [staleApplication]
+        state.entryViewLayout.entryOperations.commonApplicationsForSelectedFiles = [staleApplication]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -116,12 +115,13 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.preloadOpenWithApplications([file]))))
         await store.receive {
-            guard case let .entryOperations(.openWith(.loadCommonApplicationsForFiles(files))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.openWith(.loadCommonApplicationsForFiles(files)))) = $0
+            else {
                 return false
             }
             return files == [file]
         } assert: {
-            $0.entryOperations.commonApplicationsForSelectedFiles = []
+            $0.entryViewLayout.entryOperations.commonApplicationsForSelectedFiles = []
         }
         await store.receive { action in
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
@@ -142,7 +142,8 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.toggleGroup("Text"))))
         await store.receive { action in
-            guard case let .entryArrangements(.toggleCollapsedGroup(groupName)) = action else { return false }
+            guard case let .entryViewLayout(.entryArrangements(.toggleCollapsedGroup(groupName))) = action
+            else { return false }
             return groupName == "Text"
         }
     }
@@ -156,7 +157,7 @@ extension EVM002FileManagerPagePresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
         let file = makeSharedProjectionFile()
         var state = FileManagerContentState()
-        state.entryOperations.items = [folder, file]
+        state.entryViewLayout.entryOperations.items = [folder, file]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -166,19 +167,19 @@ extension EVM002FileManagerPagePresentationTests {
         // store.exhaustivity = .off: 다중 child reducer composition에서 grouping projection 결과만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.entryArrangements(.setGroupKey(.kind)))
+        await store.send(.entryViewLayout(.entryArrangements(.setGroupKey(.kind))))
 
         // requestApply → apply → applied chain 확인
         await store.receive { action in
-            guard case .entryArrangements(.delegate(.requestApply)) = action else { return false }
+            guard case .entryViewLayout(.entryArrangements(.delegate(.requestApply))) = action else { return false }
             return true
         }
         await store.receive { action in
-            guard case .entryArrangements(.apply) = action else { return false }
+            guard case .entryViewLayout(.entryArrangements(.apply)) = action else { return false }
             return true
         }
         await store.receive { action in
-            guard case .entryArrangements(.delegate(.applied)) = action else { return false }
+            guard case .entryViewLayout(.entryArrangements(.delegate(.applied))) = action else { return false }
             return true
         }
 
@@ -204,7 +205,7 @@ extension EVM002FileManagerPagePresentationTests {
         let rootEntry = EntryModel.temporaryFolder(id: "/root", name: "root")
         let collectionEntry = EntryModel.temporaryFolder(id: "/collection", name: "collection")
         var state = FileManagerContentState()
-        state.entryOperations.items = [rootEntry]
+        state.entryViewLayout.entryOperations.items = [rootEntry]
         state.entryViewLayout.isCollectionMode = true
         state.entryViewLayout.collectionItems = [collectionEntry]
         let store = TestStore(initialState: state) {
@@ -233,7 +234,7 @@ extension EVM002FileManagerPagePresentationTests {
         let first = EntryModel.temporaryFolder(id: "/first", name: "A")
         let second = EntryModel.temporaryFolder(id: "/second", name: "Z")
         var state = FileManagerContentState()
-        state.entryOperations.items = [second, first]
+        state.entryViewLayout.entryOperations.items = [second, first]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -243,7 +244,10 @@ extension EVM002FileManagerPagePresentationTests {
         // store.exhaustivity = .off: arrangement delegate chain보다 projection payload 순서를 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: false))))
+        await store.send(.entryViewLayout(.entryArrangements(.delegate(.applied(
+            sortedItems: [],
+            isCollectionMode: false,
+        )))))
         await store.receive { action in
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
@@ -263,8 +267,8 @@ extension EVM002FileManagerPagePresentationTests {
             Tag(name: "Red", colorCode: 1),
         ])
         var state = FileManagerContentState()
-        state.entryOperations.items = [file]
-        state.entryArrangements.groupKey = .tags
+        state.entryViewLayout.entryOperations.items = [file]
+        state.entryViewLayout.entryArrangements.groupKey = .tags
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -273,7 +277,10 @@ extension EVM002FileManagerPagePresentationTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryArrangements(.delegate(.applied(sortedItems: [file], isCollectionMode: false))))
+        await store.send(.entryViewLayout(.entryArrangements(.delegate(.applied(
+            sortedItems: [file],
+            isCollectionMode: false,
+        )))))
         await store.receive { action in
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
@@ -325,7 +332,7 @@ extension EVM002FileManagerPagePresentationTests {
         state.navigation.seedInitialFolderPath("/root")
         state.entryViewLayout.mode = .list
         state.entryViewLayout.hierarchy.replaceRoot(path: "/root")
-        state.entryOperations.items = [rootFolder, rootFile]
+        state.entryViewLayout.entryOperations.items = [rootFolder, rootFile]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -335,7 +342,7 @@ extension EVM002FileManagerPagePresentationTests {
         store.exhaustivity = .off
 
         // itemsLoaded는 accepted root completion → projection → root snapshot 순서
-        await store.send(.entryOperations(.loading(.itemsLoaded([rootFolder, rootFile]))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([rootFolder, rootFile])))))
 
         // applyContentProjection이 먼저 발행된다
         await store.receive { action in

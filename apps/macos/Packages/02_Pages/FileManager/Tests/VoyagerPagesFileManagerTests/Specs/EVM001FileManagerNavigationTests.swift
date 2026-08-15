@@ -149,7 +149,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             FileManagerContentEntryOperationsBridgeReducer()
         }
 
-        await store.send(.entryOperations(.delegate(.navigateToPath(aliasPath))))
+        await store.send(.entryViewLayout(.entryOperations(.delegate(.navigateToPath(aliasPath)))))
         await store.receive { action in
             guard case let .internal(.requestNavigation(.view(.navigateToPath(path)))) = action else {
                 return false
@@ -184,7 +184,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.emptyTrash"))))
         await store.receive { action in
-            guard case let .entryOperations(.routing(.executeCommand(command, context))) = action
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = action
             else {
                 return false
             }
@@ -218,7 +218,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             else { return false }
             return affectedPaths == [canonicalChangedPath, canonicalFolderPath] && removedPrefixes.isEmpty
         }
-        await store.receive(\.entryOperations.loading.loadItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
     }
 
     /// EVM-001-reload_directory_page_on_external_change: expanded folder 자체 변경 시 child cache reload
@@ -243,7 +243,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             return affectedPaths == [canonicalChangedFolderPath, canonicalFolderPath] && removedPrefixes.isEmpty
         }
         await store.receive { action in
-            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             return true
         }
     }
@@ -271,7 +271,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             return removedPrefixes.isEmpty
         }
         await store.receive { action in
-            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             return true
         }
     }
@@ -306,7 +306,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                     && removedPrefixes == [canonicalRemovedPath]
             }
             await store.receive { action in
-                guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+                guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
                 return true
             }
         }
@@ -414,12 +414,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         var state = FileManagerContentState()
         state.navigation.navigationState = .recents
         state.entryViewLayout.showHiddenFiles = true
-        state.entryArrangements.sortKey = .kind
+        state.entryViewLayout.entryArrangements.sortKey = .kind
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadRecentItems(showHidden, priority))) =
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden, priority)))) =
                 action else { return false }
             return showHidden && priority == .active([.spotlight])
         }
@@ -434,16 +434,16 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let changedPath = Self.fixturePath("texts/plain/11.txt")
         var state = FileManagerContentState()
         state.navigation.navigationState = .tags("Work")
-        state.entryArrangements.groupKey = .tags
+        state.entryViewLayout.entryArrangements.groupKey = .tags
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadTagItems(
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(
                 tagName,
                 showHidden,
                 priority,
-            ))) = action else { return false }
+            )))) = action else { return false }
             return tagName == "Work" && !showHidden && priority == .active([.tags])
         }
     }
@@ -512,7 +512,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await fulfillment(of: [interestUpdated], timeout: 1)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive { action in
-            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             XCTAssertEqual(effectOrder.value, ["interest"])
             return true
         }
@@ -570,7 +570,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await fulfillment(of: [streamStarted], timeout: 1)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive { action in
-            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             return true
         }
 
@@ -1043,10 +1043,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.selectedIds = [previousEntry.id]
         state.entryViewLayout.lastSelectedId = previousEntry.id
         state.entryViewLayout.rangeAnchorId = previousEntry.id
-        state.entryOperations.loadingContext.items = [previousEntry]
-        state.entryOperations.loadingContext.generation = 1
-        state.entryOperations.loadingContext.sourceKind = .directory
-        state.entryOperations.isLoading = true
+        state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.entryViewLayout.entryOperations.isLoading = true
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -1056,7 +1056,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(.home)))
-        await store.receive(\.entryOperations.loading.cancelAndClearItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
         await store.receive { action in
@@ -1065,17 +1065,17 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         await store.finish()
 
-        await store.send(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
             event: .coreBatch(items: [staleEntry], batchIndex: 0),
-        )))))
+        ))))))
 
         XCTAssertEqual(store.state.entryViewLayout.currentPath, "Home")
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
-        XCTAssertTrue(store.state.entryOperations.loadingContext.items.isEmpty)
-        XCTAssertEqual(store.state.entryOperations.loadingContext.generation, 2)
-        XCTAssertNil(store.state.entryOperations.loadingContext.sourceKind)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 2)
+        XCTAssertNil(store.state.entryViewLayout.entryOperations.loadingContext.sourceKind)
     }
 
     /// EVM-001-ai_chat_navigation_clears_hidden_entries: AI Chat route 적용 시 숨은 folder selection 정리
@@ -1105,7 +1105,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.selectedIds = [previousEntry.id]
         state.entryViewLayout.lastSelectedId = previousEntry.id
         state.entryViewLayout.rangeAnchorId = previousEntry.id
-        state.entryOperations.loadingContext.items = [previousEntry]
+        state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -1115,7 +1115,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(navigationState)))
-        await store.receive(\.entryOperations.loading.cancelAndClearItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
         await store.receive { action in
@@ -1126,7 +1126,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
-        XCTAssertTrue(store.state.entryOperations.loadingContext.items.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
     }
 
     private func makeStore(initialState: FileManagerContentState)
@@ -1164,7 +1164,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 && removedPrefixes == expectedRemovedPrefixes
         }
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadItems(path, showHidden, priority))) = action else {
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden, priority)))) =
+                action
+            else {
                 return false
             }
             return path == currentPath && !showHidden && priority == .none
@@ -1322,11 +1324,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case let .forwarded(.entryOperations(.loading(.loadItems(
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
                 path,
                 showHidden,
                 priority,
-            )))) =
+            ))))) =
                 action else { return false }
             return path == folderPath && showHidden == false && priority == .none
         }
@@ -1381,10 +1383,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case .forwarded(.entryOperations(.loading(.loadRecentItems(
+            guard case .forwarded(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(
                 showHidden: false,
                 priority: .none,
-            )))) =
+            ))))) =
                 action else { return false }
             return true
         }
@@ -1428,11 +1430,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
-            guard case let .forwarded(.entryOperations(.loading(.loadItems(
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
                 path,
                 showHidden,
                 priority,
-            )))) =
+            ))))) =
                 action else { return false }
             return path == folderPath && showHidden == false && priority == .none
         }
@@ -1478,7 +1480,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
 
         for direction in [EntryActionDirection.undo, .redo] {
-            await store.send(.bridge(.undoRedo(.entryActionApplied(direction: direction, record: record))))
+            await store.send(.bridge(.undoRedo(.replaySucceeded(
+                direction: direction,
+                sourceRecordID: record.id,
+                updatedRecord: record,
+            ))))
             await store.receive { action in
                 guard case let .forwarded(.collection(.externalPathsChanged(paths))) = action else { return false }
                 return paths == ["/tmp/a.txt"]
@@ -1622,11 +1628,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             if record.operationKind == .setTags {
                 await store.receive { action in
-                    guard case let .forwarded(.entryOperations(.loading(.loadItems(
+                    guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
                         path,
                         showHidden,
                         priority,
-                    )))) = action else { return false }
+                    ))))) = action else { return false }
                     return path == folderPath && showHidden == false && priority == .none
                 }
             }
@@ -1745,7 +1751,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
+        await store.send(.bridge(.undoRedo(.replaySucceeded(
+            direction: .undo,
+            sourceRecordID: trashedRecord.id,
+            updatedRecord: trashedRecord,
+        ))))
         await store.receive { action in
             guard case .forwarded = action else { return false }
             return true

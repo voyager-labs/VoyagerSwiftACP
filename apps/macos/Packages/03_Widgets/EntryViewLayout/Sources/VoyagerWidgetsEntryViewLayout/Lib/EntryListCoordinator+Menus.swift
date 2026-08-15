@@ -53,7 +53,7 @@ extension EntryListCoordinator {
     }
 
     func openWithApplications(selectedEntries _: [EntryModel]) -> [ApplicationInfo] {
-        state.presentation.openWithApplications
+        state.entryOperations.commonApplicationsForSelectedFiles
     }
 
     func entryForRow(_ row: Int?) -> EntryModel? {
@@ -95,8 +95,8 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             selectedEntries: target.entries,
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            restorableTrashPaths: state.restorableTrashPaths,
-            canPaste: state.hasClipboardItems,
+            restorableTrashPaths: state.entryOperations.restorableTrashPaths,
+            canPaste: !state.entryOperations.clipboardItems.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
         )
@@ -120,8 +120,10 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             showOpenWith: menuSpec.showOpenWith,
             paletteTags: menuSpec.paletteTags,
             knownTags: menuSpec.knownTags,
-            canPerformEntryCommands: (!state.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(busyEntryPaths: state.busyEntryPaths),
+            canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
+                && !target.containsBusyEntry(
+                    busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
+                ),
         ))
     }
 

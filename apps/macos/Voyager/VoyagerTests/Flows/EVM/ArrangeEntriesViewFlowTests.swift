@@ -21,7 +21,7 @@ final class ArrangeEntriesViewFlowTests: XCTestCase {
     func testArrangementPreservesPageIdentity() async {
         var state = FileManagerContentFeature.State()
         state.navigation.seedInitialFolderPath("/flow/current")
-        state.entryArrangements.sortKey = .name
+        state.entryViewLayout.entryArrangements.sortKey = .name
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
@@ -33,9 +33,9 @@ final class ArrangeEntriesViewFlowTests: XCTestCase {
 
         let initialRoute = store.state.navigation.navigationState
         let initialHistory = store.state.navigation.backHistory
-        await store.send(.entryArrangements(.setSortKey(.dateModified)))
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.dateModified))))
 
-        XCTAssertEqual(store.state.entryArrangements.sortKey, .dateModified)
+        XCTAssertEqual(store.state.entryViewLayout.entryArrangements.sortKey, .dateModified)
         XCTAssertEqual(store.state.navigation.navigationState, initialRoute)
         XCTAssertEqual(store.state.navigation.backHistory, initialHistory)
     }

@@ -28,20 +28,22 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         listIconSize = state.listIconSize
         listTextSize = state.listTextSize
         entries = state.entries
-        groupKey = state.groupKey
+        groupKey = .fromShared(state.entryArrangements.groupKey.rawValue)
         currentPath = state.currentPath
         outlineProjectionRevision = state.outlineProjectionRevision
         selectedIds = state.selectedIds
-        clipboardCutPaths = state.clipboardCutPaths
-        renamingItemId = state.renamingItemId
-        sortKey = state.sortKey
-        sortOrder = state.sortOrder
+        clipboardCutPaths = state.entryOperations.clipboardOperation == .cut
+            ? Set(state.entryOperations.clipboardItems)
+            : []
+        renamingItemId = state.entryOperations.renamingItemId
+        sortKey = .fromShared(state.entryArrangements.sortKey)
+        sortOrder = state.entryArrangements.sortOrder
         showHiddenFiles = state.showHiddenFiles
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
         isHierarchyOutlineEnabled = state.mode == .list
             && !state.isCollectionMode
-            && state.groupKey == .none
+            && state.entryArrangements.groupKey == .none
             && !state.hierarchy.rootPath.isEmpty
         outlineProjection = EntryListOutlineProjection(
             revision: state.outlineProjectionRevision,
@@ -50,10 +52,10 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
             context: .init(
                 mode: state.mode,
                 isNormalDirectoryPage: isHierarchyOutlineEnabled,
-                hasActiveGrouping: state.groupKey != .none,
+                hasActiveGrouping: state.entryArrangements.groupKey != .none,
             ),
-            sortKey: state.sortKey.sharedSortKey,
-            sortOrder: state.sortOrder,
+            sortKey: state.entryArrangements.sortKey,
+            sortOrder: state.entryArrangements.sortOrder,
         )
     }
 }

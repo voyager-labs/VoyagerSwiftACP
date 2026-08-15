@@ -24,7 +24,7 @@ final class ManageEntriesViewPresentationFlowTests: XCTestCase {
         state.navigation.seedInitialFolderPath("/flow/current")
         state.entryViewLayout.mode = .list
         state.entryViewLayout.entries = [selectedEntry]
-        state.entryOperations.items = [selectedEntry]
+        state.entryViewLayout.entryOperations.items = [selectedEntry]
         state.entryViewLayout.selectedIds = [selectedID]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -60,7 +60,7 @@ final class ManageEntriesViewPresentationFlowTests: XCTestCase {
         var state = FileManagerContentFeature.State()
         state.navigation.seedInitialFolderPath("/flow/current")
         state.entryViewLayout.entries = [folder]
-        state.entryOperations.items = [folder]
+        state.entryViewLayout.entryOperations.items = [folder]
         state.entryViewLayout.hierarchy = .init(rootPath: "/flow/current")
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()

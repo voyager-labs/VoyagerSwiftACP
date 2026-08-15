@@ -43,11 +43,11 @@ extension EVM002FileManagerPagePresentationTests {
         let view = EntryListView(frame: .zero)
         coordinator.bind(to: view)
 
-        store.send(.entryOperations(.loading(.loadItems(
+        store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
             path: root.path,
             showHidden: false,
             priority: .none,
-        ))))
+        )))))
         try await waitForOutlineRowCount(1, in: view.tableView)
         XCTAssertEqual(
             Set(outlineEntryIDs(in: view.tableView).map(FileChangeScopePolicy.canonicalPath)),
@@ -91,7 +91,7 @@ extension EVM002FileManagerPagePresentationTests {
         let view = EntryListView(frame: .zero)
         coordinator.bind(to: view)
 
-        store.send(.entryOperations(.loading(.itemsLoaded([entry]))))
+        store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([entry])))))
         let renderSettled = expectation(description: "ordinary list render settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             renderSettled.fulfill()
@@ -118,7 +118,7 @@ extension EVM002FileManagerPagePresentationTests {
         let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryOperations.items = [folder]
+        state.entryViewLayout.entryOperations.items = [folder]
         state.entryViewLayout.entries = [folder]
         state.entryViewLayout.mode = .list
         state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
@@ -177,7 +177,7 @@ extension EVM002FileManagerPagePresentationTests {
         let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryOperations.items = [folder]
+        state.entryViewLayout.entryOperations.items = [folder]
         state.entryViewLayout.entries = [folder]
         state.entryViewLayout.hierarchy = .init(
             rootPath: rootPath,
@@ -356,7 +356,7 @@ extension EVM002FileManagerPagePresentationTests {
     ) -> FileManagerContentState {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/root")
-        state.entryOperations.items = [folder]
+        state.entryViewLayout.entryOperations.items = [folder]
         state.entryViewLayout.entries = [folder]
         state.entryViewLayout.selectedIds = [folder.id]
         state.entryViewLayout.lastSelectedId = folder.id

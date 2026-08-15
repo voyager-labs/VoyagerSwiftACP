@@ -22,7 +22,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
 
         XCTAssertEqual(state.entries, [entry])
-        XCTAssertTrue(state.isLoading)
+        XCTAssertTrue(state.entryOperations.isLoading)
     }
 
     /// 첫 root batch 전에 stream이 실패하면 이전 Directory의 표시 행이 남지 않는지 검증한다.
@@ -40,7 +40,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
 
         XCTAssertTrue(state.entries.isEmpty)
-        XCTAssertFalse(state.isLoading)
+        XCTAssertFalse(state.entryOperations.isLoading)
     }
 
     /// 숨김 파일 설정 변경 시 expanded folder cache를 새 설정으로 다시 로드하는지 검증한다.
@@ -115,7 +115,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.delegate.expandRequested, folder.id)
         // OFF 상태에서도 nodesByID와 expansionIntent는 유지된다.
         XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
-        XCTAssertTrue(store.state.hierarchy.nodesByID[folder.id]?.expansionIntent == true)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.expansionIntent, true)
         XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.folder.children, [])
         let revisionAfterOff = store.state.outlineProjectionRevision
 
@@ -124,7 +124,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.delegate.expandRequested, folder.id)
         // 확장 의도는 모든 전환에서 유지된다.
         XCTAssertTrue(store.state.hierarchy.expandedFolderIDs.contains(folder.id))
-        XCTAssertTrue(store.state.hierarchy.nodesByID[folder.id]?.expansionIntent == true)
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.expansionIntent, true)
         XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.generation, 6)
         XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
         // revision은 OFF 이후보다 증가해야 한다.
@@ -173,7 +173,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.sortKey = .kind
+        state.entryArrangements.sortKey = .kind
         state.hierarchy = .init(rootPath: "/root")
         state.hierarchy.nodesByID = [folder.id: .init(generation: 2, loadPhase: .loaded)]
         state.hierarchy.setExpandedIDs([folder.id])
@@ -203,7 +203,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let staleChild = makeHierarchyIntegrationEntry(id: "/root/a/file", name: "file")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.sortKey = .kind
+        state.entryArrangements.sortKey = .kind
         state.hierarchy = .init(
             rootPath: "/root",
             nodesByID: [
@@ -352,8 +352,8 @@ extension EVM002ManageEntriesViewPresentationTests {
             },
             [second.id, inserted.id, first.id],
         )
-        XCTAssertTrue(coordinator.entryItemsByID[first.id]?.first === firstItem)
-        XCTAssertTrue(coordinator.entryItemsByID[second.id]?.first === secondItem)
+        XCTAssertIdentical(coordinator.entryItemsByID[first.id]?.first, firstItem)
+        XCTAssertIdentical(coordinator.entryItemsByID[second.id]?.first, secondItem)
     }
 
     // MARK: - EVM-002-incremental_hierarchy_bulk_reorder
@@ -430,7 +430,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         var state = EntryViewLayoutState()
         state.entries = [first, second, fourth]
-        state.presentationSections = previousPresentation.sections
+        state.entryArrangements.groupedItems = previousPresentation.sections.map {
+            .init(groupName: $0.title ?? $0.id, items: $0.items, colorCode: $0.colorCode)
+        }
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let coordinator = EntryListCoordinator(store: store)
         let view = EntryListView(frame: .zero)
@@ -440,7 +442,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let previousSnapshot = EntryListCoordinatorRenderSnapshot(state: state)
         var currentState = state
         currentState.entries = [first, second, inserted, fourth]
-        currentState.presentationSections = currentPresentation.sections
+        currentState.entryArrangements.groupedItems = currentPresentation.sections.map {
+            .init(groupName: $0.title ?? $0.id, items: $0.items, colorCode: $0.colorCode)
+        }
         let currentSnapshot = EntryListCoordinatorRenderSnapshot(state: currentState)
 
         XCTAssertTrue(
@@ -452,8 +456,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
 
         XCTAssertEqual(view.tableView.numberOfRows, 1 + 4)
-        XCTAssertTrue(coordinator.outlineItems.first === groupItem)
-        XCTAssertTrue(coordinator.entryItemsByID[second.id]?.first === secondItem)
+        XCTAssertIdentical(coordinator.outlineItems.first, groupItem)
+        XCTAssertIdentical(coordinator.entryItemsByID[second.id]?.first, secondItem)
         XCTAssertEqual(
             (0 ..< view.tableView.numberOfRows).compactMap { row -> String? in
                 guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
@@ -478,7 +482,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let removalSnapshot = EntryListCoordinatorRenderSnapshot(state: {
             var removalState = currentState
             removalState.entries = [first, second, fourth]
-            removalState.presentationSections = removalPresentation.sections
+            removalState.entryArrangements.groupedItems = removalPresentation.sections.map {
+                .init(groupName: $0.title ?? $0.id, items: $0.items, colorCode: $0.colorCode)
+            }
             return removalState
         }())
         XCTAssertTrue(
@@ -489,8 +495,8 @@ extension EVM002ManageEntriesViewPresentationTests {
             ),
         )
         XCTAssertEqual(view.tableView.numberOfRows, 1 + 3)
-        XCTAssertTrue(coordinator.outlineItems.first === groupItem)
-        XCTAssertTrue(coordinator.entryItemsByID[second.id]?.first === secondItem)
+        XCTAssertIdentical(coordinator.outlineItems.first, groupItem)
+        XCTAssertIdentical(coordinator.entryItemsByID[second.id]?.first, secondItem)
         XCTAssertEqual(
             (0 ..< view.tableView.numberOfRows).compactMap { row -> String? in
                 guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
@@ -659,7 +665,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let store = Store(initialState: state) {
             Reduce<EntryViewLayoutState, EntryViewLayoutAction> { state, action in
                 guard case let .view(.startRename(item, _)) = action else { return .none }
-                state.renamingItemId = item.id
+                state.entryOperations.renamingItemId = item.id
                 return .none
             }
         }
@@ -681,7 +687,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         _ = coordinator.contextMenu(forRow: 1, event: event)
         coordinator.contextMenuCoordinator?.contextMenuStartRename()
 
-        XCTAssertEqual(store.state.renamingItemId, child.id)
+        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: collection restore는 제거 tombstone을 해제함
@@ -715,7 +721,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.renamingItemId = child.id
+        state.entryOperations.renamingItemId = child.id
         state.hierarchy = .init(rootPath: "/root")
         state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)]
         state.hierarchy.setExpandedIDs([folder.id])
@@ -734,7 +740,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         ))))
         await store.finish()
 
-        XCTAssertEqual(store.state.renamingItemId, child.id)
+        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
     }
 
     /// EVM-002-update_entry_selection: root load에서 사라진 visible item rename 취소
@@ -747,7 +753,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let replacement = makeHierarchyIntegrationEntry(id: "/root/replacement.txt", name: "replacement.txt")
         var state = EntryViewLayoutState()
         state.entries = [renamed]
-        state.renamingItemId = renamed.id
+        state.entryOperations.renamingItemId = renamed.id
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
         } withDependencies: {
@@ -763,7 +769,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         ))))
         await store.finish()
 
-        XCTAssertNil(store.state.renamingItemId)
+        XCTAssertNil(store.state.entryOperations.renamingItemId)
         XCTAssertEqual(store.state.entries, [replacement])
     }
 
@@ -838,8 +844,8 @@ extension EVM002ManageEntriesViewPresentationTests {
     func testListCellReconfigurationPreservesRenameDraft() {
         let entry = makeHierarchyIntegrationEntry(id: "/draft.txt", name: "original.txt")
         var state = EntryViewLayoutState()
-        state.renamingItemId = entry.id
-        state.renamingText = "draft.txt"
+        state.entryOperations.renamingItemId = entry.id
+        state.entryOperations.renamingText = "draft.txt"
         let coordinator = EntryListCoordinator(store: Store(initialState: state) {
             EntryViewLayoutFeature()
         })
@@ -862,9 +868,9 @@ extension EVM002ManageEntriesViewPresentationTests {
     func testGroupedListRowsUseSectionScopedIdentity() {
         let entry = makeHierarchyIntegrationEntry(id: "/tagged.txt", name: "tagged.txt")
         var state = EntryViewLayoutState()
-        state.presentationSections = [
-            .init(id: "Blue", title: "Blue", colorCode: 6, items: [entry], isCollapsed: false),
-            .init(id: "Red", title: "Red", colorCode: 1, items: [entry], isCollapsed: false),
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "Blue", items: [entry], colorCode: 6),
+            .init(groupName: "Red", items: [entry], colorCode: 1),
         ]
         state.selectedIds = [entry.id]
         let coordinator = EntryListCoordinator(store: Store(initialState: state) {
@@ -956,8 +962,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNotNil(state.hierarchy.nodesByID[folderB.id], "B should be preserved")
         XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folderB.id), "B should remain expanded")
         // Assert: B's parentID was set to A.id by the reducer during reconciliation
-        XCTAssertEqual(state.hierarchy.nodesByID[folderB.id]?.parentID, folderA.id,
-                       "B's parentID should be set to A.id after reconciliation")
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folderB.id]?.parentID,
+            folderA.id,
+            "B's parentID should be set to A.id after reconciliation",
+        )
         // Assert: D (new rename ID) does NOT have expansionIntent
         XCTAssertNil(state.hierarchy.nodesByID[folderD.id], "D should not have a node state (never expanded)")
         // Assert: C is absent from projection visible rows
@@ -1064,7 +1073,8 @@ extension EVM002ManageEntriesViewPresentationTests {
             collapsedGroups: [],
             sections: [.ungrouped(items: entries)],
             renamingItemId: renamingItemId,
-            renamingText: "", clipboardCutPaths: [],
+            renamingText: "",
+            clipboardCutPaths: [],
             hasClipboardItems: false,
             busyEntryPaths: [],
             openWithApplications: [],

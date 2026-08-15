@@ -301,7 +301,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testSetSelectionCancelsRenameWhenRenamingItemNotInSelection() async {
         let renamingId = "renaming-item"
         var state = EntryViewLayoutState()
-        state.renamingItemId = renamingId
+        state.entryOperations.renamingItemId = renamingId
 
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
@@ -333,7 +333,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testSetSelectionKeepsRenameWhenRenamingItemIsSelected() async {
         let renamingId = "renaming-item"
         var state = EntryViewLayoutState()
-        state.renamingItemId = renamingId
+        state.entryOperations.renamingItemId = renamingId
 
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
@@ -393,6 +393,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.rangeAnchorId = "/previous/stale"
         state.shouldScrollToSelection = true
         state.entries = [keptEntry, otherEntry]
+        state.entryOperations.items = [keptEntry, otherEntry]
 
         _ = EntryViewLayoutFeature.updateEntriesAndReapply(&state)
 
@@ -767,6 +768,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         var state = EntryViewLayoutState()
         let item = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
         state.entries = [item]
+        state.entryOperations.items = [item]
 
         XCTAssertFalse(state.isCollectionMode)
         XCTAssertEqual(state.displayItems.count, 1)
@@ -784,6 +786,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
 
         state.entries = [regularItem]
+        state.entryOperations.items = [regularItem]
         state.collectionItems = [collectionItem]
         state.isCollectionMode = true
 
@@ -815,6 +818,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let item1 = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
         let item2 = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
         state.entries = [item1, item2]
+        state.entryOperations.items = [item1, item2]
 
         XCTAssertEqual(state.displayOrderItems.count, 2)
         XCTAssertEqual(state.displayOrderItems[0].id, item1.id)
@@ -873,6 +877,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
 
         state.entries = [regularItem]
+        state.entryOperations.items = [regularItem]
         state.collectionItems = [collectionItem]
 
         XCTAssertEqual(state.displayItems.first?.id, regularItem.id)
@@ -989,21 +994,24 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// - 사전 조건: 일반 item load 후 collection mode와 collection item이 설정됨
     /// - 기대 결과: 일반 mode로 복귀하고 entries가 일반 item source로 복원됨
     func testClearCollectionPresentationFallsBackToRegularSource() async throws {
-        let store = makeCollectionPresentationTestStore()
         let fixtures = try makeCollectionPresentationItems()
         defer { fixtures.sandboxes.forEach { $0.cleanup() } }
         let regularItem = fixtures.regularItem
         let collectionItem = fixtures.collectionItem
+        var initialState = EntryViewLayoutState()
+        initialState.entryOperations.items = [regularItem]
+        let store = makeCollectionPresentationTestStore(initialState: initialState)
 
         await store.send(.internal(.setCollectionItems([regularItem]))) {
             $0.collectionItems = [regularItem]
             $0.outlineProjectionRevision = 1
-            $0.lastVisibleSelectableEntryIDs = Set([])
+            $0.lastVisibleSelectableEntryIDs = Set([regularItem.id])
+            $0.entries = [regularItem]
         }
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
-            $0.outlineProjectionRevision = 2
+            $0.outlineProjectionRevision = 1
             $0.lastVisibleSelectableEntryIDs = Set([regularItem.id])
             $0.entries = [regularItem]
         }
@@ -1017,7 +1025,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.isCollectionMode = false
             $0.collectionItems = []
             $0.collectionReplaceEpoch = 1
-            $0.entries = [collectionItem]
+            $0.entries = [regularItem]
         }
     }
 
@@ -1381,7 +1389,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         initialState.collectionCoreFinished = true
         initialState.collectionItems = [item]
         initialState.entries = [item]
-        initialState.sortKey = .kind
+        initialState.entryArrangements.sortKey = .kind
         let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         } withDependencies: {
@@ -1416,7 +1424,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.collectionCoreFinished = true
         state.collectionItems = [first, second]
         state.entries = [first, second]
-        state.sortKey = .name
+        state.entryArrangements.sortKey = .name
 
         _ = EntryViewLayoutFeature().reduce(into: &state, action: .internal(.collectionReplaceEvent(
             epoch: 0,
@@ -1434,8 +1442,9 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 }
 
 private extension EVM002ManageEntriesViewPresentationTests {
-    func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
-        let initialState = EntryViewLayoutState()
+    func makeCollectionPresentationTestStore(
+        initialState: EntryViewLayoutState = .init(),
+    ) -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
         let store = TestStore(initialState: initialState) {
             EntryViewLayoutFeature()
         } withDependencies: {

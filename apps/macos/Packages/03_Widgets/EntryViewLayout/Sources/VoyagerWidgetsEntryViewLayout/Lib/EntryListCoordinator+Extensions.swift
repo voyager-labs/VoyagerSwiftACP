@@ -55,7 +55,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard tableColumn.identifier.rawValue == EntryListColumn.name.rawValue else { return false }
         guard let outlineItem = item as? OutlineItem else { return false }
         guard case let .entry(entry) = outlineItem.kind else { return false }
-        guard state.renamingItemId == entry.id else { return false }
+        guard state.entryOperations.renamingItemId == entry.id else { return false }
         return true
     }
 
@@ -92,8 +92,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard let change = EntryListCoordinatorSortDescriptorMapper.change(from: outlineView.sortDescriptors)
         else { return }
         guard let needed = EntryListCoordinatorSortDescriptorMapper.actionNeeded(
-            currentSortKey: state.sortKey.sharedSortKey,
-            currentSortOrder: state.sortOrder,
+            currentSortKey: state.entryArrangements.sortKey,
+            currentSortOrder: state.entryArrangements.sortOrder,
             change: change,
         ) else { return }
         store.send(.view(.changeSort(
@@ -258,7 +258,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard isCurrentOutlineItem(item) else { return }
         switch item.kind {
         case let .group(name, _, _):
-            if state.collapsedGroups.contains(name) {
+            if state.entryArrangements.collapsedGroups.contains(name) {
                 store.send(.view(.toggleGroup(name)))
             }
         case let .entry(entry) where isHierarchyOutlineEnabled:
@@ -274,7 +274,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard isCurrentOutlineItem(item) else { return }
         switch item.kind {
         case let .group(name, _, _):
-            if !state.collapsedGroups.contains(name) {
+            if !state.entryArrangements.collapsedGroups.contains(name) {
                 store.send(.view(.toggleGroup(name)))
             }
         case let .entry(entry) where isHierarchyOutlineEnabled:
@@ -392,6 +392,16 @@ extension EntryListCoordinator {
             return false
         }
 
+        return applyFlatPresentationChanges(
+            previous: previous,
+            snapshot: snapshot,
+        )
+    }
+
+    private func applyFlatPresentationChanges(
+        previous: RenderSnapshot,
+        snapshot: RenderSnapshot,
+    ) -> Bool {
         let pathChanged = previous.currentPath != snapshot.currentPath
 
         let changes = snapshot.presentation.changes(from: previous.presentation)
@@ -434,59 +444,85 @@ extension EntryListCoordinator {
         current: EntryViewLayoutPresentation,
         changes: EntryViewLayoutPresentationChangeSet,
     ) -> Bool {
-        guard previous.sections.count == current.sections.count,
-              previous.sections.enumerated().allSatisfy({ index, section in
-                  let next = current.sections[index]
-                  return section.id == next.id
-                      && section.title == next.title
-                      && section.colorCode == next.colorCode
-                      && section.isCollapsed == next.isCollapsed
-              })
-        else { return false }
+        guard sectionsMatch(previous, current) else { return false }
 
         let changedCount = changes.insertedEntryIDs.count + changes.removedEntryIDs.count
         guard changedCount * 2 <= max(previous.entries.count, current.entries.count) else { return false }
         let incomingItems = makeOutlineItems(presentation: current)
 
-        var childUpdates: [(parent: OutlineItem, removed: IndexSet, inserted: IndexSet)] = []
+        var childUpdates: [ChildRowUpdate] = []
         for (sectionIndex, oldParent) in outlineItems.enumerated() {
-            guard sectionIndex < incomingItems.count,
-                  oldParent.id == incomingItems[sectionIndex].id
-            else { return false }
-            let newParent = incomingItems[sectionIndex]
-            let oldChildren = oldParent.children
-            let newChildren = newParent.children
-            let oldIDs = oldChildren.map(\.id)
-            let newIDs = newChildren.map(\.id)
-            let oldIDSet = Set(oldIDs)
-            let newIDSet = Set(newIDs)
-            let retained = oldIDSet.intersection(newIDSet)
-            guard retained.count >= min(oldIDs.count, newIDs.count) - 1
-            else { return false }
-            let retainedOrderPreserved = oldIDs.filter { retained.contains($0) }
-                == newIDs.filter { retained.contains($0) }
-            guard retainedOrderPreserved else { return false }
-            let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
-            let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
-            guard max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count) else { return false }
-            let oldChildrenByID = Dictionary(
-                oldChildren.map { ($0.id, $0) },
-                uniquingKeysWith: { first, _ in first },
-            )
-            let retainedChildren = newChildren.map { newItem in
-                if let existing = oldChildrenByID[newItem.id] {
-                    existing.kind = newItem.kind
-                    existing.isLoadingChildren = newItem.isLoadingChildren
-                    return existing
-                }
-                return newItem
-            }
-            oldParent.children = retainedChildren
-            childUpdates.append((oldParent, removed, inserted))
+            guard let update = makeChildRowUpdate(
+                oldParent: oldParent,
+                incomingParent: incomingItems[sectionIndex],
+                sectionIndex: sectionIndex,
+                incomingItems: incomingItems,
+            ) else { return false }
+            childUpdates.append(update)
         }
 
         guard childUpdates.contains(where: { !$0.removed.isEmpty || !$0.inserted.isEmpty }) else { return false }
+        applyChildRowUpdates(childUpdates, changedEntryIDs: changes.updatedEntryIDs)
+        return true
+    }
 
+    private func sectionsMatch(
+        _ previous: EntryViewLayoutPresentation,
+        _ current: EntryViewLayoutPresentation,
+    ) -> Bool {
+        guard previous.sections.count == current.sections.count else { return false }
+        return previous.sections.enumerated().allSatisfy { index, section in
+            let next = current.sections[index]
+            return section.id == next.id
+                && section.title == next.title
+                && section.colorCode == next.colorCode
+                && section.isCollapsed == next.isCollapsed
+        }
+    }
+
+    private func makeChildRowUpdate(
+        oldParent: OutlineItem,
+        incomingParent: OutlineItem,
+        sectionIndex: Int,
+        incomingItems: [OutlineItem],
+    ) -> ChildRowUpdate? {
+        guard sectionIndex < incomingItems.count,
+              oldParent.id == incomingParent.id
+        else { return nil }
+        let oldChildren = oldParent.children
+        let newChildren = incomingParent.children
+        let oldIDs = oldChildren.map(\.id)
+        let newIDs = newChildren.map(\.id)
+        let oldIDSet = Set(oldIDs)
+        let newIDSet = Set(newIDs)
+        let retained = oldIDSet.intersection(newIDSet)
+        guard retained.count >= min(oldIDs.count, newIDs.count) - 1 else { return nil }
+        let retainedOrderPreserved = oldIDs.filter { retained.contains($0) }
+            == newIDs.filter { retained.contains($0) }
+        guard retainedOrderPreserved else { return nil }
+        let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
+        let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
+        guard max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count) else { return nil }
+        let oldChildrenByID = Dictionary(
+            oldChildren.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first },
+        )
+        let retainedChildren = newChildren.map { newItem in
+            if let existing = oldChildrenByID[newItem.id] {
+                existing.kind = newItem.kind
+                existing.isLoadingChildren = newItem.isLoadingChildren
+                return existing
+            }
+            return newItem
+        }
+        oldParent.children = retainedChildren
+        return ChildRowUpdate(parent: oldParent, removed: removed, inserted: inserted)
+    }
+
+    private func applyChildRowUpdates(
+        _ childUpdates: [ChildRowUpdate],
+        changedEntryIDs: Set<EntryModel.ID>,
+    ) {
         rebuildItemIndexes()
         tableView.beginUpdates()
         for update in childUpdates {
@@ -498,7 +534,7 @@ extension EntryListCoordinator {
             }
         }
         tableView.endUpdates()
-        let updatedRowIndexes = IndexSet(changes.updatedEntryIDs.flatMap { id in
+        let updatedRowIndexes = IndexSet(changedEntryIDs.flatMap { id in
             entryItemsByID[id, default: []].compactMap { item in
                 let row = tableView.row(forItem: item)
                 return row >= 0 ? row : nil
@@ -508,7 +544,12 @@ extension EntryListCoordinator {
             let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
             tableView.reloadData(forRowIndexes: updatedRowIndexes, columnIndexes: columnIndexes)
         }
-        return true
+    }
+
+    private struct ChildRowUpdate {
+        let parent: OutlineItem
+        let removed: IndexSet
+        let inserted: IndexSet
     }
 
     func reloadVisibleRowsForPresentationChange(
@@ -644,7 +685,7 @@ extension EntryListCoordinator {
     }
 
     public func syncListRenamingFromStore() {
-        let currentRenamingItemId = state.renamingItemId
+        let currentRenamingItemId = state.entryOperations.renamingItemId
         let previousRenamingItemId = lastRenamingItemId
         lastRenamingItemId = currentRenamingItemId
 

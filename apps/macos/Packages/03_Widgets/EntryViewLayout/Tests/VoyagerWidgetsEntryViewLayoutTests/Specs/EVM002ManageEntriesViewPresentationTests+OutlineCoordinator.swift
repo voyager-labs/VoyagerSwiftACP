@@ -24,8 +24,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         currentState.entries = [targetEntry]
         currentState.selectedIds = [targetEntry.id]
         currentState.lastSelectedId = targetEntry.id
-        currentState.clipboardCutPaths = [targetEntry.fullPath]
-        currentState.renamingItemId = targetEntry.id
+        currentState.entryOperations.clipboardItems = [targetEntry.fullPath]
+        currentState.entryOperations.clipboardOperation = .cut
+        currentState.entryOperations.renamingItemId = targetEntry.id
         currentState.shouldScrollToSelection = true
 
         let store = Store(initialState: currentState) { EntryViewLayoutFeature() }
@@ -68,7 +69,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let insertedEntry = EntryModel.temporaryFolder(id: "/root/inserted", name: "inserted")
         var previousState = EntryViewLayoutState()
         previousState.entries = [retainedEntry]
-        previousState.renamingItemId = retainedEntry.id
+        previousState.entryOperations.renamingItemId = retainedEntry.id
 
         var currentState = EntryViewLayoutState()
         currentState.entries = [retainedEntry, insertedEntry]
@@ -460,6 +461,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let inserted = EntryModel.temporaryFolder(id: "/root/inserted", name: "inserted")
         var state = EntryViewLayoutState()
         state.entries = [anchor, last]
+        state.entryOperations.items = [anchor, last]
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let coordinator = EntryListCoordinator(store: store)
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 20))
@@ -578,7 +580,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let retained = EntryModel.temporaryFolder(id: "/root/b", name: "b")
         var state = EntryViewLayoutState()
         state.entries = [removed, retained]
+        state.entryOperations.items = [removed, retained]
         state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.setExpandedIDs([removed.id, retained.id])
         let coordinator = EntryListCoordinator(store: Store(initialState: state) {
             EntryViewLayoutFeature()
         })
@@ -656,11 +660,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
         let file = makePresentationFile(id: "/root/file.txt", name: "file.txt")
         var state = EntryViewLayoutState()
-        state.groupKey = .kind
+        state.entryArrangements.groupKey = .kind
         state.entries = [folder, file]
-        state.presentationSections = [
-            .init(id: "Folders", title: "Folders", colorCode: nil, items: [folder], isCollapsed: false),
-            .init(id: "Text", title: "Text", colorCode: nil, items: [file], isCollapsed: false),
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "Folders", items: [folder]),
+            .init(groupName: "Text", items: [file]),
         ]
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let grid = EntryGridCoordinator(store: store)
@@ -682,11 +686,11 @@ extension EVM002ManageEntriesViewPresentationTests {
     func testCollapsedSharedSectionHidesItemsInBothLayouts() {
         let file = makePresentationFile(id: "/root/file.txt", name: "file.txt")
         var state = EntryViewLayoutState()
-        state.groupKey = .kind
-        state.collapsedGroups = ["Text"]
+        state.entryArrangements.groupKey = .kind
+        state.entryArrangements.collapsedGroups = ["Text"]
         state.entries = [file]
-        state.presentationSections = [
-            .init(id: "Text", title: "Text", colorCode: nil, items: [file], isCollapsed: true),
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "Text", items: [file]),
         ]
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let gridSection = EntryGridCoordinator(store: store).makeSections(state: state)[0]
@@ -715,7 +719,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         var state = EntryViewLayoutState()
         state.entries = [file]
-        state.openWithApplications = [application]
+        state.entryOperations.commonApplicationsForSelectedFiles = [application]
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
 
         XCTAssertEqual(

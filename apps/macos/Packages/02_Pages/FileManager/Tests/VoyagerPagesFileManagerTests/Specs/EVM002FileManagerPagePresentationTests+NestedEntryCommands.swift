@@ -90,9 +90,9 @@ extension EVM002FileManagerPagePresentationTests {
         store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.receive {
-            guard case let .entryOperations(.delegate(.navigateToPath(path))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.delegate(.navigateToPath(path)))) = $0 else {
                 return false
             }
             return path == child.fullPath
@@ -133,9 +133,9 @@ extension EVM002FileManagerPagePresentationTests {
         store.exhaustivity = .off // Quick Look success 후 root reload chain은 nested path routing 계약과 무관하다.
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.receive {
-            guard case let .entryOperations(.open(.quickLookFiles(paths))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.open(.quickLookFiles(paths)))) = $0 else {
                 return false
             }
             return paths == [child.fullPath]
@@ -174,7 +174,7 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.entryViewLayout(.delegate(.openEntry(folder))))
         // Bridge가 command planner를 통해 라우팅 — clicked entry만 context에 포함
         await store.receive {
-            guard case let .entryOperations(.routing(.executeCommand(command, context))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = $0 else {
                 return false
             }
             guard case .navigation(.openSelectedItem) = command else { return false }
@@ -185,7 +185,7 @@ extension EVM002FileManagerPagePresentationTests {
         }
         // Planner가 폴더를 navigateToPath delegate로 변환
         await store.receive {
-            guard case let .entryOperations(.delegate(.navigateToPath(path))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.delegate(.navigateToPath(path)))) = $0 else {
                 return false
             }
             return path == folderPath
@@ -200,8 +200,8 @@ extension EVM002FileManagerPagePresentationTests {
     /// - 검증 내용: bridge가 .openEntry(file)를 navigation.openSelectedItem command로 변환하고
     ///   planner가 일반 파일을 openFiles로 라우팅하는지 확인
     /// - 사전 조건: texts/plain/11.txt fixture 파일
-    /// - 기대 결과: .entryOperations(.routing(.executeCommand)) →
-    ///   .entryOperations(.open(.openFiles([fixturePath]))) 순서로 전송
+    /// - 기대 결과: .entryViewLayout(.entryOperations(.routing(.executeCommand))) →
+    ///   .entryViewLayout(.entryOperations(.open(.openFiles([fixturePath])))) 순서로 전송
     func testOpenEntryFileRoutesThroughCommandPlannerToOpenFiles() async {
         guard let plainDir = try? FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/texts/plain")
         else {
@@ -240,10 +240,10 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.openEntry(file))))
         // Bridge가 command planner를 통해 라우팅
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         // Planner가 일반 파일을 openFiles로 변환
         await store.receive {
-            guard case let .entryOperations(.open(.openFiles(paths))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = $0 else {
                 return false
             }
             return paths == [fileURL.path]
@@ -256,8 +256,8 @@ extension EVM002FileManagerPagePresentationTests {
     /// - 검증 내용: bridge가 .openEntry(voycoll)를 navigation.openSelectedItem command로 변환하고
     ///   planner가 .voycoll 파일을 openCollectionFile delegate로 라우팅하는지 확인
     /// - 사전 조건: collections/legacy_schema_v1_collection.voycoll fixture
-    /// - 기대 결과: .entryOperations(.routing(.executeCommand)) →
-    ///   .entryOperations(.delegate(.openCollectionFile(fixtureURL))) 순서로 전송
+    /// - 기대 결과: .entryViewLayout(.entryOperations(.routing(.executeCommand))) →
+    ///   .entryViewLayout(.entryOperations(.delegate(.openCollectionFile(fixtureURL)))) 순서로 전송
     func testOpenEntryVoycollRoutesThroughCommandPlannerToOpenCollectionFile() async {
         guard let collDir = try? FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/collections")
         else {
@@ -296,10 +296,10 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.openEntry(voycoll))))
         // Bridge가 command planner를 통해 라우팅
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         // Planner가 .voycoll 파일을 openCollectionFile delegate로 변환
         await store.receive {
-            guard case let .entryOperations(.delegate(.openCollectionFile(url))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.delegate(.openCollectionFile(url)))) = $0 else {
                 return false
             }
             return url == voycollURL

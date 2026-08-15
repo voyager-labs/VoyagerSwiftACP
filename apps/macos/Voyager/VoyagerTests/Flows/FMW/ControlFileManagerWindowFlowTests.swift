@@ -79,7 +79,7 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.content(.entryOperations(.lifecycle(.windowIDChanged(receivedID))))),
+                action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(receivedID)))))),
             )) = action else {
                 return false
             }
@@ -126,9 +126,17 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         let store = makeStore(initialState: initialState)
 
         await store.send(.event(.windowClosed(firstID))) {
+            $0.closingWindowIDs.insert(firstID)
+            $0.invalidatingWindowIDs.insert(firstID)
+            $0.refreshContentTabMoveTargets()
+        }
+        await store.receive(\.windowInvalidationFinished) {
             $0.windows.remove(id: firstID)
+            $0.closingWindowIDs.remove(firstID)
+            $0.invalidatingWindowIDs.remove(firstID)
             $0.focusedWindowID = secondID
             $0.lastUsedWindowIDs = [secondID]
+            $0.refreshContentTabMoveTargets()
         }
     }
 
@@ -136,11 +144,11 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
 
     /// FMW-001-quit_voyager: 모든 윈도우 종료
     ///
-    /// closeAllWindows 액션이 모든 윈도우를 제거하고 focusedWindowID를 nil로 만드는지 검증.
+    /// closeAllWindows 액션이 모든 윈도우를 종료 대상으로 표시하고 focusedWindowID를 nil로 만드는지 검증.
     /// fileManagerWindowClient.closeAll이 정확히 한 번 호출되는지도 함께 검증.
-    /// - 검증 내용: closeAllWindows 전송 후 windows 배열 비움, focusedWindowID nil, closeAll 호출 횟수
+    /// - 검증 내용: closeAllWindows 전송 후 closing 상태, focusedWindowID nil, closeAll 호출 횟수
     /// - 사전 조건: 2개 윈도우(first, second) 존재, second가 focused
-    /// - 기대 결과: windows.isEmpty == true, focusedWindowID == nil, closeAllCallCount == 1
+    /// - 기대 결과: 모든 window ID가 closing 상태이고 focusedWindowID == nil, closeAllCallCount == 1
     func test_closeAllOrQuitSurrogate_terminatesAllWindows() async {
         let firstID = UUID()
         let secondID = UUID()
@@ -156,10 +164,12 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         }
 
         await store.send(.window(.closeAllWindows)) {
-            $0.windows.removeAll()
+            $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
 
+        XCTAssertEqual(Array(store.state.windows.ids), [firstID, secondID])
         XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
     }
 }

@@ -4,9 +4,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
-import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -14,9 +12,6 @@ import VoyagerWidgetsEntryViewLayout
 public struct FileManagerContentState: Equatable {
     public var navigation: ContentPageNavigationFeature.State = .init()
     public var entryViewLayout: EntryViewLayoutFeature.State = .init()
-    public var entryOperations: EntryOperationsFeature.State = .init()
-    public var entryArrangements: EntryArrangementsFeature.State = .init()
-    public var entryThumbnail: EntryThumbnailFeature.State = .init()
     public var composer: ComposerFeature.State = .init()
     public var collection: CollectionFeature.State = .init()
     public var aiChat: AiChatFeature.State = .init()
@@ -40,7 +35,7 @@ public struct FileManagerContentState: Equatable {
     var isOrdinaryDirectoryLoading: Bool {
         !composer.isCollectionSearching
             && !entryViewLayout.isCollectionContentLoading
-            && entryOperations.isLoading
+            && entryViewLayout.entryOperations.isLoading
             && !isCollectionMode
     }
 

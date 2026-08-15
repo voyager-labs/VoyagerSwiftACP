@@ -75,7 +75,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         state.reconcileSelectionWithVisibleEntries()
         let initialRevision = state.outlineProjectionRevision
 
-        state.sortOrder = .descending
+        state.entryArrangements.sortOrder = .descending
         state.reconcileSelectionWithVisibleEntries()
 
         XCTAssertEqual(state.outlineProjectionRevision, initialRevision + 1)

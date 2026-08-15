@@ -20,7 +20,7 @@ enum FileManagerContentEntryOpsCoordinator {
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
             )
 
-        case let .undoRedo(.entryActionApplied(direction: direction, record: record)):
+        case let .undoRedo(.replaySucceeded(direction: direction, sourceRecordID: _, updatedRecord: record)):
             .merge(
                 handleEntryActionApplied(direction: direction, record: record, state: state),
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
@@ -31,6 +31,12 @@ enum FileManagerContentEntryOpsCoordinator {
 
         case let .lifecycle(.operationFinished(path, kind, result)):
             handleOperationFinished(path: path, kind: kind, result: result, state: state)
+
+        case .lifecycle(.operationFinished(_, _, .failure)):
+            .none
+
+        case .lifecycle(.dropOperationFinished):
+            .none
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
@@ -44,7 +50,7 @@ enum FileManagerContentEntryOpsCoordinator {
         reloadEntryItemsEffect(
             navigationState: state.navigation.navigationState,
             showHidden: state.entryViewLayout.showHiddenFiles,
-            priority: rootMetadataPriority(for: state.entryArrangements),
+            priority: rootMetadataPriority(for: state.entryViewLayout.entryArrangements),
         )
     }
 
@@ -155,7 +161,7 @@ enum FileManagerContentEntryOpsCoordinator {
             let affectedPaths = record.targets.flatMap { target in
                 [target.beforePath, target.afterPath].compactMap(\.self)
             }
-            let removedPrefixes = record.operationKind.sourcePathCeasesToExistAtOriginalLocation
+            let removedPrefixes = record.operationKind.removesSourceAtOrigin
                 ? record.targets.compactMap(\.beforePath)
                 : []
             guard !affectedPaths.isEmpty else { return .none }
@@ -296,12 +302,12 @@ enum FileManagerContentEntryOpsCoordinator {
     }
 
     private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {
-        .send(.entryOperations(action))
+        .send(.entryViewLayout(.entryOperations(action)))
     }
 }
 
 private extension OperationKind {
-    var sourcePathCeasesToExistAtOriginalLocation: Bool {
+    var removesSourceAtOrigin: Bool {
         switch self {
         case .pasteFileMove, .rename, .moveToTrash, .putBack:
             true

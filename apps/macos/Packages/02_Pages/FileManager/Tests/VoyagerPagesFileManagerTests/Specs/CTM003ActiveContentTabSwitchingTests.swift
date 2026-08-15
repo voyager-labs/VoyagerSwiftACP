@@ -126,7 +126,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         } withDependencies: {
@@ -158,7 +160,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         }
@@ -186,7 +190,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         }
@@ -218,7 +224,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         } withDependencies: {
@@ -270,9 +278,11 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         await store.send(.navigation(.delegate(.navigateToState(.folder(nextPath)))))
         await store.receive(\.contentTabs)
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
-            else { return false }
-            return receivedPath == nextPath
+            guard case let .tabContent(
+                receivedTabID,
+                .internal(.applyNavigationState(.folder(receivedPath))),
+            ) = action else { return false }
+            return receivedTabID == tabID && receivedPath == nextPath
         }
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs[id: tabID])

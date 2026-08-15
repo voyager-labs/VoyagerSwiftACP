@@ -32,7 +32,7 @@ final class ArrangeEntriesFlowTests: XCTestCase {
         let targetEntry = makeEntry(at: targetDirectory, isFolder: true)
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(sandbox.root.path)
-        state.entryOperations.items = [sourceEntry, parentEntry]
+        state.entryViewLayout.entryOperations.items = [sourceEntry, parentEntry]
         state.entryViewLayout.entries = [sourceEntry, parentEntry]
         state.entryViewLayout.hierarchy = .init(
             rootPath: sandbox.root.path,
@@ -51,9 +51,9 @@ final class ArrangeEntriesFlowTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.entryFileOpsClient = .liveValue
             $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
                 AsyncThrowingStream { continuation in
@@ -83,10 +83,10 @@ final class ArrangeEntriesFlowTests: XCTestCase {
         XCTAssertEqual(store.state.navigation.navigationState, initialRoute)
         XCTAssertEqual(store.state.navigation.backHistory, initialHistory)
         XCTAssertFalse(
-            store.state.entryOperations.undoRecords.isEmpty,
+            store.state.entryViewLayout.entryOperations.undoRecords.isEmpty,
             "drag-and-drop move must produce an undo record",
         )
-        XCTAssertTrue(store.state.entryOperations.canUndoEntryAction)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.canUndoEntryAction)
     }
 
     private func makeEntry(at url: URL, isFolder: Bool) -> EntryModel {

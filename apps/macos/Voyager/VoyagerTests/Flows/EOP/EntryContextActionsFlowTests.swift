@@ -95,7 +95,7 @@ final class EntryContextActionsFlowTests: XCTestCase {
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryOperations.items = IdentifiedArray(uniqueElements: entries)
+        state.entryViewLayout.entryOperations.items = IdentifiedArray(uniqueElements: entries)
         state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = selectedIDs
         return TestStore(initialState: state) {

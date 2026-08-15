@@ -2,6 +2,9 @@ import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 public struct EntryViewLayoutCollectionCancelID: Hashable, Sendable {
@@ -38,6 +41,18 @@ public struct EntryViewLayoutFeature {
     }
 
     public var body: some Reducer<State, Action> {
+        Scope(state: \.entryOperations, action: \.entryOperations) {
+            EntryOperationsFeature()
+        }
+
+        Scope(state: \.entryThumbnail, action: \.entryThumbnail) {
+            EntryThumbnailFeature()
+        }
+
+        Scope(state: \.entryArrangements, action: \.entryArrangements) {
+            EntryArrangementsFeature()
+        }
+
         EntryListHierarchyReducer()
 
         Reduce { state, action in
@@ -50,7 +65,7 @@ public struct EntryViewLayoutFeature {
                 state.shouldScrollToSelection = shouldScrollToSelection
 
                 var effects: [Effect<Action>] = []
-                if let renamingId = state.renamingItemId {
+                if let renamingId = state.entryOperations.renamingItemId {
                     let isRenamingItemSelected = ids == [renamingId]
                     if !isRenamingItemSelected {
                         effects.append(.send(.delegate(.renameCanceled)))
@@ -299,24 +314,12 @@ public struct EntryViewLayoutFeature {
 
             case let .view(.applyContentProjection(projection)):
                 state.entries = projection.entries
-                state.isLoading = projection.isLoading
-                state.sortKey = projection.sortKey
-                state.sortOrder = projection.sortOrder
-                state.groupKey = projection.groupKey
-                state.collapsedGroups = projection.collapsedGroups
-                state.presentationSections = projection.sections.isEmpty
-                    ? [.ungrouped(items: projection.entries)]
-                    : projection.sections
-                state.openWithApplications = projection.openWithApplications
-                state.renamingItemId = projection.renamingItemId
-                state.renamingText = projection.renamingText
-                state.clipboardCutPaths = projection.clipboardCutPaths
-                state.hasClipboardItems = projection.hasClipboardItems
-                state.busyEntryPaths = projection.busyEntryPaths
-                state.restorableTrashPaths = projection.restorableTrashPaths
                 state.trashDirectoryPath = projection.trashDirectoryPath
-                state.collectionWindowID = projection.collectionWindowID
-                state.collectionLoadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
+                state.entryOperations.isLoading = projection.isLoading
+                state.entryOperations.renamingItemId = projection.renamingItemId
+                state.entryOperations.renamingText = projection.renamingText
+                state.entryOperations.windowID = projection.collectionWindowID
+                state.entryOperations.loadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
                 state.reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
                 return .none
 
@@ -522,6 +525,33 @@ public struct EntryViewLayoutFeature {
             case .delegate:
                 return .none
 
+            case .entryThumbnail:
+                return .none
+
+            case let .entryOperations(entryOperationsAction):
+                switch entryOperationsAction {
+                case .loading(.itemsLoaded),
+                     .loading(.itemsLoadFailed):
+                    return Self.updateEntriesAndReapply(&state)
+                default:
+                    return .none
+                }
+
+            case let .entryArrangements(entryArrangementsAction):
+                switch entryArrangementsAction {
+                case .delegate(.requestApply):
+                    return .send(.entryArrangements(.apply(
+                        items: state.entries,
+                        isCollectionMode: state.isCollectionMode,
+                    )))
+                case let .delegate(.applied(sortedItems, _)):
+                    state.entries = sortedItems
+                    state.reconcileSelectionWithVisibleEntries()
+                    return .none
+                default:
+                    return .none
+                }
+
             case .hierarchy:
                 return .none
             }
@@ -535,14 +565,14 @@ public struct EntryViewLayoutFeature {
         switch operation {
         case .replace:
             EntryViewLayoutCollectionCancelID.replace(
-                windowID: state.collectionWindowID,
-                ownerID: state.collectionLoadingCancellationOwnerID,
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
             )
         case let .append(token):
             EntryViewLayoutCollectionCancelID.append(
                 token: token,
-                windowID: state.collectionWindowID,
-                ownerID: state.collectionLoadingCancellationOwnerID,
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
             )
         }
     }
@@ -575,7 +605,7 @@ public struct EntryViewLayoutFeature {
         state: State,
     ) -> Bool {
         let activeProbes = [
-            metadataProbe(for: state.sortKey.sharedSortKey),
+            metadataProbe(for: state.entryArrangements.sortKey),
         ].compactMap(\.self)
         guard !activeProbes.isEmpty else { return false }
         return patches.contains { patch in
@@ -698,13 +728,14 @@ public struct EntryViewLayoutFeature {
     }
 
     static func patchAffectsActiveArrangement(_ patch: EntryMetadataPatch, state: State) -> Bool {
-        let sortKey = state.sortKey.sharedSortKey
+        let sortKey = state.entryArrangements.sortKey
         return switch patch {
         case .spotlight:
             [VoyagerShared.SortKey.kind, .application, .dateLastOpened].contains(sortKey)
-                || [EntryViewLayoutGroupKey.kind, .application, .dateLastOpened].contains(state.groupKey)
+                || [GroupKey.kind, .application, .dateLastOpened]
+                .contains(state.entryArrangements.groupKey)
         case .tags:
-            sortKey == .tags || state.groupKey == .tags
+            sortKey == .tags || state.entryArrangements.groupKey == .tags
         case .supplementaryMetadata:
             false
         }
@@ -712,17 +743,17 @@ public struct EntryViewLayoutFeature {
 
     static func collectionMetadataPriority(for state: State) -> EntryMetadataPriority {
         var probes: [EntryMetadataProbe] = []
-        let sortKey = state.sortKey.sharedSortKey
+        let sortKey = state.entryArrangements.sortKey
         if [VoyagerShared.SortKey.kind, .application, .dateLastOpened].contains(sortKey) {
             probes.append(.spotlight)
         }
         if sortKey == .tags {
             probes.append(.tags)
         }
-        if [EntryViewLayoutGroupKey.kind, .application, .dateLastOpened].contains(state.groupKey) {
+        if [GroupKey.kind, .application, .dateLastOpened].contains(state.entryArrangements.groupKey) {
             probes.append(.spotlight)
         }
-        if state.groupKey == .tags {
+        if state.entryArrangements.groupKey == .tags {
             probes.append(.tags)
         }
         return probes.isEmpty ? .none : .active(probes)

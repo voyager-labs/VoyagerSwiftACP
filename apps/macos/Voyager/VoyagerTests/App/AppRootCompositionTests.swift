@@ -5,6 +5,7 @@ import Dependencies
 import VoyagerEntitiesCollection
 import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
+import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
@@ -16,6 +17,55 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testLiveUndoManagerClientUsesCanonicalRegistryStackForSequentialUndo() async throws {
+        let windowID = UUID()
+        let ownerID = UUID()
+        let registry = FileOperationUndoManagerRegistry()
+        let window = FileManagerWindowState.makeInitial(path: "/active")
+        let activeTabID = try XCTUnwrap(window.contentTabs.activeTabID)
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: activeTabID.rawValue)
+        let nativeUndoManager = registry.activate(scope)
+        let generation = try XCTUnwrap(registry.generation(for: scope))
+        let client = VoyagerApp.makeUndoManagerClient(
+            fileOperationUndoManagerRegistry: registry,
+            resolveScope: { requestedWindowID in
+                requestedWindowID == windowID ? scope : nil
+            },
+        )
+        let firstRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/first-old", afterPath: "/first-new")],
+        )
+        let secondRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/second-old", afterPath: "/second-new")],
+        )
+        var events = client.events(windowID).makeAsyncIterator()
+
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: firstRecord))
+        await client.registerUndo(windowID, ownerID, firstRecord)
+        XCTAssertTrue(registry.registerUndo(scope, expectedGeneration: generation, record: secondRecord))
+        await client.registerUndo(windowID, ownerID, secondRecord)
+
+        let secondIdentity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: secondRecord.id)
+        let firstUndo = await client.undo(windowID, expectedTarget: secondIdentity)
+        let firstEvent = await events.next()
+        let firstIdentity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: firstRecord.id)
+        let secondUndo = await client.undo(windowID, expectedTarget: firstIdentity)
+        let secondEvent = await events.next()
+
+        XCTAssertIdentical(registry.undoManager(for: scope), nativeUndoManager)
+        XCTAssertTrue(firstUndo.didInvoke)
+        XCTAssertTrue(secondUndo.didInvoke)
+        XCTAssertEqual(firstEvent, UndoManagerEvent(ownerID: ownerID, record: secondRecord, direction: .undo))
+        XCTAssertEqual(secondEvent, UndoManagerEvent(ownerID: ownerID, record: firstRecord, direction: .undo))
+        XCTAssertFalse(secondUndo.availability.canUndo)
+        XCTAssertTrue(secondUndo.availability.canRedo)
+        XCTAssertFalse(nativeUndoManager.canUndo)
+        XCTAssertTrue(nativeUndoManager.canRedo)
+        XCTAssertEqual(registry.generation(for: scope), generation)
+    }
+
     func testSignedOutLaunchDefersInitialWindowUntilRuntimeAndWindowCompletion() async {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
@@ -671,6 +721,7 @@ final class AppRootCompositionTests: XCTestCase {
             ],
         )
         let events = LockIsolated<[String]>([])
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.didStartHelper = true
@@ -688,7 +739,10 @@ final class AppRootCompositionTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in
                 events.withValue { $0.append("alert") }
             }
@@ -757,6 +811,7 @@ final class AppRootCompositionTests: XCTestCase {
             .directory(path: "/tmp"),
             .collectionFile(url: collectionURL),
         ] + (0 ..< 18).map { .directory(path: "/tmp/overflow/\($0)") }
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.didStartHelper = true
@@ -773,7 +828,10 @@ final class AppRootCompositionTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.isRequired = { false }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }
@@ -1630,13 +1688,17 @@ final class AppRootCompositionTests: XCTestCase {
 
         let activationStarted = expectation(description: "native activation started")
         let activationGate = AsyncStream<Void>.makeStream()
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.isRequired = { false }
-            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.fileManagerWindowClient.activate = { _ in
                 activationStarted.fulfill()
                 for await _ in activationGate.stream {
@@ -2589,6 +2651,10 @@ final class AppRootCompositionTests: XCTestCase {
                 XCTAssertEqual(id, windowID)
                 closeCompleted.fulfill()
             }
+            $0.undoManagerClient.invalidateWindow = { id in
+                XCTAssertEqual(id, windowID)
+                return .init(succeeded: true, availability: .init())
+            }
         }
         // store.exhaustivity = .off: native completion과 queued parent terminal 사이 revoke ownership만 검증함.
         store.exhaustivity = .off
@@ -2596,6 +2662,10 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.lifecycle(.termination(.willTerminate)))
         await fulfillment(of: [closeCompleted], timeout: 1)
         await store.skipReceivedActions()
+        XCTAssertNotNil(store.state.windowManager.windows[id: windowID])
+
+        await store.send(.windowManager(.event(.windowClosed(windowID))))
+        await store.receive(\.windowManager.windowInvalidationFinished)
 
         XCTAssertTrue(store.state.windowManager.windows.isEmpty)
         XCTAssertNil(store.state.windowManager.trackedSingletonWindow)
@@ -2740,6 +2810,7 @@ final class AppRootCompositionTests: XCTestCase {
         let batchURL = URL(fileURLWithPath: "/tmp/batch-after-native-open")
         let openStarted = expectation(description: "tracked native open started")
         let openGate = AsyncStream<Void>.makeStream()
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
         var initialState = AppRootFeature.State()
         initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.didStartHelper = true
@@ -2754,12 +2825,14 @@ final class AppRootCompositionTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
             $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
-            $0.fileManagerWindowClient.open = { _ in
+            $0.fileManagerWindowClient.open = { id in
+                registeredWindowIDs.withValue { $0.insert(id) }
                 openStarted.fulfill()
                 for await _ in openGate.stream {
                     break
                 }
             }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
             $0.pathProbeClient.probeExistence = { _ in PathProbeResult(exists: false, isDirectory: false) }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }

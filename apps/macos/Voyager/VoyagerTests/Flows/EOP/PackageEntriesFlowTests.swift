@@ -38,7 +38,7 @@ final class PackageEntriesFlowTests: XCTestCase {
         await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.compressSelectedItems"))))
 
         await store.receive { action in
-            guard case let .entryOperations(.routing(.executeCommand(command, context))) = action,
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = action,
                   case .mutation(.compressSelectedItems) = command
             else { return false }
             return context.selectedIds == [entry.id]
@@ -47,12 +47,13 @@ final class PackageEntriesFlowTests: XCTestCase {
         }
 
         await store.receive { action in
-            guard case let .entryOperations(.archive(.compressItems(paths))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.archive(.compressItems(paths)))) = action
+            else { return false }
             return paths == [sandbox.fileURL.path]
         }
 
-        await store.receive(\.entryOperations.lifecycle.operationStarted)
-        await store.receive(\.entryOperations.lifecycle.operationFinished)
+        await store.receive(\.entryViewLayout.entryOperations.lifecycle.operationStarted)
+        await store.receive(\.entryViewLayout.entryOperations.lifecycle.operationFinished)
         await store.finish()
 
         let expectedArchiveURL = sandbox.root.appendingPathComponent("\(sandbox.fileURL.lastPathComponent).zip")
@@ -99,7 +100,7 @@ final class PackageEntriesFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.compressSelectedItems"))))
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.finish()
 
         let archiveURLsAfter = sandboxArchiveURLs(in: sandbox.root)
@@ -124,7 +125,7 @@ final class PackageEntriesFlowTests: XCTestCase {
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryOperations.items = .init(uniqueElements: entries)
+        state.entryViewLayout.entryOperations.items = .init(uniqueElements: entries)
         state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = selectedIDs
 
@@ -135,9 +136,9 @@ final class PackageEntriesFlowTests: XCTestCase {
             $0.entryFileOpsClient = .liveValue
             $0.entryThumbnailCacheClient = .testValue
             $0.undoManagerClient = UndoManagerClient(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
                 AsyncThrowingStream { continuation in

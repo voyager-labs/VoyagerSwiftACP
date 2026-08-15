@@ -30,7 +30,7 @@ final class EditEntryMetadataFlowTests: XCTestCase {
         var state = FileManagerContentFeature.State()
         state.navigation.seedInitialFolderPath(sandboxRootPath)
         state.navigation.appendBackHistory(.init(navigationState: .folder("/flow/previous")))
-        state.entryOperations.items = [sourceEntry]
+        state.entryViewLayout.entryOperations.items = [sourceEntry]
         state.entryViewLayout.entries = [sourceEntry]
         state.entryViewLayout.selectedIds = [sourceEntry.id]
         let store = TestStore(initialState: state) {
@@ -47,9 +47,9 @@ final class EditEntryMetadataFlowTests: XCTestCase {
             }
             $0.entryThumbnailCacheClient = .testValue
             $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.userDefaultsClient.setString = { _, _ in }
         }
@@ -74,7 +74,7 @@ final class EditEntryMetadataFlowTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
         XCTAssertEqual(store.state.entryViewLayout.entries, [renamedEntry])
-        XCTAssertEqual(store.state.entryOperations.items, [renamedEntry])
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.items, [renamedEntry])
         XCTAssertEqual(store.state.navigation.navigationState, initialRoute)
         XCTAssertEqual(store.state.navigation.backHistory, initialHistory)
     }
@@ -100,7 +100,7 @@ final class EditEntryMetadataFlowTests: XCTestCase {
         }
         var state = FileManagerContentFeature.State()
         state.navigation.seedInitialFolderPath(sandboxRootPath)
-        state.entryOperations.items = [sourceEntry]
+        state.entryViewLayout.entryOperations.items = [sourceEntry]
         state.entryViewLayout.entries = [sourceEntry]
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -135,9 +135,9 @@ final class EditEntryMetadataFlowTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: renamedURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
         XCTAssertEqual(store.state.entryViewLayout.entries, [sourceEntry])
-        XCTAssertEqual(store.state.entryOperations.items, [sourceEntry])
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.items, [sourceEntry])
         XCTAssertEqual(
-            store.state.entryOperations.itemStates[sourceEntry.id]?.lastError?.message,
+            store.state.entryViewLayout.entryOperations.itemStates[sourceEntry.id]?.lastError?.message,
             "Rename write failed",
         )
         XCTAssertEqual(store.state.navigation.navigationState, initialRoute)

@@ -21,7 +21,7 @@ extension EVM002FileManagerPagePresentationTests {
     func testHierarchyExpandUsesArrangementMetadataPriority() async {
         let folderID = "/root/folder"
         var state = FileManagerContentState()
-        state.entryArrangements.sortKey = .kind
+        state.entryViewLayout.entryArrangements.sortKey = .kind
         state.entryViewLayout.hierarchy.nodesByID[folderID] = .init(generation: 3)
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
@@ -29,7 +29,8 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.expandRequested(folderID))))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))) = action
+            else { return false }
             return request.folderGeneration == 3 && request.priority == .active([.spotlight])
         }
     }
@@ -41,7 +42,7 @@ extension EVM002FileManagerPagePresentationTests {
     func testHierarchyRetryUsesArrangementMetadataPriority() async {
         let folderID = "/root/folder"
         var state = FileManagerContentState()
-        state.entryArrangements.groupKey = .tags
+        state.entryViewLayout.entryArrangements.groupKey = .tags
         state.entryViewLayout.hierarchy.nodesByID[folderID] = .init(generation: 4)
         let store = TestStore(initialState: state) {
             FileManagerContentEntryOperationsBridgeReducer()
@@ -49,7 +50,8 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.retryRequested(folderID))))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))) = action
+            else { return false }
             return request.folderGeneration == 4 && request.priority == .active([.tags])
         }
     }
@@ -77,7 +79,8 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.expandRequested(folderID))))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))) = action
+            else { return false }
             return request.ancestorPaths == [rootID, parentID]
         }
     }
@@ -104,7 +107,8 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.entryViewLayout(.delegate(.retryRequested(firstID))))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))) = action
+            else { return false }
             return request.ancestorPaths == ["/cycle", secondID]
         }
     }

@@ -9,6 +9,7 @@ import VoyagerShared
 @CasePathable
 public enum EntryOperationsAction: CasePathable, Sendable {
     case delegate(Delegate)
+    case outcome(Outcome)
     case routing(Routing)
     case loading(Loading)
     case lifecycle(Lifecycle)
@@ -31,11 +32,19 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
+    public enum Outcome: CasePathable, Sendable {
+        case entriesMutated(EntryOperationsMutationImpact)
+        case undoManagerAvailabilityChanged(UndoManagerAvailability)
+        case entryActionReplayFinished(direction: EntryActionDirection, terminal: EntryActionReplayTerminal)
+    }
+
+    @CasePathable
     public enum Routing: CasePathable, @unchecked Sendable {
         case executeCommand(command: EntryOperationsCommand, context: EntryOperationsCommandContext)
         case validateDrop(context: EntryDropValidationContext)
         case saveDragPaths([String])
-        case handleDrop(providers: [NSItemProvider], destinationPath: String)
+        case handleDrop(providers: [NSItemProvider], destinationPath: String, isOptionDrag: Bool)
+        case handleDropToTrash(providers: [NSItemProvider])
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case handleDropToTag(providers: [NSItemProvider], tagName: String)
     }
@@ -68,6 +77,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case clearError(String)
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
+        case dropOperationFinished(String, OperationKind, Result<Void, FileOpError>)
         case entryActionCompleted(EntryActionRecord)
         case emptyTrashCompleted
         case loadClipboardState
@@ -124,6 +134,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
             operation: ClipboardOperation,
             operationKind: OperationKind,
         )
+        case performDrop(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
     }
 
     @CasePathable
@@ -155,7 +166,12 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case undoEntryAction(EntryActionRecord)
         case redoEntryAction(EntryActionRecord)
         case replayEntryAction(direction: EntryActionDirection, record: EntryActionRecord)
-        case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
+        case replaySucceeded(
+            direction: EntryActionDirection,
+            sourceRecordID: UUID,
+            updatedRecord: EntryActionRecord,
+        )
+        case replayFailed(direction: EntryActionDirection, appliedTargets: [EntryActionRecord.Target])
     }
 }
 
@@ -202,7 +218,28 @@ public struct TagMutationFailure: Equatable, Sendable {
     }
 }
 
-public enum EntryActionDirection: Sendable {
+public enum EntryActionDirection: Equatable, Sendable {
     case undo
     case redo
+}
+
+public enum EntryActionReplayTerminal: Equatable, Sendable {
+    case success(EntryActionRecord)
+    case failure(reason: EntryActionReplayFailureReason, appliedTargets: [EntryActionRecord.Target])
+}
+
+public enum EntryActionReplayFailureReason: Equatable, Sendable {
+    case ownerRecordMismatch
+    case ownerBusy
+    case operationFailed
+}
+
+public struct EntryOperationsMutationImpact: Equatable, Sendable {
+    public let sourceParentPaths: [String]
+    public let destinationPath: String
+
+    public init(sourceParentPaths: [String], destinationPath: String) {
+        self.sourceParentPaths = sourceParentPaths
+        self.destinationPath = destinationPath
+    }
 }

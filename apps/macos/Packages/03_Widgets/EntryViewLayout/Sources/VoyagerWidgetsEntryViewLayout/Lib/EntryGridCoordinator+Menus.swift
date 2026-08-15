@@ -17,8 +17,8 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             selectedEntries: target.entries,
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            restorableTrashPaths: state.restorableTrashPaths,
-            canPaste: state.hasClipboardItems,
+            restorableTrashPaths: state.entryOperations.restorableTrashPaths,
+            canPaste: !state.entryOperations.clipboardItems.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
         )
@@ -42,8 +42,10 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             showOpenWith: menuSpec.showOpenWith,
             paletteTags: menuSpec.paletteTags,
             knownTags: menuSpec.knownTags,
-            canPerformEntryCommands: (!state.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(busyEntryPaths: state.busyEntryPaths),
+            canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
+                && !target.containsBusyEntry(
+                    busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
+                ),
         ))
     }
 

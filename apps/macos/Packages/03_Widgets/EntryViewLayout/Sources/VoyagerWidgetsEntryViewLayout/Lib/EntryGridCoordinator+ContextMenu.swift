@@ -7,7 +7,7 @@ extension EntryGridCoordinator {
     }
 
     func openWithApplications(selectedEntries _: [EntryModel]) -> [ApplicationInfo] {
-        state.presentation.openWithApplications
+        state.entryOperations.commonApplicationsForSelectedFiles
     }
 
     func updateContextMenuAnchor(_ event: NSEvent) {

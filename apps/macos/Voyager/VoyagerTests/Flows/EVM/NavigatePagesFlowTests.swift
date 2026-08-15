@@ -89,9 +89,9 @@ final class NavigatePagesFlowTests: XCTestCase {
             path: "/flow/current/changed.txt",
             flags: 0,
         )]))
-        await store.receive(\.entryOperations.loading.loadItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
         await store.receive { action in
-            guard case let .entryOperations(.loading(.streamEvent(event))) = action else {
+            guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(event)))) = action else {
                 return false
             }
             return event.event == .coreBatch(items: [entry], batchIndex: 0)
@@ -102,7 +102,7 @@ final class NavigatePagesFlowTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.entryViewLayout.entries, [entry])
-        XCTAssertFalse(store.state.entryOperations.isLoading)
+        XCTAssertFalse(store.state.entryViewLayout.entryOperations.isLoading)
     }
 
     // FLOW-PATH: happy_path.recents_route_reaches_staged_first_batch
@@ -131,9 +131,9 @@ final class NavigatePagesFlowTests: XCTestCase {
             path: "/flow/recents/changed.txt",
             flags: 0,
         )]))
-        await store.receive(\.entryOperations.loading.loadRecentItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadRecentItems)
         await store.receive { action in
-            guard case let .entryOperations(.loading(.streamEvent(event))) = action else {
+            guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(event)))) = action else {
                 return false
             }
             return event.event == .coreBatch(items: [entry], batchIndex: 0)
@@ -144,7 +144,7 @@ final class NavigatePagesFlowTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.entryViewLayout.entries, [entry])
-        XCTAssertFalse(store.state.entryOperations.isLoading)
+        XCTAssertFalse(store.state.entryViewLayout.entryOperations.isLoading)
     }
 
     // FLOW-PATH: happy_path.tags_route_reaches_staged_first_batch
@@ -171,9 +171,9 @@ final class NavigatePagesFlowTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.externalFileSystemChanged([FileChangeGatewayEvent(path: "/flow/tags/changed.txt", flags: 0)]))
-        await store.receive(\.entryOperations.loading.loadTagItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadTagItems)
         await store.receive { action in
-            guard case let .entryOperations(.loading(.streamEvent(event))) = action else {
+            guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(event)))) = action else {
                 return false
             }
             return event.event == .coreBatch(items: [entry], batchIndex: 0)
@@ -184,7 +184,7 @@ final class NavigatePagesFlowTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.entryViewLayout.entries, [entry])
-        XCTAssertFalse(store.state.entryOperations.isLoading)
+        XCTAssertFalse(store.state.entryViewLayout.entryOperations.isLoading)
     }
 
     nonisolated private static func stagedStream(

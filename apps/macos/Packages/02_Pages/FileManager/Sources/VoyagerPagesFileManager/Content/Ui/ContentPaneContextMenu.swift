@@ -24,11 +24,11 @@ struct ContentPaneContextMenu: View {
     }
 
     private var canPerformEntryCommands: Bool {
-        !store.entryOperations.isLoading || store.entryViewLayout.isCollectionMode
+        !store.entryViewLayout.entryOperations.isLoading || store.entryViewLayout.isCollectionMode
     }
 
     private var canPaste: Bool {
-        canPerformEntryCommands && !store.entryOperations.clipboardItems.isEmpty
+        canPerformEntryCommands && !store.entryViewLayout.entryOperations.clipboardItems.isEmpty
     }
 
     private var canSelectAll: Bool {
@@ -39,16 +39,16 @@ struct ContentPaneContextMenu: View {
         if isTrashFolder {
             Button("Empty Trash") {
                 store
-                    .send(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
-                            .map(\.fullPath)))))
+                    .send(.entryViewLayout(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
+                            .map(\.fullPath))))))
             }
             .disabled(!canPerformEntryCommands)
         } else {
             Button("New Folder") {
-                store.send(.entryOperations(.edit(.createNewFolder(
+                store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
                     parentPath: store.navigation.currentPath,
                     siblingNames: store.entryViewLayout.entries.map(\.name),
-                ))))
+                )))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!canPerformEntryCommands)
@@ -85,7 +85,7 @@ struct ContentPaneContextMenu: View {
             sortOrderToggle("Ascending", order: .ascending)
             sortOrderToggle("Descending", order: .descending)
         }
-        .disabled(store.entryArrangements.groupKey != .none || !canPerformEntryCommands)
+        .disabled(store.entryViewLayout.entryArrangements.groupKey != .none || !canPerformEntryCommands)
 
         Menu("Group By") {
             groupKeyToggle("None", key: .none)
@@ -117,10 +117,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryArrangements.sortKey == key },
+                get: { store.entryViewLayout.entryArrangements.sortKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryArrangements(.setSortKey(key)))
+                        store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
                     }
                 },
             ),
@@ -131,10 +131,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryArrangements.sortOrder == order },
+                get: { store.entryViewLayout.entryArrangements.sortOrder == order },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryArrangements(.setSortOrder(order)))
+                        store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
                     }
                 },
             ),
@@ -145,10 +145,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryArrangements.groupKey == key },
+                get: { store.entryViewLayout.entryArrangements.groupKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryArrangements(.setGroupKey(key)))
+                        store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
                     }
                 },
             ),

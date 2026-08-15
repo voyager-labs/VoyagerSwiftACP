@@ -30,11 +30,13 @@ struct EntryGridRenderSnapshot: Equatable {
         presentation = state.presentation
         entries = state.entries
         entriesCount = state.entries.count
-        groupKey = state.groupKey
-        collapsedGroups = state.collapsedGroups
+        groupKey = .fromShared(state.entryArrangements.groupKey.rawValue)
+        collapsedGroups = state.entryArrangements.collapsedGroups
         selectedIds = state.selectedIds
-        clipboardCutPaths = state.clipboardCutPaths
-        renamingItemId = state.renamingItemId
+        clipboardCutPaths = state.entryOperations.clipboardOperation == .cut
+            ? Set(state.entryOperations.clipboardItems)
+            : []
+        renamingItemId = state.entryOperations.renamingItemId
         gridIconSize = state.gridIconSize
         gridTextSize = state.gridTextSize
         showHiddenFiles = state.showHiddenFiles

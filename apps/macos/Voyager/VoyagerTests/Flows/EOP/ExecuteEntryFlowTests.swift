@@ -38,7 +38,7 @@ final class ExecuteEntryFlowTests: XCTestCase {
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
         await store.receive { action in
-            guard case let .entryOperations(.routing(.executeCommand(command, context))) = action,
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = action,
                   case .navigation(.openSelectedItem) = command
             else { return false }
             return context.selectedIds == [entry.id]
@@ -46,11 +46,11 @@ final class ExecuteEntryFlowTests: XCTestCase {
                 && context.currentPath == sandbox.root.path
         }
         await store.receive { action in
-            guard case let .entryOperations(.open(.openFiles(paths))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = action else { return false }
             return paths == [sandbox.fileURL.path]
         }
-        await store.receive(\.entryOperations.lifecycle.operationStarted)
-        await store.receive(\.entryOperations.lifecycle.operationFinished)
+        await store.receive(\.entryViewLayout.entryOperations.lifecycle.operationStarted)
+        await store.receive(\.entryViewLayout.entryOperations.lifecycle.operationFinished)
         await store.finish()
 
         let openedURLs = await recorder.recordedURLs()
@@ -86,7 +86,7 @@ final class ExecuteEntryFlowTests: XCTestCase {
         let initialSelection = store.state.entryViewLayout.selectedIds
 
         await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
-        await store.receive(\.entryOperations.routing.executeCommand)
+        await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.finish()
 
         let openedURLs = await recorder.recordedURLs()
@@ -105,7 +105,7 @@ final class ExecuteEntryFlowTests: XCTestCase {
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryOperations.items = .init(uniqueElements: entries)
+        state.entryViewLayout.entryOperations.items = .init(uniqueElements: entries)
         state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = selectedIDs
 

@@ -5,6 +5,9 @@ import IdentifiedCollections
 import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 @ObservableState
@@ -23,23 +26,12 @@ public struct EntryViewLayoutState: Equatable {
     }
 
     public var mode: Mode = .list
-    public var isLoading: Bool = false
-    public var renamingItemId: EntryModel.ID?
-    public var sortKey: EntryViewLayoutSortKey = .name
-    public var sortOrder: VoyagerShared.SortOrder = .ascending
-    public var groupKey: EntryViewLayoutGroupKey = .none
-    public var collapsedGroups: Set<String> = []
-    public var presentationSections: [EntryViewLayoutSection] = []
-    public var openWithApplications: [ApplicationInfo] = []
-    public var clipboardCutPaths: Set<String> = []
-    public var hasClipboardItems: Bool = false
-    public var renamingText: String = ""
-    /// FileManagerContentState.entryOperations에서 동기화되는 투영값
-    public var restorableTrashPaths: Set<String> = []
-    public var trashDirectoryPath: String?
-    public var busyEntryPaths: Set<String> = []
+    public var entryOperations: EntryOperationsFeature.State = .init()
+    public var entryThumbnail: EntryThumbnailFeature.State = .init()
+    public var entryArrangements: EntryArrangementsFeature.State = .init()
     public var hierarchy: EntryListHierarchyState = .init()
     public var outlineProjectionRevision: Int = 0
+    public var trashDirectoryPath: String?
 
     /// Cached set of visible selectable entry IDs from the last reconciliation.
     /// Used to detect whether visible entries actually changed, avoiding
@@ -89,7 +81,7 @@ public struct EntryViewLayoutState: Equatable {
 
     /// Canonical display items: `collectionItems` in collection mode, `entries` otherwise.
     public var displayItems: IdentifiedArrayOf<EntryModel> {
-        isCollectionMode ? collectionItems : IdentifiedArrayOf(uniqueElements: entries)
+        isCollectionMode ? collectionItems : entryOperations.items
     }
 
     /// Ordered snapshot of `displayItems` for list/grid rendering.
@@ -99,11 +91,19 @@ public struct EntryViewLayoutState: Equatable {
 
     public var presentation: EntryViewLayoutPresentation {
         EntryViewLayoutPresentation(
-            sections: presentationSections.isEmpty
+            sections: entryArrangements.groupedItems.isEmpty
                 ? [.ungrouped(items: entries)]
-                : presentationSections,
+                : entryArrangements.groupedItems.enumerated().map { index, group in
+                    EntryViewLayoutSection(
+                        id: group.groupName.isEmpty ? "group-\(index)" : group.groupName,
+                        title: group.groupName,
+                        colorCode: group.colorCode,
+                        items: group.items,
+                        isCollapsed: entryArrangements.collapsedGroups.contains(group.groupName),
+                    )
+                },
             selectedIds: selectedIds,
-            openWithApplications: openWithApplications,
+            openWithApplications: entryOperations.commonApplicationsForSelectedFiles,
         )
     }
 
@@ -125,18 +125,17 @@ public struct EntryViewLayoutState: Equatable {
 
     mutating func synchronizeEntries(_ entries: [EntryModel]) {
         self.entries = entries
-        presentationSections = [.ungrouped(items: entries)]
         reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
     }
 
     mutating func synchronizePresentation(
         entries: [EntryModel],
-        sections: [EntryViewLayoutSection],
+        sections _: [EntryViewLayoutSection],
         openWithApplications: [ApplicationInfo],
     ) {
         self.entries = entries
-        presentationSections = sections.isEmpty ? [.ungrouped(items: entries)] : sections
-        self.openWithApplications = openWithApplications
+        entryOperations.commonApplicationsForSelectedFiles = openWithApplications
+        self.entries = entries
         reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
     }
 
@@ -144,7 +143,7 @@ public struct EntryViewLayoutState: Equatable {
         mode == .list
             && !isCollectionMode
             && !hierarchy.rootPath.isEmpty
-            && groupKey == .none
+            && entryArrangements.groupKey == .none
     }
 
     func contextMenuSelectedEntries(rowEntry: EntryModel?) -> [EntryModel] {
@@ -165,10 +164,10 @@ public struct EntryViewLayoutState: Equatable {
             context: .init(
                 mode: mode,
                 isNormalDirectoryPage: isNormalDirectoryPage && !isCollectionMode,
-                hasActiveGrouping: groupKey != .none,
+                hasActiveGrouping: entryArrangements.groupKey != .none,
             ),
-            sortKey: sortKey.sharedSortKey,
-            sortOrder: sortOrder,
+            sortKey: entryArrangements.sortKey,
+            sortOrder: entryArrangements.sortOrder,
         )
     }
 

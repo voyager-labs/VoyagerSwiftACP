@@ -2,6 +2,9 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 @CasePathable
@@ -10,6 +13,9 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case delegate(Delegate)
     case `internal`(Internal)
     case hierarchy(EntryListHierarchyAction)
+    case entryOperations(EntryOperationsFeature.Action)
+    case entryThumbnail(EntryThumbnailFeature.Action)
+    case entryArrangements(EntryArrangementsFeature.Action)
 
     public struct EntryViewLayoutPreferences: Sendable {
         public let listIconSize: CGFloat

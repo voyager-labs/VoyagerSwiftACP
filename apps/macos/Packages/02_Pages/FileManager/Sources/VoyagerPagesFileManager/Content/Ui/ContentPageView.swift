@@ -70,7 +70,7 @@ struct ContentPageView: View {
         .resolve(
             isCollectionSearching: store.composer.isCollectionSearching,
             isCollectionContentLoading: store.entryViewLayout.isCollectionContentLoading,
-            isEntryLoading: store.entryOperations.isLoading,
+            isEntryLoading: store.entryViewLayout.entryOperations.isLoading,
             isCollectionMode: store.isCollectionMode,
         )
     }
@@ -122,7 +122,7 @@ struct ContentPageView: View {
                 ContentPaneContextMenu(store: store)
             }
             .onTapGesture {
-                guard store.entryOperations.renamingItemId == nil else { return }
+                guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 restoreKeyCommandFocus()
             }
     }
@@ -155,12 +155,12 @@ struct ContentPageView: View {
                 restoreKeyCommandFocus()
             }
             .onChange(of: store.entryViewLayout.selectedIds) { _ in
-                guard store.entryOperations.renamingItemId == nil else { return }
+                guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 restoreKeyCommandFocus()
             }
             .onAppear {
                 store.send(.internal(.startObservingSystemNotifications))
-                guard store.entryOperations.renamingItemId == nil else { return }
+                guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }

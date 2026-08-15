@@ -105,15 +105,19 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
         // store.exhaustivity = .off: flow는 first-batch visible result와 loading feedback만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.loading(.loadItems(path: "/flow/current", showHidden: false))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            path: "/flow/current",
+            showHidden: false,
+        )))))
         await store.receive { action in
-            guard case let .entryOperations(.loading(.streamEvent(event))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(event)))) = action
+            else { return false }
             return event.event == .coreBatch(items: [entry], batchIndex: 0)
         }
         await store.receive(\.entryViewLayout.view.applyContentProjection)
 
         XCTAssertEqual(store.state.entryViewLayout.entries, [entry])
-        XCTAssertFalse(store.state.entryOperations.isLoading)
+        XCTAssertFalse(store.state.entryViewLayout.entryOperations.isLoading)
     }
 
     // FLOW-PATH: happy_path.multiple_folder_expansion_is_independent
@@ -274,7 +278,7 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
         let secondChildA = entryFile(id: "/flow/current/second/a", name: "a")
         let secondChildZ = entryFile(id: "/flow/current/second/z", name: "z")
         let store = makeStore(roots: [first, second]) {
-            $0.entryArrangements.sortKey = .dateModified
+            $0.entryViewLayout.entryArrangements.sortKey = .dateModified
             $0.entryViewLayout.hierarchy.nodesByID[first.id] = .init(
                 children: [firstChildZ, firstChildA],
                 loadPhase: .loaded,
@@ -294,7 +298,7 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
         // store.exhaustivity = .off: flow는 arrangement reducer의 내부 delegate 대신 sibling-local order를 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.entryArrangements(.setSortKey(.name)))
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.name))))
         await store.skipReceivedActions()
 
         XCTAssertEqual(
@@ -314,14 +318,14 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
     func testGridAndGroupedModesKeepProjectionFlat() async {
         let folder = EntryModel.temporaryFolder(id: "/flow/current/folder", name: "folder")
         for (mode, isCollectionMode, groupKey) in [
-            (EntryViewLayoutState.Mode.grid, false, EntryViewLayoutGroupKey.none),
+            (EntryViewLayoutState.Mode.grid, false, GroupKey.none),
             (.list, false, .kind),
             (.list, true, .none),
         ] {
             let store = makeLayoutStore(roots: [folder]) {
                 $0.mode = mode
                 $0.isCollectionMode = isCollectionMode
-                $0.groupKey = groupKey
+                $0.entryArrangements.groupKey = groupKey
             }
             // store.exhaustivity = .off: flow는 flat mode의 visible root projection만 검증한다.
             store.exhaustivity = .off
@@ -415,11 +419,11 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
         // store.exhaustivity = .off: flow는 mutation-to-reload projection만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.lifecycle(.pathsMutated([
+        await store.send(.entryViewLayout(.entryOperations(.lifecycle(.pathsMutated([
             "/flow/current/folder/new",
-        ]))))
+        ])))))
         await store.receive(\.entryViewLayout.hierarchy.hierarchyInvalidated)
-        await store.receive(\.entryOperations.loading.loadFolderItems)
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadFolderItems)
 
         XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
         XCTAssertTrue(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.children.isEmpty ?? false)
@@ -530,7 +534,7 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/flow/current")
-        state.entryOperations.items = IdentifiedArrayOf(uniqueElements: roots)
+        state.entryViewLayout.entryOperations.items = IdentifiedArrayOf(uniqueElements: roots)
         state.entryViewLayout.entries = roots
         state.entryViewLayout.hierarchy = .init(rootPath: "/flow/current")
         configure(&state)
@@ -573,10 +577,10 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
             context: .init(
                 mode: state.mode,
                 isNormalDirectoryPage: true,
-                hasActiveGrouping: state.groupKey != .none,
+                hasActiveGrouping: state.entryArrangements.groupKey != .none,
             ),
-            sortKey: state.sortKey.sharedSortKey,
-            sortOrder: state.sortOrder,
+            sortKey: state.entryArrangements.sortKey,
+            sortOrder: state.entryArrangements.sortOrder,
         )
     }
 

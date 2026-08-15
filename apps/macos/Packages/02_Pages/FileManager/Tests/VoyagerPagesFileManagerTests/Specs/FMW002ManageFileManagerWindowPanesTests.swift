@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerEntitiesCollection
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -522,9 +523,9 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
 
         XCTAssertTrue(store.state.content.entryViewLayout.showHiddenFiles)
         XCTAssertEqual(store.state.content.entryViewLayout.listIconSize, 22)
-        XCTAssertTrue(store.state.tabContentStates[activeID]?.entryViewLayout.showHiddenFiles == true)
+        XCTAssertEqual(store.state.tabContentStates[activeID]?.entryViewLayout.showHiddenFiles, true)
         XCTAssertEqual(store.state.tabContentStates[activeID]?.entryViewLayout.listIconSize, 22)
-        XCTAssertTrue(store.state.tabContentStates[inactiveID]?.entryViewLayout.showHiddenFiles == true)
+        XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.showHiddenFiles, true)
         XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.listIconSize, 22)
         await store.finish()
     }
@@ -624,6 +625,173 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         XCTAssertEqual(sidebarState.sidebarWidth, SidebarWidth.defaultValue)
 
         await inspectorStore.finish()
+    }
+
+    func testWindowSplitObservationInputTracksOnlySidebarLayout() {
+        var state = FileManagerWindowState()
+        let baseline = FileManagerWindowSplitObservationInput(state: state)
+        let extraTab = ContentTabItem(
+            id: ContentTabID(rawValue: "sidebar-projection-only"),
+            page: .directory,
+            anchor: .directory(path: "/sidebar/projection"),
+            isPinned: false,
+            title: "Projection Only",
+            iconName: "folder",
+        )
+        state.contentTabs.tabs.append(extraTab)
+        state.syncContentTabSidebarItems()
+        XCTAssertEqual(FileManagerWindowSplitObservationInput(state: state), baseline)
+        var visibilityChanged = state
+        visibilityChanged.sidebar.sidebarVisible.toggle()
+        XCTAssertNotEqual(FileManagerWindowSplitObservationInput(state: visibilityChanged), baseline)
+        var widthChanged = state
+        widthChanged.sidebar.sidebarWidth += 1
+        XCTAssertNotEqual(FileManagerWindowSplitObservationInput(state: widthChanged), baseline)
+    }
+
+    func testWindowObservationInputsIgnoreContentTabSelectionState() {
+        let fixture = makeMainContainerObservationFixture()
+        let state = fixture.state
+        let mainBaseline = FileManagerWindowMainContainerObservationInput(state: state)
+        let splitBaseline = FileManagerWindowSplitObservationInput(state: state)
+
+        var selectedSetChanged = state
+        selectedSetChanged.contentTabs.selectedTabIDs = [fixture.secondTab.id]
+        XCTAssertEqual(FileManagerWindowMainContainerObservationInput(state: selectedSetChanged), mainBaseline)
+        XCTAssertEqual(FileManagerWindowSplitObservationInput(state: selectedSetChanged), splitBaseline)
+
+        var anchorChanged = state
+        anchorChanged.contentTabs.selectionAnchorID = fixture.secondTab.id
+        XCTAssertEqual(FileManagerWindowMainContainerObservationInput(state: anchorChanged), mainBaseline)
+        XCTAssertEqual(FileManagerWindowSplitObservationInput(state: anchorChanged), splitBaseline)
+    }
+
+    func testMainContainerObservationInputIgnoresTopNavigationReorderProjection() {
+        var fixture = makeMainContainerObservationFixture()
+        let baseline = FileManagerWindowMainContainerObservationInput(state: fixture.state)
+        fixture.state.contentTabs.tabs = [fixture.secondTab, fixture.firstTab]
+        fixture.state.syncContentTabSidebarItems()
+        XCTAssertEqual(FileManagerWindowMainContainerObservationInput(state: fixture.state), baseline)
+    }
+
+    func testMainContainerObservationInputTracksContentRenderSemantics() {
+        let fixture = makeMainContainerObservationFixture()
+        let state = fixture.state
+        let baseline = FileManagerWindowMainContainerObservationInput(state: state)
+        var activeTabChanged = state
+        activeTabChanged.contentTabs.activeTabID = fixture.secondTab.id
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: activeTabChanged), baseline)
+        var activeAnchorChanged = state
+        activeAnchorChanged.contentTabs.tabs[id: fixture.firstTab.id]?.anchor = .directory(path: "/render/new-anchor")
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: activeAnchorChanged), baseline)
+        var navigationChanged = state
+        navigationChanged.content.navigation.seedInitialFolderPath("/render/new-navigation")
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: navigationChanged), baseline)
+        var titlePathChanged = state
+        titlePathChanged.content.navigation.titlePath = "/render/new-title"
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: titlePathChanged), baseline)
+        var backHistoryChanged = state
+        backHistoryChanged.content.navigation.backHistory = [.init(navigationState: .folder("/render/back"))]
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: backHistoryChanged), baseline)
+        var forwardHistoryChanged = state
+        forwardHistoryChanged.content.navigation.forwardHistory = [.init(navigationState: .folder("/render/forward"))]
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: forwardHistoryChanged), baseline)
+        var composerChanged = state
+        composerChanged.content.composer.isPresented = true
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: composerChanged), baseline)
+        var unrelatedContentChanged = state
+        unrelatedContentChanged.content.pendingSelectEntryID = "unrelated-content-runtime"
+        XCTAssertEqual(FileManagerWindowMainContainerObservationInput(state: unrelatedContentChanged), baseline)
+    }
+
+    func testMainContainerObservationInputTracksCollectionOverlaySemantics() {
+        let baselineState = makeMainContainerObservationFixture().state
+        let baseline = FileManagerWindowMainContainerObservationInput(state: baselineState)
+        let currentContext = CollectionContext(query: "current", scopes: ["/render"], conditions: [])
+        var canSaveState = baselineState
+        canSaveState.content.entryViewLayout.isCollectionMode = true
+        canSaveState.content.collection.collectionContext = currentContext
+        let canSave = FileManagerWindowMainContainerObservationInput(state: canSaveState)
+        XCTAssertFalse(baseline.canSaveCollection)
+        XCTAssertTrue(canSave.canSaveCollection)
+        XCTAssertNotEqual(canSave, baseline)
+        var discardState = canSaveState
+        let baselineContext = CollectionContext(query: "baseline", scopes: ["/render"], conditions: [])
+        discardState.content.collection.collectionSession.metadata.baseline = .init(context: baselineContext)
+        let discard = FileManagerWindowMainContainerObservationInput(state: discardState)
+        XCTAssertFalse(canSave.isDiscardEnabled)
+        XCTAssertTrue(discard.isDiscardEnabled)
+        XCTAssertEqual(discard.canSaveCollection, canSave.canSaveCollection)
+        XCTAssertNotEqual(discard, canSave)
+        var openedState = canSaveState
+        openedState.content.collection.collectionSession.document = .init(
+            url: URL(fileURLWithPath: "/render/collection.voycoll"),
+            name: "collection",
+            compatibility: makeObservationCollectionCompatibility(),
+        )
+        let opened = FileManagerWindowMainContainerObservationInput(state: openedState)
+        XCTAssertTrue(canSave.isTemporaryCollection)
+        XCTAssertFalse(opened.isTemporaryCollection)
+        XCTAssertEqual(opened.canSaveCollection, canSave.canSaveCollection)
+        XCTAssertNotEqual(opened, canSave)
+    }
+
+    func testMainContainerObservationInputTracksInspectorRenderSemantics() {
+        let state = makeMainContainerObservationFixture().state
+        let baseline = FileManagerWindowMainContainerObservationInput(state: state)
+        var visibilityChanged = state
+        visibilityChanged.inspector.inspectorVisible = true
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: visibilityChanged), baseline)
+        var widthChanged = state
+        widthChanged.inspector.inspectorWidth += 1
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: widthChanged), baseline)
+        var mountChanged = state
+        mountChanged.inspector.inspectorPaneExists = true
+        XCTAssertNotEqual(FileManagerWindowMainContainerObservationInput(state: mountChanged), baseline)
+    }
+
+    private func makeMainContainerObservationFixture() -> MainContainerObservationFixture {
+        let firstTab = ContentTabItem(
+            id: ContentTabID(rawValue: "observation-first"),
+            page: .directory,
+            anchor: .directory(path: "/observation/first"),
+            isPinned: false,
+            title: "First",
+            iconName: "folder",
+        )
+        let secondTab = ContentTabItem(
+            id: ContentTabID(rawValue: "observation-second"),
+            page: .directory,
+            anchor: .directory(path: "/observation/second"),
+            isPinned: false,
+            title: "Second",
+            iconName: "folder",
+        )
+        var state = FileManagerWindowState()
+        state.contentTabs = ContentTabState(
+            tabs: [firstTab, secondTab],
+            activeTabID: firstTab.id,
+        )
+        state.content.navigation.seedInitialFolderPath("/observation/first")
+        state.syncContentTabSidebarItems()
+        return MainContainerObservationFixture(state: state, firstTab: firstTab, secondTab: secondTab)
+    }
+
+    private func makeObservationCollectionCompatibility() -> CollectionFileCompatibilityMetadata {
+        .init(
+            sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+            migrationPath: [.currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: true,
+            writeBackReason: .allowed,
+        )
+    }
+
+    private struct MainContainerObservationFixture {
+        var state: FileManagerWindowState
+        let firstTab: ContentTabItem
+        let secondTab: ContentTabItem
     }
 
     /// FMW-002-show_sidebar: 시작 폴더 path는 Home tab이 아니라 directory tab anchor로 보존한다.

@@ -33,7 +33,7 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         let sourceEntry = makeEntry(at: sandbox.fileURL, isFolder: false)
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(sandbox.root.path)
-        state.entryOperations.items = [sourceEntry]
+        state.entryViewLayout.entryOperations.items = [sourceEntry]
         state.entryViewLayout.entries = [sourceEntry]
         state.entryViewLayout.selectedIds = [sourceEntry.id]
         let store = TestStore(initialState: state) {
@@ -44,9 +44,9 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
             $0.trashMetadataStoreClient = .testValue
             $0.entryOperationSoundClient = .testValue
             $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
                 AsyncThrowingStream { continuation in
@@ -72,11 +72,11 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         XCTAssertEqual(store.state.navigation.navigationState, initialRoute)
         XCTAssertEqual(store.state.navigation.backHistory, initialHistory)
         XCTAssertFalse(
-            store.state.entryOperations.undoRecords.isEmpty,
+            store.state.entryViewLayout.entryOperations.undoRecords.isEmpty,
             "move-to-trash must produce an undo record",
         )
-        XCTAssertTrue(store.state.entryOperations.canUndoEntryAction)
-        XCTAssertTrue(store.state.entryOperations.restorableTrashPaths.contains(trashPath.path))
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.canUndoEntryAction)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.restorableTrashPaths.contains(trashPath.path))
     }
 
     // FLOW-PATH: happy_path.undo_restores_source
@@ -100,7 +100,7 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         let sourceEntry = makeEntry(at: sandbox.fileURL, isFolder: false)
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(sandbox.root.path)
-        state.entryOperations.items = [sourceEntry]
+        state.entryViewLayout.entryOperations.items = [sourceEntry]
         state.entryViewLayout.entries = [sourceEntry]
         state.entryViewLayout.selectedIds = [sourceEntry.id]
         let store = TestStore(initialState: state) {
@@ -111,9 +111,9 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
             $0.trashMetadataStoreClient = .testValue
             $0.entryOperationSoundClient = .testValue
             $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
                 AsyncThrowingStream { continuation in
@@ -134,20 +134,20 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath.path))
 
-        let undoRecord = try XCTUnwrap(store.state.entryOperations.undoRecords.last)
+        let undoRecord = try XCTUnwrap(store.state.entryViewLayout.entryOperations.undoRecords.last)
         XCTAssertEqual(undoRecord.operationKind, .moveToTrash)
 
         // 2. Undo the trash operation
-        await store.send(.entryOperations(.undoRedo(.undoEntryAction(undoRecord))))
+        await store.send(.entryViewLayout(.entryOperations(.undoRedo(.undoEntryAction(undoRecord)))))
         await store.finish()
         await store.skipReceivedActions()
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
-        XCTAssertEqual(store.state.entryOperations.undoRecords.count, 0)
-        XCTAssertEqual(store.state.entryOperations.redoRecords.count, 1)
-        XCTAssertEqual(store.state.entryOperations.redoRecords.first?.id, undoRecord.id)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.undoRecords.count, 0)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.redoRecords.count, 1)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.redoRecords.first?.id, undoRecord.id)
     }
 
     // FLOW-PATH: denial.move_to_trash_fails_preserves_file
@@ -169,7 +169,7 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         let sourceEntry = makeEntry(at: sandbox.fileURL, isFolder: false)
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(sandbox.root.path)
-        state.entryOperations.items = [sourceEntry]
+        state.entryViewLayout.entryOperations.items = [sourceEntry]
         state.entryViewLayout.entries = [sourceEntry]
         state.entryViewLayout.selectedIds = [sourceEntry.id]
         let store = TestStore(initialState: state) {
@@ -180,9 +180,9 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
             $0.trashMetadataStoreClient = .testValue
             $0.entryOperationSoundClient = .testValue
             $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
+                registerUndo: { _, _, _ in },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
                 AsyncThrowingStream { continuation in
@@ -200,8 +200,8 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
-        XCTAssertTrue(store.state.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.entryOperations.restorableTrashPaths.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.restorableTrashPaths.isEmpty)
     }
 
     // MARK: - Helpers

@@ -35,7 +35,47 @@ public struct FileManagerHostMaterialSurfaceConfiguration {
 }
 
 @MainActor
+public struct FileManagerHostMaterialConfiguration {
+    public typealias Surface = FileManagerHostMaterialSurfaceConfiguration
+
+    public var windowShell: FileManagerHostMaterialSurfaceConfiguration
+    public var contentBackground: FileManagerHostMaterialSurfaceConfiguration
+
+    public init(
+        windowShell: FileManagerHostMaterialSurfaceConfiguration,
+        contentBackground: FileManagerHostMaterialSurfaceConfiguration,
+    ) {
+        self.windowShell = windowShell
+        self.contentBackground = contentBackground
+    }
+
+    public static var hostDefault: Self {
+        Self(
+            windowShell: FileManagerHostMaterialSurfaceConfiguration(
+                material: VoyagerDS.SurfaceMaterialRole.windowShell.material,
+                blendingMode: VoyagerDS.SurfaceMaterialRole.windowShell.blendingMode,
+                alphaValue: VoyagerDS.SurfaceMaterialRole.windowShell.alphaValue,
+            ),
+            contentBackground: FileManagerHostMaterialSurfaceConfiguration(
+                material: VoyagerDS.SurfaceMaterialRole.mainContentBackground.material,
+                blendingMode: VoyagerDS.SurfaceMaterialRole.mainContentBackground.blendingMode,
+                alphaValue: VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
+            ),
+        )
+    }
+
+    var materialOverride: FileManagerWindowMaterialOverride {
+        FileManagerWindowMaterialOverride(
+            windowShell: windowShell.materialOverride,
+            contentBackground: contentBackground.materialOverride,
+        )
+    }
+}
+
+@MainActor
 public enum FileManagerHostFixture {
+    public typealias MaterialConfiguration = FileManagerHostMaterialConfiguration
+
     public struct PhaseNotification: Equatable, Sendable {
         public let phase: String
         public let windowID: UUID
@@ -58,43 +98,6 @@ public enum FileManagerHostFixture {
             self.requestID = requestID
             self.errorCode = errorCode
             self.rowCount = rowCount
-        }
-    }
-
-    public struct MaterialConfiguration {
-        public typealias Surface = FileManagerHostMaterialSurfaceConfiguration
-
-        public var windowShell: FileManagerHostMaterialSurfaceConfiguration
-        public var contentBackground: FileManagerHostMaterialSurfaceConfiguration
-
-        public init(
-            windowShell: FileManagerHostMaterialSurfaceConfiguration,
-            contentBackground: FileManagerHostMaterialSurfaceConfiguration,
-        ) {
-            self.windowShell = windowShell
-            self.contentBackground = contentBackground
-        }
-
-        public static var hostDefault: Self {
-            Self(
-                windowShell: FileManagerHostMaterialSurfaceConfiguration(
-                    material: VoyagerDS.SurfaceMaterialRole.windowShell.material,
-                    blendingMode: VoyagerDS.SurfaceMaterialRole.windowShell.blendingMode,
-                    alphaValue: VoyagerDS.SurfaceMaterialRole.windowShell.alphaValue,
-                ),
-                contentBackground: FileManagerHostMaterialSurfaceConfiguration(
-                    material: VoyagerDS.SurfaceMaterialRole.mainContentBackground.material,
-                    blendingMode: VoyagerDS.SurfaceMaterialRole.mainContentBackground.blendingMode,
-                    alphaValue: VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
-                ),
-            )
-        }
-
-        var materialOverride: FileManagerWindowMaterialOverride {
-            FileManagerWindowMaterialOverride(
-                windowShell: windowShell.materialOverride,
-                contentBackground: contentBackground.materialOverride,
-            )
         }
     }
 
@@ -145,11 +148,13 @@ public enum FileManagerHostFixture {
         } withDependencies: {
             FileManagerHostFixtureDependencies.apply(
                 to: &$0,
-                scenario: preset.scenario,
-                preset: preset.rawValue,
-                windowID: windowID,
-                fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
-                workspaceClient: workspaceClient,
+                context: .init(
+                    scenario: preset.scenario,
+                    preset: preset.rawValue,
+                    windowID: windowID,
+                    fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                    workspaceClient: workspaceClient,
+                ),
             )
         }
 
@@ -182,54 +187,7 @@ public enum FileManagerHostFixture {
             return
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            switch scenario.delayedNavigation {
-            case .rootNavigation:
-                windowController.store.send(.navigation(.view(
-                    .navigateToPath(FileManagerHostFixtureSampleData.delayedRootPath),
-                )))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    windowController.store.send(.navigation(.view(
-                        .navigateToPath(FileManagerHostFixtureSampleData.delayedRootReplacementPath),
-                    )))
-                }
-
-            case .tabSwitch:
-                windowController.store.send(.navigation(.view(
-                    .navigateToPath(FileManagerHostFixtureSampleData.delayedTabPrimaryPath),
-                )))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    windowController.store.send(.contentTabs(.setCurrent(
-                        FileManagerHostFixtureStateFactory.delayedTabSwitchTargetID,
-                    )))
-                }
-
-            case .none:
-                let folderID: String = if scenario.permission != .none {
-                    FileManagerHostFixtureSampleData.restrictedFolder.id
-                } else if scenario.largeFolder != .none {
-                    FileManagerHostFixtureSampleData.largeFolder.id
-                } else {
-                    FileManagerHostFixtureSampleData.projects.id
-                }
-                windowController.store.send(
-                    .content(
-                        .entryViewLayout(
-                            .hierarchy(
-                                .folderExpansionRequested(id: folderID),
-                            ),
-                        ),
-                    ),
-                )
-                if scenario.permission == .retry {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-                        windowController.store.send(.content(.entryViewLayout(.hierarchy(
-                            .folderRetryRequested(id: folderID),
-                        ))))
-                    }
-                }
-            }
-        }
+        runPostMountScenario(scenario: scenario, in: windowController)
     }
 
     public static func updateMaterialConfiguration(
@@ -285,32 +243,70 @@ public enum FileManagerHostFixture {
         windowID: UUID,
         workspaceClient: WorkspaceClient,
     ) {
-        applyDependencies(
+        FileManagerHostFixtureDependencies.apply(
             to: &dependencies,
-            scenario: FileManagerHostScenario(progressiveEntryLoading: progressiveEntryLoading),
-            preset: nil,
-            windowID: windowID,
-            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
-            workspaceClient: workspaceClient,
+            context: .init(
+                scenario: FileManagerHostScenario(progressiveEntryLoading: progressiveEntryLoading),
+                preset: nil,
+                windowID: windowID,
+                fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                workspaceClient: workspaceClient,
+            ),
         )
     }
 
-    static func applyDependencies(
-        to dependencies: inout DependencyValues,
+    private static func runPostMountScenario(
         scenario: FileManagerHostScenario,
-        preset: String?,
-        windowID: UUID,
-        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
-        workspaceClient: WorkspaceClient,
+        in windowController: FileManagerWindowCoordinator,
     ) {
-        FileManagerHostFixtureDependencies.apply(
-            to: &dependencies,
-            scenario: scenario,
-            preset: preset,
-            windowID: windowID,
-            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
-            workspaceClient: workspaceClient,
-        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            switch scenario.delayedNavigation {
+            case .rootNavigation:
+                windowController.store.send(.navigation(.view(
+                    .navigateToPath(FileManagerHostFixtureSampleData.delayedRootPath),
+                )))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    windowController.store.send(.navigation(.view(
+                        .navigateToPath(FileManagerHostFixtureSampleData.delayedRootReplacementPath),
+                    )))
+                }
+
+            case .tabSwitch:
+                windowController.store.send(.navigation(.view(
+                    .navigateToPath(FileManagerHostFixtureSampleData.delayedTabPrimaryPath),
+                )))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    windowController.store.send(.contentTabs(.setCurrent(
+                        FileManagerHostFixtureStateFactory.delayedTabSwitchTargetID,
+                    )))
+                }
+
+            case .none:
+                let folderID: String = if scenario.permission != .none {
+                    FileManagerHostFixtureSampleData.restrictedFolder.id
+                } else if scenario.largeFolder != .none {
+                    FileManagerHostFixtureSampleData.largeFolder.id
+                } else {
+                    FileManagerHostFixtureSampleData.projects.id
+                }
+                windowController.store.send(
+                    .content(
+                        .entryViewLayout(
+                            .hierarchy(
+                                .folderExpansionRequested(id: folderID),
+                            ),
+                        ),
+                    ),
+                )
+                if scenario.permission == .retry {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+                        windowController.store.send(.content(.entryViewLayout(.hierarchy(
+                            .folderRetryRequested(id: folderID),
+                        ))))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -335,14 +331,14 @@ private enum FileManagerHostFixtureStateFactory {
         state.content.applyWindowContext(windowID: windowID)
         state.content.entryViewLayout.mode = .list
         state.content.entryViewLayout.hierarchy.replaceRoot(path: FileManagerHostFixtureSampleData.path)
-        state.content.entryOperations.items = IdentifiedArrayOf(
+        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
             uniqueElements: preset == .permissionDenied || preset == .permissionRetry
                 ? FileManagerHostFixtureSampleData.permissionEntries
                 : preset == .largeFolder1000 || preset == .concurrentLargeFolders
                 ? FileManagerHostFixtureSampleData.largeFolderRootEntries
                 : FileManagerHostFixtureSampleData.entries,
         )
-        state.content.entryViewLayout.entries = Array(state.content.entryOperations.items)
+        state.content.entryViewLayout.entries = Array(state.content.entryViewLayout.entryOperations.items)
         if preset == .default {
             seedSpecialContentTabs(in: &state)
         } else if preset == .delayedTabSwitch {
@@ -359,26 +355,30 @@ private enum FileManagerHostFixtureStateFactory {
             state.content = activeContent
         }
         if preset == .collectionDirectory {
-            state.content.navigation.navigationState = .collection(.init(
-                kind: .temporary,
-                context: .init(query: "Design Assets", scopes: [], conditions: []),
-                sortKey: .name,
-                sortOrder: .ascending,
-                viewLayout: .list,
-            ))
-            state.content.collection.collectionContext = .init(
-                query: "Design Assets",
-                scopes: [],
-                conditions: [],
-            )
-            state.content.entryViewLayout.isCollectionMode = true
-            state.content.entryViewLayout.collectionItems = IdentifiedArrayOf(
-                uniqueElements: FileManagerHostFixtureSampleData.collectionEntries,
-            )
-            state.content.entryViewLayout.hierarchy = .init()
-            state.syncActiveTabContentState()
+            applyCollectionDirectoryScenario(to: &state)
         }
         return state
+    }
+
+    private static func applyCollectionDirectoryScenario(to state: inout FileManagerFeature.State) {
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(query: "Design Assets", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        state.content.collection.collectionContext = .init(
+            query: "Design Assets",
+            scopes: [],
+            conditions: [],
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.entryViewLayout.collectionItems = IdentifiedArrayOf(
+            uniqueElements: FileManagerHostFixtureSampleData.collectionEntries,
+        )
+        state.content.entryViewLayout.hierarchy = .init()
+        state.syncActiveTabContentState()
     }
 
     private static func seedDelayedTabSwitchTabs(in state: inout FileManagerFeature.State) {
@@ -489,32 +489,36 @@ private enum FileManagerHostFixtureStateFactory {
 
 @MainActor
 enum FileManagerHostFixtureDependencies {
+    struct ApplyContext {
+        var scenario: FileManagerHostScenario
+        var preset: String?
+        var windowID: UUID
+        var fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
+        var workspaceClient: WorkspaceClient
+    }
+
     static func apply(
         to dependencies: inout DependencyValues,
-        scenario: FileManagerHostScenario,
-        preset: String?,
-        windowID: UUID,
-        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
-        workspaceClient: WorkspaceClient,
+        context: ApplyContext,
     ) {
         dependencies.userDefaultsClient = .previewValue
         dependencies.metricsClient = .previewValue
         dependencies.fileManagerWindowClient = .previewValue
         dependencies.fileManagerIconClient = .previewValue
         dependencies.entryLoadingClient = .fileManagerHostFixture(
-            scenario: scenario,
-            preset: preset,
-            windowID: windowID,
+            scenario: context.scenario,
+            preset: context.preset,
+            windowID: context.windowID,
         )
         dependencies.fileManagerClient = .previewValue
         dependencies.fileManagerLocationsClient = .fileManagerHostFixture
         dependencies.notificationCenterClient = .previewValue
-        dependencies.workspaceClient = workspaceClient
+        dependencies.workspaceClient = context.workspaceClient
         dependencies.entryOpenClient = .previewValue
         dependencies.entryQuickLookClient = .previewValue
         dependencies.entryFileOpsClient = .previewValue
         dependencies.entryOperationsAlertClient = .previewValue
-        dependencies.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
+        dependencies.fileOperationUndoManagerClient = .live(registry: context.fileOperationUndoManagerRegistry)
         dependencies.registryClient = .testValue
         dependencies.collectionFileClient = .testValue
         dependencies.collectionAlertClient = .previewValue

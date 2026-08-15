@@ -36,15 +36,12 @@ extension EVM001FileManagerNavigationTests {
             characters: nil,
             charactersIgnoringModifiers: nil,
         ))))
-        await store.receive { action in
-            guard case .entryViewLayout(.delegate(.executeCommand("mutation.moveSelectedItemsToTrash"))) = action
-            else {
-                return false
-            }
-            return true
-        }
+        await store.receive(
+            \.entryViewLayout.delegate.executeCommand,
+            "mutation.moveSelectedItemsToTrash",
+        )
 
-        let outputs = EntryOperationsCommandPlanner.plan(
+        let outputs: [EntryOperationsCommandOutput] = EntryOperationsCommandPlanner.plan(
             command: .mutation(.moveSelectedItemsToTrash),
             context: .init(
                 selectedIds: state.entryViewLayout.selectedIds,
@@ -53,7 +50,9 @@ extension EVM001FileManagerNavigationTests {
             ),
         )
         XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.trash(.moveToTrash(paths))) = outputs.first else {
+        guard let output = outputs.first,
+              case let .entryOperations(.trash(.moveToTrash(paths))) = output
+        else {
             return XCTFail("Trash 이동 명령은 moveToTrash payload를 계획해야 합니다.")
         }
         XCTAssertEqual(paths, [parent.fullPath])

@@ -142,23 +142,24 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case .selectionChanged:
             let currentContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
             return .concatenate(
-                .send(.entryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout.selectedIds)))),
+                .send(.entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout
+                        .selectedIds))))),
                 .send(.delegate(.currentContextChanged(currentContext))),
             )
 
         case let .sortChanged(sortKey, sortOrder):
             let featureSortKey = sortKey.sharedSortKey
             return .concatenate(
-                .send(.entryArrangements(.setSortKey(featureSortKey))),
-                .send(.entryArrangements(.setSortOrder(sortOrder))),
+                .send(.entryViewLayout(.entryArrangements(.setSortKey(featureSortKey)))),
+                .send(.entryViewLayout(.entryArrangements(.setSortOrder(sortOrder)))),
             )
 
         case let .groupChanged(groupKey):
             guard let featureGroupKey = GroupKey(rawValue: groupKey.rawValue) else { return .none }
-            return .send(.entryArrangements(.setGroupKey(featureGroupKey)))
+            return .send(.entryViewLayout(.entryArrangements(.setGroupKey(featureGroupKey))))
 
         case let .toggleGroup(groupName):
-            return .send(.entryArrangements(.toggleCollapsedGroup(groupName)))
+            return .send(.entryViewLayout(.entryArrangements(.toggleCollapsedGroup(groupName))))
 
         default:
             return nil
@@ -173,7 +174,8 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .expandRequested(id):
             guard let folderGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation
             else { return .none }
-            let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
+            let priority = FileManagerContentEntryOpsCoordinator
+                .rootMetadataPriority(for: state.entryViewLayout.entryArrangements)
             return sendEntryOperations(.loading(.loadFolderItems(.init(
                 rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
                 folderID: id,
@@ -196,7 +198,8 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .retryRequested(id):
             guard let folderGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation
             else { return .none }
-            let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
+            let priority = FileManagerContentEntryOpsCoordinator
+                .rootMetadataPriority(for: state.entryViewLayout.entryArrangements)
             return sendEntryOperations(.loading(.loadFolderItems(.init(
                 rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
                 folderID: id,
@@ -219,7 +222,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         state: inout State,
     ) -> Effect<Action>? {
         // Bridge entry operations delegate → navigation
-        if case let .entryOperations(.delegate(delegate)) = action {
+        if case let .entryViewLayout(.entryOperations(.delegate(delegate))) = action {
             switch delegate {
             case let .navigateToPath(path):
                 let navigationAction: ContentPageNavigationAction = .view(.navigateToPath(path))
@@ -262,7 +265,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         }
 
         // Bridge entry operations actions → metrics + coordinator
-        guard case let .entryOperations(entryOperationsAction) = action else {
+        guard case let .entryViewLayout(.entryOperations(entryOperationsAction)) = action else {
             return nil
         }
 
@@ -276,7 +279,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     // MARK: - Helpers
 
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
-        .send(.entryOperations(action))
+        .send(.entryViewLayout(.entryOperations(action)))
     }
 
     private func makeEntryOperationsCommandContext(

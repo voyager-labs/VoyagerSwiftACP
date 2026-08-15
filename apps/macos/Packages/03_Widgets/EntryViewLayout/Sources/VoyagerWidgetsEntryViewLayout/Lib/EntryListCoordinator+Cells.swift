@@ -18,7 +18,8 @@ extension EntryListCoordinator {
         thumbnail: NSImage?,
         isLoadingChildren: Bool,
     ) -> EntryListEntryCellViewConfiguration {
-        let isCut = state.clipboardCutPaths.contains(entry.fullPath)
+        let isCut = state.entryOperations.clipboardOperation == .cut
+            && state.entryOperations.clipboardItems.contains(entry.fullPath)
 
         return .init(
             context: .init(
@@ -31,22 +32,22 @@ extension EntryListCoordinator {
                 isHidden: entry.isHidden,
                 isCut: isCut,
                 isLoadingChildren: isLoadingChildren,
-                isRenaming: state.renamingItemId == entry.id,
-                renamingText: state.renamingText,
+                isRenaming: state.entryOperations.renamingItemId == entry.id,
+                renamingText: state.entryOperations.renamingText,
                 workspaceClient: workspaceClient,
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
-                    guard state.renamingItemId != nil else { return }
+                    guard state.entryOperations.renamingItemId != nil else { return }
                     store.send(.view(.startRename(item: entry, text: text)))
                 },
                 onRenameCommit: { [weak self] in
                     guard let self else { return }
-                    guard state.renamingItemId != nil else { return }
-                    store.send(.view(.commitRename(itemID: entry.id, newName: state.renamingText)))
+                    guard state.entryOperations.renamingItemId != nil else { return }
+                    store.send(.view(.commitRename(itemID: entry.id, newName: state.entryOperations.renamingText)))
                 },
                 onRenameCancel: { [weak self] in
                     guard let self else { return }
-                    guard state.renamingItemId != nil else { return }
+                    guard state.entryOperations.renamingItemId != nil else { return }
                     store.send(.delegate(.renameCanceled))
                 },
             ),

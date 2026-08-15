@@ -84,6 +84,16 @@
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Content Tab Drag Payload</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.voyager.app.content-tab-drag-payload</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
 				<string>public.data</string>
 				<string>public.content</string>
 				<string>com.apple.package</string>
@@ -103,6 +113,26 @@
 				<key>public.mime-type</key>
 				<string>application/x-voycoll-collection</string>
 			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Content Tab Reorder Payload</string>
+			<key>UTTypeIdentifier</key>
+			<string>fm.voyager.content-tab-reorder</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Content Tab Reorder Local Marker</string>
+			<key>UTTypeIdentifier</key>
+			<string>fm.voyager.content-tab-reorder.local</string>
 		</dict>
 	</array>
 	<key>SUScheduledCheckInterval</key>

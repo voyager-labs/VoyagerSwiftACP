@@ -283,8 +283,9 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
         }
 
         let entry = sections[indexPath.section].items[indexPath.item]
-        let isCut = state.clipboardCutPaths.contains(entry.fullPath)
-        let isRenaming = state.renamingItemId == entry.id
+        let isCut = state.entryOperations.clipboardOperation == .cut
+            && state.entryOperations.clipboardItems.contains(entry.fullPath)
+        let isRenaming = state.entryOperations.renamingItemId == entry.id
         let thumbnail = thumbnailImagesByPath[entry.fullPath]
         let isDropTargeted = dropTargetEntryId == entry.id
 
@@ -296,7 +297,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isCut: isCut,
             isHidden: entry.isHidden,
             isRenaming: isRenaming,
-            renamingText: state.renamingText,
+            renamingText: state.entryOperations.renamingText,
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
@@ -305,7 +306,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             },
             onRenameCommit: { [weak self] in
                 guard let self else { return }
-                store.send(.view(.commitRename(itemID: entry.id, newName: state.renamingText)))
+                store.send(.view(.commitRename(itemID: entry.id, newName: state.entryOperations.renamingText)))
             },
             onRenameCancel: { [weak self] in
                 guard let self else { return }

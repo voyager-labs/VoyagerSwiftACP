@@ -11,6 +11,7 @@ public struct FileManagerFixedLocationItem: Equatable, Sendable, Identifiable {
     public let path: String
     public let iconName: String
     public let accessibilityLabel: String
+    public let kind: SidebarItems.LocationItem.Kind
 
     public init(
         id: String,
@@ -18,12 +19,14 @@ public struct FileManagerFixedLocationItem: Equatable, Sendable, Identifiable {
         path: String,
         iconName: String,
         accessibilityLabel: String,
+        kind: SidebarItems.LocationItem.Kind = .directory,
     ) {
         self.id = id
         self.title = title
         self.path = path
         self.iconName = iconName
         self.accessibilityLabel = accessibilityLabel
+        self.kind = kind
     }
 }
 
@@ -46,9 +49,9 @@ public struct FileManagerHomeFavoriteItem: Equatable, Sendable, Identifiable {
         self.id = id
         self.title = title
         self.iconName = iconName
-        self.filePath = filePath
         self.anchor = anchor
         self.page = page
+        self.filePath = filePath
     }
 }
 
@@ -84,7 +87,7 @@ public extension FileManagerHomeDashboardProjection {
         from favorites: [SidebarItems.FavoriteItem],
         fileExistsWithIsDirectory: (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
     ) -> [FileManagerHomeFavoriteItem] {
-        favorites.compactMap { favorite in
+        favorites.compactMap { favorite -> FileManagerHomeFavoriteItem? in
             var isDirectory = ObjCBool(false)
             guard fileExistsWithIsDirectory(favorite.url.path, &isDirectory) else { return nil }
 
@@ -133,6 +136,7 @@ public extension FileManagerHomeDashboardProjection {
                     path: location.url.path,
                     iconName: location.iconName,
                     accessibilityLabel: location.name,
+                    kind: location.kind,
                 )
             }
     }
