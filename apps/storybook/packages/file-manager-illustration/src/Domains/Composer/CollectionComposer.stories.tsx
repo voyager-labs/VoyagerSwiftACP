@@ -234,7 +234,10 @@ const ComposerSelectionFlow = ({
                     "/VoyagerFixtures/Projects/Legacy",
                     "/VoyagerFixtures/Inbox",
                   ].map((path) => {
-                    const included = draft.scopes.includes(path)
+                    // 네이티브 makeScopeSections: 상위 scope를 포함하면 하위 scope는 included 계열로 파생
+                    const included = draft.scopes.some(
+                      (scope) => scope === path || path.startsWith(`${scope}/`),
+                    )
                     const actions = included
                       ? (["clearDirectRule"] as const)
                       : (["include", "exclude"] as const)

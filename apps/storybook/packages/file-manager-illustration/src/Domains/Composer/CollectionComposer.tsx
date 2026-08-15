@@ -87,13 +87,13 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         <ComposerSymbolButton
           symbol="arrow.uturn.backward"
           label="Undo"
-          disabled={!fixture.canUndo}
+          disabled={!fixture.canUndo || fixture.isProcessing}
           onClick={onUndo}
         />
         <ComposerSymbolButton
           symbol="arrow.uturn.forward"
           label="Redo"
-          disabled={!fixture.canRedo}
+          disabled={!fixture.canRedo || fixture.isProcessing}
           onClick={onRedo}
         />
         <label className="collection-composer-query">
@@ -115,12 +115,13 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         <ComposerTextButton
           symbol={clearContent.symbol}
           label={clearContent.label}
+          disabled={fixture.isProcessing}
           onClick={onClear}
         />
         <ComposerTextButton
           symbol={saveContent.symbol}
           label={saveContent.label}
-          disabled={!fixture.canSave}
+          disabled={!fixture.canSave || fixture.isProcessing}
           onClick={onSave}
         />
       </div>
@@ -148,6 +149,7 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
             symbol="chevron.down"
             label="Edit scopes"
             compact
+            disabled={fixture.isProcessing}
             onClick={onEditScope}
           />
         </div>
@@ -173,6 +175,7 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
             symbol="plus"
             label="Add condition"
             compact
+            disabled={fixture.isProcessing}
             onClick={onAddCondition}
           />
         </div>
@@ -189,7 +192,11 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         <ComposerOperatorPicker picker={fixture.picker} onSelect={onOperatorSelect} />
       )}
       {fixture.picker?.kind === "value" && (
-        <ComposerValuePicker picker={fixture.picker} onCommit={onValueCommit} />
+        <ComposerValuePicker
+          key={fixture.picker.conditionID}
+          picker={fixture.picker}
+          onCommit={onValueCommit}
+        />
       )}
       {fixture.picker?.kind === "scope" && (
         <ScopePicker
