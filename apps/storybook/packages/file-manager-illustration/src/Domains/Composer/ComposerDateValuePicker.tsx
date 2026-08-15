@@ -117,17 +117,6 @@ const parseInitialValue = (value: string | undefined): InitialState => {
       values: [],
     }
   }
-  // 레거시 표시 문구 매핑: "This month"는 relative 30 days ago로 해석한다
-  if (trimmed === "This month") {
-    return {
-      dateMode: "relative",
-      preset: "30 days ago",
-      amount: "1",
-      unit: "Day",
-      direction: "past",
-      values: [],
-    }
-  }
   const custom = /^(\d+) (day|week|month|year)s? ago$/.exec(trimmed)
   if (custom != null) {
     const native = custom[2] as ParsedRelativeLiteral["unit"]

@@ -110,7 +110,7 @@ const populatedDraft = {
       property: "Modified",
       propertySymbol: "calendar.badge.clock",
       operator: "is after",
-      value: "This month",
+      value: "voyager.relativeDate:v1:past:30:day:2026-01-01",
     },
   ],
   canUndo: true,

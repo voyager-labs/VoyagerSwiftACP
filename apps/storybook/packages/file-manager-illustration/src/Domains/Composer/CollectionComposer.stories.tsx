@@ -7,6 +7,7 @@ import {
   composerPropertyOption,
 } from "./composer-condition-options"
 import { composerPropertyOptions } from "./composer-condition-options"
+import { encodeRelativeLiteral } from "./composer-date-literal"
 import { type ComposerCondition, type ComposerFixture, composerFixtures } from "./composer-fixtures"
 
 type SelectionStep = "property" | "operator" | "value" | "complete"
@@ -14,6 +15,7 @@ type SelectionStep = "property" | "operator" | "value" | "complete"
 type DraftState = {
   readonly query: string
   readonly scopes: readonly string[]
+  readonly excludedScopes: readonly string[]
   readonly includeSubfolders: boolean
   readonly conditions: readonly ComposerCondition[]
 }
@@ -21,6 +23,7 @@ type DraftState = {
 const baseDraft = (): DraftState => ({
   query: "Find PDFs modified this month",
   scopes: ["/VoyagerFixtures/Documents"],
+  excludedScopes: [],
   includeSubfolders: true,
   conditions: [
     {
@@ -35,7 +38,7 @@ const baseDraft = (): DraftState => ({
       property: "Content modification date",
       propertySymbol: "calendar.badge.clock",
       operator: "Is greater than",
-      value: "This month",
+      value: "voyager.relativeDate:v1:past:30:day:2026-01-01",
     },
   ],
 })
@@ -104,7 +107,7 @@ const ComposerSelectionFlow = ({
   }
 
   const clear = () => {
-    commit({ query: "", scopes: [], includeSubfolders: true, conditions: [] })
+    commit({ query: "", scopes: [], excludedScopes: [], includeSubfolders: true, conditions: [] })
     setStep("complete")
     setScopePickerOpen(false)
   }
@@ -166,12 +169,14 @@ const ComposerSelectionFlow = ({
       return
     }
     if (action === "exclude") {
+      commit({ ...draft, excludedScopes: [...draft.excludedScopes, path] })
       setToast({ type: "error", message: `Scope excluded: ${path.split("/").at(-1)}` })
       return
     }
     commit({
       ...draft,
       scopes: draft.scopes.filter((scope) => scope !== path && !scope.startsWith(`${path}/`)),
+      excludedScopes: draft.excludedScopes.filter((excluded) => excluded !== path),
     })
   }
 
@@ -252,11 +257,14 @@ const ComposerSelectionFlow = ({
                     const inherited =
                       !isDirect && draft.scopes.some((scope) => path.startsWith(`${scope}/`))
                     const included = isDirect || (inherited && draft.includeSubfolders)
-                    const actions = isDirect
+                    const isExcluded = draft.excludedScopes.includes(path)
+                    const actions = isExcluded
                       ? (["clearDirectRule"] as const)
-                      : included
-                        ? (["exclude"] as const)
-                        : (["include", "exclude"] as const)
+                      : isDirect
+                        ? (["clearDirectRule"] as const)
+                        : included
+                          ? (["exclude"] as const)
+                          : (["include", "exclude"] as const)
                     return {
                       path,
                       depth: Math.max(
@@ -265,8 +273,16 @@ const ComposerSelectionFlow = ({
                           "/VoyagerFixtures".split("/").filter(Boolean).length -
                           1,
                       ),
-                      status: included ? ("included" as const) : ("available" as const),
-                      kind: isDirect ? ("base" as const) : ("candidate" as const),
+                      status: isExcluded
+                        ? ("excluded" as const)
+                        : included
+                          ? ("included" as const)
+                          : ("available" as const),
+                      kind: isExcluded
+                        ? ("exception" as const)
+                        : isDirect
+                          ? ("base" as const)
+                          : ("candidate" as const),
                       ruleSource: isDirect ? ("direct" as const) : undefined,
                       actions,
                     }
