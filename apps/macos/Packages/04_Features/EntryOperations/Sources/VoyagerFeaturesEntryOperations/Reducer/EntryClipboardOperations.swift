@@ -493,7 +493,10 @@ private enum EntryClipboardOperationsSupport {
         entryFileOpsClient: EntryFileOpsClient,
     ) -> [(URL, URL)] {
         var destinations: [(URL, URL)] = []
-        var reservedBasenames: Set<String> = []
+        var reservedNameKeys: Set<String> = []
+        let volumeSupportsCaseSensitiveNames = (try? destinationURL.resourceValues(
+            forKeys: [.volumeSupportsCaseSensitiveNamesKey],
+        ))?.volumeSupportsCaseSensitiveNames ?? false
 
         for sourcePath in sourcePaths {
             let sourceURL = URL(fileURLWithPath: sourcePath)
@@ -505,7 +508,10 @@ private enum EntryClipboardOperationsSupport {
             }
 
             var destURL = destinationURL.appendingPathComponent(fileName)
-            let collisionInBatch = reservedBasenames.contains(destURL.lastPathComponent)
+            let collisionInBatch = reservedNameKeys.contains(destinationNameKey(
+                destURL.lastPathComponent,
+                volumeSupportsCaseSensitiveNames: volumeSupportsCaseSensitiveNames,
+            ))
             if collisionInBatch
                 || (operation == .copy
                     && sourceParent == destinationURL
@@ -514,12 +520,16 @@ private enum EntryClipboardOperationsSupport {
                 destURL = nextAvailableDestinationURL(
                     baseName: fileName,
                     destinationURL: destinationURL,
-                    reservedBasenames: reservedBasenames,
+                    reservedNameKeys: reservedNameKeys,
+                    volumeSupportsCaseSensitiveNames: volumeSupportsCaseSensitiveNames,
                     entryFileOpsClient: entryFileOpsClient,
                 )
             }
 
-            reservedBasenames.insert(destURL.lastPathComponent)
+            reservedNameKeys.insert(destinationNameKey(
+                destURL.lastPathComponent,
+                volumeSupportsCaseSensitiveNames: volumeSupportsCaseSensitiveNames,
+            ))
             destinations.append((sourceURL, destURL))
         }
 
@@ -529,7 +539,8 @@ private enum EntryClipboardOperationsSupport {
     private static func nextAvailableDestinationURL(
         baseName: String,
         destinationURL: URL,
-        reservedBasenames: Set<String>,
+        reservedNameKeys: Set<String>,
+        volumeSupportsCaseSensitiveNames: Bool,
         entryFileOpsClient: EntryFileOpsClient,
     ) -> URL {
         let nameWithoutExtension = URL(fileURLWithPath: baseName)
@@ -548,12 +559,25 @@ private enum EntryClipboardOperationsSupport {
                     : "\(nameWithoutExtension) copy \(counter).\(fileExtension)"
             }
             let candidate = destinationURL.appendingPathComponent(name)
-            let reserved = reservedBasenames.contains(candidate.lastPathComponent)
+            let reserved = reservedNameKeys.contains(destinationNameKey(
+                candidate.lastPathComponent,
+                volumeSupportsCaseSensitiveNames: volumeSupportsCaseSensitiveNames,
+            ))
             let filesystemCollision = entryFileOpsClient.fileExists(candidate.path)
             if !reserved, !filesystemCollision {
                 return candidate
             }
             counter += 1
         }
+    }
+
+    private static func destinationNameKey(
+        _ name: String,
+        volumeSupportsCaseSensitiveNames: Bool,
+    ) -> String {
+        let casedName = volumeSupportsCaseSensitiveNames
+            ? name
+            : name.folding(options: [.caseInsensitive], locale: nil)
+        return casedName.precomposedStringWithCanonicalMapping
     }
 }

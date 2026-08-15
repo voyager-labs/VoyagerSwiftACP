@@ -121,6 +121,61 @@ extension EOP002ArrangeEntriesTests {
         ))
     }
 
+    /// EOP-002-move_entries: batch destination 이름은 case-insensitive volume 의미로 충돌을 피한다.
+    /// 세 parent의 case-only basename과 fallback 이름을 한 destination으로 이동해도 모두 보존한다.
+    /// - 검증 내용: `Report.txt`가 `report.txt`와 충돌하고 `Report copy.txt`도 예약 이름과 충돌한다.
+    /// - 사전 조건: 기본 case-insensitive volume에 `report copy.txt`, `report.txt`, `Report.txt` source가 존재한다.
+    /// - 기대 결과: 세 번째 source는 두 예약 충돌을 건너뛰어 `Report copy 2.txt`로 이동한다.
+    func testMoveEntries_batchFallbackTreatsCaseOnlyBasenamesAsCollision() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let firstParent = sandbox.root.appendingPathComponent("First")
+        let secondParent = sandbox.root.appendingPathComponent("Second")
+        let thirdParent = sandbox.root.appendingPathComponent("Third")
+        let destinationFolder = sandbox.root.appendingPathComponent("Destination")
+        for directory in [firstParent, secondParent, thirdParent, destinationFolder] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        let firstSource = firstParent.appendingPathComponent("report copy.txt")
+        let secondSource = secondParent.appendingPathComponent("report.txt")
+        let thirdSource = thirdParent.appendingPathComponent("Report.txt")
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: firstSource)
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: secondSource)
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: thirdSource)
+
+        let recorder = FileOpsRecorder()
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        }
+        // store.exhaustivity = .off: batch move의 async filesystem 결과와 recorder destination을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.clipboard(.pasteItems(
+            sourcePaths: [firstSource.path, secondSource.path, thirdSource.path],
+            destinationPath: destinationFolder.path,
+            operation: .cut,
+            operationKind: .pasteFileMove,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            recorder.movedPaths.map(\.destination.lastPathComponent),
+            ["report copy.txt", "report.txt", "Report copy 2.txt"],
+        )
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: destinationFolder.appendingPathComponent("report copy.txt").path,
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: destinationFolder.appendingPathComponent("report.txt").path,
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: destinationFolder.appendingPathComponent("Report copy 2.txt").path,
+        ))
+    }
+
     /// EOP-002-move_entries: 외부 drop 실행도 source의 descendant destination을 거부한다.
     /// validation 결과를 우회해 들어온 실행 action에도 동일한 순환 참조 규칙을 적용한다.
     /// - 검증 내용: `.routing(.dropItems)`가 move와 copy 모두 descendant destination에서 paste action을 만들지 않는다.
