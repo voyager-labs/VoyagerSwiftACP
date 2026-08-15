@@ -598,8 +598,7 @@ public struct EntryViewLayoutFeature {
                     )))
                 case let .delegate(.applied(sortedItems, _)):
                     state.entries = sortedItems
-                    state.reconcileSelectionWithVisibleEntries()
-                    return .none
+                    return .send(.internal(.reconcileHierarchySelection))
                 default:
                     return .none
                 }

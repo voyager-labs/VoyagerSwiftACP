@@ -194,6 +194,34 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-002-update_entry_selection: grouping 적용의 선택 제거를 delegate로 전달
+    /// grouping 적용이 flat root만 남겨 선택을 제거할 때 selectionChanged가 발행되는지 검증한다.
+    /// - 검증 내용: entryArrangements delegate.applied 후 `.delegate(.selectionChanged)` 수신
+    /// - 사전 조건: collapsed /root/a의 loaded child만 선택돼 있고 적용 결과는 flat root만 포함한다.
+    /// - 기대 결과: 선택이 제거되며 selectionChanged delegate가 발행됨
+    func testGroupingAppliedEmitsSelectionChangedWhenChildLeavesProjection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let hiddenChild = visibleSelectionFile(id: "/root/a/hidden")
+        let store = TestStore(initialState: visibleSelectionState(
+            roots: [folder],
+            expandedFolderIDs: [],
+            childrenByFolderID: [folder.id: [hiddenChild]],
+            selection: .init(ids: [hiddenChild.id], lastSelectedID: hiddenChild.id, rangeAnchorID: hiddenChild.id),
+        )) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryArrangements(.delegate(.applied(
+            sortedItems: [folder],
+            isCollectionMode: false,
+        ))))
+        await store.receive(\.internal.reconcileHierarchySelection)
+        await store.receive(\.delegate.selectionChanged)
+    }
+
     /// EVM-002-update_entry_selection: list에서 grid 전환은 hidden descendant selection을 flat root projection으로 조정한다.
     /// 사용자가 hierarchy-enabled list를 떠날 때 grid가 descendant를 계속 선택 대상으로 유지하지 않는지 검증한다.
     /// - 검증 내용: setMode가 flat fallback visible IDs로 reconciliation과 revision 증가를 수행한다.
