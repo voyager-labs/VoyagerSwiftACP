@@ -570,4 +570,20 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             XCTAssertTrue(policy.allowsKeyboardCommandDispatch)
         }
     }
+
+    /// EVM-002-set_entries_view_as_list_table: stream failure 후 선택 재조정을 발행한다
+    /// 루트 스트림이 부분 core batch 뒤 실패하면, partial projection이 선택을 보존한 상태이므로
+    /// 현재 visible projection 기준으로 reconcile이 발행되는지 검증한다.
+    /// - 검증 내용: streamFailed 후 `.internal(.reconcileHierarchySelection)` 수신
+    /// - 사전 조건: hierarchy root가 설정돼 있고 루트 stream이 실패한다.
+    /// - 기대 결과: reconcileHierarchySelection이 발행되어 선택·rename delegate를 동기화한다.
+    func testStreamFailureEmitsHierarchySelectionReconcile() async {
+        var state = FileManagerContentState()
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.receive(\.entryViewLayout.internal.reconcileHierarchySelection)
+    }
 }

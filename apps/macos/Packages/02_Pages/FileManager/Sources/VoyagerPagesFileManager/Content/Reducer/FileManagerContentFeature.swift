@@ -152,7 +152,18 @@ public struct FileManagerContentFeature {
                     )))),
                 )
             }
-            return .send(.entryViewLayout(.view(.applyContentProjection(projection))))
+            var projectionEffects: [Effect<Action>] = [
+                .send(.entryViewLayout(.view(.applyContentProjection(projection)))),
+            ]
+            // stream failure는 root completion이 아니므로 rootSnapshotCompleted를 보내지 않지만,
+            // partial projection이 선택을 보존한 상태이므로 현재 visible projection 기준으로
+            // 선택·rename delegate를 동기화한다.
+            if case .entryViewLayout(.entryOperations(.loading(.streamFailed))) = action,
+               !state.entryViewLayout.hierarchy.rootPath.isEmpty
+            {
+                projectionEffects.append(.send(.entryViewLayout(.internal(.reconcileHierarchySelection))))
+            }
+            return .concatenate(projectionEffects)
         }
 
         Reduce { state, action in
