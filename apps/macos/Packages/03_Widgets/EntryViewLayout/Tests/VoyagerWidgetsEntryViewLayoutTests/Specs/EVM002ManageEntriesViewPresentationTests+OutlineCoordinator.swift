@@ -778,6 +778,44 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(changes.groupExpansionChanged)
         XCTAssertFalse(changes.openWithApplicationsChanged)
     }
+
+    // MARK: - EVM-002-rename_entry_inline
+
+    /// EVM-002-rename_entry_inline: list inline rename 중 Escape는 rename-cancel delegate 경로를 사용한다.
+    /// 기존 코드는 Escape에서 `.view(.updateSelection(...))`로 selection/scroll 상태를 재설정했지만,
+    /// 수정 후에는 `.delegate(.renameCanceled)`만 방출하고 coordinator가 command를 소비한다.
+    /// - 검증 내용: Escape가 true를 반환하고 store의 selection/scroll 상태를 변경하지 않는다.
+    /// - 사전 조건: renamingItemId가 설정된 list 상태와 coordinator에 연결된 text field가 있다.
+    /// - 기대 결과: cancelOperation command가 true를 반환하고 selectedIds/lastSelectedId/shouldScrollToSelection이 유지된다.
+    func testEscapeDuringInlineRenameEmitsRenameCanceledDelegateAndConsumesCommand() {
+        let renamingId = "/root/renaming"
+        let renamingEntry = EntryModel.temporaryFolder(id: renamingId, name: "renaming")
+        var state = EntryViewLayoutState()
+        state.entries = [renamingEntry]
+        state.selectedIds = [renamingId]
+        state.lastSelectedId = renamingId
+        state.rangeAnchorId = renamingId
+        state.entryOperations.renamingItemId = renamingId
+        state.shouldScrollToSelection = true
+
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+
+        let textField = NSTextField()
+        textField.delegate = coordinator
+        textField.stringValue = "renaming"
+
+        let handled = coordinator.control(
+            textField,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)),
+        )
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(store.state.selectedIds, [renamingId])
+        XCTAssertEqual(store.state.lastSelectedId, renamingId)
+        XCTAssertTrue(store.state.shouldScrollToSelection)
+    }
 }
 
 private extension EntryListOutlineItem {

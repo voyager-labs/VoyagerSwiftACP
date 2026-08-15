@@ -42,7 +42,8 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isFolder
+           entry.isFolder,
+           !entry.isPackage
         {
             outlineView.setDropItem(outlineItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
             destinationPath = entry.fullPath
@@ -68,7 +69,8 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isFolder
+           entry.isFolder,
+           !entry.isPackage
         {
             destinationPath = entry.fullPath
         }
@@ -126,12 +128,7 @@ extension EntryListCoordinator: NSTextFieldDelegate {
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            store.send(.view(.updateSelection(
-                ids: state.selectedIds,
-                lastSelectedId: state.lastSelectedId,
-                rangeAnchorId: state.rangeAnchorId,
-                shouldScrollToSelection: false,
-            )))
+            store.send(.delegate(.renameCanceled))
             return true
         }
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
