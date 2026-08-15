@@ -17,7 +17,7 @@ export const PathBreadcrumb: FC<PathBreadcrumbProps> = ({ segments }) => (
       >
         {index > 0 && (
           <span className="statusbar-chevron-slot">
-            <SFSymbol name="chevron.right" size={10} weight={700} />
+            <SFSymbol name="chevron.right" size={10} />
           </span>
         )}
         <span className="statusbar-breadcrumb-item">

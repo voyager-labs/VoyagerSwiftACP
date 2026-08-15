@@ -113,6 +113,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Unknown/deviation:** dynamic material rendering remains runtime-dependent. Runtime accessibility inspection confirms the AppKit table geometry below; pixel capture remains unavailable without Screen Recording permission.
 - **Follow-up:** Revisit only when native runtime captures are in scope or a new content state changes layout ownership.
 - **List view:** reflects the native `NSOutlineView` default with `Name`, `Date Modified`, `Size`, and `Kind` columns; 420/220/110/180px default widths, a 28px header, 24px entry rows, 20px thumbnails, 13px regular name text, 12px secondary text, 4px inter-column spacing, horizontal overflow when the content pane is narrower than the native table, a transparent list surface over the content-pane background, alternating unselected row backgrounds (odd rows only, mirroring `EntryListView` clear surface + `EntryListSelectionRowView` odd-row fill), metadata values, extension-preserving middle truncation, and replace/toggle/range selection.
+- **Status bar:** mirrors `ContentPaneBreadcrumbBarView` with a 24px footer, 16px horizontal inset, a left breadcrumb region fixed to 50% of the available width (`leftWidth`), and a right item-count label (`N items` / `N of M selected`) that flexes to fill the remainder and right-aligns in 12px medium secondary.
 
 ### Domains: Chat and Composer
 
