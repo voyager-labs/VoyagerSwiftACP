@@ -1,6 +1,6 @@
 import type { FC } from "react"
-import { FileBrowser } from "../Entries/FileBrowser"
-import type { EntryViewMode } from "../Patterns/FileToolbar"
+import { FileBrowser } from "../Domains/Entries/FileBrowser"
+import type { EntryViewMode } from "../Patterns/Content/FileToolbar"
 import type { ContentRoute } from "../model/content-route"
 import type { HomeFavorite, HomeLocation } from "../model/home"
 import type { Entry } from "../model/types"

@@ -60,6 +60,28 @@
         "Selects relevant interaction, data, and geometry dimensions",
         "Reports unknowns separately from design decisions"
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Keep the current AI Chat input design and compare material, borderless, and compact-layout candidates in the same working tree. Add whatever Storybook stories, branches, and fixtures are needed.",
+      "expected_output": "The response uses current plus semantic candidate IDs, reuses the existing state matrix and fixtures, and chooses CSS or structural boundaries according to each delta without requiring Git workflow machinery.",
+      "assertions": [
+        "Uses current and candidate semantic IDs rather than next or version-number names",
+        "Reuses existing stories and deterministic fixtures instead of cloning the state matrix",
+        "Routes style and structural candidates through different narrow seams",
+        "Does not require a Linear issue, branch, worktree, or duplicate Storybook server"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Create candidate-material-dark-sequoia-processing and candidate-borderless-light-tahoe-ready stories so every design combination is explicit.",
+      "expected_output": "The response rejects combination-encoded candidate IDs and keeps Design Version, appearance, OS baseline, and UI state as independent axes over shared reference variations.",
+      "assertions": [
+        "Rejects appearance, baseline, and state encoded into candidate IDs",
+        "Keeps design version and rendering-state dimensions independent",
+        "Uses the closest current variation as the candidate reference",
+        "Avoids duplicating stories for the Cartesian product"
+      ]
     }
   ]
 }

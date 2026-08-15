@@ -82,11 +82,23 @@
 [data-file-manager-illustration] {
   --fm-font-ui: "Voyager SF Pro Text", "Voyager SF Pro Display", -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --fm-font-mono: "SFMono-Regular", "SF Mono", ui-monospace, monospace;
   --fm-font-symbols: "Voyager SF Pro Symbols", ".SF Symbols", "SF Pro Symbols";
   --fm-font-size-caption-2: 11px;
   --fm-font-size-caption: 12px;
   --fm-font-size-body: 13px;
   --fm-font-size-title: 16px;
+  --fm-chat-heading-1-size: 15px;
+  --fm-chat-heading-2-size: 13px;
+  --fm-chat-heading-3-size: 13px;
+  --fm-chat-line-body: 16px;
+  --fm-chat-line-caption: 15px;
+  --fm-chat-line-chip: 13px;
+  --fm-chat-line-heading-1: 20px;
+  --fm-chat-line-heading-2: 18px;
+  --fm-chat-line-heading-3: 17px;
+  --fm-chat-user-leading-gutter: 16px;
+  --fm-chat-timestamp-offset: 28px;
   --fm-line-tight: 1.14;
   --fm-line-body: 1.35;
   --fm-weight-regular: 400;

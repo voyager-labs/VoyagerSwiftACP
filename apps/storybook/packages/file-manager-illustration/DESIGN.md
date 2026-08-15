@@ -89,7 +89,36 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 ### Contextual Inspector
 
 - **Structure:** 40px chat-only header and chat body.
-- **States:** Chat History, conversation, closed.
+- **States:** Chat History, connected empty (blank body + bottom composer), unconnected provider setup (top status banner), connection error (top banner + Retry), rebind required (top banner + two actions), conversation, closed. The content-page centered empty ("Ask Voyager" + optional compactConnectionCTA) is modeled only as an isolated AiChatView specimen, never in the inspector root.
+
+### AI Chat Input Bar
+
+- **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift`, its `AiChatInputDisplayModel`, and `AiChatView` placement rules.
+- **Design Version axis:** `current` is the adopted native translation. The VOY-721 `candidate-material-controls` proposal was retired without adoption because this issue excludes browser visual review and native source remains the authority.
+- **Current structure:** optional request-context sections, dynamically sized message field, plain text `+` attachment button, borderless native-menu model and thinking selectors, and one plain submit-or-stop button with the native SF Symbol glyph container.
+- **Geometry:** 8px internal padding and spacing, 46–160px message field height, 24×24px action control, 8px action radius, and a 16px Tahoe / 10px Sequoia composer radius.
+- **Placement:** conversation uses 10px horizontal, 8px top, and 10px bottom outer padding; centered-empty uses the input bar without that outer inset.
+- **States:** empty submit-disabled, unconnected no-model selectors with submit-disabled, draft submit-enabled, pending-resolution editing-disabled with stop, processing next-turn editing with stop, stop-disabled, unavailable model, populated request context, multiline maximum height, and 230px minimum inspector width.
+- **Tokens:** `current` preserves the native solid chat input background through `--macos-chat-input-background-color` → `--fm-chat-composer-bg`.
+
+#### VOY-721 input comparison decision
+
+- **Decision:** Retire `candidate-material-controls`; keep `current` as the only active input design.
+- **Authority:** Native `VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift` source and this issue's scope.
+- **Checked:** Recovery, submit/stop, selector, removable-context, editing-disabled, and file/URL-drop Storybook contracts; `pnpm check`, `build-storybook`, and `verify:contract`.
+- **Unknown/deviation:** No browser visual comparison was performed because VOY-721 explicitly excludes Playwright/browser visual review; candidate adoption therefore remains unsubstantiated.
+- **Follow-up:** None; reopen a candidate only with a new review question and visual evidence scope.
+
+### AI Chat Conversation
+
+- **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift`, `AiChatAssistantMarkdownText.swift`, and `VoyagerDS` typography/surface roles.
+- **User message:** right-aligned intrinsic bubble with a 16px minimum leading gutter, 14px horizontal and 10px vertical padding, 20px continuous radius, body typography, and `inputBackground` surface role.
+- **Assistant message:** transparent full-width response with 12px internal block spacing and 4px vertical padding. Historical responses hide the visual Assistant header; waiting responses show the full title/status header.
+- **Rich content:** assistant headings, paragraphs, bullets, numbered rows, blockquotes, tables, and fenced code follow native block ordering. Inline emphasis, strong text, links, and inline code preserve the native attributed-text intents. Body uses 13px typography with the native 16px AppKit line height and 8px block spacing; heading levels use 17/15/14px type with 20/18/17px line heights. Blockquotes use a 2px separator rail and 8px content gap. Tables own horizontal overflow, use 8px horizontal and 6px vertical cell padding, and tint the header with the control-background role. Code owns horizontal overflow, exposes its source-language header, and uses 12px monospaced typography with a 15px line height, an input-border stroke, 8px content padding, and an 8px radius.
+- **Failure:** partial content remains visible before the 8px-spaced red failure row; contentless failure shows neither the header nor waiting indicator.
+- **Affordances:** user and assistant output text remains browser-selectable as the Storybook translation of native AppKit selection. Deterministic copied/failed specimens use the native top-trailing capsule with the control-background role; they demonstrate presentation only, not pasteboard behavior or the native two-second lifecycle. Only the latest historical assistant response may expose the 28×28 regenerate action. Its hover label uses the native popover background and separator roles. Timestamp affordances occupy the user leading gutter or assistant top-trailing gutter without changing normal row flow.
+- **Surface boundary:** assistant responses do not introduce an independent card background, border, radius, or fixed max-width.
+- **Story harness:** isolated message stories render inside the 300px default inspector width. The user specimen retains the message-row alignment wrapper so its intrinsic bubble width and 16px minimum leading gutter remain observable. Integrated File Manager stories follow the window contract and may resize the inspector between its 230px minimum and 300px default when the viewport cannot fit the default 960px window plus stage insets.
 
 ## 6. Motion & Interaction
 
@@ -136,7 +165,7 @@ The provenance snapshot lives in `src/assets/entry-thumbnails/provenance.json`. 
 
 ### Renderer precedence
 
-The `EntryThumbnail` component (`src/Entries/EntryThumbnail.tsx`) evaluates in this order:
+The `EntryThumbnail` component (`src/Domains/Entries/EntryThumbnail.tsx`) evaluates in this order:
 
 1. **`thumbnailSrc` present** — renders an `<img>` with the provided URL/import path, including folder fixtures.
 2. **No thumbnailSrc** — falls back to the kind-specific SVG icon (`FolderIcon`, `PdfIcon`, `ImageIcon`, `SheetIcon`, `VideoIcon`, `ArchiveIcon`, or generic `FileIcon`).
