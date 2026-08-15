@@ -35,6 +35,13 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 5. **Implement boundedly.** Fixtures are deterministic and local: no network, clock, random data, or simulated production backend. A clickable control proves only the web prototype unless an executable test proves more.
 6. **Verify and hand off.** Run the matching checks and record only the evidence actually obtained. Retire a state when its review question is resolved and it has no root consumer.
 
+## Storybook browser verification
+
+- Use the `agent-browser` CLI for Storybook accessibility, interaction, and screenshot verification required by this skill.
+- Do not substitute Playwright MCP for this project workflow. If `agent-browser` is unavailable, report the verification as blocked instead of silently changing tools.
+- Use a fresh named session, wait for `networkidle`, capture `snapshot -i --json`, exercise the target interaction, and save a screenshot after the final state.
+- Record the Storybook URL, session, viewport, state, interaction result, and screenshot path. A successful build remains insufficient evidence for visual or interaction claims.
+
 ## Common mistakes
 
 - Porting every historical prototype merely to claim migration completeness.
