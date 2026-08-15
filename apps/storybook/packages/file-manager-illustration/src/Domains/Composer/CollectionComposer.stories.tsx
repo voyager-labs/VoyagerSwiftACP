@@ -51,8 +51,9 @@ const ComposerSelectionFlow = ({
   const [operator, setOperator] = useState<ComposerOperatorOption | undefined>()
   const [isProcessing, setIsProcessing] = useState(false)
   const [scopePickerOpen, setScopePickerOpen] = useState(false)
+  const [includeSubfolders, setIncludeSubfolders] = useState(true)
   const [toast, setToast] = useState<
-    { readonly type: "success" | "warning" | "error"; readonly message: string } | undefined
+    { readonly type: "info" | "error"; readonly message: string } | undefined
   >()
 
   const commit = (next: DraftState) => {
@@ -86,7 +87,7 @@ const ComposerSelectionFlow = ({
   }
 
   const save = () => {
-    setToast({ type: "success", message: "Collection saved." })
+    setToast({ type: "info", message: "Collection saved." })
   }
 
   const submit = () => {
@@ -95,7 +96,7 @@ const ComposerSelectionFlow = ({
     setToast(undefined)
     window.setTimeout(() => {
       setIsProcessing(false)
-      setToast({ type: "success", message: "Collection query completed." })
+      setToast({ type: "info", message: "Collection query completed." })
     }, 900)
   }
 
@@ -104,10 +105,33 @@ const ComposerSelectionFlow = ({
     setStep("property")
   }
 
+  const removeCondition = (id: string) => {
+    commit({ ...draft, conditions: draft.conditions.filter((condition) => condition.id !== id) })
+    if (property?.key === id) {
+      setProperty(undefined)
+      setOperator(undefined)
+      setStep("complete")
+    }
+  }
+
+  const removeScope = (path: string) => {
+    commit({ ...draft, scopes: draft.scopes.filter((scope) => scope !== path) })
+  }
+
   const selectScope = (item: string) => {
-    commit({ ...draft, scopes: [`/VoyagerFixtures/${item}`] })
+    commit({
+      ...draft,
+      scopes: [item.startsWith("/") ? item : `/VoyagerFixtures/${item}`],
+    })
     setScopePickerOpen(false)
   }
+
+  const editingCondition =
+    property == null
+      ? undefined
+      : draft.conditions.find(
+          (condition) => condition.id === property.key || condition.property === property.label,
+        )
 
   const fixture: ComposerFixture = {
     ...composerFixtures.emptyDraft,
@@ -130,15 +154,26 @@ const ComposerSelectionFlow = ({
               options: property.operators,
             }
           : step === "value" && operator != null
-            ? { kind: "value", editor: operator.editor, selectedValue: draft.conditions[0]?.value }
+            ? {
+                kind: "value",
+                conditionID: property?.key,
+                editor: operator.editor,
+                selectedValue: editingCondition?.value,
+              }
             : scopePickerOpen
               ? {
                   kind: "scope",
                   query: "",
                   currentSummary: draft.scopes[0]?.split("/").at(-1) ?? "This Mac",
-                  includeSubfolders: true,
+                  includeSubfolders,
+                  rootOnly: draft.scopes.length === 0,
                   sectionTitle: "Current scope",
-                  items: ["Documents", "Projects", "Inbox"],
+                  items: [
+                    { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
+                    { path: "/VoyagerFixtures/Projects", depth: 0, status: "available" },
+                    { path: "/VoyagerFixtures/Projects/Legacy", depth: 1, status: "excluded" },
+                    { path: "/VoyagerFixtures/Inbox", depth: 0, status: "available" },
+                  ],
                 }
               : undefined,
   }
@@ -155,22 +190,32 @@ const ComposerSelectionFlow = ({
         setScopePickerOpen((open) => !open)
       }}
       onScopeSelect={selectScope}
+      onScopeRemove={removeScope}
+      onToggleSubfolders={() => setIncludeSubfolders((current) => !current)}
+      onScopeFeedbackAction={(action) =>
+        setToast({ type: "info", message: `${action} scope change.` })
+      }
       onSubmit={submit}
       onAddCondition={addCondition}
+      onRemoveCondition={removeCondition}
+      onPropertyClick={() => setStep("property")}
       onPropertySelect={(propertyKey) => {
         const selectedProperty = composerPropertyOption(propertyKey)
         if (selectedProperty == null) return
         setProperty(selectedProperty)
         setOperator(undefined)
+        // 네이티브 ComposerConditionEditingReducer는 신규 조건을 append 한다
+        const id = `${selectedProperty.key}-${draft.conditions.length + 1}`
         commit({
           ...draft,
           conditions: [
+            ...draft.conditions,
             {
-              id: selectedProperty.key,
+              id,
               property: selectedProperty.label,
               propertySymbol: selectedProperty.symbol,
-              operator: "Operator",
-              value: "Value",
+              operator: "",
+              value: "",
             },
           ],
         })
@@ -183,15 +228,15 @@ const ComposerSelectionFlow = ({
         setOperator(selectedOperator)
         commit({
           ...draft,
-          conditions: [
-            {
-              id: property?.key ?? "condition",
-              property: property?.label ?? "Property",
-              propertySymbol: property?.symbol ?? "questionmark",
-              operator: selectedOperator.label,
-              value: selectedOperator.editor.kind === "none" ? "" : "Value",
-            },
-          ],
+          conditions: draft.conditions.map((condition) =>
+            condition.id === property?.key || condition.property === property?.label
+              ? {
+                  ...condition,
+                  operator: selectedOperator.label,
+                  value: selectedOperator.editor.kind === "none" ? "" : "",
+                }
+              : condition,
+          ),
         })
         setStep(selectedOperator.editor.kind === "none" ? "complete" : "value")
       }}
@@ -201,15 +246,11 @@ const ComposerSelectionFlow = ({
       onValueCommit={(value) => {
         commit({
           ...draft,
-          conditions: [
-            {
-              id: property?.key ?? "condition",
-              property: property?.label ?? "Property",
-              propertySymbol: property?.symbol ?? "questionmark",
-              operator: operator?.label ?? "Operator",
-              value,
-            },
-          ],
+          conditions: draft.conditions.map((condition) =>
+            condition.id === property?.key || condition.property === property?.label
+              ? { ...condition, value }
+              : condition,
+          ),
         })
         setStep("complete")
       }}

@@ -19,7 +19,12 @@ type Story = StoryObj<typeof meta>
 
 export const RootScope: Story = {}
 export const ExplicitScope: Story = {
-  args: { title: "Documents", path: "/VoyagerFixtures/Documents", removable: true },
+  args: {
+    title: "Documents",
+    path: "/VoyagerFixtures/Documents",
+    removable: true,
+    onRemove: () => {},
+  },
 }
 export const RemoveVisible: Story = {
   args: {
@@ -27,5 +32,6 @@ export const RemoveVisible: Story = {
     path: "/VoyagerFixtures/Documents",
     removable: true,
     showRemove: true,
+    onRemove: () => {},
   },
 }

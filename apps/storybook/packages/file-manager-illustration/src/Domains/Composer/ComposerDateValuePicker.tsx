@@ -12,22 +12,66 @@ const relativePresets = [
 
 export type ComposerDateValuePickerProps = {
   readonly kind: "date" | "dateRange"
+  readonly initialValue?: string
   readonly error?: string
   readonly onCommit?: (value: string) => void
 }
 
+const relativeUnits = ["Day", "Week", "Month", "Year"] as const
+
+const parseInitialValue = (
+  value: string | undefined,
+): {
+  dateMode: "absolute" | "relative"
+  preset: (typeof relativePresets)[number]
+  amount: string
+  unit: (typeof relativeUnits)[number]
+  values: readonly string[]
+} => {
+  const trimmed = value?.trim() ?? ""
+  const preset = relativePresets.find(
+    (candidate) => candidate !== "Custom" && candidate === trimmed,
+  )
+  if (preset != null) {
+    return { dateMode: "relative", preset, amount: "1", unit: "Day", values: [] }
+  }
+  const custom = /^(\d+) (day|week|month|year)s? ago$/.exec(trimmed)
+  if (custom != null) {
+    const unit = relativeUnits.find((candidate) => candidate.toLowerCase() === custom[2])
+    return {
+      dateMode: "relative",
+      preset: "Custom",
+      amount: custom[1] ?? "1",
+      unit: unit ?? "Day",
+      values: [],
+    }
+  }
+  return {
+    dateMode: "absolute",
+    preset: "7 days ago",
+    amount: "1",
+    unit: "Day",
+    values: trimmed.length > 0 ? trimmed.split(" - ") : [],
+  }
+}
+
 export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
   kind,
+  initialValue,
   error: initialError,
   onCommit,
 }) => {
   const isRange = kind === "dateRange"
-  const [values, setValues] = useState<readonly string[]>(isRange ? ["", ""] : [""])
-  const [dateMode, setDateMode] = useState<"absolute" | "relative">("absolute")
-  const [relativePreset, setRelativePreset] =
-    useState<(typeof relativePresets)[number]>("7 days ago")
-  const [relativeAmount, setRelativeAmount] = useState("1")
-  const [relativeUnit, setRelativeUnit] = useState("Day")
+  const initial = parseInitialValue(initialValue)
+  const [values, setValues] = useState<readonly string[]>(() =>
+    Array.from({ length: isRange ? 2 : 1 }, (_, index) => initial.values[index] ?? ""),
+  )
+  const [dateMode, setDateMode] = useState<"absolute" | "relative">(initial.dateMode)
+  const [relativePreset, setRelativePreset] = useState<(typeof relativePresets)[number]>(
+    initial.preset,
+  )
+  const [relativeAmount, setRelativeAmount] = useState(initial.amount)
+  const [relativeUnit, setRelativeUnit] = useState<(typeof relativeUnits)[number]>(initial.unit)
   const [error, setError] = useState<string | undefined>(initialError)
 
   const commit = (nextValues: readonly string[]) => {
@@ -35,8 +79,38 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       setError("Value is required.")
       return
     }
+    if (kind === "dateRange") {
+      const [from, to] = nextValues
+      if (from.localeCompare(to) > 0) {
+        setError("From must be earlier than or equal to To.")
+        return
+      }
+    }
     setError(undefined)
     onCommit?.(nextValues.join(" - "))
+  }
+
+  const relativeAmountValid =
+    relativePreset !== "Custom" ||
+    (relativeAmount.trim().length > 0 &&
+      Number.isInteger(Number(relativeAmount)) &&
+      Number(relativeAmount) > 0)
+
+  const relativePreview =
+    relativePreset === "Custom"
+      ? `${relativeAmount} ${relativeUnit.toLowerCase()}${relativeAmount === "1" ? "" : "s"} ago`
+      : relativePreset
+
+  const submit = () => {
+    if (kind === "date" && dateMode === "relative") {
+      if (!relativeAmountValid) {
+        setError("Enter a positive whole number of units.")
+        return
+      }
+      commit([relativePreview])
+      return
+    }
+    commit(values)
   }
 
   return (
@@ -49,15 +123,7 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
         className="collection-composer-value-form"
         onSubmit={(event) => {
           event.preventDefault()
-          commit(
-            kind === "date" && dateMode === "relative"
-              ? [
-                  relativePreset === "Custom"
-                    ? `${relativeAmount} ${relativeUnit.toLowerCase()}${relativeAmount === "1" ? "" : "s"} ago`
-                    : relativePreset,
-                ]
-              : values,
-          )
+          submit()
         }}
       >
         {kind === "date" && (
@@ -96,6 +162,8 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               <div className="collection-composer-relative-custom">
                 <input
                   aria-label="Amount"
+                  aria-invalid={!relativeAmountValid}
+                  className={!relativeAmountValid ? "invalid" : undefined}
                   inputMode="numeric"
                   placeholder="1"
                   value={relativeAmount}
@@ -104,16 +172,19 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
                 <select
                   aria-label="Relative unit"
                   value={relativeUnit}
-                  onChange={(event) => setRelativeUnit(event.currentTarget.value)}
+                  onChange={(event) =>
+                    setRelativeUnit(
+                      relativeUnits.find((unit) => unit === event.currentTarget.value) ?? "Day",
+                    )
+                  }
                 >
-                  <option>Day</option>
-                  <option>Week</option>
-                  <option>Month</option>
-                  <option>Year</option>
+                  {relativeUnits.map((unit) => (
+                    <option key={unit}>{unit}</option>
+                  ))}
                 </select>
               </div>
             )}
-            <small>Preview based on today</small>
+            <small>Preview: {relativePreview}</small>
           </>
         ) : (
           <div className="collection-composer-value-fields">

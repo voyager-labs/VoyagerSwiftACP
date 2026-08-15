@@ -9,6 +9,7 @@ export type ComposerCondition = {
   readonly id: string
   readonly property: string
   readonly propertySymbol: string
+  // 네이티브 ConditionChipPropertyOperatorView와 동일하게 operator가 비어 있으면 "Operator" 폴백 표기
   readonly operator: string
   readonly value: string
 }
@@ -16,7 +17,15 @@ export type ComposerCondition = {
 export type ComposerScopeFeedback = {
   readonly phase: "Applied" | "Applying" | "Failed"
   readonly title: string
-  readonly action?: "Undo" | "Redo" | "Retry"
+  readonly showsUndo?: boolean
+  readonly showsRedo?: boolean
+}
+
+// 네이티브 ComposerScopeTreeRow의 depth/visualState 계약 반영
+export type ComposerScopeItem = {
+  readonly path: string
+  readonly depth: number
+  readonly status: "included" | "excluded" | "available"
 }
 
 export type ComposerPropertyPicker = {
@@ -33,6 +42,7 @@ export type ComposerOperatorPicker = {
 
 export type ComposerValuePicker = {
   readonly kind: "value"
+  readonly conditionID?: string
   readonly editor: ComposerValueEditor
   readonly selectedValue?: string
   readonly error?: string
@@ -43,8 +53,9 @@ export type ComposerScopePicker = {
   readonly query: string
   readonly currentSummary: string
   readonly includeSubfolders: boolean
+  readonly rootOnly?: boolean
   readonly sectionTitle: string
-  readonly items: readonly string[]
+  readonly items: readonly ComposerScopeItem[]
   readonly feedback?: ComposerScopeFeedback
 }
 
@@ -53,7 +64,8 @@ export type ComposerClearMode = "clear" | "discard"
 export type ComposerSaveMode = "save" | "saveAs"
 
 export type ComposerTransientFeedback = {
-  readonly type: "success" | "warning" | "error"
+  // 네이티브 ComposerTransientFeedback는 info/error만 지원
+  readonly type: "info" | "error"
   readonly message: string
 }
 
@@ -129,14 +141,19 @@ export const composerFixtures = {
     picker: {
       kind: "operator",
       conditionID: "kind",
-      selectedCode: "eq",
+      selectedCode: "any",
       options:
         composerPropertyOptions.find((property) => property.key === "file_kind")?.operators ?? [],
     },
   },
   valuePickerOpen: {
     ...populatedDraft,
-    picker: { kind: "value", editor: { kind: "boolean" }, selectedValue: "True" },
+    picker: {
+      kind: "value",
+      conditionID: "kind",
+      editor: { kind: "boolean" },
+      selectedValue: "True",
+    },
   },
   processing: {
     ...populatedDraft,
@@ -150,8 +167,11 @@ export const composerFixtures = {
       currentSummary: "Documents",
       includeSubfolders: true,
       sectionTitle: "Current scope",
-      items: ["Documents"],
-      feedback: { phase: "Applied", title: "Scope updated to Documents", action: "Undo" },
+      items: [
+        { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
+        { path: "/VoyagerFixtures/Projects", depth: 0, status: "available" },
+      ],
+      feedback: { phase: "Applied", title: "Scope updated to Documents", showsUndo: true },
     },
   },
   scopeApplying: {
@@ -159,10 +179,14 @@ export const composerFixtures = {
     picker: {
       kind: "scope",
       query: "",
-      currentSummary: "Documents",
+      currentSummary: "Documents, Projects",
       includeSubfolders: true,
       sectionTitle: "Current scope",
-      items: ["Documents", "Projects"],
+      items: [
+        { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
+        { path: "/VoyagerFixtures/Projects", depth: 0, status: "included" },
+        { path: "/VoyagerFixtures/Projects/Legacy", depth: 1, status: "excluded" },
+      ],
       feedback: { phase: "Applying", title: "Updating scope" },
     },
   },
@@ -174,11 +198,16 @@ export const composerFixtures = {
       currentSummary: "Documents, Projects",
       includeSubfolders: true,
       sectionTitle: "Current scope",
-      items: ["Documents", "Projects"],
+      items: [
+        { path: "/VoyagerFixtures/Documents", depth: 0, status: "included" },
+        { path: "/VoyagerFixtures/Projects", depth: 0, status: "included" },
+        { path: "/VoyagerFixtures/Inbox", depth: 0, status: "available" },
+      ],
       feedback: {
         phase: "Failed",
         title: "Scope change could not be fully applied",
-        action: "Retry",
+        showsUndo: true,
+        showsRedo: true,
       },
     },
   },
@@ -192,7 +221,7 @@ export const composerFixtures = {
   savedConfirmation: {
     ...populatedDraft,
     transientFeedback: {
-      type: "success" as const,
+      type: "info" as const,
       message: "Collection saved.",
     },
   },

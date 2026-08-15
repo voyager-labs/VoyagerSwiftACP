@@ -6,6 +6,7 @@ export type ComposerScopeSummaryChipProps = {
   readonly secondary?: string
   readonly badge?: string
   readonly compact?: boolean
+  readonly onEdit?: () => void
 }
 
 export const ComposerScopeSummaryChip: FC<ComposerScopeSummaryChipProps> = ({
@@ -13,6 +14,7 @@ export const ComposerScopeSummaryChip: FC<ComposerScopeSummaryChipProps> = ({
   secondary,
   badge,
   compact,
+  onEdit,
 }) => (
   <div
     className="collection-composer-scope-summary-chip"
@@ -24,13 +26,16 @@ export const ComposerScopeSummaryChip: FC<ComposerScopeSummaryChipProps> = ({
       {secondary != null && <small>{secondary}</small>}
     </span>
     {badge != null && <span className="collection-composer-scope-summary-badge">{badge}</span>}
-    <button
-      type="button"
-      className={compact ? "compact" : undefined}
-      aria-label={`Edit ${primary} scope`}
-    >
-      <SFSymbol name="chevron.down" size={10} />
-    </button>
+    {onEdit != null && (
+      <button
+        type="button"
+        className={compact ? "compact" : undefined}
+        aria-label={`Edit ${primary} scope`}
+        onClick={onEdit}
+      >
+        <SFSymbol name="chevron.down" size={10} />
+      </button>
+    )}
   </div>
 )
 

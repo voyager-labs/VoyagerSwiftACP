@@ -6,6 +6,7 @@ export type ComposerScopeTokenChipProps = {
   readonly path?: string
   readonly removable?: boolean
   readonly showRemove?: boolean
+  readonly onRemove?: () => void
 }
 
 export const ComposerScopeTokenChip: FC<ComposerScopeTokenChipProps> = ({
@@ -13,6 +14,7 @@ export const ComposerScopeTokenChip: FC<ComposerScopeTokenChipProps> = ({
   path,
   removable,
   showRemove,
+  onRemove,
 }) => (
   <span
     className={`collection-composer-scope-token${showRemove ? " show-remove" : ""}`}
@@ -24,7 +26,7 @@ export const ComposerScopeTokenChip: FC<ComposerScopeTokenChipProps> = ({
     </span>
     <span className="collection-composer-scope-token-title">{title}</span>
     {removable && (
-      <button type="button" aria-label={`Remove scope ${title}`}>
+      <button type="button" aria-label={`Remove scope ${title}`} onClick={onRemove}>
         <SFSymbol name="xmark" size={9} weight={500} />
       </button>
     )}

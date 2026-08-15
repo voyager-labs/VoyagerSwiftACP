@@ -1,4 +1,4 @@
-import { type FC, useState } from "react"
+import { type FC, useEffect, useRef, useState } from "react"
 import { ComposerDateValuePicker } from "./ComposerDateValuePicker"
 import { ComposerTokenValuePicker } from "./ComposerTokenValuePicker"
 import type { ComposerValueEditor } from "./composer-condition-options"
@@ -33,13 +33,23 @@ const editorError = (
 export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCommit }) => {
   const editor = picker.editor
   const fieldCount = editor.kind === "numberRange" ? 2 : 1
-  const [values, setValues] = useState<readonly string[]>(
-    Array.from({ length: fieldCount }, () => ""),
+  const supportsUnit = editor.kind === "number" || editor.kind === "numberRange"
+  const initial = picker.selectedValue?.trim() ?? ""
+  const initialUnit = supportsUnit
+    ? editor.units?.find((unit) => initial.endsWith(` ${unit}`))
+    : undefined
+  const initialBody = initialUnit == null ? initial : initial.slice(0, -initialUnit.length - 1)
+  const initialParts = initialBody.length > 0 ? initialBody.split(" - ") : []
+  const [values, setValues] = useState<readonly string[]>(() =>
+    Array.from({ length: fieldCount }, (_, index) => initialParts[index] ?? ""),
   )
-  const [unit, setUnit] = useState(
-    editor.kind === "number" || editor.kind === "numberRange" ? editor.units?.[0] : undefined,
-  )
+  const [unit, setUnit] = useState(supportsUnit ? (initialUnit ?? editor.units?.[0]) : undefined)
   const [error, setError] = useState<string | undefined>(picker.error)
+  const firstValueFieldRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    firstValueFieldRef.current?.focus()
+  }, [])
 
   const setValue = (index: number, value: string) =>
     setValues((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)))
@@ -52,26 +62,7 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
   }
 
   if (editor.kind === "boolean") {
-    return (
-      <dialog
-        className="collection-composer-value-picker boolean"
-        open
-        aria-label="Condition value picker"
-      >
-        <div className="collection-composer-picker-list">
-          {(["True", "False"] as const).map((value) => (
-            <button
-              type="button"
-              aria-pressed={picker.selectedValue === value}
-              key={value}
-              onClick={() => onCommit?.(value)}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
-      </dialog>
-    )
+    return <BooleanValuePicker picker={picker} onCommit={onCommit} />
   }
 
   if (editor.kind === "none") {
@@ -95,6 +86,10 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
     return (
       <ComposerTokenValuePicker
         suggestions={editor.suggestions}
+        initialTokens={picker.selectedValue
+          ?.split(",")
+          .map((token) => token.trim())
+          .filter((token) => token.length > 0)}
         error={error}
         onCommit={onCommit}
       />
@@ -102,7 +97,14 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
   }
 
   if (editor.kind === "date" || editor.kind === "dateRange") {
-    return <ComposerDateValuePicker kind={editor.kind} error={error} onCommit={onCommit} />
+    return (
+      <ComposerDateValuePicker
+        kind={editor.kind}
+        initialValue={picker.selectedValue}
+        error={error}
+        onCommit={onCommit}
+      />
+    )
   }
 
   const isRange = editor.kind === "numberRange"
@@ -137,6 +139,7 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
                   aria-label={isRange ? label : "Value"}
                   aria-invalid={error != null}
                   className={error != null ? "invalid" : undefined}
+                  ref={index === 0 ? firstValueFieldRef : undefined}
                   placeholder={editor.kind === "text" ? "Enter text" : "0"}
                   value={value}
                   onChange={(event) => setValue(index, event.currentTarget.value)}
@@ -163,3 +166,40 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
 }
 
 ComposerValuePicker.displayName = "ComposerValuePicker"
+
+const BooleanValuePicker: FC<{
+  readonly picker: ComposerValuePickerFixture
+  readonly onCommit?: (value: string) => void
+}> = ({ picker, onCommit }) => {
+  const [value, setValue] = useState(picker.selectedValue)
+  const firstOptionRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    firstOptionRef.current?.focus()
+  }, [])
+
+  return (
+    <dialog
+      className="collection-composer-value-picker boolean"
+      open
+      aria-label="Condition value picker"
+    >
+      <div className="collection-composer-picker-list">
+        {(["True", "False"] as const).map((option) => (
+          <button
+            type="button"
+            ref={option === (value === "False" ? "False" : "True") ? firstOptionRef : undefined}
+            aria-pressed={value === option}
+            key={option}
+            onClick={() => {
+              setValue(option)
+              onCommit?.(option)
+            }}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </dialog>
+  )
+}

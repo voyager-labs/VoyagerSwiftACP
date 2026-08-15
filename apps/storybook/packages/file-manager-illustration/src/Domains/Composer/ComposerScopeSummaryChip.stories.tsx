@@ -11,7 +11,7 @@ const meta = {
       </div>
     ),
   ],
-  args: { primary: "This Mac", compact: true },
+  args: { primary: "This Mac", compact: true, onEdit: () => {} },
 } satisfies Meta<typeof ComposerScopeSummaryChip>
 
 export default meta
