@@ -99,18 +99,18 @@ const populatedDraft = {
   scopes: ["/VoyagerFixtures/Documents"],
   conditions: [
     {
-      id: "kind",
+      id: "file_kind",
       property: "Kind",
       propertySymbol: "tag",
-      operator: "Equals",
-      value: "pdf",
+      operator: "Contains any",
+      value: "PDF",
     },
     {
-      id: "modified",
-      property: "Modified",
+      id: "modification_date",
+      property: "Content modification date",
       propertySymbol: "calendar.badge.clock",
-      operator: "is after",
-      value: "voyager.relativeDate:v1:past:30:day:2026-01-01",
+      operator: "Is greater than",
+      value: "2026-08-01",
     },
   ],
   canUndo: true,
@@ -148,7 +148,7 @@ export const composerFixtures = {
     ...populatedDraft,
     picker: {
       kind: "operator",
-      conditionID: "kind",
+      conditionID: "file_kind",
       selectedCode: "any",
       options:
         composerPropertyOptions.find((property) => property.key === "file_kind")?.operators ?? [],

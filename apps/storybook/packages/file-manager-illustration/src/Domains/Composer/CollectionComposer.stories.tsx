@@ -38,7 +38,7 @@ const baseDraft = (): DraftState => ({
       property: "Content modification date",
       propertySymbol: "calendar.badge.clock",
       operator: "Is greater than",
-      value: "voyager.relativeDate:v1:past:30:day:2026-01-01",
+      value: "2026-08-01",
     },
   ],
 })
@@ -305,7 +305,19 @@ const ComposerSelectionFlow = ({
       onScopeSelect={selectScope}
       onScopeRemove={removeScope}
       onScopeAction={scopeAction}
-      onToggleSubfolders={() => commit({ ...draft, includeSubfolders: !draft.includeSubfolders })}
+      onToggleSubfolders={() => {
+        const next = !draft.includeSubfolders
+        commit({
+          ...draft,
+          includeSubfolders: next,
+          // 네이티브 canonicalizeScopeRule: subfolders off면 상속 하위 예외를 정리한다
+          excludedScopes: next
+            ? draft.excludedScopes
+            : draft.excludedScopes.filter(
+                (path) => !draft.scopes.some((scope) => path.startsWith(`${scope}/`)),
+              ),
+        })
+      }}
       onScopeFeedbackAction={(action) =>
         setToast({ type: "info", message: `${action} scope change.` })
       }
