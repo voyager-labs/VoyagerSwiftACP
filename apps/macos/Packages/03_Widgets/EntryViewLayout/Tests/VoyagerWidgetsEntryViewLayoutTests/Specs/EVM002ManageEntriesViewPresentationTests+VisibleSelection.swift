@@ -81,6 +81,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.showHiddenFiles = false
         }
         await store.receive(\.hierarchy.hiddenFilesSettingChanged)
+        await store.receive(\.delegate.selectionChanged)
 
         XCTAssertTrue(store.state.selectedIds.isEmpty)
         XCTAssertNil(store.state.lastSelectedId)

@@ -104,6 +104,11 @@ extension EntryListHierarchyReducer {
                 folder.supportsListHierarchyExpansion && folderIsWithinCurrentRoot(folder.id, state: state)
             }
 
+        // startLoad가 child snapshot을 비우며 선택을 동기적으로 재조정하므로,
+        // 뒤의 reconcileHierarchySelection은 이미 빈 선택만 보게 된다. 따라서 재로드 전
+        // 선택을 보존해 두고 이 함수에서 delegate를 직접 병합한다.
+        let previousSelectedIds = state.selectedIds
+
         for id in folderIDs {
             var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
             if !state.hierarchy.expandedFolderIDs.contains(id) {
@@ -120,9 +125,20 @@ extension EntryListHierarchyReducer {
         let restartEffects: [Effect<Action>] = expandedFolders.map { folder in
             startLoad(folder: folder, id: folder.id, state: &state)
         }
+        var reconcileEffects: [Effect<Action>] = []
+        if let renamingID = state.entryOperations.renamingItemId,
+           previousSelectedIds.contains(renamingID),
+           !state.selectedIds.contains(renamingID)
+        {
+            reconcileEffects.append(.send(.delegate(.renameCanceled)))
+        }
+        if previousSelectedIds != state.selectedIds {
+            reconcileEffects.append(.send(.delegate(.selectionChanged)))
+        }
         return .concatenate(
             .merge(restartEffects),
             .send(.internal(.reconcileHierarchySelection)),
+            .merge(reconcileEffects),
         )
     }
 
