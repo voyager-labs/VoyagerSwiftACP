@@ -99,19 +99,19 @@ public enum EntryDropValidationResolver {
         destinationPath: String,
         sourcePaths: [String],
     ) -> EntryDropValidationResult? {
-        guard let sourcePath = sourcePaths.first else {
-            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
-        }
-        let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
-        if sourceParent == destinationPath {
-            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
-        }
+        var remainingSources = 0
         for sourcePath in sourcePaths {
+            let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+            if sourceParent == destinationPath {
+                continue
+            }
             if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
                 return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
             }
+            remainingSources += 1
         }
-        return nil
+        guard remainingSources == 0 else { return nil }
+        return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
     }
 
     private static func contains(

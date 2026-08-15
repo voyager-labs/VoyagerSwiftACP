@@ -586,6 +586,39 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(store.state.dropValidationResult.isOptionDrag)
     }
 
+    /// EOP-002-move_entries: 혼합 부모 드롭에서 같은-부모 항목만으로 전체를 거부하지 않는다
+    /// 서로 다른 폴더의 항목을 함께 드롭할 때, 첫 항목만 같은-부모 no-op이라도 나머지 항목의 이동은 허용돼야 한다.
+    /// - 검증 내용: [같은-부모 항목, 다른-부모 항목] 순서에서 resolvedOperation이 .move다.
+    /// - 사전 조건: sourcePaths 중 첫 항목의 부모가 destination과 같고, 둘째 항목은 다른 부모다.
+    /// - 기대 결과: 같은-부모 항목은 건너뛰고 둘째 항목의 move가 유지되어 .move로 판정된다.
+    func testDropValidation_mixedParentSourcesAllowRemainingMove() async {
+        let destinationPath = "/Users/test/Documents"
+        let sameParentSource = "/Users/test/Documents/same.txt"
+        let otherParentSource = "/Users/test/Downloads/other.txt"
+
+        let store = EntryOperationsTestSupport.makeStore()
+
+        let context = EntryDropValidationContext(
+            sourcePaths: [sameParentSource, otherParentSource],
+            destinationPath: destinationPath,
+            allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+            prefersCopy: false,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: destinationPath,
+                resolvedOperation: .move,
+                isOptionDrag: false,
+            )
+        }
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .move)
+        XCTAssertFalse(store.state.dropValidationResult.isOptionDrag)
+    }
+
     /// EOP-002-move_entries: directory를 자기 하위에 드롭하면 순환 참조로 none을 반환한다
     /// destination이 source의 하위 경로이면 순환 참조가 감지되어 no-op이어야 한다.
     /// - 검증 내용: `validateDrop`이 하위 경로 드롭에서 `resolvedOperation = .none`을 반환한다.
