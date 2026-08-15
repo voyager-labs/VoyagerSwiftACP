@@ -35,6 +35,7 @@ extension EntryListHierarchyReducer {
         reloadCachedFolders: Bool,
         state: inout State,
     ) -> Effect<Action> {
+        let previousSelectedIds = state.selectedIds
         let removedIDs = Set(state.hierarchy.nodesByID.keys.filter { id in
             removedPrefixes.contains { isSameOrDescendant(path: id, of: $0) }
         })
@@ -80,7 +81,17 @@ extension EntryListHierarchyReducer {
         }
 
         state.reconcileSelectionWithVisibleEntries()
-        return .merge(effects)
+        var reconcileEffects: [Effect<Action>] = []
+        if let renamingID = state.entryOperations.renamingItemId,
+           previousSelectedIds.contains(renamingID),
+           !state.selectedIds.contains(renamingID)
+        {
+            reconcileEffects.append(.send(.delegate(.renameCanceled)))
+        }
+        if previousSelectedIds != state.selectedIds {
+            reconcileEffects.append(.send(.delegate(.selectionChanged)))
+        }
+        return .merge(effects + reconcileEffects)
     }
 
     func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
