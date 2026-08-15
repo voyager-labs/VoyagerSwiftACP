@@ -95,8 +95,16 @@ public struct EntryViewLayoutFeature {
                 state.lastSelectedId = nil
                 state.rangeAnchorId = nil
                 state.shouldScrollToSelection = false
-                guard !previousSelection.isEmpty else { return .none }
-                return .send(.delegate(.selectionChanged))
+                var effects: [Effect<Action>] = []
+                if let renamingId = state.entryOperations.renamingItemId,
+                   previousSelection.contains(renamingId)
+                {
+                    effects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelection != state.selectedIds {
+                    effects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .merge(effects)
 
             case .internal(.reconcileHierarchySelection):
                 let previousSelection = state.selectedIds

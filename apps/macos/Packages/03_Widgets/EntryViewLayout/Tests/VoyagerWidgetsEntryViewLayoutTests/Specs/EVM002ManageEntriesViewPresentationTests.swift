@@ -267,6 +267,33 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         await store.receive(\.delegate.selectionChanged)
     }
 
+    /// EVM-002-update_entry_selection: 선택 해제 시 진행 중인 rename을 취소하는지 검증
+    ///
+    /// - 검증 내용: applyClearSelection이 renamingItemId를 선택에서 제거하며 renameCanceled를 전송
+    /// - 사전 조건: renamingItemId가 설정되어 있고 선택에 포함된 상태
+    /// - 기대 결과: renameCanceled와 selectionChanged delegate가 수신됨
+    func testClearSelectionCancelsRename() async {
+        let renamingId = "renaming-item"
+        var state = EntryViewLayoutState()
+        state.selectedIds = [renamingId]
+        state.lastSelectedId = renamingId
+        state.rangeAnchorId = renamingId
+        state.entryOperations.renamingItemId = renamingId
+
+        let store = TestStore(initialState: state) {
+            EntryViewLayoutFeature()
+        }
+
+        await store.send(.internal(.applyClearSelection)) {
+            $0.selectedIds = []
+            $0.lastSelectedId = nil
+            $0.rangeAnchorId = nil
+            $0.shouldScrollToSelection = false
+        }
+        await store.receive(\.delegate.renameCanceled)
+        await store.receive(\.delegate.selectionChanged)
+    }
+
     /// EVM-002-update_entry_selection: setSelectionState 액션이 IDs를 업데이트하는지 검증
     ///
     /// - 검증 내용: setSelectionState 액션이 selectedIds, lastSelectedId, rangeAnchorId, shouldScrollToSelection을 설정
