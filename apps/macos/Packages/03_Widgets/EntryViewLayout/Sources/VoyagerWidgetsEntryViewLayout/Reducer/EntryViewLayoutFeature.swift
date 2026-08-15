@@ -99,8 +99,19 @@ public struct EntryViewLayoutFeature {
                 return .send(.delegate(.selectionChanged))
 
             case .internal(.reconcileHierarchySelection):
+                let previousSelection = state.selectedIds
                 state.reconcileSelectionWithVisibleEntries()
-                return .none
+                var effects: [Effect<Action>] = []
+                if let renamingId = state.entryOperations.renamingItemId,
+                   previousSelection.contains(renamingId),
+                   !state.selectedIds.contains(renamingId)
+                {
+                    effects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelection != state.selectedIds {
+                    effects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .merge(effects)
 
             case let .internal(.applySelectionOffset(offset, isShiftPressed, orderedItemIds)):
                 guard !orderedItemIds.isEmpty else { return .none }

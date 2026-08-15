@@ -23,12 +23,14 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let first = visibleSelectionFile(id: "/root/a/one")
         let second = visibleSelectionFile(id: "/root/a/two")
-        let store = TestStore(initialState: visibleSelectionState(
+        var state = visibleSelectionState(
             roots: [folder],
             expandedFolderIDs: [folder.id],
             childrenByFolderID: [folder.id: [first, second]],
             selection: .init(ids: [first.id, second.id], lastSelectedID: second.id, rangeAnchorID: first.id),
-        )) {
+        )
+        state.entryOperations.renamingItemId = first.id
+        let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
         }
 
@@ -44,6 +46,8 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
+        await store.receive(\.delegate.renameCanceled)
+        await store.receive(\.delegate.selectionChanged)
     }
 
     // MARK: - EVM-002-show_hide_hidden_entry
