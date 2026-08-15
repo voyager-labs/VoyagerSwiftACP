@@ -642,6 +642,38 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.delegate.selectionChanged)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: folder retry 재조정의 선택 제거를 delegate로 전달
+    /// 실패 폴더의 evicted child가 선택돼 있을 때 folderRetryRequested 후 selectionChanged가 발행되는지 검증한다.
+    /// - 검증 내용: folderRetryRequested 후 `.delegate(.selectionChanged)` 수신
+    /// - 사전 조건: retry 대상 folder의 evicted child가 선택돼 있다.
+    /// - 기대 결과: 선택이 제거되며 selectionChanged delegate가 발행됨
+    func testFolderRetryEmitsSelectionChangedWhenChildLeavesProjection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = makeHierarchyIntegrationEntry(id: "/root/a/stale.txt", name: "stale.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.selectedIds = [staleChild.id]
+        state.lastSelectedId = staleChild.id
+        state.rangeAnchorId = staleChild.id
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID = [
+            folder.id: .init(
+                children: [staleChild],
+                loadPhase: .failed(.unavailable(description: "test")),
+                generation: 2,
+            ),
+        ]
+        state.hierarchy.setExpandedIDs([folder.id])
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.folderRetryRequested(id: folder.id)))
+        await store.receive(\.delegate.expandRequested, folder.id)
+        await store.receive(\.delegate.selectionChanged)
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: coarse invalidation은 expanded descendant cache를 모두 재로드한다.
     /// ancestor path만 보고된 rescan에서도 중첩 folder snapshot이 stale로 남지 않는지 검증한다.
     /// - 검증 내용: cached folder 전체 generation 증가와 expanded A/B loading 전환

@@ -147,7 +147,19 @@ struct EntryListHierarchyReducer {
                       folder.supportsListHierarchyExpansion else { return .none }
                 guard folderIsWithinCurrentRoot(id, state: state) else { return .none }
                 state.hierarchy.nodesByID[id, default: FolderNodeState()].expansionIntent = true
-                return startLoad(folder: folder, id: id, state: &state)
+                let previousSelectedIds = state.selectedIds
+                let startLoadEffect = startLoad(folder: folder, id: id, state: &state)
+                var reconcileEffects: [Effect<Action>] = []
+                if let renamingID = state.entryOperations.renamingItemId,
+                   previousSelectedIds.contains(renamingID),
+                   !state.selectedIds.contains(renamingID)
+                {
+                    reconcileEffects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelectedIds != state.selectedIds {
+                    reconcileEffects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .concatenate([startLoadEffect] + reconcileEffects)
 
             case let .folderCollapseRequested(id):
                 var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
