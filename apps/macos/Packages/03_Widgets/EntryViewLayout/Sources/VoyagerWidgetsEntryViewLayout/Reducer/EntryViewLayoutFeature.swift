@@ -174,8 +174,7 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.setMode(mode)):
                 state.mode = mode
-                state.reconcileSelectionWithVisibleEntries()
-                return .none
+                return .send(.internal(.reconcileHierarchySelection))
 
             case let .internal(.setListVisibleColumns(columns)):
                 state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(columns)

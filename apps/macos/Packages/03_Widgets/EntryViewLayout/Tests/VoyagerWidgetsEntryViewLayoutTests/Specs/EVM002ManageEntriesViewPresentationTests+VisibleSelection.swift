@@ -213,6 +213,8 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         await store.send(.internal(.setMode(.grid))) {
             $0.mode = .grid
+        }
+        await store.receive(\.internal.reconcileHierarchySelection) {
             $0.selectedIds = []
             $0.lastSelectedId = nil
             $0.rangeAnchorId = nil
@@ -221,6 +223,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
+        await store.receive(\.delegate.selectionChanged)
     }
 
     /// EVM-002-update_entry_selection: nested child context menu는 visible selection을 사용한다.
