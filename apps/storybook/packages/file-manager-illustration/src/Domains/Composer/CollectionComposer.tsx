@@ -318,8 +318,9 @@ const ScopePicker: FC<{
     const name = item.displayName ?? item.path.split("/").at(-1) ?? item.path
     // 네이티브 handleTreeRowBodyTap: base=편집기 오픈, candidate=단일 액션 즉시 실행, exception/root=무시
     const bodyTap = () => {
-      if (item.kind === "base") onSelect?.(item.path)
-      else if (item.kind === "candidate" && item.actions.length === 1)
+      // 네이티브 handleTreeRowBodyTap: base/exclusion 본문은 편집(교체 금지), candidate만 단일 액션
+      if (item.kind === "base" || item.kind === "exception" || item.kind === "root") return
+      if (item.kind === "candidate" && item.actions.length === 1)
         onAction?.(item.path, item.actions[0])
     }
     const primaryAction = item.actions[0]

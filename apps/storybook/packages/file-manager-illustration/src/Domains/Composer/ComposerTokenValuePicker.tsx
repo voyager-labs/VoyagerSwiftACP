@@ -58,7 +58,7 @@ export const ComposerTokenValuePicker: FC<ComposerTokenValuePickerProps> = ({
           event.preventDefault()
           if (input.trim().length > 0) return addToken(input)
           if (tokens.length === 0) return setError("Value is required.")
-          onCommit?.(tokens.join(", "))
+          onCommit?.(tokens.join("; "))
         }}
       >
         <div className="collection-composer-token-field">

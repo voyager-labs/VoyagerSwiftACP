@@ -95,7 +95,7 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
       <ComposerTokenValuePicker
         suggestions={editor.suggestions}
         initialTokens={picker.selectedValue
-          ?.split(",")
+          ?.split("; ")
           .map((token) => token.trim())
           .filter((token) => token.length > 0)}
         error={error}

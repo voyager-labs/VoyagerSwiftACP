@@ -87,12 +87,21 @@ const ComposerSelectionFlow = ({
     setDraft(next)
   }
 
+  const closePicker = () => {
+    setStep("complete")
+    setEditingPropertyId(undefined)
+    setScopePickerOpen(false)
+  }
+
   const undo = () => {
     setFuture((current) => [draft, ...current])
     // 네이티브 ComposerHistoryReducer와 동일한 LIFO: 마지막 스냅샷을 복원한다
     setHistory((current) => {
       const last = current.at(-1)
-      if (last != null) setDraft(last)
+      if (last != null) {
+        setDraft(last)
+        closePicker()
+      }
       return current.slice(0, -1)
     })
   }
@@ -101,7 +110,10 @@ const ComposerSelectionFlow = ({
     setHistory((current) => [...current, draft])
     setFuture((current) => {
       const [next, ...rest] = current
-      if (next != null) setDraft(next)
+      if (next != null) {
+        setDraft(next)
+        closePicker()
+      }
       return rest
     })
   }
@@ -176,7 +188,10 @@ const ComposerSelectionFlow = ({
     commit({
       ...draft,
       scopes: draft.scopes.filter((scope) => scope !== path && !scope.startsWith(`${path}/`)),
-      excludedScopes: draft.excludedScopes.filter((excluded) => excluded !== path),
+      // 네이티브 fromCanonicalScopes: base 제거 시 그 하위 예외도 정리한다
+      excludedScopes: draft.excludedScopes.filter(
+        (excluded) => excluded !== path && !excluded.startsWith(`${path}/`),
+      ),
     })
   }
 
