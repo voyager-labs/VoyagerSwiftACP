@@ -133,6 +133,8 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
   const handleCloseChat = useCallback(() => dispatch({ type: "CLOSE_CHAT" }), [])
   const handleNoop = useCallback(() => undefined, [])
   const handleChatErrorRecovery = props.chatOnErrorRecovery ?? handleNoop
+  const handleChatRebindContext = props.chatOnRebindContext ?? handleNoop
+  const handleChatStartNewChatFromRebind = props.chatOnStartNewChat ?? handleNoop
 
   const toolbarContent: FileToolbarContent = route.kind === "home" ? "home" : "directory"
   const controlledChat = props.chatSurface != null
@@ -215,6 +217,8 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
                 onOpenSettings={handleNoop}
                 onErrorRecovery={handleChatErrorRecovery}
                 onRegenerate={handleNoop}
+                onRebindContext={handleChatRebindContext}
+                onStartNewChatFromRebind={handleChatStartNewChatFromRebind}
                 chatInputActions={props.chatInputActions}
                 chatSurface={props.chatSurface}
               />
@@ -233,7 +237,13 @@ FileManagerIllustration.displayName = "FileManagerIllustration"
 
 function deriveChatTitle(state: FileManagerIllustrationProps["chatSurface"]): string | null {
   if (state == null || state.kind === "sessions") return null
-  if (state.kind === "centeredEmpty") return "New Chat"
+  if (
+    state.kind === "centeredEmpty" ||
+    state.kind === "unconnected" ||
+    state.kind === "connectionError"
+  ) {
+    return "New Chat"
+  }
   const firstUser = state.messages.find((message) => message.role === "user")
   if (firstUser == null) return "New Chat"
   const normalized = firstUser.content.split(/\s+/).join(" ").trim()

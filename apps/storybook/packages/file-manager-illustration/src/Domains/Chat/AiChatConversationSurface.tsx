@@ -3,6 +3,7 @@ import { SFSymbol } from "../../Foundations/SFSymbol"
 import type {
   AiChatInputBarActions,
   AiChatInputBarPresentation,
+  ChatConnectionError,
   ChatMessage,
   ChatStreamingAssistant,
 } from "../../model/types"
@@ -26,6 +27,11 @@ export interface AiChatConversationSurfaceProps {
   readonly inputActions?: AiChatInputBarActions
   readonly onErrorRecovery?: () => void
   readonly onRegenerate?: () => void
+  readonly connectionError?: ChatConnectionError
+  readonly onConnectionAction?: () => void
+  readonly rebindRequired?: boolean
+  readonly onRebindContext?: () => void
+  readonly onStartNewChatFromRebind?: () => void
 }
 
 export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
@@ -40,6 +46,11 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
   inputActions,
   onErrorRecovery,
   onRegenerate,
+  connectionError,
+  onConnectionAction,
+  rebindRequired,
+  onRebindContext,
+  onStartNewChatFromRebind,
 }) => {
   const lastAssistantIndex = (() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -51,6 +62,27 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
   return (
     <section className="chat-transcript" aria-label="Conversation" aria-live="polite">
       <div className="chat-transcript-scroll">
+        {rebindRequired === true ? (
+          <AiChatStatusBanner
+            bannerLabel="Rebind required"
+            iconName="arrow.triangle.2.circlepath.circle"
+            title="Session needs rebind"
+            detail="Reconnect this chat to the current context, or start a clean chat."
+            actions={[
+              { label: "Rebind context", onClick: onRebindContext },
+              { label: "Start new chat", onClick: onStartNewChatFromRebind },
+            ]}
+          />
+        ) : null}
+        {connectionError != null ? (
+          <AiChatStatusBanner
+            bannerLabel="AI provider status"
+            iconName="bolt.horizontal.circle"
+            title={connectionError.title}
+            detail={connectionError.detail}
+            actions={[{ label: connectionError.actionLabel, onClick: onConnectionAction }]}
+          />
+        ) : null}
         {messages.map((message, index) => (
           <AiChatMessageRow
             key={message.id}
@@ -101,6 +133,51 @@ export const AiChatConversationSurface: FC<AiChatConversationSurfaceProps> = ({
 }
 
 AiChatConversationSurface.displayName = "AiChatConversationSurface"
+
+interface AiChatStatusBannerAction {
+  readonly label: string
+  readonly onClick?: () => void
+}
+
+interface AiChatStatusBannerProps {
+  readonly bannerLabel: string
+  readonly iconName: string
+  readonly title: string
+  readonly detail: string
+  readonly actions: readonly AiChatStatusBannerAction[]
+}
+
+// 원본: AiChatConversationSurface.swift AiChatStatusBanner / AiChatRebindRecoveryBanner.
+// 두 배너는 동일 카드 anatomy라 클래스를 공유한다.
+const AiChatStatusBanner: FC<AiChatStatusBannerProps> = ({
+  bannerLabel,
+  iconName,
+  title,
+  detail,
+  actions,
+}) => (
+  <output className="chat-status-banner" aria-label={bannerLabel}>
+    <div className="chat-status-banner-heading">
+      <SFSymbol name={iconName} size={18} weight={500} />
+      <div className="chat-status-banner-copy">
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+    </div>
+    <div className="chat-status-banner-actions">
+      {actions.map((action) => (
+        <button
+          key={action.label}
+          type="button"
+          className="chat-status-banner-action"
+          onClick={action.onClick}
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  </output>
+)
 
 interface AiChatMessageRowProps {
   readonly message: ChatMessage

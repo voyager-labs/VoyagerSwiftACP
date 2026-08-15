@@ -5,7 +5,11 @@ import type {
   ChatStreamingAssistant,
   ChatSurfaceState,
 } from "../../model/types"
-import { aiChatInputProcessing, aiChatInputReadyEmpty } from "./ai-chat-input-fixtures"
+import {
+  aiChatInputProcessing,
+  aiChatInputReadyEmpty,
+  aiChatInputUnconnected,
+} from "./ai-chat-input-fixtures"
 
 // 채팅 도메인 deterministic fixture — network·clock·random 미의존.
 // 원본: AiChatState (sessionList, transcriptHistory, streamingAssistantDisplayModel).
@@ -118,8 +122,15 @@ export const chatStreamingRecovery: ChatStreamingAssistant = {
 
 export const chatConnectionError: ChatConnectionError = {
   title: "Connect an AI provider",
-  detail: "Add an API key in Settings to start chatting with Voyager about your files.",
+  detail: "Set up a provider in Settings to chat with this context.",
   actionLabel: "Open Settings",
+}
+
+// 원본: AiChatDisplayModels.swift aiChatExecutionFailureMetadata ("Chat unavailable" / "Retry").
+export const chatProviderFailure: ChatConnectionError = {
+  title: "Chat unavailable",
+  detail: "The last request failed before completing. Retry to continue.",
+  actionLabel: "Retry",
 }
 
 export const chatSurfaceHistory: ChatSurfaceState = {
@@ -155,10 +166,48 @@ export const chatSurfaceRecovery: ChatSurfaceState = {
   streamingAssistant: chatStreamingRecovery,
 }
 
+// 원본: FileManagerAiChatPageView.swift AiChatEmptyStateContent ("Ask Voyager").
 export const chatSurfaceEmpty: ChatSurfaceState = {
   kind: "centeredEmpty",
-  emptyTitle: "Ask about your files",
-  emptyDetail: "Voyager can summarize, organize, and find connections across the selected entries.",
+  emptyTitle: "Ask Voyager",
+  emptyDetail: "Explore your files, collections, and ideas with Voyager.",
   inputBar: aiChatInputReadyEmpty,
+}
+
+// content page unconnected empty — centered content + compactConnectionCTA.
+export const chatSurfaceCenteredUnconnected: ChatSurfaceState = {
+  kind: "centeredEmpty",
+  emptyTitle: "Ask Voyager",
+  emptyDetail: "Explore your files, collections, and ideas with Voyager.",
+  inputBar: aiChatInputUnconnected,
   connectionError: chatConnectionError,
+}
+
+// inspector connected empty — surface .empty는 본문 없이 composer만 (EmptyView).
+export const chatSurfaceInspectorEmpty: ChatSurfaceState = {
+  kind: "transcript",
+  messages: [],
+  inputBar: aiChatInputReadyEmpty,
+}
+
+export const chatSurfaceUnconnected: ChatSurfaceState = {
+  kind: "unconnected",
+  inputBar: aiChatInputUnconnected,
+  connectionError: chatConnectionError,
+}
+
+// inspector surface-level error — status banner + errorRecovery 액션.
+export const chatSurfaceConnectionError: ChatSurfaceState = {
+  kind: "connectionError",
+  inputBar: aiChatInputReadyEmpty,
+  connectionError: chatProviderFailure,
+}
+
+// sessionStatus == .rebindRequired — rebind 배너 + 기존 transcript.
+export const chatSurfaceRebind: ChatSurfaceState = {
+  kind: "transcript",
+  messages: chatTranscriptMessages,
+  inputBar: aiChatInputReadyEmpty,
+  canRegenerate: true,
+  rebindRequired: true,
 }
