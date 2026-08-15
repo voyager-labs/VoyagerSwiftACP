@@ -71,7 +71,9 @@ export const AiChatView: FC<AiChatViewProps> = ({
     case "unconnected":
       return (
         <AiChatConversationSurface
-          messages={[]}
+          messages={state.messages ?? []}
+          statusText={state.statusText}
+          canRegenerate={state.canRegenerate}
           requestText={requestText}
           onRequestTextChange={onRequestTextChange}
           inputPresentation={state.inputBar}
@@ -83,7 +85,9 @@ export const AiChatView: FC<AiChatViewProps> = ({
     case "connectionError":
       return (
         <AiChatConversationSurface
-          messages={[]}
+          messages={state.messages ?? []}
+          statusText={state.statusText}
+          canRegenerate={state.canRegenerate}
           requestText={requestText}
           onRequestTextChange={onRequestTextChange}
           inputPresentation={state.inputBar}

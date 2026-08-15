@@ -266,11 +266,19 @@ export type ChatSurfaceState =
       readonly kind: "unconnected"
       readonly inputBar: AiChatInputBarPresentation
       readonly connectionError: ChatConnectionError
+      /** native transcriptSectionIfNeeded — 배너 하단에 기존 대화 기록 유지 */
+      readonly messages?: readonly ChatMessage[]
+      readonly canRegenerate?: boolean
+      readonly statusText?: string
     }
   | {
       readonly kind: "connectionError"
       readonly inputBar: AiChatInputBarPresentation
       readonly connectionError: ChatConnectionError
+      /** native transcriptSectionIfNeeded — 배너 하단에 기존 대화 기록 유지 */
+      readonly messages?: readonly ChatMessage[]
+      readonly canRegenerate?: boolean
+      readonly statusText?: string
     }
 
 export type FileManagerIllustrationProps = {
