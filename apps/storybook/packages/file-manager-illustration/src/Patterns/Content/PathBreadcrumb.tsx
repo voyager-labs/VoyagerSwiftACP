@@ -1,13 +1,14 @@
 import { type FC, Fragment } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import type { BreadcrumbSegment } from "../../model/types"
+import { PathBreadcrumbItem } from "./PathBreadcrumbItem"
 
 export interface PathBreadcrumbProps {
   readonly segments: readonly BreadcrumbSegment[]
 }
 
 export const PathBreadcrumb: FC<PathBreadcrumbProps> = ({ segments }) => (
-  <nav className="statusbar-breadcrumb" aria-label="Breadcrumb">
+  <nav className="path-breadcrumb" aria-label="Breadcrumb">
     {segments.map((segment, index) => (
       <Fragment
         key={segments
@@ -16,14 +17,11 @@ export const PathBreadcrumb: FC<PathBreadcrumbProps> = ({ segments }) => (
           .join("/")}
       >
         {index > 0 && (
-          <span className="statusbar-chevron-slot">
-            <SFSymbol name="chevron.right" size={10} />
+          <span className="path-breadcrumb-chevron">
+            <SFSymbol name="chevron.right" size={9} />
           </span>
         )}
-        <span className="statusbar-breadcrumb-item">
-          <SFSymbol name={segment.symbolName} size={14} weight={300} />
-          <span className="statusbar-breadcrumb-label">{segment.label}</span>
-        </span>
+        <PathBreadcrumbItem label={segment.label} symbolName={segment.symbolName} />
       </Fragment>
     ))}
   </nav>
