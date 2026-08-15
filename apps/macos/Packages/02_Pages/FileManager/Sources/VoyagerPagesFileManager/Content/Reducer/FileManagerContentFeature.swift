@@ -157,8 +157,11 @@ public struct FileManagerContentFeature {
             ]
             // stream failure는 root completion이 아니므로 rootSnapshotCompleted를 보내지 않지만,
             // partial projection이 선택을 보존한 상태이므로 현재 visible projection 기준으로
-            // 선택·rename delegate를 동기화한다.
-            if case .entryViewLayout(.entryOperations(.loading(.streamFailed))) = action,
+            // 선택·rename delegate를 동기화한다. 이전 generation의 stale failure는
+            // EntryOperationsLoadingReducer가 무시하므로, 여기서도 현재 loading generation과
+            // 일치할 때만 재조정을 발행해 진행 중인 새 batch의 선택·rename을 조기에 제거하지 않는다.
+            if case let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation)))) = action,
+               generation == state.entryViewLayout.entryOperations.loadingContext.generation,
                !state.entryViewLayout.hierarchy.rootPath.isEmpty
             {
                 projectionEffects.append(.send(.entryViewLayout(.internal(.reconcileHierarchySelection))))
