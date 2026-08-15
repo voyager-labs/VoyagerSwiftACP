@@ -81,6 +81,7 @@ export const AiChatView: FC<AiChatViewProps> = ({
           onRequestTextChange={onRequestTextChange}
           inputPresentation={state.inputBar}
           inputActions={inputActions}
+          onRegenerate={onRegenerate}
           connectionError={state.connectionError}
           onConnectionAction={onOpenSettings}
         />
@@ -95,6 +96,7 @@ export const AiChatView: FC<AiChatViewProps> = ({
           onRequestTextChange={onRequestTextChange}
           inputPresentation={state.inputBar}
           inputActions={inputActions}
+          onRegenerate={onRegenerate}
           connectionError={state.connectionError}
           onConnectionAction={onErrorRecovery}
         />

@@ -25,6 +25,8 @@ export const AiChatInputBar: FC<AiChatInputBarProps> = ({
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
+      !event.altKey &&
+      !event.nativeEvent.isComposing &&
       presentation.action.kind === "submit" &&
       presentation.action.isEnabled
     ) {

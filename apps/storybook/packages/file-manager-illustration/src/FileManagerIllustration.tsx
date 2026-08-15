@@ -237,14 +237,8 @@ FileManagerIllustration.displayName = "FileManagerIllustration"
 
 function deriveChatTitle(state: FileManagerIllustrationProps["chatSurface"]): string | null {
   if (state == null || state.kind === "sessions") return null
-  if (
-    state.kind === "centeredEmpty" ||
-    state.kind === "unconnected" ||
-    state.kind === "connectionError"
-  ) {
-    return "New Chat"
-  }
-  const firstUser = state.messages.find((message) => message.role === "user")
+  if (state.kind === "centeredEmpty") return "New Chat"
+  const firstUser = state.messages?.find((message) => message.role === "user")
   if (firstUser == null) return "New Chat"
   const normalized = firstUser.content.split(/\s+/).join(" ").trim()
   return normalized.length > 0 ? normalized.slice(0, 80) : "New Chat"

@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { useState } from "react"
 import { expect, fn } from "storybook/test"
-import { InspectorPane } from "../../Layouts/InspectorPane"
+import { InspectorPane, type InspectorPaneProps } from "../../Layouts/InspectorPane"
 import { files } from "../../data/mock-data"
-import type { AiChatInputBarActions } from "../../model/types"
+import type { AiChatInputBarActions, ChatSurfaceState } from "../../model/types"
+import { AiChatView } from "./AiChatView"
 import {
   chatSurfaceCenteredUnconnected,
   chatSurfaceConnectionError,
@@ -74,6 +75,45 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// content-page 전용 component — InspectorPane 헤더/300px 기하 없이 AiChatView를
+// 저장소의 full-page review frame(.stage + .content-pane-review) 위에 직접 그린다.
+// DESIGN.md: content-page centeredEmpty는 isolated AiChatView specimen으로만 모델링.
+function ContentPageAiChatView({
+  args,
+  state,
+}: {
+  args: InspectorPaneProps
+  state: ChatSurfaceState
+}) {
+  const [requestText, setRequestText] = useState(args.requestText)
+
+  function handleRequestTextChange(value: string) {
+    setRequestText(value)
+    args.onRequestTextChange(value)
+  }
+
+  return (
+    <div data-file-manager-illustration>
+      <main className="stage">
+        <section className="content-pane-review" aria-label="Chat Content Page">
+          <AiChatView
+            state={state}
+            requestText={requestText}
+            onRequestTextChange={handleRequestTextChange}
+            onSessionSelected={args.onSessionSelected}
+            onOpenSettings={args.onOpenSettings}
+            onErrorRecovery={args.onErrorRecovery}
+            onRegenerate={args.onRegenerate}
+            onRebindContext={args.onRebindContext}
+            onStartNewChatFromRebind={args.onStartNewChatFromRebind}
+            inputActions={args.chatInputActions}
+          />
+        </section>
+      </main>
+    </div>
+  )
+}
+
 export const History: Story = {
   args: {
     chatHeader: "sessions",
@@ -107,6 +147,9 @@ export const CenteredEmpty: Story = {
     chatTitle: "Ask Voyager",
     chatSurface: chatSurfaceEmpty,
   },
+  render: (args) => (
+    <ContentPageAiChatView args={args} state={args.chatSurface as ChatSurfaceState} />
+  ),
   play: async ({ canvas }) => {
     expect(canvas.getByText("Ask Voyager")).toBeVisible()
     expect(canvas.queryByLabelText("AI provider status")).toBeNull()
@@ -119,6 +162,9 @@ export const CenteredUnconnected: Story = {
     chatTitle: "Ask Voyager",
     chatSurface: chatSurfaceCenteredUnconnected,
   },
+  render: (args) => (
+    <ContentPageAiChatView args={args} state={args.chatSurface as ChatSurfaceState} />
+  ),
   play: async ({ args, canvas, userEvent }) => {
     expect(canvas.getByText("Ask Voyager")).toBeVisible()
     expect(canvas.getByText("Connect an AI provider")).toBeVisible()
