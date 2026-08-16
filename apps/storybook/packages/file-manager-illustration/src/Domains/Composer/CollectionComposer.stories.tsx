@@ -170,10 +170,11 @@ const ComposerSelectionFlow = ({
   }
 
   const removeScope = (path: string) => {
-    // 네이티브 fromCanonicalScopes: base 제거 시 그 하위 예외도 정리한다
+    // 네이티브 handleRemoveScope: 대상 base만 정확히 제거하고 그 하위 예외만 정리한다
+    // (subfolders off에서 독립적으로 선택된 하위 direct base는 보존)
     commit({
       ...draft,
-      scopes: draft.scopes.filter((scope) => scope !== path && !scope.startsWith(`${path}/`)),
+      scopes: draft.scopes.filter((scope) => scope !== path),
       excludedScopes: draft.excludedScopes.filter(
         (excluded) => excluded !== path && !excluded.startsWith(`${path}/`),
       ),
@@ -202,8 +203,9 @@ const ComposerSelectionFlow = ({
     }
     commit({
       ...draft,
-      scopes: draft.scopes.filter((scope) => scope !== path && !scope.startsWith(`${path}/`)),
-      // 네이티브 fromCanonicalScopes: base 제거 시 그 하위 예외도 정리한다
+      scopes: draft.scopes.filter((scope) => scope !== path),
+      // 네이티브 fromCanonicalScopes: base 제거 시 그 하위 예외만 정리한다
+      // (독립적으로 선택된 하위 direct base는 보존)
       excludedScopes: draft.excludedScopes.filter(
         (excluded) => excluded !== path && !excluded.startsWith(`${path}/`),
       ),

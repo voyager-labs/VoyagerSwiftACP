@@ -190,12 +190,11 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       ? relativeUnit
       : (presetUnits[relativePreset as keyof typeof presetUnits] ?? "Day")
 
-  // 네이티브 displayText: 프리셋 라벨이 아니라 "N unit(s) ago" 형식으로 표시한다
-  const relativePreview = relativeDisplay(
-    relativeDirection,
-    resolvedAmount,
-    unitToNative[resolvedUnit],
-  )
+  // 네이티브 displayText: Today는 별도 mode로 표시하고, 나머지는 "N unit(s) ago" 형식
+  const relativePreview =
+    relativePreset === "Today"
+      ? "Today"
+      : relativeDisplay(relativeDirection, resolvedAmount, unitToNative[resolvedUnit])
 
   const submit = () => {
     if (kind === "date" && dateMode === "relative") {
