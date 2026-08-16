@@ -55,7 +55,29 @@ const ComposerSelectionFlow = ({
 }: { readonly initialPropertyKey?: string }) => {
   const initialProperty =
     initialPropertyKey == null ? undefined : composerPropertyOption(initialPropertyKey)
-  const [draft, setDraft] = useState<DraftState>(baseDraft)
+  // 네이티브 handleAddCondition: operator picker를 열기 전에 편집 대상 placeholder 조건을
+  // seed해, baseDraft에 없는 property flow도 어떤 조건을 편집하는지 표면에서 확인하게 한다
+  const [draft, setDraft] = useState<DraftState>(() => {
+    if (initialProperty == null) return baseDraft()
+    const existing = baseDraft().conditions.some(
+      (condition) =>
+        condition.id === initialProperty.key || condition.property === initialProperty.label,
+    )
+    if (existing) return baseDraft()
+    return {
+      ...baseDraft(),
+      conditions: [
+        ...baseDraft().conditions,
+        {
+          id: initialProperty.key,
+          property: initialProperty.label,
+          propertySymbol: initialProperty.symbol,
+          operator: "",
+          value: "",
+        },
+      ],
+    }
+  })
   const [history, setHistory] = useState<readonly DraftState[]>([])
   const [future, setFuture] = useState<readonly DraftState[]>([])
   const [step, setStep] = useState<SelectionStep>(initialProperty == null ? "property" : "operator")
@@ -259,7 +281,7 @@ const ComposerSelectionFlow = ({
           ? {
               kind: "operator",
               conditionID: property.key,
-              selectedCode: operator?.code ?? property.operators[0]?.code ?? "",
+              selectedCode: operator?.code ?? "",
               options: property.operators,
             }
           : step === "value" && operator != null
