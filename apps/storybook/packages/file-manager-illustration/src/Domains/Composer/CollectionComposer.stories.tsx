@@ -20,6 +20,13 @@ type DraftState = {
   readonly conditions: readonly ComposerCondition[]
 }
 
+const scopeSummary = (scopes: readonly string[], excludedScopes: readonly string[]): string => {
+  if (scopes.length === 0) return "This Mac"
+  const names = scopes.map((scope) => scope.split("/").at(-1) ?? scope)
+  const summary = names.join(", ")
+  return excludedScopes.length > 0 ? `${summary} · ${excludedScopes.length} excluded` : summary
+}
+
 const baseDraft = (): DraftState => ({
   query: "Find PDFs modified this month",
   scopes: ["/VoyagerFixtures/Documents"],
@@ -162,7 +169,14 @@ const ComposerSelectionFlow = ({
   }
 
   const removeScope = (path: string) => {
-    commit({ ...draft, scopes: draft.scopes.filter((scope) => scope !== path) })
+    // 네이티브 fromCanonicalScopes: base 제거 시 그 하위 예외도 정리한다
+    commit({
+      ...draft,
+      scopes: draft.scopes.filter((scope) => scope !== path && !scope.startsWith(`${path}/`)),
+      excludedScopes: draft.excludedScopes.filter(
+        (excluded) => excluded !== path && !excluded.startsWith(`${path}/`),
+      ),
+    })
   }
 
   const selectScope = (item: string) => {
@@ -256,7 +270,7 @@ const ComposerSelectionFlow = ({
               ? {
                   kind: "scope",
                   query: "",
-                  currentSummary: draft.scopes[0]?.split("/").at(-1) ?? "This Mac",
+                  currentSummary: scopeSummary(draft.scopes, draft.excludedScopes),
                   includeSubfolders: draft.includeSubfolders,
                   rootOnly: draft.scopes.length === 0,
                   // 네이티브 makeScopeSections: 행 상태를 현재 selection에서 파생한다

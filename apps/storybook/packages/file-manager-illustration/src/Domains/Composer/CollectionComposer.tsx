@@ -115,7 +115,12 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
         <ComposerTextButton
           symbol={clearContent.symbol}
           label={clearContent.label}
-          disabled={fixture.isProcessing}
+          disabled={
+            fixture.isProcessing ||
+            (fixture.query.trim().length === 0 &&
+              fixture.scopes.length === 0 &&
+              fixture.conditions.length === 0)
+          }
           onClick={onClear}
         />
         <ComposerTextButton

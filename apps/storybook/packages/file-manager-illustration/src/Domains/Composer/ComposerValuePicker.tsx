@@ -9,6 +9,16 @@ export type ComposerValuePickerProps = {
   readonly onCommit?: (value: string) => void
 }
 
+const parseListValue = (value: string | undefined): readonly string[] => {
+  if (value == null) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : []
+  } catch {
+    return value.length > 0 ? [value] : []
+  }
+}
+
 const editorError = (
   editor: ComposerValueEditor,
   values: readonly string[],
@@ -94,10 +104,7 @@ export const ComposerValuePicker: FC<ComposerValuePickerProps> = ({ picker, onCo
     return (
       <ComposerTokenValuePicker
         suggestions={editor.suggestions}
-        initialTokens={picker.selectedValue
-          ?.split("; ")
-          .map((token) => token.trim())
-          .filter((token) => token.length > 0)}
+        initialTokens={parseListValue(picker.selectedValue)}
         error={error}
         onCommit={onCommit}
       />
