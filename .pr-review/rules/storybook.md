@@ -7,6 +7,34 @@ component architecture and rendered product quality together. Prefer existing
 Storybook and package-local patterns; use general React and Storybook guidance
 only when the repository has no relevant precedent.
 
+## Review surface boundary (read this first)
+
+`apps/storybook/**` is the Design Lab — an inspectable review surface that
+mirrors native macOS UI, **not a product runtime**. State, copy, and fixtures
+are deterministic by design (`DESIGN.md`: "not product/native-runtime truth").
+Before raising a finding, classify whether it concerns:
+
+- **The rendered review surface** — markup, layout, tokens, hierarchy, a story
+  actually visible in the built Storybook. In scope.
+- **A native-runtime behavior the fixture does not claim to implement** —
+  session persistence, IME/marked-text, live submit-eligibility recomputation,
+  real query filtering, focus-trap navigation, network behavior, or any
+  interaction whose source of truth is a native `AiChatStateDisplayModelBuilder`
+  / SwiftUI control that the Storybook does not port. Out of scope unless the
+  PR explicitly adds that translation.
+
+Do **not** escalate a missing native-runtime behavior to P1 because the rendered
+surface is a prototype. A fixture is allowed to be read-only, stateless, or
+non-interactive when the design-lab intent is to review appearance/state, not to
+reproduce runtime logic. When a proposed interaction is legitimate but not part
+of this PR's translation scope, record it as a follow-up (P2 footer or issue
+tracker) rather than a blocking finding.
+
+A finding that a rendered control is genuinely broken **in the built Storybook**
+(clipped, unclickable, wrong state for its fixture) is still valid. The boundary
+is between "the rendered surface is wrong" (in scope) and "the real app would
+behave differently at runtime" (out of scope).
+
 ## Review priorities
 
 Prioritize these checks over generic frontend advice:
@@ -20,8 +48,10 @@ Prioritize these checks over generic frontend advice:
    details or allowing contradictory combinations?
 5. Does the rendered result preserve hierarchy, spacing rhythm, balance,
    legibility, baseline identity, and the intended interaction model?
-6. Can users operate real interactive controls with clear semantics, keyboard
-   focus, sufficient contrast, and reduced-motion behavior where applicable?
+6. Does a control that the fixture **claims to be interactive** operate with
+   clear semantics, keyboard focus, contrast, and reduced-motion behavior?
+   Do not demand interactivity the fixture never claimed; do not excuse
+   interactivity the fixture did claim.
 
 Do not use line count as a component-splitting rule. Flag size or decomposition
 only when mixed responsibilities create concrete ownership, reuse, testing, or
@@ -48,7 +78,9 @@ identified second use or a concrete ownership problem.
 
 ## Visual and interaction findings
 
-Treat a visual or interaction issue as P1 when it has clear user impact:
+Treat a visual or interaction issue as P1 when it has clear user impact **on
+the rendered review surface and the interaction is within the fixture's stated
+scope**:
 
 - Content clips, overflows, overlaps, becomes unreadable, or loses essential
   information hierarchy at the story's intended viewport or minimum supported
@@ -56,11 +88,18 @@ Treat a visual or interaction issue as P1 when it has clear user impact:
 - Light/dark appearance or macOS visual baselines are mixed within one rendered
   surface in a way that breaks the selected design intent.
 - Contrast, focus visibility, keyboard operation, semantics, or reduced-motion
-  behavior prevents or materially impairs interaction.
+  behavior prevents or materially impairs interaction **that the fixture claims
+  to support**.
 - The result materially diverges from an explicit screenshot, macOS baseline,
   established token usage, or the PR's stated visual intent.
 - Spacing, balance, or visual rhythm is degraded enough to obscure grouping,
   priority, or interaction affordance.
+
+A control that the fixture deliberately renders read-only or stateless (for
+example a search field that mirrors native layout but does not filter, or a
+timestamp affordance that shows on hover but is not focusable) is **not** a P1
+interaction defect on its own. If the native translation is a real gap, file it
+as a follow-up; do not treat the fixture as a broken product.
 
 Source evidence is valid when the result is deterministic from the code, such as
 a CSS cascade, selector match, token override, fixed overflow rule, or impossible

@@ -29,13 +29,15 @@ struct FileManagerTopNavigationReorderDropBoundary: Equatable, Identifiable {
     ) -> [Self] {
         guard let firstID = itemIDs.first else { return [] }
 
-        return [Self(
-            id: 0,
-            owner: owner,
-            anchorID: firstID,
-            placement: .before,
-            contentTabDomain: contentTabDomain,
-        )]
+        return [
+            Self(
+                id: 0,
+                owner: owner,
+                anchorID: firstID,
+                placement: .before,
+                contentTabDomain: contentTabDomain,
+            ),
+        ]
             + itemIDs.enumerated().map { index, itemID in
                 Self(
                     id: index + 1,
@@ -327,57 +329,12 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
         // 외부 창 explicit same/opposite-domain 경계 drop: consumed token 위에서 semantic route를
         // 분류한 뒤 정확히 하나의 typed transfer callback을 dispatch한다. canonical ContentTabMoveRequest
         // lifecycle으로 합쳐지므로 transfer-then-pin 두 단계를 만들지 않는다.
-        if let movePayload = resolved.move,
-           let targetWindowID = configuration.targetWindowID,
-           let targetDomain = configuration.boundary.contentTabDomain,
-           let placement = configuration.boundary.semanticPlacement,
-           movePayload.sourceWindowID != targetWindowID,
-           movePayload.sourceDomain != nil,
-           movePayload.operationID != nil,
-           !movePayload.orderedTabIDs.isEmpty,
-           Set(movePayload.orderedTabIDs).count == movePayload.orderedTabIDs.count,
-           movePayload.orderedTabIDs.contains(movePayload.initiatingTabID),
-           validTarget(placement: placement, domain: targetDomain)
-        {
-            let route = ContentTabDropRouteProjection.route(
-                payload: movePayload,
-                targetWindowID: targetWindowID,
-                targetDomain: targetDomain,
-                placement: placement,
-                targetSurface: .contentTabDomain,
-            )
-            switch route {
-            case .foreignExplicitSameDomainTransfer, .foreignExplicitOppositeDomainTransfer:
-                configuration.onForeignExplicitTransfer(movePayload, targetDomain, placement)
-                isValid = true
-                return true
-            default:
-                return false
-            }
+        if handleForeignExplicitTransfer(movePayload: resolved.move) {
+            isValid = true
+            return true
         }
 
-        if let movePayload = resolved.move,
-           let targetWindowID = configuration.targetWindowID,
-           let targetDomain = configuration.boundary.contentTabDomain,
-           let sourceDomain = movePayload.sourceDomain,
-           let operationID = movePayload.operationID,
-           sourceDomain != targetDomain,
-           let placement = configuration.boundary.semanticPlacement,
-           !movePayload.orderedTabIDs.isEmpty,
-           Set(movePayload.orderedTabIDs).count == movePayload.orderedTabIDs.count,
-           movePayload.orderedTabIDs.contains(movePayload.initiatingTabID),
-           movePayload.sourceWindowID == targetWindowID,
-           validTarget(placement: placement, domain: targetDomain)
-        {
-            configuration.onDomainTransition(.init(
-                operationID: operationID,
-                sourceWindowID: movePayload.sourceWindowID,
-                sourceDomain: sourceDomain,
-                targetDomain: targetDomain,
-                initiatingTabID: movePayload.initiatingTabID,
-                orderedTabIDs: movePayload.orderedTabIDs,
-                placement: placement,
-            ))
+        if handleDomainTransition(movePayload: resolved.move) {
             isValid = true
             return true
         }
@@ -394,6 +351,67 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
             placement: configuration.boundary.placement,
         ))
         isValid = true
+        return true
+    }
+
+    private func handleForeignExplicitTransfer(
+        movePayload: ContentTabDragPayload?,
+    ) -> Bool {
+        guard let movePayload,
+              let targetWindowID = configuration.targetWindowID,
+              let targetDomain = configuration.boundary.contentTabDomain,
+              let placement = configuration.boundary.semanticPlacement,
+              movePayload.sourceWindowID != targetWindowID,
+              movePayload.sourceDomain != nil,
+              movePayload.operationID != nil,
+              !movePayload.orderedTabIDs.isEmpty,
+              Set(movePayload.orderedTabIDs).count == movePayload.orderedTabIDs.count,
+              movePayload.orderedTabIDs.contains(movePayload.initiatingTabID),
+              validTarget(placement: placement, domain: targetDomain)
+        else { return false }
+
+        let route = ContentTabDropRouteProjection.route(
+            payload: movePayload,
+            targetWindowID: targetWindowID,
+            targetDomain: targetDomain,
+            placement: placement,
+            targetSurface: .contentTabDomain,
+        )
+        switch route {
+        case .foreignExplicitSameDomainTransfer, .foreignExplicitOppositeDomainTransfer:
+            configuration.onForeignExplicitTransfer(movePayload, targetDomain, placement)
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func handleDomainTransition(
+        movePayload: ContentTabDragPayload?,
+    ) -> Bool {
+        guard let movePayload,
+              let targetWindowID = configuration.targetWindowID,
+              let targetDomain = configuration.boundary.contentTabDomain,
+              let sourceDomain = movePayload.sourceDomain,
+              let operationID = movePayload.operationID,
+              sourceDomain != targetDomain,
+              let placement = configuration.boundary.semanticPlacement,
+              !movePayload.orderedTabIDs.isEmpty,
+              Set(movePayload.orderedTabIDs).count == movePayload.orderedTabIDs.count,
+              movePayload.orderedTabIDs.contains(movePayload.initiatingTabID),
+              movePayload.sourceWindowID == targetWindowID,
+              validTarget(placement: placement, domain: targetDomain)
+        else { return false }
+
+        configuration.onDomainTransition(.init(
+            operationID: operationID,
+            sourceWindowID: movePayload.sourceWindowID,
+            sourceDomain: sourceDomain,
+            targetDomain: targetDomain,
+            initiatingTabID: movePayload.initiatingTabID,
+            orderedTabIDs: movePayload.orderedTabIDs,
+            placement: placement,
+        ))
         return true
     }
 

@@ -211,7 +211,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             let presentationHitLocation = NSPoint(x: fixture.button.bounds.midX, y: fixture.button.bounds.midY)
             let presentationView = try XCTUnwrap(fixture.button.subviews.first)
 
-            XCTAssertTrue(fixture.button.hitTest(buttonHitLocation) === fixture.button)
+            XCTAssertIdentical(fixture.button.hitTest(buttonHitLocation), fixture.button)
             XCTAssertNil(presentationView.hitTest(presentationHitLocation))
             XCTAssertEqual(fixture.button.accessibilityLabel(), "Content Tab")
             XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Active, Not Selected")

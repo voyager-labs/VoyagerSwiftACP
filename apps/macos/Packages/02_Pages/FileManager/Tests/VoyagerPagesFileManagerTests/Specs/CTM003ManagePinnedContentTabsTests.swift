@@ -1583,8 +1583,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             tabs: [
                 Self.pinnedItem(id: tabA, anchor: .directory(path: "/A"), title: "A"),
                 ContentTabItem(
-                    id: tabB, page: .home, anchor: .homeDefault, isPinned: false,
-                    title: "Home", iconName: "house",
+                    id: tabB,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
                 ),
             ],
             activeTabID: tabA,
@@ -1664,8 +1668,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [ContentTabItem(
-                id: tabID, page: .directory, anchor: .directory(path: "/A"),
-                isPinned: false, title: "A", iconName: "folder",
+                id: tabID,
+                page: .directory,
+                anchor: .directory(path: "/A"),
+                isPinned: false,
+                title: "A",
+                iconName: "folder",
             )],
             activeTabID: tabID,
         )
@@ -1735,8 +1743,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [ContentTabItem(
-                id: tabID, page: .directory, anchor: .directory(path: "/runtime"),
-                isPinned: false, title: "Runtime", iconName: "folder",
+                id: tabID,
+                page: .directory,
+                anchor: .directory(path: "/runtime"),
+                isPinned: false,
+                title: "Runtime",
+                iconName: "folder",
             )],
             activeTabID: tabID,
         )

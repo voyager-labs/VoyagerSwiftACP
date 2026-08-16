@@ -21,7 +21,10 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case composer(ComposerFeature.Action)
     case collection(CollectionFeature.Action)
     case aiChat(AiChatFeature.Action)
-    case externalFileSystemChanged([String])
+    case externalFileSystemChanged(
+        [FileChangeGatewayEvent],
+        deliveryChainToken: String? = nil,
+    )
 
     @CasePathable
     public enum View: Sendable {

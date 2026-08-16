@@ -12,7 +12,7 @@ import VoyagerShared
 
 extension FileManagerWindowRoutingReducer {
     var routingBody: some ReducerOf<Self> {
-        Reduce { state, action in
+        Reduce<Self.State, Self.Action> { state, action in
             switch action {
             case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState):
                 return applyPinnedContentTabRuntimeNavigation(

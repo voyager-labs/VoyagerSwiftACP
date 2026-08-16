@@ -16,11 +16,13 @@ public enum FileManagerSidebarTopNavigationItem: Equatable, Sendable, Identifiab
 }
 
 public enum SidebarItems {
+    public enum Kind: Equatable, Sendable {
+        case directory
+        case trash
+    }
+
     public struct LocationItem: Equatable, Sendable {
-        public enum Kind: Equatable, Sendable {
-            case directory
-            case trash
-        }
+        public typealias Kind = SidebarItems.Kind
 
         public let name: String
         public let url: URL

@@ -1,11 +1,7 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
@@ -56,15 +52,15 @@ enum EntryListCoordinatorSortDescriptorMapper {
         return EntryListCoordinatorSortDescriptorChange(sortKey: sortKey, sortOrder: sortOrder)
     }
 
-    static func actionsNeeded(
+    static func actionNeeded(
         currentSortKey: SortKey,
         currentSortOrder: VoyagerShared.SortOrder,
         change: EntryListCoordinatorSortDescriptorChange,
-    ) -> (sortKey: SortKey?, sortOrder: VoyagerShared.SortOrder?) {
-        let setKey: SortKey? = currentSortKey == change.sortKey ? nil : change.sortKey
-        let setOrder: VoyagerShared.SortOrder? = currentSortOrder == change.sortOrder ? nil : change
-            .sortOrder
-        return (setKey, setOrder)
+    ) -> EntryListCoordinatorSortDescriptorChange? {
+        guard currentSortKey != change.sortKey || currentSortOrder != change.sortOrder else {
+            return nil
+        }
+        return change
     }
 }
 
@@ -129,46 +125,18 @@ typealias EntryListDateFormatting = EntryListCoordinatorDateFormatting
 @MainActor
 public final class EntryListCoordinator: NSObject {
     typealias RenderSnapshot = EntryListCoordinatorRenderSnapshot
-    enum EntryListOutlineItemKind {
-        case group(name: String, colorCode: Int?, isCollapsed: Bool)
-        case entry(EntryModel)
+    typealias OutlineItem = EntryListOutlineItem
+
+    enum PostReloadUpdateKind {
+        case fullReload
+        case incremental(preservesScrollAnchor: Bool)
     }
 
-    final class OutlineItem: Hashable {
-        let kind: EntryListOutlineItemKind
-        let children: [OutlineItem]
-        let id: String
-        init(kind: EntryListOutlineItemKind, children: [OutlineItem] = []) {
-            self.kind = kind
-            self.children = children
-            switch kind {
-            case let .group(name, _, _):
-                id = "group:\(name)"
-            case let .entry(entry):
-                id = entry.id
-            }
-        }
-
-        static func == (lhs: OutlineItem, rhs: OutlineItem) -> Bool {
-            lhs.id == rhs.id
-        }
-
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
-    }
+    static let maxIncrementalRootMoveOperations = 32
 
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState {
         store.state
-    }
-
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
-    func sendEntryArrangements(_ action: EntryArrangementsFeature.Action) {
-        store.send(.entryArrangements(action))
     }
 
     weak var view: EntryListView?
@@ -189,32 +157,49 @@ public final class EntryListCoordinator: NSObject {
     }
 
     var outlineItems: [OutlineItem] = []
+    var entryItemsByID: [EntryModel.ID: [OutlineItem]] = [:]
+    var outlineItemByID: [String: OutlineItem] = [:]
     var entryItemById: [EntryModel.ID: OutlineItem] = [:]
     var groupItemByName: [String: OutlineItem] = [:]
+    let projectionSession = EntryListCoordinatorProjectionSession()
+    var lastAppliedVisibleRows: [EntryListOutlineProjection.ItemID] = []
+    var lastProjectionHasHierarchyTopology = false
+    var renderedProjectionRevision: Int? {
+        projectionSession.renderedProjectionRevision
+    }
+
+    var isApplyingStoreProjection: Bool {
+        projectionSession.isApplyingStoreProjection
+    }
+
+    var pendingProjection: EntryListOutlineProjection? {
+        projectionSession.pendingProjection
+    }
+
     var sortSyncGate = EntryListCoordinatorSortSyncGate()
     var isApplyingColumnsFromStore = false
     var isUpdatingSelectionFromStore = false
-    var hasRestoredScrollPosition = false
     var isUpdatingGroupExpansion = false
+    var isApplyingHierarchyExpansion = false
     var lastRenamingItemId: EntryModel.ID?
     var contextMenuAnchor: CGPoint?
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
-    var renderObservationCancellable: AnyCancellable?
+    var restoredScrollForCurrentPath = false
+    var isRenderObservationEnabled = true
+    let renderThrottler = MainThreadThrottler(intervalMs: 16, latest: true)
     let visibleRowsPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     let dateModifiedResizeDebouncer = MainThreadDebouncer(intervalMs: 150)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    @Dependency(\.entryOpenClient)
-    var entryOpenClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.entryOpenClient)
+    var entryOpenClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     init(store: StoreOf<EntryViewLayoutFeature>) {
@@ -237,9 +222,17 @@ public final class EntryListCoordinator: NSObject {
             return
         }
         didBind = true
+        lastRenderSnapshot = RenderSnapshot(state: state)
         observeListStore()
         observeTableView()
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0)
         rebuildRowsAndReload()
+        restoreScrollPositionIfNeeded()
+        if !restoredScrollForCurrentPath {
+            scrollToSelectionIfNeeded()
+        }
+        CATransaction.commit()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
 
@@ -290,160 +283,162 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func rebuildRowsAndReload() {
-        let previousGraph = (outlineItems, entryItemById, groupItemByName)
-
-        outlineItems = makeOutlineItems(state: state)
-        entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
-        groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
-            if case let .group(name, _, _) = item.kind {
-                return (name, item)
-            }
-            return nil
-        })
-        tableView.reloadData()
-        syncListSelectionFromStore()
-        applyGroupExpansionState()
-        scrollToSelectionIfNeeded()
-        restoreScrollPositionIfNeeded()
-        syncListRenamingFromStore()
-        requestThumbnailsForVisibleRows()
-
-        DispatchQueue.main.async {
-            _ = previousGraph
+        let snapshot = RenderSnapshot(state: state)
+        let previousPath = lastRenderSnapshot?.currentPath ?? snapshot.currentPath
+        let pathChanged = previousPath != snapshot.currentPath
+        if snapshot.isHierarchyOutlineEnabled {
+            applyStoreProjection(snapshot.outlineProjection, pathChanged: pathChanged)
+            return
         }
+        applyFlatItemsPresentation(
+            makeOutlineItems(state: state),
+            pathChanged: pathChanged,
+            snapshot: snapshot,
+        )
     }
 
-    func requestThumbnailsForVisibleRows() {
-        guard tableView.numberOfRows > 0 else { return }
-        let visibleRange = tableView.rows(in: tableView.visibleRect)
-        guard visibleRange.length > 0 else { return }
-        let extraRows = max(visibleRange.length, 20)
-        let startRow = max(0, visibleRange.location - extraRows)
-        let endRow = min(tableView.numberOfRows, visibleRange.location + visibleRange.length + extraRows)
-        var paths: Set<String> = []
-        paths.reserveCapacity(visibleRange.length)
-        for row in startRow ..< endRow {
-            guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
-            guard case let .entry(entry) = outlineItem.kind else { continue }
-            guard !entry.isFolder else { continue }
-            paths.insert(entry.fullPath)
-        }
-        guard !paths.isEmpty else { return }
-        pruneThumbnailSession(keeping: paths)
-        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
-        refreshVisibleNameCellIcons(for: refreshThumbnailProjection(paths: paths))
-    }
-
-    func pruneThumbnailSession(keeping paths: Set<String>) {
-        thumbnailImagesByPath = thumbnailImagesByPath.filter { paths.contains($0.key) }
-    }
-
-    func resetThumbnailSession() {
-        thumbnailImagesByPath.removeAll(keepingCapacity: false)
-    }
-
-    func refreshThumbnailProjection(paths: Set<String>) -> Set<String> {
-        var changedPaths: Set<String> = []
-
-        for path in paths {
-            let cachedImage = entryThumbnailCacheClient.getThumbnail(for: path)
-            if let cachedImage {
-                if thumbnailImagesByPath[path] == nil {
-                    changedPaths.insert(path)
+    private func applyFlatItemsPresentation(
+        _ flatItems: [OutlineItem],
+        pathChanged: Bool,
+        snapshot: RenderSnapshot,
+    ) {
+        let presentationStructureChanged = flatItems.count != outlineItems.count
+            || zip(flatItems, outlineItems).contains { incoming, current in
+                guard incoming.id == current.id else { return true }
+                switch (incoming.kind, current.kind) {
+                case let (.group(incomingName, incomingColor, incomingCollapsed),
+                          .group(currentName, currentColor, currentCollapsed)):
+                    return incomingName != currentName
+                        || incomingColor != currentColor
+                        || incomingCollapsed != currentCollapsed
+                        || incoming.children.map(\.id) != current.children.map(\.id)
+                default:
+                    return false
                 }
-                thumbnailImagesByPath[path] = cachedImage
-            } else if thumbnailImagesByPath.removeValue(forKey: path) != nil {
-                changedPaths.insert(path)
+            }
+        if presentationStructureChanged,
+           snapshot.outlineProjection.revision == projectionSession.renderedProjectionRevision
+        {
+            projectionSession.reset()
+            applyPostReloadPresentation(
+                pathChanged: pathChanged,
+                structureChanged: true,
+                updateKind: .fullReload,
+                selectionChanged: false,
+            ) {
+                outlineItems = flatItems
+                rebuildItemIndexes()
+                lastAppliedVisibleRows = []
+                tableView.reloadData()
+                applyGroupExpansionState()
+            }
+        } else {
+            projectionSession.apply(snapshot.outlineProjection, flatItems: flatItems) { [weak self] _, items in
+                guard let self else { return }
+                applyPostReloadPresentation(
+                    pathChanged: pathChanged,
+                    structureChanged: true,
+                    updateKind: .fullReload,
+                    selectionChanged: false,
+                ) {
+                    outlineItems = items
+                    rebuildItemIndexes()
+                    lastAppliedVisibleRows = []
+                    tableView.reloadData()
+                    applyGroupExpansionState()
+                }
             }
         }
-
-        return changedPaths
     }
 
-    func refreshThumbnailProjectionForVisibleRows() {
-        guard tableView.numberOfRows > 0 else { return }
-        let visibleRange = tableView.rows(in: tableView.visibleRect)
-        guard visibleRange.length > 0 else { return }
-
-        var visiblePaths: Set<String> = []
-        for row in visibleRange.location ..< (visibleRange.location + visibleRange.length) {
-            guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
-            guard case let .entry(entry) = outlineItem.kind, !entry.isFolder else { continue }
-            visiblePaths.insert(entry.fullPath)
+    func applyPostReloadPresentation(
+        pathChanged: Bool,
+        structureChanged: Bool,
+        updateKind: PostReloadUpdateKind,
+        selectionChanged: Bool,
+        materialize: () -> Void,
+    ) {
+        if pathChanged {
+            restoredScrollForCurrentPath = false
         }
+        let shouldRestoreSavedOffset = pathChanged || !restoredScrollForCurrentPath
+        let capturedAnchor = pathChanged ? nil : captureScrollAnchor()
+        materialize()
 
-        refreshVisibleNameCellIcons(for: refreshThumbnailProjection(paths: visiblePaths))
-    }
-
-    func saveScrollPosition() {
-        let offset = scrollView.contentView.bounds.origin
-        store.send(.delegate(.saveScrollOffset(offset, forPath: state.currentPath)))
-    }
-
-    func scrollToSelectionIfNeeded() {
-        guard state.shouldScrollToSelection else { return }
-        let targetId = state.lastSelectedId
-            ?? state.selectedIds.first
-        guard let targetId, let item = entryItemById[targetId] else {
-            store.send(.internal(.resetScrollFlag))
-            return
+        if structureChanged || selectionChanged {
+            syncListSelectionFromStore()
         }
-        let row = tableView.row(forItem: item)
-        guard row >= 0 else {
-            store.send(.internal(.resetScrollFlag))
-            return
+        let scrolledToSelection = scrollToSelectionIfNeeded()
+        if scrolledToSelection {
+            restoredScrollForCurrentPath = true
         }
-        tableView.scrollRowToVisible(row)
-        store.send(.internal(.resetScrollFlag))
-    }
-
-    func updateDropTargetBorder(isTargeted: Bool) {
-        scrollView.layer?.borderWidth = isTargeted ? 2 : 0
-        scrollView.layer?.borderColor = isTargeted ? NSColor.controlAccentColor.cgColor : nil
-    }
-
-    func makeOutlineItems(state: EntryViewLayoutState) -> [OutlineItem] {
-        if state.entryArrangements.groupKey == .none {
-            return state.entries.map { OutlineItem(kind: .entry($0)) }
-        }
-        var result: [OutlineItem] = []
-        for group in state.entryArrangements.groupedItems {
-            let items = group.items.map { OutlineItem(kind: .entry($0)) }
-            if !group.groupName.isEmpty, state.entryArrangements.groupKey != .name {
-                let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
-                let groupItem = OutlineItem(
-                    kind: .group(name: group.groupName, colorCode: group.colorCode, isCollapsed: isCollapsed),
-                    children: items,
-                )
-                result.append(groupItem)
-            } else {
-                result.append(contentsOf: items)
+        if !scrolledToSelection {
+            let restoredSavedOffset = shouldRestoreSavedOffset ? restoreScrollPositionIfNeeded() : false
+            if !restoredSavedOffset {
+                let preservesScrollAnchor: Bool = switch updateKind {
+                case .fullReload:
+                    false
+                case let .incremental(preservesScrollAnchor):
+                    preservesScrollAnchor
+                }
+                if !preservesScrollAnchor {
+                    restoreScrollAnchor(capturedAnchor)
+                }
             }
         }
-        return result
-    }
-
-    func applyGroupExpansionState() {
-        isUpdatingGroupExpansion = true
-        for (name, item) in groupItemByName {
-            if state.entryArrangements.collapsedGroups.contains(name) {
-                tableView.collapseItem(item)
-            } else {
-                tableView.expandItem(item)
-            }
+        if structureChanged {
+            syncListRenamingFromStore()
         }
-        isUpdatingGroupExpansion = false
+        requestThumbnailsForVisibleRows()
     }
 
-    func restoreScrollPositionIfNeeded() {
-        let itemCount = state.entries.count
-        guard itemCount != 0 else { return }
-        guard !hasRestoredScrollPosition,
-              let savedOffset = state.savedScrollOffset
+    struct ScrollAnchor {
+        let entryId: EntryModel.ID
+        let pixelOffset: CGFloat
+    }
+
+    func captureScrollAnchor() -> ScrollAnchor? {
+        let rows = tableView.rows(in: scrollView.contentView.bounds)
+        guard rows.location != NSNotFound,
+              rows.length > 0,
+              let item = tableView.item(atRow: rows.location) as? OutlineItem,
+              case let .entry(entry) = item.kind
         else {
+            return nil
+        }
+        let rowOrigin = tableView.rect(ofRow: rows.location).origin.y
+        return ScrollAnchor(
+            entryId: entry.id,
+            pixelOffset: rowOrigin - scrollView.contentView.bounds.origin.y,
+        )
+    }
+
+    func restoreScrollAnchor(_ anchor: ScrollAnchor?) {
+        guard let anchor else { return }
+        guard let row = entryItemsByID[anchor.entryId]?
+            .lazy
+            .map({ self.tableView.row(forItem: $0) })
+            .first(where: { $0 >= 0 })
+        else {
+            scrollToSelectionIfNeeded()
             return
         }
+        let rowOrigin = tableView.rect(ofRow: row).origin.y
+        let targetOrigin = CGPoint(
+            x: scrollView.contentView.bounds.origin.x,
+            y: rowOrigin - anchor.pixelOffset,
+        )
+        scrollView.contentView.scroll(to: targetOrigin)
+    }
+
+    @discardableResult
+    func restoreScrollPositionIfNeeded() -> Bool {
+        let itemCount = state.entries.count
+        guard itemCount != 0 else { return false }
+        guard let savedOffset = state.savedScrollOffset else { return false }
+        guard !restoredScrollForCurrentPath else { return false }
+        restoredScrollForCurrentPath = true
         scrollView.contentView.scroll(to: savedOffset)
-        hasRestoredScrollPosition = true
+        return true
     }
 }

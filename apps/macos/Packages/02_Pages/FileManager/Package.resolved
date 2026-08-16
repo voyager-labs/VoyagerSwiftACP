@@ -1,5 +1,5 @@
 {
-  "originHash" : "83121a7096d0b5bb6a3b17d542d0d0293311f3fd1130b66445437d24bd53e56a",
+  "originHash" : "6c1ae9a99514501d6155471c0a3db68da163b67179b21967050b5ca199d14ecb",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -60,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections",
       "state" : {
-        "revision" : "03cc312c2c933ed87abace34044a5dff7a3117c1",
-        "version" : "1.5.0"
+        "revision" : "7b847a3b7008b2dc2f47ca3110d8c782fb2e5c7e",
+        "version" : "1.3.0"
       }
     },
     {

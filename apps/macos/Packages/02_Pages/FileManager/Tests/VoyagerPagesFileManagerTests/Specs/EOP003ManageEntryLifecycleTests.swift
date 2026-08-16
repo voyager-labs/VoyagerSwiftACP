@@ -525,6 +525,11 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             XCTAssertEqual(operations?.selectedEntryIDs.isEmpty, true)
             XCTAssertEqual(operations?.clipboardItems.isEmpty, true)
             XCTAssertEqual(operations?.windowID, duplicateWindowID)
+            XCTAssertEqual(content?.entryViewLayout.collectionWindowID, duplicateWindowID)
+            XCTAssertEqual(
+                content?.entryViewLayout.collectionLoadingCancellationOwnerID,
+                operations?.loadingCancellationOwnerID,
+            )
         }
         let activeTabID = try XCTUnwrap(duplicate.contentTabs.activeTabID)
         XCTAssertEqual(duplicate.content, duplicate.tabContentStates[activeTabID])

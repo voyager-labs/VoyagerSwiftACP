@@ -18,6 +18,12 @@ private struct ContentTabCloseDisposition {
     let shouldResyncContentNavigation: Bool
 }
 
+private struct ContentTabCloseEffectInputs {
+    let handoffCleanup: Effect<FileManagerWindowAction>
+    let undoManagerLifecycle: Effect<FileManagerWindowAction>
+    let loadingCancellation: Effect<FileManagerWindowAction>
+}
+
 private func contentTabCloseDisposition(
     tabID: ContentTabID,
     state: FileManagerWindowState,
@@ -712,54 +718,135 @@ extension FileManagerWindowRoutingReducer {
             return .none
         }
         let disposition = contentTabCloseDisposition(tabID: tabID, state: state)
-        let isActualRemoval = disposition.isActualRemoval
-        let shouldRestorePreviousActiveTab = disposition.shouldRestorePreviousActiveTab
-        let shouldResetLastTabContent = disposition.shouldResetLastTabContent
-        let replacementHomeTabID = disposition.replacementHomeTabID
-        let shouldResyncContentNavigation = disposition.shouldResyncContentNavigation
         state.pendingDirectoryReloadTabIDs.remove(tabID)
-        let closedTabLoadingCancellationEffect: Effect<Action> = if isActualRemoval || shouldResetLastTabContent {
-            cancelLoadingEffectForClosedTab(
-                tabID: tabID,
-                wasActive: shouldRestorePreviousActiveTab,
-                state: state,
-            )
-        } else {
-            .none
-        }
+        let closedTabLoadingCancellationEffect = makeContentTabLoadingCancellationEffect(
+            tabID: tabID,
+            disposition: disposition,
+            state: state,
+        )
         let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
-        let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
+        let isAiChatLifecyclePreservingTabClose = disposition.shouldResyncContentNavigation
             && !aiChatLifecycleSessionIDs.isEmpty
-        if isActualRemoval {
+        if disposition.isActualRemoval {
             state.recentlyClosedNavigationRoute = navigationRouteForClosingTab(tabID, state: state)
         }
-        let handoffCleanupEffect: Effect<Action>
-        if shouldResyncContentNavigation {
-            if isAiChatLifecyclePreservingTabClose {
-                for aiChatSessionID in aiChatLifecycleSessionIDs {
-                    state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
-                }
-                handoffCleanupEffect = prepareContentForActiveTabHandoff(
-                    state: &state.content,
-                    skipAiChatCleanup: true,
-                )
-            } else {
-                handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
-            }
-        } else {
-            handoffCleanupEffect = .none
+        let handoffCleanupEffect = makeContentTabHandoffCleanupEffect(
+            disposition: disposition,
+            isAiChatLifecyclePreservingTabClose: isAiChatLifecyclePreservingTabClose,
+            aiChatLifecycleSessionIDs: aiChatLifecycleSessionIDs,
+            state: &state,
+        )
+        applyContentTabCloseStateRemoval(
+            tabID: tabID,
+            disposition: disposition,
+            state: &state,
+        )
+        syncDashboardProjections(state: &state)
+        syncSidebarSelectionForActiveContentTab(state: &state)
+        let undoManagerLifecycleEffect = makeContentTabUndoManagerLifecycleEffect(
+            tabID: tabID,
+            disposition: disposition,
+            state: state,
+        )
+        return makeContentTabCloseEffects(
+            ContentTabCloseEffectInputs(
+                handoffCleanup: handoffCleanupEffect,
+                undoManagerLifecycle: undoManagerLifecycleEffect,
+                loadingCancellation: closedTabLoadingCancellationEffect,
+            ),
+            disposition: disposition,
+            state: &state,
+        )
+    }
+
+    private func makeContentTabLoadingCancellationEffect(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: State,
+    ) -> Effect<Action> {
+        guard disposition.isActualRemoval || disposition.shouldResetLastTabContent else { return .none }
+        return cancelLoadingEffectForClosedTab(
+            tabID: tabID,
+            wasActive: disposition.shouldRestorePreviousActiveTab,
+            state: state,
+        )
+    }
+
+    private func makeContentTabUndoManagerLifecycleEffect(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: State,
+    ) -> Effect<Action> {
+        if let replacementHomeTabID = disposition.replacementHomeTabID {
+            return replaceUndoManagerScopeEffect(
+                closedTabID: tabID,
+                homeTabID: replacementHomeTabID,
+                state: state,
+            )
         }
-        if isActualRemoval {
+        if disposition.isActualRemoval {
+            return deactivateUndoManagerScopeEffect(tabID: tabID, state: state)
+        }
+        return .none
+    }
+
+    private func makeContentTabCloseEffects(
+        _ inputs: ContentTabCloseEffectInputs,
+        disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) -> Effect<Action> {
+        let handoffEffect: Effect<Action> = .merge(
+            inputs.handoffCleanup,
+            activeTabHandoffEffect(
+                disposition.shouldResyncContentNavigation,
+                state: &state,
+                aiConnectionsFileClient: aiConnectionsFileClient,
+                skipAiChatCancel: true,
+            ),
+            closeInspectorForActiveAiChatEffect(state: state),
+            inputs.undoManagerLifecycle,
+            inputs.loadingCancellation,
+        )
+        return disposition.shouldResetLastTabContent
+            ? .merge(handoffEffect, .send(.delegate(.closeWindow)))
+            : handoffEffect
+    }
+
+    private func makeContentTabHandoffCleanupEffect(
+        disposition: ContentTabCloseDisposition,
+        isAiChatLifecyclePreservingTabClose: Bool,
+        aiChatLifecycleSessionIDs: [AiChatSessionID],
+        state: inout State,
+    ) -> Effect<Action> {
+        guard disposition.shouldResyncContentNavigation else { return .none }
+        if isAiChatLifecyclePreservingTabClose {
+            for aiChatSessionID in aiChatLifecycleSessionIDs {
+                state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+            }
+            return prepareContentForActiveTabHandoff(
+                state: &state.content,
+                skipAiChatCleanup: true,
+            )
+        }
+        return prepareContentForActiveTabHandoff(state: &state.content)
+    }
+
+    private func applyContentTabCloseStateRemoval(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) {
+        if disposition.isActualRemoval {
             state.addBackgroundAiChatState(for: tabID)
             state.addBackgroundInspectorAiChatState(for: tabID)
             state.removeContentState(for: tabID)
             state.removeInspectorState(for: tabID)
-            if shouldRestorePreviousActiveTab {
+            if disposition.shouldRestorePreviousActiveTab {
                 state.restoreContentStateForActiveTab()
                 removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                 state.restoreInspectorStateForActiveTab()
             }
-        } else if shouldResetLastTabContent {
+        } else if disposition.shouldResetLastTabContent {
             state.addBackgroundAiChatState(for: tabID)
             state.addBackgroundInspectorAiChatState(for: tabID)
             state.content = contentState(
@@ -770,34 +857,6 @@ extension FileManagerWindowRoutingReducer {
             state.syncActiveTabContentState()
             state.syncActiveTabInspectorState()
         }
-        syncDashboardProjections(state: &state)
-        syncSidebarSelectionForActiveContentTab(state: &state)
-        let undoManagerLifecycleEffect: Effect<Action> = if let replacementHomeTabID {
-            replaceUndoManagerScopeEffect(
-                closedTabID: tabID,
-                homeTabID: replacementHomeTabID,
-                state: state,
-            )
-        } else if isActualRemoval {
-            deactivateUndoManagerScopeEffect(tabID: tabID, state: state)
-        } else {
-            .none
-        }
-        let handoffEffect: Effect<Action> = .merge(
-            handoffCleanupEffect,
-            activeTabHandoffEffect(
-                shouldResyncContentNavigation,
-                state: &state,
-                aiConnectionsFileClient: aiConnectionsFileClient,
-                skipAiChatCancel: true,
-            ),
-            closeInspectorForActiveAiChatEffect(state: state),
-            undoManagerLifecycleEffect,
-            closedTabLoadingCancellationEffect,
-        )
-        return shouldResetLastTabContent
-            ? .merge(handoffEffect, .send(.delegate(.closeWindow)))
-            : handoffEffect
     }
 
     func prepareContentTabTeardown(
@@ -814,15 +873,11 @@ extension FileManagerWindowRoutingReducer {
             break
 
         case .desynchronized:
-            if let batchOperationID {
-                return .send(.performSelectedContentTabCloseMutation(
-                    operationID: batchOperationID,
-                    tabID: tabID,
-                    action: .commitClose(tabID),
-                ))
-            }
-            _ = ContentTabFeature().reduce(into: &state.contentTabs, action: .commitClose(tabID))
-            return finalizeContentTabClose(tabID: tabID, state: &state)
+            return finalizeContentTabTeardownImmediately(
+                tabID: tabID,
+                batchOperationID: batchOperationID,
+                state: &state,
+            )
 
         case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
             return .none
@@ -833,15 +888,11 @@ extension FileManagerWindowRoutingReducer {
             ? state.content.entryViewLayout.entryOperations.undoOwnerID
             : state.tabContentStates[tabID]?.entryViewLayout.entryOperations.undoOwnerID
         guard let ownerID, let windowID = state.windowID else {
-            if let batchOperationID {
-                return .send(.performSelectedContentTabCloseMutation(
-                    operationID: batchOperationID,
-                    tabID: tabID,
-                    action: .commitClose(tabID),
-                ))
-            }
-            _ = ContentTabFeature().reduce(into: &state.contentTabs, action: .commitClose(tabID))
-            return finalizeContentTabClose(tabID: tabID, state: &state)
+            return finalizeContentTabTeardownImmediately(
+                tabID: tabID,
+                batchOperationID: batchOperationID,
+                state: &state,
+            )
         }
 
         let requestID = uuid()
@@ -862,6 +913,22 @@ extension FileManagerWindowRoutingReducer {
         return invalidationEffect.cancellable(
             id: SelectedContentTabCloseOperationCancelID(operationID: batchOperationID),
         )
+    }
+
+    private func finalizeContentTabTeardownImmediately(
+        tabID: ContentTabID,
+        batchOperationID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        if let batchOperationID {
+            return .send(.performSelectedContentTabCloseMutation(
+                operationID: batchOperationID,
+                tabID: tabID,
+                action: .commitClose(tabID),
+            ))
+        }
+        _ = ContentTabFeature().reduce(into: &state.contentTabs, action: .commitClose(tabID))
+        return finalizeContentTabClose(tabID: tabID, state: &state)
     }
 
     func handleCloseContentTabRequested(
@@ -904,26 +971,43 @@ extension FileManagerWindowRoutingReducer {
             targetState = inactiveState
         }
 
-        if targetState.isCollectionMode, targetState.hasUnsavedCollectionChanges {
-            let cancelCollectionOpenEffect = isActiveTarget
-                ? cancelPendingCollectionOpen(state: &state)
-                : Effect<Action>.none
-            return .concatenate(
-                cancelCollectionOpenEffect,
-                beginUnsavedContentTabClose(
-                    tabID: tabID,
-                    targetState: targetState,
-                    isActiveTarget: isActiveTarget,
-                    batchOperationID: batchOperationID,
-                    state: &state,
-                ),
-            )
+        if let unsavedCloseEffect = routeUnsavedContentTabClose(
+            tabID: tabID,
+            targetState: targetState,
+            isActiveTarget: isActiveTarget,
+            batchOperationID: batchOperationID,
+            state: &state,
+        ) {
+            return unsavedCloseEffect
         }
 
         return routeContentTabCloseMutation(
             tabID: tabID,
             batchOperationID: batchOperationID,
             action: .requestClose(tabID),
+        )
+    }
+
+    private func routeUnsavedContentTabClose(
+        tabID: ContentTabID,
+        targetState: FileManagerContentState,
+        isActiveTarget: Bool,
+        batchOperationID: UUID?,
+        state: inout State,
+    ) -> Effect<Action>? {
+        guard targetState.isCollectionMode, targetState.hasUnsavedCollectionChanges else { return nil }
+        let cancelCollectionOpenEffect = isActiveTarget
+            ? cancelPendingCollectionOpen(state: &state)
+            : Effect<Action>.none
+        return .concatenate(
+            cancelCollectionOpenEffect,
+            beginUnsavedContentTabClose(
+                tabID: tabID,
+                targetState: targetState,
+                isActiveTarget: isActiveTarget,
+                batchOperationID: batchOperationID,
+                state: &state,
+            ),
         )
     }
 
