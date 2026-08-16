@@ -54,8 +54,25 @@ export const relativeDisplay = (
   return direction === "past" ? `${amount} ${unitLabel} ago` : `In ${amount} ${unitLabel}`
 }
 
-// 조건 칩 표기: 정규 리터럴은 표시 문자열로, today는 "Today"로, 나머지는 원문 그대로
+// 목록 값은 JSON 배열로 직렬화되므로 칩 표시 시 디코딩한다
+const displayListValue = (value: string): string => {
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed)) {
+      return parsed.filter((token): token is string => typeof token === "string").join(", ")
+    }
+  } catch {
+    // 비-배열 JSON 또는 평문은 그대로
+  }
+  return value
+}
+
+// 조건 칩 표기: 목록 JSON은 디코딩, 정규 리터럴은 표시 문자열, today는 "Today", 나머지는 원문 그대로
 export const displayValueForLiteral = (value: string): string => {
+  if (value.startsWith("[")) {
+    const decoded = displayListValue(value)
+    if (decoded !== value) return decoded
+  }
   const relative = parseRelativeLiteral(value)
   if (relative != null) return relativeDisplay(relative.direction, relative.amount, relative.unit)
   if (value === todayLiteral()) return "Today"

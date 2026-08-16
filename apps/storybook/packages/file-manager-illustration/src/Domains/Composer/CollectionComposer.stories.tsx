@@ -293,7 +293,8 @@ const ComposerSelectionFlow = ({
                         ? (["clearDirectRule"] as const)
                         : included
                           ? (["exclude"] as const)
-                          : (["include", "exclude"] as const)
+                          : // 네이티브 resolvedCandidateState: available 후보는 단일 include 액션만
+                            (["include"] as const)
                     return {
                       path,
                       depth: Math.max(
