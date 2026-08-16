@@ -162,6 +162,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
             $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
+        await store.receive(\.delegate.selectionChanged)
     }
 
     /// EVM-002-update_entry_selection: grouping transition은 hidden descendant를 flat root selection으로 조정한다.
