@@ -39,7 +39,6 @@ final class ManageEntriesViewPresentationFlowTests: XCTestCase {
         await store.send(.view(.changeLayout(.grid)))
         await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
-            $0.entryViewLayout.outlineProjectionRevision = 1
         }
 
         XCTAssertEqual(store.state.entryViewLayout.mode, .grid)
