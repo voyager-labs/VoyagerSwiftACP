@@ -1933,6 +1933,1082 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: secondSource.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationFolder.appendingPathComponent("11.txt").path))
     }
+
+    // MARK: - EOP-002-import_external_objects
+
+    /// EOP-002-import_external_objects: 받아들인 외부 drop 요청은 종단 획득 이벤트를 낸다.
+    /// accept 시점에 시작된 획득 세션은 receiver 콜백이 staging에 파일을 산출하면
+    /// `.succeeded` 종단 이벤트를 emit해야 한다. (RED: 이 계약이 아직 모델링되지 않음)
+    /// - 검증 내용: begin → staging에 파일 수신 → events 스트림이 `.succeeded`를 포함한다.
+    /// - 사전 조건: 1개 receiver가 file.txt를 promise하고 staging 콜백이 성공을 보고한다.
+    /// - 기대 결과: events가 `.succeeded(sessionID)` 종단 이벤트를 산출한다.
+    func testExternalDropAcquisition_beginEmitsSucceededTerminalEvent() async throws {
+        let fixture = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { fixture.cleanup() }
+        let temporaryRoot = fixture.root.appendingPathComponent("staging")
+        try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
+
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+        let receiver = FilePromiseReceiverSpy(names: ["file.txt"])
+
+        let request = client.begin([receiver], [], "/dest", false)
+        let stagingURL = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+        let stagedURL = stagingURL.appendingPathComponent("file.txt")
+        try FileManager.default.copyItem(at: fixture.fileURL, to: stagedURL)
+        receiver.invokeReader(url: stagedURL, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+
+        // 수신 파일 1건의 `.received` 후 종단 `.succeeded` 이벤트가 온다 (stream은 종단 후 finish).
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    // MARK: - EOP-002-import_external_objects (universal data-flavor materialization)
+
+    /// 검증 내용: data-flavor item의 바이트가 staging에 그대로(변환 없이) 쓰이고 UTI 기반 이름을 갖는다.
+    /// 사전 조건: JSON UTI(public.json) data flavor를 begin으로 물리화한다.
+    /// 기대 결과: staged 파일 이름이 `Clipping 1.json`이고 내용이 입력 바이트와 byte-for-byte 일치한다.
+    func testExternalDropMaterialization_writesExactBytesWithUTIName() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DataBytes")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let bytes = Data(#"{"k":"v","n":1}"#.utf8)
+        let flavor = ExternalDropDataFlavor(uti: "public.json", bytes: bytes, filename: "Clipping 1.json")
+        let request = client.begin([], [flavor], "/dest", false)
+
+        let stagedURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clipping 1.json")
+        XCTAssertEqual(try Data(contentsOf: stagedURL), bytes)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// 검증 내용: text 계열 data flavor는 첫 줄을 정리한 base name을 사용한다.
+    /// 사전 조건: public.utf8-plain-text data flavor가 여러 줄 텍스트를 담는다.
+    /// 기대 결과: staged 파일 이름이 첫 줄(정리·길이 제한) 기반 `Quarterly Report.txt`가 된다.
+    func testExternalDropMaterialization_textFlavorUsesFirstLineBaseName() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DataTextName")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let flavor = ExternalDropDataFlavor(
+            uti: "public.utf8-plain-text",
+            bytes: Data("Quarterly Report\nrevenue up\n".utf8),
+            filename: "Quarterly Report.txt",
+        )
+        let request = client.begin([], [flavor], "/dest", false)
+
+        let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
+            .appendingPathComponent("Quarterly Report.txt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// 검증 내용: 동적 UTI처럼 preferred extension이 없는 경우 fallback 확장자를 쓴다.
+    /// 사전 조건: `dyn.` 동적 UTI data flavor.
+    /// 기대 결과: staged 파일 이름이 base name + 기본 확장자(`.data`)가 된다.
+    func testExternalDropMaterialization_fallbackExtensionForDynamicUTI() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DataFallbackExt")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let flavor = ExternalDropDataFlavor(
+            uti: "dyn.a8f9b1c2d3e4f5a6b7c8d9e0",
+            bytes: Data("raw".utf8),
+            filename: "Clipping 1.data",
+        )
+        let request = client.begin([], [flavor], "/dest", false)
+
+        let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
+            .appendingPathComponent("Clipping 1.data")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    // MARK: - EOP-002-import_external_objects (extension supertype walk)
+
+    /// 검증 내용: preferredFilenameExtension이 없는 pasteboard 전용 UTI도 supertype 계층에서 확장자를 유도한다.
+    /// 사전 조건: `public.utf8-plain-text`는 직접 확장자가 없지만 `public.plain-text`(txt)를 조상으로 갖는다.
+    /// 기대 결과: `fileExtension(for:)`가 "txt"를 반환하고 `filename`이 `.txt` 확장자를 갖는다.
+    func testExternalDropFileExtension_utf8PlainTextWalksSupertypeToTxt() {
+        XCTAssertEqual(ExternalDropDataFlavorNaming.fileExtension(for: "public.utf8-plain-text"), "txt")
+        let name = ExternalDropDataFlavorNaming.filename(
+            uti: "public.utf8-plain-text",
+            bytes: Data("Cell value".utf8),
+            ordinal: 1,
+        )
+        XCTAssertEqual(name, "Cell value.txt")
+    }
+
+    /// 검증 내용: TSV 계열 UTI가 supertype 계층에서 탭-구분 확장자를 유도한다.
+    /// 사전 조건: `public.utf8-tab-separated-values-text`의 조상 중 `public.tab-separated-values-text`가 tsv를 선언한다.
+    /// 기대 결과: `fileExtension(for:)`가 "tsv"를 반환한다.
+    func testExternalDropFileExtension_tsvWalksSupertypeToTsv() {
+        XCTAssertEqual(
+            ExternalDropDataFlavorNaming.fileExtension(for: "public.utf8-tab-separated-values-text"),
+            "tsv",
+        )
+    }
+
+    /// 검증 내용: 조상이 전혀 없는(미등록/사유) UTI는 기존 data fallback을 유지한다.
+    /// 사전 조건: `com.apple.iWork.TSPNativeData`는 이 환경에서 미등록 동적 UTI다.
+    /// 기대 결과: `fileExtension(for:)`가 `defaultExtension`("data")를 반환한다.
+    func testExternalDropFileExtension_unknownUTIFallsBackToData() {
+        XCTAssertEqual(
+            ExternalDropDataFlavorNaming.fileExtension(for: "com.apple.iWork.TSPNativeData"),
+            ExternalDropDataFlavorNaming.defaultExtension,
+        )
+    }
+
+    /// 검증 내용: promise receiver와 data flavor가 섞인 drag가 둘 다 물리화되고 all-promises 배리어가 성립한다.
+    /// 사전 조건: [data flavor, promise receiver]를 하나의 세션으로 begin한다.
+    /// 기대 결과: data 파일과 promise 파일이 모두 staged되고 `.succeeded` 종단이 온다.
+    func testExternalDropMaterialization_mixedPromiseAndDataBarrierHolds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DataMixed")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["promise.txt"])
+        let flavor = ExternalDropDataFlavor(
+            uti: "public.json",
+            bytes: Data(#"{"k":1}"#.utf8),
+            filename: "Clipping 1.json",
+        )
+        let request = client.begin([receiver], [flavor], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let stagedData = staging.appendingPathComponent("Clipping 1.json")
+        let stagedPromise = staging.appendingPathComponent("promise.txt")
+        try Data("promise".utf8).write(to: stagedPromise)
+        receiver.invokeReader(url: stagedPromise, error: nil)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stagedData.path))
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.map(\.stagedPath), [stagedData.path, stagedPromise.path])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// 검증 내용: 레거시 폴백 beginLegacy가 staging에 이미 물리화된 파일들을 received-item으로 등록하고
+    /// cardinality만큼 모두 등록되면 `.succeeded`를 emit한다.
+    /// 사전 조건: staging에 존재하는 파일 2개 경로를 beginLegacy로 넘긴다.
+    /// 기대 결과: `.received` 2건 후 `.succeeded(sessionID)` 종단 이벤트가 온다.
+    func testExternalDropAcquisition_beginLegacyRegistersStagedFilesAndSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyStaged")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacyFixture")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let firstURL = stagingDir.appendingPathComponent("a.eml")
+        let secondURL = stagingDir.appendingPathComponent("b.eml")
+        try Data("a".utf8).write(to: firstURL)
+        try Data("b".utf8).write(to: secondURL)
+
+        let request = client.beginLegacy([firstURL.path, secondURL.path], stagingDir.path, "/dest", true)
+
+        XCTAssertEqual(request.stagingDirectory, stagingDir.path)
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> String? in
+            guard case let .received(file) = event else { return nil }
+            return file.stagedPath
+        }
+        XCTAssertEqual(Set(received), Set([firstURL.path, secondURL.path]))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// 검증 내용: beginLegacy에 staging 밖 경로를 넘기면 타입화 실패(outsideStaging)로 귀결된다.
+    /// 사전 조건: staging 밖에 존재하는 파일 경로를 beginLegacy로 넘긴다.
+    /// 기대 결과: `.failed(sessionID, .outsideStaging)` 종단 이벤트가 온다.
+    func testExternalDropAcquisition_beginLegacyRejectsOutsideStaging() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyOutside")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacyOutside")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let outsideURL = temporaryRoot.appendingPathComponent("outside.eml")
+        try Data("x".utf8).write(to: outsideURL)
+
+        let request = client.beginLegacy([outsideURL.path], stagingDir.path, "/dest", true)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 후속): fileNames가 빈 receiver는 기대 콜백 수가
+    /// 미정이므로 첫 성공 콜백으로 완료 판정한다. Mail receiver는 fileNames가 비어도
+    /// receiver 이행으로 `.eml`을 받는다(레거시 폴백·텍스트 플레이버로 떨어지지 않는다).
+    /// - 사전 조건: fileNames가 빈 receiver 하나로 세션을 시작하고 staging에 파일을 쓴 뒤
+    ///   non-main 큐에서 성공 콜백 1회를 호출한다.
+    /// - 기대 결과: `.received` 1건 후 `.succeeded(sessionID)`가 오고 파일이 1개 물리화된다.
+    func testExternalDropAcquisition_emptyFileNamesReceiverCompletesOnFirstCallback() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("EmptyNames")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        // Mail처럼 receiver가 1개지만 fileNames가 비어 있다(기대 콜백 수 미정).
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent("message.eml")
+        try Data("eml".utf8).write(to: staged)
+
+        receiver.invokeReaderOnQueue(url: staged, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.map(\.stagedPath), [staged.path])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertFalse(receiver.readerExecutedOnMainThread ?? true)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 후속): 빈 fileNames 수신기(미정) + 파일명 있는
+    /// 수신기(결정적) 혼합 세션에서 결정적 수신기 완료만으로 성공하지 않고, 미정 수신기의 첫
+    /// 성공 콜백까지 도착해야 `.succeeded`가 온다. 결정적 콜백이 먼저 와도 완료되지 않음을 보장한다.
+    /// - 사전 조건: 빈 fileNames receiver와 "a.txt" receiver를 함께 begin하고 staging 파일을 쓴다.
+    /// - 기대 결과: 결정적 콜백 1회 후에는 종단이 없고, 미정 콜백 1회 후 `.succeeded`가 온다.
+    func testExternalDropAcquisition_indeterminateBarrierWaitsForEmptyNamesReceiver() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("IndeterminateBarrier")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let emptyReceiver = FilePromiseReceiverSpy(names: [])
+        let namedReceiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([emptyReceiver, namedReceiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let mail = staging.appendingPathComponent("message.eml")
+        try Data("a".utf8).write(to: a)
+        try Data("eml".utf8).write(to: mail)
+
+        // 결정적 receiver("a.txt")만 콜백: 아직 성공하면 안 된다(미정 receiver 미완료).
+        namedReceiver.invokeReader(url: a, error: nil)
+        var events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertNil(events.last, "결정적 기여만으로 성공하면 안 된다")
+        XCTAssertFalse(events.contains { event in
+            if case .succeeded = event { return true }
+            return false
+        })
+
+        // 미정 receiver 첫 콜백: 이제 모든 기여가 완료돼 성공해야 한다.
+        emptyReceiver.invokeReaderOnQueue(url: mail, error: nil)
+        events = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 2)
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects: 모든 receiver가 같은 destination(staging)을 사용한다.
+    /// 여러 receiver는 반드시 동일한 destination location으로 receive를 호출해야 한다.
+    /// - 검증 내용: 두 receiver의 `receivedDestination`이 같고 begin이 반환한 staging 경로와 일치한다.
+    /// - 사전 조건: 2개 receiver를 하나의 세션으로 begin한다.
+    /// - 기대 결과: 두 receiver 모두 같은 staging 디렉터리를 사용한다.
+    func testExternalDropAcquisition_sameDestinationForAllReceivers() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("SameDest")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiverA = FilePromiseReceiverSpy(names: ["a.txt"])
+        let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiverA, receiverB], [], "/dest", false)
+
+        let expected = URL(fileURLWithPath: request.stagingDirectory)
+        XCTAssertEqual(receiverA.receivedDestination?.path, expected.path)
+        XCTAssertEqual(receiverB.receivedDestination?.path, expected.path)
+        XCTAssertEqual(receiverA.receivedDestination?.path, receiverB.receivedDestination?.path)
+    }
+
+    /// EOP-002-import_external_objects: receiver 콜백은 non-main OperationQueue에서 실행된다.
+    /// main actor를 막지 않도록 콜백이 main queue가 아닌 큐로 전달돼야 한다.
+    /// - 검증 내용: receivePromisedFiles에 전달된 operationQueue가 main이 아니다.
+    /// - 사전 조건: begin으로 receiver를 시작한다.
+    /// - 기대 결과: `receivedOperationQueue != OperationQueue.main`.
+    func testExternalDropAcquisition_callbackOnNonMainQueue() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("NonMainQueue")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        _ = client.begin([receiver], [], "/dest", false)
+
+        XCTAssertNotNil(receiver.receivedOperationQueue)
+        XCTAssertFalse(receiver.receivedOperationQueue === OperationQueue.main)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 회귀): AppKit이 reader 콜백을 non-main
+    /// OperationQueue에서 호출해도 세션이 main-thread 콜백과 동일한 종단 상태에 도달한다.
+    /// begin은 @MainActor이므로 @Sendable이 없는 콜백 클로저는 MainActor로 추론되어
+    /// Swift 6 런타임 executor 검사에서 SIGTRAP했다. 이 테스트는 spy로 실제 큐 경로를
+    /// 재현해 크래시 없이 off-main 콜백이 성공함을 검증한다.
+    /// - 사전 조건: receiver가 a.txt를 promise하고, staging에 파일을 쓰고, 콜백을 큐에서 호출.
+    /// - 기대 결과: events에 `.succeeded` 종단이 오고, reader 콜백이 main이 아닌 스레드에서 실행됐다.
+    func testExternalDropAcquisition_callbackFromNonMainQueueReachesTerminal() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("NonMainQueueTerminal")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: staged)
+
+        // 실제 AppKit 경로: 콜백을 non-main OperationQueue에서 실행한다.
+        receiver.invokeReaderOnQueue(url: staged, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        // 콜백이 확실히 non-main 스레드에서 실행됐음을 보장한다. nil이면 큐 경로가
+        // 실행되지 않았으므로 테스트가 실패해 크래시 경로 재현이 누락됨을 드러낸다.
+        XCTAssertFalse(receiver.readerExecutedOnMainThread ?? true)
+    }
+
+    /// EOP-002-import_external_objects: 한 receiver가 여러 콜백을 산출하면 각각 수신된다.
+    /// legacy promise는 한 pasteboard item에 여러 파일을 쓸 수 있다.
+    /// - 검증 내용: 2개 파일 이름을 promise한 receiver에 콜백 2회를 호출하면 `.received`가 2건 온다.
+    /// - 사전 조건: receiver가 a.txt, b.txt를 promise하고 staging에 두 파일을 모두 쓴다.
+    /// - 기대 결과: events에 `.received` 2건 후 `.succeeded`가 온다.
+    func testExternalDropAcquisition_multipleCallbacksPerReceiver() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("MultiCallback")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt", "b.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+        receiver.invokeReader(url: a, error: nil)
+        receiver.invokeReader(url: b, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 2)
+        XCTAssertEqual(received.map(\.itemOrdinal), [1, 2])
+        XCTAssertEqual(received.map(\.callbackOrdinal), [1, 2])
+        XCTAssertEqual(received.map(\.stagedPath), [a.path, b.path])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects: 수신 결과는 순서 보장된 Sendable 값으로 산출된다.
+    /// 여러 콜백의 `.received`가 item/callback ordinal과 staged 경로를 순서대로 보존한다.
+    /// - 검증 내용: 3회 콜백의 received 순서와 ordinal이 입력 순서와 일치한다.
+    /// - 사전 조건: receiver가 3개 파일을 promise하고 순서대로 콜백한다.
+    /// - 기대 결과: ordinal 1,2,3이 입력 순서와 일치하고 stagedPath가 staging 안이다.
+    func testExternalDropAcquisition_orderedSendableResults() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("Ordered")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["1.txt", "2.txt", "3.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+
+        let urls = (1 ... 3).map { staging.appendingPathComponent("\($0).txt") }
+        for url in urls {
+            try Data("x".utf8).write(to: url)
+        }
+        for url in urls {
+            receiver.invokeReader(url: url, error: nil)
+        }
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.map(\.itemOrdinal), [1, 2, 3])
+        XCTAssertEqual(received.map(\.callbackOrdinal), [1, 2, 3])
+        XCTAssertEqual(received.map(\.stagedPath), urls.map(\.path))
+        XCTAssertTrue(received.allSatisfy { $0.stagedPath.hasPrefix(request.stagingDirectory) })
+    }
+
+    /// EOP-002-import_external_objects: 오류 콜백 URL이 틀려도 유일한 실제 promise 파일을 수용한다.
+    /// provider가 staging에 파일을 쓴 뒤 외부의 존재하지 않는 URL과 취소를 보고할 수 있다.
+    /// - 검증 내용: callback URL 대신 staging의 유일한 미등록 파일로 수신·성공 이벤트가 난다.
+    /// - 사전 조건: receiver가 파일을 staging에 쓴 뒤 잘못된 URL과 취소 오류를 보고한다.
+    /// - 기대 결과: 원본 파일 `.received` 후 `.succeeded(sessionID)`가 emit된다.
+    func testExternalDropAcquisition_callbackErrorWithStagedFileSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CallbackError")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let message = staging.appendingPathComponent("message.eml")
+        try Data("message".utf8).write(to: message)
+        receiver.invokeReader(
+            url: URL(fileURLWithPath: "/message.eml"),
+            error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
+        )
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(
+            received.map { URL(fileURLWithPath: $0.stagedPath).resolvingSymlinksInPath().path },
+            [message.resolvingSymlinksInPath().path],
+        )
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 회귀): source가 취소 콜백을 먼저 보낸 뒤
+    /// promise 파일을 staging에 쓰더라도 callback 오류로 세션을 조기 종료하지 않는다.
+    /// - 사전 조건: fileNames가 빈 receiver가 취소 오류를 보고한 다음 staging에 파일을 쓴다.
+    /// - 기대 결과: 뒤늦게 생성된 source-owned 파일을 `.received`로 받고 세션이 성공한다.
+    func testExternalDropAcquisition_callbackErrorBeforeStagedFileRecovers() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DelayedCallbackError")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        receiver.invokeReader(
+            url: URL(fileURLWithPath: "/message.eml"),
+            error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
+        )
+
+        let message = staging.appendingPathComponent("message.eml")
+        try Data("message".utf8).write(to: message, options: .atomic)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(
+            received.map { URL(fileURLWithPath: $0.stagedPath).resolvingSymlinksInPath().path },
+            [message.resolvingSymlinksInPath().path],
+        )
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects: 수신기 취소를 잔여 데이터 성공으로 강등하지 않는다.
+    /// source-owned promise가 파일을 쓰지 못했으면 텍스트 플레이버가 수신기 기여를 대신할 수 없다.
+    /// - 검증 내용: 데이터가 먼저 물리화돼도 수신기 취소가 `.callbackError` 실패로 끝난다.
+    /// - 사전 조건: fileNames 빈(미정) 수신기 1개 + 데이터 플레이버 1개를 begin하고 취소 오류 콜백을 보고한다.
+    /// - 기대 결과: `.failed(sessionID, .callbackError)`가 emit되고 성공 이벤트는 없다.
+    func testExternalDropAcquisition_cancelledReceiverDoesNotDegradeToData() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CancelDataFallback")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let flavor = ExternalDropDataFlavor(
+            uti: "public.utf8-plain-text",
+            bytes: Data("Fwd: hello".utf8),
+            filename: "Fwd hello.txt",
+        )
+        let request = client.begin([receiver], [flavor], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let dataURL = staging.appendingPathComponent("Fwd hello.txt")
+
+        receiver.invokeReader(
+            url: dataURL,
+            error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
+        )
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 1, "데이터 플레이버 자체는 물리화돼야 한다")
+        XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dataURL.path))
+    }
+
+    /// EOP-002-import_external_objects: 여러 파일 promise가 일부만 쓴 뒤 오류 나도 세션은 종단한다.
+    /// callback 오류는 추가 파일이 오지 않음을 뜻하므로 불완전 cardinality를 pending으로 남기지 않는다.
+    /// - 검증 내용: 두 파일 중 하나만 staging에 쓰고 취소하면 수신 후 실패 종단 이벤트가 난다.
+    /// - 사전 조건: 결정적 파일명 2개를 가진 receiver가 첫 파일과 취소 오류를 함께 보고한다.
+    /// - 기대 결과: 첫 파일 `.received` 후 `.failed(sessionID, .callbackError)`가 emit된다.
+    func testExternalDropAcquisition_callbackErrorWithPartialDeterminateOutputFails() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("PartialCallbackError")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt", "b.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let a = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+
+        receiver.invokeReader(
+            url: a,
+            error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
+        )
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }.map(\.stagedPath), [a.path])
+        XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
+    }
+
+    /// EOP-002-import_external_objects: staging에 파일이 없으면 `.fileAbsent`로 거절된다.
+    /// 콜백이 보고한 URL의 파일이 실제로 존재하지 않으면 성공으로 승격하지 않는다.
+    /// - 검증 내용: 존재하지 않는 경로를 콜백하면 `.failed(.fileAbsent)`가 온다.
+    /// - 사전 조건: receiver가 staging 안 경로를 보고하지만 파일이 없다.
+    /// - 기대 결과: `.failed(sessionID, .fileAbsent)`가 emit된다.
+    func testExternalDropAcquisition_fileAbsentRejects() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("FileAbsent")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["ghost.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let missing = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("ghost.txt")
+        receiver.invokeReader(url: missing, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .fileAbsent))
+    }
+
+    /// EOP-002-import_external_objects: staging 밖 경로는 `.outsideStaging`으로 거절된다.
+    /// 세션 staging 디렉터리 밖에 있는 출력은 절대 수용하지 않는다.
+    /// - 검증 내용: staging 밖에 존재하는 파일을 콜백하면 `.failed(.outsideStaging)`가 온다.
+    /// - 사전 조건: staging 밖 temp root에 파일이 존재하고 이를 콜백이 보고한다.
+    /// - 기대 결과: `.failed(sessionID, .outsideStaging)`가 emit된다.
+    func testExternalDropAcquisition_outsideStagingRejects() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("OutsideStaging")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["leak.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let outside = temporaryRoot.appendingPathComponent("leak.txt")
+        try Data("leak".utf8).write(to: outside)
+        receiver.invokeReader(url: outside, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
+    }
+
+    /// EOP-002-import_external_objects: finish는 멱등하며 추가 이벤트를 내지 않는다.
+    /// 정상 종료 후 다시 finish를 호출해도 세션 상태가 변하지 않아야 한다.
+    /// - 검증 내용: begin 후 finish를 두 번 호출해도 crash 없이 종료되고 성공 이벤트가 없을 수 있다.
+    /// - 사전 조건: receiver가 시작된 세션에 finish를 2회 호출한다.
+    /// - 기대 결과: 두 번의 finish가 모두 성공하고 추가 종단 이벤트가 없다.
+    func testExternalDropAcquisition_finishIsIdempotent() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("IdempotentFinish")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        client.finish(request.sessionID)
+        client.finish(request.sessionID)
+
+        // finish 후 추가 이벤트가 emit되지 않는다 (세션이 이미 종료됨).
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects (F2 P1-2): 성공 종단 후 finish가 staging을 정확히 한 번 제거한다.
+    /// 성공 경로에서 `<temp>/ExternalDrop-<uuid>`가 누수되지 않도록 finish가 staging을 정리해야 한다.
+    /// - 검증 내용: `.succeeded` 종단 후 staging이 존재하다가, finish 호출 후 제거된다.
+    /// - 사전 조건: receiver가 파일을 promise하고 staging에 실제 파일을 써서 성공 종단을 만든다.
+    /// - 기대 결과: finish 후 staging 경로가 사라진다.
+    func testExternalDropAcquisition_finishRemovesStagingAfterSuccess() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("FinishCleanupSuccess")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
+        receiver.invokeReader(url: staging.appendingPathComponent("a.txt"), error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        // 성공 종단 직후 staging은 복사 대상이므로 아직 존재한다.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: request.stagingDirectory))
+
+        client.finish(request.sessionID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
+    }
+
+    /// EOP-002-import_external_objects (F2 P1-2): finish 후 지연 콜백은 staging을 재삭제하고 이벤트를 내지 않는다.
+    /// - 검증 내용: finish 후 늦게 도착한 콜백의 reported output이 삭제되고 추가 이벤트가 없다.
+    /// - 사전 조건: 세션을 finish한 뒤 늦은 콜백이 새 파일을 보고한다.
+    /// - 기대 결과: finish 후에도 늦은 파일이 재삭제되고 이벤트는 없다.
+    func testExternalDropAcquisition_lateCallbackAfterFinishIsCleanedUp() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LateFinishCallback")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        client.finish(request.sessionID)
+
+        // finish 후 늦은 콜백이 새 출력을 보고한다.
+        let lateURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("late.txt")
+        try FileManager.default.createDirectory(
+            at: lateURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data("late".utf8).write(to: lateURL)
+        receiver.invokeReader(url: lateURL, error: nil)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lateURL.path))
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects: cancel은 staging을 즉시 제거하고 `.cancelled`를 낸다.
+    /// 취소 시 세션 무효화, 로컬 큐 취소, staging 제거가 일어나야 한다.
+    /// - 검증 내용: staging 파일이 제거되고 `.cancelled` 종단 이벤트가 온다.
+    /// - 사전 조건: staging에 파일이 존재하는 세션을 cancel한다.
+    /// - 기대 결과: staging 경로가 사라지고 `.cancelled(sessionID)`가 emit된다.
+    func testExternalDropAcquisition_cancelCleansUpStaging() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CancelCleanup")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
+
+        client.cancel(request.sessionID)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .cancelled(request.sessionID))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
+    }
+
+    /// EOP-002-import_external_objects: 취소 후 지연 콜백은 이벤트를 내지 않고 출력을 재삭제한다.
+    /// provider-side 취소를 주장하지 않고, 늦게 도착한 출력을 조용히 정리한다.
+    /// - 검증 내용: cancel 후 콜백이 오면 추가 이벤트 없이 해당 파일이 삭제된다.
+    /// - 사전 조건: 세션을 cancel한 뒤 늦은 콜백이 새 파일을 보고한다.
+    /// - 기대 결과: events가 `.cancelled`만이고 늦은 파일이 삭제된다.
+    func testExternalDropAcquisition_lateCallbackIsSuppressedAndCleanedUp() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LateCallback")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false)
+        client.cancel(request.sessionID)
+
+        // 취소 후 늦은 콜백이 새 출력을 보고한다.
+        let lateURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("late.txt")
+        try FileManager.default.createDirectory(
+            at: lateURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data("late".utf8).write(to: lateURL)
+        receiver.invokeReader(url: lateURL, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events, [.cancelled(request.sessionID)])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lateURL.path))
+    }
+
+    /// VOY-736: beginDeferred는 load 클로저를 세션 큐에서 실행해 main thread를 차단하지 않고,
+    /// 로드가 끝난 뒤에야 `.received`/`.succeeded` 종단 이벤트를 낸다 (Mail 다중 MB source 대응).
+    /// - 검증 내용: beginDeferred 반환 즉시 request가 나오고, 로드 완료 후 staging에 verbatim 바이트가 쓰이며 종단 `.succeeded`가 온다.
+    /// - 사전 조건: load 클로저가 고정 바이트를 반환하는 deferred flavor 1건.
+    /// - 기대 결과: staged 파일이 filename 그대로 생성되고 내용이 byte-for-byte 일치하며 events가 `.succeeded`로 끝난다.
+    func testExternalDropAcquisition_beginDeferredMaterializesAndSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DeferredFlavor")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let bytes = Data("Message-ID: <deferred@example.com>\r\n\r\nBody".utf8)
+        let flavor = ExternalDropDeferredFlavor(uti: "com.apple.mail.email", filename: "Fwd- hello.eml") {
+            bytes
+        }
+
+        let request = client.beginDeferred([flavor], "/dest", true)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
+            .appendingPathComponent("Fwd- hello.eml")
+        XCTAssertEqual(try Data(contentsOf: stagedURL), bytes)
+    }
+
+    /// VOY-736: beginDeferred의 load 실패는 타입화된 실패로 종단 처리된다.
+    /// - 검증 내용: load가 nil을 반환하면 `.failed(dataMaterializationFailed)` 종단 이벤트만 나온다.
+    /// - 사전 조건: nil을 반환하는 deferred flavor 1건.
+    /// - 기대 결과: events가 `.failed(sessionID, .dataMaterializationFailed)`로 끝난다.
+    func testExternalDropAcquisition_beginDeferredLoadFailureFails() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DeferredFail")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let flavor = ExternalDropDeferredFlavor(uti: "com.apple.mail.email", filename: "unavailable.eml") {
+            nil
+        }
+
+        let request = client.beginDeferred([flavor], "/dest", true)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .dataMaterializationFailed))
+    }
+
+    // MARK: - EOP-002-import_external_objects (all-promises barrier)
+
+    /// EOP-002-import_external_objects: 받아들인 혼합 요청은 all-promises 성공 전까지 배치를 보류한다.
+    /// `.accepted`가 active 세션을 저장하고 상태를 `pending`으로 유지하며, `.received` 이벤트만으로는
+    /// 아직 `.applyImport`(placement)를 내지 않는다. (RED: 배리어/종단 상태가 아직 모델링되지 않음)
+    /// - 검증 내용: accepted → pending 상태, received 후에도 applyImport 미발생.
+    func testExternalDropBarrier_acceptedHoldsPlacementUntilSuccess() async {
+        let (store, _) = makeExternalDropBarrierHarness()
+        let request = makeMixedAcceptedRequest()
+        let file = ExternalDropReceivedFile(
+            sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
+        )
+
+        await store.send(.externalDrop(.accepted(request: request))) {
+            $0.activeExternalDrop = .init(request: request)
+            $0.externalObjectImportStatus = .pending
+        }
+        await store.send(.externalDrop(.event(.received(file)))) {
+            $0.activeExternalDrop?.receivedFiles = [file]
+        }
+        // exhaustivity(on) 하에서 미수신 applyImport가 emit되면 finish()가 실패한다 → "배치 없음" 증명.
+        await store.finish()
+
+        // 아직 pending: 어떤 placement도 시작하지 않는다.
+        XCTAssertEqual(store.state.externalObjectImportStatus, .pending)
+        XCTAssertEqual(store.state.activeExternalDrop?.sessionID, request.sessionID)
+    }
+
+    /// EOP-002-import_external_objects: 하나의 promise 실패가 전체 배치를 막는다.
+    /// 어떤 promise가 실패하면 logical pending state를 지우고 client cleanup을 요청하며,
+    /// promised/immediate 어느 쪽도 placement를 시작하지 않는다.
+    /// - 검증 내용: failed → active 세션 해제, status `.failed`, applyImport 미발생, cancel 1회.
+    func testExternalDropBarrier_singleFailureBlocksAllPlacement() async {
+        let (store, recorder) = makeExternalDropBarrierHarness()
+        let request = makeMixedAcceptedRequest()
+        let file = ExternalDropReceivedFile(
+            sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
+        )
+
+        await store.send(.externalDrop(.accepted(request: request))) {
+            $0.activeExternalDrop = .init(request: request)
+            $0.externalObjectImportStatus = .pending
+        }
+        await store.send(.externalDrop(.event(.received(file)))) {
+            $0.activeExternalDrop?.receivedFiles = [file]
+        }
+        await store.send(.externalDrop(.event(.failed(request.sessionID, .callbackError)))) {
+            $0.activeExternalDrop = nil
+            $0.externalObjectImportStatus = .failed
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.externalObjectImportStatus, .failed)
+        XCTAssertNil(store.state.activeExternalDrop)
+        XCTAssertEqual(recorder.cancels.count, 1)
+        XCTAssertTrue(recorder.finishes.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects: all-promises 성공 시 정확히 한 번의 순서 보장 applyImport를 낸다.
+    /// 수신 파일을 item/callback ordinal 순서로 보존하고 destination/order 메타데이터와 함께
+    /// 내부 import-placement action으로 emit한다. (Todo 7 이후 placement가 실제 복사를 수행한다)
+    /// - 검증 내용: succeeded → active 해제, applyImport 정확히 1회.
+    func testExternalDropBarrier_allSuccessEmitsSingleOrderedApplyImport() async {
+        let (store, recorder) = makeExternalDropBarrierHarness()
+        store.exhaustivity = .off
+        let request = makeMixedAcceptedRequest()
+        let fileA = ExternalDropReceivedFile(
+            sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
+        )
+        let fileB = ExternalDropReceivedFile(
+            sessionID: request.sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: "/staging/b.txt",
+        )
+
+        await store.send(.externalDrop(.accepted(request: request))) {
+            $0.activeExternalDrop = .init(request: request)
+            $0.externalObjectImportStatus = .pending
+        }
+        await store.send(.externalDrop(.event(.received(fileA)))) {
+            $0.activeExternalDrop?.receivedFiles = [fileA]
+        }
+        await store.send(.externalDrop(.event(.received(fileB)))) {
+            $0.activeExternalDrop?.receivedFiles = [fileA, fileB]
+        }
+        await store.send(.externalDrop(.event(.succeeded(request.sessionID)))) {
+            $0.activeExternalDrop = nil
+        }
+        let expectedPlan = ExternalDropImportPlan(
+            sessionID: request.sessionID,
+            destination: request.destination,
+            forcedCopy: request.forcedCopy,
+            orderedPromisedNames: request.orderedPromisedNames,
+            promisedOrdinals: request.promisedOrdinals,
+            receivedFiles: [fileA, fileB],
+        )
+        await store.receive(\.externalDrop.applyImport, expectedPlan)
+        await store.finish()
+        await store.skipReceivedActions()
+
+        // Todo 7 placement가 단일 applyImport를 소비해 staging cleanup(finish)을 정확히 한 번 한다.
+        XCTAssertEqual(recorder.finishes.count, 1)
+        XCTAssertTrue(recorder.cancels.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects: stale/다른 세션의 이벤트와 cancel은 no-op이다.
+    /// 세션 신선도: 현재 active 세션과 일치하지 않는 이벤트(received/succeeded/failed)와
+    /// 다른 세션의 cancelSession은 무시되어 active 세션을 건드리지 않는다.
+    /// - 검증 내용: 다른 세션 이벤트 후에도 active 세션/status 유지, cleanup 0회.
+    func testExternalDropBarrier_staleAndDuplicateEventsAreNoops() async {
+        let (store, recorder) = makeExternalDropBarrierHarness()
+        let request = makeMixedAcceptedRequest()
+        let otherSession = ExternalDropSessionID(rawValue: "other-session")
+
+        await store.send(.externalDrop(.accepted(request: request))) {
+            $0.activeExternalDrop = .init(request: request)
+            $0.externalObjectImportStatus = .pending
+        }
+        await store.send(.externalDrop(.event(.received(ExternalDropReceivedFile(
+            sessionID: otherSession, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/x.txt",
+        )))))
+        await store.send(.externalDrop(.event(.succeeded(otherSession))))
+        await store.send(.externalDrop(.event(.failed(otherSession, .callbackError))))
+        await store.send(.externalDrop(.cancelSession(otherSession)))
+        await store.finish()
+
+        XCTAssertEqual(store.state.activeExternalDrop?.sessionID, request.sessionID)
+        XCTAssertEqual(store.state.externalObjectImportStatus, .pending)
+        XCTAssertTrue(store.state.activeExternalDrop?.receivedFiles.isEmpty ?? true)
+        XCTAssertTrue(recorder.cancels.isEmpty)
+        XCTAssertTrue(recorder.finishes.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects: 정확한 세션의 cancel은 pending을 지우고 cleanup을 정확히 한 번 한다.
+    /// 반복 cancel은 멱등이다.
+    /// - 검증 내용: cancelSession → active/status 해제, cancel 1회; 반복 cancel → 추가 cleanup 없음.
+    func testExternalDropBarrier_exactSessionCancelClearsAndCleansUpOnce() async {
+        let (store, recorder) = makeExternalDropBarrierHarness()
+        let request = makeMixedAcceptedRequest()
+
+        await store.send(.externalDrop(.accepted(request: request))) {
+            $0.activeExternalDrop = .init(request: request)
+            $0.externalObjectImportStatus = .pending
+        }
+        await store.send(.externalDrop(.cancelSession(request.sessionID))) {
+            $0.activeExternalDrop = nil
+            $0.externalObjectImportStatus = nil
+        }
+        await store.finish()
+
+        XCTAssertEqual(recorder.cancels.count, 1)
+        XCTAssertNil(store.state.activeExternalDrop)
+
+        // 반복 cancel은 멱등: 추가 cleanup 없음.
+        await store.send(.externalDrop(.cancelSession(request.sessionID)))
+        await store.finish()
+        XCTAssertEqual(recorder.cancels.count, 1)
+    }
+
+    /// EOP-002-import_external_objects: windowIDChanged가 active 세션을 취소한다.
+    /// 라이프사이클 전환 시 정확한 active 세션을 취소하고 pending 상태를 해제한다.
+    /// - 검증 내용: windowIDChanged → active 해제, cancel 1회.
+    func testExternalDropBarrier_windowIDChangedCancelsActiveSession() async {
+        let (store, recorder) = makeExternalDropBarrierHarness()
+        let request = makeMixedAcceptedRequest()
+        let newWindowID = UUID()
+
+        await store.send(.externalDrop(.accepted(request: request))) {
+            $0.activeExternalDrop = .init(request: request)
+            $0.externalObjectImportStatus = .pending
+        }
+        await store.send(.lifecycle(.windowIDChanged(newWindowID))) {
+            $0.windowID = newWindowID
+            $0.activeExternalDrop = nil
+            $0.externalObjectImportStatus = nil
+        }
+        await store.finish()
+
+        XCTAssertNil(store.state.activeExternalDrop)
+        XCTAssertNil(store.state.externalObjectImportStatus)
+        XCTAssertEqual(recorder.cancels.count, 1)
+    }
+
+    // MARK: - EOP-002-import_external_objects (placement)
+
+    /// EOP-002-import_external_objects: applyImport가 staged source를 destination으로 복사하고 종합 완료를 낸다.
+    /// 획득된 staged 파일을 item/callback ordinal 순서로 `.copy` + `.externalObjectImportItem`으로 복사하고,
+    /// 모든 항목이 끝나면 정확히 한 번 종합 완료(importFinished)와 staging cleanup(finish)을 수행한다.
+    /// - 검증 내용: source 복사, destination 생성, 원본 보존, undo 기록 없음, finish 1회, status `.applied`.
+    func testExternalDropImport_applyImportCopiesAndAggregates() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+                begin: { _, _, _, _ in fatalError("begin not used") },
+                events: { _ in AsyncStream { $0.finish() } },
+                cancel: { cleanup.recordCancel($0) },
+                finish: { cleanup.recordFinish($0) },
+                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+            )
+        }
+        store.exhaustivity = .off
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt", "b.txt"],
+            promisedOrdinals: [0, 1],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: b.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [a.path, b.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("b.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
+        XCTAssertEqual(store.state.externalObjectImportStatus, .applied)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects: 이름 충돌 stop은 해당 항목만 실패시키고 나머지는 유지한다.
+    /// destination에 이미 같은 이름이 있으면 replace alert `.stop`에 따라 그 항목만 실패하고,
+    /// 나머지 항목은 성공해 status가 `.partiallyApplied`가 된다.
+    /// - 검증 내용: 충돌 항목만 실패, 성공 항목은 남음, 원본 보존, finish 1회, status `.partiallyApplied`.
+    func testExternalDropImport_collisionStopFailsOnlyThatItem() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+        // destination에 a.txt가 이미 존재해 충돌을 유발한다.
+        try Data("existing".utf8).write(to: dest.appendingPathComponent("a.txt"))
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+            $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
+            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+                begin: { _, _, _, _ in fatalError("begin not used") },
+                events: { _ in AsyncStream { $0.finish() } },
+                cancel: { cleanup.recordCancel($0) },
+                finish: { cleanup.recordFinish($0) },
+                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+            )
+        }
+        store.exhaustivity = .off
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt", "b.txt"],
+            promisedOrdinals: [0, 1],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: b.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        // 충돌 항목 a.txt만 실패, b.txt는 성공해 destination에 남는다.
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [b.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("b.txt").path))
+        // 원본 staged 파일은 그대로 남는다.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
+        XCTAssertEqual(store.state.externalObjectImportStatus, .partiallyApplied)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
 }
 private func mutationImpacts(in actions: [EntryOperationsAction]) -> [EntryOperationsMutationImpact] {
     actions.compactMap { action in
@@ -2070,4 +3146,63 @@ private func makeAliasRecordingClient() -> EntryFileOpsClient {
         loadClipboardPaths: { ([], .copy) },
         postFileSystemChanged: { _ in },
     )
+}
+
+private func makeMixedAcceptedRequest() -> ExternalDropAcceptedRequest {
+    ExternalDropAcceptedRequest(
+        sessionID: ExternalDropSessionID(),
+        destination: "/Users/test/Desktop",
+        orderedPromisedNames: ["a.txt", "b.txt"],
+        promisedOrdinals: [0, 1],
+        forcedCopy: false,
+        stagingDirectory: "/staging",
+    )
+}
+
+private final class AcquisitionCleanupRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _cancels: [ExternalDropSessionID] = []
+    private var _finishes: [ExternalDropSessionID] = []
+
+    func recordCancel(_ id: ExternalDropSessionID) {
+        lock.lock()
+        defer { lock.unlock() }
+        _cancels.append(id)
+    }
+
+    func recordFinish(_ id: ExternalDropSessionID) {
+        lock.lock()
+        defer { lock.unlock() }
+        _finishes.append(id)
+    }
+
+    var cancels: [ExternalDropSessionID] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _cancels
+    }
+
+    var finishes: [ExternalDropSessionID] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _finishes
+    }
+}
+
+@MainActor
+private func makeExternalDropBarrierHarness() -> (
+    store: TestStore<EntryOperationsFeature.State, EntryOperationsFeature.Action>,
+    recorder: AcquisitionCleanupRecorder,
+) {
+    let recorder = AcquisitionCleanupRecorder()
+    let store = EntryOperationsTestSupport.makeStore {
+        $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+            begin: { _, _, _, _ in fatalError("begin is not used by barrier tests") },
+            events: { _ in AsyncStream { $0.finish() } },
+            cancel: { recorder.recordCancel($0) },
+            finish: { recorder.recordFinish($0) },
+            beginLegacy: { _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
+        )
+    }
+    return (store, recorder)
 }
