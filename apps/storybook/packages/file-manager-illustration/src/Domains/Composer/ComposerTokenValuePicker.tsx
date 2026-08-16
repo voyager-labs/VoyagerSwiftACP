@@ -56,9 +56,17 @@ export const ComposerTokenValuePicker: FC<ComposerTokenValuePickerProps> = ({
         className="collection-composer-value-form"
         onSubmit={(event) => {
           event.preventDefault()
-          if (input.trim().length > 0) return addToken(input)
-          if (tokens.length === 0) return setError("Value is required.")
-          onCommit?.(JSON.stringify(tokens))
+          const pending = input.trim()
+          const nextTokens =
+            pending.length === 0
+              ? tokens
+              : tokens.some((token) => token.toLowerCase() === pending.toLowerCase())
+                ? tokens
+                : [...tokens, pending]
+          if (nextTokens.length === 0) return setError("Value is required.")
+          setTokens(nextTokens)
+          setInput("")
+          onCommit?.(JSON.stringify(nextTokens))
         }}
       >
         <div className="collection-composer-token-field">
@@ -100,6 +108,7 @@ export const ComposerTokenValuePicker: FC<ComposerTokenValuePickerProps> = ({
           </div>
         )}
         {error != null && <output className="collection-composer-value-error">{error}</output>}
+        <button type="submit">Apply</button>
       </form>
     </dialog>
   )
