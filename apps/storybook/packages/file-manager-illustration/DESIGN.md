@@ -30,9 +30,16 @@ All macOS semantic colors come from `--macos-*` custom properties in `src/styles
 
 Scroll ownership is explicit: sidebar tabs, entry content, and inspector chat own their independent vertical scrolling. Window chrome, location shortcuts, toolbar, and breadcrumb/status remain fixed.
 
-## 5. Components
+## 5. Catalog Taxonomy
 
-### Entry Thumbnail Visual Contract
+- **Foundations and UI** are product-agnostic visual primitives and controls. They may be used by any higher layer and do not own File Manager workflow state.
+- **Patterns** combine primitives into reusable File Manager interaction or chrome structures without owning a product workflow.
+- **Layouts** place patterns and domains within the window shell and own pane geometry, resize behavior, and scroll boundaries.
+- **Domains** own product language, fixtures, and stateful review flows. A domain may expose a domain pattern when a composition is reusable inside that domain but is not product-agnostic.
+
+### Domains: Entries
+
+#### Entries — Entry Thumbnail Visual Contract
 
 Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails, not native-runtime proofs. All tokens are consumed through `--fm-entry-*` CSS custom properties; no raw component colors are allowed. SVG gradient IDs use distinct prefixes (`folder-*`, `doc-*`) to avoid collisions.
 
@@ -70,28 +77,34 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **QuickLook:** parent wrapper scales the SVG 1.55× via CSS `transform: scale(1.55)`.
 - **Constraint:** all three scaling tiers must preserve the silhouette — no element is hidden or added at different sizes.
 
-### Native Window Shell
+### Layouts
+
+#### Native Window Shell
 
 - **Structure:** full-height sidebar, accessible separator, inset rounded main surface, content pane, optional inspector separator and inspector.
 - **States:** sidebar open/closed; inspector open/closed; persisted pane widths.
 - **Accessibility:** separators expose orientation, controlled pane, pixel value, min/max, pointer drag, arrows, Shift+arrows, Home, and End.
 
-### Sidebar
+#### Sidebar
 
 - **Structure:** titlebar controls, fixed location grid, scrollable pinned/unpinned tabs, New Tab row.
 - **States:** active, hover, focus, revealed row action, empty tab collection.
 
-### Content Chrome
-
-- **Structure:** navigation controls, active title area, hover/focus view and sort controls, New Chat, optional Show Sidebar, scroll body, breadcrumb/status.
-- **States:** Home, browser, grid/list, sidebar closed.
-
-### Contextual Inspector
+#### Contextual Inspector
 
 - **Structure:** 40px chat-only header and chat body.
 - **States:** Chat History, connected empty (blank body + bottom composer), unconnected provider setup (top status banner), connection error (top banner + Retry), rebind required (top banner + two actions), conversation, closed. The content-page centered empty ("Ask Voyager" + optional compactConnectionCTA) is modeled only as an isolated AiChatView specimen, never in the inspector root.
 
-### AI Chat Input Bar
+### Patterns
+
+#### Content Chrome
+
+- **Structure:** navigation controls, active title area, hover/focus view and sort controls, New Chat, optional Show Sidebar, scroll body, breadcrumb/status.
+- **States:** Home, browser, grid/list, sidebar closed.
+
+### Domains: Chat and Composer
+
+#### Chat — AI Chat Input Bar
 
 - **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift`, its `AiChatInputDisplayModel`, and `AiChatView` placement rules.
 - **Design Version axis:** `current` is the adopted native translation. The VOY-721 `candidate-material-controls` proposal was retired without adoption because this issue excludes browser visual review and native source remains the authority.
@@ -109,7 +122,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Unknown/deviation:** No browser visual comparison was performed because VOY-721 explicitly excludes Playwright/browser visual review; candidate adoption therefore remains unsubstantiated.
 - **Follow-up:** None; reopen a candidate only with a new review question and visual evidence scope.
 
-### AI Chat Conversation
+#### Chat — AI Chat Conversation
 
 - **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift`, `AiChatAssistantMarkdownText.swift`, and `VoyagerDS` typography/surface roles.
 - **User message:** right-aligned intrinsic bubble with a 16px minimum leading gutter, 14px horizontal and 10px vertical padding, 20px continuous radius, body typography, and `inputBackground` surface role.
@@ -119,6 +132,17 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Affordances:** user and assistant output text remains browser-selectable as the Storybook translation of native AppKit selection. Deterministic copied/failed specimens use the native top-trailing capsule with the control-background role; they demonstrate presentation only, not pasteboard behavior or the native two-second lifecycle. Only the latest historical assistant response may expose the 28×28 regenerate action. Its hover label uses the native popover background and separator roles. Timestamp affordances occupy the user leading gutter or assistant top-trailing gutter without changing normal row flow.
 - **Surface boundary:** assistant responses do not introduce an independent card background, border, radius, or fixed max-width.
 - **Story harness:** isolated message stories render inside the 300px default inspector width. The user specimen retains the message-row alignment wrapper so its intrinsic bubble width and 16px minimum leading gutter remain observable. Integrated File Manager stories follow the window contract and may resize the inspector between its 230px minimum and 300px default when the viewport cannot fit the default 960px window plus stage insets.
+
+#### Composer — Collection Composer Pattern
+
+- **Catalog role:** Composer domain pattern. It composes Composer-specific controls and picker flows, so it remains under `Domains/Composer`; it is not a product-agnostic `Patterns` primitive.
+- **Authority:** `VoyagerFeaturesComposer/Ui/ComposerView.swift`, `ComposerTopRowView.swift`, `ComposerBottomRowView.swift`, and their picker/chip views.
+- **Placement:** File Manager content-pane top overlay with 7px horizontal and 5px top inset; it is not an independent window or Chat surface.
+- **Structure:** 40px top row with undo, redo, query, submit/stop, Clear/Discard, and Save/Save As; 1px inset separator; wrapped 28px scope and condition rows.
+- **Geometry:** top row uses 8px spacing and 16px horizontal/6px vertical padding. Query field has a 30px minimum height and 8px radius. Scope and condition chips use 28px rows, 8px spacing, 16px outer padding, and 6px/4px container/item radii.
+- **Overlays:** scope picker is 420px wide with a 520px maximum height. Property picker is 200×320px and keeps the native hierarchy bounded to pinned recommendations plus static Common/Filesystem groups; search and category navigation remain out of scope. Operator picker is a flat, text-only 180px list. Generic text/number/range value forms are 240px; semantic date is 163px; Boolean is a 150px True/False list; categorical/list token entry is 260px with a 164px suggestion region. Transient feedback is 360px maximum width and appears 54px below the composer top.
+- **Tokens:** native `Interaction.composerBackground`, input, chip, popover, control-hover, brand accent, radius, and shadow roles map through `--macos-composer-*` to `--fm-composer-*`.
+- **States:** empty/populated draft, standalone compact-width review, property/operator/value pickers, processing stop, applied/applying/failed scope feedback, query recovery, and deterministic representative flows for string, number, unit-bearing size, single/range date, Boolean, string-list, categorical token, and arity-zero operators. Registry-inaccessible `rx`, Boolean `neq`, and unused `listNumber` are excluded. Storybook demonstrates browser-side presentation and selection only; it does not claim native material compositing, measured chip wrapping, or reducer/business-logic execution.
 
 ## 6. Motion & Interaction
 
