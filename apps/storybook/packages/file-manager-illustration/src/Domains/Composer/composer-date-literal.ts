@@ -69,7 +69,7 @@ const displayListValue = (value: string): string => {
   return value
 }
 
-// 조건 칩 표기: list editor 값만 목록 JSON 디코딩, 정규 리터럴은 표시 문자열, today는 "Today", 나머지는 원문 그대로
+// 조건 칩 표기: list는 목록 JSON 디코딩, date/dateRange만 정규 리터럴·Today 변환, 나머지는 원문 그대로
 export const displayValueForLiteral = (
   value: string,
   editorKind?: ComposerValueEditor["kind"],
@@ -78,8 +78,10 @@ export const displayValueForLiteral = (
     const decoded = displayListValue(value)
     if (decoded !== value) return decoded
   }
-  const relative = parseRelativeLiteral(value)
-  if (relative != null) return relativeDisplay(relative.direction, relative.amount, relative.unit)
-  if (value === todayLiteral()) return "Today"
+  if (editorKind === "date" || editorKind === "dateRange") {
+    const relative = parseRelativeLiteral(value)
+    if (relative != null) return relativeDisplay(relative.direction, relative.amount, relative.unit)
+    if (value === todayLiteral()) return "Today"
+  }
   return value
 }
