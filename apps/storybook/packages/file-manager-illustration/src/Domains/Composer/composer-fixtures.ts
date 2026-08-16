@@ -272,7 +272,8 @@ export const composerFixtures = {
           depth: 0,
           status: "available",
           kind: "candidate",
-          actions: ["include", "exclude"],
+          // 네이티브 resolvedCandidateState: available 후보는 단일 include 액션만 갖는다
+          actions: ["include"],
         },
       ],
       feedback: {

@@ -36,6 +36,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
       <button
         type="button"
         className="collection-composer-condition-property collection-composer-condition-text"
+        disabled={inactive}
         onClick={() => onPropertyClick?.(condition.id)}
       >
         <SFSymbol name={condition.propertySymbol} size={10} weight={500} />
@@ -45,6 +46,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
         type="button"
         className="collection-composer-condition-segment collection-composer-condition-text"
         aria-expanded={operatorExpanded}
+        disabled={inactive}
         onClick={() => onOperatorClick?.(condition.id)}
       >
         {hasOperator ? condition.operator : "Operator"}
@@ -55,6 +57,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
           type="button"
           className="collection-composer-condition-segment collection-composer-condition-text"
           aria-expanded={valueExpanded}
+          disabled={inactive}
           onClick={() => onValueClick?.(condition.id)}
         >
           {displayValueForLiteral(condition.value, condition.editorKind)}
