@@ -335,8 +335,12 @@
   .collection-composer-condition-chip:hover
   .collection-composer-condition-remove,
 [data-file-manager-illustration]
+  .collection-composer-condition-chip:focus-within
+  .collection-composer-condition-remove,
+[data-file-manager-illustration]
   .collection-composer-condition-chip.show-remove
-  .collection-composer-condition-remove {
+  .collection-composer-condition-remove,
+[data-file-manager-illustration] .collection-composer-condition-remove:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
