@@ -8,7 +8,7 @@ export interface PropertiesPaneProps {
 
 export const PropertiesPane: FC<PropertiesPaneProps> = ({ selectedEntries, primaryEntry }) => {
   return (
-    <section className="vc-properties-pane">
+    <section className="properties-pane">
       {primaryEntry != null ? (
         <>
           <span className="vc-eyebrow">Entry</span>

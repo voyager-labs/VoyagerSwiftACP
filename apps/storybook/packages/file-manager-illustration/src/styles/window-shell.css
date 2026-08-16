@@ -106,6 +106,18 @@
   overflow: hidden;
 }
 
+[data-file-manager-illustration].content-browser-narrow-review {
+  width: var(--fm-native-window-min-width);
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+[data-file-manager-illustration].content-browser-narrow-review
+  [data-file-manager-illustration]
+  .stage {
+  padding: 0;
+}
+
 [data-file-manager-illustration] .mac-titlebar-controls {
   display: flex;
   position: absolute;

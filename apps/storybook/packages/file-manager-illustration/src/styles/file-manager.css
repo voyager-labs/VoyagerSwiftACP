@@ -74,7 +74,7 @@
   font-family: "Voyager SF Pro Symbols";
   font-display: swap;
   font-style: normal;
-  font-weight: 400;
+  font-weight: 1 1000;
   src: local(".SF Symbols"), local("SF Pro Symbols"), url("/fonts/sf-pro/SF-Pro-Symbols.otf")
     format("opentype");
 }
@@ -121,6 +121,8 @@
   --fm-window-border: var(--macos-window-border-color);
   --fm-window-hairline: var(--macos-window-border-color);
   --fm-main-frame-border: color-mix(in srgb, var(--fm-text-primary) 3%, transparent);
+  /* native ToolbarView/ContentPane/SidebarSectionDivider 공통 1px 구분선 — Color.primary.opacity(0.12) */
+  --fm-separator-emphasis: color-mix(in srgb, var(--fm-text-primary) 12%, transparent);
   --fm-titlebar: var(--macos-material-titlebar);
   --fm-stage-padding: var(--fm-space-10);
   --fm-window-max-width: 1280px;
@@ -147,7 +149,7 @@
   --fm-token-page-width: 1180px;
   --fm-search-min-width: 220px;
   --fm-context-menu-width: 240px;
-  --fm-entry-name-width: 82px;
+  --fm-entry-name-width: 92px;
   --fm-feedback-max-width: 360px;
   --fm-copy-max-width: 640px;
   --fm-sidebar: var(--macos-material-sidebar);
@@ -201,6 +203,7 @@
   --fm-selection: var(--macos-unemphasized-selected-content-background-color);
   --fm-selection-strong: var(--macos-selected-content-background-color);
   --fm-selection-label: var(--macos-control-accent-color);
+  --fm-list-row-alternate: var(--macos-entry-list-alternate-row-background-color);
   --fm-focus-ring: var(--macos-keyboard-focus-indicator-color);
   --fm-home-background-start: var(--macos-home-gradient-start);
   --fm-home-background-end: var(--macos-home-gradient-end);
@@ -270,21 +273,33 @@
   --fm-space-8: 18px;
   --fm-space-9: 24px;
   --fm-space-10: 28px;
-  --fm-home-page-padding-inline: 44px;
-  --fm-home-page-padding-block: 42px;
-  --fm-home-section-gap: 34px;
-  --fm-home-heading-content-gap: 16px;
-  --fm-home-card-gap: 12px;
-  --fm-home-card-target-width: 160px;
-  --fm-home-card-height: 48px;
-  --fm-home-card-icon-size: 31px;
-  --fm-home-card-label-size: 14px;
+  --fm-home-page-padding-inline: 36px;
+  --fm-home-page-padding-block: 32px;
+  --fm-home-section-gap: 28px;
+  --fm-home-heading-content-gap: 12px;
+  --fm-home-section-title-size: 15px;
+  --fm-home-nav-grid-gap: 12px;
+  --fm-home-nav-tile-width: 120px;
+  --fm-home-nav-tile-height: 88px;
+  --fm-home-nav-tile-icon-size: 32px;
+  --fm-home-nav-tile-icon-symbol-size: 24px;
+  --fm-home-nav-tile-icon-label-gap: 6px;
+  --fm-home-nav-tile-label-size: 13px;
+  --fm-home-nav-tile-radius: 8px;
+  --fm-home-hover-duration: 140ms;
+  --fm-home-empty-padding: 12px;
+  --fm-home-new-chat-height: 24px;
+  --fm-home-new-chat-radius: 6px;
+  --fm-home-new-chat-font-size: 12px;
+  --fm-home-chat-list-gap: 8px;
+  --fm-home-chat-row-gap: 12px;
+  --fm-home-chat-row-padding: 10px;
+  --fm-home-chat-glyph-size: 32px;
+  --fm-home-chat-glyph-icon-size: 16px;
+  --fm-home-chat-title-detail-gap: 2px;
   --fm-sidebar-location-cell-size: 42px;
   --fm-sidebar-tab-action-size: 18px;
   --fm-motion-fast: 120ms;
-  --fm-home-card-hover-scale: 1.006;
-  --fm-home-card-shadow: 0 2px 5px #0000000a;
-  --fm-home-card-hover-shadow: 0 2px 8px #00000014;
 
   --fm-shadow-window: 0 28px 72px #0000003d, 0 8px 24px #0000001f;
   --fm-shadow-paper: 0 1px 2px #00000024;
@@ -633,13 +648,19 @@
   color: var(--fm-text-secondary);
 }
 
+[data-file-manager-illustration] .vc-icon-button:disabled {
+  color: var(--fm-text-quaternary);
+  cursor: default;
+  opacity: 0.5;
+}
+
 [data-file-manager-illustration] .vc-button.subtle:not(.active):hover,
 [data-file-manager-illustration] .vc-pill-button.subtle:hover {
   background: color-mix(in srgb, var(--fm-control-hover) 40%, transparent);
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):hover {
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):not(:disabled):hover {
   background: color-mix(in srgb, var(--fm-control-hover) 40%, transparent);
   color: var(--fm-text-primary);
 }
@@ -650,7 +671,7 @@
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):active {
+[data-file-manager-illustration] .vc-icon-button.subtle:not(.active):not(:disabled):active {
   background: color-mix(in srgb, var(--fm-control-pressed) 52%, transparent);
   color: var(--fm-text-primary);
 }
@@ -1177,7 +1198,7 @@
 }
 
 [data-file-manager-illustration] .file-manager-home.compact {
-  max-width: calc(var(--fm-home-card-target-width) * 2 + var(--fm-home-card-gap));
+  max-width: calc(var(--fm-home-nav-tile-width) * 2 + var(--fm-home-nav-grid-gap));
 }
 
 [data-file-manager-illustration] .file-manager-home.standalone {
@@ -1193,7 +1214,7 @@
 [data-file-manager-illustration] .home-section h2 {
   margin: 0;
   color: var(--fm-text-primary);
-  font-size: var(--fm-font-size-title);
+  font-size: var(--fm-home-section-title-size);
   font-weight: var(--fm-weight-semibold);
   line-height: var(--fm-line-tight);
 }
@@ -1205,54 +1226,169 @@
   gap: var(--fm-space-4);
 }
 
-[data-file-manager-illustration] .home-card-grid {
+/* native NavigationGrid — adaptive 120px columns, grid spacing 12 (FileManagerHomeMetrics) */
+[data-file-manager-illustration] .home-nav-grid {
   display: grid;
   grid-template-columns: repeat(
       auto-fit,
-      minmax(min(100%, var(--fm-home-card-target-width)), var(--fm-home-card-target-width))
+      minmax(min(100%, var(--fm-home-nav-tile-width)), var(--fm-home-nav-tile-width))
     );
-  gap: var(--fm-home-card-gap);
-  justify-content: space-between;
+  gap: var(--fm-home-nav-grid-gap);
+  justify-content: start;
 }
 
-[data-file-manager-illustration] .home-card {
+/* native QuickNavigationItem — vertical 120×88 tile, hover fill, radius 8 (VoyagerDS.Radius.control) */
+[data-file-manager-illustration] .home-nav-tile {
   display: grid;
-  min-width: 0;
-  min-height: var(--fm-home-card-height);
-  grid-template-columns: var(--fm-home-card-icon-size) minmax(0, 1fr);
-  align-items: center;
-  gap: var(--fm-home-card-gap);
-  border: 1px solid var(--fm-home-card-stroke);
-  border-radius: var(--fm-radius-md);
-  background: var(--fm-home-card);
-  padding: var(--fm-space-4);
+  grid-template-rows: var(--fm-home-nav-tile-icon-size) 1fr;
+  place-items: center;
+  gap: var(--fm-home-nav-tile-icon-label-gap);
+  width: var(--fm-home-nav-tile-width);
+  height: var(--fm-home-nav-tile-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--fm-home-nav-tile-radius);
+  background: transparent;
   color: var(--fm-text-primary);
-  box-shadow: var(--fm-home-card-shadow);
-  font-size: var(--fm-home-card-label-size);
-  font-weight: var(--fm-weight-semibold);
-  text-align: left;
-  transition: border-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
-    transform var(--fm-motion-fast) ease;
+  cursor: default;
+  transition: background-color var(--fm-home-hover-duration) ease-out;
 }
 
-[data-file-manager-illustration] .home-card:hover {
-  border-color: var(--fm-home-card-hover-stroke);
-  box-shadow: var(--fm-home-card-hover-shadow);
-  transform: scale(var(--fm-home-card-hover-scale));
+[data-file-manager-illustration] .home-nav-tile:hover {
+  background: var(--fm-home-row-hover);
 }
 
-[data-file-manager-illustration] .home-card:focus-visible {
+[data-file-manager-illustration] .home-nav-tile:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--fm-focus-ring), var(--fm-home-card-shadow);
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }
 
-[data-file-manager-illustration] .home-card-icon {
+[data-file-manager-illustration] .home-nav-tile-icon {
   display: grid;
-  width: var(--fm-home-card-icon-size);
-  height: var(--fm-home-card-icon-size);
+  width: var(--fm-home-nav-tile-icon-size);
+  height: var(--fm-home-nav-tile-icon-size);
   place-items: center;
   color: var(--fm-selection-label);
+  font-size: var(--fm-home-nav-tile-icon-symbol-size);
   font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .home-nav-tile-label {
+  max-width: 100%;
+  padding: 0 var(--fm-space-2);
+  font-size: var(--fm-home-nav-tile-label-size);
+  font-weight: var(--fm-weight-semibold);
+  line-height: var(--fm-line-body);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* native newChatButton — ToolbarHoverPillButtonLabel pill, radius chipContainer ≈ 6 */
+[data-file-manager-illustration] .home-new-chat {
+  display: inline-flex;
+  align-items: center;
+  height: var(--fm-home-new-chat-height);
+  padding: 0 var(--fm-space-3);
+  border: 1px solid var(--fm-separator-strong);
+  border-radius: var(--fm-home-new-chat-radius);
+  background: transparent;
+  color: var(--fm-text-primary);
+  font-size: var(--fm-home-new-chat-font-size);
+  font-weight: var(--fm-weight-medium);
+  cursor: default;
+  transition: background-color var(--fm-home-hover-duration) ease-out;
+}
+
+[data-file-manager-illustration] .home-new-chat:hover {
+  background: var(--fm-home-row-hover);
+}
+
+[data-file-manager-illustration] .home-new-chat:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* native recentChatsSection — chatHistorySpacing 8 (FileManagerHomeMetrics) */
+[data-file-manager-illustration] .home-chat-list {
+  display: grid;
+  gap: var(--fm-home-chat-list-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* native ChatHistoryRow — row padding 10, radius 8, hover fill (FileManagerHomeMetrics) */
+[data-file-manager-illustration] .home-chat-row {
+  display: grid;
+  grid-template-columns: var(--fm-home-chat-glyph-size) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fm-home-chat-row-gap);
+  width: 100%;
+  padding: var(--fm-home-chat-row-padding);
+  border: 0;
+  border-radius: var(--fm-home-nav-tile-radius);
+  background: transparent;
+  color: var(--fm-text-primary);
+  text-align: left;
+  cursor: default;
+  transition: background-color var(--fm-home-hover-duration) ease-out;
+}
+
+[data-file-manager-illustration] .home-chat-row:hover {
+  background: var(--fm-home-row-hover);
+}
+
+[data-file-manager-illustration] .home-chat-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* native AssistantChatGlyph — 32×32, radius 8, inputBackground fill (FileManagerHomeMetrics) */
+[data-file-manager-illustration] .home-chat-glyph {
+  display: grid;
+  width: var(--fm-home-chat-glyph-size);
+  height: var(--fm-home-chat-glyph-size);
+  place-items: center;
+  border-radius: var(--fm-home-nav-tile-radius);
+  background: var(--fm-home-icon-tile);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .home-chat-text {
+  display: grid;
+  gap: var(--fm-home-chat-title-detail-gap);
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .home-chat-title {
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-semibold);
+  color: var(--fm-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-file-manager-illustration] .home-chat-detail {
+  font-size: var(--fm-font-size-caption);
+  color: var(--fm-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-file-manager-illustration] .home-chat-time {
+  font-size: var(--fm-font-size-caption);
+  color: var(--fm-text-tertiary);
+  white-space: nowrap;
+}
+
+/* native empty state — emptyStateVerticalPadding 12 (FileManagerHomeMetrics) */
+[data-file-manager-illustration] .home-empty {
+  margin: 0;
+  padding: var(--fm-home-empty-padding) 0;
+  color: var(--fm-text-tertiary);
+  font-size: var(--fm-font-size-body);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1260,7 +1396,9 @@
   [data-file-manager-illustration] .nav-item,
   [data-file-manager-illustration] .nav-item-action,
   [data-file-manager-illustration] .sidebar-new-tab,
-  [data-file-manager-illustration] .home-card {
+  [data-file-manager-illustration] .home-nav-tile,
+  [data-file-manager-illustration] .home-new-chat,
+  [data-file-manager-illustration] .home-chat-row {
     transition: none;
   }
 }
@@ -1278,10 +1416,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--fm-space-6);
+  gap: var(--fm-space-4);
   height: 40px;
-  border-bottom: 1px solid var(--fm-separator);
-  padding: 0 var(--fm-space-7);
+  border-bottom: 1px solid var(--fm-separator-emphasis);
+  padding: 0 16px;
+}
+
+/* native IconButtonStyle.toolbar — 24×24, radius 5 (VoyagerDS.Radius.toolbarButton) */
+[data-file-manager-illustration] .toolbar .vc-icon-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+/* native New Chat은 ToolbarContextMenuButton 28×28 프레임 */
+[data-file-manager-illustration] .toolbar .vc-icon-button.toolbar-new-chat {
+  width: 28px;
+  height: 28px;
 }
 
 [data-file-manager-illustration] .toolbar-title-area {
@@ -1300,7 +1451,7 @@
 [data-file-manager-illustration] .toolbar-title-content {
   display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-3);
+  gap: var(--fm-space-2);
   min-width: 0;
 }
 
@@ -1373,13 +1524,15 @@
 
 [data-file-manager-illustration] .entry-grid {
   display: grid;
+  flex: 1;
   min-height: 0;
   align-content: start;
-  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
-  column-gap: var(--fm-space-8);
-  row-gap: var(--fm-space-8);
+  grid-template-columns: repeat(auto-fill, 120px);
+  /* native EntryGridCoordinator — interitemSpacing 2, lineSpacing 8, sectionInset(8, 12, 12, 12) */
+  column-gap: 2px;
+  row-gap: var(--fm-space-4);
   overflow: auto;
-  padding: var(--fm-space-8) var(--fm-space-9) var(--fm-space-9);
+  padding: var(--fm-space-4) 12px 12px;
 }
 
 [data-file-manager-illustration] .entry-list {
@@ -1388,55 +1541,64 @@
   align-content: start;
   grid-auto-rows: min-content;
   overflow: auto;
-  background: var(--fm-content);
-  padding: var(--fm-space-5) var(--fm-space-7) var(--fm-space-9);
+  background: transparent;
+  padding: 0 0 var(--fm-space-9);
+}
+
+[data-file-manager-illustration] .entry-list > thead,
+[data-file-manager-illustration] .entry-list > tbody {
+  display: contents;
 }
 
 [data-file-manager-illustration] .entry-list-header,
 [data-file-manager-illustration] .entry-list-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 112px 128px 180px;
+  grid-template-columns: 420px 220px 110px 180px;
   align-items: center;
-  column-gap: var(--fm-space-7);
+  column-gap: var(--fm-space-2);
 }
 
 [data-file-manager-illustration] .entry-list-header {
   position: sticky;
   z-index: 1;
   top: 0;
-  height: 26px;
+  box-sizing: border-box;
+  height: 28px;
   border-bottom: 1px solid var(--fm-separator);
   background: var(--fm-content);
   color: var(--fm-text-tertiary);
   font-size: var(--fm-font-size-caption-2);
-  font-weight: var(--fm-weight-bold);
+  font-weight: var(--fm-weight-regular);
+}
+
+[data-file-manager-illustration] .entry-list-header > th {
+  padding: 0 var(--fm-space-2);
+  text-align: left;
+}
+
+[data-file-manager-illustration] .entry-list-header > th:not(:last-child) {
+  border-right: 1px solid var(--fm-separator);
 }
 
 [data-file-manager-illustration] .entry-list-row {
   min-width: 0;
-  height: 34px;
+  height: 24px;
   border: 0;
-  border-radius: var(--fm-radius-md);
   background: transparent;
-  padding: 0 var(--fm-space-4);
+  padding: 0 var(--fm-space-2);
   color: var(--fm-text-primary);
   text-align: left;
-  transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms
-    ease;
+  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
+    color var(--fm-motion-fast) ease;
 }
 
-[data-file-manager-illustration] .entry-list-row:hover {
-  background: var(--fm-control-hover);
+[data-file-manager-illustration] .entry-list-row:nth-child(odd):not(.selected) {
+  background: var(--fm-list-row-alternate);
 }
 
 [data-file-manager-illustration] .entry-list-row.selected {
   background: var(--fm-selection-strong);
   color: var(--fm-text-on-accent);
-}
-
-[data-file-manager-illustration] .entry-list-row:active {
-  background: var(--fm-control-pressed);
-  transform: translateY(1px);
 }
 
 [data-file-manager-illustration] .entry-list-row:focus-visible {
@@ -1445,47 +1607,46 @@
 }
 
 [data-file-manager-illustration] .entry-list-name {
-  display: grid;
+  display: flex;
   min-width: 0;
   align-items: center;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: var(--fm-space-4);
+  gap: var(--fm-space-3);
   overflow: hidden;
   font-size: var(--fm-font-size-body);
-  font-weight: var(--fm-weight-semibold);
+  font-weight: var(--fm-weight-regular);
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .entry-list-name-text {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-file-manager-illustration] .entry-list-name-leading {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-[data-file-manager-illustration] .entry-list-name::before {
-  content: "";
-  display: none;
-}
-
-[data-file-manager-illustration] .entry-list-row > .thumb {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-[data-file-manager-illustration] .entry-list-row > .entry-list-name {
-  grid-column: 1;
-  grid-row: 1;
-  padding-left: 34px;
+[data-file-manager-illustration] .entry-list-name-trailing {
+  flex-shrink: 0;
 }
 
 [data-file-manager-illustration] .entry-kind,
-[data-file-manager-illustration] .entry-detail,
-[data-file-manager-illustration] .entry-location {
+[data-file-manager-illustration] .entry-date-modified,
+[data-file-manager-illustration] .entry-size {
   overflow: hidden;
-  color: var(--fm-text-secondary);
+  color: var(--fm-text-primary);
   font-size: var(--fm-font-size-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 [data-file-manager-illustration] .entry-list-row.selected .entry-kind,
-[data-file-manager-illustration] .entry-list-row.selected .entry-detail,
-[data-file-manager-illustration] .entry-list-row.selected .entry-location {
+[data-file-manager-illustration] .entry-list-row.selected .entry-date-modified,
+[data-file-manager-illustration] .entry-list-row.selected .entry-size {
   color: var(--fm-text-on-accent);
 }
 
@@ -1500,15 +1661,6 @@
   padding: 0;
   color: var(--fm-text-primary);
   text-align: center;
-  transition: color 120ms ease, filter 120ms ease, transform 120ms ease;
-}
-
-[data-file-manager-illustration] .entry-tile:hover {
-  filter: brightness(0.98);
-}
-
-[data-file-manager-illustration] .entry-tile:active {
-  transform: translateY(1px);
 }
 
 [data-file-manager-illustration] .entry-tile:focus-visible {
@@ -1517,6 +1669,19 @@
 
 [data-file-manager-illustration] .entry-tile:focus-visible .entry-name {
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* native EntryGridCollectionViewItem — 아이콘존 80×80(아이콘+16) 반경 8, 선택 시 white 8% 오버레이 */
+[data-file-manager-illustration] .entry-tile-icon {
+  display: grid;
+  width: 80px;
+  height: 80px;
+  place-items: center;
+  border-radius: var(--fm-entry-radius-regular);
+}
+
+[data-file-manager-illustration] .entry-tile.selected .entry-tile-icon {
+  background: rgb(255 255 255 / 8%);
 }
 
 [data-file-manager-illustration] .thumb {
@@ -1548,6 +1713,18 @@
   filter: var(--fm-entry-shadow-small);
 }
 
+/* 목록 전용 20px tier: 네이티브 EntryListView 20px 썸네일. 공유 small(24/28)은 보존한다 */
+[data-file-manager-illustration] .entry-list-row .thumb-small {
+  width: 20px;
+  height: 20px;
+}
+
+[data-file-manager-illustration] .entry-list-row .thumb-small .entry-svg-icon,
+[data-file-manager-illustration] .entry-list-row .thumb-small .entry-thumbnail-image {
+  width: 20px;
+  height: 20px;
+}
+
 [data-file-manager-illustration] .entry-thumbnail-image {
   width: 64px;
   height: 64px;
@@ -1569,7 +1746,7 @@
   border-radius: var(--fm-radius-xs);
   padding: 0 2px;
   font-size: var(--fm-font-size-caption);
-  font-weight: var(--fm-weight-medium);
+  font-weight: var(--fm-weight-regular);
   line-height: var(--fm-line-tight);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1589,48 +1766,61 @@
   color: var(--fm-text-on-accent);
 }
 
+[data-file-manager-illustration] .entry-tile.selected .entry-meta {
+  color: var(--fm-text-on-accent);
+}
+
 [data-file-manager-illustration] .statusbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 24px;
-  border-top: 1px solid var(--fm-separator);
+  border-top: 1px solid var(--fm-separator-emphasis);
   padding: 0 16px;
   color: var(--fm-text-secondary);
   font-size: var(--fm-font-size-caption);
   font-weight: var(--fm-weight-medium);
 }
 
+/* 상태바 좌측 브레드크럼 영역 할당 — native ContentPaneBreadcrumbBarView의 50% leftWidth */
 [data-file-manager-illustration] .statusbar-breadcrumb {
+  min-width: 0;
+  width: 50%;
+  flex-shrink: 0;
+}
+
+/* PathBreadcrumb 컴포넌트 자체 지오메트리 — native PathBreadcrumbView: 높이 20, 요소 간격 4 */
+[data-file-manager-illustration] .path-breadcrumb {
   display: flex;
   align-items: center;
   overflow: hidden;
   min-width: 0;
-  max-width: 50%;
   gap: 4px;
+  height: 20px;
 }
 
-[data-file-manager-illustration] .statusbar-breadcrumb-item {
+[data-file-manager-illustration] .path-breadcrumb-item {
   display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-1);
+  gap: 0;
   min-width: 0;
+  max-width: 100%;
 }
 
-[data-file-manager-illustration] .statusbar-chevron-slot {
+[data-file-manager-illustration] .path-breadcrumb-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
+  width: 10px;
   height: 14px;
   flex-shrink: 0;
 }
 
-[data-file-manager-illustration] .statusbar-breadcrumb-item .sf-symbol {
+[data-file-manager-illustration] .path-breadcrumb-item .sf-symbol {
   flex-shrink: 0;
 }
 
-[data-file-manager-illustration] .statusbar-breadcrumb-label {
+[data-file-manager-illustration] .path-breadcrumb-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1638,14 +1828,17 @@
   color: var(--fm-text-secondary);
   font-size: 12px;
   font-weight: var(--fm-weight-regular);
+  line-height: 1;
 }
 
-[data-file-manager-illustration] .statusbar-breadcrumb-item + .statusbar-breadcrumb-item {
+[data-file-manager-illustration] .path-breadcrumb-item + .path-breadcrumb-item {
   margin-left: 0;
 }
 
 [data-file-manager-illustration] .statusbar-count {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  text-align: right;
   color: var(--fm-text-secondary);
   font-size: var(--fm-font-size-caption);
   font-weight: var(--fm-weight-medium);

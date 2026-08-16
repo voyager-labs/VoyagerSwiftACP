@@ -33,10 +33,11 @@ export const ContentPane: Story = {
           <FileToolbar
             title="Directory"
             content="directory"
-            viewMode="grid"
+            viewMode={args.viewMode}
             showSidebarButton
             onViewModeChange={() => undefined}
             onToggleSidebar={() => undefined}
+            onNewChat={() => undefined}
           />
           <FileManagerPrimaryContent {...args} />
           <StatusBar
@@ -47,4 +48,12 @@ export const ContentPane: Story = {
       </main>
     </div>
   ),
+}
+
+export const ListView: Story = {
+  ...ContentPane,
+  args: {
+    ...ContentPane.args,
+    viewMode: "list",
+  },
 }

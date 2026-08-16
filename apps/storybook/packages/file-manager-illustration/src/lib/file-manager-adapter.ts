@@ -14,6 +14,8 @@ export function toEntry(f: FileEntry): Entry {
     id: f.id,
     name: f.displayName,
     kind: f.kind,
+    dateModified: f.dateModified,
+    size: f.size,
     meta: f.secondaryLabel ?? f.extension ?? undefined,
     thumbnailSrc: f.thumbnailSrc,
   }
@@ -32,11 +34,18 @@ export function propsToInitialParams(props: FileManagerIllustrationProps): {
   files: readonly Entry[]
   tabs: readonly SidebarTabItem[]
   activeTabId: string | null
+  initialPresentation: NonNullable<FileManagerIllustrationProps["initialPresentation"]>
 } {
   return {
     files: props.files.map(toEntry),
     tabs: props.contentContext.tabs.map(toSidebarTabItem),
     activeTabId: props.contentContext.activeTabId,
+    initialPresentation: props.initialPresentation ?? {
+      selectedEntryIds: [],
+      viewMode: "grid",
+      sidebarOpen: true,
+      inspectorOpen: false,
+    },
   }
 }
 
