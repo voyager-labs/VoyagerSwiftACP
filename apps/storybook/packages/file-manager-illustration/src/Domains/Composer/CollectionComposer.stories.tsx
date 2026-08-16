@@ -461,7 +461,8 @@ const ComposerSelectionFlow = ({
           editorKind: operator?.editor.kind,
           value: "",
         }
-        upsertCondition({ ...target, value })
+        // 편집 대상 조건에 editorKind가 없어도 operator에서 파생해 wire format 노출을 막는다
+        upsertCondition({ ...target, value, editorKind: operator?.editor.kind })
         setStep("complete")
       }}
     />
