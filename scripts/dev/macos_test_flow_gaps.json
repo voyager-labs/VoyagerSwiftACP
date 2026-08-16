@@ -5,6 +5,15 @@
       "canonical_path": "set/flows/settings_shortcuts_flow.md",
       "reason": "Missing production SettingsSection.shortcuts and keyboard-shortcut reducer/action/storage",
       "missing_symbols": ["SettingsSection.shortcuts", "KeyboardShortcutsFeature"]
+    },
+    "evm.split_content_pane": {
+      "canonical_path": "evm/flows/split_content_pane_flow.md",
+      "reason": "All EVM-003 interactions are planned/CBT-NEXT and no independent content-pane split composition exists",
+      "missing_symbols": [
+        "EVM-003 production command entry point",
+        "EVM-003 independent pane layout state owner",
+        "EVM-003 rendered pane composition"
+      ]
     }
   }
 }

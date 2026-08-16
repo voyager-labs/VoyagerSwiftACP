@@ -163,9 +163,11 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         .view(.setText(text))
     }
 
-    public static func scopeEditorOpen(editingPath: String?, favorites: [ScopeFavoriteItem],
-                                       backHistory: [String]) -> Self
-    {
+    public static func scopeEditorOpen(
+        editingPath: String?,
+        favorites: [ScopeFavoriteItem],
+        backHistory: [String],
+    ) -> Self {
         .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory))
     }
 

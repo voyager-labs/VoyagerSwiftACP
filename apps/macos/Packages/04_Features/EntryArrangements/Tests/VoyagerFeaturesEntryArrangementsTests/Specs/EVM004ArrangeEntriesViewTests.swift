@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryArrangements
 import XCTest
@@ -88,6 +89,26 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
         await store.send(.reapply)
         await store.receive(.delegate(.requestApply))
         await store.finish()
+    }
+
+    /// EVM-004-sort_entries_by_property: extracted sibling sorter preserves flat arrangement semantics.
+    /// hierarchy projection과 root arrangement가 동일 comparator를 공유하도록 public sorter seam을 검증한다.
+    /// - 검증 내용: sibling sorter가 name ascending 입력을 existing arrangement와 동일하게 정렬한다.
+    /// - 사전 조건: name order가 c, a, b인 flat sibling input과 name ascending configuration이다.
+    /// - 기대 결과: sorter 결과가 a, b, c이며 reducer apply semantic과 일치한다.
+    func testSiblingSorterPreservesFlatArrangementSemantics() {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let itemC = makeEntry(fixedDate, "c", "/tmp/c", 3)
+        let itemA = makeEntry(fixedDate, "a", "/tmp/a", 1)
+        let itemB = makeEntry(fixedDate, "b", "/tmp/b", 2)
+
+        let sorted = EntrySiblingSorter().sort(
+            [itemC, itemA, itemB],
+            by: .name,
+            order: .ascending,
+        )
+
+        XCTAssertEqual(sorted.map(\.id), [itemA.id, itemB.id, itemC.id])
     }
 
     /// EVM-004-sort_entries_by_property: 이름 오름차순 정렬 적용

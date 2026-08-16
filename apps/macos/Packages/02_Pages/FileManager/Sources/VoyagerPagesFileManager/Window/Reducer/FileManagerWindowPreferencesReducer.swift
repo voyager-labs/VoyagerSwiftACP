@@ -18,7 +18,9 @@ struct FileManagerWindowPreferencesReducer {
 
                 applyContentPreferences(preferences, to: &state.content)
                 for tabID in state.tabContentStates.keys {
-                    applyContentPreferences(preferences, to: &state.tabContentStates[tabID]!)
+                    guard var content = state.tabContentStates[tabID] else { continue }
+                    applyContentPreferences(preferences, to: &content)
+                    state.tabContentStates[tabID] = content
                 }
 
                 return .merge(

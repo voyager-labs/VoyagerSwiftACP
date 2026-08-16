@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import IdentifiedCollections
 import VoyagerEntitiesAppPreferences
@@ -19,13 +20,14 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         var state = FileManagerContentState()
         state.entryViewLayout.mode = .grid
 
-        let store = makeFileManagerContentStore(initialState: state)
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
 
-        await store.send(.view(.changeLayout(.list))) {
+        await store.send(.view(.changeLayout(.list)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .list
         }
 
-        // composer 동기화 수신 — 하위 composer 액션
         await store.receive(\.composer.internal.syncCollectionState)
     }
 
@@ -37,9 +39,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// - 사전 조건: 기본 FileManagerContentState (mode 기본값)
     /// - 기대 결과: state.entryViewLayout.mode == .grid, composer.syncCollectionState 수신
     func testChangeLayoutToGridUpdatesMode() async {
-        let store = makeFileManagerContentStore()
+        let store = makeFileManagerContentFeatureStore()
+        store.exhaustivity = .off
 
-        await store.send(.view(.changeLayout(.grid))) {
+        await store.send(.view(.changeLayout(.grid)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
         }
 
@@ -53,9 +57,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// - 기대 결과: recorder에 SettingsKeys.viewLayout == EntryViewLayoutState.Mode.grid.rawValue 기록
     func testChangeLayoutPersistsToSettings() async {
         let recorder = UserDefaultsStringRecorder()
-        let store = makeFileManagerContentStore(setString: recorder.record)
+        let store = makeFileManagerContentFeatureStore(setString: recorder.record)
+        store.exhaustivity = .off
 
-        await store.send(.view(.changeLayout(.grid))) {
+        await store.send(.view(.changeLayout(.grid)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
+            $0.entryViewLayout.mode = .grid
             $0.entryViewLayout.mode = .grid
         }
 
@@ -76,8 +83,10 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         state.entryViewLayout.entryOperations.renamingItemId = renamingId
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
 
-        await store.send(.view(.changeLayout(.grid))) {
+        await store.send(.view(.changeLayout(.grid)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
         }
 
@@ -98,12 +107,16 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         state.entryViewLayout.mode = .list
         state.entryViewLayout.entryOperations.renamingItemId = renamingId
 
-        let store = makeFileManagerContentStore(initialState: state)
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
 
         // 같은 모드로 변경 → isModeChanging == false → 취소 없음
         await store.send(.view(.changeLayout(.list)))
+        await store.receive(\.entryViewLayout.internal.setMode)
 
         await store.receive(\.composer.internal.syncCollectionState)
+        XCTAssertEqual(store.state.entryViewLayout.mode, .list)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.renamingItemId, renamingId)
     }
 
     // MARK: - EVM-002-show_hide_hidden_entry
@@ -112,16 +125,17 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// EVM-002-show_hide_hidden_entry: 숨김 파일 토글 + 리로드 시 네비게이션/히스토리 불변 검증
     /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가 entryViewLayout.toggleShowHiddenFiles +
     /// reload 체인을 트리거하며 네비게이션 라우트와 히스토리가 변경되지 않음을 증명한다.
-    /// - 검증 내용: showHiddenFiles 토글, 현재 폴더 reload 액션 수신, navigationState/backHistory/forwardHistory 불변 확인
-    /// - 사전 조건: navigationState == .folder("/seed"), showHiddenFiles == false
+    /// - 검증 내용: showHiddenFiles 토글, 현재 정렬 metadata priority를 포함한 reload, navigation history 불변 확인
+    /// - 사전 조건: navigationState == .folder("/seed"), showHiddenFiles == false, sortKey == .kind
     /// - 기대 결과:
     ///   1) .entryViewLayout(.view(.toggleShowHiddenFiles)) 수신, showHiddenFiles == true
-    ///   2) .entryViewLayout(.entryOperations(.loading(.loadItems(path: "/seed", showHidden: true)))) 수신
+    ///   2) loadItems(path: "/seed", showHidden: true, priority: .active([.spotlight])) 수신
     ///   3) navigationState, backHistory, forwardHistory 변경 없음
     func testToggleShowHiddenFilesAndReloadPreservesNavigationHistory() async {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/seed")
         state.entryViewLayout.showHiddenFiles = false
+        state.entryViewLayout.entryArrangements.sortKey = .kind
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
@@ -137,12 +151,175 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryViewLayout.showHiddenFiles = true
         }
 
-        _ = await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        _ = await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority,
+            )))) = action else { return false }
+            return path == "/seed"
+                && showHidden
+                && priority == .active([.spotlight])
+        }
 
         // 네비게이션 라우트와 히스토리가 변경되지 않았는지 확인
         XCTAssertEqual(store.state.navigation.navigationState, preNavigation)
         XCTAssertEqual(store.state.navigation.backHistory, preBackHistory)
         XCTAssertEqual(store.state.navigation.forwardHistory, preForwardHistory)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 현재 root와 expanded folder reload
+    /// Spotlight 기반 정렬을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
+    /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 동일한 active priority를 사용함
+    /// - 사전 조건: folder route, sortKey == .kind, expanded hierarchy cache 존재
+    /// - 기대 결과: loadItems와 arrangementMetadataPriorityChanged가 차례로 전달됨
+    func testMetadataSortChangeReloadsRootAndExpandedHierarchy() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/seed")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: arrangement apply 내부 액션은 metadata reload 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden: _,
+                priority,
+            )))) = action else { return false }
+            return path == "/seed" && priority == .active([.spotlight])
+        }
+        await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: collection metadata 정렬 변경 시 현재 path 재조회
+    /// Collection의 기존 core-only payload를 새 metadata priority로 다시 materialize하도록 요청하는지 검증한다.
+    /// - 검증 내용: collection mode에서 sortKey 변경이 현재 collection item path를 applyCollectionSearchPaths로 전달함
+    /// - 사전 조건: collection mode, sortKey == .name, 현재 collection item 두 개 존재
+    /// - 기대 결과: 두 item path와 현재 showHidden 값으로 collection materialization이 재요청됨
+    func testMetadataSortChangeRematerializesCurrentCollectionPaths() async {
+        var state = FileManagerContentState()
+        state.entryViewLayout.isCollectionMode = true
+        state.entryViewLayout.collectionItems = [
+            .temporaryFolder(id: "/collection/first", name: "first"),
+            .temporaryFolder(id: "/collection/second", name: "second"),
+        ]
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: collection materialization 내부 stream은 현재 path 재요청 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, showHidden, priority))) =
+                action
+            else { return false }
+            return paths == ["/collection/first", "/collection/second"]
+                && !showHidden
+                && priority == .active([.spotlight])
+        }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: in-flight collection 정렬 변경 시 원본 path 유지
+    /// partial batch만 도착한 replace stream을 새 metadata priority로 재시작해도 미도착 path가 보존되는지 검증한다.
+    /// - 검증 내용: arrangement 변경이 partial collectionItems가 아닌 active replace 원본 paths를 재사용함
+    /// - 사전 조건: 두 path replace가 진행 중이고 첫 번째 item만 materialize됨
+    /// - 기대 결과: applyCollectionSearchPaths 재요청에 원본 path 두 개가 모두 포함됨
+    func testMetadataSortChangePreservesInFlightCollectionSourcePaths() async {
+        let first = EntryModel.temporaryFolder(id: "/collection/first", name: "first")
+        let sourcePaths = [first.id, "/collection/second"]
+        var layoutState = EntryViewLayoutState()
+        layoutState.isCollectionMode = true
+        _ = EntryViewLayoutFeature().reduce(
+            into: &layoutState,
+            action: .internal(.applyCollectionSearchPaths(
+                paths: sourcePaths,
+                showHidden: false,
+                priority: .none,
+            )),
+        )
+        layoutState.collectionItems = [first]
+        var state = FileManagerContentState()
+        state.entryViewLayout = layoutState
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: collection materialization stream은 원본 path 재사용 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _, priority))) = action
+            else { return false }
+            return paths == sourcePaths && priority == .active([.spotlight])
+        }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: in-flight append 정렬 변경 시 원본 path 유지
+    /// partial append를 취소하고 metadata reload를 시작해도 미도착 path는 보존하고 제거 path는 제외하는지 검증한다.
+    /// - 검증 내용: active append 원본 paths 병합과 remove lifecycle pruning
+    /// - 사전 조건: 세 path append 중 하나만 도착했고 다른 하나는 제거됨
+    /// - 기대 결과: 현재 item과 미도착 유효 path만 applyCollectionSearchPaths에 포함됨
+    func testMetadataSortChangePreservesInFlightAppendPathsExceptRemovedPaths() async {
+        let base = EntryModel.temporaryFolder(id: "/collection/base", name: "base")
+        let arrived = EntryModel.temporaryFolder(id: "/collection/arrived", name: "arrived")
+        let pendingPath = "/collection/pending"
+        let removedPath = "/collection/removed"
+        var layoutState = EntryViewLayoutState()
+        layoutState.isCollectionMode = true
+        layoutState.collectionItems = [base]
+        _ = EntryViewLayoutFeature().reduce(
+            into: &layoutState,
+            action: .internal(.addCollectionPaths([arrived.id, pendingPath, removedPath])),
+        )
+        layoutState.collectionItems.append(arrived)
+        _ = EntryViewLayoutFeature().reduce(
+            into: &layoutState,
+            action: .internal(.removeCollectionPaths([removedPath])),
+        )
+        var state = FileManagerContentState()
+        state.entryViewLayout = layoutState
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: collection materialization stream은 append 원본 path 재사용 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _, priority))) = action
+            else { return false }
+            return paths == [base.id, arrived.id, pendingPath] && priority == .active([.spotlight])
+        }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: metadata grouping 변경 시 현재 root와 expanded folder reload
+    /// Tags 기반 grouping을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
+    /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 Tags 우선 priority를 사용함
+    /// - 사전 조건: folder route, groupKey == .tags
+    /// - 기대 결과: loadItems와 arrangementMetadataPriorityChanged가 차례로 전달됨
+    func testMetadataGroupChangeReloadsRootAndExpandedHierarchy() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/seed")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: arrangement apply 내부 액션은 metadata reload 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setGroupKey(.tags)))) {
+            $0.entryViewLayout.entryArrangements.groupKey = .tags
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden: _,
+                priority,
+            )))) = action else { return false }
+            return path == "/seed" && priority == .active([.tags])
+        }
+        await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
     }
 
     // MARK: - EVM-002-set_entries_view_as_list_table
@@ -160,19 +337,18 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         var state = FileManagerContentState()
         state.entryViewLayout.mode = .grid
 
-        // store.exhaustivity = .off: FileManagerContentFeature 전체 리듀서 사용 시
-        // changeLayout이 ComposerReducer 외에도 Scope/composer 자체 처리를 트리거할 수 있음
         let store = makeFileManagerContentFeatureStore(
             initialState: state,
             setString: recorder.record,
         )
         store.exhaustivity = .off
 
-        await store.send(.view(.changeLayout(.list))) {
+        await store.send(.view(.changeLayout(.list)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .list
         }
 
-        _ = await store.receive(\.composer.internal.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
 
         XCTAssertEqual(recorder.value(forKey: SettingsKeys.viewLayout), EntryViewLayoutState.Mode.list.rawValue)
         XCTAssertEqual(store.state.entryViewLayout.mode, .list)
@@ -194,6 +370,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             .temporaryFolder(id: "/seed/file-c", name: "file-c"),
         ]
         state.entryViewLayout.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
+        state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = ["/seed/file-a", "/seed/file-c"]
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
@@ -219,6 +396,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             .temporaryFolder(id: "/seed/file-y", name: "file-y"),
         ]
         state.entryViewLayout.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
+        state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = []
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
@@ -317,6 +495,27 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         )
     }
 
+    /// EVM-002-set_entries_view_as_list_table: root 교체 시 현재 list만 접근성 child로 유지함
+    /// content root가 바뀐 뒤 VoiceOver가 이전 EntryListView를 계속 탐색하지 않는지 검증한다.
+    /// - 검증 내용: non-list child 보존, stale list 제거, current descendant list 추가
+    /// - 사전 조건: 기존 accessibility children에 stale list와 일반 view가 있고 새 list가 렌더됨
+    /// - 기대 결과: 결과 children에는 일반 view와 current list만 포함됨
+    func testAccessibilityChildrenReplaceStaleEntryListWithCurrentList() {
+        let retainedView = NSView(frame: .zero)
+        let staleList = EntryListView()
+        let currentList = EntryListView()
+
+        let children = MainContainerSplitCoordinator.entryListAccessibilityChildren(
+            existingChildren: [retainedView, staleList],
+            currentEntryListViews: [currentList],
+        )
+
+        XCTAssertEqual(children.count, 2)
+        XCTAssertTrue(children.contains { ($0 as? NSView) === retainedView })
+        XCTAssertTrue(children.contains { ($0 as? NSView) === currentList })
+        XCTAssertFalse(children.contains { ($0 as? NSView) === staleList })
+    }
+
     // MARK: - VOY-578-ordinary_directory_loading
 
     /// VOY-578-ordinary_directory_loading: 일반 Directory 로딩은 엔트리를 유지하고 투명 input blocker로 입력을 차단한다.
@@ -370,5 +569,38 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             XCTAssertFalse(policy.requiresKeyCommandFocus)
             XCTAssertTrue(policy.allowsKeyboardCommandDispatch)
         }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: 현재 generation의 stream failure 후 선택 재조정을 발행한다
+    /// 루트 스트림이 부분 core batch 뒤 실패하면, partial projection이 선택을 보존한 상태이므로
+    /// 현재 loading generation과 일치하는 실패에 대해서만 reconcile을 발행해
+    /// 선택·rename delegate를 동기화한다.
+    /// - 검증 내용: 현재 generation의 streamFailed 후 `.internal(.reconcileHierarchySelection)` 수신
+    /// - 사전 조건: hierarchy root가 설정돼 있고 현재 generation의 루트 stream이 실패한다.
+    /// - 기대 결과: reconcileHierarchySelection이 발행되어 선택·rename delegate를 동기화한다.
+    func testStreamFailureEmitsHierarchySelectionReconcile() async {
+        var state = FileManagerContentState()
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 0)))))
+        await store.receive(\.entryViewLayout.internal.reconcileHierarchySelection)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: stale generation의 stream failure는 재조정 없이 projection만 적용한다
+    /// 이전 generation의 streamFailed가 늦게 도착하면 EntryOperationsLoadingReducer가 무시하므로,
+    /// 현재 loading generation과 다른 실패에 대해서는 reconcile을 발행하지 않고 projection만 적용한다.
+    /// - 검증 내용: 현재 generation과 다른 streamFailed 후 applyContentProjection 수신 (reconcile 미발행)
+    /// - 사전 조건: hierarchy root가 설정돼 있고 현재 generation은 0이다.
+    /// - 기대 결과: projection은 적용되되 reconcileHierarchySelection은 발행되지 않는다.
+    func testStaleStreamFailureSkipsHierarchySelectionReconcile() async {
+        var state = FileManagerContentState()
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.receive(\.entryViewLayout.view.applyContentProjection)
     }
 }

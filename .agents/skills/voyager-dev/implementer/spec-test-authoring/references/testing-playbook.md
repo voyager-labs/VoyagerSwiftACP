@@ -130,6 +130,20 @@ See `flow-test-topology.md` for the complete mapping contract.
 - Use `TestStore(initialState:) { Reducer() } withDependencies: { ... }` for deterministic mock injection. Test both state mutations (in `send` closure) and received effects (`store.receive`). Use `.off` exhaustivity for complex reducer flows with computed properties.
 - `skipInFlightEffects()`는 effect 처리 중 새로 생성된 downstream effect를 **재귀적으로 처리하지 않는다**. 다단계 effect chain에서는 각 downstream effect를 명시적으로 `receive`해야 한다.
 
+### 버퍼링된 비동기 전달의 상관관계 테스트
+
+payload와 correlation metadata가 비동기 경계를 함께 통과해야 하는 동작은 해당 spec/AC의 owning suite에서 다음 순서로 검증한다. Reducer-owned effect는 `TestStore`를 통해 구동한다.
+
+1. checked continuation 또는 명시적 barrier로 결과 소비를 보류한다.
+2. 소비를 재개하기 전에 서로 다른 metadata를 가진 payload를 두 개 이상 enqueue한다.
+3. barrier를 해제하고 모든 결과를 소비한다.
+4. 각 payload가 원래 metadata와 결합되어 있는지와 owning behavior가 요구하는 enqueue 순서를 함께 단언한다.
+
+`Task.sleep`으로 우연한 interleaving을 기다리지 않는다. 경과 시간 자체가 동작 계약일 때만 controlled clock을 사용한다.
+
+- **RED:** shared `current` 또는 `latest` side channel에서 metadata를 읽는 구현에서 payload-metadata 결합 단언이 실패한다.
+- **GREEN:** 각 buffered item이 자신의 immutable payload-metadata value를 소유하면 같은 테스트가 결합과 순서를 모두 보존하며 통과한다.
+
 ### skipInFlightEffects 한계 및 대응
 
 `skipInFlightEffects()`는 현재 대기 중인 effect만 처리한다. effect 실행 중 새로 생성된 effect는 자동으로 처리되지 않는다.

@@ -273,7 +273,27 @@ enum EntryFileOpsLive {
                 throw FileOpError.system(message: "No items to compress")
             }
 
-            let parentURL = itemURLs[0].deletingLastPathComponent()
+            let standardizedItemURLs = itemURLs.map(\.standardizedFileURL)
+            let parentURLs = standardizedItemURLs.map {
+                $0.deletingLastPathComponent().standardizedFileURL
+            }
+            let sharedParentURL = parentURLs[0]
+            let allItemsShareParent = parentURLs.dropFirst().allSatisfy { $0 == sharedParentURL }
+
+            var commonAncestorPathComponents = standardizedItemURLs[0].pathComponents
+            for itemURL in standardizedItemURLs.dropFirst() {
+                let itemPathComponents = itemURL.pathComponents
+                let commonComponentCount = zip(commonAncestorPathComponents, itemPathComponents)
+                    .prefix { $0 == $1 }
+                    .count
+                commonAncestorPathComponents = Array(commonAncestorPathComponents.prefix(commonComponentCount))
+            }
+
+            let commonAncestorURL = URL(
+                fileURLWithPath: "/" + commonAncestorPathComponents.dropFirst().joined(separator: "/"),
+                isDirectory: true,
+            ).standardizedFileURL
+            let archiveParentURL = allItemsShareParent ? sharedParentURL : commonAncestorURL
 
             let archiveName: String
             if itemURLs.count == 1 {
@@ -283,21 +303,22 @@ enum EntryFileOpsLive {
                 archiveName = "Archive.zip"
             }
 
-            var archiveURL = parentURL.appendingPathComponent(archiveName)
+            var archiveURL = archiveParentURL.appendingPathComponent(archiveName)
             var counter = 2
             while FileManagerClient.liveValue.fileExists(archiveURL.path) {
                 let baseName = archiveName.replacingOccurrences(of: ".zip", with: "")
-                archiveURL = parentURL.appendingPathComponent("\(baseName) \(counter).zip")
+                archiveURL = archiveParentURL.appendingPathComponent("\(baseName) \(counter).zip")
                 counter += 1
             }
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-            process.currentDirectoryURL = parentURL
+            process.currentDirectoryURL = archiveParentURL
 
             var arguments = ["-r", "-q", archiveURL.lastPathComponent]
-            for itemURL in itemURLs {
-                arguments.append(itemURL.lastPathComponent)
+            for itemURL in standardizedItemURLs {
+                let relativePathComponents = itemURL.pathComponents.dropFirst(archiveParentURL.pathComponents.count)
+                arguments.append(relativePathComponents.joined(separator: "/"))
             }
             process.arguments = arguments
 

@@ -75,6 +75,7 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         let selectedEntry = makeEntry(name: "Dropped.md", fullPath: "/Users/test/Documents/Dropped.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
+        initialState.content.entryViewLayout.entries = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
         let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
         initialState.tabContentStates[activeTabID] = initialState.content

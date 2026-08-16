@@ -222,14 +222,11 @@ func handleEntryActionReplayTerminal(
     case .success:
         let refreshRequestID = requestID ?? makeFallbackRequestID()
         state.undoRedoPhase = .refreshing(requestID: refreshRequestID)
-        let windowID = state.windowID
-        return .run { send in
-            let availability = await undoManagerClient.availability(windowID)
-            await send(.internal(.undoManagerReplayAvailabilityChanged(
-                requestID: refreshRequestID,
-                availability: availability,
-            )))
-        }
+        return handleReplaySuccessEffect(
+            requestID: refreshRequestID,
+            windowID: state.windowID,
+            undoManagerClient: undoManagerClient,
+        )
 
     case .failure(reason: .operationFailed, appliedTargets: _):
         guard let requestID, let windowID = state.windowID else {
@@ -255,6 +252,20 @@ func handleEntryActionReplayTerminal(
         state.undoRedoPhase = .desynchronized
         state.undoManagerAvailability = .init()
         return .none
+    }
+}
+
+private func handleReplaySuccessEffect(
+    requestID: UUID,
+    windowID: UUID?,
+    undoManagerClient: UndoManagerClient,
+) -> Effect<FileManagerWindowAction> {
+    .run { send in
+        let availability = await undoManagerClient.availability(windowID)
+        await send(.internal(.undoManagerReplayAvailabilityChanged(
+            requestID: requestID,
+            availability: availability,
+        )))
     }
 }
 

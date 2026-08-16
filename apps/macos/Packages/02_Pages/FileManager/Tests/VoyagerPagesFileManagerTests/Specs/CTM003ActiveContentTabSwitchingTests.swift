@@ -128,7 +128,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         } withDependencies: {
@@ -160,7 +162,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         }
@@ -188,7 +192,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         }
@@ -220,7 +226,9 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
                 isPinned: false,
                 title: "Home",
                 iconName: "house",
-            )], activeTabID: homeID, recentlyClosed: nil),
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         } withDependencies: {

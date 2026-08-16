@@ -159,6 +159,33 @@ private func contentTabObservationRebindEvent(
     }
 }
 
+private enum ContentTabMoveFolderLifecycleEvent: String {
+    case folderCancel = "folder-cancel"
+    case windowRebind = "window-rebind"
+    case hierarchyRestart = "hierarchy-restart"
+    case collectionRestart = "collection-restart"
+    case rebindComplete = "rebind-complete"
+}
+
+private func contentTabMoveFolderLifecycleEvent(
+    _ action: FileManagerContentAction,
+) -> ContentTabMoveFolderLifecycleEvent? {
+    switch action {
+    case .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))):
+        .folderCancel
+    case .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged))):
+        .windowRebind
+    case .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads)):
+        .hierarchyRestart
+    case .entryViewLayout(.internal(.restartCollectionMaterialization)):
+        .collectionRestart
+    case .internal(.applyNavigationState):
+        .rebindComplete
+    default:
+        nil
+    }
+}
+
 @MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
     private struct ExpectedPinnedRecordSaveFailure: Error {}
@@ -7687,7 +7714,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let allInterests = LockIsolated<[FileChangeWatchInterest]>([])
         let pendingInterests = LockIsolated<[FileChangeWatchInterest]>([])
         let removedInterestIDs = LockIsolated<Set<String>>([])
-        let eventContinuations = LockIsolated<[String: [AsyncStream<[FileChangeGatewayEvent]>.Continuation]]>([:])
+        let eventContinuations = LockIsolated<[String: [AsyncStream<FileChangeGatewayEventBatch>.Continuation]]>([:])
         let notificationStarts = LockIsolated(0)
         let notificationStops = LockIsolated(0)
         let observedStreamStarts = LockIsolated(0)
@@ -7708,12 +7735,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 Reduce { _, action in
                     guard case let .windows(.element(
                         id: windowID,
-                        action: .window(.tabContent(tabID: tabID, action: .externalFileSystemChanged(paths))),
+                        action: .window(.tabContent(tabID: tabID, action: .externalFileSystemChanged(paths, _))),
                     )) = action else { return .none }
-                    if windowID == sourceID, tabID == fallbackTabID, paths == ["\(fallbackPath)/changed"] {
+                    if windowID == sourceID, tabID == fallbackTabID, paths.map(\.path) == ["\(fallbackPath)/changed"] {
                         sourceEventReceived.fulfill()
                     }
-                    if windowID == targetID, tabID == movedTabID, paths == ["\(movedPath)/changed"] {
+                    if windowID == targetID, tabID == movedTabID, paths.map(\.path) == ["\(movedPath)/changed"] {
                         targetEventReceived.fulfill()
                     }
                     return .none
@@ -7826,18 +7853,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(notificationStarts.value, 4)
         XCTAssertGreaterThanOrEqual(notificationStops.value, 2)
 
-        eventContinuations.value[fallbackPath]?.last?.yield([
+        eventContinuations.value[fallbackPath]?.last?.yield(.init(events: [
             FileChangeGatewayEvent(
                 path: "\(fallbackPath)/changed",
                 flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified),
             ),
-        ])
-        eventContinuations.value[movedPath]?.last?.yield([
+        ]))
+        eventContinuations.value[movedPath]?.last?.yield(.init(events: [
             FileChangeGatewayEvent(
                 path: "\(movedPath)/changed",
                 flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified),
             ),
-        ])
+        ]))
         await fulfillment(of: [sourceEventReceived, targetEventReceived], timeout: 1)
 
         await store.send(.windows(.element(
@@ -7854,7 +7881,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 action: .internal(.stopObservingSystemNotifications),
             )),
         )))
-        await store.skipReceivedActions()
         await store.finish()
     }
 
@@ -8016,6 +8042,213 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             "rebind-start",
             "rebind-complete",
         ])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: cross-window folder·collection load lifecycle를 보장한다.
+    /// projectTarget가 moved tab의 entryOperations.windowID를 이미 target으로 재지정한 뒤에도, 복사된
+    /// folderLoadingContexts에서 유도한 source-keyed cancel이 원본 source folder stream을 실제로 취소하고,
+    /// 그 후 cancelAllFolderItems가 target의 folderLoadingContexts를 비우며, restart·observation rebind 순서를
+    /// 지키고, 무관한 source tab의 folder stream은 보존하는지 검증한다.
+    /// - 검증 내용: held source folder stream .cancelled, target restart, context clearing, 무관 tab isolation,
+    ///   folder-cancel → window-rebind → hierarchy-restart → observation rebind 순서
+    /// - 사전 조건: moved tab과 무관 fallback tab이 각각 held folder stream을 갖고 move가 성공한다.
+    /// - 기대 결과: moved tab의 source-keyed stream이 취소되고, fallback stream은 유지되며, target moved tab의
+    ///   folderLoadingContexts가 비워지고, hierarchy·collection restart/rebind 순서가 지켜진다.
+    func testContentTabMoveOrdersLoadingCancellationBeforeOwnerRebindAndRestartsAfter() async throws {
+        let sourceID = UUID(4560)
+        let targetID = UUID(4561)
+        let movedTabID = ContentTabID(rawValue: "folder-lifecycle-moved")
+        let fallbackTabID = ContentTabID(rawValue: "folder-lifecycle-fallback")
+        let targetOutgoingTabID = ContentTabID(rawValue: "folder-lifecycle-target-outgoing")
+        let movedOwnerID = UUID(4563)
+        let fallbackOwnerID = UUID(4564)
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4562),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        let movedFolderRequest = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/folder-lifecycle/moved/child",
+            folderGeneration: 1,
+            path: "/folder-lifecycle/moved/child",
+            showHidden: false,
+            priority: .none,
+        )
+        let fallbackFolderRequest = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/folder-lifecycle/fallback/child",
+            folderGeneration: 1,
+            path: "/folder-lifecycle/fallback/child",
+            showHidden: false,
+            priority: .none,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, "/folder-lifecycle/moved"), (fallbackTabID, "/folder-lifecycle/fallback")],
+        )
+        source.window.contentTabs.activeTabID = movedTabID
+        source.window.contentTabs.previousActiveTabID = fallbackTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[movedTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[movedTabID])
+        var movedContent = source.window.content
+        movedContent.entryViewLayout.entryOperations.windowID = sourceID
+        movedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = movedOwnerID
+        movedContent.entryViewLayout.isCollectionMode = true
+        movedContent.entryViewLayout.collectionReplaceEpoch = 3
+        movedContent.entryViewLayout.activeCollectionReplacePaths = ["/collection-lifecycle/replace.txt"]
+        movedContent.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 0]
+        movedContent.entryViewLayout.activeCollectionAppendPaths = [7: ["/collection-lifecycle/append.txt"]]
+        movedContent.entryViewLayout.nextCollectionAppendToken = 7
+        // target restart가 같은 moved URL을 두 번째로 재호출하도록, moved folder를 expanded .loadingCore로 시드한다.
+        // folderGeneration은 source request(movedFolderRequest.folderGeneration == 1)와 일치시킨다.
+        let movedFolder = EntryModel.temporaryFolder(
+            id: "/folder-lifecycle/moved/child",
+            name: "child",
+        )
+        movedContent.entryViewLayout.entries.append(movedFolder)
+        movedContent.entryViewLayout.hierarchy.nodesByID["/folder-lifecycle/moved/child"] = FolderNodeState(
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loadingCore,
+        )
+        source.window.tabContentStates[movedTabID] = movedContent
+        source.window.content = movedContent
+        var fallbackContent = try XCTUnwrap(source.window.tabContentStates[fallbackTabID])
+        fallbackContent.entryViewLayout.entryOperations.windowID = sourceID
+        fallbackContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = fallbackOwnerID
+        source.window.tabContentStates[fallbackTabID] = fallbackContent
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        source.window.pendingContentTabMove = .init(request: request, lifecycle: .inFlight)
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetOutgoingTabID, "/folder-lifecycle/target/outgoing")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+
+        let events = LockIsolated<[String]>([])
+        let movedLoadStarted = expectation(description: "moved folder load started")
+        let fallbackLoadStarted = expectation(description: "fallback folder load started")
+        let movedLoadCancelled = expectation(description: "moved source-keyed folder load cancelled")
+        let movedLoadCount = LockIsolated(0)
+        let movedCancellationCount = LockIsolated(0)
+        let fallbackCancellationCount = LockIsolated(0)
+        let targetContentContextsAtCancel = LockIsolated<[Bool?]>([])
+        let movedGate = AsyncStream<Void>.makeStream()
+        let fallbackGate = AsyncStream<Void>.makeStream()
+
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { state, action in
+                    guard case let .windows(.element(
+                        id: windowID,
+                        action: .window(.tabContent(tabID: tabID, action: contentAction)),
+                    )) = action,
+                        windowID == targetID, tabID == movedTabID,
+                        let event = contentTabMoveFolderLifecycleEvent(contentAction)
+                    else { return .none }
+                    if event == .folderCancel {
+                        // cancelAllFolderItems 처리 시점의 target active content folderLoadingContexts가
+                        // 이미 비워졌는지를 recorder에서 기록한다.
+                        let isEmpty = MainActor.assumeIsolated {
+                            state.windows[id: targetID]?.window.content.entryViewLayout.entryOperations
+                                .folderLoadingContexts.isEmpty
+                        }
+                        targetContentContextsAtCancel.withValue { $0.append(isEmpty) }
+                    }
+                    events.withValue { $0.append(event.rawValue) }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                if url.path == "/folder-lifecycle/moved/child" {
+                    // 첫 invocation만 source-keyed held stream으로 취급하고, cancel 뒤 target restart가
+                    // 같은 URL을 다시 로드하면 즉시 완료(빈 결과)로 두어 over-fulfill/교착을 피한다.
+                    let isFirstLoad = movedLoadCount.withValue { count -> Bool in
+                        count += 1
+                        return count == 1
+                    }
+                    guard isFirstLoad else { return [] }
+                    movedLoadStarted.fulfill()
+                    return await withTaskCancellationHandler {
+                        for await _ in movedGate.stream {}
+                        return []
+                    } onCancel: {
+                        movedCancellationCount.withValue { $0 += 1 }
+                        movedGate.continuation.finish()
+                        movedLoadCancelled.fulfill()
+                    }
+                }
+                if url.path == "/folder-lifecycle/fallback/child" {
+                    fallbackLoadStarted.fulfill()
+                    return await withTaskCancellationHandler {
+                        for await _ in fallbackGate.stream {}
+                        return []
+                    } onCancel: {
+                        fallbackCancellationCount.withValue { $0 += 1 }
+                        fallbackGate.continuation.finish()
+                    }
+                }
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient.moveScopes = { _ in .moved }
+        }
+        store.exhaustivity = .off
+
+        // Both source folder streams start: moved tab is source-keyed, fallback is unrelated.
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.tabContent(
+                tabID: movedTabID,
+                action: .entryViewLayout(.entryOperations(.loading(.loadFolderItems(movedFolderRequest)))),
+            )),
+        )))
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.tabContent(
+                tabID: fallbackTabID,
+                action: .entryViewLayout(.entryOperations(.loading(.loadFolderItems(fallbackFolderRequest)))),
+            )),
+        )))
+        await fulfillment(of: [movedLoadStarted, fallbackLoadStarted], timeout: 1)
+
+        await store.send(.contentTabMoveRequest(request))
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        // Source-keyed moved folder stream must be cancelled by the explicit source-keyed cancel.
+        await fulfillment(of: [movedLoadCancelled], timeout: 1)
+
+        // Unrelated fallback stream (not moved) must NOT be cancelled.
+        XCTAssertEqual(fallbackCancellationCount.value, 0)
+        // Source stream loaded once (held), then target restart re-invokes the same moved URL a
+        // second time (immediate empty result), so the moved URL is invoked exactly twice.
+        XCTAssertEqual(movedLoadCount.value, 2)
+
+        // Release the unrelated fallback stream so finish() can complete.
+        fallbackGate.continuation.finish()
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(targetContentContextsAtCancel.value, [true])
+
+        XCTAssertEqual(events.value, [
+            "folder-cancel",
+            "window-rebind",
+            "hierarchy-restart",
+            "collection-restart",
+            "rebind-complete",
+        ])
+        XCTAssertEqual(movedCancellationCount.value, 1)
+        let movedLayout = try XCTUnwrap(store.state.windows[id: targetID]?.window.content.entryViewLayout)
+        XCTAssertEqual(movedLayout.collectionReplaceEpoch, 5)
+        XCTAssertEqual(movedLayout.nextCollectionAppendToken, 8)
     }
 
     /// CTM-001-move_content_tab_to_another_window: inactive move는 source active lifecycle을 rebind하지 않는다.

@@ -132,31 +132,42 @@ extension FileManagerWindowState {
         }
         guard let managerTarget else { return nil }
 
+        let candidates = matchingUndoRedoOperations(for: managerTarget)
+        guard candidates.count == 1, let operations = candidates.first else { return nil }
+
+        guard let localRecord = latestUndoRedoRecord(for: direction, in: operations),
+              localRecord.id == managerTarget.recordID,
+              !operations.isEntryActionBusy(localRecord)
+        else { return nil }
+        return managerTarget
+    }
+
+    private func matchingUndoRedoOperations(for target: UndoManagerRecordIdentity) -> [EntryOperationsState] {
         var candidates: [EntryOperationsState] = []
-        if sidebarEntryDropOperations.undoOwnerID == managerTarget.ownerID {
+        if sidebarEntryDropOperations.undoOwnerID == target.ownerID {
             candidates.append(sidebarEntryDropOperations)
         }
-        if content.entryViewLayout.entryOperations.undoOwnerID == managerTarget.ownerID {
+        if content.entryViewLayout.entryOperations.undoOwnerID == target.ownerID {
             candidates.append(content.entryViewLayout.entryOperations)
         }
         for (tabID, contentState) in tabContentStates where tabID != contentTabs.activeTabID {
             let operations = contentState.entryViewLayout.entryOperations
-            if operations.undoOwnerID == managerTarget.ownerID {
+            if operations.undoOwnerID == target.ownerID {
                 candidates.append(operations)
             }
         }
-        guard candidates.count == 1, let operations = candidates.first else { return nil }
+        return candidates
+    }
 
-        let localRecord = switch direction {
+    private func latestUndoRedoRecord(
+        for direction: EntryActionDirection,
+        in operations: EntryOperationsState,
+    ) -> EntryActionRecord? {
+        switch direction {
         case .undo:
             operations.latestUndoRecord
         case .redo:
             operations.latestRedoRecord
         }
-        guard let localRecord,
-              localRecord.id == managerTarget.recordID,
-              !operations.isEntryActionBusy(localRecord)
-        else { return nil }
-        return managerTarget
     }
 }

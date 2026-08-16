@@ -141,6 +141,7 @@ private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate,
         }
         controller.showWindow(nil)
         presentWindow(controller)
+        FileManagerHostFixture.startScenarioIfNeeded(for: preset, in: controller)
         DispatchQueue.main.async { [weak self, weak controller] in
             guard let self,
                   let controller,

@@ -17,7 +17,10 @@ enum FileManagerAiChatContextAdapter {
 
     static func makeCurrentContextSnapshot(content state: FileManagerContentState) -> AiChatCurrentContextSnapshot {
         let currentViewReference = makeCurrentViewReference(navigation: state.navigation)
-        let selectedEntries = state.entryViewLayout.displayOrderItems
+        let selectionSource = state.entryViewLayout.hierarchyProjectionIsActive
+            ? state.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true)
+            : state.entryViewLayout.displayOrderItems
+        let selectedEntries = selectionSource
             .filter { state.entryViewLayout.selectedIds.contains($0.id) }
 
         return AiChatCurrentContextSnapshot(

@@ -49,9 +49,9 @@ public struct FileManagerHomeFavoriteItem: Equatable, Sendable, Identifiable {
         self.id = id
         self.title = title
         self.iconName = iconName
-        self.filePath = filePath
         self.anchor = anchor
         self.page = page
+        self.filePath = filePath
     }
 }
 
@@ -87,7 +87,7 @@ public extension FileManagerHomeDashboardProjection {
         from favorites: [SidebarItems.FavoriteItem],
         fileExistsWithIsDirectory: (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
     ) -> [FileManagerHomeFavoriteItem] {
-        favorites.compactMap { favorite in
+        favorites.compactMap { favorite -> FileManagerHomeFavoriteItem? in
             var isDirectory = ObjCBool(false)
             guard fileExistsWithIsDirectory(favorite.url.path, &isDirectory) else { return nil }
 
