@@ -133,7 +133,10 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
 
       <div className="collection-composer-separator" />
 
-      <div className={`collection-composer-chip-area${fixture.isProcessing ? " locked" : ""}`}>
+      <div
+        className={`collection-composer-chip-area${fixture.isProcessing ? " locked" : ""}`}
+        inert={fixture.isProcessing}
+      >
         <div className="collection-composer-scope-row" aria-label="Collection scope">
           <div className="collection-composer-scope-tokens">
             {fixture.scopes.length === 0 ? (
@@ -321,13 +324,25 @@ const ScopePicker: FC<{
 
   const scopeRow = (item: ComposerScopeItem) => {
     const name = item.displayName ?? item.path.split("/").at(-1) ?? item.path
-    // 네이티브 handleTreeRowBodyTap: base=편집기 오픈, candidate=단일 액션 즉시 실행, exception/root=무시
-    const bodyTap = () => {
-      // 네이티브 handleTreeRowBodyTap: base/exclusion 본문은 편집(교체 금지), candidate만 단일 액션
-      if (item.kind === "base" || item.kind === "exception" || item.kind === "root") return
-      if (item.kind === "candidate" && item.actions.length === 1)
-        onAction?.(item.path, item.actions[0])
-    }
+    // 네이티브 handleTreeRowBodyTap: base/exclusion/root는 편집(교체 금지)이라 본문을
+    // 읽기 전용으로 렌더하고, 단일 액션 candidate만 본문 클릭으로 실행한다
+    const bodyIsActionable = item.kind === "candidate" && item.actions.length === 1
+    const bodyContent = (
+      <>
+        <SFSymbol name="folder" size={12} />
+        <span className="collection-composer-scope-row-copy">
+          <strong>{name}</strong>
+          <small title={item.path}>{item.path}</small>
+        </span>
+        <span className={`collection-composer-scope-row-badge ${item.status}`}>
+          {item.status === "included"
+            ? "Included"
+            : item.status === "excluded"
+              ? "Excluded"
+              : "Available"}
+        </span>
+      </>
+    )
     const primaryAction = item.actions[0]
     return (
       <div
@@ -335,25 +350,23 @@ const ScopePicker: FC<{
         key={item.path}
         title={item.ruleSource === "inherited" ? `Inherited from ${item.inheritedFrom}` : undefined}
       >
-        <button
-          type="button"
-          className="collection-composer-scope-tree-body"
-          style={{ paddingInlineStart: `${10 + item.depth * 16}px` }}
-          onClick={bodyTap}
-        >
-          <SFSymbol name="folder" size={12} />
-          <span className="collection-composer-scope-row-copy">
-            <strong>{name}</strong>
-            <small title={item.path}>{item.path}</small>
-          </span>
-          <span className={`collection-composer-scope-row-badge ${item.status}`}>
-            {item.status === "included"
-              ? "Included"
-              : item.status === "excluded"
-                ? "Excluded"
-                : "Available"}
-          </span>
-        </button>
+        {bodyIsActionable ? (
+          <button
+            type="button"
+            className="collection-composer-scope-tree-body"
+            style={{ paddingInlineStart: `${10 + item.depth * 16}px` }}
+            onClick={() => onAction?.(item.path, item.actions[0])}
+          >
+            {bodyContent}
+          </button>
+        ) : (
+          <div
+            className="collection-composer-scope-tree-body"
+            style={{ paddingInlineStart: `${10 + item.depth * 16}px` }}
+          >
+            {bodyContent}
+          </div>
+        )}
         {primaryAction != null && (
           <button
             type="button"
