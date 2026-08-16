@@ -1,4 +1,6 @@
 // 네이티브 RelativeDateConditionLiteral 계약: voyager.relativeDate:v1:<direction>:<amount>:<unit>:<anchor>
+import type { ComposerValueEditor } from "./composer-condition-options"
+
 export type ParsedRelativeLiteral = {
   readonly direction: "past" | "future"
   readonly amount: number
@@ -67,9 +69,12 @@ const displayListValue = (value: string): string => {
   return value
 }
 
-// 조건 칩 표기: 목록 JSON은 디코딩, 정규 리터럴은 표시 문자열, today는 "Today", 나머지는 원문 그대로
-export const displayValueForLiteral = (value: string): string => {
-  if (value.startsWith("[")) {
+// 조건 칩 표기: list editor 값만 목록 JSON 디코딩, 정규 리터럴은 표시 문자열, today는 "Today", 나머지는 원문 그대로
+export const displayValueForLiteral = (
+  value: string,
+  editorKind?: ComposerValueEditor["kind"],
+): string => {
+  if (editorKind === "list" && value.startsWith("[")) {
     const decoded = displayListValue(value)
     if (decoded !== value) return decoded
   }

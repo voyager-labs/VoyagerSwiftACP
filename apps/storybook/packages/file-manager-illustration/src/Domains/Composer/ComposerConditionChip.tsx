@@ -57,7 +57,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
           aria-expanded={valueExpanded}
           onClick={() => onValueClick?.(condition.id)}
         >
-          {displayValueForLiteral(condition.value)}
+          {displayValueForLiteral(condition.value, condition.editorKind)}
         </button>
       )}
       <button

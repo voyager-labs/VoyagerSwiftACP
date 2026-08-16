@@ -12,6 +12,8 @@ export type ComposerCondition = {
   // 네이티브 ConditionChipPropertyOperatorView와 동일하게 operator가 비어 있으면 "Operator" 폴백 표기
   readonly operator: string
   readonly value: string
+  // 값 직렬화에 쓰인 editor kind: 목록 JSON 디코딩을 list 조건에만 적용한다
+  readonly editorKind?: ComposerValueEditor["kind"]
 }
 
 export type ComposerScopeFeedback = {

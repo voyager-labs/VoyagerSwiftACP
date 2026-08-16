@@ -145,6 +145,7 @@ const ComposerSelectionFlow = ({
     if (draft.query.trim().length === 0) return
     setIsProcessing(true)
     setToast(undefined)
+    closePicker()
     submitTimer.current = window.setTimeout(() => {
       setIsProcessing(false)
       setToast({ type: "info", message: "Collection query completed." })
@@ -432,6 +433,7 @@ const ComposerSelectionFlow = ({
           propertySymbol: property.symbol,
           operator: selectedOperator.label,
           value: "",
+          editorKind: selectedOperator.editor.kind,
         })
         setStep(selectedOperator.editor.kind === "none" ? "complete" : "value")
       }}
@@ -456,6 +458,7 @@ const ComposerSelectionFlow = ({
           property: property?.label ?? "Property",
           propertySymbol: property?.symbol ?? "questionmark",
           operator: operator?.label ?? "Operator",
+          editorKind: operator?.editor.kind,
           value: "",
         }
         upsertCondition({ ...target, value })
