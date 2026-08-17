@@ -174,6 +174,17 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
     }
 
+    /// data flavor가 이미 확정된 promise 파일명과 충돌해 provider 쓰기를 실패시키지
+    /// 않도록 파일명을 미리 예약한다. 물리화 시점에 data flavor가 다른 이름을 고른다.
+    func reserveStagedFilenames(_ filenames: [String]) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        for filename in filenames {
+            usedStagedFilenames.insert(filename.lowercased())
+        }
+    }
+
     /// data flavor 파일명이 세션 내에서 고유하도록 ` <n>` 접미로 충돌을 회피한다.
     /// caller는 lock을 보유해야 한다.
     private func uniqueStagedFilename(for original: String) -> String {

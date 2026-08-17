@@ -1219,6 +1219,48 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(acceptedRequests.first?.immediateURLPaths, [immediateURL.path])
     }
 
+    /// 검증 내용 (VOY-736 회귀): 혼합 drop의 즉시 file URL이 canonical 검증을 통과하지
+    /// 못하면(예: destination 자체를 복사하려는 경우) drop 전체를 거절한다.
+    /// 사전 조건: promise item과 destination 디렉터리 자체를 가리키는 즉시 file URL item.
+    /// 기대 결과: 드롭이 거절되고 어떤 acquisition 세션도 시작되지 않는다.
+    @MainActor
+    func testMixedDropImmediateURLFailingContainmentRejectsEntireDrop() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerMixedContainment-\(UUID().uuidString)")
+        XCTAssertNoThrow(try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true))
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        // 즉시 URL이 destination 자체 → 자기 하위 복사가 되므로 resolver가 거절한다.
+        let pasteboard = DragInfoFixture.makePromisePlusFileURLPasteboard(fileURL: destination)
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: true,
+        )
+        XCTAssertEqual(negotiation.promisedOrdinals.count, 1)
+        XCTAssertEqual(negotiation.immediateURLDescriptors.count, 1)
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy], pasteboard: pasteboard)
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var activeSessionID: ExternalDropSessionID?
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: acquisition.client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: {},
+            ),
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: destination.path,
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertNil(activeSessionID)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertTrue(acceptedRequests.isEmpty)
+    }
+
     /// 검증 내용 (VOY-736 회귀): legacy promise가 promised 이름 중 일부만 물리화하면
     /// 나머지로 세션을 성공시키지 않고 staging을 정리한 뒤 전체 drop을 거절한다.
     /// 사전 조건: namesOfPromisedFilesDropped가 이름 2개를 반환하지만 파일 1개만 쓴다.
@@ -2051,6 +2093,19 @@ private extension DragInfoFixture {
             forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
         )
         pasteboard.writeObjects([legacy])
+        return pasteboard
+    }
+
+    /// promise item과 즉시 file URL item이 섞인 pasteboard.
+    /// `[promise-A, URL-B]` 혼합 드롭을 재현한다 (VOY-736).
+    static func makePromisePlusFileURLPasteboard(fileURL: URL) -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-promise-url-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let provider = NSFilePromiseProvider(
+            fileType: UTType.plainText.identifier,
+            delegate: FilePromiseProviderFixtureDelegate(filename: "promise-0.txt"),
+        )
+        pasteboard.writeObjects([provider, fileURL as NSURL])
         return pasteboard
     }
 

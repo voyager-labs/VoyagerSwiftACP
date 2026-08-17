@@ -84,9 +84,15 @@ extension ExternalDropAcquisitionClient: DependencyKey {
         live(fileManager: .liveValue)
     }
 
-    public static func live(fileManager: FileManagerClient) -> ExternalDropAcquisitionClient {
+    public static func live(
+        fileManager: FileManagerClient,
+        sessionTombstoneSeconds: TimeInterval = 60,
+    ) -> ExternalDropAcquisitionClient {
         MainActor.assumeIsolated {
-            ExternalDropAcquisitionLive.live(fileManager: fileManager)
+            ExternalDropAcquisitionLive.live(
+                fileManager: fileManager,
+                sessionTombstoneSeconds: sessionTombstoneSeconds,
+            )
         }
     }
 
@@ -144,8 +150,14 @@ enum ExternalDropAcquisitionLive {
     }
 
     @MainActor
-    static func live(fileManager: FileManagerClient) -> ExternalDropAcquisitionClient {
-        let store = ExternalDropAcquisitionStore(fileManager: fileManager)
+    static func live(
+        fileManager: FileManagerClient,
+        sessionTombstoneSeconds: TimeInterval = 60,
+    ) -> ExternalDropAcquisitionClient {
+        let store = ExternalDropAcquisitionStore(
+            fileManager: fileManager,
+            sessionTombstoneSeconds: sessionTombstoneSeconds,
+        )
         return ExternalDropAcquisitionClient(
             begin: { receivers, dataFlavors, destination, forcedCopy, immediateURLPaths in
                 store.begin(
@@ -191,9 +203,12 @@ private final class ExternalDropAcquisitionStore {
     private var sessions: [ExternalDropSessionID: ExternalDropAcquisitionSession] = [:]
     private var receiverRegistry: [ExternalDropSessionID: [NSFilePromiseReceiver]] = [:]
     private let fileManager: FileManagerClient
+    /// 종단 후 늦은 콜백의 staging 재삭제를 보장하는 tombstone 기간(초). 이후 registry에서 회수한다.
+    private let sessionTombstoneSeconds: TimeInterval
 
-    init(fileManager: FileManagerClient) {
+    init(fileManager: FileManagerClient, sessionTombstoneSeconds: TimeInterval = 60) {
         self.fileManager = fileManager
+        self.sessionTombstoneSeconds = sessionTombstoneSeconds
     }
 
     /// 세션 전용 OperationQueue를 생성한다. 한 세션의 `cancelAllOperations()`가 다른 세션의
@@ -237,6 +252,10 @@ private final class ExternalDropAcquisitionStore {
         // cardinality 검증: empty/indeterminate는 추측 성공이 아닌 타입화 실패다.
         // data flavor는 begin에서 동기적으로 물리화되므로 promise fileNames 수에 더한다.
         session.finalizeCardinality(fileNamesByReceiver: receivers.map(\.fileNames), dataCount: dataFlavors.count)
+
+        // 확정된 promise 파일명을 먼저 예약해 data flavor가 같은 이름으로 staging에 쓰는
+        // 것을 방지한다(data-promise 충돌 시 provider 쓰기 실패로 전체 drop이 실패한다).
+        session.reserveStagedFilenames(receivers.flatMap(\.fileNames))
 
         // data flavor 즉시 물리화: 바이트를 verbatim으로 staging에 쓰고 `.received`를 emit한다.
         for flavor in dataFlavors {
@@ -351,6 +370,7 @@ private final class ExternalDropAcquisitionStore {
         }
         session.cancel(fileManager: fileManager)
         receiverRegistry.removeValue(forKey: sessionID)
+        scheduleSessionReclaim(sessionID)
     }
 
     @MainActor
@@ -358,9 +378,19 @@ private final class ExternalDropAcquisitionStore {
         guard let session = sessions[sessionID] else {
             return
         }
-        // cancel과 동일하게 세션은 `sessions`에 유지해 finish 후 도착하는 지연 콜백이
-        // session을 소유하며 reported output/staging을 재삭제할 수 있게 한다.
         receiverRegistry.removeValue(forKey: sessionID)
         session.finish()
+        scheduleSessionReclaim(sessionID)
+    }
+
+    /// 종단 후 짧은 tombstone 기간 동안 늦은 콜백의 재삭제를 허용한 뒤 세션을 회수해
+    /// 장시간 실행에서 sessions/queue/bufferedEvents가 무한 증가하지 않게 한다.
+    @MainActor
+    private func scheduleSessionReclaim(_ sessionID: ExternalDropSessionID) {
+        let tombstone = sessionTombstoneSeconds
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(tombstone * 1_000_000_000))
+            self?.sessions.removeValue(forKey: sessionID)
+        }
     }
 }

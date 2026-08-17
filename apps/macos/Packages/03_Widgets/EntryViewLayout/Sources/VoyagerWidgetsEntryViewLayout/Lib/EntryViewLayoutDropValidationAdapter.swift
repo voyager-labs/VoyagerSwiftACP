@@ -313,6 +313,21 @@ extension EntryViewLayoutDropValidationAdapter {
             // 이미 진행 중인 외부 세션이 있으면 두 번째 accept를 거절한다.
             return false
         }
+        // 혼합 drop의 즉시 file URL도 canonical 검증을 통과해야 한다. 순수 URL drop은
+        // resolver가 destination 자체/조상 복사를 거절하지만, promise/data와 섞이면
+        // 이 검증 없이 acquisition에 그대로 흘러들므로 동일 계약을 여기서 적용한다.
+        if negotiation.immediateURLDescriptors.contains(where: { descriptor in
+            resolve(
+                sourcePaths: [descriptor.path],
+                destinationPath: destinationPath,
+                allowedOperations: [.copy],
+                prefersCopy: true,
+            ).resolvedOperation == .none
+        }) {
+            validationLogger.info("acquisition rejected immediate-url containment")
+            context.clearDropState()
+            return false
+        }
         if let accepted = beginMailMessageDrop(
             activeSessionID: &activeSessionID,
             context: context,
