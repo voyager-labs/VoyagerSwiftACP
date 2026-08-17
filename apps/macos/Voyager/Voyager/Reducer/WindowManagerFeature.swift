@@ -660,8 +660,7 @@ extension WindowManagerFeature {
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
         guard let id = state.focusedWindowID,
-              !state.closingWindowIDs.contains(id),
-              state.windows[id: id] != nil
+              isWindowReady(id, state: state)
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
