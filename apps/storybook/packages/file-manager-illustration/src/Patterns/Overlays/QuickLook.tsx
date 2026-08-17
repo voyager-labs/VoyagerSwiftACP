@@ -1,7 +1,7 @@
+import { Button } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import { EntryThumbnail } from "../../Domains/Entries/EntryThumbnail"
 import type { EntryThumbnailEntry } from "../../Domains/Entries/EntryThumbnail"
-import { Button } from "../../UI/Controls/Button"
 import type { EntryKind } from "../../model/types"
 
 export interface QuickLookEntry extends EntryThumbnailEntry {

@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { TrafficLightsProps } from "../../model/types"
+import type { TrafficLightsProps } from "../../model/ui-types"
 
 export const TrafficLights: FC<TrafficLightsProps> = () => {
   return (

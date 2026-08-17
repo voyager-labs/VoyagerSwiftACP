@@ -1,6 +1,6 @@
+import { IconButton } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
-import { IconButton } from "../../UI/Controls/IconButton"
 
 export const ToolbarNavigation: FC = () => (
   <div className="toolbar-left">

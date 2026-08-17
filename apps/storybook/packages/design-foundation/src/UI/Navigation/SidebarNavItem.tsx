@@ -1,6 +1,6 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
-import type { SidebarNavItemProps } from "../../model/types"
+import type { SidebarNavItemProps } from "../../model/ui-types"
 import { SidebarIcon } from "./SidebarIcon"
 
 export const SidebarNavItem: FC<SidebarNavItemProps> = ({

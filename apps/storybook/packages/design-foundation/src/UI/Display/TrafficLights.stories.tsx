@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import type { FC } from "react"
 import { TrafficLights } from "./TrafficLights"
 
 const meta = {
@@ -6,7 +7,7 @@ const meta = {
   id: "file-manager-trafficlights",
   tags: ["autodocs"],
   decorators: [
-    (Story) => (
+    (Story: FC) => (
       <div data-file-manager-illustration style={{ padding: "16px" }}>
         <Story />
       </div>

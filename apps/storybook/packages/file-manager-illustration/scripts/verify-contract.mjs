@@ -21,9 +21,13 @@ const generatedMaterialMetadata = readFileSync(
   resolve(packageRoot, "src/Foundations/swiftui-material-metadata.generated.ts"),
   "utf8",
 )
+// atoms.css는 UI 키트와 함께 design-foundation으로 이관됨
+const atomsCss = readFileSync(
+  resolve(packageRoot, "../design-foundation/src/styles/atoms.css"),
+  "utf8",
+)
 const styleSheets = [
   "src/styles/file-manager.css",
-  "src/styles/atoms.css",
   "src/styles/window-shell.css",
   "src/styles/sidebar.css",
   "src/styles/inspector.css",
@@ -31,6 +35,7 @@ const styleSheets = [
 const fileManagerCss = readFileSync(resolve(packageRoot, styleSheets[0]), "utf8")
 const css = [
   macosTokens,
+  atomsCss,
   ...styleSheets.map((path) => readFileSync(resolve(packageRoot, path), "utf8")),
 ].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
@@ -366,8 +371,10 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.ok(fileManagerStories.length >= 245)
-assert.ok(fileManagerPaths.size >= 51)
+// UI 키트 이관(Design Foundation) 후 File Manager 스토리 축소 — 176 기준 마진 170
+assert.ok(fileManagerStories.length >= 170)
+// UI 키트 이관(Design Foundation) 후 경로 축소 — 현값 38 기준 마진 35
+assert.ok(fileManagerPaths.size >= 35)
 assert.equal(nonKnownStories.length, 0, "알려지지 않은 서페이스 프리픽스의 스토리가 존재합니다")
 for (const storyName of ["Centered Empty", "Centered Unconnected", "Connection Error", "Rebind"]) {
   assert.ok(
