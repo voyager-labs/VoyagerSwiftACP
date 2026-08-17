@@ -706,6 +706,8 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             id: UUID(608),
             url: collectionURL,
             sourceRoute: initialState.content.navigation.navigationState,
+            prePrepareBackHistory: initialState.content.navigation.backHistory,
+            prePrepareForwardHistory: initialState.content.navigation.forwardHistory,
         )
         initialState.pendingCollectionOpenRequest = request
         initialState.content.collection.collectionSession.document = .init(
