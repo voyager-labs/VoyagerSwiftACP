@@ -16,6 +16,8 @@ struct EntryOperationsLifecycleReducer {
     var entryThumbnailCacheClient
     @Dependency(\.trashMetadataStoreClient)
     var trashMetadataStoreClient
+    @Dependency(\.externalDropAcquisitionClient)
+    var externalDropAcquisitionClient
     @Dependency(\.uuid)
     var uuid
 
@@ -27,12 +29,22 @@ struct EntryOperationsLifecycleReducer {
                 return .none
 
             case let .lifecycle(.resetForDuplicate(windowID)):
+                // reset이 activeExternalDrop을 nil로 만들기 전에 진행 중인 외부 drop 세션을
+                // 정확한 ID로 취소한다. ExternalDrop reducer는 Lifecycle 뒤에 실행돼 reset 후
+                // activeExternalDrop이 이미 nil이므로, 취소는 여기서 보장한다.
+                let externalDropSessionID = state.activeExternalDrop?.sessionID
                 state.resetForDuplicate(
                     windowID: windowID,
                     loadingCancellationOwnerID: uuid(),
                     undoOwnerID: uuid(),
                 )
-                return .none
+                guard let externalDropSessionID else { return .none }
+                return .merge(
+                    .cancel(id: CancelID.externalDrop(externalDropSessionID)),
+                    .run { [externalDropAcquisitionClient] _ in
+                        await externalDropAcquisitionClient.cancel(externalDropSessionID)
+                    },
+                )
 
             case .loading(.itemsLoaded):
                 return refreshRestorableTrashPaths()

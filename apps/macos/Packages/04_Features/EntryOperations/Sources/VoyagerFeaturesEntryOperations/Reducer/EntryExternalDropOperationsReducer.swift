@@ -140,6 +140,7 @@ public struct EntryExternalDropOperationsReducer {
                 orderedPromisedNames: active.orderedPromisedNames,
                 promisedOrdinals: active.promisedOrdinals,
                 receivedFiles: active.receivedFiles,
+                immediateURLPaths: active.immediateURLPaths,
             )
             state.activeExternalDrop = nil
             // 획득은 완료됐지만 placement(복사)는 아직 시작 전이므로 pending을 유지한다.
@@ -167,10 +168,12 @@ public struct EntryExternalDropOperationsReducer {
     }
 
     private func startPlacement(plan: ExternalDropImportPlan, state: inout State) -> Effect<Action> {
-        // 획득된 staged 파일을 item/callback ordinal 순서로 정렬해 source로 사용한다.
+        // 획득된 staged 파일을 item/callback ordinal 순서로 정렬하고, mixed drop의 즉시
+        // file URL을 뒤에 이어 붙여 promise/materialization과 함께 복사 배치로 전달한다.
         let orderedSources = plan.receivedFiles
             .sorted { ($0.itemOrdinal, $0.callbackOrdinal) < ($1.itemOrdinal, $1.callbackOrdinal) }
             .map(\.stagedPath)
+            + plan.immediateURLPaths
         guard !orderedSources.isEmpty else {
             state.externalObjectImportStatus = .failed
             return .run { [acquisitionClient, sessionID = plan.sessionID] _ in

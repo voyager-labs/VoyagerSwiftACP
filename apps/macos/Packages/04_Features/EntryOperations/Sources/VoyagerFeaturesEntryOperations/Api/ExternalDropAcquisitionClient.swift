@@ -13,8 +13,8 @@ import VoyagerShared
 public struct ExternalDropAcquisitionClient: Sendable {
     /// 외부 drop 획득을 동기적으로 시작한다. main actor에서 호출되며 Todo 4/5의
     /// Grid/List `acceptDrop`이 이 진입점을 사용한다. promise receiver와 data flavor를 함께
-    /// 받아 물리화하고, Sendable 요청 메타데이터만 반환한다.
-    public var begin: @MainActor @Sendable ([NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool)
+    /// 받아 물리화하고, 즉시 file URL 경로는 복사 배치에 포함시킨다. Sendable 요청 메타데이터만 반환한다.
+    public var begin: @MainActor @Sendable ([NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String])
         -> ExternalDropAcceptedRequest
 
     /// 주어진 세션의 종단 획득 이벤트 스트림. reducer가 구독해 소비한다.
@@ -48,8 +48,9 @@ public struct ExternalDropAcquisitionClient: Sendable {
     public var loadMailSource: @Sendable (MailMessageSourceLookup) -> Data?
 
     nonisolated public init(
-        begin: @escaping @MainActor @Sendable ([NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool)
-            -> ExternalDropAcceptedRequest,
+        begin: @escaping @MainActor @Sendable (
+            [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String],
+        ) -> ExternalDropAcceptedRequest,
         events: @escaping @MainActor @Sendable (ExternalDropSessionID) -> AsyncStream<ExternalDropAcquisitionEvent>,
         cancel: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
         finish: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
@@ -115,7 +116,7 @@ enum ExternalDropAcquisitionLive {
     /// 결정적 no-op 클라이언트. 실제 획득 없이 안전하게 빈 요청/이벤트만 반환한다.
     static var noop: ExternalDropAcquisitionClient {
         ExternalDropAcquisitionClient(
-            begin: { _, _, destination, forcedCopy in
+            begin: { _, _, destination, forcedCopy, immediateURLPaths in
                 ExternalDropAcceptedRequest(
                     sessionID: ExternalDropSessionID(),
                     destination: destination,
@@ -123,6 +124,7 @@ enum ExternalDropAcquisitionLive {
                     promisedOrdinals: [],
                     forcedCopy: forcedCopy,
                     stagingDirectory: "",
+                    immediateURLPaths: immediateURLPaths,
                 )
             },
             events: { _ in AsyncStream { _ in } },
@@ -145,12 +147,13 @@ enum ExternalDropAcquisitionLive {
     static func live(fileManager: FileManagerClient) -> ExternalDropAcquisitionClient {
         let store = ExternalDropAcquisitionStore(fileManager: fileManager)
         return ExternalDropAcquisitionClient(
-            begin: { receivers, dataFlavors, destination, forcedCopy in
+            begin: { receivers, dataFlavors, destination, forcedCopy, immediateURLPaths in
                 store.begin(
                     receivers: receivers,
                     dataFlavors: dataFlavors,
                     destination: destination,
                     forcedCopy: forcedCopy,
+                    immediateURLPaths: immediateURLPaths,
                 )
             },
             events: { sessionID in
@@ -188,14 +191,19 @@ private final class ExternalDropAcquisitionStore {
     private var sessions: [ExternalDropSessionID: ExternalDropAcquisitionSession] = [:]
     private var receiverRegistry: [ExternalDropSessionID: [NSFilePromiseReceiver]] = [:]
     private let fileManager: FileManagerClient
-    private let queue: OperationQueue
 
     init(fileManager: FileManagerClient) {
         self.fileManager = fileManager
+    }
+
+    /// 세션 전용 OperationQueue를 생성한다. 한 세션의 `cancelAllOperations()`가 다른 세션의
+    /// 대기 작업을 취소하지 않도록 각 세션이 고유 큐를 소유한다.
+    @MainActor
+    private func makeSessionQueue() -> OperationQueue {
         let queue = OperationQueue()
-        queue.name = "com.voyager.external-drop-acquisition"
+        queue.name = "com.voyager.external-drop-acquisition-\(ExternalDropSessionID().rawValue)"
         queue.maxConcurrentOperationCount = 1
-        self.queue = queue
+        return queue
     }
 
     /// 외부 drop 획득을 동기적으로 시작한다. main actor에서 호출된다.
@@ -205,6 +213,7 @@ private final class ExternalDropAcquisitionStore {
         dataFlavors: [ExternalDropDataFlavor],
         destination: String,
         forcedCopy: Bool,
+        immediateURLPaths: [String],
     ) -> ExternalDropAcceptedRequest {
         let sessionID = ExternalDropSessionID()
         let stagingURL = fileManager
@@ -217,7 +226,7 @@ private final class ExternalDropAcquisitionStore {
             sessionID: sessionID,
             stagingDirectory: stagingURL.path,
             fileManager: fileManager,
-            queue: queue,
+            queue: makeSessionQueue(),
         )
 
         sessions[sessionID] = session
@@ -237,18 +246,7 @@ private final class ExternalDropAcquisitionStore {
         // receive 시작 후 receiver.fileNames를 예상 cardinality로 사용한다.
         for (index, receiver) in receivers.enumerated() {
             receiverRegistry[sessionID, default: []].append(receiver)
-            receiver.receivePromisedFiles(
-                atDestination: stagingURL,
-                options: [:],
-                operationQueue: queue,
-            ) { @Sendable [weak session] url, error in
-                // AppKit는 이 클로저를 non-main OperationQueue에서 호출한다. `begin`은
-                // @MainActor이므로 @Sendable이 없으면 이 클로저가 MainActor로 추론되어
-                // Swift 6 런타임 executor 검사에서 SIGTRAP한다. @Sendable로 nonisolated
-                // 처리해 큐 스레드에서 handleCallback(이미 lock-guarded, off-main 안전)을
-                // 호출한다.
-                session?.handleCallback(receiverIndex: index, url: url, error: error)
-            }
+            session.startReceiving(receiver: receiver, atDestination: stagingURL, index: index)
         }
 
         let orderedPromisedNames = receivers.flatMap(\.fileNames)
@@ -264,6 +262,7 @@ private final class ExternalDropAcquisitionStore {
             promisedOrdinals: promisedOrdinals,
             forcedCopy: forcedCopy,
             stagingDirectory: stagingURL.path,
+            immediateURLPaths: immediateURLPaths,
         )
     }
 
@@ -282,7 +281,7 @@ private final class ExternalDropAcquisitionStore {
             sessionID: sessionID,
             stagingDirectory: stagingDirectory,
             fileManager: fileManager,
-            queue: queue,
+            queue: makeSessionQueue(),
         )
         sessions[sessionID] = session
 
@@ -319,24 +318,13 @@ private final class ExternalDropAcquisitionStore {
             sessionID: sessionID,
             stagingDirectory: stagingURL.path,
             fileManager: fileManager,
-            queue: queue,
+            queue: makeSessionQueue(),
         )
         sessions[sessionID] = session
         session.finalizeCardinality(fileNamesByReceiver: [], dataCount: items.count)
 
         for item in items {
-            queue.addOperation { [weak session] in
-                guard let session else { return }
-                guard let bytes = item.load() else {
-                    session.fail(reason: .dataMaterializationFailed)
-                    return
-                }
-                session.materialize(dataFlavor: ExternalDropDataFlavor(
-                    uti: item.uti,
-                    bytes: bytes,
-                    filename: item.filename,
-                ))
-            }
+            session.enqueueDeferredLoad(item)
         }
 
         return ExternalDropAcceptedRequest(

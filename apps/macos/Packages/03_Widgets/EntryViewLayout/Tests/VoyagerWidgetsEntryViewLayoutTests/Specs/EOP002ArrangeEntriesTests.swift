@@ -80,7 +80,7 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
 
     var client: ExternalDropAcquisitionClient {
         var client = ExternalDropAcquisitionClient.testValue
-        client.begin = { [self] receivers, dataFlavors, destination, forcedCopy in
+        client.begin = { [self] receivers, dataFlavors, destination, forcedCopy, immediateURLPaths in
             beginCalls.append(BeginCall(
                 receiverCount: receivers.count,
                 dataFlavorCount: dataFlavors.count,
@@ -95,6 +95,7 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
                 promisedOrdinals: [],
                 forcedCopy: forcedCopy,
                 stagingDirectory: "/tmp/grid-staging",
+                immediateURLPaths: immediateURLPaths,
             )
         }
         client.beginLegacy = { [self] stagedPaths, stagingDirectory, destination, forcedCopy in
