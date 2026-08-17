@@ -329,6 +329,7 @@ extension EntryViewLayoutDropValidationAdapter {
                 activeSessionID: &activeSessionID,
                 context: context,
                 draggingInfo: draggingInfo,
+                negotiation: negotiation,
                 destinationPath: destinationPath,
             )
         }
@@ -518,6 +519,7 @@ extension EntryViewLayoutDropValidationAdapter {
         activeSessionID: inout ExternalDropSessionID?,
         context: ExternalDropAcquisitionContext,
         draggingInfo: any NSDraggingInfo,
+        negotiation: ExternalDropNegotiation,
         destinationPath: String,
     ) -> Bool {
         let sessionID = ExternalDropSessionID()
@@ -551,8 +553,19 @@ extension EntryViewLayoutDropValidationAdapter {
             return false
         }
         let request = context.client.beginLegacy(stagedPaths, stagingURL.path, destinationPath, true)
-        activeSessionID = request.sessionID
-        context.sendAccepted(request)
+        // legacy 경로도 negotiation이 확정한 즉시 URL을 병합해 modern 경로와 동일한
+        // ordered placement plan으로 전달한다(조용한 누락 방지).
+        let mergedRequest = ExternalDropAcceptedRequest(
+            sessionID: request.sessionID,
+            destination: request.destination,
+            orderedPromisedNames: request.orderedPromisedNames,
+            promisedOrdinals: request.promisedOrdinals,
+            forcedCopy: request.forcedCopy,
+            stagingDirectory: request.stagingDirectory,
+            immediateURLPaths: negotiation.immediateURLDescriptors.map(\.path),
+        )
+        activeSessionID = mergedRequest.sessionID
+        context.sendAccepted(mergedRequest)
         context.clearDropState()
         logger.info("legacy fallback invoked files=\(stagedPaths.count, privacy: .public)")
         return true

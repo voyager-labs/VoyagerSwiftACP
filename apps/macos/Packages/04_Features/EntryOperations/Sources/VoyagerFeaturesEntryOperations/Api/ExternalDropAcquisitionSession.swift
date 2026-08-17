@@ -28,6 +28,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var pendingCancelledCallbacks: [Int: Int] = [:]
     private var callbackErrorTimeouts: [Int: DispatchWorkItem] = [:]
     private var stagingScanWorkItem: DispatchWorkItem?
+    /// 미정(fileNames 빈) 수신기의 다중 파일 콜백을 수용하기 위한 quiescence 타이머.
+    private var indeterminateQuiescenceWorkItem: DispatchWorkItem?
     private var stagingObserver: DispatchSourceFileSystemObject?
     private var isCancelled = false
     private var isFinished = false
@@ -295,7 +297,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         if error != nil { Self.logger.info("callback error reconciled by staged file") }
 
         registerReceivedFile(receiverIndex: receiverIndex, url: resolvedURL, callbackOrdinal: callbackOrdinal)
-        if error != nil, !emittedTerminal {
+        // reconcile로 복구된 error 콜백 중 미정 수신기 것은 quiescence 종단 판정에 맡긴다.
+        // 기존 계약(취소 error + staged file = 성공)을 유지한다.
+        if error != nil, !emittedTerminal, !indeterminateReceivers.contains(receiverIndex) {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
         lock.unlock()
@@ -397,10 +401,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         nextItemOrdinal += 1
         let itemOrdinal = nextItemOrdinal
         receivedCount += 1
-        if indeterminateReceivers.contains(receiverIndex) {
-            // 미정 수신기: 첫 성공 콜백으로 해당 수신기 기여가 완료된다. 추가 콜백은
-            // 종단 전까지 유효하면 추가 아이템으로 수용된다(아래 barrier는 이미 완료된
-            // 미정 수신기에 추가 received가 와도 성공 상태를 반복 emit하지 않는다).
+        let isIndeterminate = indeterminateReceivers.contains(receiverIndex)
+        if isIndeterminate {
+            // 미정 수신기: 첫 성공 콜백으로 "기여 시작"을 표시한다. 다중 파일 전달 대비해
+            // 아래에서 quiescence 후 최종 종단을 판정한다.
             completedIndeterminateReceivers.insert(receiverIndex)
         } else {
             receivedDeterminateCount += 1
@@ -414,6 +418,36 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         )
         emitLocked(.received(receivedFile))
 
+        if indeterminateReceivers.isEmpty {
+            // 미정 수신기가 없으면 즉시 종단 판정한다(기존 동작).
+            if sessionIsCompleteLocked() {
+                emitTerminalLocked(.succeeded(sessionID))
+            }
+        } else {
+            // 미정 수신기가 있으면 첫 콜백에서 곧바로 성공을 내지 않고, 같은 receiver의
+            // 추가 콜백(다중 파일)을 수용하기 위해 quiescence 타이머로 최종 종단을 지연한다.
+            scheduleIndeterminateQuiescenceLocked()
+        }
+    }
+
+    /// 미정 수신기의 종단 판정을 quiescence(추가 콜백 대기) 후로 지연한다. 같은 receiver에서
+    /// 여러 파일이 콜백으로 전달될 때 첫 callback만으로 완료 처리하지 않도록 한다.
+    /// caller는 lock을 보유해야 한다.
+    private func scheduleIndeterminateQuiescenceLocked() {
+        guard !emittedTerminal, !isFinished, !isCancelled else { return }
+        indeterminateQuiescenceWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.evaluateIndeterminateCompletion()
+        }
+        indeterminateQuiescenceWorkItem = workItem
+        observationQueue.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+    }
+
+    private func evaluateIndeterminateCompletion() {
+        lock.lock()
+        defer { lock.unlock() }
+        indeterminateQuiescenceWorkItem = nil
+        guard !isCancelled, !isFinished, !emittedTerminal else { return }
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
         }
@@ -487,6 +521,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         stagingObserver = nil
         stagingScanWorkItem?.cancel()
         stagingScanWorkItem = nil
+        indeterminateQuiescenceWorkItem?.cancel()
+        indeterminateQuiescenceWorkItem = nil
         callbackErrorTimeouts.values.forEach { $0.cancel() }
         callbackErrorTimeouts.removeAll()
         pendingCancelledCallbacks.removeAll()
