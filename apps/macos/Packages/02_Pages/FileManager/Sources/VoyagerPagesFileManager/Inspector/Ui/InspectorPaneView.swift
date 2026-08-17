@@ -7,16 +7,21 @@ struct InspectorPaneView: View {
     let store: StoreOf<FileManagerInspectorFeature>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
+        WithPerceptionTracking {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                Divider()
 
-            if store.activeMode == .chat {
-                AiChatView(store: store.scope(state: \.aiChat, action: \.aiChat))
+                if store.activeMode == .chat {
+                    AiChatView(
+                        store: store.scope(state: \.aiChat, action: \.aiChat),
+                        allowsAttachmentPicker: true,
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
             }
+            .frame(maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var header: some View {
