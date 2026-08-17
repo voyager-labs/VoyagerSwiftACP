@@ -203,16 +203,22 @@ func activeTabHandoffEffect(
     guard shouldResyncContentNavigation else {
         return .none
     }
-    if restorePendingCollectionHistory,
-       let request = state.pendingCollectionOpenRequest
+    let restoreHistoryEffect: Effect<FileManagerWindowAction> = if restorePendingCollectionHistory,
+                                                                   let request = state
+                                                                   .pendingCollectionOpenRequest
     {
-        state.content.navigation.backHistory = request.prePrepareBackHistory
-        state.content.navigation.forwardHistory = request.prePrepareForwardHistory
+        .send(.navigation(.internal(.restoreHistory(
+            back: request.prePrepareBackHistory,
+            forward: request.prePrepareForwardHistory,
+        ))))
+    } else {
+        .none
     }
     state.pendingCollectionOpenRequest = nil
     let navigationEffect = resyncContentNavigationEffect(state: state)
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
+        restoreHistoryEffect,
         .merge(
             navigationEffect,
             restartAiChatProviderLoadOnTabRestoreEffect(

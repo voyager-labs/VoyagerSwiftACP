@@ -1,6 +1,7 @@
 @_spi(Internals) import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
@@ -684,6 +685,54 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             sourceDraftContext: dirtySourceContext,
             expectedHistory: expectedHistory,
         )
+    }
+
+    /// RCL-002-open_saved_collection: pending Collection checkpoint 복원 후 새 경로로 이동
+    /// 동일 user navigation action의 restore와 perform effect가 병합되어 history가 역전되지 않는지 검증한다.
+    /// - 검증 내용: pending/loading 정리와 checkpoint 복원 뒤 새 source snapshot 기록
+    /// - 사전 조건: folder source에서 Collection open prepare가 back/forward history를 변경한 상태
+    /// - 기대 결과: 새 경로와 back/forward history가 하나의 직렬화된 navigation transaction으로 일치함
+    func testNavigateToPathWhileCollectionOpenPendingRestoresCheckpointBeforeNavigation() async {
+        let sourceRoute = ContentPageNavigationRoute.folder("/source")
+        let targetRoute = ContentPageNavigationRoute.folder("/new")
+        let originalBackHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/old")),
+        ]
+        let originalForwardHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/future")),
+        ]
+        let sourceSnapshot = ContentPageNavigationHistorySnapshot(navigationState: sourceRoute)
+        var initialState = FileManagerFeature.State()
+        initialState.content.navigation.navigationState = sourceRoute
+        initialState.content.navigation.backHistory = originalBackHistory + [sourceSnapshot]
+        initialState.content.navigation.forwardHistory = []
+        initialState.content.entryViewLayout.isCollectionContentLoading = true
+        initialState.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(734),
+            url: URL(fileURLWithPath: "/target.voycollection"),
+            sourceRoute: sourceRoute,
+            prePrepareBackHistory: originalBackHistory,
+            prePrepareForwardHistory: originalForwardHistory,
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 734))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileManagerClient.displayName = { $0 }
+        }
+        // 비포괄적: downstream content load보다 restore와 새 navigation의 최종 순서를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.navigateToPath("/new"))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+        XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+        XCTAssertEqual(store.state.content.navigation.navigationState, targetRoute)
+        XCTAssertEqual(store.state.content.navigation.backHistory, originalBackHistory + [sourceSnapshot])
+        XCTAssertEqual(store.state.content.navigation.forwardHistory, [])
     }
 
     // MARK: - RCL-002-show_restored_collection_snapshot

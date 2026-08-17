@@ -21,18 +21,6 @@ extension FileManagerWindowRoutingReducer {
                     state: &state,
                 )
 
-            case .navigation(.view(.navigateToPath)),
-                 .navigation(.view(.showRecents)),
-                 .navigation(.view(.showComputer)),
-                 .navigation(.view(.showTag)),
-                 .navigation(.view(.showAiChat)),
-                 .navigation(.view(.showAiChatSessions)),
-                 .navigation(.view(.goBack)),
-                 .navigation(.view(.goForward)),
-                 .navigation(.view(.goToHistoryIndex)),
-                 .navigation(.view(.goToEnclosingDirectory)):
-                return cancelPendingCollectionOpen(state: &state)
-
             case let .requestSelectedContentTabPinMutation(target):
                 return handleRequestSelectedContentTabPinMutation(target: target, state: &state)
 

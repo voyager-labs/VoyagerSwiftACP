@@ -7568,6 +7568,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.applyAuthoritativePinnedContentTabs(authoritative))
+        await store.receive { action in
+            guard case let .navigation(.internal(.restoreHistory(back, forward))) = action else {
+                return false
+            }
+            return back == originalBackHistory && forward == originalForwardHistory
+        }
         await fulfillment(of: [loadStarted], timeout: 1)
         await store.skipReceivedActions(strict: false)
 

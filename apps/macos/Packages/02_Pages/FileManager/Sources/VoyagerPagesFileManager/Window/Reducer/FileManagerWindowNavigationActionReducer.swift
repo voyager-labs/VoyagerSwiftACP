@@ -72,13 +72,19 @@ struct FileManagerNavigationActionReducer {
              .showTag,
              .showAiChat,
              .showAiChatSessions:
-            handleDirectNavigationAction(action, state: &state)
+            .concatenate(
+                cancelPendingCollectionOpen(state: &state),
+                handleDirectNavigationAction(action, state: &state),
+            )
 
         case .goBack,
              .goForward,
              .goToHistoryIndex,
              .goToEnclosingDirectory:
-            handleHistoryNavigationAction(action, state: &state)
+            .concatenate(
+                cancelPendingCollectionOpen(state: &state),
+                handleHistoryNavigationAction(action, state: &state),
+            )
 
         case let .openCollectionFile(url):
             handleOpenCollectionFile(
@@ -638,6 +644,28 @@ private func restoreCollectionOpenHistoryEffect(
         back: request.prePrepareBackHistory,
         forward: request.prePrepareForwardHistory,
     ))))
+}
+
+func cancelPendingCollectionOpen(
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    guard let request = state.pendingCollectionOpenRequest else { return .none }
+    state.pendingCollectionOpenRequest = nil
+    let clearLoadingEffect: Effect<FileManagerWindowAction> = if let activeTabID = state.contentTabs.activeTabID {
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.setCollectionContentLoading(false))),
+        ))
+    } else {
+        .none
+    }
+    return .concatenate(
+        .cancel(id: OpenCollectionFileCancelID(
+            windowID: state.content.entryViewLayout.entryOperations.windowID,
+        )),
+        clearLoadingEffect,
+        restoreCollectionOpenHistoryEffect(request),
+    )
 }
 
 private func isUserNavigationRequest(_ action: ContentPageNavigationAction) -> Bool {

@@ -173,29 +173,6 @@ struct FileManagerWindowRoutingReducer {
         state.syncHomeFavoriteItems()
     }
 
-    func cancelPendingCollectionOpen(state: inout State) -> Effect<Action> {
-        guard let request = state.pendingCollectionOpenRequest else { return .none }
-        state.pendingCollectionOpenRequest = nil
-        let clearLoadingEffect: Effect<Action> = if let activeTabID = state.contentTabs.activeTabID {
-            .send(.tabContent(
-                tabID: activeTabID,
-                action: .entryViewLayout(.internal(.setCollectionContentLoading(false))),
-            ))
-        } else {
-            .none
-        }
-        return .concatenate(
-            .cancel(id: OpenCollectionFileCancelID(
-                windowID: state.content.entryViewLayout.entryOperations.windowID,
-            )),
-            clearLoadingEffect,
-            .send(.navigation(.internal(.restoreHistory(
-                back: request.prePrepareBackHistory,
-                forward: request.prePrepareForwardHistory,
-            )))),
-        )
-    }
-
     func applyPinnedContentTabRuntimeNavigation(
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
