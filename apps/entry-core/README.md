@@ -6,7 +6,8 @@ Entry Core는 Voyager의 최소 Go runtime foundation입니다. 현재 productio
 
 - Module: `github.com/voyager-labs/voyager-app/apps/entry-core`
 - Go: `1.26.5`
-- Dependencies: Go standard library only
+- Dependencies: pure-Go runtime deps `gorm.io/gorm`, `github.com/glebarez/sqlite` (driven by `modernc.org/sqlite`, CGO-free), `github.com/golang-migrate/migrate/v4`; `go.sum` required and committed
+- Dev/CI tools: Atlas CLI (`mise` aqua `ariga/atlas` 1.3.0) + Atlas GORM Provider (`ariga.io/atlas-provider-gorm`, imported only by the dev `tools/atlas-schema` loader, never by daemon code)
 - Workspace: 없음, root와 module 어디에도 `go.work`를 만들지 않음
 - Wire and Entry contract: one unversioned initial canonical contract
 - Request/response envelope ceiling: exactly `65,536` bytes for canonical wire contract
@@ -59,7 +60,7 @@ make -C apps/entry-core check
 
 ## Dependency and native event decisions
 
-- The runtime foundation is standard-library-only because the current CLI, daemon, protocol, and Unix socket lifecycle require no external package.
+- The runtime foundation uses a pure-Go persistence stack: GORM (`gorm.io/gorm`) as the ORM, the `github.com/glebarez/sqlite` driver backed by `modernc.org/sqlite` (pure Go, so `CGO_ENABLED=0` builds work), and `github.com/golang-migrate/migrate/v4` for schema migrations. Atlas CLI (dev/CI only, pinned `mise` aqua `ariga/atlas` 1.3.0) plus the `ariga.io/atlas-provider-gorm` provider generate and validate migrations from GORM models. `go.sum` is committed and required; the module stays single (no `go.work` anywhere).
 - VOY-663 does not adopt an FSEvents implementation. Direct CoreServices/CGO, a maintained Go package, and the existing Swift-native adapter remain separate follow-up options.
 - A native event implementation must first prove event-ID replay, drop and overflow recovery, root changes, restart behavior, and signed macOS bundling. Until then, native event ingestion remains outside this module.
 

@@ -9,7 +9,7 @@
 
 ## Module and protocol boundaries
 
-- Keep the dependency-free module on the standard library while the implementation has no external dependency requirement. Adding a dependency, workspace, toolchain override, or code generation requires an explicitly owned task and corresponding verification-policy update.
+- Runtime dependencies are the pure-Go set `gorm.io/gorm`, `github.com/glebarez/sqlite` (modernc.org/sqlite, CGO-free), and `github.com/golang-migrate/migrate/v4`. Atlas CLI and the `ariga.io/atlas-provider-gorm` provider are dev/CI-only tools (loaded by `tools/atlas-schema`), never imported by daemon code. `go.sum` is required and committed; `go.work` remains forbidden (single module, no workspace). Adding a dependency, workspace, toolchain override, or code generation requires an explicitly owned task and corresponding verification-policy update.
 - Preserve the unversioned initial canonical wire contract, default app version `0.1.0-dev`, one request and one response per Unix socket connection, and the required absolute `--socket` contract. Add a future version discriminator only when an observed compatibility break requires parallel decoding or migration.
 - Keep logs metadata-only. Never log raw request or response payloads, params, request IDs, secrets, or credentials.
 
@@ -28,7 +28,7 @@ Do not duplicate detailed assertions across these owners. Pair behavior changes 
 
 From the repository root, use `mise run entry-core-check` as the complete verification entry point. Focused commands are available as `entry-core-build`, `entry-core-test`, `entry-core-test-race`, and `entry-core-smoke`.
 
-When root harness or guidance changes, also run `python3 -m scripts.validate_harness` and `git diff --check`. Keep `go vet`, gofmt cleanliness, single-module output, and absent `go.sum`/`go.work` as required invariants.
+When root harness or guidance changes, also run `python3 -m scripts.validate_harness` and `git diff --check`. Keep `go vet`, gofmt cleanliness, single-module output, `go.sum` presence, `go.work` absence, the pinned module allowlist (`go list -m all | sort` diff), and the `AutoMigrate(` ban as required invariants.
 
 ## Cross-boundary changes
 
