@@ -9,12 +9,12 @@ public struct ValuePickerFeature {
     public typealias State = ValuePickerState
     public typealias Action = ValuePickerAction
 
-    @Dependency(\.registryClient)
-    var registryClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
 
     public init() {}
+
+    private static let finderTagPropertyKey = "tag_names"
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -27,44 +27,33 @@ public struct ValuePickerFeature {
                 return .none
 
             case let .prepare(payload):
-                state.propertyKey = payload.propertyKey
-                state.operatorCode = payload.operatorCode
-                state.valueType = payload.valueType
-                state.valueArity = max(0, payload.valueArity)
-                state.valueUIKind = payload.valueUIKind
-                state.isCategoricalProperty =
-                    registryClient.propertyTypeString(for: payload.propertyKey) == "categorical"
+                state.condition = payload.condition
                 state.tokenInput = ""
-                state.finderTagListState = payload.propertyKey == ValuePickerTokenUtils.finderTagPropertyKey
+                state.finderTagListState = payload.condition.property.key == Self.finderTagPropertyKey
                     ?
-                    .init(options: ValuePickerTokenUtils
+                    .init(options: ConditionTagSuggestions
                         .deduplicatedTagsByName(finderFavoritesTagClient.favoriteTags()))
                     : nil
                 state.errorMessage = nil
                 state.editingIndex = payload.editingIndex
 
-                let tokenMode = ValuePickerTokenUtils.isTokenMode(
-                    isCategoricalProperty: state.isCategoricalProperty,
-                    valueUIKind: state.valueUIKind,
-                )
+                let tokenMode = if case .listText? = state.valueContract?.input {
+                    true
+                } else {
+                    false
+                }
 
-                let prepared = prepareValueInputs(
-                    valueArity: state.valueArity,
+                state.values = prepareValueInputs(
+                    contract: state.valueContract,
                     existingValues: payload.existingValues,
                     currentValues: state.values,
                     tokenMode: tokenMode,
                 )
-                state.valueArity = prepared.valueArity
-                state.values = prepared.values
 
-                if let spec = resolvedUnitSpec(
-                    propertyKey: payload.propertyKey,
-                    valueType: payload.valueType,
-                    tokenMode: tokenMode,
-                    registryClient: registryClient,
-                ) {
-                    let unitValueState = UnitValuePresentationUtils.makeState(
-                        spec: spec,
+                state.unitContract = payload.condition.property.unitContract
+                if let unitContract = state.unitContract, !tokenMode {
+                    let unitValueState = UnitValueState(
+                        contract: unitContract,
                         preferredUnitCode: payload.preferredUnitCode,
                     )
                     let selectedUnitCode = unitValueState.selectedUnitCode
@@ -72,24 +61,20 @@ public struct ValuePickerFeature {
                     state.unitValueState = unitValueState
 
                     if let existingDisplayValues = payload.existingDisplayValues {
-                        let preparedDisplayValues = prepareValueInputs(
-                            valueArity: state.valueArity,
+                        state.values = prepareValueInputs(
+                            contract: state.valueContract,
                             existingValues: existingDisplayValues,
                             currentValues: state.values,
                             tokenMode: false,
                         )
-                        state.valueArity = preparedDisplayValues.valueArity
-                        state.values = preparedDisplayValues.values.map {
-                            UnitValueUtils.stripUnitSuffixIfNeeded($0, spec: spec)
-                        }
                     } else {
                         state.values = state.values.map { raw in
                             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !trimmed.isEmpty else { return "" }
-                            return UnitValueUtils.fromCanonical(
+                            return ConditionUnitConverter.fromCanonical(
                                 canonicalText: trimmed,
                                 to: selectedUnitCode,
-                                spec: spec,
+                                contract: unitContract,
                             ) ?? trimmed
                         }
                     }
@@ -99,8 +84,7 @@ public struct ValuePickerFeature {
 
                 state.dateValueState = prepareDateValueState(
                     values: state.values,
-                    valueType: state.valueType,
-                    valueArity: state.valueArity,
+                    contract: state.valueContract,
                 )
 
                 state.isPresented = true
@@ -112,7 +96,7 @@ public struct ValuePickerFeature {
                 state.values[index] = text
                 if index == 0,
                    isSingleDateEditing(state),
-                   let parsed = ValueNormalizerUtils.parseDate(text)
+                   let parsed = ConditionValueNormalizer.parseDate(text)
                 {
                     state.dateValueState?.selectedDate = parsed
                     state.dateValueState?.mode = isToday(parsed) ? .today : .absolute
@@ -189,13 +173,7 @@ public struct ValuePickerFeature {
                 return .none
 
             case let .selectUnit(unitCode):
-                guard let propertyKey = state.propertyKey,
-                      resolvedUnitSpec(
-                          propertyKey: propertyKey,
-                          valueType: state.valueType,
-                          tokenMode: false,
-                          registryClient: registryClient,
-                      ) != nil,
+                guard state.unitContract != nil,
                       let unitValueState = state.unitValueState,
                       unitValueState.availableUnitCodes.contains(unitCode)
                 else {
@@ -216,52 +194,55 @@ public struct ValuePickerFeature {
                     return .none
                 }
 
-                let normalized = ValuePickerTokenUtils.normalizedTokenKey(token)
-                let existing = Set(state.values.map(ValuePickerTokenUtils.normalizedTokenKey))
+                let normalized = ConditionTagSuggestions.normalizedTokenKey(token)
+                let existing = Set(state.values.map(ConditionTagSuggestions.normalizedTokenKey))
                 guard !existing.contains(normalized) else {
                     state.tokenInput = ""
                     return .none
                 }
 
                 state.values.append(token)
-                state.values = ValueNormalizerUtils.deduplicatedTokenValues(state.values)
+                state.values = ConditionValueNormalizer.deduplicatedTokenValues(state.values)
                 state.tokenInput = ""
                 state.errorMessage = nil
                 return .none
 
             case let .removeToken(rawToken):
-                let normalized = ValuePickerTokenUtils.normalizedTokenKey(rawToken)
-                state.values.removeAll { ValuePickerTokenUtils.normalizedTokenKey($0) == normalized }
+                let normalized = ConditionTagSuggestions.normalizedTokenKey(rawToken)
+                state.values.removeAll { ConditionTagSuggestions.normalizedTokenKey($0) == normalized }
                 state.errorMessage = nil
                 return .none
 
             case .commit:
-                guard let propertyKey = state.propertyKey,
-                      state.operatorCode != nil
+                guard state.condition?.operation != nil
                 else {
                     return .none
                 }
 
-                if let dateCommitEffect = commitSemanticDateIfNeeded(state: &state, propertyKey: propertyKey) {
+                if let dateCommitEffect = commitSemanticDateIfNeeded(state: &state) {
                     return dateCommitEffect
                 }
 
-                let tokenMode = ValuePickerTokenUtils.isTokenMode(
-                    isCategoricalProperty: state.isCategoricalProperty,
-                    valueUIKind: state.valueUIKind,
+                let tokenMode = if case .listText? = state.valueContract?.input {
+                    true
+                } else {
+                    false
+                }
+                let expected = requiredValueInputCount(
+                    contract: state.valueContract,
+                    currentValues: state.values,
                 )
-                let expected = max(state.valueArity, ValueNormalizerUtils.expectedArity(for: state.valueUIKind))
                 var displayValues = state.values
                 if tokenMode {
                     let token = state.tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !token.isEmpty {
-                        let normalized = ValuePickerTokenUtils.normalizedTokenKey(token)
-                        let existing = Set(displayValues.map(ValuePickerTokenUtils.normalizedTokenKey))
+                        let normalized = ConditionTagSuggestions.normalizedTokenKey(token)
+                        let existing = Set(displayValues.map(ConditionTagSuggestions.normalizedTokenKey))
                         if !existing.contains(normalized) {
                             displayValues.append(token)
                         }
                     }
-                    displayValues = ValueNormalizerUtils.deduplicatedTokenValues(displayValues)
+                    displayValues = ConditionValueNormalizer.deduplicatedTokenValues(displayValues)
                     state.tokenInput = ""
                 }
 
@@ -271,28 +252,27 @@ public struct ValuePickerFeature {
 
                 let rawValues: [String]
                 let selectedUnitCode = state.unitValueState?.selectedUnitCode
-                if let spec = resolvedUnitSpec(
-                    propertyKey: propertyKey,
-                    valueType: state.valueType,
-                    tokenMode: tokenMode,
-                    registryClient: registryClient,
-                ), let selectedUnitCode {
-                    guard let canonicalValues = UnitValueUtils.toCanonicalValues(
-                        displayValues: displayValues,
-                        from: selectedUnitCode,
-                        spec: spec,
-                    ) else {
+                if let unitContract = state.unitContract, !tokenMode, let selectedUnitCode {
+                    let canonicalValues = displayValues.compactMap {
+                        ConditionUnitConverter.toCanonical(
+                            displayValueText: $0,
+                            from: selectedUnitCode,
+                            contract: unitContract,
+                        )
+                    }
+                    guard canonicalValues.count == displayValues.count else {
                         state.errorMessage = "Enter a valid number."
                         return .none
                     }
                     rawValues = canonicalValues
-                    displayValues = UnitValueUtils.strippedDisplayValues(displayValues, spec: spec)
+                    displayValues = displayValues
                 } else {
                     rawValues = displayValues
                 }
 
-                let result = ValueNormalizerUtils.normalize(
-                    kind: state.valueUIKind,
+                guard let contract = state.valueContract else { return .none }
+                let result = ConditionValueNormalizer.normalize(
+                    contract: contract,
                     rawValues: rawValues,
                     editingIndex: state.editingIndex,
                 )
@@ -313,11 +293,10 @@ public struct ValuePickerFeature {
                     return .none
                 }
                 if tokenMode {
-                    state.values = ValueNormalizerUtils.deduplicatedTokenValues(displayValues)
+                    state.values = ConditionValueNormalizer.deduplicatedTokenValues(displayValues)
                 }
                 return .send(
                     .commitResult(
-                        propertyKey: propertyKey,
                         values: committedValues,
                         displayValues: displayValues,
                         selectedUnitCode: state.unitValueState?.selectedUnitCode,
@@ -332,65 +311,72 @@ public struct ValuePickerFeature {
 }
 
 private func resetValuePickerState(state: inout ValuePickerState) {
-    state.propertyKey = nil
-    state.operatorCode = nil
-    state.isCategoricalProperty = false
+    state.condition = nil
     state.values = [""]
     state.unitValueState = nil
+    state.unitContract = nil
     state.tokenInput = ""
     state.finderTagListState = nil
     state.errorMessage = nil
     state.editingIndex = nil
-    state.valueType = "string"
-    state.valueUIKind = "singleText"
-    state.valueArity = 1
     state.dateValueState = nil
 }
 
 private func ensureEditableValues(state: inout ValuePickerState) {
-    let count = max(state.valueArity, 1)
+    let count = max(
+        requiredValueInputCount(contract: state.valueContract, currentValues: state.values),
+        1,
+    )
     if state.values.count < count {
         state.values = Array(repeating: "", count: count)
     }
 }
 
+private func requiredValueInputCount(
+    contract: Condition.ValueContract?,
+    currentValues: [String],
+) -> Int {
+    switch contract?.count {
+    case let .fixed(count):
+        count
+    case .multiple:
+        max(currentValues.count, 1)
+    case nil:
+        0
+    }
+}
+
 private func prepareValueInputs(
-    valueArity: Int,
+    contract: Condition.ValueContract?,
     existingValues: [String]?,
     currentValues: [String],
     tokenMode: Bool,
-) -> (valueArity: Int, values: [String]) {
-    let normalizedArity = max(0, valueArity)
-    guard normalizedArity > 0 else { return (0, []) }
+) -> [String] {
+    let minimumCount: Int
+    switch contract?.count {
+    case let .fixed(count):
+        minimumCount = count
+    case .multiple:
+        minimumCount = 1
+    case nil:
+        return []
+    }
+    guard minimumCount > 0 else { return [] }
 
     if let existingValues {
         let trimmed = existingValues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let normalized = tokenMode ? ValueNormalizerUtils.deduplicatedTokenValues(trimmed) : trimmed
-        let effectiveArity = max(normalizedArity, normalized.count)
-        var values = Array(normalized.prefix(effectiveArity))
-        if values.count < effectiveArity {
-            values.append(contentsOf: Array(repeating: "", count: effectiveArity - values.count))
+        let normalized = tokenMode ? ConditionValueNormalizer.deduplicatedTokenValues(trimmed) : trimmed
+        let effectiveCount = max(minimumCount, normalized.count)
+        var values = Array(normalized.prefix(effectiveCount))
+        if values.count < effectiveCount {
+            values.append(contentsOf: Array(repeating: "", count: effectiveCount - values.count))
         }
-        return (effectiveArity, values)
+        return values
     }
 
-    if normalizedArity == 1 {
-        return (1, [currentValues.first ?? ""])
+    if minimumCount == 1 {
+        return [currentValues.first ?? ""]
     }
 
-    return (normalizedArity, Array(repeating: "", count: normalizedArity))
-}
-
-private func resolvedUnitSpec(
-    propertyKey: String,
-    valueType: String,
-    tokenMode: Bool,
-    registryClient: RegistryClient,
-) -> UnitValueUtils.UnitSpec? {
-    guard !tokenMode,
-          UnitValueUtils.supportsUnits(propertyKey: propertyKey, valueType: valueType, registryClient: registryClient)
-    else {
-        return nil
-    }
-    return UnitValueUtils.spec(for: propertyKey, registryClient: registryClient)
+    return Array(repeating: "", count: minimumCount)
 }

@@ -13,3 +13,11 @@ export type HomeLocation = {
   readonly destinationTabId: "directory"
   readonly path: string
 }
+
+// native FileManagerHomeChatHistoryItem — sessionID + title + detail + updatedAtMs
+export type HomeChat = {
+  readonly id: string
+  readonly title: string
+  readonly detail?: string
+  readonly relativeTime: string
+}

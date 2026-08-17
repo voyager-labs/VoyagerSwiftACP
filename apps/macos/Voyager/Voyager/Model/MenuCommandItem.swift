@@ -15,6 +15,7 @@ struct MenuCommandItem: Identifiable, Equatable {
         case restoreLastClosedTab
         case duplicateTab
         case selectContentTab(position: Int)
+        case selectMostRecentlyUsedContentTab
 
         case newFolder
         case open

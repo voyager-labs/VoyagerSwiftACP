@@ -6,6 +6,12 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
+private struct ComposerFeedbackPresentation {
+    var kind: ComposerTransientFeedbackKind
+    var stage: ComposerTransientFeedbackStage
+    var category: ComposerTransientFeedbackCategory
+}
+
 extension FileManagerContentFeature {
     func handleCollectionModeAction(
         _ action: Action,
@@ -44,21 +50,21 @@ extension FileManagerContentFeature {
         case .view(.discardCollectionChanges):
             handleDiscardCollectionChanges(state: &state)
 
-        case let .collection(.delegate(.draftRestorePrepared(payload))):
-            .concatenate(
-                .send(.composer(.applyCollectionDraftRestore(payload))),
-                syncComposerCollectionStateEffect(state),
-                restoredCollectionSearchEffect(payload: payload),
-            )
+        case .collection:
+            handleCollectionAction(action, state: &state)
 
-        case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
-            handleCollectionWriteBackPrepared(payload: payload, state: &state)
+        default:
+            nil
+        }
+    }
 
-        case let .collection(.delegate(.saveFeedback(payload))):
-            handleCollectionSaveFeedback(payload: payload, state: &state)
-
-        case let .collection(.delegate(delegateAction)):
-            handleCollectionDelegateAction(delegateAction, state: &state)
+    private func handleCollectionAction(
+        _ action: Action,
+        state: inout State,
+    ) -> Effect<Action>? {
+        switch action {
+        case .collection(.delegate):
+            handleCollectionDelegateEffects(action, state: &state)
 
         case .collection(.navigationStateApplied):
             .none
@@ -84,6 +90,32 @@ extension FileManagerContentFeature {
 
         case .collection:
             .none
+
+        default:
+            nil
+        }
+    }
+
+    private func handleCollectionDelegateEffects(
+        _ action: Action,
+        state: inout State,
+    ) -> Effect<Action>? {
+        switch action {
+        case let .collection(.delegate(.draftRestorePrepared(payload))):
+            .concatenate(
+                .send(.composer(.applyCollectionDraftRestore(payload))),
+                syncComposerCollectionStateEffect(state),
+                restoredCollectionSearchEffect(payload: payload),
+            )
+
+        case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
+            handleCollectionWriteBackPrepared(payload: payload, state: &state)
+
+        case let .collection(.delegate(.saveFeedback(payload))):
+            handleCollectionSaveFeedback(payload: payload, state: &state)
+
+        case let .collection(.delegate(delegateAction)):
+            handleCollectionDelegateAction(delegateAction, state: &state)
 
         default:
             nil
@@ -170,11 +202,13 @@ extension FileManagerContentFeature {
             return .none
         }
         return presentCollectionRefreshFeedback(
-            kind: .error,
+            presentation: .init(
+                kind: .error,
+                stage: .queryExecution,
+                category: .executionFailure,
+            ),
             message: "Refresh failed. Try again.",
             recoveryHint: "The collection is still stale until refresh succeeds.",
-            stage: .queryExecution,
-            category: .executionFailure,
             state: &state,
         )
     }
@@ -185,11 +219,14 @@ extension FileManagerContentFeature {
             return .none
         }
         return presentCollectionRefreshFeedback(
-            kind: .error,
+            presentation: .init(
+                kind: .error,
+                stage: .save,
+                category: .saveFailed,
+            ),
             message: "Could not save refreshed collection snapshot.",
-            recoveryHint: "The latest results may be visible, but this collection will stay stale until saving succeeds.",
-            stage: .save,
-            category: .saveFailed,
+            recoveryHint: "The latest results may be visible, but this collection will stay stale "
+                + "until saving succeeds.",
             state: &state,
         )
     }
@@ -216,31 +253,31 @@ extension FileManagerContentFeature {
             return .none
         }
         return presentCollectionRefreshFeedback(
-            kind: .info,
+            presentation: .init(
+                kind: .info,
+                stage: .save,
+                category: .saveBlocked,
+            ),
             message: compatibilityBlockedRefreshMessage(
                 reason: writeBackReason,
             ),
             recoveryHint: "Save as a new collection to keep refreshed results.",
-            stage: .save,
-            category: .saveBlocked,
             state: &state,
         )
     }
 
     private func presentCollectionRefreshFeedback(
-        kind: ComposerTransientFeedbackKind,
+        presentation: ComposerFeedbackPresentation,
         message: String,
         recoveryHint: String,
-        stage: ComposerTransientFeedbackStage,
-        category: ComposerTransientFeedbackCategory,
         state: inout State,
     ) -> Effect<Action> {
         let feedback = ComposerTransientFeedback(
             id: UUID(),
-            kind: kind,
+            kind: presentation.kind,
             message: message,
-            stage: stage,
-            category: category,
+            stage: presentation.stage,
+            category: presentation.category,
             recoveryHint: recoveryHint,
         )
         state.composer.isPresented = true

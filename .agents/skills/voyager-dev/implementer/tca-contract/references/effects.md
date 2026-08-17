@@ -169,6 +169,12 @@ case .didTapDelete:
     // Task 실행 중 state가 변경되어도 snapshotID는 변하지 않음
 ```
 
+### 버퍼링된 비동기 전달의 상관관계
+
+첫 suspension 또는 buffer 경계(`await`, callback handoff, continuation yield, stream enqueue)를 넘기기 전에 payload와 그 payload를 설명하는 correlation metadata(`token`, `generation`, request ID, trace ID)를 하나의 immutable value로 묶어라. 이후 단계에는 결합된 값만 전달한다.
+
+`current` 또는 `latest` metadata side channel을 lock으로 보호하면 data race는 막을 수 있지만 temporal correlation은 보장되지 않는다. 둘 이상의 payload가 소비 전에 buffer되면 metadata가 덮어써져 이전 payload가 이후 metadata와 잘못 결합될 수 있다. 소비자는 suspension 이후 shared side channel에서 metadata를 다시 조회하면 안 된다.
+
 ### 고빈도 체크는 effect 내부에서
 
 ```swift

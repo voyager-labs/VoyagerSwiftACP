@@ -29,6 +29,7 @@ public enum EntryModelTagColorNormalizer {
                 tags: normalizedTags,
                 supplementaryMetadata: entry.facets.supplementaryMetadata,
             ),
+            isPackage: entry.isPackage,
         )
     }
 }

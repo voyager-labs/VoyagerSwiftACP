@@ -9,11 +9,11 @@ import XCTest
 final class CBW002RequestContextManagementTests: XCTestCase {
     // MARK: - CBW-002-show_request_context
 
-    /// CBW-002-show_request_context: draft request context를 current context와 added attachment로 분리해 표시한다.
-    /// 사용자가 요청 전에 볼 수 있는 context chip들이 source별로 분리되고 빈 placeholder가 숨겨지는지 검증합니다.
-    /// - 검증 내용: display source, current context title, attachment title/status/removable 상태를 확인합니다.
+    /// CBW-002-show_request_context: live draft request context를 current context와 added attachment로 분리해 표시한다.
+    /// 사용자가 다음 요청에 사용할 context chip들이 종류별로 분리되고 빈 placeholder가 숨겨지는지 검증합니다.
+    /// - 검증 내용: current context title, attachment title/status/removable 상태를 확인합니다.
     /// - 사전 조건: current context에는 선택 파일이 있고 added attachment에는 resolved file과 broken file이 있습니다.
-    /// - 기대 결과: draft source가 표시되고 current context와 added attachments는 서로 섞이지 않습니다.
+    /// - 기대 결과: current context와 added attachments는 서로 섞이지 않습니다.
     func testShowRequestContextSeparatesDraftCurrentContextAndAddedAttachments() {
         let state = AiChatFeature.State(
             sessionID: makeCBW002AttachmentSessionID(),
@@ -34,53 +34,52 @@ final class CBW002RequestContextManagementTests: XCTestCase {
 
         let displayModel = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
 
-        XCTAssertEqual(displayModel.source, .draft)
         XCTAssertEqual(displayModel.currentContext?.title, "ProjectPlan.md")
         XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["Notes.txt", "Broken.txt"])
         XCTAssertEqual(displayModel.addedAttachments.map(\.statusLabel), ["Included", "Failed"])
         XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
     }
 
-    /// CBW-002-show_request_context: processing 중 locked snapshot과 live next context를 분리해 표시한다.
-    /// submit 이후 current response chip은 고정하고 다음 메시지의 current context와 attachment는 별도 편집면으로 유지하는지 검증합니다.
-    /// - 검증 내용: locked current-response section과 draft root section의 chip/removable 상태를 확인합니다.
-    /// - 사전 조건: executionPhase는 Locked.md context로 processing 중이고 live state에는 LiveOnly.md attachment가 있습니다.
-    /// - 기대 결과: current response는 non-removable locked 값이고 next message는 removable live 값입니다.
-    func testShowRequestContextUsesLockedSnapshotWhileProcessing() throws {
-        let state = makeProcessingStateWithLockedContext()
+    /// CBW-002-show_request_context: current context와 attachments를 서로 독립된 조건부 행으로 투영한다.
+    /// live draft의 각 context 종류가 있을 때만 해당 행이 나타나고 표시 순서가 유지되는지 검증합니다.
+    /// - 검증 내용: empty, current-only, attachment-only, both 조합의 행 종류와 순서를 확인합니다.
+    /// - 사전 조건: current context chip과 attachment chip display model을 조합합니다.
+    /// - 기대 결과: 빈 행은 생기지 않고 current context 행 다음에 attachments 행이 표시됩니다.
+    func testShowRequestContextProjectsIndependentConditionalRows() {
+        let currentContext = AiChatCurrentContextChipDisplayModel(title: "Context.md", detail: nil)
+        let attachment = AiChatAddedAttachmentChipDisplayModel(
+            attachmentID: AiChatAttachmentID(rawValue: "attachment"),
+            title: "Attachment.md",
+            statusLabel: "Included",
+            statusDetail: "Included as text",
+            isRemovable: true,
+        )
+        let cases: [(AiChatRequestContextDisplayModel, [AiChatRequestContextRowPresentation.Kind])] = [
+            (.init(currentContext: nil, addedAttachments: []), []),
+            (.init(currentContext: currentContext, addedAttachments: []), [.currentContext]),
+            (.init(currentContext: nil, addedAttachments: [attachment]), [.attachments]),
+            (.init(currentContext: currentContext, addedAttachments: [attachment]), [.currentContext, .attachments]),
+        ]
 
-        let displayModel = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
-        let currentResponse = try XCTUnwrap(displayModel.currentResponse)
-
-        XCTAssertEqual(currentResponse.source, .locked)
-        XCTAssertEqual(currentResponse.currentContext?.title, "Locked.md")
-        XCTAssertEqual(currentResponse.addedAttachments.map(\.title), ["LockedNotes.txt"])
-        XCTAssertEqual(currentResponse.addedAttachments.map(\.isRemovable), [false])
-        XCTAssertEqual(displayModel.source, .draft)
-        XCTAssertEqual(displayModel.currentContext?.title, "LiveOnly.md")
-        XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
-        XCTAssertEqual(displayModel.addedAttachments.map(\.isRemovable), [true])
+        for (displayModel, expectedRows) in cases {
+            XCTAssertEqual(AiChatRequestContextRowPresentation(displayModel: displayModel).rows, expectedRows)
+        }
     }
 
-    /// CBW-002-show_request_context: processing 중 locked 응답 context와 editable next context를 동시에 투영한다.
-    /// 현재 응답 snapshot을 고정한 채 사용자가 다음 메시지의 current context와 attachment를 편집할 수 있는지 검증합니다.
-    /// - 검증 내용: root draft projection의 live current context, removable next attachment, processing lock 불변성을 확인합니다.
-    /// - 사전 조건: processing lock에는 Locked.md가 있고 live state에는 LiveOnly.md와 LiveOnly.txt가 있습니다.
-    /// - 기대 결과: editable projection은 live 값을 노출하고 active lock은 원 locked context를 그대로 유지합니다.
-    func testShowRequestContextProjectsEditableNextContextDuringProcessing() {
+    /// CBW-002-show_request_context: processing 중에도 입력 영역에는 live draft context만 표시한다.
+    /// submit 이후 request lock은 내부에 고정하되 다음 메시지의 current context와 attachment만 편집면에 표시하는지 검증합니다.
+    /// - 검증 내용: live current context, removable attachment, processing lock 불변성을 확인합니다.
+    /// - 사전 조건: executionPhase는 Locked.md context로 processing 중이고 live state에는 LiveOnly.md attachment가 있습니다.
+    /// - 기대 결과: 입력 영역에는 live 값만 표시되고 active lock은 원 locked context를 유지합니다.
+    func testShowRequestContextDisplaysOnlyLiveDraftWhileProcessing() {
         let state = makeProcessingStateWithLockedContext()
         let originalLock = state.executionPhase.lock
 
         let displayModel = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
 
-        XCTAssertEqual(displayModel.source, .draft)
         XCTAssertEqual(displayModel.currentContext?.title, "LiveOnly.md")
         XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
-        XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
-        XCTAssertEqual(displayModel.currentResponse?.source, .locked)
-        XCTAssertEqual(displayModel.currentResponse?.currentContext?.title, "Locked.md")
-        XCTAssertEqual(displayModel.currentResponse?.addedAttachments.map(\.title), ["LockedNotes.txt"])
-        XCTAssertTrue(displayModel.currentResponse?.addedAttachments.allSatisfy { !$0.isRemovable } == true)
+        XCTAssertEqual(displayModel.addedAttachments.map(\.isRemovable), [true])
         XCTAssertEqual(state.executionPhase.lock, originalLock)
     }
 
@@ -119,8 +118,6 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertEqual(displayModel.currentContext?.folderStructureMode, .includeSubfolders)
         XCTAssertEqual(Set(displayModel.addedAttachments.map(\.title)), ["NextPicker.txt", "NextDrop.txt"])
         XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
-        XCTAssertEqual(displayModel.currentResponse?.currentContext?.title, "Locked.md")
-        XCTAssertEqual(displayModel.currentResponse?.addedAttachments.map(\.title), ["LockedNotes.txt"])
         XCTAssertEqual(store.state.executionPhase.lock, originalLock)
     }
 
@@ -704,70 +701,6 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertEqual(currentContext?.supportsFolderStructureMode, true)
     }
 
-    /// CBW-002-show_request_context: Locked Current Context Selected File Does Not Fallback To Folder Reference Icon
-    /// Path
-    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
-    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
-    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
-    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
-    func testLockedCurrentContextSelectedFileDoesNotFallbackToFolderReferenceIconPath() {
-        let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let lockedRequestContext = makeLockedSelectedImageFileRequestContext()
-        let lock = makeImageAttachmentRequestLock(
-            context: lockedRequestContext,
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-        )
-        let state = AiChatFeature.State(
-            sessionID: lock.context.sessionID,
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            executionPhase: .processing(lock),
-        )
-
-        let currentContext = AiChatStateDisplayModelBuilder(state: state)
-            .requestContextDisplayModel.currentResponse?.currentContext
-
-        XCTAssertEqual(currentContext?.title, "SCR-20260528-suth.png")
-        XCTAssertEqual(currentContext?.iconSystemName, "doc")
-        XCTAssertNil(currentContext?.iconFilePath)
-        XCTAssertEqual(currentContext?.supportsFolderStructureMode, true)
-    }
-
-    /// CBW-002-show_request_context: Locked Current Context Attachment Keeps Attachment Icon During Processing
-    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
-    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
-    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
-    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
-    func testLockedCurrentContextAttachmentKeepsAttachmentIconDuringProcessing() {
-        let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let lockedRequestContext = makeLockedImageAttachmentRequestContext()
-        let lock = makeImageAttachmentRequestLock(
-            context: lockedRequestContext,
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-        )
-        let state = AiChatFeature.State(
-            sessionID: lock.context.sessionID,
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            executionPhase: .processing(lock),
-        )
-
-        let currentContext = AiChatStateDisplayModelBuilder(state: state)
-            .requestContextDisplayModel.currentResponse?.currentContext
-
-        XCTAssertEqual(currentContext?.title, "Screenshot.png")
-        XCTAssertEqual(currentContext?.iconSystemName, "paperclip")
-        XCTAssertNil(currentContext?.iconFilePath)
-        XCTAssertNil(currentContext?.folderStructureMode)
-        XCTAssertEqual(currentContext?.supportsFolderStructureMode, true)
-    }
-
     // MARK: - CBW-002-show_request_context
 
     /// CBW-002-show_request_context: Request Context Display Model Separates Groups And Hides Empty Placeholder
@@ -842,21 +775,6 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertTrue(currentContextTooltip.contains("Destination: ChatGPT Codex"))
         XCTAssertTrue(currentContextTooltip.contains("Status: Reference only"))
         XCTAssertTrue(currentContextTooltip.contains("contents not included"))
-    }
-
-    /// CBW-002-show_request_context: Locked Current Context Chip Uses Resolved Folder Metadata During Processing
-    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
-    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
-    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
-    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
-    func testLockedCurrentContextChipUsesResolvedFolderMetadataDuringProcessing() {
-        let catalogRows = makeCatalogRows()
-        let (_, currentContext) = makeLockedFolderProcessingState(catalogRows: catalogRows)
-
-        XCTAssertEqual(currentContext?.title, "Desktop")
-        XCTAssertEqual(currentContext?.iconSystemName, "folder")
-        XCTAssertEqual(currentContext?.iconFilePath, "/tmp/Desktop")
-        XCTAssertEqual(currentContext?.folderStructureMode, .includeSubfolders)
     }
 
     /// CBW-002-show_request_context: Current File Context Does Not Expose Folder Structure Mode
@@ -987,39 +905,6 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         }
     }
 
-    // MARK: - CBW-002-show_request_context
-
-    /// CBW-002-show_request_context: Locked Folder Reference Uses Finder Icon Path During Processing
-    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
-    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
-    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
-    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
-    func testLockedFolderReferenceUsesFinderIconPathDuringProcessing() {
-        let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let lockedRequestContext = makeLockedFolderReferenceContext()
-        let lock = makeFolderIconRequestLock(
-            context: lockedRequestContext,
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-        )
-        let state = AiChatFeature.State(
-            sessionID: lock.context.sessionID,
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            executionPhase: .processing(lock),
-        )
-
-        let currentContext = AiChatStateDisplayModelBuilder(state: state)
-            .requestContextDisplayModel.currentResponse?.currentContext
-
-        XCTAssertEqual(currentContext?.title, "Desktop")
-        XCTAssertEqual(currentContext?.iconSystemName, "folder")
-        XCTAssertEqual(currentContext?.iconFilePath, "/tmp/Desktop")
-        XCTAssertEqual(currentContext?.folderStructureMode, .includeSubfolders)
-    }
-
     // MARK: - CBW-002-add_attachment_by_drop
 
     /// CBW-002-add_attachment_by_drop: File URLPasteboard Resolves Attachment URLs
@@ -1079,13 +964,12 @@ final class CBW002RequestContextManagementTests: XCTestCase {
 
     // MARK: - CBW-002-show_request_context
 
-    /// CBW-002-show_request_context: Request Context Display Model Uses Locked Snapshot During Processing And Terminal
-    /// States
-    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
-    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// CBW-002-show_request_context: processing과 terminal 상태에서 live draft context만 표시한다.
+    /// request lock의 lifecycle과 무관하게 입력 영역은 다음 요청에 사용할 live draft를 투영하는지 검증합니다.
+    /// - 검증 내용: processing과 completed 상태에서 live current context와 removable attachment를 확인합니다.
     /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
-    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
-    func testRequestContextDisplayModelUsesLockedSnapshotDuringProcessingAndTerminalStates() {
+    /// - 기대 결과: 두 상태 모두 locked snapshot 대신 각 상태의 live draft를 표시합니다.
+    func testRequestContextDisplayModelUsesLiveDraftDuringProcessingAndTerminalStates() {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let lockedRequestContext = makeLockedRequestContextForDisplayTest()
@@ -1121,7 +1005,8 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         )
 
         let processingDisplayModel = AiChatStateDisplayModelBuilder(state: processingState).requestContextDisplayModel
-        assertProcessingLockedDisplayModel(processingDisplayModel)
+        assertProcessingLiveDraftDisplayModel(processingDisplayModel)
+        XCTAssertEqual(processingState.executionPhase.lock, lock)
 
         let completedState = makeCompletedDisplayModelState(
             processingState: processingState,
@@ -1131,10 +1016,9 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         )
 
         let completedDisplayModel = AiChatStateDisplayModelBuilder(state: completedState).requestContextDisplayModel
-        XCTAssertEqual(completedDisplayModel.source, AiChatRequestContextDisplaySource.draft)
-        XCTAssertNil(completedDisplayModel.currentResponse)
         XCTAssertEqual(completedDisplayModel.currentContext?.title, "LiveOnly.txt")
         XCTAssertEqual(completedDisplayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
+        XCTAssertEqual(completedState.executionPhase.lock, lock)
     }
 
     // MARK: - CBW-002-change_context_folder_structure_mode
@@ -1515,7 +1399,13 @@ private extension CBW002RequestContextManagementTests {
     }
 
     func makeCBW002AttachmentSessionID() -> AiChatSessionID {
-        AiChatSessionID(rawValue: UUID(uuidString: "22222222-2222-3333-4444-000000000002")!)
+        AiChatSessionID(rawValue: UUID(uuid: (
+            0x22, 0x22, 0x22, 0x22,
+            0x22, 0x22,
+            0x33, 0x33,
+            0x44, 0x44,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+        )))
     }
 
     func makeCBW002TemporaryDirectory() throws -> URL {
@@ -1866,7 +1756,6 @@ private func makeLiveStateForGroupSeparation() -> AiChatFeature.State {
 }
 
 private func assertDraftDisplayModelGroupSeparation(_ displayModel: AiChatRequestContextDisplayModel) {
-    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.draft)
     XCTAssertEqual(displayModel.currentContext?.title, "ProjectPlan.md")
     XCTAssertEqual(displayModel.addedAttachments.map(\.title), [
         "Notes.txt", "Workspace", "Pending.txt", "Long.txt", "Broken.txt",
@@ -1887,44 +1776,6 @@ private func assertDraftDisplayModelGroupSeparation(_ displayModel: AiChatReques
     XCTAssertEqual(displayModel.currentContext?.folderStructureMode, .includeSubfolders)
     XCTAssertEqual(displayModel.currentContext?.supportsFolderStructureMode, true)
     XCTAssertEqual(displayModel.addedAttachments[1].folderStructureMode, .includeSubfolders)
-}
-
-private func makeLockedFolderProcessingState(
-    catalogRows: [AiModelCatalogRow],
-) -> (state: AiChatFeature.State, currentContext: AiChatCurrentContextChipDisplayModel?) {
-    let selectedHandle = catalogRows[0].handle
-    let lockedRequestContext = makeDesktopLockedRequestContext()
-    let lock = makeRequestLock(
-        kind: .submit,
-        request: AiChatRequest(
-            context: AiChatRequestContextSnapshot(
-                sessionID: AiChatSessionID(rawValue: UUID()),
-                requestID: AiChatRequestID(rawValue: UUID()),
-                runID: AiChatRunID(rawValue: UUID()),
-                provider: selectedHandle.provider,
-                model: selectedHandle,
-                selectedModelRow: catalogRows[0],
-                sessionStatus: .active,
-                currentContext: makeContextSnapshot(summary: "Live context"),
-                requestContext: lockedRequestContext,
-                promptSummary: "Hello",
-            ),
-            messages: [],
-        ),
-        selectedHandle: selectedHandle,
-        selectedRow: catalogRows[0],
-        assistantReplacementIndex: nil,
-    )
-    let state = AiChatFeature.State(
-        sessionID: lock.context.sessionID,
-        sessionStatus: .active,
-        catalogRows: catalogRows,
-        selectedModelHandle: selectedHandle,
-        executionPhase: .processing(lock),
-    )
-    let currentContext = AiChatStateDisplayModelBuilder(state: state)
-        .requestContextDisplayModel.currentResponse?.currentContext
-    return (state, currentContext)
 }
 
 private func makeDesktopLockedRequestContext() -> AiChatLockedRequestContextSnapshot {
@@ -2290,31 +2141,10 @@ private func makeProcessingDisplayModelState(
     )
 }
 
-private func assertProcessingLockedDisplayModel(_ displayModel: AiChatRequestContextDisplayModel) {
-    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.draft)
+private func assertProcessingLiveDraftDisplayModel(_ displayModel: AiChatRequestContextDisplayModel) {
+    XCTAssertEqual(displayModel.currentContext?.title, "VoyagerEntitiesAi.swift")
     XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["DraftOnly.txt"])
     XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
-    guard let currentResponse = displayModel.currentResponse else {
-        return XCTFail("Expected current response context section")
-    }
-    XCTAssertEqual(currentResponse.source, AiChatRequestContextDisplaySource.locked)
-    XCTAssertEqual(currentResponse.currentContext?.title, "VoyagerEntitiesAi.swift")
-    XCTAssertEqual(currentResponse.addedAttachments.map(\.title), ["Workspace", "Design.pdf", "Secret.txt"])
-    XCTAssertEqual(
-        currentResponse.addedAttachments.map(\.statusLabel),
-        ["Collection paths", "Uploaded/native", "Failed"],
-    )
-    XCTAssertEqual(currentResponse.addedAttachments.map(\.statusDetail), [
-        "Collection paths only; contents not included",
-        "Uploaded natively as application/pdf",
-        "Not sent: permissionDenied",
-    ])
-    XCTAssertEqual(currentResponse.addedAttachments[0].iconFilePath, "/tmp/Workspace.voycoll")
-    XCTAssertEqual(currentResponse.addedAttachments[0].iconAssetName, "voycollFileIcon")
-    XCTAssertTrue(currentResponse.addedAttachments.allSatisfy { !$0.isRemovable })
-    XCTAssertNil(currentResponse.currentContext?.folderStructureMode)
-    XCTAssertEqual(currentResponse.currentContext?.supportsFolderStructureMode, false)
-    XCTAssertEqual(currentResponse.addedAttachments[0].folderStructureMode, .includeSubfolders)
 }
 
 private func makeCompletedDisplayModelState(

@@ -30,9 +30,16 @@ All macOS semantic colors come from `--macos-*` custom properties in `src/styles
 
 Scroll ownership is explicit: sidebar tabs, entry content, and inspector chat own their independent vertical scrolling. Window chrome, location shortcuts, toolbar, and breadcrumb/status remain fixed.
 
-## 5. Components
+## 5. Catalog Taxonomy
 
-### Entry Thumbnail Visual Contract
+- **Foundations and UI** are product-agnostic visual primitives and controls. They may be used by any higher layer and do not own File Manager workflow state.
+- **Patterns** combine primitives into reusable File Manager interaction or chrome structures without owning a product workflow.
+- **Layouts** place patterns and domains within the window shell and own pane geometry, resize behavior, and scroll boundaries.
+- **Domains** own product language, fixtures, and stateful review flows. A domain may expose a domain pattern when a composition is reusable inside that domain but is not product-agnostic.
+
+### Domains: Entries
+
+#### Entries — Entry Thumbnail Visual Contract
 
 Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails, not native-runtime proofs. All tokens are consumed through `--fm-entry-*` CSS custom properties; no raw component colors are allowed. SVG gradient IDs use distinct prefixes (`folder-*`, `doc-*`) to avoid collisions.
 
@@ -70,26 +77,91 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **QuickLook:** parent wrapper scales the SVG 1.55× via CSS `transform: scale(1.55)`.
 - **Constraint:** all three scaling tiers must preserve the silhouette — no element is hidden or added at different sizes.
 
-### Native Window Shell
+### Layouts
+
+#### Native Window Shell
 
 - **Structure:** full-height sidebar, accessible separator, inset rounded main surface, content pane, optional inspector separator and inspector.
 - **States:** sidebar open/closed; inspector open/closed; persisted pane widths.
 - **Accessibility:** separators expose orientation, controlled pane, pixel value, min/max, pointer drag, arrows, Shift+arrows, Home, and End.
 
-### Sidebar
+#### Sidebar
 
 - **Structure:** titlebar controls, fixed location grid, scrollable pinned/unpinned tabs, New Tab row.
 - **States:** active, hover, focus, revealed row action, empty tab collection.
 
-### Content Chrome
-
-- **Structure:** navigation controls, active title area, hover/focus view and sort controls, New Chat, optional Show Sidebar, scroll body, breadcrumb/status.
-- **States:** Home, browser, grid/list, sidebar closed.
-
-### Contextual Inspector
+#### Contextual Inspector
 
 - **Structure:** 40px chat-only header and chat body.
-- **States:** Chat History, conversation, closed.
+- **States:** Chat History, connected empty (blank body + bottom composer), unconnected provider setup (top status banner), connection error (top banner + Retry), rebind required (top banner + two actions), conversation, closed. The content-page centered empty ("Ask Voyager" + optional compactConnectionCTA) is modeled only as an isolated AiChatView specimen, never in the inspector root.
+
+### Patterns
+
+#### Content Chrome
+
+- **Structure:** navigation controls, active title area, hover/focus view and sort controls, New Chat, optional Show Sidebar, scroll body, breadcrumb/status.
+- **Geometry:** toolbar icon buttons follow native `IconButtonStyle.toolbar` (24×24, radius 5) with New Chat at the native `ToolbarContextMenuButton` 28×28; group spacing is 8px; toolbar/status/sidebar 1px separators use `--fm-separator-emphasis` (native `Color.primary.opacity(0.12)`).
+- **States:** Home, browser, grid/list, sidebar closed.
+
+### Content Browser Review Surface
+
+- **Authority:** `FileManagerContentPaneView`, `ContentPageView`, `EntryGridView`, `EntryListView`, and `ContentPaneBreadcrumbBarView` native source establishes the page structure, grid/list modes, selection semantics, and status text. Storybook remains a deterministic review translation, not runtime proof.
+- **Root states:** `DefaultGrid`, `GridSelection`, `ListSelection`, `EmptyGrid`, `LongNamesList`, `NarrowSidebarClosed`, and `InspectorOpenList` cover the minimum VOY-720 review matrix without creating a Cartesian product.
+- **Content stress:** grid names preserve the native-style two-line clamp; list names remain single-line with middle truncation that preserves the extension. Empty content preserves toolbar and breadcrumb chrome, while the 600px narrow fixture closes the sidebar so the 400px content minimum remains observable.
+- **Pane states:** sidebar and inspector open/closed are window-shell states. There is no separate native `content pane closed` state, so Storybook does not claim or add one.
+- **Decision:** Adopt the named root states as the canonical ContentPane/entry-browser review surface; isolated EntryGrid/EntryList stories remain reusable specimens.
+- **Checked:** typed initial presentation, SSR pane/list/selection markup, Storybook catalog state IDs, package check, static build, and contract verifier.
+- **Unknown/deviation:** dynamic material rendering remains runtime-dependent. Runtime accessibility inspection confirms the AppKit table geometry below; pixel capture remains unavailable without Screen Recording permission.
+- **Follow-up:** Revisit only when native runtime captures are in scope or a new content state changes layout ownership.
+- **List view:** reflects the native `NSOutlineView` default with `Name`, `Date Modified`, `Size`, and `Kind` columns; 420/220/110/180px default widths, a 28px header, 24px entry rows, 20px thumbnails, 13px regular name text, 12px metadata text in primary `labelColor` (native metadata cells set no secondary color), 4px inter-column spacing, horizontal overflow when the content pane is narrower than the native table, a transparent list surface over the content-pane background, alternating unselected row backgrounds (odd rows only, mirroring `EntryListView` clear surface + `EntryListSelectionRowView` odd-row fill), metadata values, extension-preserving middle truncation, replace/toggle/range selection, and background-click/Escape selection clearing (native `mouseDown` deselectAll).
+- **Grid view:** 120px auto-fill tiles with native `EntryGridCoordinator` spacing — 2px inter-item, 8px line, 8/12/12/12 section insets; 80×80 icon zone (native icon+16) radius 8 with white 8% overlay on selection; name 12px regular, 92px width, two-line clamp; selected meta text turns on-accent; no fabricated hover/active effects (native items have none).
+- **Status bar:** mirrors `ContentPaneBreadcrumbBarView` with a 24px footer, 16px horizontal inset, a left breadcrumb region fixed to 50% of the available width (`leftWidth`), and a right item-count label (`N items` / `N of M selected`) that flexes to fill the remainder and right-aligns in 12px medium secondary.
+- **Home:** mirrors `FileManagerHomePageView` with Favorites → Locations → Recent Chats sections, 36px horizontal / 32px vertical padding, 28px section gap, 15px semibold section titles, 120×88 vertical navigation tiles (icon frame 32 above a 13px semibold label, 6px gap, 12px grid spacing, hover fill), Recent Chats rows at 8px spacing with a trailing 24px radius-6 New Chat pill, and "No pinned favorites" / "No recent chats" empty states.
+- **PathBreadcrumb:** isolated specimen with its own component geometry boundary (`.path-breadcrumb`), separate from the statusbar 50% allocation wrapper (`.statusbar-breadcrumb`). `Default` uses a normal path; `LongLabels` exercises the single-line ellipsis truncation inside a bounded width.
+- **PathBreadcrumbItem:** reusable item specimen owning the icon + label markup (`path-breadcrumb-item` / `path-breadcrumb-label`) as a presentational element inside the parent `<nav aria-label="Breadcrumb">`. `Default` is a plain `{folder}` item; `LongLabel` exercises the single-line ellipsis truncation inside a bounded width. Icon–label gap is 0 and both stay vertically centered.
+- **Item geometry:** follows the native `PathBreadcrumbView` contract exactly — 14px icon box, 12px regular label, 10px chevron glyph, 4px element gap, 20px inner component height, single-line truncation with `line-height: 1`, and a 2px icon–label gap compensating for the tighter side bearings of the web symbol font (native `HStack(spacing: 0)` relies on AppKit symbol glyph bearings for the same visual rhythm). The earlier screenshot-driven 13/11/9/18 scale-down was reverted once the oversized rendering was traced to the missing `line-height` constraint, not the font sizes.
+
+### Domains: Chat and Composer
+
+#### Chat — AI Chat Input Bar
+
+- **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift`, its `AiChatInputDisplayModel`, and `AiChatView` placement rules.
+- **Design Version axis:** `current` is the adopted native translation. The VOY-721 `candidate-material-controls` proposal was retired without adoption because this issue excludes browser visual review and native source remains the authority.
+- **Current structure:** optional request-context sections, dynamically sized message field, plain text `+` attachment button, borderless native-menu model and thinking selectors, and one plain submit-or-stop button with the native SF Symbol glyph container.
+- **Geometry:** 8px internal padding and spacing, 46–160px message field height, 24×24px action control, 8px action radius, and a 16px Tahoe / 10px Sequoia composer radius.
+- **Placement:** conversation uses 10px horizontal, 8px top, and 10px bottom outer padding; centered-empty uses the input bar without that outer inset.
+- **States:** empty submit-disabled, unconnected no-model selectors with submit-disabled, draft submit-enabled, pending-resolution editing-disabled with stop, processing next-turn editing with stop, stop-disabled, unavailable model, populated request context, multiline maximum height, and 230px minimum inspector width.
+- **Tokens:** `current` preserves the native solid chat input background through `--macos-chat-input-background-color` → `--fm-chat-composer-bg`.
+
+#### VOY-721 input comparison decision
+
+- **Decision:** Retire `candidate-material-controls`; keep `current` as the only active input design.
+- **Authority:** Native `VoyagerFeaturesAiChat/Ui/AiChatInputBar.swift` source and this issue's scope.
+- **Checked:** Recovery, submit/stop, selector, removable-context, editing-disabled, and file/URL-drop Storybook contracts; `pnpm check`, `build-storybook`, and `verify:contract`.
+- **Unknown/deviation:** No browser visual comparison was performed because VOY-721 explicitly excludes Playwright/browser visual review; candidate adoption therefore remains unsubstantiated.
+- **Follow-up:** None; reopen a candidate only with a new review question and visual evidence scope.
+
+#### Chat — AI Chat Conversation
+
+- **Authority:** `VoyagerFeaturesAiChat/Ui/AiChatConversationSurface.swift`, `AiChatAssistantMarkdownText.swift`, and `VoyagerDS` typography/surface roles.
+- **User message:** right-aligned intrinsic bubble with a 16px minimum leading gutter, 14px horizontal and 10px vertical padding, 20px continuous radius, body typography, and `inputBackground` surface role.
+- **Assistant message:** transparent full-width response with 12px internal block spacing and 4px vertical padding. Historical responses hide the visual Assistant header; waiting responses show the full title/status header.
+- **Rich content:** assistant headings, paragraphs, bullets, numbered rows, blockquotes, tables, and fenced code follow native block ordering. Inline emphasis, strong text, links, and inline code preserve the native attributed-text intents. Body uses 13px typography with the native 16px AppKit line height and 8px block spacing; heading levels use 17/15/14px type with 20/18/17px line heights. Blockquotes use a 2px separator rail and 8px content gap. Tables own horizontal overflow, use 8px horizontal and 6px vertical cell padding, and tint the header with the control-background role. Code owns horizontal overflow, exposes its source-language header, and uses 12px monospaced typography with a 15px line height, an input-border stroke, 8px content padding, and an 8px radius.
+- **Failure:** partial content remains visible before the 8px-spaced red failure row; contentless failure shows neither the header nor waiting indicator.
+- **Affordances:** user and assistant output text remains browser-selectable as the Storybook translation of native AppKit selection. Deterministic copied/failed specimens use the native top-trailing capsule with the control-background role; they demonstrate presentation only, not pasteboard behavior or the native two-second lifecycle. Only the latest historical assistant response may expose the 28×28 regenerate action. Its hover label uses the native popover background and separator roles. Timestamp affordances occupy the user leading gutter or assistant top-trailing gutter without changing normal row flow.
+- **Surface boundary:** assistant responses do not introduce an independent card background, border, radius, or fixed max-width.
+- **Story harness:** isolated message stories render inside the 300px default inspector width. The user specimen retains the message-row alignment wrapper so its intrinsic bubble width and 16px minimum leading gutter remain observable. Integrated File Manager stories follow the window contract and may resize the inspector between its 230px minimum and 300px default when the viewport cannot fit the default 960px window plus stage insets.
+
+#### Composer — Collection Composer Pattern
+
+- **Catalog role:** Composer domain pattern. It composes Composer-specific controls and picker flows, so it remains under `Domains/Composer`; it is not a product-agnostic `Patterns` primitive.
+- **Authority:** `VoyagerFeaturesComposer/Ui/ComposerView.swift`, `ComposerTopRowView.swift`, `ComposerBottomRowView.swift`, and their picker/chip views.
+- **Placement:** File Manager content-pane top overlay with 7px horizontal and 5px top inset; it is not an independent window or Chat surface.
+- **Structure:** 40px top row with undo, redo, query, submit/stop, Clear/Discard, and Save/Save As; 1px inset separator; wrapped 28px scope and condition rows.
+- **Geometry:** top row uses 8px spacing and 16px horizontal/6px vertical padding. Query field has a 30px minimum height and 8px radius. Scope and condition chips use 28px rows, 8px spacing, 16px outer padding, and 6px/4px container/item radii.
+- **Overlays:** scope picker is 420px wide with a 520px maximum height. Property picker is 200×320px and keeps the native hierarchy bounded to pinned recommendations plus static Common/Filesystem groups; search and category navigation remain out of scope. Operator picker is a flat, text-only 180px list. Generic text/number/range value forms are 240px; semantic date is 163px; Boolean is a 150px True/False list; categorical/list token entry is 260px with a 164px suggestion region. Transient feedback is 360px maximum width and appears 54px below the composer top.
+- **Tokens:** native `Interaction.composerBackground`, input, chip, popover, control-hover, brand accent, radius, and shadow roles map through `--macos-composer-*` to `--fm-composer-*`.
+- **States:** empty/populated draft, standalone compact-width review, property/operator/value pickers, processing stop, applied/applying/failed scope feedback, query recovery, and deterministic representative flows for string, number, unit-bearing size, single/range date, Boolean, string-list, categorical token, and arity-zero operators. Registry-inaccessible `rx`, Boolean `neq`, and unused `listNumber` are excluded. Storybook demonstrates browser-side presentation and selection only; it does not claim native material compositing, measured chip wrapping, or reducer/business-logic execution.
 
 ## 6. Motion & Interaction
 
@@ -136,7 +208,7 @@ The provenance snapshot lives in `src/assets/entry-thumbnails/provenance.json`. 
 
 ### Renderer precedence
 
-The `EntryThumbnail` component (`src/Entries/EntryThumbnail.tsx`) evaluates in this order:
+The `EntryThumbnail` component (`src/Domains/Entries/EntryThumbnail.tsx`) evaluates in this order:
 
 1. **`thumbnailSrc` present** — renders an `<img>` with the provided URL/import path, including folder fixtures.
 2. **No thumbnailSrc** — falls back to the kind-specific SVG icon (`FolderIcon`, `PdfIcon`, `ImageIcon`, `SheetIcon`, `VideoIcon`, `ArchiveIcon`, or generic `FileIcon`).

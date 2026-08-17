@@ -117,6 +117,13 @@ struct AppMenuCommands: Commands {
         }
 
         CommandMenu("Go") {
+            Button("Last Used Tab") {
+                send(.app(.selectMostRecentlyUsedContentTab))
+            }
+            .keyboardShortcut(.tab, modifiers: .control)
+
+            Divider()
+
             Button("Back") {
                 send(.app(.goBack))
             }

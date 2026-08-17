@@ -39,6 +39,7 @@ public struct EntryModel: Identifiable, Sendable {
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
+    public let isPackage: Bool
     public let isHidden: Bool
     public let size: Int64
     public let modifiedDate: Date
@@ -54,10 +55,12 @@ public struct EntryModel: Identifiable, Sendable {
         modifiedDate: Date,
         fileExtension: String,
         facets: EntryFacets,
+        isPackage: Bool = false,
     ) {
         self.name = name
         self.fullPath = fullPath
         self.isFolder = isFolder
+        self.isPackage = isPackage
         self.isHidden = isHidden
         self.size = size
         self.modifiedDate = modifiedDate
@@ -71,11 +74,53 @@ public struct EntryModel: Identifiable, Sendable {
 }
 
 extension EntryModel: Equatable {
-    public static func == (lhs: EntryModel, rhs: EntryModel) -> Bool {
-        lhs.id == rhs.id &&
-            lhs.modifiedDate == rhs.modifiedDate &&
-            lhs.size == rhs.size &&
-            lhs.facets.tags == rhs.facets.tags
+    public func applying(_ patch: EntryMetadataPatch) -> EntryModel {
+        let updatedFacets: EntryFacets
+        switch patch {
+        case let .spotlight(id, kind, creatorApplication, lastOpenedDate) where id == self.id:
+            updatedFacets = EntryFacets(
+                createdDate: facets.createdDate,
+                addedDate: facets.addedDate,
+                lastOpenedDate: lastOpenedDate,
+                kind: kind ?? facets.kind,
+                creatorApplication: creatorApplication,
+                tags: facets.tags,
+                supplementaryMetadata: facets.supplementaryMetadata,
+            )
+        case let .tags(id, tags) where id == self.id:
+            updatedFacets = EntryFacets(
+                createdDate: facets.createdDate,
+                addedDate: facets.addedDate,
+                lastOpenedDate: facets.lastOpenedDate,
+                kind: facets.kind,
+                creatorApplication: facets.creatorApplication,
+                tags: tags,
+                supplementaryMetadata: facets.supplementaryMetadata,
+            )
+        case let .supplementaryMetadata(id, metadata) where id == self.id:
+            updatedFacets = EntryFacets(
+                createdDate: facets.createdDate,
+                addedDate: facets.addedDate,
+                lastOpenedDate: facets.lastOpenedDate,
+                kind: facets.kind,
+                creatorApplication: facets.creatorApplication,
+                tags: facets.tags,
+                supplementaryMetadata: metadata,
+            )
+        default:
+            return self
+        }
+        return EntryModel(
+            name: name,
+            fullPath: fullPath,
+            isFolder: isFolder,
+            isHidden: isHidden,
+            size: size,
+            modifiedDate: modifiedDate,
+            fileExtension: fileExtension,
+            facets: updatedFacets,
+            isPackage: isPackage,
+        )
     }
 
     public static func temporaryFolder(id: ID, name: String) -> EntryModel {
@@ -96,6 +141,7 @@ extension EntryModel: Equatable {
                 tags: nil,
                 supplementaryMetadata: nil,
             ),
+            isPackage: false,
         )
     }
 }

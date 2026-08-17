@@ -16,6 +16,8 @@ struct ComposerSearchLifecycleReducer {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.uuid)
+    var uuid
     @Dependency(\.continuousClock)
     var clock
     @Dependency(\.composerMetricClient)
@@ -107,7 +109,12 @@ struct ComposerSearchLifecycleReducer {
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
                     applyQueryPhaseTransition(.searchSucceeded, state: &state)
-                    applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
+                    applyAppliedFilters(
+                        normalizedAppliedFilters,
+                        state: &state,
+                        registryClient: registryClient,
+                        uuid: { uuid() },
+                    )
                     logSearchDurationIfNeeded(state.searchStartedAt, composerMetricClient: composerMetricClient)
                     logCollectionFilterQueryResult(
                         response: response,
@@ -237,7 +244,12 @@ struct ComposerSearchLifecycleReducer {
                     let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics
                         .sourceManualApply
                     state.activeFiltersMetricSource = nil
-                    applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                    applyAppliedFilters(
+                        response.appliedFilters,
+                        state: &state,
+                        registryClient: registryClient,
+                        uuid: { uuid() },
+                    )
                     state.scopeEditor.committedSelection = state.scopeEditor.selection
                     state.scopeEditor.committedIncludeSubfolders = state.scopeEditor.includeSubfolders
                     state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)

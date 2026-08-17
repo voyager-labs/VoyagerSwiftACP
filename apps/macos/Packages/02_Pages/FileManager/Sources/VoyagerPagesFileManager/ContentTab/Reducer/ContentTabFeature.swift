@@ -210,6 +210,7 @@ extension ContentTabFeature {
         )
         state.tabs.append(item)
         state.previousActiveTabID = previousActiveTabID
+        state.recordActivation(item.id)
         state.activeTabID = item.id
         return .none
     }
@@ -221,6 +222,7 @@ extension ContentTabFeature {
             return .none
         }
         state.previousActiveTabID = state.activeTabID
+        state.recordActivation(id)
         state.activeTabID = id
         return .none
     }
@@ -241,42 +243,12 @@ extension ContentTabFeature {
         }
 
         if state.tabs.count == 1 {
-            if case .aiChat = tab.anchor {
-                let snapshot = ClosedContentTabSnapshot(
-                    page: tab.page,
-                    anchor: tab.anchor,
-                    wasPinned: tab.isPinned,
-                    closedAt: Date(),
-                    title: tab.title,
-                    iconName: tab.iconName,
-                )
-                state.recentlyClosed = snapshot
-            }
-
-            state.previousActiveTabID = id
-            if preservesLastTabIdentity {
-                state.tabs[id: id]?.page = .home
-                state.tabs[id: id]?.anchor = .homeDefault
-                state.tabs[id: id]?.title = "Home"
-                state.tabs[id: id]?.iconName = "house"
-                state.activeTabID = id
-                return .none
-            }
-
-            let homeTab = ContentTabItem(
-                id: ContentTabID(),
-                page: .home,
-                anchor: .homeDefault,
-                isPinned: false,
-                title: "Home",
-                iconName: "house",
+            return closeLastTab(
+                tab: tab,
+                id: id,
+                preservesLastTabIdentity: preservesLastTabIdentity,
+                state: &state,
             )
-            state.tabs.remove(id: id)
-            state.tabs.append(homeTab)
-            state.activeTabID = homeTab.id
-            state.selectedTabIDs = [homeTab.id]
-            state.selectionAnchorID = homeTab.id
-            return .none
         }
 
         let snapshot = ClosedContentTabSnapshot(
@@ -290,38 +262,118 @@ extension ContentTabFeature {
         state.recentlyClosed = snapshot
 
         let wasActive = state.activeTabID == id
-        let fallbackTabID: ContentTabID? = {
-            guard let closingIndex = state.tabs.firstIndex(where: { $0.id == id }) else { return nil }
-
-            if let previousID = state.previousActiveTabID,
-               previousID != id,
-               state.tabs[id: previousID] != nil
-            {
-                return previousID
-            }
-
-            if closingIndex + 1 < state.tabs.endIndex {
-                return state.tabs[closingIndex + 1].id
-            }
-
-            if closingIndex > state.tabs.startIndex {
-                return state.tabs[state.tabs.index(before: closingIndex)].id
-            }
-
-            return state.tabs.first?.id
-        }()
+        let fallbackTabID = fallbackTabID(forClosing: id, state: state)
 
         state.tabs.remove(id: id)
         state.reconcileSelection()
 
         if wasActive {
             state.previousActiveTabID = id
+            if let fallbackTabID {
+                state.recordActivation(fallbackTabID)
+            }
             state.activeTabID = fallbackTabID
         } else {
             state.previousActiveTabID = nil
         }
 
         return .none
+    }
+
+    private func closeLastTab(
+        tab: ContentTabItem,
+        id: ContentTabID,
+        preservesLastTabIdentity: Bool,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        if case .aiChat = tab.anchor {
+            state.recentlyClosed = ClosedContentTabSnapshot(
+                page: tab.page,
+                anchor: tab.anchor,
+                wasPinned: tab.isPinned,
+                closedAt: Date(),
+                title: tab.title,
+                iconName: tab.iconName,
+            )
+        }
+
+        state.previousActiveTabID = id
+        if preservesLastTabIdentity {
+            state.tabs[id: id]?.page = .home
+            state.tabs[id: id]?.anchor = .homeDefault
+            state.tabs[id: id]?.title = "Home"
+            state.tabs[id: id]?.iconName = "house"
+            state.activeTabID = id
+            return .none
+        }
+
+        let homeTab = ContentTabItem(
+            id: ContentTabID(),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        )
+        state.tabs.remove(id: id)
+        state.tabs.append(homeTab)
+        state.pruneRecentlyUsedTabIDs()
+        state.recordActivation(homeTab.id)
+        state.activeTabID = homeTab.id
+        state.selectedTabIDs = [homeTab.id]
+        state.selectionAnchorID = homeTab.id
+        return .none
+    }
+
+    private func replaceLastTabWithHome(
+        tab: ContentTabItem,
+        id: ContentTabID,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        if case .aiChat = tab.anchor {
+            state.recentlyClosed = ClosedContentTabSnapshot(
+                page: tab.page,
+                anchor: tab.anchor,
+                wasPinned: tab.isPinned,
+                closedAt: Date(),
+                title: tab.title,
+                iconName: tab.iconName,
+            )
+        }
+
+        let homeTab = ContentTabItem(
+            id: ContentTabID(),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        )
+        state.previousActiveTabID = id
+        state.tabs.remove(id: id)
+        state.tabs.append(homeTab)
+        state.activeTabID = homeTab.id
+        return .none
+    }
+
+    private func fallbackTabID(
+        forClosing id: ContentTabID,
+        state: ContentTabState,
+    ) -> ContentTabID? {
+        guard let closingIndex = state.tabs.firstIndex(where: { $0.id == id }) else { return nil }
+        if let previousID = state.previousActiveTabID,
+           previousID != id,
+           state.tabs[id: previousID] != nil
+        {
+            return previousID
+        }
+        if closingIndex + 1 < state.tabs.endIndex {
+            return state.tabs[closingIndex + 1].id
+        }
+        if closingIndex > state.tabs.startIndex {
+            return state.tabs[state.tabs.index(before: closingIndex)].id
+        }
+        return state.tabs.first?.id
     }
 
     private func restore(state: inout ContentTabState) -> Effect<ContentTabAction> {
@@ -344,210 +396,10 @@ extension ContentTabFeature {
         )
         state.tabs.append(item)
         state.previousActiveTabID = state.activeTabID
+        state.recordActivation(item.id)
         state.activeTabID = item.id
         state.recentlyClosed = nil
         return .none
-    }
-
-    private func duplicate(
-        sourceID: ContentTabID,
-        duplicateID: ContentTabID,
-        state: inout ContentTabState,
-    ) -> Effect<ContentTabAction> {
-        guard state.tabs.count < ContentTabConstants.maxTabs,
-              let source = state.tabs[id: sourceID],
-              let duplicateItem = makeDuplicateItem(
-                  source: source,
-                  duplicateID: duplicateID,
-                  existingIDs: Set(state.tabs.ids),
-              )
-        else {
-            return .none
-        }
-
-        if source.isPinned {
-            let boundaryIndex = state.tabs.firstIndex(where: { !$0.isPinned }) ?? state.tabs.endIndex
-            state.tabs.insert(duplicateItem, at: boundaryIndex)
-        } else {
-            guard let sourceIndex = state.tabs.index(id: sourceID) else { return .none }
-            state.tabs.insert(duplicateItem, at: sourceIndex + 1)
-            state.previousActiveTabID = state.activeTabID
-            state.activeTabID = duplicateID
-        }
-
-        return .none
-    }
-
-    private func duplicateSelected(
-        requests: [ContentTabDuplicateRequest],
-        state: inout ContentTabState,
-    ) -> Effect<ContentTabAction> {
-        let remainingCapacity = ContentTabConstants.maxTabs - state.tabs.count
-        guard remainingCapacity > 0, !requests.isEmpty else { return .none }
-
-        let existingIDs = Set(state.tabs.ids)
-        var seenSourceIDs = Set<ContentTabID>()
-        var seenDuplicateIDs = Set<ContentTabID>()
-        var validRequests: [(source: ContentTabItem, duplicate: ContentTabItem)] = []
-
-        for request in requests {
-            guard !seenSourceIDs.contains(request.sourceID),
-                  !seenDuplicateIDs.contains(request.duplicateID),
-                  let source = state.tabs[id: request.sourceID],
-                  let duplicate = makeDuplicateItem(
-                      source: source,
-                      duplicateID: request.duplicateID,
-                      existingIDs: existingIDs,
-                  )
-            else {
-                continue
-            }
-
-            seenSourceIDs.insert(request.sourceID)
-            seenDuplicateIDs.insert(request.duplicateID)
-            validRequests.append((source, duplicate))
-        }
-
-        let successfulRequests = Array(validRequests.prefix(remainingCapacity))
-        guard !successfulRequests.isEmpty else { return .none }
-
-        let preOperationActiveID = state.activeTabID
-        var updatedTabs = Array(state.tabs)
-        let pinnedSourceDuplicates = successfulRequests
-            .filter(\.source.isPinned)
-            .map(\.duplicate)
-        if !pinnedSourceDuplicates.isEmpty {
-            let boundaryIndex = updatedTabs.firstIndex(where: { !$0.isPinned }) ?? updatedTabs.endIndex
-            updatedTabs.insert(contentsOf: pinnedSourceDuplicates, at: boundaryIndex)
-        }
-        for request in successfulRequests where !request.source.isPinned {
-            guard let sourceIndex = updatedTabs.firstIndex(where: { $0.id == request.source.id }) else {
-                continue
-            }
-            updatedTabs.insert(request.duplicate, at: sourceIndex + 1)
-        }
-        state.tabs = .init(uniqueElements: updatedTabs)
-        state.previousActiveTabID = preOperationActiveID
-        state.activeTabID = successfulRequests[0].duplicate.id
-        state.reconcileSelection()
-        return .none
-    }
-
-    private func makeDuplicateItem(
-        source: ContentTabItem,
-        duplicateID: ContentTabID,
-        existingIDs: Set<ContentTabID>,
-    ) -> ContentTabItem? {
-        guard !existingIDs.contains(duplicateID),
-              isValidDuplicate(page: source.page, anchor: source.anchor)
-        else {
-            return nil
-        }
-
-        return ContentTabItem(
-            id: duplicateID,
-            page: source.page,
-            anchor: source.anchor,
-            isPinned: false,
-            title: source.title,
-            iconName: source.iconName,
-        )
-    }
-
-    static func reorderedTabs(
-        _ tabs: IdentifiedArrayOf<ContentTabItem>,
-        orderedMovingIDs: [ContentTabID],
-        anchorID: ContentTabID,
-        placement: FileManagerTopNavigationReorderPlacement,
-    ) -> [ContentTabItem]? {
-        let movingIDSet = Set(orderedMovingIDs)
-        guard !orderedMovingIDs.isEmpty,
-              movingIDSet.count == orderedMovingIDs.count,
-              !movingIDSet.contains(anchorID),
-              let anchor = tabs[id: anchorID],
-              !anchor.isPinned,
-              orderedMovingIDs.allSatisfy({ id in
-                  guard let tab = tabs[id: id] else { return false }
-                  return !tab.isPinned
-              })
-        else {
-            return nil
-        }
-
-        let originalUnpinnedIDs = tabs.filter { !$0.isPinned }.map(\.id)
-        var reducedUnpinnedIDs = originalUnpinnedIDs.filter { !movingIDSet.contains($0) }
-        guard let anchorIndex = reducedUnpinnedIDs.firstIndex(of: anchorID) else {
-            return nil
-        }
-
-        let insertionIndex = placement == .before ? anchorIndex : anchorIndex + 1
-        reducedUnpinnedIDs.insert(contentsOf: orderedMovingIDs, at: insertionIndex)
-        guard reducedUnpinnedIDs != originalUnpinnedIDs,
-              reducedUnpinnedIDs.count == originalUnpinnedIDs.count,
-              Set(reducedUnpinnedIDs) == Set(originalUnpinnedIDs)
-        else {
-            return nil
-        }
-
-        var reorderedUnpinnedIterator = reducedUnpinnedIDs.makeIterator()
-        var result: [ContentTabItem] = []
-        result.reserveCapacity(tabs.count)
-        for tab in tabs {
-            if tab.isPinned {
-                result.append(tab)
-                continue
-            }
-
-            guard let reorderedID = reorderedUnpinnedIterator.next(),
-                  let reorderedTab = tabs[id: reorderedID]
-            else {
-                return nil
-            }
-            result.append(reorderedTab)
-        }
-
-        guard reorderedUnpinnedIterator.next() == nil,
-              result.count == tabs.count,
-              Set(result.map(\.id)) == Set(tabs.map(\.id))
-        else {
-            return nil
-        }
-        return result
-    }
-
-    private func reorder(
-        orderedMovingIDs: [ContentTabID],
-        anchorID: ContentTabID,
-        placement: FileManagerTopNavigationReorderPlacement,
-        state: inout ContentTabState,
-    ) -> Effect<ContentTabAction> {
-        guard let reorderedTabs = Self.reorderedTabs(
-            state.tabs,
-            orderedMovingIDs: orderedMovingIDs,
-            anchorID: anchorID,
-            placement: placement,
-        ) else {
-            return .none
-        }
-        state.tabs = .init(uniqueElements: reorderedTabs)
-        return .none
-    }
-
-    private func isValidDuplicate(page: ContentTabPage, anchor: ContentTabPageAnchor) -> Bool {
-        switch (page, anchor) {
-        case (.home, .homeDefault):
-            true
-        case let (.directory, .directory(path)):
-            UUID(uuidString: path) == nil
-        case (.collection, .collectionFile):
-            true
-        case (.collection, .virtualCollection):
-            true
-        case let (.aiChat, .aiChat(sessionID)):
-            UUID(uuidString: sessionID) != nil
-        default:
-            false
-        }
     }
 
     private func pin(
@@ -796,405 +648,5 @@ enum ContentTabPinMutationPreflight {
             insertionIndex: insertionIndex,
             previousPinnedRecord: state.pinnedRecords[id],
         )
-    }
-}
-
-private func ordinaryPinInsertionIndex(in state: ContentTabState) -> Int {
-    state.tabs.firstIndex(where: { !$0.isPinned }) ?? state.tabs.endIndex
-}
-
-private func pinnedRecordPersistenceAction(
-    request: ContentTabPinnedRecordPersistenceRequest,
-    discoveredLocationIDs: [String],
-    client: ContentTabPinnedRecordClient,
-    defaults: UserDefaultsClient,
-    persistenceScopeID: UUID,
-) async -> ContentTabAction {
-    do {
-        try PinnedRecordPersistenceIntent.checkCurrent(
-            scopeID: persistenceScopeID,
-            tabID: request.tabID,
-            intentID: request.context.intentID,
-        )
-        let disposition = try await persistPinnedRecordMutation(
-            request: request,
-            discoveredLocationIDs: discoveredLocationIDs,
-            client: client,
-            defaults: defaults,
-            persistenceScopeID: persistenceScopeID,
-        )
-        return pinnedRecordDispositionAction(disposition, request: request)
-    } catch is CancellationError {
-        return .pinnedRecordSaveNotApplied(
-            tabID: request.tabID,
-            context: request.context,
-            reason: .cancelled,
-            rollback: request.rollback,
-        )
-    } catch let error as ContentTabPinnedRecordStoreLoadError {
-        return .pinnedRecordStoreUnavailable(
-            tabID: request.tabID,
-            context: request.context,
-            failure: topNavigationLoadFailure(error),
-            rollback: request.rollback,
-        )
-    } catch {
-        return .pinnedRecordSaveFailed(
-            tabID: request.tabID,
-            context: request.context,
-            rollback: request.rollback,
-        )
-    }
-}
-
-private func pinInsertionIndex(
-    for placement: ContentTabPlacement?,
-    sourceID: ContentTabID,
-    state: ContentTabState,
-) -> Int? {
-    guard let placement else { return ordinaryPinInsertionIndex(in: state) }
-    switch placement {
-    case let .before(anchorID):
-        guard anchorID != sourceID,
-              state.tabs[id: anchorID]?.isPinned == true,
-              state.pinnedRecords[anchorID] != nil
-        else { return nil }
-        return state.tabs.filter { $0.id != sourceID }.firstIndex { $0.id == anchorID }
-    case let .after(anchorID):
-        guard anchorID != sourceID,
-              state.tabs[id: anchorID]?.isPinned == true,
-              state.pinnedRecords[anchorID] != nil,
-              let anchorIndex = state.tabs.filter({ $0.id != sourceID }).firstIndex(where: { $0.id == anchorID })
-        else { return nil }
-        return anchorIndex + 1
-    case .empty:
-        guard !state.tabs.contains(where: \.isPinned), state.pinnedRecords.isEmpty else { return nil }
-        return 0
-    }
-}
-
-private func unpinInsertionIndex(
-    for placement: ContentTabPlacement?,
-    sourceID: ContentTabID,
-    state: ContentTabState,
-) -> Int? {
-    let remainingTabs = state.tabs.filter { $0.id != sourceID }
-    guard let placement else { return remainingTabs.endIndex }
-    switch placement {
-    case let .before(anchorID):
-        guard anchorID != sourceID, state.tabs[id: anchorID]?.isPinned == false else { return nil }
-        return remainingTabs.firstIndex { $0.id == anchorID }
-    case let .after(anchorID):
-        guard anchorID != sourceID,
-              state.tabs[id: anchorID]?.isPinned == false,
-              let anchorIndex = remainingTabs.firstIndex(where: { $0.id == anchorID })
-        else { return nil }
-        return anchorIndex + 1
-    case .empty:
-        guard !remainingTabs.contains(where: { !$0.isPinned }) else { return nil }
-        return remainingTabs.endIndex
-    }
-}
-
-private func pinnedRecordDispositionAction(
-    _ disposition: ContentTabPinnedRecordMutationDisposition,
-    request: ContentTabPinnedRecordPersistenceRequest,
-) -> ContentTabAction {
-    switch disposition {
-    case .applied:
-        .pinnedRecordSaveSucceeded(tabID: request.tabID, context: request.context)
-    case .superseded:
-        .pinnedRecordSaveNotApplied(
-            tabID: request.tabID,
-            context: request.context,
-            reason: .superseded,
-            rollback: request.rollback,
-        )
-    }
-}
-
-private func persistPinnedRecordMutation(
-    request: ContentTabPinnedRecordPersistenceRequest,
-    discoveredLocationIDs: [String],
-    client: ContentTabPinnedRecordClient,
-    defaults: UserDefaultsClient,
-    persistenceScopeID: UUID,
-) async throws -> ContentTabPinnedRecordMutationDisposition {
-    if request.mutation.hasExplicitPlacement {
-        let disposition = try await client.applyPersistenceMutationCommittedGuarded(
-            request.context.generation,
-            defaults,
-            discoveredLocationIDs: discoveredLocationIDs,
-            mutation: request.mutation,
-        ) {
-            try PinnedRecordPersistenceIntent.checkCurrent(
-                scopeID: persistenceScopeID,
-                tabID: request.tabID,
-                intentID: request.context.intentID,
-            )
-        }
-        switch disposition {
-        case .applied:
-            return .applied
-        case .superseded:
-            return .superseded
-        }
-    }
-    return try await client.updateStoreGuarded(
-        request.context.generation,
-        defaults,
-    ) { store in
-        try PinnedRecordPersistenceIntent.checkCurrent(
-            scopeID: persistenceScopeID,
-            tabID: request.tabID,
-            intentID: request.context.intentID,
-        )
-        return try applying(
-            request.mutation,
-            to: store,
-            discoveredLocationIDs: discoveredLocationIDs,
-        )
-    }
-}
-
-private func restorePinnedRecordSnapshot(
-    tabID: ContentTabID,
-    previousIsPinned: Bool,
-    previousPinnedRecord: ContentTabPinnedRecord?,
-    previousTabIndex: Int?,
-    state: inout ContentTabState,
-) {
-    if let previousTabIndex, let tab = state.tabs[id: tabID] {
-        let selectedTabIDs = state.selectedTabIDs
-        let selectionAnchorID = state.selectionAnchorID
-        state.tabs.remove(id: tabID)
-        state.tabs.insert(tab, at: min(previousTabIndex, state.tabs.endIndex))
-        state.selectedTabIDs = selectedTabIDs
-        state.selectionAnchorID = selectionAnchorID
-    }
-    state.tabs[id: tabID]?.isPinned = previousIsPinned
-    if let previousPinnedRecord {
-        state.pinnedRecords[tabID] = previousPinnedRecord
-    } else {
-        state.pinnedRecords.removeValue(forKey: tabID)
-    }
-}
-
-extension ContentTabFeature {
-    private func title(for anchor: ContentTabPageAnchor) -> String {
-        switch anchor {
-        case .homeDefault:
-            "Home"
-        case let .directory(path):
-            entryLoadingClient.displayName(path).nonEmpty ?? URL(fileURLWithPath: path).lastPathComponent
-                .nonEmpty ?? path
-        case let .collectionFile(url):
-            CollectionFileUtils.displayName(url, fallback: url.lastPathComponent)
-        case let .virtualCollection(id):
-            id
-        case .aiChat:
-            "AI Chat"
-        }
-    }
-
-    private func iconName(for anchor: ContentTabPageAnchor) -> String {
-        switch anchor {
-        case .homeDefault:
-            "house"
-        case let .directory(path):
-            fileManagerIconClient.iconNameForURL(URL(fileURLWithPath: path), true, entryLoadingClient)
-        case .collectionFile:
-            "rectangle.stack"
-        case let .virtualCollection(id):
-            id == "Recents" ? "clock" : "folder"
-        case .aiChat:
-            "bubble.right"
-        }
-    }
-
-    private func page(for anchor: ContentTabPageAnchor) -> ContentTabPage {
-        switch anchor {
-        case .homeDefault:
-            .home
-        case .directory:
-            .directory
-        case .collectionFile, .virtualCollection:
-            .collection
-        case .aiChat:
-            .aiChat
-        }
-    }
-}
-
-struct PinnedRecordPersistenceCancelID: Hashable {
-    let scopeID: UUID
-    let tabID: ContentTabID
-}
-
-enum PinnedRecordPersistenceIntent {
-    private struct Key: Hashable {
-        let scopeID: UUID
-        let tabID: ContentTabID
-    }
-
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var latestIntentIDs: [Key: UUID] = [:]
-
-    static func markLatest(scopeID: UUID, tabID: ContentTabID) -> UUID {
-        let intentID = UUID()
-        lock.lock()
-        latestIntentIDs[Key(scopeID: scopeID, tabID: tabID)] = intentID
-        lock.unlock()
-        return intentID
-    }
-
-    static func isCurrent(scopeID: UUID, tabID: ContentTabID, intentID: UUID) -> Bool {
-        lock.lock()
-        let isCurrent = latestIntentIDs[Key(scopeID: scopeID, tabID: tabID)] == intentID
-        lock.unlock()
-        return isCurrent
-    }
-
-    static func checkCurrent(scopeID: UUID, tabID: ContentTabID, intentID: UUID) throws {
-        if !isCurrent(scopeID: scopeID, tabID: tabID, intentID: intentID) {
-            throw CancellationError()
-        }
-        try Task.checkCancellation()
-    }
-}
-
-func upsertPinnedRecord(
-    _ record: ContentTabPinnedRecord,
-    in existingStore: ContentTabPinnedRecordStore,
-    dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot? = nil,
-    placement: ContentTabPlacement? = nil,
-    discoveredLocationIDs: [String] = [],
-) -> ContentTabPinnedRecordStore {
-    let tabID = ContentTabID(rawValue: record.id)
-    if let placement {
-        let projection = FileManagerTopNavigationOrderPolicy.normalize(
-            store: existingStore,
-            discoveredLocationIDs: discoveredLocationIDs,
-        )
-        guard let insertedOrder = FileManagerTopNavigationOrderPolicy.insertingContentTab(
-            tabID,
-            at: placement,
-            in: projection.durableOrder,
-        ) else { return existingStore }
-        var records = projection.normalizedStore.records
-        if let existingIndex = records.firstIndex(where: { $0.id == record.id }) {
-            records[existingIndex] = record
-        } else {
-            records.append(record)
-        }
-        return ContentTabPinnedRecordStore(
-            schemaVersion: projection.normalizedStore.schemaVersion,
-            records: records,
-            topNavigationOrder: insertedOrder,
-        )
-    }
-
-    var records = existingStore.records
-    let existingIndex = records.firstIndex(where: { $0.id == record.id })
-    if let existingIndex {
-        records[existingIndex] = record
-    } else {
-        records.append(record)
-    }
-    let baseStore = ContentTabPinnedRecordStore(
-        schemaVersion: existingStore.schemaVersion,
-        records: records,
-        topNavigationOrder: existingStore.topNavigationOrder,
-    )
-    var normalizedStore = FileManagerTopNavigationOrderPolicy.normalize(
-        store: baseStore,
-        discoveredLocationIDs: discoveredLocationIDs,
-    ).normalizedStore
-    if existingIndex == nil || dormantSlot != nil {
-        normalizedStore.topNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
-            tabID,
-            into: normalizedStore.topNavigationOrder,
-            dormantSlot: dormantSlot,
-        )
-    }
-    return normalizedStore
-}
-
-func removePinnedRecord(
-    id: String,
-    from existingStore: ContentTabPinnedRecordStore,
-    discoveredLocationIDs: [String] = [],
-) -> ContentTabPinnedRecordStore {
-    let tabID = ContentTabID(rawValue: id)
-    let baseStore = ContentTabPinnedRecordStore(
-        schemaVersion: existingStore.schemaVersion,
-        records: existingStore.records.filter { $0.id != id },
-        topNavigationOrder: .init(items: existingStore.topNavigationOrder.items.filter {
-            $0 != .contentTab(tabID)
-        }),
-    )
-    return FileManagerTopNavigationOrderPolicy.normalize(
-        store: baseStore,
-        discoveredLocationIDs: discoveredLocationIDs,
-    ).normalizedStore
-}
-
-private extension ContentTabPinnedRecordPersistenceMutation {
-    var hasExplicitPlacement: Bool {
-        guard case let .upsert(_, _, placement) = self else { return false }
-        return placement != nil
-    }
-}
-
-func applying(
-    _ mutation: ContentTabPinnedRecordPersistenceMutation,
-    to store: ContentTabPinnedRecordStore,
-    discoveredLocationIDs: [String],
-) throws -> ContentTabPinnedRecordStore {
-    switch mutation {
-    case let .upsert(record, dormantSlot, placement):
-        if let placement {
-            let durableOrder = FileManagerTopNavigationOrderPolicy.normalize(
-                store: store,
-                discoveredLocationIDs: discoveredLocationIDs,
-            ).durableOrder
-            guard FileManagerTopNavigationOrderPolicy.insertingContentTab(
-                ContentTabID(rawValue: record.id),
-                at: placement,
-                in: durableOrder,
-            ) != nil else {
-                throw ContentTabPinnedRecordPersistenceCommitError.superseded
-            }
-        }
-        return upsertPinnedRecord(
-            record,
-            in: store,
-            dormantSlot: dormantSlot,
-            placement: placement,
-            discoveredLocationIDs: discoveredLocationIDs,
-        )
-    case let .remove(recordID):
-        return removePinnedRecord(
-            id: recordID,
-            from: store,
-            discoveredLocationIDs: discoveredLocationIDs,
-        )
-    }
-}
-
-private func topNavigationLoadFailure(
-    _ error: ContentTabPinnedRecordStoreLoadError,
-) -> FileManagerTopNavigationArrangementLoadFailure {
-    switch error {
-    case .corruptUnavailable:
-        .corrupt
-    case let .futureSchemaUnavailable(schemaVersion):
-        .unsupportedSchema(schemaVersion)
-    }
-}
-
-private extension String {
-    var nonEmpty: String? {
-        isEmpty ? nil : self
     }
 }

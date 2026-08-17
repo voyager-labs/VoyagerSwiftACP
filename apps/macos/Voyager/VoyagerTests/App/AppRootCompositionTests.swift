@@ -234,6 +234,11 @@ final class AppRootCompositionTests: XCTestCase {
     func testEntryCoreHealthProbeCancellationPreservesTerminationRouting() async {
         let probeStarted = expectation(description: "Entry Core health probe started")
         let probeCancelled = expectation(description: "Entry Core health probe cancelled")
+        let helperMonitorCancelled = expectation(description: "Helper monitor cancelled")
+        let helperEvents = AsyncStream<Void>.makeStream()
+        helperEvents.continuation.onTermination = { @Sendable _ in
+            helperMonitorCancelled.fulfill()
+        }
         let store = TestStore(initialState: AppLifecycleFeature.State()) {
             AppLifecycleFeature()
         } withDependencies: {
@@ -250,7 +255,13 @@ final class AppRootCompositionTests: XCTestCase {
                     probeCancelled.fulfill()
                 }
             }
-            $0.helperAppClient = helperAppClient()
+            $0.helperAppClient = HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { true },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { _ in },
+            )
             $0.helperStateClient = readyHelperStateClient
             $0.onboardingWindowClient.showIfNeeded = { false }
         }
@@ -265,8 +276,238 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.termination(.willTerminate))
         await store.receive(\.accountAccess.appWillTerminate)
-        await fulfillment(of: [probeCancelled], timeout: 1)
+        await fulfillment(of: [probeCancelled, helperMonitorCancelled], timeout: 1)
         await store.finish()
+    }
+
+    // MARK: - Helper monitoring
+
+    func testHelperMonitorRestartsAfterTerminationEvent() async {
+        let restartRequested = expectation(description: "Helper restart requested")
+        let restartCount = LockIsolated(0)
+        let ensureRequestCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    guard await canLaunch() else { return }
+                    let requestCount = ensureRequestCount.withValue {
+                        $0 += 1
+                        return $0
+                    }
+                    guard requestCount > 1 else { return }
+                    restartCount.withValue { $0 += 1 }
+                    restartRequested.fulfill()
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await Task.yield()
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [restartRequested], timeout: 1)
+
+        task.cancel()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(restartCount.value, 1)
+    }
+
+    func testHelperMonitorCancellationDuringGraceWindowDoesNotRestart() async {
+        let clock = TestClock()
+        let restartRequested = expectation(description: "Initial helper restart requested")
+        let graceSleepStarted = expectation(description: "Grace window sleep started")
+        let restartCount = LockIsolated(0)
+        let ensureRequestCount = LockIsolated(0)
+        let nowReadCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    guard await canLaunch() else { return }
+                    let requestCount = ensureRequestCount.withValue {
+                        $0 += 1
+                        return $0
+                    }
+                    guard requestCount > 1 else { return }
+                    restartCount.withValue { $0 += 1 }
+                    restartRequested.fulfill()
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: clock,
+            now: {
+                let count = nowReadCount.withValue {
+                    $0 += 1
+                    return $0
+                }
+                if count == 3 {
+                    graceSleepStarted.fulfill()
+                }
+                return Date(timeIntervalSince1970: 0)
+            },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await Task.yield()
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [restartRequested], timeout: 1)
+
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [graceSleepStarted], timeout: 1)
+
+        task.cancel()
+        await clock.advance(by: .seconds(5))
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(restartCount.value, 1)
+    }
+
+    func testHelperMonitorCancellationBeforeLaunchDoesNotRestart() async {
+        let restartEntered = expectation(description: "Helper restart boundary entered")
+        let restartCount = LockIsolated(0)
+        let ensureRequestCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let restartGate = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: {},
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    let requestCount = ensureRequestCount.withValue {
+                        $0 += 1
+                        return $0
+                    }
+                    guard requestCount > 1 else { return }
+                    restartEntered.fulfill()
+                    for await _ in restartGate.stream {
+                        break
+                    }
+                    guard await canLaunch() else { return }
+                    restartCount.withValue { $0 += 1 }
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await Task.yield()
+        helperEvents.continuation.yield(())
+        await fulfillment(of: [restartEntered], timeout: 1)
+
+        task.cancel()
+        restartGate.continuation.yield(())
+        restartGate.continuation.finish()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(restartCount.value, 0)
+    }
+
+    func testHelperMonitorCancellationBeforeInitialLaunchDoesNotStart() async {
+        let launchEntered = expectation(description: "Initial helper launch boundary entered")
+        let launchCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let launchGate = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: { launchCount.withValue { $0 += 1 } },
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    launchEntered.fulfill()
+                    for await _ in launchGate.stream {
+                        break
+                    }
+                    guard await canLaunch() else { return }
+                    launchCount.withValue { $0 += 1 }
+                },
+            ),
+            stateClient: readyHelperStateClient,
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await fulfillment(of: [launchEntered], timeout: 1)
+        task.cancel()
+        launchGate.continuation.yield(())
+        launchGate.continuation.finish()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(launchCount.value, 0)
+    }
+
+    func testHelperMonitorCancellationDuringInitialAlignmentDoesNotRestart() async {
+        let resolveEntered = expectation(description: "Initial helper state resolution entered")
+        let startCount = LockIsolated(0)
+        let helperEvents = AsyncStream<Void>.makeStream()
+        let resolveGate = AsyncStream<Void>.makeStream()
+        let monitor = HelperMonitor(
+            helperClient: HelperAppClient(
+                start: { startCount.withValue { $0 += 1 } },
+                stop: {},
+                isRunning: { false },
+                terminationEvents: { helperEvents.stream },
+                ensureRunning: { canLaunch in
+                    guard await canLaunch() else { return }
+                    startCount.withValue { $0 += 1 }
+                },
+            ),
+            stateClient: HelperStateClient(
+                resolve: {
+                    resolveEntered.fulfill()
+                    for await _ in resolveGate.stream {
+                        return nil
+                    }
+                    return nil
+                },
+                observe: { AsyncStream { $0.finish() } },
+            ),
+            clock: ImmediateClock(),
+            now: { Date(timeIntervalSince1970: 0) },
+            canRestart: { true },
+        )
+        let task = Task {
+            await monitor.run(mainBundleVersion: nil)
+        }
+
+        await fulfillment(of: [resolveEntered], timeout: 1)
+        XCTAssertEqual(startCount.value, 1)
+
+        task.cancel()
+        resolveGate.continuation.yield(())
+        resolveGate.continuation.finish()
+        helperEvents.continuation.finish()
+        await task.value
+        XCTAssertEqual(startCount.value, 1)
     }
 
     private var accessSnapshot: AccessStatusSnapshot {
@@ -290,7 +531,10 @@ final class AppRootCompositionTests: XCTestCase {
             stop: {},
             isRunning: { true },
             terminationEvents: { AsyncStream { $0.finish() } },
-            ensureRunning: {},
+            ensureRunning: { canLaunch in
+                guard await canLaunch() else { return }
+                startCount?.withValue { $0 += 1 }
+            },
         )
     }
 

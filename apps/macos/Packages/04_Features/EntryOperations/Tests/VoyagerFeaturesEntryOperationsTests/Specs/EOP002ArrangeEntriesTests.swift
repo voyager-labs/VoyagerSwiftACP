@@ -82,6 +82,18 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-copy_entries: 선택된 부모와 하위 항목은 표시 순서와 무관하게 부모만 복사 payload로 계획한다.
+    /// 사용자가 폴더, 그 하위 파일, 그리고 문자열 접두사만 같은 peer 파일을 함께 선택할 때 하위 파일은 제외하고 topmost source만 유지하는지 확인한다.
+    /// - 검증 내용: `.clipboard(.copySelectedItems)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고, 남은 source의 표시 순서와 원본
+    /// fullPath를 보존한다.
+    /// - 사전 조건: 동일한 폴더와 하위 파일을 선택하되 descendant-first 및 ancestor-first 표시 순서를 각각 구성하고, 경로 구성요소상 조상이 아닌 raw-prefix peer를
+    /// 포함한다.
+    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 copy payload에 포함되고, 하위 파일은 포함되지 않는다.
+    func testCopyEntries_excludesSelectedDescendantsRegardlessOfDisplayOrder() throws {
+        try assertCopyEntriesExcludingSelectedDescendant(isDescendantFirst: true)
+        try assertCopyEntriesExcludingSelectedDescendant(isDescendantFirst: false)
+    }
+
     // MARK: - EOP-002-cut_entries
 
     /// EOP-002-cut_entries: 선택한 Entry가 이동용 잘라내기 상태로 저장되는지 검증한다.
@@ -130,6 +142,18 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(store.state.cutClearSession?.pasteboard.changeCount, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-cut_entries: 선택된 부모와 하위 항목은 표시 순서와 무관하게 부모만 잘라내기 payload로 계획한다.
+    /// 사용자가 폴더, 그 하위 파일, 그리고 문자열 접두사만 같은 peer 파일을 함께 선택할 때 하위 파일은 제외하고 topmost source만 유지하는지 확인한다.
+    /// - 검증 내용: `.clipboard(.copySelectedItems)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고, 뒤이어 cut operation을 설정하며
+    /// 남은 source의 표시 순서와 원본 fullPath를 보존한다.
+    /// - 사전 조건: 동일한 폴더와 하위 파일을 선택하되 descendant-first 및 ancestor-first 표시 순서를 각각 구성하고, 경로 구성요소상 조상이 아닌 raw-prefix peer를
+    /// 포함한다.
+    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 cut의 copy payload에 포함되고, 하위 파일은 포함되지 않으며 cut operation이 뒤따른다.
+    func testCutEntries_excludesSelectedDescendantsRegardlessOfDisplayOrder() throws {
+        try assertCutEntriesExcludingSelectedDescendant(isDescendantFirst: true)
+        try assertCutEntriesExcludingSelectedDescendant(isDescendantFirst: false)
     }
 
     // MARK: - EOP-002-paste_entries
@@ -260,6 +284,67 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-duplicate_entries: 서로 다른 계층의 선택 항목을 각 원본 부모에 복제한다.
+    /// 계층 projection에서 선택된 중첩 항목이 현재 root로 이동하지 않고 원래 sibling 위치에 복제되는지 검증한다.
+    /// - 검증 내용: duplicate command plan이 선택 path를 원본 부모별 paste action으로 분리함
+    /// - 사전 조건: 서로 다른 부모를 가진 두 항목이 선택되고 currentPath는 상위 root임
+    /// - 기대 결과: 각 paste destination은 해당 source의 deletingLastPathComponent 경로임
+    func testDuplicateCommandPlansEachSourceParentDestination() {
+        let first = EntryModelFixtures.makeEntry(path: "/root/folder/first.txt")
+        let second = EntryModelFixtures.makeEntry(path: "/root/other/second.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [first.id, second.id],
+            displayItems: [first, second],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .clipboard(.duplicateSelectedItems),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 2)
+        guard outputs.count == 2,
+              case let .entryOperations(.clipboard(.pasteItems(firstPaths, firstDestination, _, _))) = outputs[0],
+              case let .entryOperations(.clipboard(.pasteItems(secondPaths, secondDestination, _, _))) = outputs[1]
+        else {
+            XCTFail("Expected duplicate paste plans grouped by source parent")
+            return
+        }
+        XCTAssertEqual(firstPaths, [first.fullPath])
+        XCTAssertEqual(firstDestination, "/root/folder")
+        XCTAssertEqual(secondPaths, [second.fullPath])
+        XCTAssertEqual(secondDestination, "/root/other")
+    }
+
+    /// EOP-002-duplicate_entries: 부모와 자식을 함께 선택하면 부모만 복제한다.
+    /// 계층 projection에서 선택된 폴더의 하위 항목을 별도 복제해 중복 결과를 만들지 않는지 검증한다.
+    /// - 검증 내용: duplicate command plan이 선택된 ancestor의 descendant path를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: paste source에는 부모 폴더만 포함됨
+    func testDuplicateCommandOmitsDescendantOfSelectedFolder() {
+        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+        let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [folder.id, child.id],
+            displayItems: [folder, child],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .clipboard(.duplicateSelectedItems),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.clipboard(.pasteItems(paths, destination, _, _))) = outputs.first else {
+            XCTFail("Expected one duplicate paste plan")
+            return
+        }
+        XCTAssertEqual(paths, [folder.fullPath])
+        XCTAssertEqual(destination, "/root")
+    }
+
     /// EOP-002-duplicate_entries: 일부 선택 항목이 사라진 상태에서도 앞선 항목 복제는 유지되는지 검증한다.
     /// 사용자가 `fixtures/fixtures/images/jpeg/`에서 여러 항목을 duplicate할 때 중간 하나가 없어도 앞선 복제는 유지되는지 확인한다.
     /// - 검증 내용: `.clipboard(.pasteItems)`가 다중 선택을 순차 처리하면서 앞선 성공과 뒤늦은 실패를 분리한다.
@@ -300,6 +385,53 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationPath))
         XCTAssertFalse(FileManager.default.fileExists(atPath: missingFile))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-duplicate_entries: 선택된 부모와 하위 항목은 표시 순서와 무관하게 부모만 복제하도록 계획한다.
+    /// 사용자가 폴더, 그 하위 파일, 그리고 문자열 접두사만 같은 peer 파일을 함께 선택할 때 하위 파일은 제외하고 topmost source만 유지하는지 확인한다.
+    /// - 검증 내용: `.routing(.executeCommand)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고, 남은 source의 표시 순서와 원본 fullPath를
+    /// 보존한다.
+    /// - 사전 조건: 동일한 폴더와 하위 파일을 선택하되 descendant-first 및 ancestor-first 표시 순서를 각각 구성하고, 경로 구성요소상 조상이 아닌 raw-prefix peer를
+    /// 포함한다.
+    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 하나의 부모별 duplicate paste action으로 방출되며, 하위 파일은 sourcePaths에 포함되지
+    /// 않는다.
+    func testDuplicateEntries_excludesSelectedDescendantsRegardlessOfDisplayOrder() async throws {
+        try await assertDuplicateEntriesExcludingSelectedDescendant(isDescendantFirst: true)
+        try await assertDuplicateEntriesExcludingSelectedDescendant(isDescendantFirst: false)
+    }
+
+    /// EOP-002-duplicate_entries: 서로 다른 부모의 교차 선택은 부모별로 같은 디렉터리에 복제하도록 계획한다.
+    /// 사용자가 root와 두 nested 폴더의 항목을 표시 순서대로 교차 선택해 duplicate할 때 각 항목이 원래 부모에 남는 경로를 확인한다.
+    /// - 검증 내용: `.routing(.executeCommand)`가 display 순서로 선택을 필터링하고, 첫 등장 부모 순서 및 부모별 source 순서를 보존한
+    /// `.clipboard(.pasteItems)`를 만든다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사하고, 샌드박스 root 및 두 nested 디렉터리에 실제 파일을 준비한다.
+    /// - 기대 결과: root, 첫 번째 nested 부모, 두 번째 nested 부모 순서로 각각 하나의 duplicate paste action이 방출되고, root 항목의 destination은
+    /// context.currentPath와 같다.
+    func testDuplicateEntries_groupsInterleavedSelectionsByParentInDisplayOrder() async throws {
+        let scenario = try makeInterleavedDuplicateScenario()
+        defer { scenario.sandbox.cleanup() }
+        let store = EntryOperationsTestSupport.makeStore()
+
+        // store.exhaustivity = .off: duplicate 실행의 lifecycle effect 대신 planner가 방출한 부모별 paste action만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .clipboard(.duplicateSelectedItems),
+            context: scenario.context,
+        )))
+        for group in scenario.expectedGroups {
+            await store.receive { action in
+                guard case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)) = action
+                else {
+                    return false
+                }
+                return sourcePaths == group.sourcePaths
+                    && destinationPath == group.destinationPath
+                    && operation == .copy
+                    && operationKind == .pasteFileDuplicate
+            }
+        }
+        await store.finish()
     }
 
     // MARK: - EOP-002-move_entries
@@ -454,6 +586,39 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(store.state.dropValidationResult.isOptionDrag)
     }
 
+    /// EOP-002-move_entries: 혼합 부모 드롭에서 같은-부모 항목만으로 전체를 거부하지 않는다
+    /// 서로 다른 폴더의 항목을 함께 드롭할 때, 첫 항목만 같은-부모 no-op이라도 나머지 항목의 이동은 허용돼야 한다.
+    /// - 검증 내용: [같은-부모 항목, 다른-부모 항목] 순서에서 resolvedOperation이 .move다.
+    /// - 사전 조건: sourcePaths 중 첫 항목의 부모가 destination과 같고, 둘째 항목은 다른 부모다.
+    /// - 기대 결과: 같은-부모 항목은 건너뛰고 둘째 항목의 move가 유지되어 .move로 판정된다.
+    func testDropValidation_mixedParentSourcesAllowRemainingMove() async {
+        let destinationPath = "/Users/test/Documents"
+        let sameParentSource = "/Users/test/Documents/same.txt"
+        let otherParentSource = "/Users/test/Downloads/other.txt"
+
+        let store = EntryOperationsTestSupport.makeStore()
+
+        let context = EntryDropValidationContext(
+            sourcePaths: [sameParentSource, otherParentSource],
+            destinationPath: destinationPath,
+            allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+            prefersCopy: false,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: destinationPath,
+                resolvedOperation: .move,
+                isOptionDrag: false,
+            )
+        }
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .move)
+        XCTAssertFalse(store.state.dropValidationResult.isOptionDrag)
+    }
+
     /// EOP-002-move_entries: directory를 자기 하위에 드롭하면 순환 참조로 none을 반환한다
     /// destination이 source의 하위 경로이면 순환 참조가 감지되어 no-op이어야 한다.
     /// - 검증 내용: `validateDrop`이 하위 경로 드롭에서 `resolvedOperation = .none`을 반환한다.
@@ -483,6 +648,38 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .none)
+    }
+
+    /// EOP-002-copy_entries: directory를 자기 하위에 copy drop하면 순환 참조로 none을 반환한다
+    /// prefersCopy=true이더라도 destination이 source의 하위 경로이면 무한 재귀가 발생하므로 copy를 거부해야 한다.
+    /// - 검증 내용: `validateDrop`이 prefersCopy=true이고 destination이 source 하위 경로인 경우 `resolvedOperation = .none`을 반환한다.
+    /// - 사전 조건: sourcePaths가 directory이고 destination이 그 하위 경로이며 prefersCopy=true다.
+    /// - 기대 결과: dropValidationResult의 resolvedOperation이 `.none`이고 isOptionDrag가 true다.
+    func testDropValidation_descendantPathReturnsNoneForCopyDrop() async {
+        let sourcePath = "/Users/test/Documents"
+        let destinationPath = "/Users/test/Documents/Subfolder"
+
+        let store = EntryOperationsTestSupport.makeStore()
+
+        let context = EntryDropValidationContext(
+            sourcePaths: [sourcePath],
+            destinationPath: destinationPath,
+            allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+            prefersCopy: true,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: destinationPath,
+                resolvedOperation: .none,
+                isOptionDrag: true,
+            )
+        }
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .none)
+        XCTAssertTrue(store.state.dropValidationResult.isOptionDrag)
     }
 
     /// EOP-002-move_entries: Option 키를 누르면 copy operation이 우선 판정된다
@@ -580,6 +777,51 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .none)
     }
 
+    /// EOP-002-move_entries: 내부 드래그의 부모와 하위 경로는 부모만 paste action으로 전달한다.
+    /// 내부 드래그 저장소에 선택된 폴더와 그 하위 파일이 함께 있을 때, 드롭 라우팅 경계에서 중복 작업을 막는다.
+    /// - 검증 내용: `.routing(.handleDrop)`가 `.clipboard(.pasteItems)`로 부모 경로만 전송한다.
+    /// - 사전 조건: 저장된 내부 드래그 경로에 parent와 descendant가 함께 있고 Option 키를 눌렀다.
+    /// - 기대 결과: pasteItems의 sourcePaths에는 parent만 남고 copy operation과 operationKind는 유지된다.
+    func testHandleDrop_excludesParentSelectedDescendantFromPasteItems() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let sourceFolder = sandbox.root.appendingPathComponent("SelectedFolder")
+        try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+        let descendantFile = sourceFolder.appendingPathComponent("child.txt")
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: descendantFile)
+
+        let destinationFolder = sandbox.root.appendingPathComponent("DropTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let recorder = FileOpsRecorder()
+        let parentPath = sourceFolder.path
+        let descendantPath = descendantFile.path
+        var fileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        fileOpsClient.loadDragPaths = { [parentPath, descendantPath] }
+        fileOpsClient.loadDragWithOption = { true }
+
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = fileOpsClient
+        }
+
+        // store.exhaustivity = .off: 드롭 실행은 async filesystem mutation이므로 recorder의 라우팅 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: true,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [parentPath])
+        XCTAssertEqual(recorder.copiedPaths.map(\.destination.path), [
+            destinationFolder.appendingPathComponent(sourceFolder.lastPathComponent).path,
+        ])
+    }
+
     // MARK: - EOP-002-move_entries
 
     // AC: EOP-002-move_entries Edge Case #8
@@ -660,6 +902,44 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationPath))
         XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-move_entries: 부모 folder와 중첩 child를 함께 Option-drag하면 부모만 복사한다.
+    /// hierarchy selection의 중첩 source가 별도 child 복사본을 중복 생성하지 않는지 검증한다.
+    /// - 검증 내용: `.routing(.dropItems)`가 source를 top-level path 하나로 축약함
+    /// - 사전 조건: fixture folder와 그 안의 child를 함께 source로 전달함
+    /// - 기대 결과: 부모 folder만 한 번 복사되고 destination 내부 hierarchy가 보존됨
+    func testDropExecution_parentAndChildSourcesCopiesTopLevelFolderOnly() async throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/texts/plain")
+        defer { sandbox.cleanup() }
+
+        let recorder = FileOpsRecorder()
+        let destinationFolder = sandbox.root.appendingPathComponent("DropTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+        let childName = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(atPath: sandbox.fileURL.path).min(),
+        )
+        let childPath = sandbox.fileURL.appendingPathComponent(childName).path
+        let copiedFolder = destinationFolder.appendingPathComponent(sandbox.fileURL.lastPathComponent)
+
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        }
+        // store.exhaustivity = .off: drop execution은 async filesystem mutation이며 최종 recorder와 파일 구조를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.dropItems(
+            sourcePaths: [childPath, sandbox.fileURL.path],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: true,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.count, 1)
+        XCTAssertEqual(recorder.copiedPaths.first?.source.path, sandbox.fileURL.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copiedFolder.appendingPathComponent(childName).path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
@@ -1097,8 +1377,16 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .map { DelayedFileURLItemProvider(fileURL: $0) }
         let fileOpsRecorder = FileOpsRecorder()
         let actionRecorder = CallRecorder<EntryOperationsAction>()
+        var fileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        fileOpsClient.pasteFile = { sourceURL, destinationURL in
+            guard sourceURL.path != failedSandbox.fileURL.path else {
+                throw FileOpError.system(message: "simulated provider failure")
+            }
+            try await EntryFileOpsClient.liveValue.pasteFile(sourceURL, destinationURL)
+            fileOpsRecorder.recordCopy(source: sourceURL, destination: destinationURL)
+        }
         let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+            $0.entryFileOpsClient = fileOpsClient
             $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
         }
         store.exhaustivity = .off
@@ -1402,6 +1690,26 @@ private func mutationImpacts(in actions: [EntryOperationsAction]) -> [EntryOpera
         guard case let .outcome(.entriesMutated(impact)) = action else { return nil }
         return impact
     }
+}
+
+private func assertClipboardCommandOmitsSelectedDescendant(
+    _ command: EntryOperationsClipboardCommand,
+) {
+    let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+    let child = EntryModelFixtures.makeEntry(path: "/root/folder/./child.txt")
+    let context = EntryOperationsCommandContext(
+        selectedIds: [folder.id, child.id],
+        displayItems: [folder, child],
+        currentPath: "/root",
+    )
+
+    let outputs = EntryOperationsCommandPlanner.plan(command: .clipboard(command), context: context)
+
+    guard case let .entryOperations(.clipboard(.copySelectedItems(files))) = outputs.first else {
+        XCTFail("Expected clipboard files plan")
+        return
+    }
+    XCTAssertEqual(files.map(\.fullPath), [folder.fullPath])
 }
 
 private final class ClipboardRecorder: @unchecked Sendable {

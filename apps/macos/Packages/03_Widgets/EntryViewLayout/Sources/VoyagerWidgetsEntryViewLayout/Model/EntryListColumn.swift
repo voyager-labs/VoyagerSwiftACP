@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 public enum EntryListColumn: String, CaseIterable, Equatable, Sendable {

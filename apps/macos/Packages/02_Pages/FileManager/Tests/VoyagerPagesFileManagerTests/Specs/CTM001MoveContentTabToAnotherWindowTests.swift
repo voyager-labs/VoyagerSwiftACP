@@ -99,6 +99,53 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(postCommit.target.tabInspectorStates[scenario.movedID], scenario.movedInspector)
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 이동 후 양쪽 window의 MRU 순서를 보존한다.
+    /// source에서는 moved identity를 제거하고 target에서는 moved primary를 기존 history 앞에 기록하는지 검증한다.
+    /// - 검증 내용: source stale identity prune, fallback 우선순위, target 기존 MRU 상대 순서
+    /// - 사전 조건: source와 target이 각각 세 단계와 두 단계의 최근 사용 기록을 보유함
+    /// - 기대 결과: source는 fallback부터 생존 순서, target은 moved primary부터 기존 순서를 유지함
+    func testApplyPreservesWindowLocalRecentlyUsedOrder() throws {
+        let sourceFallbackID = ContentTabID(rawValue: "source-fallback")
+        let movedID = ContentTabID(rawValue: "moved")
+        let sourceOlderID = ContentTabID(rawValue: "source-older")
+        let targetActiveID = ContentTabID(rawValue: "target-active")
+        let targetOlderID = ContentTabID(rawValue: "target-older")
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(sourceFallbackID, path: "/source-fallback"),
+                Fixture.tab(movedID, path: "/moved"),
+                Fixture.tab(sourceOlderID, path: "/source-older"),
+            ],
+            active: movedID,
+            previous: sourceFallbackID,
+        )
+        source.contentTabs.recentlyUsedTabIDs = [movedID, sourceFallbackID, sourceOlderID]
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetActiveID, path: "/target-active"),
+                Fixture.tab(targetOlderID, path: "/target-older"),
+            ],
+            active: targetActiveID,
+        )
+        target.contentTabs.recentlyUsedTabIDs = [targetActiveID, targetOlderID]
+
+        let postCommit = try ContentTabTransfer
+            .apply(ContentTabTransfer.preflight(source: source, target: target, tabID: movedID).successToken())
+            .movedPostCommit()
+
+        XCTAssertEqual(postCommit.source.contentTabs.activeTabID, sourceFallbackID)
+        XCTAssertEqual(
+            postCommit.source.contentTabs.recentlyUsedTabIDs,
+            [sourceFallbackID, sourceOlderID],
+        )
+        XCTAssertEqual(
+            postCommit.target.contentTabs.recentlyUsedTabIDs,
+            [movedID, targetActiveID, targetOlderID],
+        )
+    }
+
     /// CTM-001-move_content_tab_to_another_file_manager_window: background AI owner와 close history가 보존된다.
     /// moved Content/Inspector background owner만 이동하고 unrelated 양쪽 owner는 그대로인지 검증한다.
     /// - 검증 내용: background owner source 0/target 1, unrelated owner equality, destination context, close history
@@ -907,7 +954,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             source: source,
             target: target,
             tabID: movedID,
-        ).successToken()
+        )
+        .successToken()
 
         XCTAssertEqual(source, sourceBefore)
         XCTAssertEqual(target, targetBefore)
@@ -958,7 +1006,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             source: source,
             target: target,
             tabID: movedID,
-        ).successToken()
+        )
+        .successToken()
 
         XCTAssertFalse(token.sourceOutgoingOwner.canCancelLoadingExclusively)
         XCTAssertFalse(token.sourceOutgoingOwner.canCancelComposerExclusively)
@@ -1438,7 +1487,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             target: scenario.target,
             orderedTabIDs: scenario.orderedIDs,
             primaryTabID: scenario.unpinnedID,
-        ).successToken()
+        )
+        .successToken()
         let semanticToken = try semanticPreflight(
             source: scenario.source,
             target: scenario.target,
@@ -1533,7 +1583,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
                 Fixture.tab(secondID, path: "/same-domain/pinned-second", pinned: true),
             ],
             active: firstID,
-        ).withPinnedRecords(for: [firstID, secondID])
+        )
+        .withPinnedRecords(for: [firstID, secondID])
         let emptyPinnedToken = try semanticPreflight(
             source: pinnedSource,
             target: emptyPinnedTarget,

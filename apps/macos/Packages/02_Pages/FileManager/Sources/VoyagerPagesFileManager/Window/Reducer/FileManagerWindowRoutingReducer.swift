@@ -215,31 +215,13 @@ struct FileManagerWindowRoutingReducer {
         guard currentNavigationState != navigationState || shouldResetCollectionMode else { return .none }
 
         guard isActiveTab else {
-            var contentState = state.tabContentStates[tabID]
-                ?? FileManagerContentFeature.State.initialContent(
-                    for: anchor,
-                    inheritingWindowContextFrom: state.content,
-                )
-            if shouldResetCollectionMode {
-                contentState.resetComposerAndClearCollectionMode()
-            }
-            contentState.navigation.navigationState = navigationState
-            switch navigationState {
-            case let .aiChat(sessionID):
-                let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
-                if !contentState.aiChat.prepareChatPresentation(for: aiChatSessionID) {
-                    contentState.aiChat.prepareDeferredChatSessionRestore(for: aiChatSessionID)
-                }
-            case let .aiChatSessions(sessionID):
-                let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
-                contentState.aiChat.prepareInactiveSessionsPresentation(for: aiChatSessionID)
-            default:
-                break
-            }
-            state.tabContentStates[tabID] = contentState
-            return tab.anchor == anchor
-                ? .none
-                : .send(.contentTabs(.updateRuntimePageAnchor(tabID, anchor)))
+            return applyPinnedContentTabRuntimeNavigationToInactiveTab(
+                tabID: tabID,
+                anchor: anchor,
+                navigationState: navigationState,
+                shouldResetCollectionMode: shouldResetCollectionMode,
+                state: &state,
+            )
         }
 
         return .concatenate(
@@ -251,6 +233,41 @@ struct FileManagerWindowRoutingReducer {
             .send(.navigation(.internal(.applyPinnedPeerNavigationState(navigationState)))),
             handleNavigateToState(navigationState, state: &state),
         )
+    }
+
+    private func applyPinnedContentTabRuntimeNavigationToInactiveTab(
+        tabID: ContentTabID,
+        anchor: ContentTabPageAnchor,
+        navigationState: ContentPageNavigationRoute,
+        shouldResetCollectionMode: Bool,
+        state: inout State,
+    ) -> Effect<Action> {
+        var contentState = state.tabContentStates[tabID]
+            ?? FileManagerContentFeature.State.initialContent(
+                for: anchor,
+                inheritingWindowContextFrom: state.content,
+            )
+        if shouldResetCollectionMode {
+            contentState.resetComposerAndClearCollectionMode()
+        }
+        contentState.navigation.navigationState = navigationState
+        switch navigationState {
+        case let .aiChat(sessionID):
+            let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+            if !contentState.aiChat.prepareChatPresentation(for: aiChatSessionID) {
+                contentState.aiChat.prepareDeferredChatSessionRestore(for: aiChatSessionID)
+            }
+        case let .aiChatSessions(sessionID):
+            let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+            contentState.aiChat.prepareInactiveSessionsPresentation(for: aiChatSessionID)
+        default:
+            break
+        }
+        state.tabContentStates[tabID] = contentState
+        let tabAnchor = state.contentTabs.tabs[id: tabID]?.anchor
+        return tabAnchor == anchor
+            ? .none
+            : .send(.contentTabs(.updateRuntimePageAnchor(tabID, anchor)))
     }
 
     func undoManagerScope(tabID: ContentTabID, state: State) -> UndoManagerScope? {

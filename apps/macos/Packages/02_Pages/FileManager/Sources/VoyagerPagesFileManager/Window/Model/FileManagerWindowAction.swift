@@ -142,7 +142,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case backgroundAiChat(AiChatAction)
     case backgroundAiChatSnapshotPersisted(AiChatSessionSnapshot)
     case backgroundInspectorAiChat(AiChatAction)
-    case backgroundInspectorAiChatSnapshotPersisted(AiChatSessionSnapshot)
+    case backgroundInspectorSnapshotPersisted(AiChatSessionSnapshot)
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
@@ -345,6 +345,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case copyURLs
         case openNewContentTab
         case selectContentTab(position: Int)
+        case selectMostRecentlyUsedContentTab
         case closeActiveContentTab
         case closeSelectedContentTabs
         case toggleActiveContentTabPin

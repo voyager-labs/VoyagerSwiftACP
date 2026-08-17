@@ -344,6 +344,7 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
             )
         }
         focusedWindow.content.entryViewLayout.entryOperations.items = [selectedEntry]
+        focusedWindow.content.entryViewLayout.entries = [selectedEntry]
         focusedWindow.content.entryViewLayout.selectedIds = [selectedEntry.id]
         configure(&focusedWindow)
         initialState.windows[id: focusedUUID]?.window = focusedWindow

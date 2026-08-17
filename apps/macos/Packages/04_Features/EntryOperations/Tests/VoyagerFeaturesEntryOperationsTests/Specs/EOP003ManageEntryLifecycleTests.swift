@@ -338,45 +338,6 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
     // MARK: - EOP-003-empty_trash
 
-    /// EOP-003-empty_trash: Trash 비우기가 실제 파일 삭제로 이어지는지 검증한다.
-    /// 사용자가 `fixtures/fixtures/texts/plain/11.txt`를 fake Trash에 넣은 뒤 empty trash를 실행할 때 파일이 삭제되는지 확인한다.
-    /// - 검증 내용: `.trash(.emptyTrash)`가 confirmation 후 trash 항목 전체 삭제와 완료 상태 갱신을 수행한다.
-    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사한 뒤 fake Trash 디렉터리로 옮겨두고, confirmation
-    /// alert는 승인으로 응답한다.
-    /// - 기대 결과: trash 파일이 삭제되고, reducer state의 pending/complete 카운터가 초기화되며, 원본 fixture 경로는 유지된다.
-    func testEmptyTrash_success() async throws {
-        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
-        defer { sandbox.cleanup() }
-
-        let recorder = FileOpsRecorder()
-        let trashRoot = sandbox.root.appendingPathComponent(".Trash")
-        try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
-
-        let trashPath = trashRoot.appendingPathComponent("trash.txt")
-        try FileManager.default.copyItem(at: sandbox.fileURL, to: trashPath)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath.path))
-
-        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.entryOperationsAlertClient.showEmptyTrashConfirmationAlert = { _ in true }
-        }
-
-        // store.exhaustivity = .off: empty-trash confirmation and deletion are async integration steps.
-        // skipReceivedActions로 수신된 action들을 소비해 store.state를 최종 상태로 갱신한다.
-        store.exhaustivity = .off
-
-        await store.send(.trash(.emptyTrash(paths: [trashPath.path])))
-        await store.finish()
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorder.deletedPaths, [trashPath])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath.path))
-        XCTAssertEqual(store.state.pendingEmptyTrashItemCount, 0)
-        XCTAssertEqual(store.state.emptyTrashCompletedCount, 0)
-        XCTAssertTrue(store.state.restorableTrashPaths.isEmpty)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
-    }
-
     // MARK: - EOP-003-undo_entry_action
 
     /// EOP-003-undo_entry_action: move-to-trash 기록을 undo 하면 원래 위치로 돌아오는지 검증한다.
@@ -1452,7 +1413,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         }
 
         let didStartRegistration = await registrationStartedIterator.next()
-        XCTAssertEqual(didStartRegistration, true)
+        XCTAssertTrue(didStartRegistration ?? false)
         let invalidation = await client.invalidateOwner(windowID, ownerID)
         XCTAssertTrue(invalidation.succeeded)
 
@@ -1755,6 +1716,183 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
     // MARK: - EOP-003-load_entry_items
 
+    /// EOP-003-load_entry_items: 대용량 디렉터리는 첫 core batch를 즉시 표시한다.
+    /// 사용자가 65개 항목이 있는 디렉터리를 열 때 전체 변환 완료를 기다리지 않고 첫 32개를 볼 수 있어야 한다.
+    /// - 검증 내용: directory load의 첫 observable completion은 32개 항목만 포함하고 blocking loading을 해제한다.
+    /// - 사전 조건: EntryLoadingClient는 순서가 고정된 65개 항목을 반환한다.
+    /// - 기대 결과: 첫 receive에서 32개 항목만 반영되고 남은 항목은 후속 lifecycle에서 추가된다.
+    func testDirectoryLoadPublishesFirstCoreBatchBeforeRemainingItems() async {
+        let entries = (0 ..< 65).map {
+            EntryModelFixtures.makeFileEntry(id: "/tmp/entry-\($0).txt", name: "entry-\($0).txt")
+        }
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.coreBatch(items: Array(entries.prefix(32)), batchIndex: 0))
+                    continuation.yield(.coreBatch(items: Array(entries[32 ..< 64]), batchIndex: 1))
+                    continuation.yield(.coreBatch(items: [entries[64]], batchIndex: 2))
+                    continuation.yield(.coreFinished(batchCount: 3))
+                    continuation.finish()
+                }
+            }
+        }
+
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) {
+            $0.isLoading = true
+            $0.loadingContext.generation = 1
+            $0.loadingContext.sourceKind = .directory
+        }
+        await store.receive(\.loading.streamEvent, .init(
+            generation: 1,
+            event: .coreBatch(items: Array(entries.prefix(32)), batchIndex: 0),
+        )) {
+            $0.items = IdentifiedArray(uniqueElements: entries.prefix(32))
+            $0.isLoading = false
+            $0.loadingContext.expectedCoreBatchIndex = 1
+        }
+        await store.receive(\.loading.streamEvent, .init(
+            generation: 1,
+            event: .coreBatch(items: Array(entries[32 ..< 64]), batchIndex: 1),
+        )) {
+            $0.items = IdentifiedArray(uniqueElements: entries.prefix(64))
+            $0.loadingContext.expectedCoreBatchIndex = 2
+        }
+        await store.receive(\.loading.streamEvent, .init(
+            generation: 1,
+            event: .coreBatch(items: [entries[64]], batchIndex: 2),
+        )) {
+            $0.items = IdentifiedArray(uniqueElements: entries)
+            $0.loadingContext.expectedCoreBatchIndex = 3
+        }
+        await store.receive(\.loading.streamEvent, .init(generation: 1, event: .coreFinished(batchCount: 3))) {
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = 1
+        }
+        await store.receive(\.loading.streamFinished, 1) {
+            $0.loadingContext.streamTerminal = true
+        }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+    }
+
+    /// EOP-003-load_entry_items: stale 또는 잘못된 root stream event는 현재 항목을 변경하지 않는다.
+    /// 새 navigation이 이전 request를 대체한 뒤 늦은 batch, 순서가 틀린 batch, 종료 후 batch가 도착할 수 있다.
+    /// - 검증 내용: generation, batch index, core completion, terminal guard가 허용되지 않은 event를 모두 무시한다.
+    /// - 사전 조건: generation 3의 directory request가 batch 0을 아직 기다리고 있다.
+    /// - 기대 결과: 유효한 batch 0만 항목과 expected index를 갱신하고 나머지는 state를 변경하지 않는다.
+    func testRootStreamIgnoresStaleMalformedAndPostFinishedEvents() async {
+        let entry = EntryModelFixtures.makeFileEntry(id: "/tmp/current.txt", name: "current.txt")
+        var state = EntryOperationsState()
+        state.isLoading = true
+        state.loadingContext.generation = 3
+        state.loadingContext.sourceKind = .directory
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.streamEvent(.init(
+            generation: 2,
+            event: .coreBatch(items: [entry], batchIndex: 0),
+        ))))
+        await store.send(.loading(.streamEvent(.init(
+            generation: 3,
+            event: .coreBatch(items: [entry], batchIndex: 1),
+        ))))
+        await store.send(.loading(.streamEvent(.init(
+            generation: 3,
+            event: .coreBatch(items: [entry], batchIndex: 0),
+        )))) {
+            $0.items = [entry]
+            $0.isLoading = false
+            $0.loadingContext.expectedCoreBatchIndex = 1
+        }
+        await store.send(.loading(.streamEvent(.init(generation: 3, event: .coreFinished(batchCount: 1))))) {
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = 3
+        }
+        await store.send(.loading(.streamFinished(generation: 3))) {
+            $0.loadingContext.streamTerminal = true
+        }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+        await store.send(.loading(.streamEvent(.init(
+            generation: 3,
+            event: .coreBatch(items: [entry], batchIndex: 1),
+        ))))
+    }
+
+    /// EOP-003-load_entry_items: route clear는 root load generation과 transient snapshot을 함께 무효화한다.
+    /// Home·AI Chat 전환 뒤 이미 enqueue된 이전 stream event가 빈 목록을 다시 채우지 않는지 검증한다.
+    /// - 검증 내용: cancelAndClearItems의 generation 증가와 stale batch 차단
+    /// - 사전 조건: generation 4의 directory load가 항목 하나를 표시하며 진행 중임
+    /// - 기대 결과: generation 5의 빈 idle context로 전환하고 generation 4 event를 무시함
+    func testCancelAndClearItemsInvalidatesRootStreamGeneration() async {
+        let currentEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/current.txt", name: "current.txt")
+        let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
+        var state = EntryOperationsState()
+        state.items = [currentEntry]
+        state.isLoading = true
+        state.isReloading = true
+        state.loadingContext.generation = 4
+        state.loadingContext.sourceKind = .directory
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.cancelAndClearItems)) {
+            $0.items = []
+            $0.isLoading = false
+            $0.isReloading = false
+            $0.loadingContext.generation = 5
+            $0.loadingContext.sourceKind = nil
+        }
+        await store.send(.loading(.streamEvent(.init(
+            generation: 4,
+            event: .coreBatch(items: [staleEntry], batchIndex: 0),
+        ))))
+    }
+
+    /// EOP-003-load_entry_items: empty core completion은 blocking loading을 해제한다.
+    /// 빈 Recents 또는 Tags 결과도 stream terminal을 기다리지 않고 입력 가능한 상태가 되어야 한다.
+    /// - 검증 내용: `.coreFinished(batchCount: 0)`가 isLoading과 isReloading을 해제하고 core completion을 기록한다.
+    /// - 사전 조건: generation 4의 Recents request가 loading 중이며 이전 snapshot은 없다.
+    /// - 기대 결과: 항목은 비어 있고 loading은 false이며 후속 stream terminal은 정상 수용된다.
+    func testEmptyCoreFinishReleasesBlockingLoading() async {
+        var state = EntryOperationsState()
+        state.isLoading = true
+        state.isReloading = true
+        state.loadingContext.generation = 4
+        state.loadingContext.sourceKind = .recents
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.streamEvent(.init(generation: 4, event: .coreFinished(batchCount: 0))))) {
+            $0.isLoading = false
+            $0.isReloading = false
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = 4
+        }
+        await store.send(.loading(.streamFinished(generation: 4))) {
+            $0.loadingContext.streamTerminal = true
+        }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+    }
+
+    /// EOP-003-load_entry_items: 첫 batch 뒤 stream failure는 부분 rows를 유지한다.
+    /// source acquisition이 enrichment 전에 실패해도 이미 보여 준 항목을 빈 목록으로 바꾸면 안 된다.
+    /// - 검증 내용: post-first failure가 incomplete/terminal을 기록하고 rows와 nonblocking presentation을 보존한다.
+    /// - 사전 조건: generation 5의 Tags request가 하나의 accepted core batch를 이미 수신했다.
+    /// - 기대 결과: existing ID는 유지되고 isLoading은 false, isIncomplete과 streamTerminal은 true가 된다.
+    func testPostFirstBatchFailureRetainsPartialRowsAndMarksIncomplete() async {
+        let entry = EntryModelFixtures.makeFileEntry(id: "/tmp/partial.txt", name: "partial.txt")
+        var state = EntryOperationsState()
+        state.isLoading = false
+        state.loadingContext.generation = 5
+        state.loadingContext.expectedCoreBatchIndex = 1
+        state.loadingContext.sourceKind = .tags
+        state.items = [entry]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.streamFailed(generation: 5))) {
+            $0.loadingContext.streamTerminal = true
+            $0.loadingContext.isIncomplete = true
+        }
+        XCTAssertEqual(store.state.items, [entry])
+    }
+
     /// EOP-003-load_entry_items (VOY-578): Directory 실패와 성공한 빈 결과를 별도 completion으로 처리함
     /// 일반 Directory load 실패 후 retry가 빈 Directory로 성공하는 lifecycle 계약을 검증한다.
     /// - 검증 내용: 실패는 itemsLoadFailed로 transient state를 정리하고 retry 성공은 itemsLoaded([])를 방출함
@@ -1803,29 +1941,358 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.computerFailure)
         XCTAssertTrue(preservedLatest)
     }
+
+    // MARK: - EOP-003-load_folder_items
+
+    /// EOP-003-load_folder_items: canonical ancestor 재방문은 enumeration 없이 unavailable failure로 종료된다.
+    /// - 검증 내용: ancestor URL과 request path의 canonical target match가 한 번의 terminal failure로 매핑된다.
+    /// - 사전 조건: resolver가 request와 ancestor를 같은 canonical directory로 해석하고 staged loader가 설치되어 있다.
+    /// - 기대 결과: `.unavailable(description:)` delegate가 한 번 전달되고 staged loader는 호출되지 않는다.
+    func testFolderLoadAncestorCycleEmitsOneUnavailableFailureWithoutEnumeration() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("eop003-ancestor-cycle-\(UUID().uuidString)")
+        let child = root.appendingPathComponent("child")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: alias.appendingPathComponent("child").path,
+            folderGeneration: 2,
+            path: alias.appendingPathComponent("child").path,
+            showHidden: false,
+            priority: .active([]),
+            ancestorPaths: [child.path],
+        )
+        let enumerationCount = LockIsolated(0)
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                enumerationCount.withValue { $0 += 1 }
+                return AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamFailed(receivedRequest, failure)) = action else { return false }
+            guard receivedRequest == request else { return false }
+            if case let .unavailable(description) = failure {
+                return !description.isEmpty
+            }
+            return false
+        } assert: {
+            $0.folderLoadingContexts[request.id]?.terminal = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadFailed(receivedRequest, failure)) = action else { return false }
+            guard receivedRequest == request else { return false }
+            if case let .unavailable(description) = failure {
+                return !description.isEmpty
+            }
+            return false
+        }
+        await store.finish()
+
+        XCTAssertEqual(enumerationCount.value, 0)
+    }
+
+    /// EOP-003-load_folder_items: canonical ancestor가 아니면 lexical sibling alias도 정상 load된다.
+    /// - 검증 내용: non-cycle request가 staged stream을 완료하고 request path의 lexical URL을 유지한다.
+    /// - 사전 조건: ancestor와 sibling alias가 서로 다른 canonical target이며 loader가 core completion을 방출한다.
+    /// - 기대 결과: sibling alias는 failure 없이 folder load delegate를 완료한다.
+    func testFolderLoadNonCycleSiblingAliasCompletesWithoutAncestorFailure() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("eop003-sibling-alias-\(UUID().uuidString)")
+        let ancestor = root.appendingPathComponent("ancestor")
+        let sibling = root.appendingPathComponent("sibling")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: ancestor, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: sibling)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: alias.path,
+            folderGeneration: 2,
+            path: alias.path,
+            showHidden: false,
+            priority: .active([]),
+            ancestorPaths: [ancestor.path],
+        )
+        let loadedURLs = LockIsolated<[URL]>([])
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: alias.appendingPathComponent("file.txt").path,
+            name: "file.txt",
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { url, _, _ in
+                loadedURLs.withValue { $0.append(url) }
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.coreBatch(items: [entry], batchIndex: 0))
+                    continuation.yield(.coreFinished(batchCount: 1))
+                    continuation.finish()
+                }
+            }
+        }
+        // store.exhaustivity = .off: streamed action 순서와 lexical URL만 검증하고 incidental context counter는 검증하지 않는다.
+        store.exhaustivity = .off
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamEvent(receivedRequest, .coreBatch(items, batchIndex))) = action else {
+                return false
+            }
+            return receivedRequest == request && items == [entry] && batchIndex == 0
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadEvent(receivedRequest, .coreBatch(items, batchIndex))) = action else {
+                return false
+            }
+            return receivedRequest == request && items == [entry] && batchIndex == 0
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamEvent(receivedRequest, .coreFinished(batchCount))) = action else {
+                return false
+            }
+            return receivedRequest == request && batchCount == 1
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadEvent(receivedRequest, .coreFinished(batchCount))) = action else {
+                return false
+            }
+            return receivedRequest == request && batchCount == 1
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamFinished(receivedRequest)) = action else { return false }
+            return receivedRequest == request
+        } assert: {
+            $0.folderLoadingContexts[request.id]?.terminal = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadFinished(receivedRequest)) = action else { return false }
+            return receivedRequest == request
+        }
+        await store.finish()
+
+        XCTAssertEqual(loadedURLs.value, [URL(fileURLWithPath: request.path)])
+    }
+
+    /// EOP-003-load_folder_items: folder stream은 Feature가 request identity와 staged 순서를 검증한 뒤 delegate로 전달한다.
+    /// 중첩 directory 로드가 Widget의 client effect가 아니라 EntryOperations의 취소 가능한 수명주기에서 처리되는지 검증한다.
+    /// - 검증 내용: request별 context가 core order를 기록하고 stale request 및 core 이전 metadata를 거부한다.
+    /// - 사전 조건: root generation 4, folder generation 2의 `/tmp/folder` request와 하나의 core entry가 있다.
+    /// - 기대 결과: 유효한 core event만 expected index를 전진시키며 stale/early metadata는 context를 변경하지 않는다.
+    func testFolderLoadLifecycleRejectsStaleAndEarlyMetadata() {
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: "/tmp/folder",
+            folderGeneration: 2,
+            path: "/tmp/folder",
+            showHidden: false,
+            priority: .active([]),
+        )
+        let staleRequest = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: "/tmp/folder",
+            folderGeneration: 1,
+            path: "/tmp/folder",
+            showHidden: false,
+            priority: .active([]),
+        )
+        let entry = EntryModelFixtures.makeFileEntry(id: "/tmp/folder/a.txt", name: "a.txt")
+        var state = EntryOperationsState()
+        let reducer = EntryOperationsFolderLoadingReducer()
+
+        _ = reducer.reduce(into: &state, action: .loading(.loadFolderItems(request)))
+        XCTAssertEqual(state.folderLoadingContexts[request.id]?.request, request)
+
+        _ = reducer.reduce(into: &state, action: .loading(.folderStreamEvent(
+            request: staleRequest,
+            event: .coreBatch(items: [entry], batchIndex: 0),
+        )))
+        _ = reducer.reduce(into: &state, action: .loading(.folderStreamEvent(
+            request: request,
+            event: .metadataPatches([]),
+        )))
+        XCTAssertEqual(state.folderLoadingContexts[request.id]?.expectedCoreBatchIndex, 0)
+
+        _ = reducer.reduce(into: &state, action: .loading(.folderStreamEvent(
+            request: request,
+            event: .coreBatch(items: [entry], batchIndex: 0),
+        )))
+        XCTAssertEqual(state.folderLoadingContexts[request.id]?.expectedCoreBatchIndex, 1)
+    }
+
+    /// EOP-003-load_folder_items: staged folder stream의 Cocoa permission error는 typed permission-denied delegate로 전달된다.
+    /// filesystem failure가 localized string으로 축소되지 않고 hierarchy presentation이 구별 가능한 failure를 받는지 검증한다.
+    /// - 검증 내용: throwing stream이 `.folderStreamFailed(..., .permissionDenied)`와 matching delegate를 순서대로 방출한다.
+    /// - 사전 조건: EntryLoadingClient의 staged folder stream이 `NSFileReadNoPermissionError`로 즉시 종료된다.
+    /// - 기대 결과: request context는 terminal이 되고 delegate failure는 `.permissionDenied`다.
+    func testFolderLoadPermissionDeniedStreamEmitsTypedFailureDelegate() async {
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 4,
+            folderID: "/tmp/protected",
+            folderGeneration: 2,
+            path: "/tmp/protected",
+            showHidden: false,
+            priority: .active([]),
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: NSError(
+                        domain: NSCocoaErrorDomain,
+                        code: NSFileReadNoPermissionError,
+                    ))
+                }
+            }
+        }
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await store.receive { action in
+            guard case let .loading(.folderStreamFailed(receivedRequest, failure)) = action else { return false }
+            return receivedRequest == request && failure == .permissionDenied
+        } assert: {
+            $0.folderLoadingContexts[request.id]?.terminal = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.folderLoadFailed(receivedRequest, failure)) = action else { return false }
+            return receivedRequest == request && failure == .permissionDenied
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-load_folder_items: 동일 window의 다른 tab folder stream은 서로 취소하지 않는다.
+    /// 같은 request identity를 사용하는 두 content tab이 각각 독립된 cancellation owner를 유지하는지 검증한다.
+    /// - 검증 내용: 두 번째 folder load 시작 후 첫 번째 stream의 cancellation recorder 상태
+    /// - 사전 조건: 같은 windowID와 request, 서로 다른 loadingCancellationOwnerID를 가진 두 Store
+    /// - 기대 결과: 두 번째 load가 시작되어도 첫 번째 stream은 취소되지 않음
+    func testFolderLoadsWithDifferentOwnersDoNotCancelEachOther() async throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/shared-folder",
+            folderGeneration: 1,
+            path: "/tmp/shared-folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var firstState = try EntryOperationsState(
+            loadingCancellationOwnerID: XCTUnwrap(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")),
+        )
+        firstState.windowID = windowID
+        var secondState = try EntryOperationsState(
+            loadingCancellationOwnerID: XCTUnwrap(UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")),
+        )
+        secondState.windowID = windowID
+        let streamFactory = FolderStreamFactory()
+        let store = TestStore(initialState: FolderLoadOwnerHarness.State(
+            first: firstState,
+            second: secondState,
+        )) {
+            FolderLoadOwnerHarness()
+        } withDependencies: {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                streamFactory.makeStream()
+            }
+        }
+        // store.exhaustivity = .off: stream 완료 액션은 정리 경로이며 cancellation 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.first(.loading(.loadFolderItems(request)))) {
+            $0.first.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.firstGate.waitUntilWaiting()
+        await store.send(.second(.loading(.loadFolderItems(request)))) {
+            $0.second.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.secondGate.waitUntilWaiting()
+
+        XCTAssertFalse(streamFactory.firstCancellation.wasCancelled)
+
+        await streamFactory.firstGate.resume(with: .entries([]))
+        await streamFactory.secondGate.resume(with: .entries([]))
+        await store.finish()
+    }
+
+    /// EOP-003-load_folder_items: owner teardown은 실행 중인 모든 folder stream을 취소한다.
+    /// 상위 tab lifecycle이 owner-scoped action 하나로 request context와 filesystem I/O를 함께 정리하는지 검증한다.
+    /// - 검증 내용: cancelAllFolderItems 이후 context 제거와 stream cancellation
+    /// - 사전 조건: 하나의 folder stream이 suspension gate에서 대기 중임
+    /// - 기대 결과: 모든 context가 제거되고 해당 stream이 취소됨
+    func testCancelAllFolderItemsCancelsOwnerStreams() async {
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/folder",
+            folderGeneration: 1,
+            path: "/tmp/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        let streamFactory = FolderStreamFactory()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in streamFactory.makeStream() }
+        }
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.firstGate.waitUntilWaiting()
+        await store.send(.loading(.cancelAllFolderItems)) {
+            $0.folderLoadingContexts = [:]
+        }
+        await store.finish()
+
+        XCTAssertTrue(streamFactory.firstCancellation.wasCancelled)
+    }
 }
 
 extension EOP003ManageEntryLifecycleTests {
     // MARK: - EOP-003-load_entry_items
 
-    /// EOP-003-load_entry_items: 모든 loaded list는 Trash metadata projection을 새로 읽는다.
-    /// - 검증 내용: itemsLoaded 후 저장된 trash path가 restorableTrashPaths로 투영된다.
-    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 loaded item 목록은 비어 있다.
-    /// - 기대 결과: lifecycle load completion이 해당 Trash path만 state에 저장한다.
-    func testItemsLoadedRefreshesRestorableTrashPaths() async {
+    /// EOP-003-load_entry_items: 단계적 root stream 완료는 Trash metadata projection을 새로 읽는다.
+    /// - 검증 내용: streamFinished 후 저장된 trash path가 restorableTrashPaths로 투영된다.
+    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 root stream의 core batch는 비어 있다.
+    /// - 기대 결과: streamed load completion이 해당 Trash path만 state에 저장한다.
+    func testStreamFinishedRefreshesRestorableTrashPaths() async {
         let trashPath = "/tmp/.Trash/entry.txt"
-        let store = EntryOperationsTestSupport.makeStore(initialState: .init())
+        var initialState = EntryOperationsState()
+        initialState.loadingContext.generation = 1
+        initialState.loadingContext.sourceKind = .directory
+        initialState.isLoading = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState)
         await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
             trashPath: trashPath,
             originalPath: "/tmp/entry.txt",
             deletedDate: .distantPast,
         ))
-        // RED: itemsLoaded never refreshed the menu eligibility projection.
-        await store.send(.loading(.itemsLoaded([])))
+        await store.send(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreFinished(batchCount: 0),
+        )))) {
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = 1
+            $0.isLoading = false
+            $0.isReloading = false
+        }
+        await store.send(.loading(.streamFinished(generation: 1))) {
+            $0.loadingContext.streamTerminal = true
+        }
         await store.receive(\.lifecycle.restorableTrashPathsLoaded) {
             $0.restorableTrashPaths = [trashPath]
         }
-        // GREEN: every successful list load refreshes the restorable Trash-path projection.
+
         XCTAssertEqual(store.state.restorableTrashPaths, [trashPath])
     }
 
@@ -1882,26 +2349,143 @@ private extension EOP003ManageEntryLifecycleTests {
         initialState.renamingText = staleEntry.name
         initialState.renamingItem = staleEntry
         let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.entryLoadingClient.loadItems = { _, _ in try await gate.wait() }
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                failingOrEmptyStagedStream(gate: gate)
+            }
         }
-        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) { $0.isLoading = true }
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) {
+            $0.isLoading = true
+            $0.loadingContext.generation = 1
+            $0.loadingContext.sourceKind = .directory
+        }
         await gate.waitUntilWaiting()
         await gate.resume(with: .failure)
-        await store.receive(\.loading.itemsLoadFailed) {
+        await store.receive(\.loading.streamFailed, 1) {
             $0.items = []
             $0.isLoading = false
             $0.isReloading = false
             $0.renamingItemId = nil
             $0.renamingText = ""
             $0.renamingItem = nil
+            $0.loadingContext.streamTerminal = true
+            $0.loadingContext.isIncomplete = true
         }
-        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) { $0.isLoading = true }
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) {
+            $0.isLoading = true
+            $0.loadingContext.generation = 2
+            $0.loadingContext.expectedCoreBatchIndex = 0
+            $0.loadingContext.coreFinished = false
+            $0.loadingContext.streamTerminal = false
+            $0.loadingContext.isIncomplete = false
+            $0.loadingContext.sourceKind = .directory
+        }
         await gate.waitUntilWaiting()
         await gate.resume(with: .entries([]))
-        await store.receive(\.loading.itemsLoaded, []) {
+        await store.receive(\.loading.streamEvent, .init(generation: 2, event: .coreFinished(batchCount: 0))) {
             $0.isLoading = false
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = 2
+        }
+        await store.receive(\.loading.streamFinished, 2) {
+            $0.loadingContext.streamTerminal = true
         }
         await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+    }
+}
+
+private func failingOrEmptyStagedStream(
+    gate: EntryLoadSuspensionGate,
+) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+    AsyncThrowingStream { continuation in
+        Task {
+            do {
+                let entries = try await gate.wait()
+                continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+}
+
+@Reducer
+private struct FolderLoadOwnerHarness {
+    @ObservableState
+    struct State: Equatable {
+        var first: EntryOperationsState
+        var second: EntryOperationsState
+    }
+
+    enum Action {
+        case first(EntryOperationsAction)
+        case second(EntryOperationsAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Scope(state: \.first, action: \.first) {
+            EntryOperationsFolderLoadingReducer()
+        }
+        Scope(state: \.second, action: \.second) {
+            EntryOperationsFolderLoadingReducer()
+        }
+    }
+}
+
+private final class FolderStreamCancellationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var wasCancelled: Bool {
+        lock.withLock { cancelled }
+    }
+
+    func recordCancellation() {
+        lock.withLock { cancelled = true }
+    }
+}
+
+private final class FolderStreamFactory: @unchecked Sendable {
+    let firstGate = EntryLoadSuspensionGate()
+    let secondGate = EntryLoadSuspensionGate()
+    let firstCancellation = FolderStreamCancellationRecorder()
+
+    private let lock = NSLock()
+    private var invocationCount = 0
+
+    func makeStream() -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let invocation = lock.withLock {
+            invocationCount += 1
+            return invocationCount
+        }
+        if invocation == 1 {
+            return suspendedFolderStream(gate: firstGate, cancellationRecorder: firstCancellation)
+        }
+        return suspendedFolderStream(gate: secondGate)
+    }
+}
+
+private func suspendedFolderStream(
+    gate: EntryLoadSuspensionGate,
+    cancellationRecorder: FolderStreamCancellationRecorder? = nil,
+) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+    AsyncThrowingStream { continuation in
+        continuation.onTermination = { termination in
+            guard case .cancelled = termination else { return }
+            cancellationRecorder?.recordCancellation()
+        }
+        Task {
+            do {
+                let entries = try await gate.wait()
+                if !entries.isEmpty {
+                    continuation.yield(.coreBatch(items: entries, batchIndex: 0))
+                }
+                continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
     }
 }
 

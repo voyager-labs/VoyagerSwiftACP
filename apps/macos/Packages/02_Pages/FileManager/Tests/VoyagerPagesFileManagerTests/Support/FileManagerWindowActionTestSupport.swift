@@ -70,4 +70,31 @@ extension TestStore where State == FileManagerFeature.State, Action == FileManag
             column: column,
         )
     }
+
+    func receiveTabContentCoreBatch(
+        fileID: StaticString = #fileID,
+        file filePath: StaticString = #filePath,
+        line: UInt = #line,
+        column: UInt = #column,
+    ) async {
+        await receive(
+            { action in
+                guard case let .tabContent(_,
+                                           .entryViewLayout(.entryOperations(.loading(.streamEvent(event))))) = action
+                else { return false }
+                switch event.event {
+                case .coreBatch, .coreFinished:
+                    break
+                case .metadataPatches:
+                    return false
+                }
+                return true
+            },
+            fileID: fileID,
+            file: filePath,
+            line: line,
+            column: column,
+        )
+        await receiveTabContent(\.entryViewLayout.view.applyContentProjection)
+    }
 }

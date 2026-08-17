@@ -57,9 +57,7 @@ struct ContentPaneContextMenu: View {
         Divider()
 
         Button("Paste") {
-            store.send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .pasteItems(destinationPath: store.navigation.currentPath),
-            )))))
+            store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
         }
         .keyboardShortcut("v", modifiers: .command)
         .disabled(!canPaste)

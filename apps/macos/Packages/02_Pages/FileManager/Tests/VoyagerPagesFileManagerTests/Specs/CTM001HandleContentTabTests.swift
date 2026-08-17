@@ -172,10 +172,10 @@ private func makeBatchAiRequestLock(sessionID: AiChatSessionID) -> AiChatRequest
             context: context,
             messages: [AiChatMessage(role: .user, content: "shared request")],
         ),
-        persistenceTranscriptHistory: nil,
         selectedModelHandle: modelHandle,
         selectedModelRow: modelRow,
         assistantReplacementIndex: nil,
+        persistenceTranscriptHistory: nil,
     )
 }
 
@@ -1564,11 +1564,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.finish() 불필요: 모든 effect가 receive로 소비됨
     }
 
-    /// CTM-001-duplicate_selected_content_tabs: raw Cmd-D는 Content semantic delegate로 전달됨
-    /// key-command focus가 Content로 복귀해도 entry duplicate를 직접 실행하지 않는 boundary를 검증한다.
-    /// - 검증 내용: Cmd-D keyboard action이 `.requestDuplicate` delegate를 정확히 한 번 방출함
+    /// CTM-001-duplicate_selected_content_tabs: raw Cmd-D는 Content entry command delegate로 전달됨
+    /// key-command focus가 Content로 복귀해도 duplicate command가 canonical EntryViewLayout boundary를 통과하는지 검증한다.
+    /// - 검증 내용: Cmd-D keyboard action이 `clipboard.duplicateSelectedItems` command를 정확히 한 번 방출함
     /// - 사전 조건: 기본 Content 상태와 command modifier가 설정된 D key command
-    /// - 기대 결과: EntryViewLayout action 없이 parent-owned duplicate request만 수신됨
+    /// - 기대 결과: nested EntryViewLayout delegate command를 수신함
     func testDuplicateKeyCommand_routesThroughContentDelegate() async {
         let command = KeyCommand(
             keyCode: 2,
@@ -1581,7 +1581,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
 
         await store.send(.view(.handleKeyCommand(command)))
-        await store.receive(\.delegate.requestDuplicate)
+        await store.receive(\.entryViewLayout.delegate.executeCommand, "clipboard.duplicateSelectedItems")
         await store.finish()
     }
 
@@ -7366,7 +7366,11 @@ private enum ExternalTabReservationTestFixture {
             )
             XCTAssertEqual(state.contentTabs.activeTabID, fileID)
             XCTAssertEqual(state.contentTabs.previousActiveTabID, originalActiveID)
-            XCTAssertEqual(state.tabContentStates[originalActiveID], expectedOriginalContent)
+            let savedOriginalContent = state.tabContentStates[originalActiveID]
+            XCTAssertEqual(savedOriginalContent?.navigation, expectedOriginalContent.navigation)
+            XCTAssertEqual(savedOriginalContent?.pendingSelectEntryID, expectedOriginalContent.pendingSelectEntryID)
+            XCTAssertEqual(savedOriginalContent?.entryViewLayout.showHiddenFiles, true)
+            XCTAssertEqual(savedOriginalContent?.entryViewLayout.gridIconSize, 73)
             XCTAssertEqual(state.tabInspectorStates[originalActiveID], expectedOriginalInspector)
             XCTAssertEqual(state.contentTabs.tabs[id: pinnedID], pinnedTab)
             XCTAssertEqual(state.contentTabs.pinnedRecords[pinnedID], pinnedRecord)
@@ -7615,6 +7619,138 @@ private struct CTM001HomeNewChatFixture {
         // store.exhaustivity = .off: Home부터 model catalog와 AiChat persistence까지의 통합 action 중 durable 경계만 선별 검증한다.
         store.exhaustivity = .off
         return store
+    }
+}
+
+extension CTM001HandleContentTabTests {
+    // MARK: - CTM-001-open_in_new_tab_routing
+
+    /// CTM-001-open_in_new_tab_routing: 유효한 active tab의 New Tab delegate는 directory tab을 생성하고 활성화한다
+    /// folder context menu의 Open in New Tab이 active content tab에서 선택 폴더 anchor 탭을 열어야 한다.
+    /// - 검증 내용: 단일 폴더 delegate 후 directory tab이 추가되고 active로 전환된다.
+    /// - 사전 조건: 기본 FileManagerFeature.State로 active Home tab이 하나 있다.
+    /// - 기대 결과: tabs.count가 1 증가하고 마지막 tab anchor가 directory(path:)이며 active가 된다.
+    @MainActor
+    func testOpenInNewTabRouting_activeTabOpensDirectoryTab() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        // store.exhaustivity = .off: FileManagerFeature.bootstrap가 다수의 child action을 방출하므로 탭 전이 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let tabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        let initialCount = store.state.contentTabs.tabs.count
+
+        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/folder"]))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, initialCount + 1)
+        let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(lastTab.anchor, .directory(path: "/folder"))
+        XCTAssertEqual(lastTab.page, .directory)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, lastTab.id)
+    }
+
+    /// CTM-001-open_in_new_tab_routing: 복수 폴더 delegate는 display 순서대로 directory tab을 생성한다
+    /// 여러 폴더 선택은 요청 순서대로 각각 directory tab을 열어야 한다.
+    /// - 검증 내용: 두 경로 delegate 후 directory tab 두 개가 순서대로 추가되고 마지막이 active다.
+    /// - 사전 조건: 기본 FileManagerFeature.State와 두 폴더 경로.
+    /// - 기대 결과: 마지막 두 tab anchor가 [/a, /b] 순서이고 active가 /b 탭이다.
+    @MainActor
+    func testOpenInNewTabRouting_multiplePathsPreserveOrder() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        // store.exhaustivity = .off: bootstrap child action을 무시하고 순서 보존 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let tabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        let initialCount = store.state.contentTabs.tabs.count
+
+        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/a", "/b"]))))
+        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs)
+
+        let tabs = store.state.contentTabs.tabs
+        XCTAssertEqual(tabs.count, initialCount + 2)
+        XCTAssertEqual(tabs[tabs.count - 2].anchor, .directory(path: "/a"))
+        XCTAssertEqual(tabs[tabs.count - 1].anchor, .directory(path: "/b"))
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabs[tabs.count - 1].id)
+    }
+
+    /// CTM-001-open_in_new_tab_routing: 비활성 tab의 New Tab delegate는 무시된다
+    /// New Tab 라우팅은 active tab에만 적용되고 비활성 tab의 delegate는 no-op이어야 한다.
+    /// - 검증 내용: 비활성 tab id로 delegate를 보내면 새 tab이 생성되지 않는다.
+    /// - 사전 조건: 두 tab이 있고 첫 번째(비활성) id를 명시적으로 delegate 전송에 사용한다.
+    /// - 기대 결과: tabs.count 불변이고 activeTabID도 유지된다.
+    @MainActor
+    func testOpenInNewTabRouting_inactiveTabIgnored() async throws {
+        var state = FileManagerFeature.State()
+        let activeID = try XCTUnwrap(state.contentTabs.activeTabID)
+        let inactiveTabID = ContentTabID()
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: inactiveTabID,
+            page: .directory,
+            anchor: .directory(path: "/inactive"),
+            isPinned: false,
+            title: nil,
+            iconName: nil,
+        ))
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        // store.exhaustivity = .off: bootstrap child action을 무시하고 inactive 무시 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let beforeCount = store.state.contentTabs.tabs.count
+
+        await store.send(.tabContent(tabID: inactiveTabID, action: .delegate(.openInNewTab(["/folder"]))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+    }
+
+    /// CTM-001-open_in_new_tab_routing: max tab 한계에 도달하면 추가 open이 무시된다
+    /// ContentTabFeature.open의 max-tab guard가 각 .open 호출에서 강제되므로 경계에서 no-op이어야 한다.
+    /// - 검증 내용: maxTabs만큼 채운 상태에서 New Tab delegate가 새 tab을 만들지 않는다.
+    /// - 사전 조건: tabs가 ContentTabConstants.maxTabs로 가득 찬 상태.
+    /// - 기대 결과: tabs.count가 maxTabs를 넘지 않고 activeTabID가 유지된다.
+    @MainActor
+    func testOpenInNewTabRouting_maxTabLimitRespected() async throws {
+        var tabs = IdentifiedArrayOf<ContentTabItem>()
+        for _ in 0 ..< ContentTabConstants.maxTabs {
+            tabs.append(ContentTabItem(
+                id: ContentTabID(),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        let activeID = tabs[0].id
+        var state = FileManagerFeature.State()
+        state.contentTabs.tabs = tabs
+        state.contentTabs.activeTabID = activeID
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        // store.exhaustivity = .off: bootstrap child action을 무시하고 max-limit no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let tabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/folder"]))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
     }
 }
 

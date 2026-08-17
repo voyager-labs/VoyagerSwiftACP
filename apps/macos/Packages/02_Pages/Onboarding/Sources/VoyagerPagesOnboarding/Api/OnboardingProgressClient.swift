@@ -51,8 +51,8 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
 
-                guard let stepData = "\"\(currentStepRaw)\"".data(using: .utf8),
-                      let step = try? JSONDecoder().decode(OnboardingStep.self, from: stepData)
+                let stepData = Data("\"\(currentStepRaw)\"".utf8)
+                guard let step = try? JSONDecoder().decode(OnboardingStep.self, from: stepData)
                 else {
                     return .resetRequired
                 }

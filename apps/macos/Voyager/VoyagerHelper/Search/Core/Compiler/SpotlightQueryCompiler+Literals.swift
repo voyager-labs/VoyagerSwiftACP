@@ -81,6 +81,19 @@ extension SpotlightQueryCompiler {
         return (min(first, second), max(first, second))
     }
 
+    func readNumberList(
+        _ value: JSONValue?,
+        propertyKey: String,
+        operatorCode: String,
+    ) throws -> [Double] {
+        guard case let .array(values)? = value, values.isEmpty == false else {
+            throw CompileError.invalidValue(propertyKey: propertyKey, operatorCode: operatorCode)
+        }
+        return try values.map {
+            try readNumber($0, propertyKey: propertyKey, operatorCode: operatorCode)
+        }
+    }
+
     func readDateLiteral(
         _ value: JSONValue?,
         propertyKey: String,
