@@ -41,6 +41,27 @@ private enum FileManagerHostSmokeMode {
     }
 }
 
+@MainActor
+private enum FileManagerHostAppearanceApplication {
+    static func apply() -> Bool {
+        let application = NSApplication.shared
+        switch FileManagerHostAppearance.resolveFromEnvironment() {
+        case .system:
+            application.appearance = nil
+            return true
+        case .light:
+            application.appearance = NSAppearance(named: .aqua)
+            return true
+        case .dark:
+            application.appearance = NSAppearance(named: .darkAqua)
+            return true
+        case let .invalid(rawValue):
+            NSLog("Invalid FILE_MANAGER_HOST_APPEARANCE: \(rawValue)")
+            return false
+        }
+    }
+}
+
 @main
 struct FileManagerHostApp: App {
     @NSApplicationDelegateAdaptor(FileManagerHostAppDelegate.self)
@@ -53,6 +74,7 @@ struct FileManagerHostApp: App {
         try? EnvironmentLoader.loadEnvFiles()
         EnvironmentLoader.requireAppEnv()
 
+        guard FileManagerHostAppearanceApplication.apply() else { exit(2) }
         FileManagerHostSmokeMode.runIfNeeded()
     }
 
@@ -124,6 +146,7 @@ private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate,
             materialConfiguration: materialTuning.configuration,
         )
         windowControllers.append(controller)
+        FileManagerHostFixture.presentSwitcherIfNeeded(for: preset, in: controller.store)
         if let menuController {
             menuController.updateStore(controller.store)
         } else {

@@ -69,14 +69,16 @@ public enum FileManagerHostFixture {
     }
 
     public static func makeWindowController(
-        preset _: FileManagerHostPreset = .default,
+        preset: FileManagerHostPreset = .default,
         oneDriveIcon: @escaping @Sendable () -> NSImage? = { nil },
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         materialConfiguration: MaterialConfiguration? = nil,
     ) -> FileManagerWindowCoordinator {
-        let windowID = UUID()
-        let state = FileManagerHostFixtureStateFactory.makeState(windowID: windowID)
+        @Dependency(\.uuid)
+        var uuid
+        let windowID = uuid()
+        let state = FileManagerHostFixtureStateFactory.makeState(windowID: windowID, preset: preset)
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
         let fileOperationUndoManagerClient = FileOperationUndoManagerClient.live(
             registry: fileOperationUndoManagerRegistry,
@@ -103,6 +105,14 @@ public enum FileManagerHostFixture {
         )
     }
 
+    public static func presentSwitcherIfNeeded(
+        for preset: FileManagerHostPreset,
+        in store: StoreOf<FileManagerFeature>,
+    ) {
+        guard let source = preset.switcherPresentationSource else { return }
+        store.send(.request(.presentContentTabSwitcher(source: source)))
+    }
+
     public static func updateMaterialConfiguration(
         _ materialConfiguration: MaterialConfiguration?,
         in coordinator: FileManagerWindowCoordinator,
@@ -113,8 +123,33 @@ public enum FileManagerHostFixture {
 
 @MainActor
 private enum FileManagerHostFixtureStateFactory {
-    static func makeState(windowID: UUID) -> FileManagerFeature.State {
-        var state = FileManagerFeature.State.makeInitial(path: nil)
+    static func makeState(windowID: UUID, preset: FileManagerHostPreset) -> FileManagerFeature.State {
+        let contentTabs: ContentTabState? = switch preset {
+        case .default:
+            nil
+        case .contentTabSwitcherContent:
+            FileManagerHostContentTabSwitcherContent.state
+        case .contentTabSwitcherFallback:
+            FileManagerHostContentTabSwitcherContent.fallbackState
+        case .contentTabSwitcherEmpty:
+            FileManagerHostContentTabSwitcherEmpty.state
+        case .contentTabSwitcherLoading, .contentTabSwitcherError:
+            FileManagerHostContentTabSwitcherContent.state
+        }
+
+        var state = FileManagerFeature.State.makeInitial(
+            path: nil,
+            contentTabs: contentTabs,
+            windowID: windowID,
+        )
+        if preset == .contentTabSwitcherEmpty {
+            state.contentTabs = .init()
+        }
+        if let contentTabs {
+            state.contentTabs.recentlyUsedTabIDs = contentTabs.recentlyUsedTabIDs
+            state.contentTabs.selectedTabIDs = FileManagerHostContentTabSwitcherContent.selectedTabIDs
+            state.contentTabs.selectionAnchorID = FileManagerHostContentTabSwitcherContent.selectionAnchorID
+        }
         for tabID in state.contentTabs.tabs.ids {
             state.tabContentStates[tabID]?.entryViewLayout.entryOperations.windowID = windowID
         }
@@ -133,6 +168,144 @@ private enum FileManagerHostFixtureStateFactory {
         state.content.entryViewLayout.entries = FileManagerHostFixtureSampleData.entries
         return state
     }
+}
+
+private enum FileManagerHostContentTabSwitcherContent {
+    static let homeID = ContentTabID(rawValue: "content-home")
+    static let activeDirectoryID = ContentTabID(rawValue: "content-active-directory")
+    static let collectionID = ContentTabID(rawValue: "content-collection")
+    static let virtualCollectionID = ContentTabID(rawValue: "content-virtual-collection")
+    static let chatID = ContentTabID(rawValue: "content-ai-chat")
+    static let cjkDirectoryID = ContentTabID(rawValue: "content-cjk-directory")
+    static let longCollectionID = ContentTabID(rawValue: "content-long-collection")
+    static let downloadsID = ContentTabID(rawValue: "content-downloads")
+    static let pinnedFolderID = ContentTabID(rawValue: "content-pinned-folder")
+    static let notesCollectionID = ContentTabID(rawValue: "content-notes-collection")
+
+    static let state = ContentTabState(
+        tabs: [
+            ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+            ContentTabItem(
+                id: activeDirectoryID,
+                page: .directory,
+                anchor: .directory(path: "/Fixture/Projects/Voyager"),
+                isPinned: false,
+                title: "Voyager Projects",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: collectionID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/Fixture/Collections/Research.voycoll")),
+                isPinned: false,
+                title: "Research",
+                iconName: "tray.full",
+            ),
+            ContentTabItem(
+                id: virtualCollectionID,
+                page: .collection,
+                anchor: .virtualCollection(id: "fixture-virtual-collection"),
+                isPinned: false,
+                title: "Recent Documents",
+                iconName: "clock",
+            ),
+            ContentTabItem(
+                id: chatID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: "00000000-0000-0000-0000-000000000007"),
+                isPinned: false,
+                title: "Voyager Assistant",
+                iconName: "sparkles",
+            ),
+            ContentTabItem(
+                id: cjkDirectoryID,
+                page: .directory,
+                anchor: .directory(path: "/Fixture/문서/프로젝트"),
+                isPinned: false,
+                title: "프로젝트 문서",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: longCollectionID,
+                page: .collection,
+                anchor: .collectionFile(
+                    url: URL(
+                        fileURLWithPath:
+                        "/Fixture/Collections/Very-Long-Research-Notes-For-The-Content-Tab-Switcher.voycoll",
+                    ),
+                ),
+                isPinned: false,
+                title: "A long collection title for switcher overflow",
+                iconName: "rectangle.stack",
+            ),
+            ContentTabItem(
+                id: downloadsID,
+                page: .directory,
+                anchor: .directory(path: "/Fixture/Downloads"),
+                isPinned: false,
+                title: "Downloads",
+                iconName: "arrow.down.circle",
+            ),
+            ContentTabItem(
+                id: pinnedFolderID,
+                page: .directory,
+                anchor: .directory(path: "/Fixture/Favorites"),
+                isPinned: true,
+                title: "Favorites",
+                iconName: "star",
+            ),
+            ContentTabItem(
+                id: notesCollectionID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/Fixture/Collections/Notes.voycoll")),
+                isPinned: false,
+                title: "Notes",
+                iconName: "note.text",
+            ),
+        ],
+        activeTabID: activeDirectoryID,
+        recentlyUsedTabIDs: [
+            chatID,
+            longCollectionID,
+            homeID,
+            collectionID,
+            activeDirectoryID,
+            cjkDirectoryID,
+            virtualCollectionID,
+            downloadsID,
+            pinnedFolderID,
+            notesCollectionID,
+        ],
+    )
+
+    static let fallbackState: ContentTabState = {
+        var fallback = state
+        fallback.tabs = IdentifiedArrayOf(uniqueElements: fallback.tabs.map { item in
+            var item = item
+            item.title = nil
+            item.iconName = nil
+            return item
+        })
+        return fallback
+    }()
+
+    static let selectedTabIDs: Set<ContentTabID> = [chatID, longCollectionID]
+    static let selectionAnchorID: ContentTabID? = chatID
+}
+
+private enum FileManagerHostContentTabSwitcherEmpty {
+    static let state = ContentTabState(
+        tabs: [],
+        activeTabID: nil,
+        recentlyUsedTabIDs: [],
+    )
 }
 
 @MainActor
