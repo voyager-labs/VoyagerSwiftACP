@@ -94,9 +94,10 @@ public struct EntryViewLayoutState: Equatable {
             sections: entryArrangements.groupedItems.isEmpty
                 ? [.ungrouped(items: entries)]
                 : entryArrangements.groupedItems.enumerated().map { index, group in
+                    // 빈 groupName은 groupKey .none(ungrouped)을 뜻하므로 group header 없이 flat 렌더링한다.
                     EntryViewLayoutSection(
                         id: group.groupName.isEmpty ? "group-\(index)" : group.groupName,
-                        title: group.groupName,
+                        title: group.groupName.isEmpty ? nil : group.groupName,
                         colorCode: group.colorCode,
                         items: group.items,
                         isCollapsed: entryArrangements.collapsedGroups.contains(group.groupName),
