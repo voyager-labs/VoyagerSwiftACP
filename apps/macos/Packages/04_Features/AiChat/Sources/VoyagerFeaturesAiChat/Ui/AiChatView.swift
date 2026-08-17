@@ -16,6 +16,7 @@ public struct AiChatView: View {
     let store: StoreOf<AiChatFeature>
     let centeredEmptyContent: AnyView?
     let onSessionSelected: ((AiChatSessionID) -> Void)?
+    let allowsAttachmentPicker: Bool
 
     @Environment(\.colorScheme)
     var colorScheme
@@ -33,12 +34,14 @@ public struct AiChatView: View {
 
     public init(
         store: StoreOf<AiChatFeature>,
+        allowsAttachmentPicker: Bool,
         centeredEmptyContent: AnyView? = nil,
         onSessionSelected: ((AiChatSessionID) -> Void)? = nil,
     ) {
         self.store = store
         self.centeredEmptyContent = centeredEmptyContent
         self.onSessionSelected = onSessionSelected
+        self.allowsAttachmentPicker = allowsAttachmentPicker
     }
 
     public var body: some View {
@@ -464,6 +467,7 @@ extension AiChatView {
             state: state,
             input: input,
             requestContext: requestContext,
+            allowsAttachmentPicker: allowsAttachmentPicker,
             colorScheme: colorScheme,
             composerIdentity: composerIdentity,
             focusOwner: inputFocusOwner,

@@ -1,31 +1,6 @@
 import Foundation
 import VoyagerEntitiesAi
 
-public enum AiChatRequestContextDisplaySource: Equatable, Sendable {
-    case draft
-    case locked
-}
-
-public struct AiChatRequestContextSectionDisplayModel: Equatable, Sendable {
-    public var source: AiChatRequestContextDisplaySource
-    public var currentContext: AiChatCurrentContextChipDisplayModel?
-    public var addedAttachments: [AiChatAddedAttachmentChipDisplayModel]
-
-    public init(
-        source: AiChatRequestContextDisplaySource,
-        currentContext: AiChatCurrentContextChipDisplayModel?,
-        addedAttachments: [AiChatAddedAttachmentChipDisplayModel],
-    ) {
-        self.source = source
-        self.currentContext = currentContext
-        self.addedAttachments = addedAttachments
-    }
-
-    public var isEmpty: Bool {
-        currentContext == nil && addedAttachments.isEmpty
-    }
-}
-
 public struct AiChatCurrentContextChipDisplayModel: Equatable, Sendable {
     public var title: String
     public var detail: String?
@@ -137,24 +112,18 @@ public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Se
 }
 
 public struct AiChatRequestContextDisplayModel: Equatable, Sendable {
-    public var source: AiChatRequestContextDisplaySource
     public var currentContext: AiChatCurrentContextChipDisplayModel?
     public var addedAttachments: [AiChatAddedAttachmentChipDisplayModel]
-    public var currentResponse: AiChatRequestContextSectionDisplayModel?
 
     public init(
-        source: AiChatRequestContextDisplaySource,
         currentContext: AiChatCurrentContextChipDisplayModel?,
         addedAttachments: [AiChatAddedAttachmentChipDisplayModel],
-        currentResponse: AiChatRequestContextSectionDisplayModel? = nil,
     ) {
-        self.source = source
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
-        self.currentResponse = currentResponse
     }
 
     public var isEmpty: Bool {
-        currentResponse == nil && currentContext == nil && addedAttachments.isEmpty
+        currentContext == nil && addedAttachments.isEmpty
     }
 }
