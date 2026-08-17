@@ -452,10 +452,8 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             rowEntry: first,
         )
 
-        XCTAssertFalse(target.containsBusyEntry(itemStates: [:]))
-        XCTAssertTrue(target.containsBusyEntry(itemStates: [
-            second.fullPath: ItemOperationState(isBusy: true),
-        ]))
+        XCTAssertFalse(target.containsBusyEntry(busyEntryPaths: []))
+        XCTAssertTrue(target.containsBusyEntry(busyEntryPaths: [second.fullPath]))
     }
 
     /// EOP-004-edit_entry_tags: ordinary loading 또는 busy target의 entry menu는 AppKit이 다시 활성화할 수 없다.

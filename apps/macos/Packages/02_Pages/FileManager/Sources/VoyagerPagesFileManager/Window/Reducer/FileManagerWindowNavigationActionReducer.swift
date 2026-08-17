@@ -363,35 +363,12 @@ private func handleCollectionFileLoaded(
     switch result {
     case let .success(loadResult):
         let file = loadResult.file
-        var isStale = false
-        let canonicalPath = request.url.standardizedFileURL.path
-        let hasPersistedInvalidation = environment.collectionStalenessClient.record(canonicalPath)?
-            .lastInvalidatedAt != nil
-        let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
-        isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
-        state.content.collection.prepareOpenTransition(
-            at: request.url,
-            reopenContext: state.content.collection.collectionContext,
-            isAlreadyStale: hasPersistedInvalidation,
+        let isStale = prepareLoadedCollectionOpenStaleness(
+            request: request,
+            file: file,
+            state: &state,
+            environment: environment,
         )
-        environment.collectionStalenessClient.registerCollection(
-            canonicalPath,
-            file.scopes,
-            file.excludedScopes,
-            file.includeSubfolders,
-        )
-        if hasScopeRootChangedSinceSnapshot {
-            environment.collectionStalenessClient.upsertRecord(
-                canonicalPath,
-                .init(
-                    definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
-                    relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
-                    excludedScopes: file.excludedScopes,
-                    includeSubfolders: file.includeSubfolders,
-                    lastInvalidatedAt: Date(),
-                ),
-            )
-        }
         return handleCollectionFileLoadedSuccess(
             file,
             compatibility: loadResult.compatibility,
@@ -407,6 +384,42 @@ private func handleCollectionFileLoaded(
             collectionAlertClient: environment.collectionAlertClient,
         )
     }
+}
+
+private func prepareLoadedCollectionOpenStaleness(
+    request: ContentPageCollectionOpenRequest,
+    file: VoyagerCollectionFile,
+    state: inout FileManagerWindowState,
+    environment: CollectionOpenEnvironment,
+) -> Bool {
+    let canonicalPath = request.url.standardizedFileURL.path
+    let hasPersistedInvalidation = environment.collectionStalenessClient.record(canonicalPath)?
+        .lastInvalidatedAt != nil
+    let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
+    state.content.collection.prepareOpenTransition(
+        at: request.url,
+        reopenContext: state.content.collection.collectionContext,
+        isAlreadyStale: hasPersistedInvalidation,
+    )
+    environment.collectionStalenessClient.registerCollection(
+        canonicalPath,
+        file.scopes,
+        file.excludedScopes,
+        file.includeSubfolders,
+    )
+    if hasScopeRootChangedSinceSnapshot {
+        environment.collectionStalenessClient.upsertRecord(
+            canonicalPath,
+            .init(
+                definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
+                relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                excludedScopes: file.excludedScopes,
+                includeSubfolders: file.includeSubfolders,
+                lastInvalidatedAt: Date(),
+            ),
+        )
+    }
+    return hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
 }
 
 private func handleNavigateToCollection(

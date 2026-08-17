@@ -68,7 +68,7 @@ enum FileManagerVirtualCollectionContextFactory {
             includeSubfolders: true,
             conditions: conditionPayloads,
         )
-        let resolved = AppliedFiltersUtils.resolveDetailed(
+        let resolved = AppliedFilterResolver.resolveDetailed(
             appliedFilters,
             fallbackScopes: allIndexedScopes,
             fallbackConditions: [],
@@ -95,18 +95,18 @@ enum FileManagerVirtualCollectionContextFactory {
 
     private static func isRecentsVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
         guard conditions.count == 2 else { return false }
-        let keys = conditions.map(\.propertyKey)
+        let keys = conditions.map(\.property.key)
         return keys == ["last_used_date", "content_type_tree"]
-            && conditions[0].operatorCode == "gt"
+            && conditions[0].operation?.code == "gt"
             && conditions[0].values == [recentsSinceAnyOpenedLiteral]
-            && conditions[1].operatorCode == "neq"
+            && conditions[1].operation?.code == "neq"
             && conditions[1].values == ["public.folder"]
     }
 
     private static func isTagVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
         guard conditions.count == 1, let condition = conditions.first else { return false }
-        return condition.propertyKey == "tag_names"
-            && condition.operatorCode == "any"
+        return condition.property.key == "tag_names"
+            && condition.operation?.code == "any"
             && condition.values?.count == 1
     }
 

@@ -10,62 +10,126 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+public struct FileManagerHostMaterialSurfaceConfiguration {
+    public var material: NSVisualEffectView.Material
+    public var blendingMode: NSVisualEffectView.BlendingMode
+    public var alphaValue: CGFloat
+
+    public init(
+        material: NSVisualEffectView.Material,
+        blendingMode: NSVisualEffectView.BlendingMode,
+        alphaValue: CGFloat,
+    ) {
+        self.material = material
+        self.blendingMode = blendingMode
+        self.alphaValue = alphaValue
+    }
+
+    var materialOverride: FileManagerWindowMaterialOverride.Surface {
+        FileManagerWindowMaterialOverride.Surface(
+            material: material,
+            blendingMode: blendingMode,
+            alphaValue: alphaValue,
+        )
+    }
+}
+
+@MainActor
+public struct FileManagerHostMaterialConfiguration {
+    public typealias Surface = FileManagerHostMaterialSurfaceConfiguration
+
+    public var windowShell: FileManagerHostMaterialSurfaceConfiguration
+    public var contentBackground: FileManagerHostMaterialSurfaceConfiguration
+
+    public init(
+        windowShell: FileManagerHostMaterialSurfaceConfiguration,
+        contentBackground: FileManagerHostMaterialSurfaceConfiguration,
+    ) {
+        self.windowShell = windowShell
+        self.contentBackground = contentBackground
+    }
+
+    public static var hostDefault: Self {
+        Self(
+            windowShell: FileManagerHostMaterialSurfaceConfiguration(
+                material: VoyagerDS.SurfaceMaterialRole.windowShell.material,
+                blendingMode: VoyagerDS.SurfaceMaterialRole.windowShell.blendingMode,
+                alphaValue: VoyagerDS.SurfaceMaterialRole.windowShell.alphaValue,
+            ),
+            contentBackground: FileManagerHostMaterialSurfaceConfiguration(
+                material: VoyagerDS.SurfaceMaterialRole.mainContentBackground.material,
+                blendingMode: VoyagerDS.SurfaceMaterialRole.mainContentBackground.blendingMode,
+                alphaValue: VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
+            ),
+        )
+    }
+
+    var materialOverride: FileManagerWindowMaterialOverride {
+        FileManagerWindowMaterialOverride(
+            windowShell: windowShell.materialOverride,
+            contentBackground: contentBackground.materialOverride,
+        )
+    }
+}
+
 @MainActor
 public enum FileManagerHostFixture {
-    public struct MaterialConfiguration {
-        public struct Surface {
-            public var material: NSVisualEffectView.Material
-            public var blendingMode: NSVisualEffectView.BlendingMode
-            public var alphaValue: CGFloat
+    public typealias MaterialConfiguration = FileManagerHostMaterialConfiguration
 
-            public init(
-                material: NSVisualEffectView.Material,
-                blendingMode: NSVisualEffectView.BlendingMode,
-                alphaValue: CGFloat,
-            ) {
-                self.material = material
-                self.blendingMode = blendingMode
-                self.alphaValue = alphaValue
-            }
+    public struct PhaseNotification: Equatable, Sendable {
+        public let phase: String
+        public let windowID: UUID
+        public let preset: String?
+        public let requestID: UUID?
+        public let errorCode: Int?
+        public let rowCount: Int?
 
-            var materialOverride: FileManagerWindowMaterialOverride.Surface {
-                FileManagerWindowMaterialOverride.Surface(
-                    material: material,
-                    blendingMode: blendingMode,
-                    alphaValue: alphaValue,
-                )
-            }
+        public init(
+            phase: String,
+            windowID: UUID,
+            preset: String? = nil,
+            requestID: UUID? = nil,
+            errorCode: Int? = nil,
+            rowCount: Int? = nil,
+        ) {
+            self.phase = phase
+            self.windowID = windowID
+            self.preset = preset
+            self.requestID = requestID
+            self.errorCode = errorCode
+            self.rowCount = rowCount
         }
+    }
 
-        public var windowShell: Surface
-        public var contentBackground: Surface
+    nonisolated public static let phaseDidChange = Notification.Name("FileManagerHostFixture.phaseDidChange")
+    nonisolated public static let phaseUserInfoKey = "phase"
+    nonisolated public static let phaseWindowIDUserInfoKey = "windowID"
+    nonisolated public static let phasePresetUserInfoKey = "preset"
+    nonisolated public static let phaseRequestIDUserInfoKey = "requestID"
+    nonisolated public static let phaseErrorCodeUserInfoKey = "errorCode"
+    nonisolated public static let phaseRowCountUserInfoKey = "rowCount"
 
-        public init(windowShell: Surface, contentBackground: Surface) {
-            self.windowShell = windowShell
-            self.contentBackground = contentBackground
-        }
+    nonisolated public static func snapshotCaptureDirectory(
+        in outputDirectory: URL,
+        windowID: UUID,
+    ) -> URL {
+        outputDirectory.appending(path: windowID.uuidString, directoryHint: .isDirectory)
+    }
 
-        public static var hostDefault: Self {
-            Self(
-                windowShell: Surface(
-                    material: VoyagerDS.SurfaceMaterialRole.windowShell.material,
-                    blendingMode: VoyagerDS.SurfaceMaterialRole.windowShell.blendingMode,
-                    alphaValue: VoyagerDS.SurfaceMaterialRole.windowShell.alphaValue,
-                ),
-                contentBackground: Surface(
-                    material: VoyagerDS.SurfaceMaterialRole.mainContentBackground.material,
-                    blendingMode: VoyagerDS.SurfaceMaterialRole.mainContentBackground.blendingMode,
-                    alphaValue: VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
-                ),
-            )
-        }
+    nonisolated public static func phaseNotification(from notification: Notification) -> PhaseNotification? {
+        guard notification.name == phaseDidChange,
+              let phase = notification.userInfo?[phaseUserInfoKey] as? String,
+              let windowID = notification.userInfo?[phaseWindowIDUserInfoKey] as? UUID
+        else { return nil }
 
-        var materialOverride: FileManagerWindowMaterialOverride {
-            FileManagerWindowMaterialOverride(
-                windowShell: windowShell.materialOverride,
-                contentBackground: contentBackground.materialOverride,
-            )
-        }
+        return PhaseNotification(
+            phase: phase,
+            windowID: windowID,
+            preset: notification.userInfo?[phasePresetUserInfoKey] as? String,
+            requestID: notification.userInfo?[phaseRequestIDUserInfoKey] as? UUID,
+            errorCode: notification.userInfo?[phaseErrorCodeUserInfoKey] as? Int,
+            rowCount: notification.userInfo?[phaseRowCountUserInfoKey] as? Int,
+        )
     }
 
     public static func makeWindowController(
@@ -78,19 +142,21 @@ public enum FileManagerHostFixture {
         @Dependency(\.uuid)
         var uuid
         let windowID = uuid()
-        let state = FileManagerHostFixtureStateFactory.makeState(windowID: windowID, preset: preset)
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
-        let fileOperationUndoManagerClient = FileOperationUndoManagerClient.live(
-            registry: fileOperationUndoManagerRegistry,
-        )
+        let state = FileManagerHostFixtureStateFactory.makeState(preset: preset, windowID: windowID)
         let workspaceClient = WorkspaceClient.fileManagerHostFixture(oneDriveIcon: oneDriveIcon)
         let store = Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             FileManagerHostFixtureDependencies.apply(
                 to: &$0,
-                fileOperationUndoManagerClient: fileOperationUndoManagerClient,
-                workspaceClient: workspaceClient,
+                context: .init(
+                    scenario: preset.scenario,
+                    preset: preset.rawValue,
+                    windowID: windowID,
+                    fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                    workspaceClient: workspaceClient,
+                ),
             )
         }
 
@@ -113,20 +179,162 @@ public enum FileManagerHostFixture {
         store.send(.request(.presentContentTabSwitcher(source: source)))
     }
 
+    /// Host window가 mount된 뒤 fixture Projects folder의 deterministic stream을 시작한다.
+    public static func startScenarioIfNeeded(
+        for preset: FileManagerHostPreset,
+        in windowController: FileManagerWindowCoordinator,
+    ) {
+        let scenario = preset.scenario
+        guard scenario.progressiveEntryLoading != .none
+            || scenario.delayedNavigation != .none
+            || scenario.permission != .none
+            || scenario.collection != .none
+            || scenario.largeFolder != .none
+        else { return }
+
+        if scenario.collection == .directory {
+            startCollectionScenarioIfNeeded(for: preset, windowID: windowController.windowID)
+            return
+        }
+
+        runPostMountScenario(scenario: scenario, in: windowController)
+    }
+
     public static func updateMaterialConfiguration(
         _ materialConfiguration: MaterialConfiguration?,
         in coordinator: FileManagerWindowCoordinator,
     ) {
         coordinator.updateMaterialOverride(materialConfiguration?.materialOverride)
     }
+
+    static func startCollectionScenarioIfNeeded(
+        for preset: FileManagerHostPreset,
+        windowID: UUID,
+    ) {
+        guard preset.scenario.collection == .directory else { return }
+        let rowCount = FileManagerHostFixtureSampleData.collectionEntries.count
+        FileManagerHostFixturePhase.collectionStarted.log(
+            preset: preset.rawValue,
+            windowID: windowID,
+            rowCount: rowCount,
+        )
+        FileManagerHostFixturePhase.collectionFinished.log(
+            preset: preset.rawValue,
+            windowID: windowID,
+            rowCount: rowCount,
+        )
+    }
+
+    static func makeEntryLoadingClient(
+        preset: FileManagerHostPreset,
+        windowID: UUID,
+    ) -> EntryLoadingClient {
+        .fileManagerHostFixture(
+            scenario: preset.scenario,
+            preset: preset.rawValue,
+            windowID: windowID,
+        )
+    }
+
+    static func makeState(
+        preset: FileManagerHostPreset,
+        windowID: UUID,
+    ) -> FileManagerFeature.State {
+        FileManagerHostFixtureStateFactory.makeState(
+            preset: preset,
+            windowID: windowID,
+        )
+    }
+
+    static func applyDependencies(
+        to dependencies: inout DependencyValues,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+        progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
+        windowID: UUID,
+        workspaceClient: WorkspaceClient,
+    ) {
+        FileManagerHostFixtureDependencies.apply(
+            to: &dependencies,
+            context: .init(
+                scenario: FileManagerHostScenario(progressiveEntryLoading: progressiveEntryLoading),
+                preset: nil,
+                windowID: windowID,
+                fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                workspaceClient: workspaceClient,
+            ),
+        )
+    }
+
+    private static func runPostMountScenario(
+        scenario: FileManagerHostScenario,
+        in windowController: FileManagerWindowCoordinator,
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            switch scenario.delayedNavigation {
+            case .rootNavigation:
+                windowController.store.send(.navigation(.view(
+                    .navigateToPath(FileManagerHostFixtureSampleData.delayedRootPath),
+                )))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    windowController.store.send(.navigation(.view(
+                        .navigateToPath(FileManagerHostFixtureSampleData.delayedRootReplacementPath),
+                    )))
+                }
+
+            case .tabSwitch:
+                windowController.store.send(.navigation(.view(
+                    .navigateToPath(FileManagerHostFixtureSampleData.delayedTabPrimaryPath),
+                )))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    windowController.store.send(.contentTabs(.setCurrent(
+                        FileManagerHostFixtureStateFactory.delayedTabSwitchTargetID,
+                    )))
+                }
+
+            case .none:
+                let folderID: String = if scenario.permission != .none {
+                    FileManagerHostFixtureSampleData.restrictedFolder.id
+                } else if scenario.largeFolder != .none {
+                    FileManagerHostFixtureSampleData.largeFolder.id
+                } else {
+                    FileManagerHostFixtureSampleData.projects.id
+                }
+                windowController.store.send(
+                    .content(
+                        .entryViewLayout(
+                            .hierarchy(
+                                .folderExpansionRequested(id: folderID),
+                            ),
+                        ),
+                    ),
+                )
+                if scenario.permission == .retry {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+                        windowController.store.send(.content(.entryViewLayout(.hierarchy(
+                            .folderRetryRequested(id: folderID),
+                        ))))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @MainActor
 private enum FileManagerHostFixtureStateFactory {
-    static func makeState(windowID: UUID, preset: FileManagerHostPreset) -> FileManagerFeature.State {
+    fileprivate static let delayedTabSwitchTargetID = ContentTabID(rawValue: "file-manager-host-delayed-tab-target")
+    private static let aiChatSessionID = "00000000-0000-0000-0000-000000000001"
+    private static let homeTabID = ContentTabID(rawValue: "file-manager-host-home")
+    private static let recentsTabID = ContentTabID(rawValue: "file-manager-host-recents")
+    private static let computerTabID = ContentTabID(rawValue: "file-manager-host-computer")
+    private static let collectionTabID = ContentTabID(rawValue: "file-manager-host-collection")
+    private static let aiChatTabID = ContentTabID(rawValue: "file-manager-host-ai-chat")
+
+    static func makeState(
+        preset: FileManagerHostPreset,
+        windowID: UUID,
+    ) -> FileManagerFeature.State {
         let contentTabs: ContentTabState? = switch preset {
-        case .default:
-            nil
         case .contentTabSwitcherContent:
             FileManagerHostContentTabSwitcherContent.state
         case .contentTabSwitcherFallback:
@@ -135,6 +343,8 @@ private enum FileManagerHostFixtureStateFactory {
             FileManagerHostContentTabSwitcherEmpty.state
         case .contentTabSwitcherLoading, .contentTabSwitcherError:
             FileManagerHostContentTabSwitcherContent.state
+        default:
+            nil
         }
 
         var state = FileManagerFeature.State.makeInitial(
@@ -150,23 +360,165 @@ private enum FileManagerHostFixtureStateFactory {
             state.contentTabs.selectedTabIDs = FileManagerHostContentTabSwitcherContent.selectedTabIDs
             state.contentTabs.selectionAnchorID = FileManagerHostContentTabSwitcherContent.selectionAnchorID
         }
+        state.sidebar.sidebarVisible = true
+        state.sidebar.sidebarWidth = 220
+        state.content.navigation.seedInitialFolderPath(FileManagerHostFixtureSampleData.path)
+        state.content.applyWindowContext(windowID: windowID)
+        state.content.entryViewLayout.mode = .list
+        state.content.entryViewLayout.hierarchy.replaceRoot(path: FileManagerHostFixtureSampleData.path)
+        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
+            uniqueElements: preset == .permissionDenied || preset == .permissionRetry
+                ? FileManagerHostFixtureSampleData.permissionEntries
+                : preset == .largeFolder1000 || preset == .concurrentLargeFolders
+                ? FileManagerHostFixtureSampleData.largeFolderRootEntries
+                : FileManagerHostFixtureSampleData.entries,
+        )
+        state.content.entryViewLayout.entries = Array(state.content.entryViewLayout.entryOperations.items)
+        if preset == .default {
+            seedSpecialContentTabs(in: &state)
+        } else if preset == .delayedTabSwitch {
+            seedDelayedTabSwitchTabs(in: &state)
+        } else {
+            state.syncActiveTabContentState()
+        }
         for tabID in state.contentTabs.tabs.ids {
-            state.tabContentStates[tabID]?.entryViewLayout.entryOperations.windowID = windowID
+            state.tabContentStates[tabID]?.applyWindowContext(windowID: windowID)
         }
         if let activeTabID = state.contentTabs.activeTabID,
            let activeContent = state.tabContentStates[activeTabID]
         {
             state.content = activeContent
         }
-        state.sidebar.sidebarVisible = true
-        state.sidebar.sidebarWidth = 220
-        state.content.entryViewLayout.currentPath = FileManagerHostFixtureSampleData.path
-        state.content.entryViewLayout.mode = .list
-        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
-            uniqueElements: FileManagerHostFixtureSampleData.entries,
-        )
-        state.content.entryViewLayout.entries = FileManagerHostFixtureSampleData.entries
+        if preset == .collectionDirectory {
+            applyCollectionDirectoryScenario(to: &state)
+        }
         return state
+    }
+
+    private static func applyCollectionDirectoryScenario(to state: inout FileManagerFeature.State) {
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(query: "Design Assets", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        state.content.collection.collectionContext = .init(
+            query: "Design Assets",
+            scopes: [],
+            conditions: [],
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.entryViewLayout.collectionItems = IdentifiedArrayOf(
+            uniqueElements: FileManagerHostFixtureSampleData.collectionEntries,
+        )
+        state.content.entryViewLayout.hierarchy = .init()
+        state.syncActiveTabContentState()
+    }
+
+    private static func seedDelayedTabSwitchTabs(in state: inout FileManagerFeature.State) {
+        let home = state.contentTabs.tabs.first ?? makeTab(
+            homeTabID,
+            .home,
+            .homeDefault,
+            "Home",
+            "house",
+        )
+        let target = makeTab(
+            delayedTabSwitchTargetID,
+            .directory,
+            .directory(path: FileManagerHostFixtureSampleData.delayedTabSecondaryPath),
+            "Delayed Tab",
+            "folder",
+        )
+        state.contentTabs = ContentTabState(tabs: [home, target], activeTabID: home.id)
+        state.tabContentStates = [
+            home.id: state.content,
+            target.id: FileManagerContentFeature.State.initialContent(
+                for: target.anchor,
+                inheritingWindowContextFrom: state.content,
+            ),
+        ]
+        state.syncContentTabSidebarItems()
+    }
+
+    private static func seedSpecialContentTabs(in state: inout FileManagerFeature.State) {
+        state.contentTabs = makeSpecialContentTabs()
+        state.tabContentStates = makeSpecialContentStates(source: state.content)
+        state.syncContentTabSidebarItems()
+    }
+
+    private static func makeSpecialContentTabs() -> ContentTabState {
+        ContentTabState(
+            tabs: [
+                makeTab(homeTabID, .home, .homeDefault, "Home", "house"),
+                makeTab(recentsTabID, .collection, .virtualCollection(id: "Recents"), "Recents", "clock"),
+                makeTab(
+                    computerTabID,
+                    .collection,
+                    .virtualCollection(id: "Computer"),
+                    "Computer",
+                    "desktopcomputer",
+                ),
+                makeTab(
+                    collectionTabID,
+                    .collection,
+                    .virtualCollection(id: "Design Assets"),
+                    "Collection",
+                    "list.bullet",
+                ),
+                makeTab(aiChatTabID, .aiChat, .aiChat(sessionID: aiChatSessionID), "AI Chat", "message"),
+            ],
+            activeTabID: homeTabID,
+        )
+    }
+
+    private static func makeTab(
+        _ id: ContentTabID,
+        _ page: ContentTabPage,
+        _ anchor: ContentTabPageAnchor,
+        _ title: String,
+        _ iconName: String,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: page,
+            anchor: anchor,
+            isPinned: false,
+            title: title,
+            iconName: iconName,
+        )
+    }
+
+    private static func makeSpecialContentStates(
+        source: FileManagerContentFeature.State,
+    ) -> [ContentTabID: FileManagerContentFeature.State] {
+        var recentsContent = FileManagerContentFeature.State.initialContent(
+            for: .virtualCollection(id: "Recents"),
+            inheritingWindowContextFrom: source,
+        )
+        recentsContent.navigation.navigationState = .recents
+        var computerContent = FileManagerContentFeature.State.initialContent(
+            for: .virtualCollection(id: "Computer"),
+            inheritingWindowContextFrom: source,
+        )
+        computerContent.navigation.navigationState = .computer
+        let collectionContent = FileManagerContentFeature.State.initialContent(
+            for: .virtualCollection(id: "Design Assets"),
+            inheritingWindowContextFrom: source,
+        )
+        let aiChatContent = FileManagerContentFeature.State.initialContent(
+            for: .aiChat(sessionID: aiChatSessionID),
+            inheritingWindowContextFrom: source,
+        )
+
+        return [
+            homeTabID: source,
+            recentsTabID: recentsContent,
+            computerTabID: computerContent,
+            collectionTabID: collectionContent,
+            aiChatTabID: aiChatContent,
+        ]
     }
 }
 
@@ -309,26 +661,37 @@ private enum FileManagerHostContentTabSwitcherEmpty {
 }
 
 @MainActor
-private enum FileManagerHostFixtureDependencies {
+enum FileManagerHostFixtureDependencies {
+    struct ApplyContext {
+        var scenario: FileManagerHostScenario
+        var preset: String?
+        var windowID: UUID
+        var fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
+        var workspaceClient: WorkspaceClient
+    }
+
     static func apply(
         to dependencies: inout DependencyValues,
-        fileOperationUndoManagerClient: FileOperationUndoManagerClient,
-        workspaceClient: WorkspaceClient,
+        context: ApplyContext,
     ) {
         dependencies.userDefaultsClient = .previewValue
         dependencies.metricsClient = .previewValue
         dependencies.fileManagerWindowClient = .previewValue
         dependencies.fileManagerIconClient = .previewValue
-        dependencies.entryLoadingClient = .fileManagerHostFixture
+        dependencies.entryLoadingClient = .fileManagerHostFixture(
+            scenario: context.scenario,
+            preset: context.preset,
+            windowID: context.windowID,
+        )
         dependencies.fileManagerClient = .previewValue
         dependencies.fileManagerLocationsClient = .fileManagerHostFixture
         dependencies.notificationCenterClient = .previewValue
-        dependencies.workspaceClient = workspaceClient
+        dependencies.workspaceClient = context.workspaceClient
         dependencies.entryOpenClient = .previewValue
         dependencies.entryQuickLookClient = .previewValue
         dependencies.entryFileOpsClient = .previewValue
         dependencies.entryOperationsAlertClient = .previewValue
-        dependencies.fileOperationUndoManagerClient = fileOperationUndoManagerClient
+        dependencies.fileOperationUndoManagerClient = .live(registry: context.fileOperationUndoManagerRegistry)
         dependencies.registryClient = .testValue
         dependencies.collectionFileClient = .testValue
         dependencies.collectionAlertClient = .previewValue
@@ -383,7 +746,8 @@ private extension WorkspaceClient {
         let previewIconForFile = client.iconForFile
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         let homeDirectoryPath = homeDirectory.path
-        let iCloudIconPath = "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/iCloudDrive.icns"
+        let iCloudIconPath = "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/"
+            + "iCloudDrive.icns"
         nonisolated(unsafe) let workspace = NSWorkspace.shared
         let cachedIcons = FileManagerHostFixtureIconCache([
             "/Fixture/Library/Mobile Documents/com~apple~CloudDocs":
@@ -422,95 +786,5 @@ private struct FileManagerHostFixtureIconCache: @unchecked Sendable {
             image.isTemplate = false
             return image
         }
-    }
-}
-
-private extension EntryLoadingClient {
-    static let fileManagerHostFixture = EntryLoadingClient(
-        loadItems: { _, _ in FileManagerHostFixtureSampleData.entries },
-        loadComputerItems: { FileManagerHostFixtureSampleData.entries },
-        loadRecentItems: { _, _ in FileManagerHostFixtureSampleData.entries },
-        loadFilesWithTag: { _, _, _ in FileManagerHostFixtureSampleData.entries },
-        fileExists: { _ in false },
-        fileExistsAtPath: { _, _ in false },
-        contentsOfDirectory: { _, _, _ in [] },
-        mountedVolumeURLs: { _, _ in nil },
-        urlsForDirectory: { directory, _ in
-            switch directory {
-            case .desktopDirectory:
-                [URL(fileURLWithPath: "/Fixture/Desktop")]
-            case .documentDirectory:
-                [URL(fileURLWithPath: "/Fixture/Documents")]
-            case .downloadsDirectory:
-                [URL(fileURLWithPath: "/Fixture/Downloads")]
-            case .applicationDirectory:
-                [URL(fileURLWithPath: "/Fixture/Applications")]
-            case .trashDirectory:
-                [URL(fileURLWithPath: "/Fixture/.Trash")]
-            default:
-                []
-            }
-        },
-        homeDirectory: { "/Fixture" },
-        getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "Fixture", creatorApplication: nil, lastUsedDate: nil) },
-        getImageResolution: { _ in nil },
-        getFileSizeInBytes: { _ in nil },
-        getFolderItemCount: { _ in nil },
-        isPackageDirectory: { _ in false },
-        displayName: { path in
-            let name = URL(fileURLWithPath: path).lastPathComponent
-            return name.isEmpty ? path : name
-        },
-    )
-}
-
-private enum FileManagerHostFixtureSampleData {
-    static let path = "/Fixture/FileManager"
-
-    static let entries: [EntryModel] = [
-        makeEntry(name: "Projects", isFolder: true, size: 0, kind: "Folder"),
-        makeEntry(
-            name: "Voyager Notes.md",
-            isFolder: false,
-            size: 24576,
-            kind: "Markdown Document",
-            fileExtension: "md",
-        ),
-        makeEntry(
-            name: "Design Reference.png",
-            isFolder: false,
-            size: 1_572_864,
-            kind: "PNG Image",
-            fileExtension: "png",
-        ),
-    ]
-
-    private static let referenceDate = Date(timeIntervalSince1970: 1_735_689_600)
-
-    private static func makeEntry(
-        name: String,
-        isFolder: Bool,
-        size: Int64,
-        kind: String,
-        fileExtension: String = "",
-    ) -> EntryModel {
-        EntryModel(
-            name: name,
-            fullPath: "\(path)/\(name)",
-            isFolder: isFolder,
-            isHidden: false,
-            size: size,
-            modifiedDate: referenceDate,
-            fileExtension: fileExtension,
-            facets: EntryFacets(
-                createdDate: referenceDate,
-                addedDate: referenceDate,
-                lastOpenedDate: nil,
-                kind: kind,
-                creatorApplication: nil,
-                tags: nil,
-                supplementaryMetadata: nil,
-            ),
-        )
     }
 }

@@ -74,6 +74,19 @@ enum EntryOperationsCommandPlanner {
         }
     }
 
+    static func topLevelPaths(from paths: [String]) -> [String] {
+        let pathComponents = paths.map { URL(fileURLWithPath: $0).standardizedFileURL.pathComponents }
+        return paths.enumerated().compactMap { index, path in
+            let components = pathComponents[index]
+            let hasSelectedAncestor = pathComponents.enumerated().contains { candidateIndex, candidateComponents in
+                candidateIndex != index &&
+                    candidateComponents.count < components.count &&
+                    components.starts(with: candidateComponents)
+            }
+            return hasSelectedAncestor ? nil : path
+        }
+    }
+
     private static func planNavigation(
         _ command: EntryOperationsNavigationCommand,
         context: EntryOperationsCommandContext,
@@ -160,6 +173,26 @@ enum EntryOperationsCommandPlanner {
         selectedItems(in: context).map(\.fullPath)
     }
 
+    private static func topmostSelectedItems(in context: EntryOperationsCommandContext) -> [EntryModel] {
+        let selected = selectedItems(in: context)
+        let selectedPathComponents = selected.map {
+            URL(fileURLWithPath: $0.fullPath).standardizedFileURL.pathComponents
+        }
+        return selected.enumerated().compactMap { index, entry in
+            let entryPathComponents = selectedPathComponents[index]
+            let hasSelectedAncestor = selectedPathComponents.enumerated().contains { otherIndex, otherPathComponents in
+                otherIndex != index
+                    && otherPathComponents.count < entryPathComponents.count
+                    && zip(otherPathComponents, entryPathComponents).allSatisfy(==)
+            }
+            return hasSelectedAncestor ? nil : entry
+        }
+    }
+
+    private static func topmostSelectedPaths(in context: EntryOperationsCommandContext) -> [String] {
+        topmostSelectedItems(in: context).map(\.fullPath)
+    }
+
     private static func planOpenSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
         if selected.count == 1, let entry = selected.first {
@@ -230,7 +263,7 @@ enum EntryOperationsCommandPlanner {
     private static func planCopySelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selected = selectedItems(in: context)
+        let selected = topmostSelectedItems(in: context)
         guard !selected.isEmpty else { return [] }
         return [.entryOperations(.clipboard(.copySelectedItems(files: selected)))]
     }
@@ -238,7 +271,7 @@ enum EntryOperationsCommandPlanner {
     private static func planCutSelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selected = selectedItems(in: context)
+        let selected = topmostSelectedItems(in: context)
         guard !selected.isEmpty else { return [] }
         return [
             .entryOperations(.clipboard(.copySelectedItems(files: selected))),
@@ -249,16 +282,27 @@ enum EntryOperationsCommandPlanner {
     private static func planDuplicateSelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selectedPaths = selectedPaths(in: context)
-        guard !selectedPaths.isEmpty else { return [] }
-        return [
+        let selected = topmostSelectedItems(in: context)
+        guard !selected.isEmpty else { return [] }
+
+        var pathsByParent: [(destinationPath: String, sourcePaths: [String])] = []
+        for entry in selected {
+            let destinationPath = URL(fileURLWithPath: entry.fullPath).deletingLastPathComponent().path
+            if let index = pathsByParent.firstIndex(where: { $0.destinationPath == destinationPath }) {
+                pathsByParent[index].sourcePaths.append(entry.fullPath)
+            } else {
+                pathsByParent.append((destinationPath, [entry.fullPath]))
+            }
+        }
+
+        return pathsByParent.map { group in
             .entryOperations(.clipboard(.pasteItems(
-                sourcePaths: selectedPaths,
-                destinationPath: context.currentPath,
+                sourcePaths: group.sourcePaths,
+                destinationPath: group.destinationPath,
                 operation: .copy,
                 operationKind: .pasteFileDuplicate,
-            ))),
-        ]
+            )))
+        }
     }
 
     private static func planCopySelectedAbsolutePaths(_ context: EntryOperationsCommandContext)
@@ -288,7 +332,7 @@ enum EntryOperationsCommandPlanner {
     private static func planCompressSelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selectedPaths = selectedPaths(in: context)
+        let selectedPaths = topmostSelectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
         return [.entryOperations(.archive(.compressItems(paths: selectedPaths)))]
     }
@@ -334,7 +378,7 @@ enum EntryOperationsCommandPlanner {
     private static func planMoveSelectedItemsToTrash(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selectedPaths = selectedPaths(in: context)
+        let selectedPaths = topmostSelectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
         return [.entryOperations(.trash(.moveToTrash(paths: selectedPaths)))]
     }
@@ -342,7 +386,7 @@ enum EntryOperationsCommandPlanner {
     private static func planDeleteSelectedItemsImmediately(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selectedPaths = selectedPaths(in: context)
+        let selectedPaths = topmostSelectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
         return [.entryOperations(.trash(.deleteImmediately(paths: selectedPaths)))]
     }
@@ -350,7 +394,7 @@ enum EntryOperationsCommandPlanner {
     private static func planPutBackSelectedItems(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selectedPaths = selectedPaths(in: context)
+        let selectedPaths = topmostSelectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
         return [.entryOperations(.trash(.putBackFromTrash(paths: selectedPaths)))]
     }

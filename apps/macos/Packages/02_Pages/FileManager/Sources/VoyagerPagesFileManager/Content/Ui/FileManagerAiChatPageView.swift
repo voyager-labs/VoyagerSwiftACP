@@ -59,6 +59,7 @@ struct FileManagerAiChatPageView: View {
                         GeometryReader { proxy in
                             AiChatView(
                                 store: store.scope(state: \.aiChat, action: \.aiChat),
+                                allowsAttachmentPicker: false,
                                 centeredEmptyContent: AnyView(AiChatEmptyStateContent()),
                                 onSessionSelected: { sessionID in
                                     store.send(.aiChat(.sessionRowTapped(sessionID)))

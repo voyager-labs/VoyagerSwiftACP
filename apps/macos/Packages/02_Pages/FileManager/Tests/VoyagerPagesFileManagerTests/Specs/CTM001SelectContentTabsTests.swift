@@ -211,7 +211,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             let presentationHitLocation = NSPoint(x: fixture.button.bounds.midX, y: fixture.button.bounds.midY)
             let presentationView = try XCTUnwrap(fixture.button.subviews.first)
 
-            XCTAssertTrue(fixture.button.hitTest(buttonHitLocation) === fixture.button)
+            XCTAssertIdentical(fixture.button.hitTest(buttonHitLocation), fixture.button)
             XCTAssertNil(presentationView.hitTest(presentationHitLocation))
             XCTAssertEqual(fixture.button.accessibilityLabel(), "Content Tab")
             XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Active, Not Selected")
@@ -1444,17 +1444,17 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             id: ContentTabID(rawValue: "source-favorite"),
             title: "Source Favorite",
             iconName: "folder",
-            filePath: "/source/favorite",
             anchor: .directory(path: "/source/favorite"),
             page: .directory,
+            filePath: "/source/favorite",
         )
         let preservedFavorite = FileManagerHomeFavoriteItem(
             id: ContentTabID(rawValue: "preserved-favorite"),
             title: "Preserved Favorite",
             iconName: "folder",
-            filePath: "/preserved/favorite",
             anchor: .directory(path: "/preserved/favorite"),
             page: .directory,
+            filePath: "/preserved/favorite",
         )
         let sidebarSentinel = Self.sidebarSentinel()
         var state = FileManagerFeature.State()

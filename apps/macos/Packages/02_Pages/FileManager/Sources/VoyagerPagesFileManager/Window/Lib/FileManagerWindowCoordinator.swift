@@ -18,6 +18,11 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private weak var windowSplitCoordinator: FileManagerWindowSplitCoordinator?
     private var cancellables: Set<AnyCancellable> = []
 
+    private struct FileManagerWindowSplitInputs {
+        let workspaceClient: WorkspaceClient
+        let materialOverride: FileManagerWindowMaterialOverride?
+    }
+
     public init(
         windowID: UUID,
         store: StoreOf<FileManagerFeature>,
@@ -46,10 +51,12 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
+            splitInputs: FileManagerWindowSplitInputs(
+                workspaceClient: workspaceClient,
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
         )
 
         super.init(window: window)
@@ -69,7 +76,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         initialWindowSizeProvider: (() -> NSSize?)? = nil,
-        materialOverride: FileManagerWindowMaterialOverride?,
+        materialOverride: FileManagerWindowMaterialOverride? = nil,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         self.windowID = windowID
@@ -88,10 +95,12 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
+            splitInputs: FileManagerWindowSplitInputs(
+                workspaceClient: workspaceClient,
+                materialOverride: materialOverride,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: materialOverride,
         )
 
         super.init(window: window)
@@ -146,10 +155,12 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
+            splitInputs: FileManagerWindowSplitInputs(
+                workspaceClient: workspaceClient,
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
         )
 
         super.init(window: window)
@@ -179,11 +190,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
                 guard var tabContent = state.tabContentStates[tabID]
                     ?? (tabID == state.contentTabs.activeTabID ? state.content : nil)
                 else { continue }
+                let loadingCancellationOwnerID = UUID()
                 tabContent.entryViewLayout.entryOperations.resetForDuplicate(
                     windowID: windowID,
-                    loadingCancellationOwnerID: UUID(),
+                    loadingCancellationOwnerID: loadingCancellationOwnerID,
                     undoOwnerID: UUID(),
                 )
+                tabContent.composer.cancellationOwnerID = windowID
+                tabContent.entryViewLayout.collectionWindowID = windowID
+                tabContent.entryViewLayout.collectionLoadingCancellationOwnerID = loadingCancellationOwnerID
                 tabContent.entryViewLayout.selectedIds = []
                 tabContent.entryViewLayout.lastSelectedId = nil
                 tabContent.entryViewLayout.rangeAnchorId = nil
@@ -232,10 +247,9 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private static func makeWindow(
         store: StoreOf<FileManagerFeature>,
         path: String?,
-        workspaceClient: WorkspaceClient,
+        splitInputs: FileManagerWindowSplitInputs,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
-        materialOverride: FileManagerWindowMaterialOverride?,
     ) -> NSWindow {
         let contentViewController: NSViewController = if let makeContentViewController {
             makeContentViewController(store, path)
@@ -243,8 +257,8 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             FileManagerWindowSplitCoordinator(
                 store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
-                workspaceClient: workspaceClient,
-                materialOverride: materialOverride,
+                workspaceClient: splitInputs.workspaceClient,
+                materialOverride: splitInputs.materialOverride,
             )
         }
 

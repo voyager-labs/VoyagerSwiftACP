@@ -32,6 +32,8 @@ public struct ComposerFeature {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.uuid)
+    var uuid
     @Dependency(\.continuousClock)
     var continuousClock
 
@@ -54,11 +56,11 @@ public struct ComposerFeature {
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
             ConditionPropertyPickerFeature()
         }
-        Scope(state: \.operatorPicker, action: \.operatorPicker) {
-            OperatorPickerFeature()
-        }
         Scope(state: \.valuePicker, action: \.valuePicker) {
             ValuePickerFeature()
+        }
+        .forEach(\.conditionEditors, action: \.conditionEditor) {
+            ConditionEditorFeature()
         }
 
         Reduce { state, action in
@@ -141,11 +143,11 @@ public struct ComposerFeature {
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
             case let .internal(.applyCollectionDraftRestore(payload)):
-                state.applyCollectionDraftRestorePayload(payload)
+                state.applyCollectionDraftRestorePayload(payload, uuid: { uuid() })
                 return .none
 
             case let .internal(.applyCollectionNavigationComposer(payload)):
-                state.applyCollectionNavigationComposerPayload(payload)
+                state.applyCollectionNavigationComposerPayload(payload, uuid: { uuid() })
                 return .none
 
             case let .internal(.syncCollectionState(context, url, compatibility, isCollectionMode)):
@@ -186,12 +188,8 @@ public struct ComposerFeature {
                 return .none
 
             case .view(.applyFilters),
-                 .view(.setDisplayUnit),
                  .view(.addCondition),
                  .view(.removeCondition),
-                 .view(.setOperator),
-                 .view(.replaceConditionProperty),
-                 .view(.setValue),
                  .view(.candidateScope),
                  .view(.currentScope),
                  .view(.clearAll),
@@ -203,8 +201,8 @@ public struct ComposerFeature {
                  .view(.scopeEditorSetQueryText),
                  .view(.exceptionScope),
                  .propertyPicker,
-                 .operatorPicker,
                  .valuePicker,
+                 .conditionEditor,
                  .internal(.searchResponse),
                  .internal(.filtersResponse),
                  .internal(.scopeEditorSeedCurrentPath),
@@ -295,12 +293,12 @@ func applyAppliedFilters(
     _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
+    uuid: () -> UUID = UUID.init,
 ) {
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
     }
-    let previousDisplayByKey = state.conditionDisplayByKey
-    let resolved = AppliedFiltersUtils.resolveDetailed(
+    let resolved = AppliedFilterResolver.resolveDetailed(
         appliedFilters,
         fallbackScopes: state.scopeEditor.selection.legacyScopePaths,
         fallbackConditions: state.conditions,
@@ -318,44 +316,70 @@ func applyAppliedFilters(
     if !shouldPreserveLocalMultiScope {
         state.scopeEditor.selection = selection
     }
-    state.conditions = resolved.conditions
-    state.conditionDisplayByKey = Dictionary(
-        uniqueKeysWithValues: resolved.conditions.compactMap { condition in
-            let displayState: ConditionDisplayState? = if let previous = previousDisplayByKey[condition.propertyKey] {
-                reconcileDisplayState(
-                    for: condition,
-                    previous: previous,
-                    registryClient: registryClient,
-                )
-            } else {
-                defaultDisplayState(for: condition, registryClient: registryClient)
-            }
-            guard let displayState else { return nil }
-            return (condition.propertyKey, displayState)
-        },
+    applyResolvedConditions(
+        resolved.conditions,
+        state: &state,
+        registryClient: registryClient,
+        uuid: uuid,
     )
-    updateOperatorOptions(state: &state, registryClient: registryClient)
+}
+
+private func applyResolvedConditions(
+    _ conditions: [Condition],
+    state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+    uuid: () -> UUID,
+) {
+    let previousEditorsByKey = Dictionary(uniqueKeysWithValues: state.conditionEditors.map {
+        ($0.condition.property.key, $0)
+    })
+    let canonicalKeys = conditions.map(\.property.key)
+    guard Set(canonicalKeys).count == canonicalKeys.count else {
+        state.transientFeedback = .init(
+            id: UUID(),
+            kind: .error,
+            message: "Duplicate filter properties were returned.",
+            stage: .queryExecution,
+            category: .executionFailure,
+        )
+        return
+    }
+    state.conditionEditors = IdentifiedArray(uniqueElements: conditions.map { condition in
+        let displayState: ConditionDisplayState? = if let previous = previousEditorsByKey[condition.property.key]?
+            .displayState
+        {
+            reconcileDisplayState(
+                for: condition,
+                previous: previous,
+                registryClient: registryClient,
+            )
+        } else {
+            defaultDisplayState(for: condition, registryClient: registryClient)
+        }
+        return .init(
+            id: previousEditorsByKey[condition.property.key]?.id ?? uuid(),
+            condition: condition,
+            displayState: displayState,
+        )
+    })
 }
 
 func defaultDisplayState(
     for condition: Condition,
-    registryClient: RegistryClient,
+    registryClient _: RegistryClient,
 ) -> ConditionDisplayState? {
-    guard condition.valueType == "number",
-          let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient)
-    else {
-        return nil
+    guard let unitContract = condition.property.unitContract else { return nil }
+    let unitValueState = UnitValueState(contract: unitContract)
+    let canonicalValues = condition.values ?? []
+    let displayValues = canonicalValues.compactMap {
+        ConditionUnitConverter.fromCanonical(
+            canonicalText: $0,
+            to: unitValueState.selectedUnitCode,
+            contract: unitContract,
+        )
     }
-
-    let unitValueState = UnitValuePresentationUtils.makeState(spec: spec)
-    let unitCode = unitValueState.selectedUnitCode
-    let displayValues = (condition.values ?? []).map { value in
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
-    }
-
-    return .init(values: displayValues, unitValueState: unitValueState)
+    guard displayValues.count == canonicalValues.count else { return nil }
+    return ConditionDisplayState(values: displayValues, unitValueState: unitValueState)
 }
 
 private func reconcileDisplayState(
@@ -363,25 +387,26 @@ private func reconcileDisplayState(
     previous: ConditionDisplayState,
     registryClient: RegistryClient,
 ) -> ConditionDisplayState? {
-    guard let previousUnitValueState = previous.unitValueState,
-          let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient),
-          UnitValueUtils.unitCodes(spec: spec).contains(previousUnitValueState.selectedUnitCode)
+    guard let unitContract = condition.property.unitContract else {
+        return ConditionDisplayState(values: condition.values ?? [], unitValueState: previous.unitValueState)
+    }
+    guard let unitValueState = previous.unitValueState,
+          ConditionUnitConverter.unitCodes(contract: unitContract).contains(unitValueState.selectedUnitCode)
     else {
         return defaultDisplayState(for: condition, registryClient: registryClient)
     }
-    let values = condition.values ?? []
-    let unitCode = previousUnitValueState.selectedUnitCode
-
-    let displayValues = values.map { value -> String in
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
+    let canonicalValues = condition.values ?? []
+    let displayValues = canonicalValues.compactMap {
+        ConditionUnitConverter.fromCanonical(
+            canonicalText: $0,
+            to: unitValueState.selectedUnitCode,
+            contract: unitContract,
+        )
     }
-
-    return .init(
-        values: displayValues,
-        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
-    )
+    guard displayValues.count == canonicalValues.count else {
+        return defaultDisplayState(for: condition, registryClient: registryClient)
+    }
+    return ConditionDisplayState(values: displayValues, unitValueState: unitValueState)
 }
 
 func resetValuePicker(state: inout ComposerFeature.State) {
@@ -425,20 +450,19 @@ func applyFiltersIfNeeded(
 func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     let conditionPayloads: [VoyagerShared.SearchConditionPayload] = state.conditions
         .compactMap { condition -> VoyagerShared.SearchConditionPayload? in
-            guard condition.isSearchReady else { return nil }
-            guard let op = condition.operatorCode else { return nil }
-            if let arity = condition.operatorValueArity, arity == 0 {
+            guard condition.isExecutionReady, let operation = condition.operation else { return nil }
+            if case .fixed(0) = operation.valueContract.count {
                 return VoyagerShared.SearchConditionPayload(
-                    propertyKey: condition.propertyKey,
-                    operator: op,
+                    propertyKey: condition.property.key,
+                    operator: operation.code,
                     value: nil,
                 )
             }
             guard let values = condition.values, !values.isEmpty else { return nil }
-            guard let encoded = ConditionValueEncoder.encode(condition: condition, values: values) else { return nil }
+            guard let encoded = ConditionCodec.encode(condition: condition) else { return nil }
             return VoyagerShared.SearchConditionPayload(
-                propertyKey: condition.propertyKey,
-                operator: op,
+                propertyKey: condition.property.key,
+                operator: operation.code,
                 value: encoded,
             )
         }
@@ -454,16 +478,5 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
         excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
         includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
         conditions: conditionPayloads,
-    )
-}
-
-func updateOperatorOptions(
-    state: inout ComposerFeature.State,
-    registryClient: RegistryClient,
-) {
-    state.operatorOptionsByKey = Dictionary(
-        uniqueKeysWithValues: state.conditions.map {
-            ($0.propertyKey, registryClient.operatorCodes(for: $0.propertyKey))
-        },
     )
 }

@@ -115,6 +115,18 @@ scripts/dev/macos-launch.sh \
   "$@"
 """
 
+[tasks.macos-composer-injection]
+description = "ComposerHost Dev-Debug를 InjectionNext와 함께 빌드 후 실행"
+run = """
+scripts/dev/macos-launch.sh \
+  --workspace apps/macos/Hosts/ComposerHost/ComposerHost.xcodeproj/project.xcworkspace \
+  --scheme ComposerHost-Dev \
+  --configuration Dev-Debug \
+  --injection-next \
+  --env "VOYAGER_PROJECT_ROOT=$PWD" \
+  "$@"
+"""
+
 # macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-test]
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
@@ -191,7 +203,7 @@ test ! -f ../../go.work
 
 [tasks.entry-core-swift-test]
 description = "VoyagerEntryCoreClient unit 테스트 (process smoke 제외)"
-run = "xcrun swift test --package-path apps/macos/Packages/06_Shared/VoyagerEntryCoreClient --skip VoyagerEntryCoreProcessSmokeTests"
+run = "xcrun swift test --package-path apps/macos/Packages/06_Shared/VoyagerEntryCoreClient --skip VoyagerEntryCoreProcessSmokeFlowTests"
 
 [tasks.entry-core-swift-smoke]
 description = "실제 Entry Core daemon 기반 VoyagerEntryCoreClient process smoke 테스트"
@@ -208,7 +220,7 @@ test -x "$daemon_path"
 export VOYAGER_ENTRY_CORE_DAEMON_PATH="$daemon_path"
 xcrun swift test \
   --package-path apps/macos/Packages/06_Shared/VoyagerEntryCoreClient \
-  --filter VoyagerEntryCoreProcessSmokeTests
+  --filter VoyagerEntryCoreProcessSmokeFlowTests
 '''
 
 [tasks.entry-core-interop-check]

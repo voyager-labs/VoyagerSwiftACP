@@ -251,6 +251,22 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
             )),
             .networkError,
         )
+        XCTAssertEqual(
+            AiConnectionRuntimeClient.mapModelListError(.httpError(
+                provider: .chatgptCodex,
+                statusCode: 400,
+                body: "test",
+            )),
+            .invalid(.verificationFailed),
+        )
+        XCTAssertNotEqual(
+            AiConnectionRuntimeClient.mapModelListError(.httpError(
+                provider: .chatgptCodex,
+                statusCode: 400,
+                body: "test",
+            )),
+            .invalid(.expired),
+        )
     }
 
     /// SET-007-codex_oauth_runtime: API-key model authentication rejection remains invalid API key.
@@ -306,7 +322,114 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
             XCTAssertEqual(outcome.result, .invalid(.expired))
         }
     }
+}
 
+extension CBW003ProviderExecutionRoutingTests {
+    /// CBW-003-prepare_contextual_chat_request: Codex models request compatibility metadata is exact 0.146.0.
+    /// Codex models request must pin a dedicated released-client compatibility version across query, header, and
+    /// User-Agent.
+    /// - 검증 내용: URL query client_version, version header, User-Agent prefix, absence of Voyager 0.9.1, and decoded
+    /// model output.
+    /// - 사전 조건: non-expired OAuth credential and an isolated successful Codex models response.
+    /// - 기대 결과: decoded response exposes gpt-5 and request metadata uses exact 0.146.0 without exposing Voyager 0.9.1.
+    func testCodexModelsRequest_capturesExactCompatibilityVersionAndDecodesModels() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        nonisolated(unsafe) var capturedRequest: URLRequest?
+        ProviderExecutionURLProtocol.handler = { request in
+            capturedRequest = request
+            let response = try XCTUnwrap(try HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil,
+            ))
+            return (response, Data(#"{"data":[{"slug":"gpt-5","display_name":"GPT-5"}]}"#.utf8))
+        }
+        let credential = OAuthCredentialFile(
+            accessToken: "codex-token",
+            expiresAtMs: Int64.max,
+        )
+
+        let response = try await AiProviderModelListClient.fetchCodexModels(
+            credential: credential,
+            session: session,
+        )
+
+        let request = try XCTUnwrap(capturedRequest)
+        let url = try XCTUnwrap(request.url)
+        XCTAssertEqual(url.query, "client_version=0.146.0")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "version"), "0.146.0")
+        let userAgent = request.value(forHTTPHeaderField: "User-Agent") ?? ""
+        XCTAssertTrue(userAgent.contains("codex_cli_rs/0.146.0"))
+        XCTAssertFalse(url.absoluteString.contains("0.9.1"))
+        XCTAssertFalse(userAgent.contains("0.9.1"))
+        XCTAssertFalse(request.value(forHTTPHeaderField: "version")?.contains("0.9.1") ?? true)
+        XCTAssertTrue(response.models.contains { $0.modelID == "gpt-5" })
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
+    }
+
+    /// SET-007-codex_oauth_runtime: non-expired Codex verification with empty models is verificationFailed.
+    /// An empty model list from a valid credential must not be interpreted as credential expiry.
+    /// - 검증 내용: empty models payload produces invalid verificationFailed, not expired.
+    /// - 사전 조건: non-expired OAuth credential and an isolated empty Codex models response.
+    /// - 기대 결과: outcome result is invalid verificationFailed and not expired.
+    func testCodexVerification_nonExpiredEmptyModels_verificationFailed() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let credential = StoredCredentialPayload.oauth(OAuthCredentialFile(
+            accessToken: "codex-token",
+            expiresAtMs: Int64.max,
+        ))
+        ProviderExecutionURLProtocol.handler = { request in
+            let response = try XCTUnwrap(try HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil,
+            ))
+            return (response, Data(#"{"data":[]}"#.utf8))
+        }
+        let client = AiConnectionRuntimeClient.live(session: session)
+
+        let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
+            .chatgptCodex,
+            credential,
+        )
+
+        XCTAssertEqual(outcome.result, .invalid(.verificationFailed))
+    }
+
+    /// SET-007-codex_oauth_runtime: non-expired Codex verification URL failure is networkError.
+    /// A URL loading failure from the isolated transport must map to networkError, not expired.
+    /// - 검증 내용: URLError thrown by the URLProtocol maps to networkError.
+    /// - 사전 조건: non-expired OAuth credential and a models transport throwing URLError(.notConnectedToInternet).
+    /// - 기대 결과: outcome result is networkError.
+    func testCodexVerification_nonExpiredURLFailure_networkError() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProviderExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let credential = StoredCredentialPayload.oauth(OAuthCredentialFile(
+            accessToken: "codex-token",
+            expiresAtMs: Int64.max,
+        ))
+        ProviderExecutionURLProtocol.handler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        let client = AiConnectionRuntimeClient.live(session: session)
+
+        let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
+            .chatgptCodex,
+            credential,
+        )
+
+        XCTAssertEqual(outcome.result, .networkError)
+    }
+}
+
+extension CBW003ProviderExecutionRoutingTests {
     /// SET-007-codex_oauth_runtime: live API-key smoke retains invalid API key semantics.
     /// Codex OAuth mapping must not alter non-Codex verification behavior.
     /// - 검증 내용: live OpenAI smoke HTTP 401 outcome.

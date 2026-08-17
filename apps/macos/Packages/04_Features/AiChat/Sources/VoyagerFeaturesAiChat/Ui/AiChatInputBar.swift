@@ -10,6 +10,7 @@ struct AiChatInputBar: View {
     let state: AiChatState
     let input: AiChatInputDisplayModel
     let requestContext: AiChatRequestContextDisplayModel
+    let allowsAttachmentPicker: Bool
     let colorScheme: ColorScheme
     let composerIdentity: AiChatComposerIdentity
     @ObservedObject var focusOwner: AiChatInputFocusOwner
@@ -23,20 +24,22 @@ struct AiChatInputBar: View {
             chatInputTextField
 
             HStack(alignment: .bottom, spacing: 4) {
-                Button {
-                    store.send(.attachmentPickerTapped)
-                } label: {
-                    AiChatHoverTextAffordance(
-                        title: input.contextAffordanceLabel,
-                        titleFontSize: 14,
-                        titleWeight: .semibold,
-                        hoverColor: .primary,
-                    )
-                    .fixedSize(horizontal: true, vertical: false)
+                if allowsAttachmentPicker {
+                    Button {
+                        store.send(.attachmentPickerTapped)
+                    } label: {
+                        AiChatHoverTextAffordance(
+                            title: input.contextAffordanceLabel,
+                            titleFontSize: 14,
+                            titleWeight: .semibold,
+                            hoverColor: .primary,
+                        )
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(input.isComposerEditingDisabled)
+                    .accessibilityLabel("Add attachment")
                 }
-                .buttonStyle(.plain)
-                .disabled(input.isComposerEditingDisabled)
-                .accessibilityLabel("Add attachment")
                 HStack(alignment: .bottom, spacing: 8) {
                     AiChatModelSelectorButton(
                         store: store,
@@ -205,153 +208,94 @@ struct AiChatInputBar: View {
 
 private extension AiChatInputBar {
     @ViewBuilder var requestContextRow: some View {
-        let presentation = AiChatRequestContextRowPresentation(
-            displayModel: requestContext,
-            isNextMessageEditable: !input.isComposerEditingDisabled,
-        )
-        if !presentation.sections.isEmpty {
-            AiChatRequestContextRow(store: store, state: state, presentation: presentation)
+        let presentation = AiChatRequestContextRowPresentation(displayModel: requestContext)
+        if !presentation.rows.isEmpty {
+            AiChatRequestContextRow(
+                store: store,
+                state: state,
+                displayModel: requestContext,
+                presentation: presentation,
+                isEditable: !input.isComposerEditingDisabled,
+            )
         }
     }
 }
 
 struct AiChatRequestContextRowPresentation: Equatable {
     enum Kind: Hashable {
-        case currentResponse
-        case nextMessage
+        case currentContext
+        case attachments
     }
 
-    struct Section: Equatable {
-        let kind: Kind
-        let label: String
-        let section: AiChatRequestContextSectionDisplayModel
-        let isEditable: Bool
-    }
+    let rows: [Kind]
 
-    let sections: [Section]
-
-    init(
-        currentResponse: AiChatRequestContextSectionDisplayModel?,
-        nextMessage: AiChatRequestContextSectionDisplayModel,
-        isNextMessageEditable: Bool,
-    ) {
-        var sections: [Section] = []
-        if let currentResponse, !currentResponse.isEmpty {
-            sections.append(Section(
-                kind: .currentResponse,
-                label: "Current response context",
-                section: currentResponse,
-                isEditable: false,
-            ))
+    init(displayModel: AiChatRequestContextDisplayModel) {
+        var rows: [Kind] = []
+        if displayModel.currentContext != nil {
+            rows.append(.currentContext)
         }
-        if !nextMessage.isEmpty {
-            sections.append(Section(
-                kind: .nextMessage,
-                label: "Next message context",
-                section: nextMessage,
-                isEditable: isNextMessageEditable,
-            ))
+        if !displayModel.addedAttachments.isEmpty {
+            rows.append(.attachments)
         }
-        self.sections = sections
-    }
-
-    init(displayModel: AiChatRequestContextDisplayModel, isNextMessageEditable: Bool) {
-        self.init(
-            currentResponse: displayModel.currentResponse,
-            nextMessage: AiChatRequestContextSectionDisplayModel(
-                source: displayModel.source,
-                currentContext: displayModel.currentContext,
-                addedAttachments: displayModel.addedAttachments,
-            ),
-            isNextMessageEditable: isNextMessageEditable,
-        )
+        self.rows = rows
     }
 }
 
 private struct AiChatRequestContextRow: View {
     let store: StoreOf<AiChatFeature>
     let state: AiChatState
+    let displayModel: AiChatRequestContextDisplayModel
     let presentation: AiChatRequestContextRowPresentation
-
-    private var currentResponseLock: AiChatRequestLock? {
-        state.executionPhase.lock
-    }
+    let isEditable: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(presentation.sections, id: \.kind) { section in
-                contextSection(section)
+            ForEach(presentation.rows, id: \.self) { kind in
+                contextRow(kind)
             }
         }
     }
 
-    private func contextSection(_ presentation: AiChatRequestContextRowPresentation.Section) -> some View {
+    @ViewBuilder
+    private func contextRow(_ kind: AiChatRequestContextRowPresentation.Kind) -> some View {
+        let label = rowLabel(for: kind)
         HStack(alignment: .center, spacing: 8) {
-            Text(presentation.label)
-                .font(VoyagerDS.Typography.chip)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityAddTraits(.isHeader)
-
-            contextRows(
-                section: presentation.section,
-                currentContextSnapshot: currentContextSnapshot(for: presentation.kind),
-                destinationProvider: destinationProvider(for: presentation.kind),
-                isEditable: presentation.isEditable,
-                sectionLabel: presentation.label,
-            )
+            groupLabel(label)
+            rowContent(kind)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(presentation.label)
+        .accessibilityLabel(label)
     }
 
-    private func currentContextSnapshot(
-        for kind: AiChatRequestContextRowPresentation.Kind,
-    ) -> AiChatCurrentContextSnapshot {
+    private func rowLabel(for kind: AiChatRequestContextRowPresentation.Kind) -> String {
         switch kind {
-        case .currentResponse:
-            currentResponseLock?.context.requestContext.currentContext ?? .init()
-        case .nextMessage:
-            state.currentContext
+        case .currentContext:
+            "Current context"
+        case .attachments:
+            "Attachments"
         }
     }
 
-    private func destinationProvider(for kind: AiChatRequestContextRowPresentation.Kind) -> AiProvider? {
-        switch kind {
-        case .currentResponse:
-            currentResponseLock?.selectedModelHandle.provider
-        case .nextMessage:
-            state.selectedModelHandle?.provider
-        }
-    }
-
-    private func contextRows(
-        section: AiChatRequestContextSectionDisplayModel,
-        currentContextSnapshot: AiChatCurrentContextSnapshot,
-        destinationProvider: AiProvider?,
-        isEditable: Bool,
-        sectionLabel: String?,
-    ) -> some View {
+    private func rowContent(_ kind: AiChatRequestContextRowPresentation.Kind) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .center, spacing: 8) {
-                if let currentContext = section.currentContext {
-                    groupLabel("Current context")
-                    currentContextChip(
-                        currentContext,
-                        snapshot: currentContextSnapshot,
-                        destinationProvider: destinationProvider,
-                        sourceLabel: sectionLabel.map { "\($0) current context" } ?? "Current context",
-                        isEditable: isEditable,
-                    )
-                }
-
-                if !section.addedAttachments.isEmpty {
-                    groupLabel("Attachments")
-                    ForEach(section.addedAttachments) { attachment in
+                switch kind {
+                case .currentContext:
+                    if let currentContext = displayModel.currentContext {
+                        currentContextChip(
+                            currentContext,
+                            snapshot: state.currentContext,
+                            destinationProvider: state.selectedModelHandle?.provider,
+                            sourceLabel: "Current context",
+                            isEditable: isEditable,
+                        )
+                    }
+                case .attachments:
+                    ForEach(displayModel.addedAttachments) { attachment in
                         attachmentChip(
                             attachment,
-                            destinationProvider: destinationProvider,
-                            sourceLabel: sectionLabel.map { "\($0) attachments" } ?? "Attachments",
+                            destinationProvider: state.selectedModelHandle?.provider,
+                            sourceLabel: "Attachments",
                             isEditable: isEditable,
                         )
                     }
@@ -364,6 +308,7 @@ private struct AiChatRequestContextRow: View {
         Text(title)
             .font(chipTitleFont)
             .foregroundStyle(.secondary)
+            .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder

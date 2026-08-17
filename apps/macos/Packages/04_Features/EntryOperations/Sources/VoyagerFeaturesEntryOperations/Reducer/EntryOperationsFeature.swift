@@ -11,6 +11,7 @@ public struct EntryOperationsFeature {
         CombineReducers {
             EntryOperationsCommandRoutingReducer()
             EntryOperationsLoadingReducer()
+            EntryOperationsFolderLoadingReducer()
             EntryOperationsMetricsReducer()
             EntryOperationsLifecycleReducer()
             EntryUndoRedoOperationsReducer()

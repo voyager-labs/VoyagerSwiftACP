@@ -85,6 +85,17 @@ path_instructions:
       filtered from inline comments. If a docs submodule pointer changes, verify
       whether it changes the spec baseline used to judge the app diff.
 
+      ## Storybook Design Lab boundary
+
+      For `apps/storybook/**`, distinguish the rendered Design Lab fixture from
+      a production runtime. Do not raise P0/P1 findings solely because a
+      deterministic Storybook fixture omits native-runtime behavior such as live
+      state recomputation, persistence, IME handling, network execution, or
+      focus management. Those concerns are in scope only when the PR explicitly
+      translates them or the rendered fixture claims that behavior. Apply the
+      path-scoped `rules/storybook.md` instructions before judging interaction
+      concerns on Storybook files.
+
       Every comment must explain:
       1. What is wrong.
       2. Why it matters for this repository.

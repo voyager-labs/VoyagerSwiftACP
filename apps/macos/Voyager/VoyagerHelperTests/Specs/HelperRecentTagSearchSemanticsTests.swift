@@ -304,6 +304,48 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
         XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/rootSibling/file.txt", normalizedScopes: scopes))
     }
 
+    func testFilterCandidatePathMatcherCombinesScopeExclusionsAndHistoricalPathConditions() {
+        let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+        let service = SpotlightSearchService(defaultScopeURL: { homeURL })
+        let excludedScopes = ["/Users/test/Documents/Archive"]
+        let conditions = [
+            SearchConditionPayload(
+                propertyKey: "relative_path_from_home",
+                operator: "sw",
+                value: .string("~/Documents"),
+            ),
+        ]
+
+        XCTAssertTrue(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Documents/report.pdf",
+            exactFolderScopes: ["/Users/test/Documents"],
+            normalizedExcludedScopes: excludedScopes,
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Downloads/report.pdf",
+            exactFolderScopes: ["/Users/test/Documents"],
+            normalizedExcludedScopes: excludedScopes,
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Documents/Quarterly/report.pdf",
+            exactFolderScopes: ["/Users/test/Documents"],
+            normalizedExcludedScopes: excludedScopes,
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Documents/Archive/report.pdf",
+            exactFolderScopes: [],
+            normalizedExcludedScopes: excludedScopes,
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+    }
+
     private func makeSandbox() throws -> URL {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

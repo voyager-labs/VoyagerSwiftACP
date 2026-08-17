@@ -1,8 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { files } from "../data/mock-data"
+import { chatSurfaceConversation, chatSurfaceHistory } from "../Domains/Chat/chat-fixtures"
 import { InspectorPane } from "./InspectorPane"
-
-const primaryEntry = files[0]
 
 const meta = {
   component: InspectorPane,
@@ -10,9 +8,8 @@ const meta = {
   args: {
     chatHeader: "sessions" as const,
     requestText: "",
-    selectedEntries: files.slice(0, 5),
-    primaryEntry,
     chatTitle: "Chat History",
+    chatSurface: chatSurfaceHistory,
     onRequestTextChange: () => {},
     onOpenChatHistory: () => {},
     onOpenNewChat: () => {},
@@ -29,5 +26,6 @@ export const Conversation: Story = {
   args: {
     chatHeader: "chat" as const,
     chatTitle: "Review collection PDFs",
+    chatSurface: chatSurfaceConversation,
   },
 }

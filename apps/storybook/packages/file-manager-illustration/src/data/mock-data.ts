@@ -1,4 +1,4 @@
-import type { EntryThumbnailComparisonEntry } from "../Entries/EntryThumbnailComparison"
+import type { EntryThumbnailComparisonEntry } from "../Domains/Entries/EntryThumbnailComparison"
 import type { ContextMenuAction, Entry, FileEntry } from "../model/types"
 import { entryThumbnailFixtures } from "./entry-thumbnail-fixtures"
 
@@ -7,67 +7,96 @@ export const files: readonly Entry[] = [
     id: "e01",
     name: "IDC20on20The20Hig...tion.pdf",
     kind: "pdf",
+    dateModified: "Aug 12, 10:42 AM",
+    size: "1.2 MB",
     thumbnailSrc: entryThumbnailFixtures.pdf,
   },
   {
     id: "e02",
     name: "3_iis_2020_236-244.pdf",
     kind: "pdf",
+    dateModified: "Aug 12, 10:31 AM",
+    size: "842 KB",
     thumbnailSrc: entryThumbnailFixtures.pdfTest,
   },
   {
     id: "e03",
     name: "Asso for Info Scienc...ior.pdf",
     kind: "pdf",
+    dateModified: "Aug 11, 6:14 PM",
+    size: "2.4 MB",
     thumbnailSrc: entryThumbnailFixtures.pdf1mb,
   },
   {
     id: "e04",
     name: "Asso for Info Scienc...ion.pdf",
     kind: "pdf",
+    dateModified: "Aug 11, 5:52 PM",
+    size: "156 KB",
     thumbnailSrc: entryThumbnailFixtures.pdf150k,
   },
   {
     id: "e05",
     name: "Asso for Info Scienc...ure.pdf",
     kind: "pdf",
+    dateModified: "Aug 11, 4:08 PM",
+    size: "912 KB",
     thumbnailSrc: entryThumbnailFixtures.pdfTest,
   },
   {
     id: "e06",
     name: "fileOrganizationFrom...top.pdf",
     kind: "pdf",
+    dateModified: "Aug 10, 2:37 PM",
+    size: "5.1 MB",
     thumbnailSrc: entryThumbnailFixtures.pdf5mb,
   },
-  { id: "e07", name: "C04-1083 (1).pdf", kind: "pdf", thumbnailSrc: entryThumbnailFixtures.pdf },
+  {
+    id: "e07",
+    name: "C04-1083 (1).pdf",
+    kind: "pdf",
+    dateModified: "Aug 9, 11:26 AM",
+    size: "1.1 MB",
+    thumbnailSrc: entryThumbnailFixtures.pdf,
+  },
   {
     id: "e08",
     name: "thesis_fulltext.pdf",
     kind: "pdf",
+    dateModified: "Aug 8, 7:43 PM",
+    size: "3.8 MB",
     thumbnailSrc: entryThumbnailFixtures.pdf1mb,
   },
   {
     id: "e09",
     name: "fitchett2014.pdf",
     kind: "pdf",
+    dateModified: "Aug 8, 3:05 PM",
+    size: "728 KB",
     thumbnailSrc: entryThumbnailFixtures.pdfTest,
   },
   {
     id: "e10",
     name: "View of Usabili...iew.pdf",
     kind: "pdf",
+    dateModified: "Aug 7, 9:18 AM",
+    size: "164 KB",
     thumbnailSrc: entryThumbnailFixtures.pdf150k,
   },
   {
     id: "e20",
     name: "cursor-brand-assets...924 (1)",
     kind: "folder",
+    dateModified: "Aug 6, 4:22 PM",
+    size: "—",
     thumbnailSrc: entryThumbnailFixtures.folder,
   },
   {
     id: "e23",
     name: "SCR-20251209-noh.png",
     kind: "image",
+    dateModified: "Aug 5, 1:47 PM",
+    size: "384 KB",
     thumbnailSrc: entryThumbnailFixtures.image,
   },
   {
@@ -206,6 +235,8 @@ export const publicFiles: readonly FileEntry[] = files.map((file) => ({
   kind: file.kind,
   extension: null,
   secondaryLabel: file.meta ?? file.count ?? null,
+  dateModified: file.dateModified,
+  size: file.size,
   thumbnailSrc: file.thumbnailSrc,
 }))
 

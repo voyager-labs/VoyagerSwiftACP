@@ -182,14 +182,16 @@ public extension ContentTabState {
     static func withHomeTab() -> ContentTabState {
         let id = ContentTabID()
         return ContentTabState(
-            tabs: [ContentTabItem(
-                id: id,
-                page: .home,
-                anchor: .homeDefault,
-                isPinned: false,
-                title: "Home",
-                iconName: "house",
-            )],
+            tabs: [
+                ContentTabItem(
+                    id: id,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
             activeTabID: id,
             previousActiveTabID: nil,
             recentlyUsedTabIDs: [id],
@@ -220,59 +222,43 @@ public extension ContentTabState {
         )
     }
 
+    struct PinnedRecordRestoration: Equatable {
+        public let state: ContentTabState
+        public let didCompact: Bool
+        public let droppedCount: Int
+    }
+
     static func restoringPinnedRecords(
         from store: ContentTabPinnedRecordStore,
         maxTabs: Int = ContentTabConstants.maxTabs,
         isRestorableAnchor: (ContentTabPageAnchor) -> Bool = { _ in true },
-    ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
-        var seenIDs = Set<String>()
-        var validRecords: [(record: ContentTabPinnedRecord, newID: ContentTabID)] = []
-        var didCompact = false
-        var totalExcluded = 0
+    ) -> PinnedRecordRestoration {
+        let collection = collectRestorableRecords(
+            from: store,
+            maxTabs: maxTabs,
+            isRestorableAnchor: isRestorableAnchor,
+        )
 
-        for record in store.records {
-            if record.id.isEmpty {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard record.isPageAnchorCompatible else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard isRestorableAnchor(record.anchor) else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard seenIDs.insert(record.id).inserted else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            guard validRecords.count < maxTabs else {
-                didCompact = true
-                totalExcluded += 1
-                continue
-            }
-
-            let newID = ContentTabID(rawValue: record.id)
-            validRecords.append((record, newID))
+        guard !collection.records.isEmpty else {
+            return PinnedRecordRestoration(
+                state: .withHomeTab(),
+                didCompact: collection.didCompact,
+                droppedCount: collection.excludedCount,
+            )
         }
 
-        guard !validRecords.isEmpty else {
-            return (state: .withHomeTab(), didCompact: didCompact, droppedCount: totalExcluded)
-        }
+        return PinnedRecordRestoration(
+            state: makeRestoredState(from: collection),
+            didCompact: collection.didCompact,
+            droppedCount: collection.excludedCount,
+        )
+    }
 
+    private static func makeRestoredState(from collection: RestoredRecordCollection) -> ContentTabState {
         var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
         var tabs: IdentifiedArrayOf<ContentTabItem> = []
 
-        for (record, newID) in validRecords {
+        for (record, newID) in collection.records {
             let normalizedRecord = ContentTabPinnedRecord(
                 id: newID.rawValue,
                 page: record.page,
@@ -304,13 +290,54 @@ public extension ContentTabState {
             iconName: "house",
         ))
 
-        let state = ContentTabState(
+        return ContentTabState(
             tabs: tabs,
             activeTabID: homeID,
             pinnedRecords: pinnedRecords,
         )
+    }
 
-        return (state: state, didCompact: didCompact, droppedCount: totalExcluded)
+    private static func collectRestorableRecords(
+        from store: ContentTabPinnedRecordStore,
+        maxTabs: Int,
+        isRestorableAnchor: (ContentTabPageAnchor) -> Bool,
+    ) -> RestoredRecordCollection {
+        var collection = RestoredRecordCollection()
+        var seenIDs = Set<String>()
+        for record in store.records {
+            if record.id.isEmpty {
+                collection.didCompact = true
+                collection.excludedCount += 1
+                continue
+            }
+
+            guard record.isPageAnchorCompatible else {
+                collection.didCompact = true
+                collection.excludedCount += 1
+                continue
+            }
+
+            guard isRestorableAnchor(record.anchor) else {
+                collection.didCompact = true
+                collection.excludedCount += 1
+                continue
+            }
+
+            guard seenIDs.insert(record.id).inserted else {
+                collection.didCompact = true
+                collection.excludedCount += 1
+                continue
+            }
+
+            guard collection.records.count < maxTabs else {
+                collection.didCompact = true
+                collection.excludedCount += 1
+                continue
+            }
+
+            collection.records.append((record, ContentTabID(rawValue: record.id)))
+        }
+        return collection
     }
 }
 
@@ -354,4 +381,10 @@ extension ContentTabItem {
             iconName: iconName,
         )
     }
+}
+
+private struct RestoredRecordCollection {
+    var records: [(record: ContentTabPinnedRecord, newID: ContentTabID)] = []
+    var didCompact = false
+    var excludedCount = 0
 }

@@ -83,18 +83,6 @@ private actor SuspensionGate {
 final class SET007ProviderConnectionRowTests: XCTestCase {
     // MARK: - SET-007-codex_oauth_runtime
 
-    /// SET-007-codex_oauth_runtime: Codex client version is real and shared by request metadata.
-    /// Codex models requests must not use the placeholder client version.
-    /// - 검증 내용: client version is non-placeholder and usable as a request version.
-    /// - 사전 조건: VoyagerEntitiesAi model-list client is available to the package test.
-    /// - 기대 결과: version is non-empty and not `0.0.0`.
-    func testCodexClientVersion_isNonPlaceholder() {
-        let version = AiProviderModelListClient.codexClientVersion()
-
-        XCTAssertFalse(version.isEmpty)
-        XCTAssertNotEqual(version, "0.0.0")
-    }
-
     /// SET-007-codex_oauth_runtime: refresh failure keeps authentication and transport causes distinct.
     /// Refresh failures must distinguish expired credentials from transient service failures.
     /// - 검증 내용: missing/auth failures map to expired; transport/server failures map to network.
