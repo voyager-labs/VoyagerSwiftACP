@@ -8,41 +8,43 @@ struct FileManagerWindowMainContainerView: View {
     let keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator
 
     var body: some View {
-        ZStack {
-            MainContainerViewControllerRepresentable(
-                store: store,
-                isDark: isDark,
-                materialOverride: materialOverride,
-                keyCommandFocusCoordinator: keyCommandFocusCoordinator,
-            )
-
-            if let presentation = store.contentTabSwitcherPresentation {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("file-manager.content-tab-switcher.backdrop")
-                    .onTapGesture(perform: dismissContentTabSwitcher)
-
-                FileManagerContentTabSwitcherView(
-                    viewState: ContentTabSwitcherViewState.make(
-                        source: presentation.source,
-                        contentTabs: store.contentTabs,
-                    ),
-                    onDismiss: dismissContentTabSwitcher,
+        WithPerceptionTracking {
+            ZStack {
+                MainContainerViewControllerRepresentable(
+                    store: store,
+                    isDark: isDark,
+                    materialOverride: materialOverride,
+                    keyCommandFocusCoordinator: keyCommandFocusCoordinator,
                 )
-                .onExitCommand(perform: dismissContentTabSwitcher)
+
+                if let presentation = store.contentTabSwitcherPresentation {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .accessibilityIdentifier("file-manager.content-tab-switcher.backdrop")
+                        .onTapGesture(perform: dismissContentTabSwitcher)
+
+                    FileManagerContentTabSwitcherView(
+                        viewState: ContentTabSwitcherViewState.make(
+                            source: presentation.source,
+                            contentTabs: store.contentTabs,
+                        ),
+                        onDismiss: dismissContentTabSwitcher,
+                    )
+                    .onExitCommand(perform: dismissContentTabSwitcher)
+                }
             }
+            .alert(
+                "Tab Could Not Be Moved",
+                isPresented: contentTabMoveFailureIsPresented,
+                actions: {
+                    Button("OK", action: dismissContentTabMoveFailure)
+                },
+                message: {
+                    Text(contentTabMoveFailureMessage)
+                },
+            )
         }
-        .alert(
-            "Tab Could Not Be Moved",
-            isPresented: contentTabMoveFailureIsPresented,
-            actions: {
-                Button("OK", action: dismissContentTabMoveFailure)
-            },
-            message: {
-                Text(contentTabMoveFailureMessage)
-            },
-        )
     }
 
     private var contentTabMoveFailureIsPresented: Binding<Bool> {
