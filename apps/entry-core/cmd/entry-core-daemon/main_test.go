@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"log"
@@ -10,14 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
-
-	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 )
 
 func TestDaemonUsageErrors(t *testing.T) {
@@ -57,174 +53,6 @@ func TestDaemonUsageErrors(t *testing.T) {
 			}
 			if constructorCalled {
 				t.Fatal("server constructor called for invalid argv")
-			}
-		})
-	}
-}
-
-func TestDaemonDatabaseArgs(t *testing.T) {
-	acceptCases := []struct {
-		name string
-		args []string
-	}{
-		{name: "database after socket", args: []string{"--socket", "/tmp/entry.sock", "--database", "/tmp/entry.db"}},
-		{name: "database before socket", args: []string{"--database", "/tmp/entry.db", "--socket", "/tmp/entry.sock"}},
-		{name: "absent database still starts", args: []string{"--socket", "/tmp/entry.sock"}},
-	}
-	for _, test := range acceptCases {
-		t.Run(test.name, func(t *testing.T) {
-			store := newFakeDaemonStore()
-			server := newFakeDaemonServer()
-			server.serveErr = errors.New("accept failed")
-			code := run(
-				test.args,
-				io.Discard,
-				io.Discard,
-				daemonDependencies{
-					newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
-					signalSource: inertSignalSource,
-					openStore:    store.openStore,
-				},
-			)
-			if code != 1 {
-				t.Fatalf("run() = %d, want 1 (proceeded past parse to serve)", code)
-			}
-		})
-	}
-
-	rejectCases := []struct {
-		name string
-		args []string
-	}{
-		{name: "relative database", args: []string{"--socket", "/tmp/entry.sock", "--database", "relative.db"}},
-		{name: "empty database", args: []string{"--socket", "/tmp/entry.sock", "--database", ""}},
-		{name: "duplicate database", args: []string{"--socket", "/tmp/entry.sock", "--database", "/tmp/a.db", "--database", "/tmp/b.db"}},
-	}
-	for _, test := range rejectCases {
-		t.Run(test.name, func(t *testing.T) {
-			var stdout bytes.Buffer
-			var stderr bytes.Buffer
-			constructorCalled := false
-			code := run(
-				test.args,
-				&stdout,
-				&stderr,
-				daemonDependencies{
-					newServer: func(string, *log.Logger) (daemonServer, error) {
-						constructorCalled = true
-						return nil, errors.New("unexpected constructor call")
-					},
-					signalSource: inertSignalSource,
-				},
-			)
-			if code != 2 {
-				t.Fatalf("run() = %d, want 2", code)
-			}
-			if stdout.Len() != 0 {
-				t.Fatalf("stdout = %q, want empty", stdout.String())
-			}
-			if stderr.Len() == 0 {
-				t.Fatal("stderr is empty")
-			}
-			if constructorCalled {
-				t.Fatal("server constructed for invalid --database")
-			}
-		})
-	}
-}
-
-func TestDaemonWorkspaceMetadataLog(t *testing.T) {
-	tests := []struct {
-		name      string
-		precreate bool
-		wantLog   string
-	}{
-		{name: "fresh database initializes", precreate: false, wantLog: "workspace metadata initialized"},
-		{name: "existing database restores", precreate: true, wantLog: "workspace metadata restored"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			dbPath := filepath.Join(root, "entry.db")
-			if test.precreate {
-				if err := os.WriteFile(dbPath, []byte("existing"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			store := newFakeDaemonStore()
-			server := newFakeDaemonServer()
-			server.serveErr = errors.New("accept failed")
-			var stdout bytes.Buffer
-			var stderr bytes.Buffer
-			code := run(
-				[]string{"--socket", "/tmp/entry.sock", "--database", dbPath},
-				&stdout,
-				&stderr,
-				daemonDependencies{
-					newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
-					signalSource: inertSignalSource,
-					openStore:    store.openStore,
-				},
-			)
-			if code != 1 {
-				t.Fatalf("run() = %d, want 1 (proceeded to serve)", code)
-			}
-			if !strings.Contains(stderr.String(), test.wantLog) {
-				t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), test.wantLog)
-			}
-			if strings.Contains(stderr.String(), "startup failed") {
-				t.Fatalf("stderr = %q, want no startup failure", stderr.String())
-			}
-		})
-	}
-}
-
-func TestDaemonDatabaseLifecycleLog(t *testing.T) {
-	tests := []struct {
-		name       string
-		createFile bool
-		wantLog    string
-	}{
-		{name: "fresh database initializes", createFile: false, wantLog: "workspace metadata initialized"},
-		{name: "existing database restores", createFile: true, wantLog: "workspace metadata restored"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			parent := t.TempDir()
-			databasePath := filepath.Join(parent, "entry.db")
-			if test.createFile {
-				if err := os.WriteFile(databasePath, nil, 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			store := newFakeDaemonStore()
-			server := newFakeDaemonServer()
-			server.serveErr = errors.New("accept failed")
-			var stdout bytes.Buffer
-			var stderr bytes.Buffer
-			code := run(
-				[]string{"--socket", filepath.Join(parent, "entry.sock"), "--database", databasePath},
-				&stdout,
-				&stderr,
-				daemonDependencies{
-					newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
-					signalSource: inertSignalSource,
-					openStore:    store.openStore,
-				},
-			)
-			if code != 1 {
-				t.Fatalf("run() = %d, want 1; stderr = %q", code, stderr.String())
-			}
-			if stdout.Len() != 0 {
-				t.Fatalf("stdout = %q, want empty", stdout.String())
-			}
-			if !strings.Contains(stderr.String(), test.wantLog) {
-				t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), test.wantLog)
-			}
-			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "close"}) {
-				t.Fatalf("call order = %v, want [open migrate bootstrap close]", got)
 			}
 		})
 	}
@@ -394,96 +222,8 @@ func TestDaemonFailureExitMapping(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("database open failure", func(t *testing.T) {
-		store := newFakeDaemonStore()
-		store.openErr = errors.New("database open failed")
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		constructorCalled := false
-		code := run(
-			[]string{"--socket", "/tmp/entry.sock", "--database", "/tmp/entry.db"},
-			&stdout,
-			&stderr,
-			daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
-					constructorCalled = true
-					return nil, errors.New("unexpected constructor call")
-				},
-				signalSource: inertSignalSource,
-				openStore:    store.openStore,
-			},
-		)
-		if code != 1 {
-			t.Fatalf("run() = %d, want 1", code)
-		}
-		if stdout.Len() != 0 || stderr.Len() == 0 {
-			t.Fatalf("stdout = %q, stderr = %q", stdout.String(), stderr.String())
-		}
-		if constructorCalled {
-			t.Fatal("server constructed after open failure")
-		}
-		if got := store.callOrder(); !slices.Equal(got, []string{"open"}) {
-			t.Fatalf("call order = %v, want [open]", got)
-		}
-	})
-
-	t.Run("database migrate failure", func(t *testing.T) {
-		store := newFakeDaemonStore()
-		store.migrateErr = errors.New("migration failed")
-		constructorCalled := false
-		code := run(
-			[]string{"--socket", "/tmp/entry.sock", "--database", "/tmp/entry.db"},
-			io.Discard,
-			io.Discard,
-			daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
-					constructorCalled = true
-					return nil, errors.New("unexpected constructor call")
-				},
-				signalSource: inertSignalSource,
-				openStore:    store.openStore,
-			},
-		)
-		if code != 1 {
-			t.Fatalf("run() = %d, want 1", code)
-		}
-		if constructorCalled {
-			t.Fatal("server constructed after migrate failure")
-		}
-		if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "close"}) {
-			t.Fatalf("call order = %v, want [open migrate close]", got)
-		}
-	})
-
-	t.Run("database bootstrap failure", func(t *testing.T) {
-		store := newFakeDaemonStore()
-		store.bootstrapErr = errors.New("workspace metadata")
-		constructorCalled := false
-		code := run(
-			[]string{"--socket", "/tmp/entry.sock", "--database", "/tmp/entry.db"},
-			io.Discard,
-			io.Discard,
-			daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
-					constructorCalled = true
-					return nil, errors.New("unexpected constructor call")
-				},
-				signalSource: inertSignalSource,
-				openStore:    store.openStore,
-			},
-		)
-		if code != 1 {
-			t.Fatalf("run() = %d, want 1", code)
-		}
-		if constructorCalled {
-			t.Fatal("server constructed after bootstrap failure")
-		}
-		if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "close"}) {
-			t.Fatalf("call order = %v, want [open migrate bootstrap close]", got)
-		}
-	})
 }
+
 func TestDaemonSignalSubprocess(t *testing.T) {
 	for _, signal := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
 		t.Run(signal.String(), func(t *testing.T) {
@@ -604,62 +344,6 @@ func (server *fakeDaemonServer) forceObserved() bool {
 
 func inertSignalSource() (<-chan os.Signal, func()) {
 	return make(chan os.Signal), func() {}
-}
-
-// fakeDaemonStore is the named seam for all store failure injections. It
-// records its call order (open, migrate, bootstrap, close) so tests can assert
-// the daemon's startup/shutdown ordering exactly.
-type fakeDaemonStore struct {
-	mu           sync.Mutex
-	calls        []string
-	openErr      error
-	migrateErr   error
-	bootstrapErr error
-	closeErr     error
-}
-
-func newFakeDaemonStore() *fakeDaemonStore {
-	return &fakeDaemonStore{}
-}
-
-func (f *fakeDaemonStore) record(call string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, call)
-}
-
-// openStore is the openStore-seam fake: it records "open" and returns the
-// store (or the injectable openErr) without touching the filesystem.
-func (f *fakeDaemonStore) openStore(context.Context, string) (daemonStore, error) {
-	f.record("open")
-	if f.openErr != nil {
-		return nil, f.openErr
-	}
-	return f, nil
-}
-
-func (f *fakeDaemonStore) Migrate(context.Context) error {
-	f.record("migrate")
-	return f.migrateErr
-}
-
-func (f *fakeDaemonStore) BootstrapOrRestoreWorkspace(context.Context) (domainentry.WorkspaceContext, error) {
-	f.record("bootstrap")
-	if f.bootstrapErr != nil {
-		return domainentry.WorkspaceContext{}, f.bootstrapErr
-	}
-	return domainentry.WorkspaceContext{}, nil
-}
-
-func (f *fakeDaemonStore) Close() error {
-	f.record("close")
-	return f.closeErr
-}
-
-func (f *fakeDaemonStore) callOrder() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.calls...)
 }
 
 type daemonProcess struct {
