@@ -14,6 +14,11 @@ const config: StorybookConfig = {
       titlePrefix: "Settings",
       files: "**/*.stories.tsx",
     },
+    {
+      directory: "../packages/design-foundation/src",
+      titlePrefix: "Design Foundation",
+      files: "**/*.stories.tsx",
+    },
   ],
   addons: ["@storybook/addon-docs", "@storybook/addon-mcp"],
   framework: "@storybook/react-vite",

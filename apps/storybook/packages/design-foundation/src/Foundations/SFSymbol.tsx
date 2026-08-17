@@ -23,7 +23,7 @@ export const SFSymbol: FC<SFSymbolProps> = ({ name, size = 18, weight = 400 }) =
   }
 
   const style: CSSProperties = {
-    fontFamily: "var(--set-font-symbols)",
+    fontFamily: '"Voyager SF Pro Symbols", ".SF Symbols", "SF Pro Symbols"',
     fontSize: `${size}px`,
     fontWeight: weight,
     lineHeight: 1,

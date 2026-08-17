@@ -1,0 +1,52 @@
+/* 네이티브 스타일 재사용 탭 바 스타일. 제품 비종속(native-style) TabBar 컴포넌트용.
+ * 모든 색상은 --macos-* 토큰에서만 가져온다. 컴포넌트 레벨 원시 색상은 허용하지 않는다.
+ */
+
+/* 상단 중앙 탭 바: 아이콘 + 라벨. 약 37px (패딩 포함) + 하단 hairline 구분선. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  flex: none;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--macos-separator-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .tab-bar-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  color: var(--macos-secondary-label-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .tab-bar-item
+  .sf-symbol {
+  color: inherit;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .tab-bar-item.is-active {
+  color: var(--macos-control-accent-color);
+}
+
+/* 활성 탭 하단 3px accent 인디케이터. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .tab-bar-item.is-active::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: -6px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--macos-control-accent-color);
+}

@@ -13,7 +13,10 @@ import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
-const macosTokens = readFileSync(resolve(packageRoot, "src/styles/macos-tokens.css"), "utf8")
+const macosTokens = readFileSync(
+  resolve(packageRoot, "../design-foundation/src/styles/macos-tokens.css"),
+  "utf8",
+)
 const generatedMaterialMetadata = readFileSync(
   resolve(packageRoot, "src/Foundations/swiftui-material-metadata.generated.ts"),
   "utf8",
@@ -277,7 +280,10 @@ const tahoeColorBlock = macosTokens.match(
 assert.ok(fixedColorBlock, "Missing baseline-independent SwiftUI fixed colors")
 assert.ok(sequoiaColorBlock, "Missing Sequoia SwiftUI dynamic colors")
 assert.ok(tahoeColorBlock, "Missing Tahoe SwiftUI dynamic colors")
-assert.match(fixedColorBlock[1], /:root \[data-file-manager-illustration\]/)
+assert.match(
+  fixedColorBlock[1],
+  /:where\(\[data-design-foundation\], \[data-file-manager-illustration\], \[data-settings-illustration\]\)/,
+)
 assert.match(fixedColorBlock[1], /--swiftui-black:\s*#000000ff/)
 assert.match(fixedColorBlock[1], /--swiftui-white:\s*#ffffffff/)
 assert.match(fixedColorBlock[1], /--swiftui-clear:\s*#00000000/)
@@ -343,8 +349,12 @@ const fileManagerStories = entries.filter(
   (entry) => entry.type === "story" && entry.title?.startsWith("File Manager/"),
 )
 const fileManagerPaths = new Set(fileManagerStories.map((entry) => entry.importPath))
-const nonFileManagerStories = entries.filter(
-  (entry) => entry.type === "story" && !entry.title?.startsWith("File Manager/"),
+// 다중 서페이스 계약: File Manager, Settings, Design Foundation 세 화면이 공용 스토리북을 공유한다
+const KNOWN_SURFACE_PREFIXES = ["File Manager/", "Settings/", "Design Foundation/"]
+const nonKnownStories = entries.filter(
+  (entry) =>
+    entry.type === "story" &&
+    !KNOWN_SURFACE_PREFIXES.some((prefix) => entry.title?.startsWith(prefix)),
 )
 const designTokensStory = fileManagerStories.find(
   (entry) => entry.id === "file-manager-design-tokens--overview",
@@ -358,7 +368,7 @@ assert.equal(
 )
 assert.ok(fileManagerStories.length >= 245)
 assert.ok(fileManagerPaths.size >= 51)
-assert.equal(nonFileManagerStories.length, 0)
+assert.equal(nonKnownStories.length, 0, "알려지지 않은 서페이스 프리픽스의 스토리가 존재합니다")
 for (const storyName of ["Centered Empty", "Centered Unconnected", "Connection Error", "Rebind"]) {
   assert.ok(
     fileManagerStories.some(

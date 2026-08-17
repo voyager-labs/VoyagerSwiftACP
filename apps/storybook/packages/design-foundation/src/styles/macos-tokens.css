@@ -3,7 +3,7 @@
  * Use #RRGGBBAA for alpha so Swift can mirror values as Color(hex: 0xRRGGBB, alpha: A).
  */
 
-[data-settings-illustration] {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   color-scheme: light;
 
   --macos-label-color: #000;
@@ -174,7 +174,8 @@
   --macos-window-frame-color: var(--macos-window-background-color);
 }
 
-:root[data-voyager-visual-baseline="sequoia"] [data-settings-illustration] {
+:root[data-voyager-visual-baseline="sequoia"]
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --macos-unemphasized-selected-text-background-color: #3c3c432e;
   --macos-separator-color: #3c3c434a;
   --macos-separator-strong-color: #2d2d3266;
@@ -218,7 +219,12 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-voyager-color-scheme="light"]) [data-settings-illustration] {
+  :root:not([data-voyager-color-scheme="light"])
+    :where(
+      [data-design-foundation],
+      [data-file-manager-illustration],
+      [data-settings-illustration]
+    ) {
     color-scheme: dark;
     --macos-label-color: #fff;
     --macos-secondary-label-color: #ebebf599;
@@ -299,7 +305,8 @@
   }
 }
 
-:root[data-voyager-color-scheme="dark"] [data-settings-illustration] {
+:root[data-voyager-color-scheme="dark"]
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --macos-entry-list-alternate-row-background-color: rgb(255 255 255 / 3.5%);
   color-scheme: dark;
   --macos-label-color: #fff;
@@ -381,7 +388,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root[data-voyager-visual-baseline="sequoia"]:not([data-voyager-color-scheme="light"])
-    [data-settings-illustration] {
+    :where(
+      [data-design-foundation],
+      [data-file-manager-illustration],
+      [data-settings-illustration]
+    ) {
     --macos-unemphasized-selected-text-background-color: #ebebf52e;
     --macos-separator-color: #54545899;
     --macos-separator-strong-color: #545458b3;
@@ -425,7 +436,7 @@
 }
 
 :root[data-voyager-color-scheme="dark"][data-voyager-visual-baseline="sequoia"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --macos-unemphasized-selected-text-background-color: #ebebf52e;
   --macos-separator-color: #54545899;
   --macos-separator-strong-color: #545458b3;
@@ -469,7 +480,8 @@
 
 /* SWIFTUI-SYSTEM-COLORS:sequoia:BEGIN */
 /* SwiftUI runtime: macOS 15.6.1, Color.resolve(in:), sRGB */
-:root[data-voyager-visual-baseline="sequoia"] [data-settings-illustration] {
+:root[data-voyager-visual-baseline="sequoia"]
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #000000d8;
   --swiftui-secondary: #0000007f;
   --swiftui-accent-color: #007affff;
@@ -507,7 +519,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root[data-voyager-visual-baseline="sequoia"]:not([data-voyager-color-scheme="light"])
-    [data-settings-illustration] {
+    :where(
+      [data-design-foundation],
+      [data-file-manager-illustration],
+      [data-settings-illustration]
+    ) {
     --swiftui-primary: #ffffffd8;
     --swiftui-secondary: #ffffff8c;
     --swiftui-accent-color: #007affff;
@@ -528,7 +544,7 @@
 }
 
 :root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme="dark"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #ffffffd8;
   --swiftui-secondary: #ffffff8c;
   --swiftui-accent-color: #007affff;
@@ -548,7 +564,7 @@
 }
 
 :root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme-contrast="increased"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #000000ff;
   --swiftui-secondary: #000000c1;
   --swiftui-accent-color: #0040ddff;
@@ -571,7 +587,11 @@
   :root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme-contrast="increased"]:not(
       [data-voyager-color-scheme="light"]
     )
-    [data-settings-illustration] {
+    :where(
+      [data-design-foundation],
+      [data-file-manager-illustration],
+      [data-settings-illustration]
+    ) {
     --swiftui-primary: #ffffffff;
     --swiftui-secondary: #ffffffb2;
     --swiftui-accent-color: #1774daff;
@@ -592,7 +612,7 @@
 }
 
 :root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme="dark"][data-voyager-color-scheme-contrast="increased"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #ffffffff;
   --swiftui-secondary: #ffffffb2;
   --swiftui-accent-color: #1774daff;
@@ -614,7 +634,8 @@
 
 /* SWIFTUI-FIXED-COLORS:BEGIN */
 /* SwiftUI fixed colors: baseline-independent constants */
-:root [data-settings-illustration] {
+:root
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-black: #000000ff;
   --swiftui-white: #ffffffff;
   --swiftui-clear: #00000000;
@@ -623,7 +644,8 @@
 
 /* SWIFTUI-SYSTEM-COLORS:tahoe:BEGIN */
 /* SwiftUI runtime: macOS 26.1.0, Color.resolve(in:), sRGB */
-:root[data-voyager-visual-baseline="tahoe"] [data-settings-illustration] {
+:root[data-voyager-visual-baseline="tahoe"]
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #000000d8;
   --swiftui-secondary: #0000007f;
   --swiftui-accent-color: #0088ffff;
@@ -661,7 +683,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root[data-voyager-visual-baseline="tahoe"]:not([data-voyager-color-scheme="light"])
-    [data-settings-illustration] {
+    :where(
+      [data-design-foundation],
+      [data-file-manager-illustration],
+      [data-settings-illustration]
+    ) {
     --swiftui-primary: #ffffffd8;
     --swiftui-secondary: #ffffff8c;
     --swiftui-accent-color: #0091ffff;
@@ -682,7 +708,7 @@
 }
 
 :root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme="dark"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #ffffffd8;
   --swiftui-secondary: #ffffff8c;
   --swiftui-accent-color: #0091ffff;
@@ -702,7 +728,7 @@
 }
 
 :root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme-contrast="increased"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #000000ff;
   --swiftui-secondary: #000000c1;
   --swiftui-accent-color: #1e6ef4ff;
@@ -725,7 +751,11 @@
   :root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme-contrast="increased"]:not(
       [data-voyager-color-scheme="light"]
     )
-    [data-settings-illustration] {
+    :where(
+      [data-design-foundation],
+      [data-file-manager-illustration],
+      [data-settings-illustration]
+    ) {
     --swiftui-primary: #ffffffff;
     --swiftui-secondary: #ffffffb2;
     --swiftui-accent-color: #5cb8ffff;
@@ -746,7 +776,7 @@
 }
 
 :root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme="dark"][data-voyager-color-scheme-contrast="increased"]
-  [data-settings-illustration] {
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #ffffffff;
   --swiftui-secondary: #ffffffb2;
   --swiftui-accent-color: #5cb8ffff;

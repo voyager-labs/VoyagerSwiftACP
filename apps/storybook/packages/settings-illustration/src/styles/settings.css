@@ -3,89 +3,6 @@
  * 컴포넌트 레벨 원시 색상은 허용하지 않는다.
  */
 
-/* SF Pro 폰트 @font-face. fonts/sf-pro/ 에서 제공되는 번들 폰트를 로드한다.
- * @font-face 블록은 [data-settings-illustration] 범위 밖에 있어야 한다. */
-@font-face {
-  font-family: "Voyager SF Pro Text";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-  src: local("SF Pro Text"), local("SFProText-Regular"),
-    url("/fonts/sf-pro/SF-Pro-Text-Regular.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Text";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 500;
-  src: local("SF Pro Text Medium"), local("SFProText-Medium"),
-    url("/fonts/sf-pro/SF-Pro-Text-Medium.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Text";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 600;
-  src: local("SF Pro Text Semibold"), local("SFProText-Semibold"),
-    url("/fonts/sf-pro/SF-Pro-Text-Semibold.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Text";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 700;
-  src: local("SF Pro Text Bold"), local("SFProText-Bold"), url("/fonts/sf-pro/SF-Pro-Text-Bold.otf")
-    format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Display";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-  src: local("SF Pro Display"), local("SFProDisplay-Regular"),
-    url("/fonts/sf-pro/SF-Pro-Display-Regular.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Display";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 500;
-  src: local("SF Pro Display Medium"), local("SFProDisplay-Medium"),
-    url("/fonts/sf-pro/SF-Pro-Display-Medium.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Display";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 600;
-  src: local("SF Pro Display Semibold"), local("SFProDisplay-Semibold"),
-    url("/fonts/sf-pro/SF-Pro-Display-Semibold.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Display";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 700;
-  src: local("SF Pro Display Bold"), local("SFProDisplay-Bold"),
-    url("/fonts/sf-pro/SF-Pro-Display-Bold.otf") format("opentype");
-}
-
-@font-face {
-  font-family: "Voyager SF Pro Symbols";
-  font-display: swap;
-  font-style: normal;
-  font-weight: 1 1000;
-  src: local(".SF Symbols"), local("SF Pro Symbols"), url("/fonts/sf-pro/SF-Pro-Symbols.otf")
-    format("opentype");
-}
-
 [data-settings-illustration] {
   /* --macos-* 토큰에 대한 Settings 전용 별칭. 컴포넌트는 이 별칭만 참조한다. */
   --set-canvas: var(--macos-under-page-background-color);
@@ -119,7 +36,6 @@
     BlinkMacSystemFont, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
   --set-font-display: "Voyager SF Pro Display", "Voyager SF Pro Text", -apple-system,
     BlinkMacSystemFont, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
-  --set-font-symbols: "Voyager SF Pro Symbols", ".SF Symbols", "SF Pro Symbols";
 
   /* Settings 특화 기하 치수. */
   --set-titlebar-height: 52px;
@@ -213,7 +129,7 @@
   color: var(--set-text-secondary);
 }
 
-/* 상단 탭 바 스타일은 재사용 컴포넌트인 TabBar로 이동: styles/tab-bar.css 참조. */
+/* 상단 탭 바 스타일은 재사용 컴포넌트인 TabBar가 제공한다. */
 
 /* 탭 콘텐츠 pane. pane 내부 스크롤은 공유 .settings-form이 담당한다. */
 [data-settings-illustration] .settings-pane {

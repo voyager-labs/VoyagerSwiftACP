@@ -27,7 +27,8 @@ import type {
   FileManagerIllustrationProps,
   SidebarTabItem,
 } from "./model/types"
-import "./styles/macos-tokens.css"
+import "@voyager-labs/design-foundation/tokens.css"
+import "@voyager-labs/design-foundation/fonts.css"
 import "./styles/file-manager.css"
 import "./styles/atoms.css"
 import "./styles/form-controls.css"

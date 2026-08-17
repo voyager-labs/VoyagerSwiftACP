@@ -11,18 +11,18 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** [data-settings-illustration] 서피스 위에 light 배경 + primary 텍스트 색으로 심볼을 배치한다. */
+/** [data-design-foundation] 서피스 위에 light 배경 + primary 텍스트 색으로 심볼을 배치한다. */
 function SymbolSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
-      data-settings-illustration
+      data-design-foundation
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         height: "100vh",
-        background: "var(--set-canvas)",
-        color: "var(--set-text-primary)",
+        background: "var(--macos-under-page-background-color)",
+        color: "var(--macos-label-color)",
       }}
     >
       {children}
@@ -30,7 +30,7 @@ function SymbolSurface({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** Settings 탭에서 쓰는 심볼 카탈로그 그리드. */
+/** Foundation 탭에서 쓰는 심볼 카탈로그 그리드. */
 const SettingsSymbolGrid: FC = () => {
   const names = ["gear", "paintbrush", "sparkle"]
   return (
@@ -40,8 +40,8 @@ const SettingsSymbolGrid: FC = () => {
         gridTemplateColumns: "repeat(3, auto)",
         gap: "24px",
         padding: "24px",
-        background: "var(--set-window-bg)",
-        border: "1px solid var(--set-separator)",
+        background: "var(--macos-window-background-color)",
+        border: "1px solid var(--macos-separator-color)",
         borderRadius: "10px",
       }}
     >
@@ -59,8 +59,9 @@ const SettingsSymbolGrid: FC = () => {
           <span
             style={{
               fontSize: "12px",
-              fontFamily: "var(--set-font-text)",
-              color: "var(--set-text-secondary)",
+              fontFamily:
+                '"Voyager SF Pro Text", "Voyager SF Pro Display", -apple-system, sans-serif',
+              color: "var(--macos-secondary-label-color)",
             }}
           >
             {name}

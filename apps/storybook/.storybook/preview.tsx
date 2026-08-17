@@ -1,5 +1,6 @@
 import React from "react"
-import "../packages/file-manager-illustration/src/styles/macos-tokens.css"
+import "../packages/design-foundation/src/styles/macos-tokens.css"
+import "../packages/design-foundation/src/styles/fonts.css"
 import "../packages/file-manager-illustration/src/styles/file-manager.css"
 import "../packages/file-manager-illustration/src/styles/atoms.css"
 import "../packages/file-manager-illustration/src/styles/form-controls.css"

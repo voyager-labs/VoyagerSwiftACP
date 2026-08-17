@@ -23,17 +23,17 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** [data-settings-illustration] 서피스 위에 light 배경으로 TabBar를 배치한다. */
+/** [data-design-foundation] 서피스 위에 light 배경으로 TabBar를 배치한다. */
 function TabBarSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
-      data-settings-illustration
+      data-design-foundation
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         height: "100vh",
-        background: "var(--set-canvas)",
+        background: "var(--macos-under-page-background-color)",
       }}
     >
       {children}
