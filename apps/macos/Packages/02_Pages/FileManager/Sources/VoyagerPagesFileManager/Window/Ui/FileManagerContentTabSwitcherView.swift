@@ -70,6 +70,7 @@ struct FileManagerContentTabSwitcherView: View {
             ZStack {
                 switcherSurface(availableWidth: geometry.size.width)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .focusable()

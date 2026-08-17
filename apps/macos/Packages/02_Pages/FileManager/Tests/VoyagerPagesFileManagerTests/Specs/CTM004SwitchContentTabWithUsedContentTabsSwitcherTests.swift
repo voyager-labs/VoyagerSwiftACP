@@ -385,7 +385,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
 
     /// CTM-004-dismiss_content_tab_switcher_without_mutation: mounted overlay의 dismiss wiring이 Content Tab을 보존한다.
     /// package에서 검증 가능한 reducer action과 whole-window source wiring이 같은 view dismiss 경로를 사용하는지 고정한다.
-    /// - 검증 내용: switcher shell focus 확보, Escape dismiss action, semantic snapshot
+    /// - 검증 내용: switcher shell 중앙 배치와 focus 확보, Escape dismiss action, semantic snapshot
     /// - 사전 조건: two-tab window에 presentation을 표시한 상태와 canonical main-container source
     /// - 기대 결과: overlay dismiss 후 presentation만 nil이 되고 Content Tab semantic snapshot은 byte-equivalent이다.
     @MainActor
@@ -406,6 +406,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         XCTAssertTrue(switcherSource.contains(".focused($isSwitcherFocused)"))
         XCTAssertTrue(switcherSource.contains(".onAppear { isSwitcherFocused = true }"))
         XCTAssertTrue(switcherSource.contains(".onExitCommand(perform: onDismiss)"))
+        XCTAssertTrue(switcherSource.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)"))
 
         let initialState = makeSwitcherWindowState(prefix: "mounted")
         let snapshot = ContentTabSemanticSnapshot(initialState)
