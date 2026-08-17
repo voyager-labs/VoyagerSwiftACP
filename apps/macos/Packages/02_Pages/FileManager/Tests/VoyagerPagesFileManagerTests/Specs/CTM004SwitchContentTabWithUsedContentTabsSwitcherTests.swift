@@ -10,7 +10,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
 
     /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 최근 사용한 live tab만 MRU 순서로 표시한다.
     /// 한 번도 사용하지 않은 열린 탭이 최근 사용 전환기에 섞이지 않는 대표 경로를 검증한다.
-    /// - 검증 내용: live MRU 순서, non-MRU 제외, 최대 열 개, 후보 수별 균형 layout contract, 입력 불변성
+    /// - 검증 내용: live MRU 순서, non-MRU 제외, 최대 열 개, 후보 수별 균형 layout, 최소 창 폭 대응, 입력 불변성
     /// - 사전 조건: live `[A, B, C, D]`와 열두 개 MRU 후보를 각각 projection한다.
     /// - 기대 결과: non-MRU는 제외되고 긴 MRU는 첫 열 개만 1~5열의 한 행 또는 균형 잡힌 두 행에 표시한다.
     func testProjectsOnlyLiveRecentlyUsedTabsWithoutMutation() throws {
@@ -24,8 +24,6 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
 
         XCTAssertEqual(projectedCandidates.map(\.id), ids("C", "B"))
         XCTAssertFalse(projectedCandidates.contains(where: \.isCurrent))
-        XCTAssertEqual(projectedCandidates.map(\.id.rawValue), ["C", "B"])
-        print("PROJECTOR_OBSERVABLE \(projectedCandidates.map(\.id.rawValue).joined(separator: ","))")
 
         let rawIDs = (1 ... 12).map { String(format: "T%02d", $0) }
         let capped = try candidates(projecting: makeState(
@@ -33,12 +31,21 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         ))
         XCTAssertEqual(capped.map(\.id.rawValue), Array(rawIDs.prefix(10)))
         XCTAssertEqual(ContentTabSwitcherProjection.maximumCandidateCount, 10)
-        XCTAssertEqual(ContentTabSwitcherLayout.maximumColumnCount, 5)
-        XCTAssertEqual(ContentTabSwitcherLayout.maximumRowCount, 2)
+        XCTAssertEqual([ContentTabSwitcherLayout.maximumColumnCount, ContentTabSwitcherLayout.maximumRowCount], [5, 2])
         XCTAssertEqual(
             (1 ... 10).map(ContentTabSwitcherLayout.rowCounts(for:)),
             [[1], [2], [3], [4], [5], [3, 3], [4, 3], [4, 4], [5, 4], [5, 5]],
         )
+        let minimumWindowGeometry = ContentTabSwitcherLayout.constrainedGeometry(
+            candidateCount: 10,
+            availableWidth: 600,
+        )
+        XCTAssertEqual(minimumWindowGeometry, .init(surfaceWidth: 568, cardWidth: 100.8))
+        let defaultWindowGeometry = ContentTabSwitcherLayout.constrainedGeometry(
+            candidateCount: 10,
+            availableWidth: 960,
+        )
+        XCTAssertEqual(defaultWindowGeometry, .init(surfaceWidth: 704, cardWidth: 128))
     }
 
     /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: stale·missing·duplicate MRU를 제거하고 fallback을 적용한다.
