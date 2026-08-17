@@ -22,10 +22,11 @@ Use this as the main entry point for Voyager macOS TCA/FSD work. The parent `voy
 ## Workflow
 
 1. Classify the task shape with `../AGENTS.md` and this orchestrator workflow.
-2. Read `references/skill-map.md` to choose role entry points.
-3. Read `references/orchestration-workflow.md` for sequencing and handoff rules.
-4. Keep source-of-truth details in the owning role's `references/` directory; do not copy long rules into role files.
-5. After implementation or review, verify role structure with `references/structure-validation.md`.
+2. Before designing automated coverage, identify its canonical product spec or flow owner. If neither exists, do not create a test file; update the owner document first.
+3. Read `references/skill-map.md` to choose role entry points.
+4. Read `references/orchestration-workflow.md` for sequencing and handoff rules.
+5. Keep source-of-truth details in the owning role's `references/` directory; do not copy long rules into role files.
+6. After implementation or review, verify role structure with `references/structure-validation.md`.
 
 ## Not for
 

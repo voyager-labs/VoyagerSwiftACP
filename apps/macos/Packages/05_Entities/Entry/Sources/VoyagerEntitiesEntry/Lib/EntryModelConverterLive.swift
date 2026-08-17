@@ -8,12 +8,74 @@ public enum EntryModelConverterLive {
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> EntryModel? {
-        var isDirectory: ObjCBool = false
-        guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
+        guard var entry = convertURLToCoreEntry(itemURL, entryLoadingClient: entryLoadingClient) else {
             return nil
         }
+        for probe in EntryMetadataProbe.allCases {
+            if let patch = metadataPatch(
+                for: entry,
+                probe: probe,
+                entryLoadingClient: entryLoadingClient,
+                workspaceClient: workspaceClient,
+            ) {
+                entry = entry.applying(patch)
+            }
+        }
+        return entry
+    }
 
-        let resourceValues = try? itemURL.resourceValues(forKeys: [
+    nonisolated public static func convertURLToCoreEntry(
+        _ itemURL: URL,
+        entryLoadingClient: EntryLoadingClient,
+    ) -> EntryModel? {
+        convertURLToCoreEntry(itemURL, lexicalURL: itemURL, entryLoadingClient: entryLoadingClient)
+    }
+
+    nonisolated public static func metadataPatch(
+        for entry: EntryModel,
+        probe: EntryMetadataProbe,
+        entryLoadingClient: EntryLoadingClient,
+        workspaceClient: WorkspaceClient,
+        favoriteTags: [Tag] = [],
+        sourceURL: URL? = nil,
+    ) -> EntryMetadataPatch? {
+        let url = sourceURL ?? URL(fileURLWithPath: entry.fullPath)
+        switch probe {
+        case .spotlight:
+            let metadata = entryLoadingClient.getItemMetadata(url, entry.isFolder, workspaceClient)
+            return .spotlight(
+                id: entry.id,
+                kind: metadata.kind,
+                creatorApplication: metadata.creatorApplication,
+                lastOpenedDate: metadata.lastUsedDate,
+            )
+        case .tags:
+            let patch = EntryMetadataPatch.tags(id: entry.id, tags: entryTags(from: url))
+            let normalizedEntry = EntryModelTagColorNormalizer.normalize(
+                entry.applying(patch),
+                favoriteTags: favoriteTags,
+            )
+            return .tags(id: entry.id, tags: normalizedEntry.facets.tags)
+        case .supplementaryMetadata:
+            return .supplementaryMetadata(
+                id: entry.id,
+                metadata: entrySupplementaryMetadata(
+                    url: url,
+                    isDirectory: entry.isFolder,
+                    entryLoadingClient: entryLoadingClient,
+                ),
+            )
+        }
+    }
+
+    nonisolated static func convertURLToCoreEntry(
+        _ sourceURL: URL,
+        lexicalURL: URL,
+        entryLoadingClient: EntryLoadingClient,
+    ) -> EntryModel? {
+        var isDirectory: ObjCBool = false
+        guard entryLoadingClient.fileExistsAtPath(sourceURL.path, &isDirectory) else { return nil }
+        let resourceValues = try? sourceURL.resourceValues(forKeys: [
             .nameKey,
             .fileSizeKey,
             .contentModificationDateKey,
@@ -23,41 +85,35 @@ public enum EntryModelConverterLive {
             .isHiddenKey,
         ])
 
-        let name = resourceValues?.name ?? itemURL.lastPathComponent
+        let name = resourceValues?.name ?? lexicalURL.lastPathComponent
         let size = Int64(resourceValues?.fileSize ?? 0)
         let modifiedDate = resourceValues?.contentModificationDate ?? Date()
         let createdDate = resourceValues?.creationDate ?? Date()
         let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
 
         let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
-
-        let metadata = entryLoadingClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
-        let lastOpenedDate = metadata.lastUsedDate
-        let tags = entryTags(from: itemURL)
-
-        let supplementaryMetadata = entrySupplementaryMetadata(
-            url: itemURL,
-            isDirectory: isDirectory.boolValue,
-            entryLoadingClient: entryLoadingClient,
-        )
+        let isPackage = isDirectory.boolValue && entryLoadingClient.isPackageDirectory(sourceURL)
 
         return EntryModel(
             name: name,
-            fullPath: itemURL.path,
+            fullPath: lexicalURL.path,
             isFolder: isDirectory.boolValue,
             isHidden: isHidden,
             size: size,
             modifiedDate: modifiedDate,
-            fileExtension: itemURL.pathExtension,
+            fileExtension: lexicalURL.pathExtension,
             facets: EntryFacets(
                 createdDate: createdDate,
                 addedDate: addedDate,
-                lastOpenedDate: lastOpenedDate,
-                kind: metadata.kind,
-                creatorApplication: metadata.creatorApplication,
-                tags: tags,
-                supplementaryMetadata: supplementaryMetadata,
+                lastOpenedDate: nil,
+                kind: isDirectory.boolValue ? "Folder" : lexicalURL.pathExtension.isEmpty ? "File" : lexicalURL
+                    .pathExtension
+                    .uppercased() + " File",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
             ),
+            isPackage: isPackage,
         )
     }
 

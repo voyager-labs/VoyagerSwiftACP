@@ -351,27 +351,25 @@ private extension BuiltInCollectionClient {
 
     static func persistedConditions(from conditions: [Condition]) throws -> [CollectionCondition] {
         try conditions.map { condition in
-            guard condition.isActive,
-                  let operatorCode = condition.operatorCode,
-                  let arity = condition.operatorValueArity
+            guard condition.isExecutionReady,
+                  let operation = condition.operation
             else {
                 throw EnsureError.invalidCanonicalCondition
             }
-            if arity == 0 {
+            if operation.valueContract.count == .fixed(0) {
                 return CollectionCondition(
-                    propertyKey: condition.propertyKey,
-                    operatorCode: operatorCode,
+                    propertyKey: condition.property.key,
+                    operatorCode: operation.code,
                 )
             }
-            guard let values = condition.values,
-                  values.count >= arity,
-                  let encodedValue = ConditionValueEncoder.encode(condition: condition, values: values)
+            guard condition.values != nil,
+                  let encodedValue = ConditionCodec.encode(condition: condition)
             else {
                 throw EnsureError.invalidCanonicalCondition
             }
             return CollectionCondition(
-                propertyKey: condition.propertyKey,
-                operatorCode: operatorCode,
+                propertyKey: condition.property.key,
+                operatorCode: operation.code,
                 value: encodedValue,
             )
         }

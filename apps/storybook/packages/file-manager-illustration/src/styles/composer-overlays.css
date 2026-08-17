@@ -1,0 +1,818 @@
+[data-file-manager-illustration] .collection-composer-property-picker,
+[data-file-manager-illustration] .collection-composer-operator-picker,
+[data-file-manager-illustration] .collection-composer-value-picker,
+[data-file-manager-illustration] .collection-composer-scope-picker {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 6px);
+  left: 16px;
+  overflow: hidden;
+  border: 1px solid var(--fm-window-border);
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-elevated);
+  box-shadow: var(--fm-shadow-card);
+  backdrop-filter: var(--fm-backdrop-blur);
+  color: var(--fm-text-primary);
+  margin: 0;
+  padding: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-property-picker {
+  display: grid;
+  width: 200px;
+  max-height: 320px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+/* 네이티브 duplicateWarning: 노란 삼각형 + popover search 배경 + 12/6 패딩 */
+[data-file-manager-illustration] .collection-composer-duplicate-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  border-bottom: 1px solid var(--fm-separator);
+  background: var(--fm-composer-popover-search-background);
+  padding: var(--fm-space-3) 12px;
+  font-size: var(--fm-font-size-body);
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > .sf-symbol {
+  color: var(--fm-composer-warning);
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-secondary);
+  padding: 0;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > button:hover {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-duplicate-warning > button:focus-visible {
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+  border-radius: 4px;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-property-picker
+  .collection-composer-picker-list {
+  min-height: 0;
+  overflow: auto;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-property-picker
+  .collection-composer-picker-list
+  > button,
+[data-file-manager-illustration]
+  .collection-composer-property-picker
+  .collection-composer-picker-back {
+  font-size: 13px;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-property-picker
+  .collection-composer-picker-list
+  > button {
+  padding: var(--fm-space-4) 12px;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-operator-picker
+  .collection-composer-picker-list
+  button {
+  padding: var(--fm-space-4) 10px;
+  font-size: 12px;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-back {
+  display: flex;
+  min-height: 26px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  align-items: center;
+  gap: var(--fm-space-4);
+  background: transparent;
+  padding: var(--fm-space-3) var(--fm-space-4);
+  color: var(--macos-control-accent-color);
+  font: inherit;
+  font-weight: 600;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-back:hover {
+  background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-separator {
+  height: 1px;
+  margin: 5px 10px;
+  background: var(--fm-separator);
+}
+
+[data-file-manager-illustration] .collection-composer-category-row {
+  display: flex;
+  min-height: 26px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  align-items: center;
+  gap: var(--fm-space-4);
+  background: transparent;
+  padding: var(--fm-space-3) var(--fm-space-4);
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: var(--fm-font-size-body);
+  outline: 0;
+  text-align: left;
+}
+
+[data-file-manager-illustration] .collection-composer-category-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+[data-file-manager-illustration] .collection-composer-category-row small {
+  color: var(--fm-text-secondary);
+  font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-category-row:hover {
+  background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-picker {
+  width: 420px;
+  max-height: 520px;
+}
+
+[data-file-manager-illustration] .collection-composer-operator-picker {
+  width: 180px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-picker {
+  width: 240px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-picker.boolean {
+  width: 150px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-picker.date {
+  width: 163px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-picker.list {
+  width: 260px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: var(--fm-line-body);
+}
+
+[data-file-manager-illustration] .collection-composer-value-form label,
+[data-file-manager-illustration] .collection-composer-value-fields {
+  display: grid;
+  gap: 4px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form label > span,
+[data-file-manager-illustration] .collection-composer-value-form small {
+  color: var(--fm-text-secondary);
+  font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form input,
+[data-file-manager-illustration] .collection-composer-value-form select {
+  min-width: 0;
+  min-height: 22px;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-control);
+  color: var(--fm-text-primary);
+  padding: 3px 6px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form input:focus-visible,
+[data-file-manager-illustration] .collection-composer-value-form select:focus-visible {
+  border-color: var(--fm-selection-label);
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-value-form > button {
+  min-height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-composer-accent);
+  color: var(--fm-composer-accent-label);
+  font: inherit;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form > button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fm-composer-accent) 90%, white);
+}
+
+[data-file-manager-illustration] .collection-composer-value-form > button:active {
+  background: var(--fm-composer-accent);
+  transform: translateY(1px);
+}
+
+[data-file-manager-illustration] .collection-composer-token-suggestions button {
+  min-height: 24px;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  background: transparent;
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: var(--fm-font-size-body);
+  outline: 0;
+  text-align: left;
+  padding: 4px 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-token-suggestions button:hover {
+  background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-value-form > button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-value-error {
+  color: var(--fm-composer-error);
+  font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-value-form input.invalid,
+[data-file-manager-illustration] .collection-composer-value-form select.invalid,
+[data-file-manager-illustration] .collection-composer-token-field.invalid {
+  border-color: var(--fm-composer-error);
+}
+
+[data-file-manager-illustration] .collection-composer-token-field {
+  display: flex;
+  min-height: 32px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-sm);
+  padding: 6px 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-token-field button {
+  border: 0;
+  border-radius: 999px;
+  background: var(--fm-composer-hover-background);
+  color: var(--fm-text-primary);
+  padding: 4px 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-token-field input {
+  min-width: 70px;
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-token-field input:focus-visible {
+  border: 0;
+  box-shadow: none;
+}
+
+[data-file-manager-illustration] .collection-composer-token-field:focus-within {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-token-field button:hover {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-token-suggestions {
+  display: grid;
+  max-height: 164px;
+  gap: 2px;
+  overflow: auto;
+}
+
+[data-file-manager-illustration] .collection-composer-token-suggestions-empty {
+  padding: 8px 2px;
+  color: var(--fm-text-secondary);
+  font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-relative-custom {
+  display: grid;
+  grid-template-columns: 53px 82px;
+  gap: 4px;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search {
+  display: flex;
+  min-height: 37px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--fm-separator);
+  background: var(--fm-composer-popover-search-background);
+  padding: 8px 12px;
+  box-sizing: border-box;
+  color: var(--fm-text-secondary);
+  font-size: 13px;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: 13px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search input::placeholder {
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search input:focus-visible {
+  outline: 0;
+  box-shadow: 0 1px 0 var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration]
+  .collection-composer-picker-search
+  input::-webkit-search-cancel-button {
+  display: none;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search-clear {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fm-text-secondary);
+  padding: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search-clear:hover {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-search-clear:focus-visible {
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-empty,
+[data-file-manager-illustration] .collection-composer-scope-empty {
+  padding: 16px 12px;
+  color: var(--fm-text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 네이티브 scopeSectionHeader: 10pt medium secondary(0.85), 수평 2 패딩 */
+[data-file-manager-illustration] .collection-composer-scope-section {
+  display: grid;
+  gap: var(--fm-space-2);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-section-header {
+  padding: 0 2px;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-section-divider {
+  height: 1px;
+  margin: var(--fm-space-3) 2px;
+  background: var(--fm-separator);
+  opacity: 0.8;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results {
+  display: grid;
+  gap: 2px;
+  padding-block: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results strong {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+  font-weight: 600;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results span {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-no-results small {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list,
+[data-file-manager-illustration] .collection-composer-scope-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-2);
+  padding: 10px 12px;
+}
+
+/* 네이티브 ScopeTreeRowView: 행 컨테이너 10/8 패딩 + 6 반경 + 상태별 배경/보더 */
+[data-file-manager-illustration] .collection-composer-scope-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  border: 0.5px solid var(--fm-composer-chip-item-border);
+  border-radius: 6px;
+  background: var(--fm-composer-chip-item-background);
+  padding: var(--fm-space-4) 10px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.included {
+  border-color: color-mix(in srgb, var(--macos-control-accent-color) 35%, transparent);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.excluded {
+  border-color: color-mix(in srgb, var(--fm-text-secondary) 20%, transparent);
+  background: color-mix(in srgb, var(--fm-composer-chip-item-background) 70%, transparent);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.excluded strong {
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row.kind-base strong {
+  font-weight: 600;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-tree-row.included
+  > .collection-composer-scope-tree-body
+  > .sf-symbol {
+  color: var(--macos-control-accent-color);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  align-items: center;
+  gap: var(--fm-space-4);
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-body:hover {
+  background: transparent;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tree-row:hover {
+  background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 0.5px solid var(--fm-composer-chip-item-border);
+  border-radius: var(--fm-radius-round);
+  align-items: center;
+  gap: 0;
+  background: color-mix(in srgb, var(--fm-composer-chip-item-background) 95%, transparent);
+  padding: var(--fm-space-3) 6px;
+  color: var(--fm-text-primary);
+  font-size: 10px;
+  font-weight: 500;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-action span {
+  display: none;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-tree-row:hover
+  .collection-composer-scope-action {
+  gap: 4px;
+  padding-inline: var(--fm-space-4);
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-tree-row:hover
+  .collection-composer-scope-action
+  span {
+  display: inline;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button {
+  display: flex;
+  border: 0;
+  border-radius: var(--fm-radius-sm);
+  align-items: center;
+  gap: var(--fm-space-4);
+  background: transparent;
+  padding: var(--fm-space-3) var(--fm-space-4);
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-body);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list,
+[data-file-manager-illustration] .collection-composer-scope-list,
+[data-file-manager-illustration] .collection-composer-token-suggestions {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fm-separator) transparent;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list::-webkit-scrollbar,
+[data-file-manager-illustration] .collection-composer-scope-list::-webkit-scrollbar,
+[data-file-manager-illustration] .collection-composer-token-suggestions::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list::-webkit-scrollbar-thumb,
+[data-file-manager-illustration] .collection-composer-scope-list::-webkit-scrollbar-thumb,
+[data-file-manager-illustration] .collection-composer-token-suggestions::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--fm-separator);
+  background-clip: content-box;
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button > :not(.sf-symbol) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 네이티브 VoyagerDS.Interaction.hoverFill = white 8% / black 6% — 텍스트 색은 유지 */
+[data-file-manager-illustration] .collection-composer-picker-list button:hover {
+  background: var(--fm-composer-hover-background);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button:focus-visible,
+[data-file-manager-illustration] .collection-composer-scope-tree-body:focus-visible,
+[data-file-manager-illustration] .collection-composer-scope-action:focus-visible,
+[data-file-manager-illustration] .collection-composer-token-suggestions button:focus-visible,
+[data-file-manager-illustration] .collection-composer-token-field button:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-picker-list button[aria-pressed="true"] {
+  background: var(--fm-selection);
+  color: var(--fm-selection-label);
+  font-weight: 600;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-picker-list
+  button[aria-pressed="true"]
+  .sf-symbol {
+  color: var(--macos-control-accent-color);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row-copy strong {
+  overflow: hidden;
+  font-size: var(--fm-font-size-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row-copy small {
+  overflow: hidden;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--fm-composer-hover-background);
+  padding: 2px 6px;
+  color: var(--fm-text-secondary);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row-badge.included {
+  background: color-mix(in srgb, var(--macos-control-accent-color) 14%, transparent);
+  color: var(--macos-control-accent-color);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row-badge.excluded {
+  background: color-mix(in srgb, var(--fm-composer-error) 14%, transparent);
+  color: var(--fm-composer-error);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-chip-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--fm-separator);
+}
+
+[data-file-manager-illustration]
+  .collection-composer-scope-summary-chip-area
+  .collection-composer-scope-summary-chip {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-subfolders {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 24px;
+  border: 0;
+  border-radius: 999px;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--fm-separator) 80%, transparent);
+  color: var(--fm-text-secondary);
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-subfolders:hover {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-subfolders:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-subfolders[aria-pressed="true"] {
+  color: var(--macos-control-accent-color);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary {
+  display: grid;
+  grid-template-columns: 18px 1fr auto 14px;
+  align-items: center;
+  gap: 10px 6px;
+  border-bottom: 1px solid var(--fm-separator);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary span {
+  color: var(--fm-text-secondary);
+  font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 10px;
+  border: 1px solid var(--fm-separator);
+  border-radius: 999px;
+  /* 네이티브 ScopeChangeFeedbackBannerView는 popover background capsule을 사용한다 */
+  background: var(--fm-composer-popover-background);
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback strong {
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback span {
+  color: var(--fm-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback > button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--macos-control-accent-color);
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback > button:hover {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback > button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.failed > .sf-symbol {
+  color: var(--fm-composer-error);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.applying > .sf-symbol {
+  color: var(--fm-composer-warning);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.applied > .sf-symbol {
+  color: var(--fm-composer-success);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-feedback.failed strong {
+  color: var(--fm-composer-error);
+}
+
+[data-file-manager-illustration] .collection-composer-toast {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  display: flex;
+  max-width: 360px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--fm-separator);
+  border-radius: 12px;
+  background: var(--fm-composer-popover-background);
+  box-shadow: var(--fm-composer-popover-shadow);
+  padding: 10px 12px;
+  color: var(--fm-text-primary);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
+/* 네이티브 ComposerFeedbackToastView는 BrandPrimary(#F79A30)로 아이콘을 색칠한다 */
+[data-file-manager-illustration] .collection-composer-toast > .sf-symbol {
+  color: var(--fm-composer-warning);
+}

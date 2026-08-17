@@ -9,13 +9,15 @@ extension EntryListCoordinator {
         if tableView.numberOfRows > 0 {
             tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0 ..< tableView.numberOfRows))
         }
-        tableView.reloadData()
+        reloadTablePreservingScrollAnchor {
+            tableView.reloadData()
+        }
         syncListRenamingFromStore()
         requestThumbnailsForVisibleRows()
     }
 
     func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        guard previous.outlineProjectionRevision != snapshot.outlineProjectionRevision else { return }
         refreshThumbnailProjectionForVisibleRows()
     }
 }

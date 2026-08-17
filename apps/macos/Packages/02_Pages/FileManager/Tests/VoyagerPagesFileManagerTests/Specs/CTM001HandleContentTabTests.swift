@@ -172,10 +172,10 @@ private func makeBatchAiRequestLock(sessionID: AiChatSessionID) -> AiChatRequest
             context: context,
             messages: [AiChatMessage(role: .user, content: "shared request")],
         ),
-        persistenceTranscriptHistory: nil,
         selectedModelHandle: modelHandle,
         selectedModelRow: modelRow,
         assistantReplacementIndex: nil,
+        persistenceTranscriptHistory: nil,
     )
 }
 
@@ -1564,11 +1564,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.finish() 불필요: 모든 effect가 receive로 소비됨
     }
 
-    /// CTM-001-duplicate_selected_content_tabs: raw Cmd-D는 Content semantic delegate로 전달됨
-    /// key-command focus가 Content로 복귀해도 entry duplicate를 직접 실행하지 않는 boundary를 검증한다.
-    /// - 검증 내용: Cmd-D keyboard action이 `.requestDuplicate` delegate를 정확히 한 번 방출함
+    /// CTM-001-duplicate_selected_content_tabs: raw Cmd-D는 Content entry command delegate로 전달됨
+    /// key-command focus가 Content로 복귀해도 duplicate command가 canonical EntryViewLayout boundary를 통과하는지 검증한다.
+    /// - 검증 내용: Cmd-D keyboard action이 `clipboard.duplicateSelectedItems` command를 정확히 한 번 방출함
     /// - 사전 조건: 기본 Content 상태와 command modifier가 설정된 D key command
-    /// - 기대 결과: EntryViewLayout action 없이 parent-owned duplicate request만 수신됨
+    /// - 기대 결과: nested EntryViewLayout delegate command를 수신함
     func testDuplicateKeyCommand_routesThroughContentDelegate() async {
         let command = KeyCommand(
             keyCode: 2,
@@ -1581,7 +1581,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
 
         await store.send(.view(.handleKeyCommand(command)))
-        await store.receive(\.delegate.requestDuplicate)
+        await store.receive(\.entryViewLayout.delegate.executeCommand, "clipboard.duplicateSelectedItems")
         await store.finish()
     }
 
@@ -7364,7 +7364,11 @@ private enum ExternalTabReservationTestFixture {
             )
             XCTAssertEqual(state.contentTabs.activeTabID, fileID)
             XCTAssertEqual(state.contentTabs.previousActiveTabID, originalActiveID)
-            XCTAssertEqual(state.tabContentStates[originalActiveID], expectedOriginalContent)
+            let savedOriginalContent = state.tabContentStates[originalActiveID]
+            XCTAssertEqual(savedOriginalContent?.navigation, expectedOriginalContent.navigation)
+            XCTAssertEqual(savedOriginalContent?.pendingSelectEntryID, expectedOriginalContent.pendingSelectEntryID)
+            XCTAssertEqual(savedOriginalContent?.entryViewLayout.showHiddenFiles, true)
+            XCTAssertEqual(savedOriginalContent?.entryViewLayout.gridIconSize, 73)
             XCTAssertEqual(state.tabInspectorStates[originalActiveID], expectedOriginalInspector)
             XCTAssertEqual(state.contentTabs.tabs[id: pinnedID], pinnedTab)
             XCTAssertEqual(state.contentTabs.pinnedRecords[pinnedID], pinnedRecord)

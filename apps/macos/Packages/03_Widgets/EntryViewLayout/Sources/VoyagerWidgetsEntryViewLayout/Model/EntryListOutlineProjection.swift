@@ -1,0 +1,249 @@
+import Foundation
+import VoyagerEntitiesEntry
+import VoyagerShared
+
+public struct EntryListOutlineProjection: Equatable, Sendable {
+    public enum ItemID: Hashable, Sendable {
+        case entry(EntryModel.ID)
+        case empty(parent: EntryModel.ID)
+        case error(parent: EntryModel.ID)
+    }
+
+    public enum ItemPayload: Equatable, Sendable {
+        case entry(EntryModel, isLoadingChildren: Bool)
+        case empty(parent: EntryModel.ID)
+        case error(parent: EntryModel.ID, failure: EntryListHierarchyFailure)
+
+        public var isSelectable: Bool {
+            if case .entry = self {
+                return true
+            }
+            return false
+        }
+
+        public var isRetryable: Bool {
+            if case .error = self {
+                return true
+            }
+            return false
+        }
+
+        public var retryFolderID: EntryModel.ID? {
+            if case let .error(parent, _) = self {
+                return parent
+            }
+            return nil
+        }
+    }
+
+    public struct Context: Equatable, Sendable {
+        public let mode: EntryViewLayoutState.Mode
+        public let isNormalDirectoryPage: Bool
+        public let hasActiveGrouping: Bool
+
+        public init(
+            mode: EntryViewLayoutState.Mode,
+            isNormalDirectoryPage: Bool,
+            hasActiveGrouping: Bool,
+        ) {
+            self.mode = mode
+            self.isNormalDirectoryPage = isNormalDirectoryPage
+            self.hasActiveGrouping = hasActiveGrouping
+        }
+
+        public var isHierarchyEnabled: Bool {
+            mode == .list && isNormalDirectoryPage && !hasActiveGrouping
+        }
+    }
+
+    public let revision: Int
+    public let rootItemIDs: [ItemID]
+    public let childrenByParent: [ItemID: [ItemID]]
+    public let itemPayloads: [ItemID: ItemPayload]
+    public let visibleRows: [ItemID]
+    public let visibleSelectableEntryIDs: [EntryModel.ID]
+
+    /// revision은 순서 메타데이터이지 projection 내용의 일부가 아니다.
+    /// 동등성 비교에서 제외하면 selection-only 변경이나 외부 revision bump가
+    /// 구조적 차이로 오인되지 않는다.
+    public static func == (lhs: EntryListOutlineProjection, rhs: EntryListOutlineProjection) -> Bool {
+        lhs.rootItemIDs == rhs.rootItemIDs
+            && lhs.childrenByParent == rhs.childrenByParent
+            && lhs.itemPayloads == rhs.itemPayloads
+            && lhs.visibleRows == rhs.visibleRows
+            && lhs.visibleSelectableEntryIDs == rhs.visibleSelectableEntryIDs
+    }
+
+    public var visibleSelectableEntries: [EntryModel] {
+        visibleRows.compactMap { itemID in
+            guard case let .entry(entry, _) = itemPayloads[itemID] else { return nil }
+            return entry
+        }
+    }
+
+    /// Compares two projections ignoring the `revision` field.
+    /// This is used to detect structural changes without treating a revision bump
+    /// (e.g., from selection-only reconciliation) as a structural change.
+    func hasSameStructure(as other: EntryListOutlineProjection) -> Bool {
+        rootItemIDs == other.rootItemIDs
+            && childrenByParent == other.childrenByParent
+            && itemPayloads == other.itemPayloads
+            && visibleRows == other.visibleRows
+            && visibleSelectableEntryIDs == other.visibleSelectableEntryIDs
+    }
+
+    /// Compares outline topology only (rows, hierarchy, expand/collapse shape).
+    /// Excludes `itemPayloads` so spinner/metadata changes don't trigger full reload.
+    func hasSameOutlineShape(as other: EntryListOutlineProjection) -> Bool {
+        rootItemIDs == other.rootItemIDs
+            && childrenByParent == other.childrenByParent
+            && visibleRows == other.visibleRows
+            && visibleSelectableEntryIDs == other.visibleSelectableEntryIDs
+    }
+
+    public init(
+        revision: Int,
+        rootEntries: [EntryModel],
+        hierarchyState: EntryListHierarchyState,
+        context: Context,
+        sortKey: SortKey,
+        sortOrder: VoyagerShared.SortOrder,
+    ) {
+        self.revision = revision
+
+        guard context.isHierarchyEnabled else {
+            let rootItemIDs = rootEntries.map { ItemID.entry($0.id) }
+            let itemPayloads: [ItemID: ItemPayload] = Dictionary(
+                uniqueKeysWithValues: rootEntries.map { entry in
+                    (ItemID.entry(entry.id), ItemPayload.entry(entry, isLoadingChildren: false))
+                },
+            )
+            self.rootItemIDs = rootItemIDs
+            childrenByParent = [:]
+            self.itemPayloads = itemPayloads
+            visibleRows = rootItemIDs
+            visibleSelectableEntryIDs = rootEntries.map(\.id)
+            return
+        }
+
+        var builder = Builder(
+            hierarchyState: hierarchyState,
+            sortKey: sortKey,
+            sortOrder: sortOrder,
+        )
+        let sortedRoots = EntrySiblingSorter().sort(rootEntries, by: sortKey, order: sortOrder)
+        let rootItemIDs = builder.append(entries: sortedRoots)
+
+        self.rootItemIDs = rootItemIDs
+        childrenByParent = builder.childrenByParent
+        itemPayloads = builder.itemPayloads
+        visibleRows = builder.visibleRows
+        visibleSelectableEntryIDs = builder.visibleSelectableEntryIDs
+    }
+}
+
+private extension EntryListOutlineProjection {
+    struct Builder {
+        let hierarchyState: EntryListHierarchyState
+        let sortKey: SortKey
+        let sortOrder: VoyagerShared.SortOrder
+        let expandedFolderIDs: Set<EntryModel.ID>
+        var childrenByParent: [ItemID: [ItemID]] = [:]
+        var itemPayloads: [ItemID: ItemPayload] = [:]
+        var visibleRows: [ItemID] = []
+        var visibleSelectableEntryIDs: [EntryModel.ID] = []
+        var visitedFolders: Set<EntryModel.ID> = []
+
+        init(
+            hierarchyState: EntryListHierarchyState,
+            sortKey: SortKey,
+            sortOrder: VoyagerShared.SortOrder,
+        ) {
+            self.hierarchyState = hierarchyState
+            self.sortKey = sortKey
+            self.sortOrder = sortOrder
+            expandedFolderIDs = hierarchyState.expandedFolderIDs
+        }
+
+        mutating func append(entries: [EntryModel]) -> [ItemID] {
+            entries.map { entry in
+                append(entry: entry)
+            }
+        }
+
+        mutating func append(entry: EntryModel) -> ItemID {
+            let entryID = ItemID.entry(entry.id)
+            let nodeState = hierarchyState.nodesByID[entry.id]
+            let isLoadingChildren = entry.supportsListHierarchyExpansion
+                && expandedFolderIDs.contains(entry.id)
+                && nodeState?.loadPhase == .loadingCore
+                && nodeState?.folder.coreFinished == false
+            itemPayloads[entryID] = .entry(entry, isLoadingChildren: isLoadingChildren)
+            visibleRows.append(entryID)
+            visibleSelectableEntryIDs.append(entry.id)
+
+            guard entry.supportsListHierarchyExpansion,
+                  expandedFolderIDs.contains(entry.id),
+                  !visitedFolders.contains(entry.id)
+            else {
+                return entryID
+            }
+
+            visitedFolders.insert(entry.id)
+            let childItemIDs = childItems(for: entry.id)
+            childrenByParent[entryID] = childItemIDs
+            return entryID
+        }
+
+        mutating func childItems(for folderID: EntryModel.ID) -> [ItemID] {
+            let nodeState = hierarchyState.nodesByID[folderID]
+            let snapshot = nodeState?.folder ?? FolderSnapshot()
+            switch nodeState?.loadPhase ?? .idle {
+            case .idle:
+                return []
+
+            case .loadingCore:
+                guard !snapshot.coreFinished || !snapshot.children.isEmpty else {
+                    let itemID = ItemID.empty(parent: folderID)
+                    itemPayloads[itemID] = .empty(parent: folderID)
+                    visibleRows.append(itemID)
+                    return [itemID]
+                }
+                let sortedChildren = EntrySiblingSorter().sort(snapshot.children, by: sortKey, order: sortOrder)
+                return append(entries: sortedChildren)
+
+            case .enriching:
+                guard !snapshot.children.isEmpty else {
+                    let itemID = ItemID.empty(parent: folderID)
+                    itemPayloads[itemID] = .empty(parent: folderID)
+                    visibleRows.append(itemID)
+                    return [itemID]
+                }
+                let sortedChildren = EntrySiblingSorter().sort(snapshot.children, by: sortKey, order: sortOrder)
+                return append(entries: sortedChildren)
+
+            case .loaded:
+                guard !snapshot.children.isEmpty else {
+                    let itemID = ItemID.empty(parent: folderID)
+                    itemPayloads[itemID] = .empty(parent: folderID)
+                    visibleRows.append(itemID)
+                    return [itemID]
+                }
+                let sortedChildren = EntrySiblingSorter().sort(snapshot.children, by: sortKey, order: sortOrder)
+                return append(entries: sortedChildren)
+
+            case let .failed(failure):
+                var itemIDs = append(entries: EntrySiblingSorter().sort(
+                    snapshot.children,
+                    by: sortKey,
+                    order: sortOrder,
+                ))
+                let itemID = ItemID.error(parent: folderID)
+                itemPayloads[itemID] = .error(parent: folderID, failure: failure)
+                visibleRows.append(itemID)
+                itemIDs.append(itemID)
+                return itemIDs
+            }
+        }
+    }
+}

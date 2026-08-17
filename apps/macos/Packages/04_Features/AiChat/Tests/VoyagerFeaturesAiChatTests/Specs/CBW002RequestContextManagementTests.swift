@@ -1399,7 +1399,13 @@ private extension CBW002RequestContextManagementTests {
     }
 
     func makeCBW002AttachmentSessionID() -> AiChatSessionID {
-        AiChatSessionID(rawValue: UUID(uuidString: "22222222-2222-3333-4444-000000000002")!)
+        AiChatSessionID(rawValue: UUID(uuid: (
+            0x22, 0x22, 0x22, 0x22,
+            0x22, 0x22,
+            0x33, 0x33,
+            0x44, 0x44,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+        )))
     }
 
     func makeCBW002TemporaryDirectory() throws -> URL {

@@ -13,4 +13,7 @@
    <FileRef
       location = "group:../Hosts/FileManagerHost/FileManagerHost.xcodeproj">
    </FileRef>
+   <FileRef
+      location = "group:../Hosts/ComposerHost/ComposerHost.xcodeproj">
+   </FileRef>
 </Workspace>

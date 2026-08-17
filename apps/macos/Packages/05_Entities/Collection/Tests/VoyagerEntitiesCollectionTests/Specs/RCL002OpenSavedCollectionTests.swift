@@ -1,4 +1,5 @@
-@_spi(Internals) import ComposableArchitecture
+@_spi(Internals)
+import ComposableArchitecture
 import Foundation
 @testable import VoyagerEntitiesCollection
 import VoyagerShared
@@ -20,7 +21,8 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 기대 결과: delete AC는 app/file-client spec-owner suite에서 검증 필요
     func testDeleteCollection_requiresFileClientFocusedSuite() throws {
         throw XCTSkip(
-            "Collection package has no delete command; migrate delete AC to app/file-client spec-owner suite with sandboxed .voycoll fixture.",
+            "Collection package has no delete command; migrate delete AC to app/file-client "
+                + "spec-owner suite with sandboxed .voycoll fixture.",
         )
     }
 
@@ -744,17 +746,14 @@ private func makeSemanticCondition(
     propertyLabel: String,
     values: [String],
 ) -> Condition {
-    Condition(
+    ConditionFixture.make(
         propertyKey: propertyKey,
         propertyLabel: propertyLabel,
         propertyType: "string",
         operatorCode: "eq",
         operatorLabel: "Equals",
-        operatorValueArity: 1,
-        operatorValueUIKind: "singleText",
-        valueType: "string",
+        contract: .init(shape: .single, count: .fixed(1), input: .singleText),
         values: values,
-        isActive: true,
     )
 }
 

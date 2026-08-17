@@ -17,10 +17,11 @@ Do not use this workflow only to select or run existing tests; use `testing-play
 
 ### 1. Establish the spec owner
 
-1. Read the product spec, plan, or AC list before creating files.
-2. Identify the owning spec ID and title, such as `ONB-001 Run User Onboarding`.
-3. Map every interaction AC to exactly one owning suite. Do not create one file per interaction.
-4. Inspect existing tests so stale behavior owners are merged, renamed, or reduced instead of left in parallel.
+1. Read the product spec, canonical flow, plan, or AC list before deciding to add coverage.
+2. Select exactly one owner: a product spec interaction or a canonical flow. If neither exists, do not create an automated test file; update the owner document first.
+3. Identify the owning spec ID and title, such as `ONB-001 Run User Onboarding`, or the canonical flow category and name.
+4. Map every interaction AC to exactly one owning suite. Do not create one file per interaction.
+5. Inspect existing tests so stale behavior owners are merged, renamed, or reduced instead of left in parallel.
 
 ### 2. Apply the topology
 
@@ -44,7 +45,7 @@ Do not use this workflow only to select or run existing tests; use `testing-play
     - `- 기대 결과`: the observable state, emitted action, dependency call, persistence, or completion result.
     - When the scenario depends on real files, include the fixture path or category in `- 사전 조건`, for example `fixtures/fixtures/documents/pdf/...` or `fixtures/fixtures/images/jpeg/...`.
 4. Keep `// MARK:` for interaction section navigation only. Do not replace method traceability docs with plain `//` line comments.
-5. If a product behavior currently lives in `PolicyTests`, `ContractTests`, or `LifecycleTests`, move it under the spec owner unless it is a true technical contract with no AC owner.
+5. If a product behavior currently lives in `PolicyTests`, `ContractTests`, or `LifecycleTests`, move it under the spec or flow owner. Do not retain a standalone technical-contract exception.
 
 ### 4. Write deterministic TCA tests
 

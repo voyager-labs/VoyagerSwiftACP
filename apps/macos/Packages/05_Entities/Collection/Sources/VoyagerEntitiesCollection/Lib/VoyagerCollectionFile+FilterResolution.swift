@@ -4,7 +4,7 @@ import VoyagerShared
 public extension VoyagerCollectionFile {
     func resolveCollectionFilters(
         registryClient: RegistryClient,
-    ) -> AppliedFiltersUtils.ResolutionResult {
+    ) -> AppliedFilterResolver.ResolutionResult {
         let conditionPayloads = conditions.map { condition in
             VoyagerShared.SearchConditionPayload(
                 propertyKey: condition.propertyKey,
@@ -18,7 +18,7 @@ public extension VoyagerCollectionFile {
             includeSubfolders: includeSubfolders,
             conditions: conditionPayloads,
         )
-        return AppliedFiltersUtils.resolveDetailed(
+        return AppliedFilterResolver.resolveDetailed(
             appliedFilters,
             fallbackScopes: scopes,
             fallbackConditions: [],

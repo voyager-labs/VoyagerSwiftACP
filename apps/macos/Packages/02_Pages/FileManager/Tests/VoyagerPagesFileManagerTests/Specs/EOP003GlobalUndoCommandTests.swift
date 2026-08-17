@@ -103,6 +103,7 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileOperationUndoManagerClient = fileOperationClient
             $0.undoManagerClient = .live(registry: registry, resolveScope: { _ in scopeB })
         }

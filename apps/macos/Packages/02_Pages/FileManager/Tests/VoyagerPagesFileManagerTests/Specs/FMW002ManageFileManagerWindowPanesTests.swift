@@ -523,9 +523,9 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
 
         XCTAssertTrue(store.state.content.entryViewLayout.showHiddenFiles)
         XCTAssertEqual(store.state.content.entryViewLayout.listIconSize, 22)
-        XCTAssertTrue(store.state.tabContentStates[activeID]?.entryViewLayout.showHiddenFiles == true)
+        XCTAssertEqual(store.state.tabContentStates[activeID]?.entryViewLayout.showHiddenFiles, true)
         XCTAssertEqual(store.state.tabContentStates[activeID]?.entryViewLayout.listIconSize, 22)
-        XCTAssertTrue(store.state.tabContentStates[inactiveID]?.entryViewLayout.showHiddenFiles == true)
+        XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.showHiddenFiles, true)
         XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.listIconSize, 22)
         await store.finish()
     }

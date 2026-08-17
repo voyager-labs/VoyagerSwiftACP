@@ -12,22 +12,20 @@ struct FileManagerWindowUndoRoutingReducer {
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
-            switch action {
-            case let .tabContent(
-                tabID,
-                .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
-            ):
-                performUndoRedo(tabID: tabID, direction: .undo, state: &state)
+            performUndoRedoAction(state: &state, action: action)
+        }
+    }
 
-            case let .tabContent(
-                tabID,
-                .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))),
-            ):
-                performUndoRedo(tabID: tabID, direction: .redo, state: &state)
+    private func performUndoRedoAction(state: inout State, action: Action) -> Effect<Action> {
+        switch action {
+        case let .tabContent(tabID, .entryViewLayout(.entryOperations(.undoRedo(.requestUndo)))):
+            performUndoRedo(tabID: tabID, direction: .undo, state: &state)
 
-            default:
-                .none
-            }
+        case let .tabContent(tabID, .entryViewLayout(.entryOperations(.undoRedo(.requestRedo)))):
+            performUndoRedo(tabID: tabID, direction: .redo, state: &state)
+
+        default:
+            .none
         }
     }
 

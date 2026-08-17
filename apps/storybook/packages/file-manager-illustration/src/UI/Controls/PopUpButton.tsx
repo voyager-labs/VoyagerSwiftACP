@@ -16,6 +16,7 @@ export interface PopUpButtonProps<Value = string> {
   className?: string
   /** Inline styles */
   style?: CSSProperties
+  accessibilityLabel?: string
 }
 
 export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
@@ -26,6 +27,7 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
   disabled,
   className = "",
   style,
+  accessibilityLabel,
 }: PopUpButtonProps<Value>) => {
   const [open, setOpen] = useState(false)
   const listboxId = useId()
@@ -76,7 +78,7 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={selected?.label}
+        aria-label={accessibilityLabel ?? selected?.label}
         disabled={disabled}
         className="vc-button vc-popup-trigger"
         onClick={handleTrigger}

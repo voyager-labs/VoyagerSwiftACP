@@ -10,8 +10,8 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
     case `internal`(Internal)
 
     case propertyPicker(ConditionPropertyPickerFeature.Action)
-    case operatorPicker(OperatorPickerFeature.Action)
     case valuePicker(ValuePickerFeature.Action)
+    case conditionEditor(IdentifiedActionOf<ConditionEditorFeature>)
 
     @CasePathable
     public enum View: Sendable {
@@ -26,11 +26,7 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case currentScope(CurrentScope)
         case exceptionScope(ExceptionScope)
         case addCondition(propertyKey: String)
-        case removeCondition(propertyKey: String)
-        case replaceConditionProperty(originalKey: String, propertyKey: String)
-        case setOperator(propertyKey: String, operatorCode: String)
-        case setValue(propertyKey: String, values: [String])
-        case setDisplayUnit(propertyKey: String, unitCode: String)
+        case removeCondition(id: UUID)
         case clearAll
         case submit
         case applyFilters
@@ -163,9 +159,11 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         .view(.setText(text))
     }
 
-    public static func scopeEditorOpen(editingPath: String?, favorites: [ScopeFavoriteItem],
-                                       backHistory: [String]) -> Self
-    {
+    public static func scopeEditorOpen(
+        editingPath: String?,
+        favorites: [ScopeFavoriteItem],
+        backHistory: [String],
+    ) -> Self {
         .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory))
     }
 
@@ -177,9 +175,7 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         .view(.scopeEditorSetQueryText(text))
     }
 
-    public static func scopeEditorSetIncludeSubfolders(_ includeSubfolders: Bool)
-        -> Self
-    {
+    public static func scopeEditorSetIncludeSubfolders(_ includeSubfolders: Bool) -> Self {
         .view(.scopeEditorSetIncludeSubfolders(includeSubfolders))
     }
 
@@ -217,26 +213,6 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
 
     public static func addCondition(propertyKey: String) -> Self {
         .view(.addCondition(propertyKey: propertyKey))
-    }
-
-    public static func removeCondition(propertyKey: String) -> Self {
-        .view(.removeCondition(propertyKey: propertyKey))
-    }
-
-    public static func replaceConditionProperty(originalKey: String, propertyKey: String) -> Self {
-        .view(.replaceConditionProperty(originalKey: originalKey, propertyKey: propertyKey))
-    }
-
-    public static func setOperator(propertyKey: String, operatorCode: String) -> Self {
-        .view(.setOperator(propertyKey: propertyKey, operatorCode: operatorCode))
-    }
-
-    public static func setValue(propertyKey: String, values: [String]) -> Self {
-        .view(.setValue(propertyKey: propertyKey, values: values))
-    }
-
-    public static func setDisplayUnit(propertyKey: String, unitCode: String) -> Self {
-        .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
     }
 
     public static func searchResponse(
@@ -318,5 +294,9 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
             compatibility: compatibility,
             isCollectionMode: isCollectionMode,
         ))
+    }
+
+    static func removeCondition(id: UUID) -> Self {
+        .view(.removeCondition(id: id))
     }
 }

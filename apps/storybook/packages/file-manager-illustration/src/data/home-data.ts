@@ -1,4 +1,4 @@
-import type { HomeFavorite, HomeLocation } from "../model/home"
+import type { HomeChat, HomeFavorite, HomeLocation } from "../model/home"
 
 export const homeFavorites: readonly HomeFavorite[] = [
   {
@@ -45,5 +45,27 @@ export const homeLocations: readonly HomeLocation[] = [
     glyph: "⌘",
     destinationTabId: "directory",
     path: "/Applications",
+  },
+]
+
+// native FileManagerHomePageView recentChatsSection — deterministic, clock 미의존 (relativeTime 고정)
+export const homeRecentChats: readonly HomeChat[] = [
+  {
+    id: "chat-1",
+    title: "Review collection PDFs",
+    detail: "12 messages",
+    relativeTime: "just now",
+  },
+  {
+    id: "chat-2",
+    title: "Summarize research notes",
+    detail: "4 messages",
+    relativeTime: "2h ago",
+  },
+  {
+    id: "chat-3",
+    title: "Group duplicates by theme",
+    detail: "7 messages",
+    relativeTime: "1d ago",
   },
 ]

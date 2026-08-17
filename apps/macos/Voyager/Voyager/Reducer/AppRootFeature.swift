@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import os
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
@@ -118,7 +119,7 @@ struct AppRootFeature {
             )))
 
         case .appDidBecomeActive:
-            .none
+            appDidBecomeActiveEffect()
 
         default:
             .none
@@ -170,6 +171,13 @@ struct AppRootFeature {
             }
             .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true),
         )
+    }
+
+    private func appDidBecomeActiveEffect() -> Effect<Action> {
+        appRootDeliveryLogger.info(
+            "voyager.fs.delivery marker=app_activation ts=\(Date().timeIntervalSince1970)",
+        )
+        return .none
     }
 
     private func reducePreferencesAndCommands(
@@ -398,6 +406,11 @@ struct AppRootFeature {
             }
     }
 }
+
+private let appRootDeliveryLogger = os.Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager",
+    category: "FileChangeGateway",
+)
 
 @MainActor
 private func openNativeSettingsScene() {

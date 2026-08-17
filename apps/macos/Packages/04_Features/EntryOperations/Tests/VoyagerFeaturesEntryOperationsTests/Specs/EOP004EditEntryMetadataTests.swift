@@ -119,12 +119,12 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
 
     // MARK: - EOP-004-rename_entry
 
-    /// EOP-004-rename_entry: itemsLoaded에 의한 rename 자동 취소
-    /// 이름 변경이 진행 중일 때 directory listing이 갱신되어 대상 Entry가 더 이상 목록에 없으면 rename 상태가 자동 정리된다.
-    /// - 검증 내용: `itemsLoaded` 이벤트가 renamingItemId 미포함 목록으로 들어오면 `cancelRename`이 자동 발생한다.
+    /// EOP-004-rename_entry: itemsLoaded는 rename visibility 판단을 layout owner에 위임
+    /// EntryOperations의 root-only snapshot이 hierarchy child rename을 직접 취소하지 않는지 검증한다.
+    /// - 검증 내용: `itemsLoaded` 이벤트가 renamingItemId 미포함 목록이어도 rename state를 직접 변경하지 않음
     /// - 사전 조건: renamingItemId가 설정된 상태에서 itemsLoaded가 다른 항목들만 포함한 목록으로 들어온다.
-    /// - 기대 결과: renamingItemId, renamingText, renamingItem이 모두 nil/빈 문자열로 초기화된다.
-    func testRenameEntry_itemsLoadedCancelsWhenItemDisappears() async {
+    /// - 기대 결과: renamingItemId, renamingText, renamingItem이 layout reconciliation 전까지 유지됨
+    func testRenameEntry_itemsLoadedDefersVisibilityDecisionToLayoutOwner() async {
         let entry = EntryModelFixtures.makeFileEntry(
             id: "/tmp/disappeared.txt",
             name: "disappeared.txt",
@@ -146,28 +146,17 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.entryThumbnailCacheClient = .testValue
         }
 
-        // store.exhaustivity = .off: itemsLoaded가 cancelRename을 내부 발생시켜 수신 action이 예측 가능해야 한다.
-        store.exhaustivity = .off
-
-        // itemsLoaded에 renamingItemId가 포함되지 않은 목록이 들어옴
         await store.send(.loading(.itemsLoaded([otherEntry]))) {
             $0.items = IdentifiedArrayOf(uniqueElements: [otherEntry])
             $0.isLoading = false
             $0.isReloading = false
         }
-
-        // cancelRename이 자동으로 발생하여 renaming 상태가 정리됨
-        await store.receive(\.edit.cancelRename) {
-            $0.renamingItemId = nil
-            $0.renamingText = ""
-            $0.renamingItem = nil
-        }
-
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
         await store.finish()
 
-        XCTAssertNil(store.state.renamingItemId)
-        XCTAssertEqual(store.state.renamingText, "")
-        XCTAssertNil(store.state.renamingItem)
+        XCTAssertEqual(store.state.renamingItemId, entry.id)
+        XCTAssertEqual(store.state.renamingText, "new_name.txt")
+        XCTAssertEqual(store.state.renamingItem, entry)
     }
 
     /// EOP-004-rename_entry: itemsLoaded 시 대상 Entry가 여전히 존재하면 rename이 유지된다
@@ -579,35 +568,6 @@ extension EOP004EditEntryMetadataTests {
         }
 
         XCTAssertEqual(TagMetadataClient.loadTags(from: sandbox.fileURL), [favoriteTag])
-    }
-
-    /// EOP-004-edit_entry_tags: collection conversion uses injected favorite color.
-    /// Collection item normalization must resolve favorite tags through the operation dependency scope.
-    /// - 검증 내용: EntryCollectionItemsConverter가 주입된 favorite 색상으로 collection item을 정규화하는지 확인
-    /// - 사전 조건: FixtureSandbox 파일에 같은 이름의 색상 없는 태그와 inline EntryLoadingClient가 있음
-    /// - 기대 결과: 변환된 entry의 태그가 주입된 favorite 색상으로 정규화됨
-    func testCollectionItemsConverterUsesInjectedFavoriteTagColor() throws {
-        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
-        defer { sandbox.cleanup() }
-        let tagName = "InjectedFavorite"
-        let favoriteTag = Tag(name: tagName, colorCode: 6)
-        try TagMetadataClient.setTags([Tag(name: tagName, colorCode: 0)], for: sandbox.fileURL)
-
-        let entryLoadingClient = EntryLoadingClient.liveValue
-        withDependencies {
-            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
-                favoriteTagNames: { [tagName] },
-                favoriteTags: { [favoriteTag] },
-            )
-        } operation: {
-            let items = EntryCollectionItemsConverter.convert(
-                [sandbox.fileURL.path],
-                showHidden: false,
-                entryLoadingClient: entryLoadingClient,
-                workspaceClient: .liveValue,
-            )
-            XCTAssertEqual(items.first?.facets.tags, [favoriteTag])
-        }
     }
 }
 

@@ -1,7 +1,7 @@
 @preconcurrency import AppKit
 import UniformTypeIdentifiers
+import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
@@ -15,7 +15,25 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
         let serviceNames = entryOpenClient.serviceNames()
-        let menuSpec = EntryContextMenuSpecFactory.make(
+        let menuSpec = makeMenuSpec(target: target, rowEntry: rowEntry, serviceNames: serviceNames)
+        let coordinator = EntryContextMenuCoordinator(
+            store: store,
+            target: target,
+            anchorView: collectionView,
+            anchorScreenPoint: contextMenuAnchor,
+        )
+        contextMenuCoordinator = coordinator
+        return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(
+            configuration: makeMenuConfiguration(target: target, menuSpec: menuSpec, coordinator: coordinator),
+        ))
+    }
+
+    private func makeMenuSpec(
+        target: EntryContextMenuTarget,
+        rowEntry: EntryModel?,
+        serviceNames: [String],
+    ) -> EntryContextMenuSpec {
+        EntryContextMenuSpecFactory.make(
             selectedIds: target.selectedIds,
             selectedEntries: target.entries,
             rowEntry: rowEntry,
@@ -32,14 +50,14 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             },
             serviceNames: serviceNames,
         )
-        let coordinator = EntryContextMenuCoordinator(
-            store: store,
-            target: target,
-            anchorView: collectionView,
-            anchorScreenPoint: contextMenuAnchor,
-        )
-        contextMenuCoordinator = coordinator
-        return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(configuration: .init(
+    }
+
+    private func makeMenuConfiguration(
+        target: EntryContextMenuTarget,
+        menuSpec: EntryContextMenuSpec,
+        coordinator: EntryContextMenuCoordinator,
+    ) -> EntryContextMenuBuilder.Configuration {
+        .init(
             target: coordinator,
             selectedCount: menuSpec.selectedCount,
             rowEntryPathForOpenInNewWindow: menuSpec.rowEntryPathForOpenInNewWindow,
@@ -55,15 +73,17 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             paletteTags: menuSpec.paletteTags,
             knownTags: menuSpec.knownTags,
             canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
+                && !target.containsBusyEntry(
+                    busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
+                ),
             isOpenWithApplicationsLoading: menuSpec.isOpenWithApplicationsLoading,
-        )))
+        )
     }
 
     private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {
         guard state.selectedIds != target.selectedIds else { return }
         _ = MainActor.assumeIsolated {
-            store.send(.internal(.setSelectionState(
+            store.send(.view(.updateSelection(
                 ids: target.selectedIds,
                 lastSelectedId: target.entries.last?.id,
                 rangeAnchorId: target.entries.last?.id,

@@ -1,7 +1,6 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator: NSOutlineViewDataSource {
     public func outlineView(_: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -15,7 +14,9 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         switch outlineItem.kind {
         case .group:
             return !outlineItem.children.isEmpty
-        case .entry:
+        case let .entry(entry):
+            return isHierarchyOutlineEnabled && entry.supportsListHierarchyExpansion
+        case .empty, .error:
             return false
         }
     }
@@ -41,7 +42,8 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isFolder
+           entry.isFolder,
+           !entry.isPackage
         {
             outlineView.setDropItem(outlineItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
             destinationPath = entry.fullPath
@@ -49,18 +51,11 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             outlineView.setDropItem(nil, dropChildIndex: -1)
         }
 
-        let sourcePaths = entryFileOpsClient.loadDragPaths()
-        let wantsCopy = sourcePaths.isEmpty
-            ? NSEvent.modifierFlags.contains(.option)
-            : entryFileOpsClient.loadDragWithOption()
-        let allowed = info.draggingSourceOperationMask
-        sendEntryOperations(.routing(.validateDrop(context: .init(
-            sourcePaths: sourcePaths,
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            draggingInfo: info,
             destinationPath: destinationPath,
-            allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy,
-        ))))
-        let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
+        )
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
         return operation
     }
@@ -74,37 +69,10 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isFolder
+           entry.isFolder,
+           !entry.isPackage
         {
             destinationPath = entry.fullPath
-        }
-
-        let internalPaths = entryFileOpsClient.loadDragPaths()
-        let wantsCopy = internalPaths.isEmpty
-            ? NSEvent.modifierFlags.contains(.option)
-            : entryFileOpsClient.loadDragWithOption()
-        let allowed = info.draggingSourceOperationMask
-        sendEntryOperations(.routing(.validateDrop(context: .init(
-            sourcePaths: internalPaths,
-            destinationPath: destinationPath,
-            allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy,
-        ))))
-        let validation = state.entryOperations.dropValidationResult
-        let resolvedOperation = dragOperation(from: validation.resolvedOperation)
-        guard !resolvedOperation.isEmpty else {
-            store.send(.view(.setDropTargeted(false)))
-            return false
-        }
-
-        if !internalPaths.isEmpty {
-            sendEntryOperations(.routing(.dropItems(
-                sourcePaths: internalPaths,
-                destinationPath: destinationPath,
-                isOptionDrag: validation.isOptionDrag,
-            )))
-            store.send(.view(.setDropTargeted(false)))
-            return true
         }
 
         let pasteboard = info.draggingPasteboard
@@ -117,8 +85,19 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        sendEntryOperations(.routing(.dropItems(
-            sourcePaths: urls.map(\.path),
+        let sourcePaths = urls.map(\.path)
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            sourcePaths: sourcePaths,
+            destinationPath: destinationPath,
+            allowedOperations: info.draggingSourceOperationMask,
+            prefersCopy: NSEvent.modifierFlags.contains(.option),
+        )
+        guard !EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation).isEmpty else {
+            store.send(.view(.setDropTargeted(false)))
+            return false
+        }
+        store.send(.view(.dropItems(
+            sourcePaths: sourcePaths,
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
         )))
@@ -129,10 +108,11 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
 
 extension EntryListCoordinator: NSTextFieldDelegate {
     public func controlTextDidChange(_ notification: Notification) {
-        guard state.entryOperations.renamingItemId != nil else { return }
+        guard let renamingItemId = state.entryOperations.renamingItemId else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
-        sendEntryOperations(.edit(.updateRenamingText(textField.stringValue)))
+        guard let renamingItem = state.entries.first(where: { $0.id == renamingItemId }) else { return }
+        store.send(.view(.startRename(item: renamingItem, text: textField.stringValue)))
     }
 
     public func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -141,15 +121,21 @@ extension EntryListCoordinator: NSTextFieldDelegate {
         guard (textField.delegate as AnyObject?) === self else { return false }
 
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            sendEntryOperations(.edit(.commitRename))
+            store.send(.view(.commitRename(
+                itemID: state.entryOperations.renamingItemId ?? "",
+                newName: textField.stringValue,
+            )))
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            sendEntryOperations(.edit(.cancelRename))
+            store.send(.delegate(.renameCanceled))
             return true
         }
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
-            sendEntryOperations(.edit(.commitRename))
+            store.send(.view(.commitRename(
+                itemID: state.entryOperations.renamingItemId ?? "",
+                newName: textField.stringValue,
+            )))
             return true
         }
 
@@ -160,6 +146,9 @@ extension EntryListCoordinator: NSTextFieldDelegate {
         guard state.entryOperations.renamingItemId != nil else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
-        sendEntryOperations(.edit(.commitRename))
+        store.send(.view(.commitRename(
+            itemID: state.entryOperations.renamingItemId ?? "",
+            newName: textField.stringValue,
+        )))
     }
 }

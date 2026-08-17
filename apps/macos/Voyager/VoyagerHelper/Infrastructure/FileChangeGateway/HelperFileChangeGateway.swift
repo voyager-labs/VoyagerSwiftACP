@@ -5,10 +5,16 @@ import VoyagerShared
 
 @MainActor
 final class HelperFileChangeGateway {
-    private final class CallbackBox: @unchecked Sendable {
-        let emit: @Sendable ([FileChangeGatewayEvent]) -> Void
+    private struct DeliveryBatch {
+        let events: [FileChangeGatewayEvent]
+        let chainToken: String
+        let callbackAt: Date
+    }
 
-        nonisolated init(emit: @escaping @Sendable ([FileChangeGatewayEvent]) -> Void) {
+    private final class CallbackBox: @unchecked Sendable {
+        let emit: @Sendable (DeliveryBatch) -> Void
+
+        nonisolated init(emit: @escaping @Sendable (DeliveryBatch) -> Void) {
             self.emit = emit
         }
     }
@@ -22,6 +28,9 @@ final class HelperFileChangeGateway {
     private var activeWatchRoots: [String] = []
     private var pendingEventsByPath: [String: FileChangeGatewayEvent] = [:]
     private var pendingEventFlushTask: Task<Void, Never>?
+    private var pendingDeliveryChainToken: String?
+    private var pendingDeliveryCallbackAt: Date?
+    private var pendingDeliveryIsCoalesced = false
     private let eventBatchInterval: Duration
     private let maxEventsPerBatch: Int
 
@@ -87,6 +96,10 @@ final class HelperFileChangeGateway {
 
     private func updateInterests(_ updatedInterests: [FileChangeWatchInterest]) {
         guard !updatedInterests.isEmpty else { return }
+        logDeliveryMarker(
+            "fs_interest_received",
+            rootCount: helperFileChangeGatewayAllowedWatchRoots(from: updatedInterests).count,
+        )
         for interest in updatedInterests {
             interests[interest.id] = interest
         }
@@ -144,14 +157,53 @@ final class HelperFileChangeGateway {
 
         self.stream = stream
         logger.info("FileChangeGateway started", metadata: ["roots": "\(nextRoots.count)"])
+        logDeliveryMarker("fs_stream_started", rootCount: nextRoots.count)
     }
 
-    private func publish(_ events: [FileChangeGatewayEvent]) {
+    private func publish(_ deliveryBatch: DeliveryBatch) {
         let filteredEvents = helperFileChangeGatewayRelevantEvents(
-            events,
+            deliveryBatch.events,
             interests: Array(interests.values),
         )
+        guard !filteredEvents.isEmpty else { return }
+
+        let isNewPendingBatch = pendingDeliveryChainToken == nil
+        let didEstablishBatchToken = isNewPendingBatch || !pendingDeliveryIsCoalesced
+        if isNewPendingBatch {
+            pendingDeliveryChainToken = deliveryBatch.chainToken
+            pendingDeliveryCallbackAt = deliveryBatch.callbackAt
+            pendingDeliveryIsCoalesced = false
+            logDeliveryMarker(
+                "fs_callback_received",
+                timestamp: deliveryBatch.callbackAt,
+                events: filteredEvents,
+                chainToken: deliveryBatch.chainToken,
+                latencyFrom: deliveryBatch.callbackAt,
+            )
+        } else if !pendingDeliveryIsCoalesced {
+            // 두 번째 callback이 debounce 동안 병합되면, 병합된 batch를 첫 callback의 token으로
+            // 오인하지 않도록 coalesced token과 timestamp를 발급하고, 그 token으로 callback/enqueue
+            // marker를 기록해 token 상관관계를 보존한다.
+            pendingDeliveryChainToken = deliveryBatch.chainToken
+            pendingDeliveryCallbackAt = deliveryBatch.callbackAt
+            pendingDeliveryIsCoalesced = true
+            logDeliveryMarker(
+                "fs_callback_received",
+                timestamp: deliveryBatch.callbackAt,
+                events: filteredEvents,
+                chainToken: deliveryBatch.chainToken,
+                latencyFrom: deliveryBatch.callbackAt,
+            )
+        }
         enqueue(filteredEvents)
+        if didEstablishBatchToken {
+            logDeliveryMarker(
+                "fs_event_enqueued",
+                events: Array(pendingEventsByPath.values),
+                chainToken: pendingDeliveryChainToken,
+                latencyFrom: pendingDeliveryCallbackAt,
+            )
+        }
     }
 
     private func enqueue(_ events: [FileChangeGatewayEvent]) {
@@ -197,12 +249,32 @@ final class HelperFileChangeGateway {
             interests: Array(interests.values),
             maxEvents: maxEventsPerBatch,
         )
-        guard !events.isEmpty else { return }
+        let chainToken = pendingDeliveryChainToken
+        let callbackAt = pendingDeliveryCallbackAt
+        pendingDeliveryChainToken = nil
+        pendingDeliveryCallbackAt = nil
+        pendingDeliveryIsCoalesced = false
+        guard !events.isEmpty, let chainToken else { return }
+
+        logDeliveryMarker(
+            "fs_batch_flushed",
+            events: events,
+            chainToken: chainToken,
+            latencyFrom: callbackAt,
+        )
+        var userInfo = FileChangeGatewayPayload.userInfo(forEvents: events)
+        userInfo[fileChangeGatewayDeliveryChainTokenKey] = chainToken
+        logDeliveryMarker(
+            "fs_notification_posted",
+            events: events,
+            chainToken: chainToken,
+            latencyFrom: callbackAt,
+        )
 
         DistributedNotificationCenter.default().post(
             name: .voyagerFileChangeGatewayEvents,
             object: nil,
-            userInfo: FileChangeGatewayPayload.userInfo(forEvents: events),
+            userInfo: userInfo,
         )
     }
 
@@ -238,7 +310,12 @@ final class HelperFileChangeGateway {
                     flags: index < eventCount ? UInt32(eventFlags[index]) : UInt32(0),
                 )
             }
-            box.emit(events)
+            guard !events.isEmpty else { return }
+            box.emit(DeliveryBatch(
+                events: events,
+                chainToken: UUID().uuidString.lowercased(),
+                callbackAt: Date(),
+            ))
         }
     }
 
@@ -259,6 +336,36 @@ final class HelperFileChangeGateway {
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
+    }
+}
+
+private let fileChangeGatewayDeliveryChainTokenKey = "deliveryChainToken"
+
+private extension HelperFileChangeGateway {
+    func logDeliveryMarker(
+        _ marker: String,
+        timestamp: Date = Date(),
+        rootCount: Int? = nil,
+        events: [FileChangeGatewayEvent] = [],
+        chainToken: String? = nil,
+        latencyFrom: Date? = nil,
+    ) {
+        var message = "voyager.fs.delivery marker=\(marker) ts=\(timestamp.timeIntervalSince1970)"
+        if let rootCount {
+            message += " rootCount=\(max(0, rootCount))"
+        }
+        if !events.isEmpty {
+            let flags = events.reduce(UInt32(0)) { $0 | $1.flags }
+            message += " eventCount=\(events.count) flagsSummary=\(String(format: "0x%llx", UInt64(flags)))"
+        }
+        if let latencyFrom {
+            let latencyMs = max(0, timestamp.timeIntervalSince(latencyFrom) * 1000)
+            message += " latencyMs=\(latencyMs)"
+        }
+        if let chainToken {
+            message += " chainToken=\(chainToken)"
+        }
+        logger.info("\(message)")
     }
 }
 
