@@ -2259,6 +2259,38 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    /// 검증 내용: fileNames 빈(미정) receiver가 파일을 여러 개 전달하면 첫 callback에서
+    /// 종단을 내지 않고 모든 콜백을 수용한 뒤 quiescence 시점에 `.succeeded`를 낸다.
+    /// 사전 조건: 빈 fileNames receiver가 staging에 파일 2개를 쓰고 콜백 2회 호출.
+    /// 기대 결과: `.received` 2건이 모두 관측되고 `.succeeded`로 끝난다.
+    func testExternalDropAcquisition_indeterminateReceiverMultipleFilesSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("IndeterminateMulti")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let first = staging.appendingPathComponent("first.eml")
+        let second = staging.appendingPathComponent("second.eml")
+        try Data("one".utf8).write(to: first)
+        try Data("two".utf8).write(to: second)
+
+        receiver.invokeReader(url: first, error: nil)
+        receiver.invokeReader(url: second, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 2)
+        XCTAssertEqual(received.map(\.stagedPath), [first.path, second.path])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
     /// EOP-002-import_external_objects: 모든 receiver가 같은 destination(staging)을 사용한다.
     /// 여러 receiver는 반드시 동일한 destination location으로 receive를 호출해야 한다.
     /// - 검증 내용: 두 receiver의 `receivedDestination`이 같고 begin이 반환한 staging 경로와 일치한다.

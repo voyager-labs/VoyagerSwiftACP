@@ -1159,6 +1159,66 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
     }
 
+    /// 검증 내용 (VOY-736 회귀): legacy promise 드롭에 file URL이 섞여 있으면 즉시 URL도
+    /// accepted request의 ordered placement plan에 포함된다.
+    /// 사전 조건: 즉시 file URL item과 legacy promise marker item이 함께 노출되고 legacy
+    /// 호출이 파일을 쓴다.
+    /// 기대 결과: beginLegacy만 호출되고 sendAccepted로 전달된 request의 `immediateURLPaths`에
+    /// 즉시 file URL이 담긴다.
+    @MainActor
+    func testLegacyPromiseMixedDropIncludesImmediateURLs() throws {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let immediateURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerLegacyImmediate-\(UUID().uuidString).txt")
+        XCTAssertTrue(FileManager.default.createFile(atPath: immediateURL.path, contents: Data("a".utf8)))
+        defer { try? FileManager.default.removeItem(at: immediateURL) }
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerLegacyMixedDest-\(UUID().uuidString)")
+        XCTAssertNoThrow(try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true))
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let pasteboard = DragInfoFixture.makeLegacyMixedPasteboard(fileURL: immediateURL)
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: true,
+        )
+        XCTAssertEqual(negotiation.immediateURLDescriptors.count, 1)
+        XCTAssertEqual(negotiation.promisedOrdinals.count, 1)
+
+        let info = DragInfoFixture(
+            source: nil,
+            operationMask: [.copy],
+            pasteboard: pasteboard,
+            namesOfPromisedFiles: { staging in
+                let message = staging.appendingPathComponent("message.eml")
+                guard FileManager.default.createFile(atPath: message.path, contents: Data("m".utf8)) else {
+                    return nil
+                }
+                return [message.lastPathComponent]
+            },
+        )
+
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var activeSessionID: ExternalDropSessionID?
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: acquisition.client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: {},
+            ),
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: destination.path,
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.legacyCalls.count, 1)
+        XCTAssertEqual(acceptedRequests.count, 1)
+        XCTAssertEqual(acceptedRequests.first?.immediateURLPaths, [immediateURL.path])
+    }
+
     /// VOY-736: legacy promise 이행 실패를 잔여 data representation 성공으로 강등하지 않는다.
     /// 사전 조건: legacy marker + modern receiver + `.string`이 있지만 source가 파일을 쓰지 않는다.
     /// 기대 결과: 드롭이 거절되고 modern/data acquisition 세션은 시작되지 않는다.
@@ -1915,6 +1975,25 @@ private extension DragInfoFixture {
         )
         item.setString("Fwd: hello", forType: .string)
         pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// 즉시 file URL item과 legacy promise marker item이 섞인 pasteboard.
+    /// `[URL-A, legacy-promise-B]` 혼합 드롭을 재현한다 (VOY-736).
+    static func makeLegacyMixedPasteboard(fileURL: URL) -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-legacy-mixed-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects([fileURL as NSURL])
+        let legacy = NSPasteboardItem()
+        legacy.setString(
+            "message.eml",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        legacy.setString(
+            UTType.plainText.identifier,
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([legacy])
         return pasteboard
     }
 
