@@ -285,7 +285,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
     }
 
     /// CTM-004-host_scenario_fixture_matrix: FileManagerHost의 모든 전환기 fixture와 appearance 입력을 결정적으로 해석한다.
-    /// 사용자가 다섯 화면 상태와 세 가지 appearance 경계를 직접 launch할 수 있도록 preset과 semantic source 매핑을 검증한다.
+    /// 사용자가 다섯 화면 상태와 system/light/dark appearance를 직접 launch할 수 있도록 preset과 semantic source 매핑을 검증한다.
     /// - 검증 내용: content/fallback/empty/loading/error fixture, presentation nil 선행, fallback identity/metadata,
     /// appearance resolver
     /// - 사전 조건: deterministic UUID/date dependency와 각 FileManagerHost preset
@@ -369,6 +369,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
 
         let appearanceCases: [(rawValue: String?, expected: FileManagerHostAppearance)] = [
             (nil, .system),
+            ("system", .system),
             ("light", .light),
             ("dark", .dark),
             ("sepia", .invalid("sepia")),

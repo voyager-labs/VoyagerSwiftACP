@@ -143,6 +143,8 @@ public enum FileManagerHostAppearance: Equatable, Sendable {
     public static func resolve(rawValue: String?) -> Self {
         guard let rawValue else { return .system }
         return switch rawValue {
+        case "system":
+            .system
         case "light":
             .light
         case "dark":
