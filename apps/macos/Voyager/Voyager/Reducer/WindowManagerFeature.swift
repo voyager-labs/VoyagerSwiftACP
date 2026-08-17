@@ -153,6 +153,9 @@ struct WindowManagerFeature {
             case let .file(.selectContentTab(position: position)):
                 return sendCommandToFocusedWindow(state, .selectContentTab(position: position))
 
+            case .file(.presentContentTabSwitcher):
+                return sendCommandToFocusedWindow(state, .presentContentTabSwitcher(source: .automatic))
+
             case .file(.selectMostRecentlyUsedContentTab):
                 return sendCommandToFocusedWindow(state, .selectMostRecentlyUsedContentTab)
 
