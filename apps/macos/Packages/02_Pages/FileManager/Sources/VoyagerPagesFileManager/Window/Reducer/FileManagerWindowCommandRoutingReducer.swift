@@ -160,6 +160,10 @@ struct FileManagerWindowCommandRoutingReducer {
             case .request(.reopenChat):
                 return handleAiChatReopenRequest(state: &state)
 
+            case .view(.dismissContentTabSwitcher):
+                state.contentTabSwitcherPresentation = nil
+                return .none
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
@@ -542,7 +546,7 @@ struct FileManagerWindowCommandRoutingReducer {
         }
     }
 
-    private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+    func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         if state.pendingSelectedContentTabPinMutation != nil {
             if case .toggleActiveContentTabPin = command {
                 return .none
@@ -569,7 +573,8 @@ struct FileManagerWindowCommandRoutingReducer {
         switch command {
         case .openNewContentTab,
              .selectContentTab,
-             .selectMostRecentlyUsedContentTab:
+             .selectMostRecentlyUsedContentTab,
+             .presentContentTabSwitcher:
             return handleContentTabCommand(command, state: &state)
 
         case .closeActiveContentTab:
@@ -663,22 +668,15 @@ struct FileManagerWindowCommandRoutingReducer {
             return .send(.contentTabs(.setCurrent(targetID)))
 
         case .selectMostRecentlyUsedContentTab:
-            guard !state.isClosing,
-                  state.pendingSelectedContentTabClose == nil,
-                  state.pendingContentTabClose == nil,
-                  state.pendingContentTabTeardown == nil,
-                  state.pendingSelectedContentTabPinMutation == nil,
-                  state.pendingContentTabMove == nil,
-                  state.contentTabMoveParticipantRequestID == nil,
-                  state.pendingTopNavigationIntents.isEmpty,
-                  state.contentTabs.pendingPinnedRecordIDs.isEmpty
-            else { return .none }
-            if case .tearingDownTab = state.undoRedoPhase { return .none }
+            guard canRouteRecentContentTabInteraction(state) else { return .none }
 
             guard let targetID = state.contentTabs.takeMostRecentlyUsedInactiveTabID() else {
                 return unavailableRecentlyUsedContentTabFeedbackEffect()
             }
             return .send(.contentTabs(.setCurrent(targetID)))
+
+        case let .presentContentTabSwitcher(source):
+            return handlePresentContentTabSwitcher(source: source, state: &state)
 
         default:
             return .none

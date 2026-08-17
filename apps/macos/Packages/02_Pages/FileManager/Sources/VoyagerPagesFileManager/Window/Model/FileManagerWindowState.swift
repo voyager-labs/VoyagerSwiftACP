@@ -202,6 +202,7 @@ public struct FileManagerWindowState: Equatable {
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
     public var contentTabMoveParticipantRequestID: UUID?
     public var contentTabMoveFailurePresentation: ContentTabMoveFailurePresentation?
+    public var contentTabSwitcherPresentation: FileManagerContentTabSwitcherPresentation?
     var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
     var pendingAiChatNewChat: FileManagerPendingAiChatNewChat?
@@ -239,6 +240,7 @@ public struct FileManagerWindowState: Equatable {
         pendingContentTabMove = nil
         contentTabMoveParticipantRequestID = nil
         contentTabMoveFailurePresentation = nil
+        contentTabSwitcherPresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
         pendingAiChatNewChat = nil
@@ -399,6 +401,7 @@ public struct FileManagerWindowState: Equatable {
         pendingCollectionOpenRequest = nil
         pendingContentTabMove = nil
         contentTabMoveFailurePresentation = nil
+        contentTabSwitcherPresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
         pendingAiChatNewChat = nil
