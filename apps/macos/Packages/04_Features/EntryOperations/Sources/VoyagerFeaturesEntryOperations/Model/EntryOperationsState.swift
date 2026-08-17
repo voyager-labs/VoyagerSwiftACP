@@ -269,10 +269,14 @@ public enum ExternalObjectImportStatus: Equatable, Sendable {
 
 /// placement(.applyImport)의 in-flight 추적 상태.
 /// 모든 source 항목의 `operationFinished`를 수신해 정확히 한 번 종합 완료를 emit하기 위한 추적이다.
+/// `destinationBySource`는 복사 배치가 `.pathsMutated([source, destination])`으로 보고한 실제
+/// 목적지 경로를 기록해, 결과에 staging이 아닌 destination 경로가 담기도록 한다.
 public struct ExternalDropImportPlacementState: Equatable, Sendable {
     public let sessionID: ExternalDropSessionID
     public let destination: String
     public var pendingPaths: Set<String>
+    /// source(staging) 경로 → 실제 복사된 destination 경로 매핑.
+    public var destinationBySource: [String: String]
     public var succeededPaths: [String]
     public var failedPaths: [String]
 
@@ -284,6 +288,7 @@ public struct ExternalDropImportPlacementState: Equatable, Sendable {
         self.sessionID = sessionID
         self.destination = destination
         self.pendingPaths = pendingPaths
+        destinationBySource = [:]
         succeededPaths = []
         failedPaths = []
     }
