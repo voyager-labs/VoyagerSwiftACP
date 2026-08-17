@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
@@ -45,6 +46,92 @@ private final class DragTransport: @unchecked Sendable {
     init(paths: [String] = [], option: Bool = false) {
         self.paths = paths
         self.option = option
+    }
+}
+
+/// 외부 drop 획득 클라이언트의 begin/cancel 호출을 기록하는 테스트 이중.
+private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
+    struct BeginCall {
+        var receiverCount: Int
+        var dataFlavorCount: Int
+        var dataFlavors: [ExternalDropDataFlavor]
+        var destination: String
+        var forcedCopy: Bool
+    }
+
+    var beginCalls: [BeginCall] = []
+    var legacyCalls: [LegacyCall] = []
+    var deferredCalls: [DeferredCall] = []
+    var cancelledSessionIDs: [ExternalDropSessionID] = []
+    let sessionID = ExternalDropSessionID(rawValue: "deterministic-grid-session")
+
+    struct LegacyCall {
+        var stagedPathCount: Int
+        var stagingDirectory: String
+        var destination: String
+        var forcedCopy: Bool
+    }
+
+    struct DeferredCall {
+        var items: [ExternalDropDeferredFlavor]
+        var destination: String
+        var forcedCopy: Bool
+    }
+
+    var client: ExternalDropAcquisitionClient {
+        var client = ExternalDropAcquisitionClient.testValue
+        client.begin = { [self] receivers, dataFlavors, destination, forcedCopy in
+            beginCalls.append(BeginCall(
+                receiverCount: receivers.count,
+                dataFlavorCount: dataFlavors.count,
+                dataFlavors: dataFlavors,
+                destination: destination,
+                forcedCopy: forcedCopy,
+            ))
+            return ExternalDropAcceptedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                orderedPromisedNames: [],
+                promisedOrdinals: [],
+                forcedCopy: forcedCopy,
+                stagingDirectory: "/tmp/grid-staging",
+            )
+        }
+        client.beginLegacy = { [self] stagedPaths, stagingDirectory, destination, forcedCopy in
+            legacyCalls.append(LegacyCall(
+                stagedPathCount: stagedPaths.count,
+                stagingDirectory: stagingDirectory,
+                destination: destination,
+                forcedCopy: forcedCopy,
+            ))
+            return ExternalDropAcceptedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                orderedPromisedNames: [],
+                promisedOrdinals: [],
+                forcedCopy: forcedCopy,
+                stagingDirectory: stagingDirectory,
+            )
+        }
+        client.cancel = { [self] sessionID in
+            cancelledSessionIDs.append(sessionID)
+        }
+        client.beginDeferred = { [self] items, destination, forcedCopy in
+            deferredCalls.append(DeferredCall(
+                items: items,
+                destination: destination,
+                forcedCopy: forcedCopy,
+            ))
+            return ExternalDropAcceptedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                orderedPromisedNames: [],
+                promisedOrdinals: [],
+                forcedCopy: forcedCopy,
+                stagingDirectory: "/tmp/grid-staging",
+            )
+        }
+        return client
     }
 }
 
@@ -392,6 +479,1155 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             "package directory는 destination으로 route하지 않아야 한다",
         )
     }
+
+    // MARK: - EOP-002-import_external_objects (promise-first logical-item negotiation)
+
+    /// 검증 내용: promise-only pasteboard는 하나의 promised ordinal을 산출하고 즉시 descriptor가 없다.
+    /// 사전 조건: 외부 drag가 file promise만 제공한다.
+    /// 기대 결과: negotiation이 `promisedOrdinals == [0]`, descriptor 0개, acceptable logical item 1개를 반환한다.
+    func testPromiseOnlyNegotiationYieldsPromisedOrdinal() {
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertEqual(negotiation.promisedOrdinals, [0])
+        XCTAssertTrue(negotiation.immediateURLDescriptors.isEmpty)
+        XCTAssertEqual(negotiation.acceptableLogicalItemCount, 1)
+    }
+
+    /// 검증 내용: URL-only pasteboard는 즉시 descriptor를 순서대로 보존하고 promised ordinal이 없다.
+    /// 사전 조건: 외부 drag가 즉시 file URL만 제공한다.
+    /// 기대 결과: 기존 `sourcePaths(from:)` 순서/dedup 계약대로 descriptor가 보존된다.
+    func testURLOnlyNegotiationPreservesImmediateDescriptors() {
+        let first = URL(fileURLWithPath: "/external/a.txt")
+        let second = URL(fileURLWithPath: "/external/b.txt")
+        let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [first, second])
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertEqual(
+            negotiation.immediateURLDescriptors.map(\.path),
+            [first.standardizedFileURL.path, second.standardizedFileURL.path],
+        )
+        XCTAssertTrue(negotiation.promisedOrdinals.isEmpty)
+        XCTAssertEqual(negotiation.acceptableLogicalItemCount, 2)
+    }
+
+    /// 검증 내용: 같은 logical item이 promise와 file URL을 함께 제공하면 promise가 선택되고 중복하지 않는다.
+    /// 사전 조건: pasteboard item 하나에 promise type과 file URL이 함께 있다 (cloud 파일 재현).
+    /// 기대 결과: promise가 우선해 promised ordinal 1개만 있고 즉시 descriptor는 없다.
+    func testPromisePlusURLSameItemChoosesPromiseWithoutDuplicate() {
+        let fileURL = URL(fileURLWithPath: "/external/cloud.txt")
+        let pasteboard = DragInfoFixture.makePromiseFileURLSameItemPasteboard(fileURL: fileURL)
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertEqual(negotiation.promisedOrdinals, [0])
+        XCTAssertTrue(negotiation.immediateURLDescriptors.isEmpty)
+        XCTAssertEqual(negotiation.acceptableLogicalItemCount, 1)
+    }
+
+    /// 검증 내용: URL과 promise가 섞인 distinct ordered batch의 순서가 보존된다.
+    /// 사전 조건: [URL-A, Promise-B, URL-C] 순서의 external pasteboard.
+    /// 기대 결과: descriptor 순서 [A, C], promised ordinal [1]로 logical 순서 A,B,C가 보존된다.
+    func testURLPromiseDistinctBatchPreservesOrderOnGridAndList() {
+        let urlA = URL(fileURLWithPath: "/external/a.txt")
+        let urlC = URL(fileURLWithPath: "/external/c.txt")
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-batch-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects([urlA as NSURL])
+        pasteboard.writeObjects([
+            NSFilePromiseProvider(
+                fileType: UTType.plainText.identifier,
+                delegate: FilePromiseProviderFixtureDelegate(filename: "b.txt"),
+            ),
+        ])
+        pasteboard.writeObjects([urlC as NSURL])
+
+        // Grid/List가 공유하는 stateless adapter negotiation을 두 경로 모두에 대해 검증한다.
+        let gridNegotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        let listNegotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertEqual(gridNegotiation, listNegotiation)
+        XCTAssertEqual(gridNegotiation.immediateURLDescriptors.map(\.path), [
+            urlA.standardizedFileURL.path,
+            urlC.standardizedFileURL.path,
+        ])
+        XCTAssertEqual(gridNegotiation.promisedOrdinals, [1])
+    }
+
+    /// 검증 내용: 지원 항목 사이에 unsupported item이 섞이면 전체를 원자적으로 거절한다.
+    /// 사전 조건: [fileURL, unsupported text] mixed pasteboard.
+    /// 기대 결과: negotiation이 즉시 descriptor도 promised ordinal도 산출하지 않는다.
+    func testUnsupportedAmongSupportedIsAtomicallyRejected() {
+        let externalURL = URL(fileURLWithPath: "/external/ok.txt")
+        let pasteboard = DragInfoFixture.makeMixedPasteboard(fileURL: externalURL, unsupportedText: "unsupported")
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertTrue(negotiation.immediateURLDescriptors.isEmpty)
+        XCTAssertTrue(negotiation.promisedOrdinals.isEmpty)
+        XCTAssertEqual(negotiation.acceptableLogicalItemCount, 0)
+    }
+
+    // MARK: - EOP-002-import_external_objects (universal data-flavor materialization)
+
+    /// 검증 내용: 형식 하드코딩 없이 임의의 UTI(data-flavor)를 가진 외부 drop item이 data 표현으로 수용된다.
+    /// 사전 조건: promise/file URL/legacy filename이 없고, 흔치 않은 UTI(public.json, public.vcard)와
+    /// 동적 `dyn.` UTI만 노출하는 data-only pasteboard.
+    /// 기대 결과: inspection이 각 item을 `.dataFlavor(uti:)`로 수용하고 negotiation이 dataFlavor를 산출한다.
+    func testInspectionAcceptsArbitraryUncommonUTIs() {
+        let pasteboard = makeDataOnlyPasteboard([
+            (uti: "public.json", data: Data(#"{"k":1}"#.utf8)),
+            (uti: "public.vcard", data: Data("BEGIN:VCARD".utf8)),
+            (uti: "dyn.a8f9b1c2d3e4f5a6b7c8d9e0", data: Data("raw".utf8)),
+        ])
+
+        let representations = EntryViewLayoutDropValidationAdapter.inspectExternalDropItems(from: pasteboard)
+
+        XCTAssertNotNil(representations)
+        XCTAssertEqual(
+            representations?.compactMap { rep -> String? in
+                guard case let .dataFlavor(uti) = rep else { return nil }
+                return uti
+            },
+            ["public.json", "public.vcard", "dyn.a8f9b1c2d3e4f5a6b7c8d9e0"],
+        )
+        XCTAssertTrue(
+            EntryViewLayoutDropValidationAdapter.hasSupportedExternalRepresentation(in: pasteboard),
+            "data-only drag는 형식 목록 없이 지원 표현으로 수용되어야 한다",
+        )
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        XCTAssertEqual(negotiation.dataFlavors.map(\.uti), [
+            "public.json",
+            "public.vcard",
+            "dyn.a8f9b1c2d3e4f5a6b7c8d9e0",
+        ])
+        XCTAssertEqual(negotiation.dataFlavors.map(\.ordinal), [0, 1, 2])
+        XCTAssertEqual(negotiation.acceptableLogicalItemCount, 3)
+    }
+
+    /// 검증 내용: promise item과 data-flavor item이 섞여도 inspection이 두 표현을 모두 수용한다.
+    /// 사전 조건: [promise, data(json)] 순서의 pasteboard.
+    /// 기대 결과: inspection이 `.promisedFile`과 `.dataFlavor`를 순서대로 반환하고
+    /// negotiation이 promised ordinal과 dataFlavor를 함께 산출한다.
+    func testInspectionMixedPromiseAndDataMaterializesBoth() {
+        let pasteboard = makePromiseDataMixedPasteboard(
+            promiseCount: 1,
+            dataFlavors: [(uti: "public.json", data: Data(#"{"k":2}"#.utf8))],
+        )
+
+        let representations = EntryViewLayoutDropValidationAdapter.inspectExternalDropItems(from: pasteboard)
+
+        XCTAssertEqual(representations?.count, 2)
+        XCTAssertEqual(representations?.first, .promisedFile)
+        guard case let .dataFlavor(uti) = representations?[1] else {
+            XCTFail("두 번째 item은 dataFlavor여야 한다")
+            return
+        }
+        XCTAssertEqual(uti, "public.json")
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        XCTAssertEqual(negotiation.promisedOrdinals, [0])
+        XCTAssertEqual(negotiation.dataFlavors.map(\.ordinal), [1])
+        XCTAssertEqual(negotiation.acceptableLogicalItemCount, 2)
+    }
+
+    /// 검증 내용: 중복 즉시 경로는 `sourcePaths(from:)` dedup 계약을 유지해 제거한다.
+    /// 사전 조건: 같은 경로의 file URL이 pasteboard에 두 번 들어 있다.
+    /// 기대 결과: descriptor는 하나만 산출된다.
+    func testDuplicateImmediatePathsAreDeduped() {
+        let sameURL = URL(fileURLWithPath: "/external/dup.txt")
+        let pasteboard = DragInfoFixture.makeFileURLPasteboard(urls: [sameURL, sameURL])
+
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertEqual(negotiation.immediateURLDescriptors.count, 1)
+        XCTAssertEqual(negotiation.immediateURLDescriptors.first?.path, sameURL.standardizedFileURL.path)
+    }
+
+    /// 검증 내용: Grid/List view는 `.fileURL` + promise readable types + legacy filenames를 중복 없이
+    /// 결정적 순서로 등록한다.
+    /// 사전 조건: Grid/List view가 생성된다.
+    /// 기대 결과: adapter의 shared list가 결정적 순서·무중복이고, view가 같은 type 집합을 등록하며 `.fileURL`을 유지한다.
+    func testGridAndListViewRegisterDraggedTypes() {
+        let grid = EntryGridView()
+        let list = EntryListView()
+
+        let expected = EntryViewLayoutDropValidationAdapter.registeredDraggedTypes
+        // adapter는 결정적 순서·무중복 계약을 보장한다.
+        XCTAssertEqual(expected.count, Set(expected).count, "dragged types에 중복이 없어야 한다")
+        XCTAssertEqual(expected.first, .fileURL, "`.fileURL`이 첫 번째여야 한다")
+        for promiseType in NSFilePromiseReceiver.readableDraggedTypes {
+            XCTAssertTrue(
+                expected.contains(NSPasteboard.PasteboardType(promiseType)),
+                "promise type \(promiseType)을 등록해야 한다",
+            )
+        }
+        XCTAssertTrue(
+            expected.contains(NSPasteboard.PasteboardType("NSFilenamesPboardType")),
+            "legacy filenames type을 등록해야 한다",
+        )
+        // 데이터 전용 표면(UTType.data + 콘크리트 표준 타입)이 등록되어 있어야 한다.
+        XCTAssertTrue(
+            expected.contains(NSPasteboard.PasteboardType(UTType.data.identifier)),
+            "데이터 전용 드래그를 위해 UTType.data 표면을 등록해야 한다",
+        )
+        for concrete in [NSPasteboard.PasteboardType.string, .html, .rtf, .tiff, .png, .pdf] {
+            XCTAssertTrue(expected.contains(concrete), "데이터 전용 표면 \(concrete.rawValue)을 등록해야 한다")
+        }
+
+        // AppKit은 view가 받은 dragged types를 내부 순서로 재정렬하므로 집합 동일성으로 검증한다.
+        XCTAssertEqual(Set(grid.collectionView.registeredDraggedTypes), Set(expected))
+        XCTAssertEqual(Set(list.tableView.registeredDraggedTypes), Set(expected))
+        XCTAssertTrue(grid.collectionView.registeredDraggedTypes.contains(.fileURL))
+        XCTAssertTrue(list.tableView.registeredDraggedTypes.contains(.fileURL))
+    }
+
+    // MARK: - EOP-002-import_external_objects (validateDrop promise survival)
+
+    /// 검증 내용: promise-only 외부 drag가 Grid `validateDrop`을 통과해 `.copy`를 제안한다.
+    /// 사전 조건: 외부 drag가 file promise만 제공한다 (source path 없음).
+    /// 기대 결과: validateDrop이 `.copy`를 반환해 acceptDrop이 획득 세션을 시작할 수 있다.
+    func testPromiseOnlyGridValidateProposesCopy() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current")
+        let grid = EntryGridCoordinator(store: store)
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let operation = driveGridValidate(grid: grid, info: info, transport: transport, currentPath: "/current")
+
+        XCTAssertEqual(operation, .copy)
+    }
+
+    /// 검증 내용: promise-only 외부 drag가 List `validateDrop`을 통과해 `.copy`를 제안한다.
+    /// 사전 조건: 외부 drag가 file promise만 제공한다 (source path 없음).
+    /// 기대 결과: validateDrop이 `.copy`를 반환해 acceptDrop이 획득 세션을 시작할 수 있다.
+    func testPromiseOnlyListValidateProposesCopy() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current")
+        let list = EntryListCoordinator(store: store)
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let operation = driveListValidate(list: list, info: info, transport: transport, currentPath: "/current")
+
+        XCTAssertEqual(operation, .copy)
+    }
+
+    /// 검증 내용: promise + file URL이 섞인 동일 외부 drag가 Grid/List `validateDrop`을 통과해 `.copy`를 제안한다.
+    /// 사전 조건: 외부 drag가 [fileURL, promise] 순서로 제공한다 (promise item 때문에 source path는 비어 있다).
+    /// 기대 결과: Grid/List 모두 `.copy`를 반환한다.
+    func testPromiseMixedGridAndListValidateProposesCopy() {
+        let url = URL(fileURLWithPath: "/external/a.txt")
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-mixed-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects([url as NSURL])
+        pasteboard.writeObjects([
+            NSFilePromiseProvider(
+                fileType: UTType.plainText.identifier,
+                delegate: FilePromiseProviderFixtureDelegate(filename: "b.txt"),
+            ),
+        ])
+
+        let gridOperation = driveGridValidate(
+            grid: EntryGridCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+        let listOperation = driveListValidate(
+            list: EntryListCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+
+        XCTAssertEqual(gridOperation, .copy)
+        XCTAssertEqual(listOperation, .copy)
+    }
+
+    /// 검증 내용: 지원하지 않는 항목만 있는 외부 drag는 Grid/List `validateDrop`에서 여전히 거절된다.
+    /// 사전 조건: 외부 drag가 일반 문자열만 제공한다 (지원 표현 없음).
+    /// 기대 결과: Grid/List 모두 빈 operation을 반환한다 (negative boundary 고정).
+    func testUnsupportedOnlyExternalDragStillRejectedOnGridAndList() {
+        let pasteboard = DragInfoFixture.makeUnsupportedOnlyPasteboard(text: "not a file")
+
+        let gridOperation = driveGridValidate(
+            grid: EntryGridCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+        let listOperation = driveListValidate(
+            list: EntryListCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+
+        XCTAssertTrue(gridOperation.isEmpty)
+        XCTAssertTrue(listOperation.isEmpty)
+    }
+
+    // MARK: - EOP-002-import_external_objects (validateDrop data-only surface)
+
+    /// 검증 내용: 텍스트 플레이버만 노출하는 데이터 전용 외부 drag가 Grid/List `validateDrop`을 통과해 `.copy`를 제안한다.
+    /// 사전 조건: 외부 drag가 `public.utf8-plain-text`만 제공한다 (promise/file URL 없음).
+    /// 기대 결과: Grid/List 모두 `.copy`를 반환해 acceptDrop이 materialization을 시작할 수 있다.
+    func testDataOnlyTextGridAndListValidateProposesCopy() {
+        let pasteboard = makeDataOnlyPasteboard([(uti: "public.utf8-plain-text", data: Data("cell value".utf8))])
+
+        let gridOperation = driveGridValidate(
+            grid: EntryGridCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+        let listOperation = driveListValidate(
+            list: EntryListCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+
+        XCTAssertEqual(gridOperation, .copy)
+        XCTAssertEqual(listOperation, .copy)
+    }
+
+    /// 검증 내용: Numbers 셀 드래그 조합(텍스트 + iWork 네이티브 UTI)이 Grid/List `validateDrop`을 통과해 `.copy`를 제안한다.
+    /// 사전 조건: 외부 drag가 `public.utf8-plain-text`(셀 값)와 `com.apple.iWork.TSPNativeData`를 같은 item으로 노출한다.
+    /// 기대 결과: Grid/List 모두 `.copy`를 반환하고, text 계열 flavor가 materialization 후보로 우선된다.
+    func testNumbersCellDataOnlyGridAndListValidateProposesCopy() {
+        let pasteboard = makeDataOnlyPasteboard([
+            (
+                uti: "com.apple.iWork.TSPNativeData",
+                data: Data([0x01, 0x02, 0x03]),
+            ),
+            (
+                uti: "public.utf8-plain-text",
+                data: Data("2024-06-12 08:00:000".utf8),
+            ),
+        ])
+
+        let gridOperation = driveGridValidate(
+            grid: EntryGridCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+        let listOperation = driveListValidate(
+            list: EntryListCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard),
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+
+        XCTAssertEqual(gridOperation, .copy)
+        XCTAssertEqual(listOperation, .copy)
+    }
+
+    // MARK: - EOP-002-import_external_objects (Grid promise/mixed acquisition wiring)
+
+    /// 검증 내용: promise-only Grid acceptDrop이 begin으로 획득 세션을 시작하고, path 기반 move를 내지 않으며
+    /// pending 세션을 설정한다.
+    /// 사전 조건: 외부 drag가 promise만 제공한다.
+    /// 기대 결과: accepted가 true이고 begin 1회, dropItems 0회, activeExternalDropSessionID가 설정된다.
+    func testPromiseOnlyGridAcceptStartsAcquisitionSession() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+        XCTAssertEqual(recorder.emitted.count, 0, "promise 세션은 path 기반 dropItems를 내지 않아야 한다")
+        XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
+    }
+
+    /// 검증 내용: data-only 외부 drag의 Grid acceptDrop이 begin으로 data flavor를 넘겨 획득 세션을 시작한다.
+    /// 사전 조건: promise/file URL 없이 임의 UTI(data-flavor)만 노출하는 pasteboard.
+    /// 기대 결과: accepted가 true이고 begin 1회에 dataFlavorCount가 1이며 receiverCount 0이다.
+    func testDataOnlyGridAcceptStartsAcquisitionSession() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = makeDataOnlyPasteboard([(uti: "public.json", data: Data(#"{"k":1}"#.utf8))])
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.dataFlavorCount, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 0)
+        XCTAssertEqual(acquisition.beginCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+        XCTAssertEqual(recorder.emitted.count, 0, "data 세션은 path 기반 dropItems를 내지 않아야 한다")
+        XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
+    }
+
+    /// 검증 내용: Numbers 셀 드래그 조합(단일 item에 iWork 네이티브 UTI + 텍스트 플레이버)의
+    /// Grid acceptDrop이 begin으로 data flavor를 넘겨 Task 11 materialization으로 흐른다.
+    /// 사전 조건: promise/file URL 없이 iWork 네이티브 + 텍스트만 노출하는 Numbers 조합 item.
+    /// 기대 결과: accepted가 true이고 begin 1회에 dataFlavorCount가 1이며 receiverCount 0이다.
+    func testNumbersCellGridAcceptFlowsThroughDataMaterialization() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = makeNumbersCellPasteboard()
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.dataFlavorCount, 1, "Numbers 셀 값(text)이 data flavor로 물리화돼야 한다")
+        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 0)
+        XCTAssertEqual(acquisition.beginCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+        XCTAssertEqual(recorder.emitted.count, 0, "data 세션은 path 기반 dropItems를 내지 않아야 한다")
+        XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
+    }
+
+    /// Mail load 클로저 호출을 기록하는 테스트 이중 (Swift 6 Sendable 제약용 클래스).
+    private final class MailLoadRecorder: @unchecked Sendable {
+        var numericIDs: [Int?] = []
+        var messageIDs: [String] = []
+    }
+
+    /// Mail message drop의 arrange/act 공통부: recorder client를 주입해
+    /// beginExternalDropAcquisition까지 구동하고 관찰 결과를 모은다.
+    private struct MailDeferredDrive {
+        var info: DragInfoFixture
+        var acquisition: ExternalDropAcquisitionRecorder
+        var loads: MailLoadRecorder
+        var acceptedRequests: [ExternalDropAcceptedRequest]
+        var activeSessionID: ExternalDropSessionID?
+        var clearCount: Int
+        var accepted: Bool
+    }
+
+    private func driveMailMessageDeferredAcquisition(
+        pasteboard: NSPasteboard,
+        source: Data,
+        loads: MailLoadRecorder,
+        acquisition: ExternalDropAcquisitionRecorder,
+    ) -> MailDeferredDrive {
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        var activeSessionID: ExternalDropSessionID?
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var clearCount = 0
+        var client = acquisition.client
+        client.loadMailSource = { lookup in
+            loads.numericIDs.append(lookup.numericID)
+            loads.messageIDs.append(lookup.messageID ?? "")
+            return source
+        }
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: { clearCount += 1 },
+            ),
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: "/destination",
+        )
+        return MailDeferredDrive(
+            info: info,
+            acquisition: acquisition,
+            loads: loads,
+            acceptedRequests: acceptedRequests,
+            activeSessionID: activeSessionID,
+            clearCount: clearCount,
+            accepted: accepted,
+        )
+    }
+
+    /// VOY-736: Mail `message:` drop은 acceptDrop 동기 경로에서 원문을 로드하지 않고
+    /// 지연 획득(beginDeferred)으로 넘겨 main thread를 차단하지 않는다.
+    func testMailMessageURLMaterializesSourceBeforeBrokenPromise() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let loads = MailLoadRecorder()
+        let source = Data("Message-ID: <message-id@example.com>\r\n\r\nBody".utf8)
+
+        let drive = driveMailMessageDeferredAcquisition(
+            pasteboard: DragInfoFixture.makeMailMessageURLPromisePasteboard(),
+            source: source,
+            loads: loads,
+            acquisition: acquisition,
+        )
+
+        XCTAssertTrue(drive.accepted)
+        XCTAssertTrue(loads.numericIDs.isEmpty, "accept 시점에는 원문을 로드하지 않는다")
+        XCTAssertEqual(drive.info.enumerateDraggingItemsCallCount, 0)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.deferredCalls.count, 1)
+        XCTAssertEqual(acquisition.deferredCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.deferredCalls.first?.forcedCopy, true)
+        let items = acquisition.deferredCalls.first?.items ?? []
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.uti, "com.apple.mail.email")
+        XCTAssertEqual(items.first?.filename, "Fwd- hello.eml")
+        XCTAssertEqual(URL(fileURLWithPath: items.first?.filename ?? "").pathExtension, "eml")
+        XCTAssertEqual(drive.acceptedRequests.count, 1)
+        XCTAssertEqual(drive.activeSessionID, acquisition.sessionID)
+        XCTAssertEqual(drive.clearCount, 1)
+
+        // 세션 큐에서 실행될 load 클로저가 Mail identity로 원문을 로드한다.
+        XCTAssertEqual(items.first?.load(), source)
+        XCTAssertEqual(loads.numericIDs, [42])
+        XCTAssertEqual(loads.messageIDs, [""])
+    }
+
+    /// VOY-736: Automator payload 없는 Mail 메시지 드래그는 `message:` URL의
+    /// RFC Message-ID 조회로 폴백되고 파일명은 `public.url-name` 제목으로 파생된다.
+    /// - 검증 내용: URL-only pasteboard가 deferred 세션으로 흐르고 조회 키가 messageID-only다.
+    /// - 사전 조건: Automator type 없이 `public.url`(message:) + `public.url-name` + promise marker.
+    /// - 기대 결과: beginLegacy/begin 없이 beginDeferred 1회, load가 messageID로 원문을 반환하며
+    ///   파일명이 url-name 제목 기반 `Fwd- hello.eml`이다.
+    func testMailMessageURLOnlyFallsBackToMessageIDLookupAndURLNameSubject() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let loads = MailLoadRecorder()
+        let source = Data("Message-ID: <message-id@example.com>\r\n\r\nBody".utf8)
+
+        let drive = driveMailMessageDeferredAcquisition(
+            pasteboard: DragInfoFixture.makeMailMessageURLOnlyPasteboard(),
+            source: source,
+            loads: loads,
+            acquisition: acquisition,
+        )
+
+        XCTAssertTrue(drive.accepted)
+        XCTAssertTrue(loads.numericIDs.isEmpty, "accept 시점에는 원문을 로드하지 않는다")
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.deferredCalls.count, 1)
+        let items = acquisition.deferredCalls.first?.items ?? []
+        XCTAssertEqual(items.first?.filename, "Fwd- hello.eml")
+
+        XCTAssertEqual(items.first?.load(), source)
+        XCTAssertEqual(loads.numericIDs, [nil])
+        XCTAssertEqual(loads.messageIDs, ["message-id@example.com"])
+        XCTAssertEqual(drive.acceptedRequests.count, 1)
+        XCTAssertEqual(drive.activeSessionID, acquisition.sessionID)
+    }
+
+    /// 검증 내용 (VOY-736 회귀): legacy promise marker가 있으면 modern receiver를 읽기 전에
+    /// source가 선언한 `namesOfPromisedFilesDropped` 계약으로 직접 물질화한다.
+    /// 사전 조건: legacy marker와 modern receiver를 함께 노출하고 legacy 호출이 파일을 쓴다.
+    /// 기대 결과: receiver 열거 없이 beginLegacy만 호출되고 source-owned 파일이 전달된다.
+    func testLegacyPromiseMaterializesBeforeReceiverExtraction() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makeLegacyPromiseMailPasteboard()
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerLegacyDestination-\(UUID().uuidString)")
+        XCTAssertNoThrow(try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true))
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = destination.path
+
+        let info = DragInfoFixture(
+            source: nil,
+            operationMask: [.copy, .move],
+            pasteboard: pasteboard,
+            namesOfPromisedFiles: { destination in
+                let message = destination.appendingPathComponent("message.eml")
+                guard FileManager.default.createFile(atPath: message.path, contents: Data("message".utf8)) else {
+                    return nil
+                }
+                return [message.lastPathComponent]
+            },
+        )
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(info.enumerateDraggingItemsCallCount, 0, "legacy promise를 modern receiver로 먼저 읽으면 안 된다")
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.legacyCalls.count, 1)
+        XCTAssertEqual(acquisition.legacyCalls.first?.stagedPathCount, 1)
+        let stagingDirectory = URL(fileURLWithPath: acquisition.legacyCalls.first?.stagingDirectory ?? "")
+        XCTAssertEqual(stagingDirectory.deletingLastPathComponent().path, destination.path)
+        XCTAssertEqual(acquisition.legacyCalls.first?.destination, destination.path)
+        XCTAssertEqual(acquisition.legacyCalls.first?.forcedCopy, true)
+        XCTAssertEqual(recorder.emitted.count, 0, "promise 세션은 path 기반 dropItems를 내지 않아야 한다")
+        XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
+    }
+
+    /// VOY-736: legacy promise 이행 실패를 잔여 data representation 성공으로 강등하지 않는다.
+    /// 사전 조건: legacy marker + modern receiver + `.string`이 있지만 source가 파일을 쓰지 않는다.
+    /// 기대 결과: 드롭이 거절되고 modern/data acquisition 세션은 시작되지 않는다.
+    func testLegacyPromiseFailureDoesNotDegradeToResidualData() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makeLegacyPromiseMailPasteboard()
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(info.enumerateDraggingItemsCallCount, 0)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertNil(grid.activeExternalDropSessionID)
+    }
+
+    /// 검증 내용: modern receiver가 없는 legacy promise도 이행 실패 시 residual data로 강등하지 않는다.
+    /// 사전 조건: receiver 0개 + legacy marker + `.string`이 있고 source가 파일을 쓰지 않는다.
+    /// 기대 결과: 드롭이 거절되고 acquisition 세션은 시작되지 않는다.
+    func testZeroReceiverLegacyPromiseFailureIsRejected() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makeZeroReceiverLegacyDataPasteboard()
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(
+            source: nil,
+            operationMask: [.copy, .move],
+            pasteboard: pasteboard,
+            namesOfPromisedFiles: { _ in nil },
+        )
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(recorder.emitted.count, 0)
+        XCTAssertNil(grid.activeExternalDropSessionID)
+    }
+
+    /// 사전 조건: 이미 활성 외부 세션이 있다.
+    /// 기대 결과: 두 번째 accept가 false이고 begin은 한 번만 호출된다.
+    func testGridPromiseAcceptRejectsDuplicateWhilePending() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+
+        XCTAssertFalse(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+        XCTAssertEqual(acquisition.beginCalls.count, 1, "pending 동안 중복 accept는 거절되어야 한다")
+    }
+
+    /// 검증 내용: teardown이 활성 세션만 정확히 취소한다.
+    /// 사전 조건: promise 세션이 시작되어 activeExternalDropSessionID가 설정되어 있다.
+    /// 기대 결과: cancel이 해당 sessionID로 정확히 한 번 호출되고 pending이 해제된다.
+    func testGridTeardownCancelsOnlyActiveSession() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+
+        withDependencies {
+            $0.externalDropAcquisitionClient = acquisition.client
+        } operation: {
+            grid.cancelActiveExternalDropSession()
+        }
+
+        XCTAssertEqual(acquisition.cancelledSessionIDs, [acquisition.sessionID])
+        XCTAssertNil(grid.activeExternalDropSessionID)
+    }
+
+    // MARK: - EOP-002-import_external_objects (List promise/mixed acquisition wiring, parity with Grid)
+
+    /// 검증 내용: promise-only List acceptDrop이 begin으로 획득 세션을 시작하고, path 기반 move를 내지 않으며
+    /// pending 세션을 설정한다.
+    /// 사전 조건: 외부 drag가 promise만 제공한다.
+    /// 기대 결과: accepted가 true이고 begin 1회, dropItems 0회, activeExternalDropSessionID가 설정된다.
+    func testPromiseOnlyListAcceptStartsAcquisitionSession() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let list = EntryListCoordinator(store: store)
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.destination, "/current")
+        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+        XCTAssertEqual(recorder.emitted.count, 0, "promise 세션은 path 기반 dropItems를 내지 않아야 한다")
+        XCTAssertEqual(list.activeExternalDropSessionID, acquisition.sessionID)
+    }
+
+    /// 검증 내용: promise/mixed 세션이 pending인 동안 두 번째 List acceptDrop을 거절한다.
+    /// 사전 조건: 이미 활성 외부 세션이 있다.
+    /// 기대 결과: 두 번째 accept가 false이고 begin은 한 번만 호출된다.
+    func testListPromiseAcceptRejectsDuplicateWhilePending() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let list = EntryListCoordinator(store: store)
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+
+        XCTAssertFalse(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+        XCTAssertEqual(acquisition.beginCalls.count, 1, "pending 동안 중복 accept는 거절되어야 한다")
+    }
+
+    /// 검증 내용: teardown(current-path change)이 List의 활성 세션만 정확히 취소한다.
+    /// 사전 조건: promise 세션이 시작되어 activeExternalDropSessionID가 설정되어 있다.
+    /// 기대 결과: cancel이 해당 sessionID로 정확히 한 번 호출되고 pending이 해제된다.
+    func testListTeardownCancelsOnlyActiveSession() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let list = EntryListCoordinator(store: store)
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+
+        withDependencies {
+            $0.externalDropAcquisitionClient = acquisition.client
+        } operation: {
+            list.cancelActiveExternalDropSession()
+        }
+
+        XCTAssertEqual(acquisition.cancelledSessionIDs, [acquisition.sessionID])
+        XCTAssertNil(list.activeExternalDropSessionID)
+    }
+
+    /// 검증 내용: promise-only List accept가 Grid와 동일한 획득 요청 형태(강제 copy, destination)를 산출한다.
+    /// 사전 조건: blank 및 folder 대상에 대해 같은 promise fixture를 Grid와 List에 각각 드롭한다.
+    /// 기대 결과: 두 경로의 begin이 동일한 destination과 forcedCopy를 가진다.
+    func testPromiseListAcquisitionMatchesGridForBlankAndFolderTargets() {
+        let cases: [(name: String, destination: String)] = [
+            ("blank", "/current"),
+            ("folder", "/dest/folder"),
+        ]
+
+        for testCase in cases {
+            let transport = DragTransport()
+            let recorder = DropRecorder()
+            let acquisition = ExternalDropAcquisitionRecorder()
+            let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+            let gridStore = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+                $0.externalDropAcquisitionClient = acquisition.client
+            }
+            let grid = EntryGridCoordinator(store: gridStore)
+            grid.validatedDropDestinationPath = testCase.destination
+            let gridInfo = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+            let listStore = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+                $0.externalDropAcquisitionClient = acquisition.client
+            }
+            let list = EntryListCoordinator(store: listStore)
+            let listInfo = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+            let listItem: Any? = testCase.destination == "/current" ? nil : EntryListCoordinator.OutlineItem(
+                kind: .entry(EntryModel.temporaryFolder(id: testCase.destination, name: "folder")),
+            )
+
+            XCTAssertTrue(driveGridAccept(
+                grid: grid,
+                info: gridInfo,
+                transport: transport,
+                acquisition: acquisition.client,
+            ))
+            XCTAssertTrue(driveListAccept(
+                list: list,
+                info: listInfo,
+                item: listItem,
+                transport: transport,
+                acquisition: acquisition.client,
+            ))
+
+            XCTAssertEqual(acquisition.beginCalls.count, 2, "\(testCase.name) 대상 begin 2회")
+            let gridCall = acquisition.beginCalls[0]
+            let listCall = acquisition.beginCalls[1]
+            XCTAssertEqual(gridCall.destination, listCall.destination, "\(testCase.name) destination parity")
+            XCTAssertEqual(gridCall.destination, testCase.destination)
+            XCTAssertEqual(gridCall.forcedCopy, listCall.forcedCopy, "\(testCase.name) forcedCopy parity")
+            XCTAssertTrue(gridCall.forcedCopy, "\(testCase.name) 대상은 강제 copy여야 한다")
+        }
+    }
+
+    /// 검증 내용: promise-only List accept가 package directory 대상이면 currentPath로 fallback한다.
+    /// 사전 조건: promise drag를 package directory entry에 drop한다.
+    /// 기대 결과: begin destination이 currentPath이고 forcedCopy가 true다.
+    func testListPromisePackageTargetFallsBackToCurrentPath() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let list = EntryListCoordinator(store: store)
+
+        let pkgEntry = makePackageFolder(id: "/pkg.app")
+        let outlineItem = EntryListCoordinator.OutlineItem(kind: .entry(pkgEntry))
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveListAccept(
+            list: list,
+            info: info,
+            item: outlineItem,
+            transport: transport,
+            acquisition: acquisition.client,
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(
+            acquisition.beginCalls.first?.destination,
+            "/current",
+            "package directory는 destination으로 route하지 않아야 한다",
+        )
+        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+    }
+
+    // MARK: - EOP-002-import_external_objects (repeated-drop after terminal)
+
+    /// 검증 내용: Grid에서 성공 종단 후 같은 폴더의 다음 promise drop이 다시 수락된다 (F2 P0).
+    /// 사전 조건: promise 세션이 성공(.succeeded)으로 종료된다.
+    /// 기대 결과: activeExternalDropSessionID가 해제되고 두 번째 accept가 true이며 begin이 2회다.
+    func testGridRepeatedPromiseDropAcceptedAfterTerminalSuccess() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
+
+        // reducer로 종단 성공을 구동하면 activeExternalDrop이 nil이 된다.
+        let previousActive = store.state.entryOperations.activeExternalDrop
+        XCTAssertNotNil(previousActive)
+        store.send(.entryOperations(.externalDrop(.event(.succeeded(acquisition.sessionID)))))
+        XCTAssertNil(store.state.entryOperations.activeExternalDrop)
+
+        // coordinator render-loop 전이 관찰: 세션 ID 해제.
+        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
+            activeSessionID: &grid.activeExternalDropSessionID,
+            previousActive: previousActive,
+            currentActive: store.state.entryOperations.activeExternalDrop,
+        )
+        XCTAssertNil(grid.activeExternalDropSessionID)
+
+        XCTAssertTrue(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+        XCTAssertEqual(acquisition.beginCalls.count, 2, "종단 후 두 번째 accept는 다시 수락되어야 한다")
+    }
+
+    /// 검증 내용: Grid에서 실패 종단 후 같은 폴더의 다음 promise drop이 다시 수락된다 (F2 P0).
+    /// 사전 조건: promise 세션이 실패(.failed)로 종료된다.
+    /// 기대 결과: activeExternalDropSessionID가 해제되고 두 번째 accept가 true다.
+    func testGridRepeatedPromiseDropAcceptedAfterTerminalFailure() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+        let previousActive = store.state.entryOperations.activeExternalDrop
+        XCTAssertNotNil(previousActive)
+
+        store.send(.entryOperations(.externalDrop(.event(.failed(acquisition.sessionID, .callbackError)))))
+        XCTAssertNil(store.state.entryOperations.activeExternalDrop)
+
+        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
+            activeSessionID: &grid.activeExternalDropSessionID,
+            previousActive: previousActive,
+            currentActive: store.state.entryOperations.activeExternalDrop,
+        )
+        XCTAssertNil(grid.activeExternalDropSessionID)
+
+        XCTAssertTrue(driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client))
+        XCTAssertEqual(acquisition.beginCalls.count, 2, "실패 종단 후 두 번째 accept는 다시 수락되어야 한다")
+    }
+
+    /// 검증 내용: List에서 성공 종단 후 같은 폴더의 다음 promise drop이 다시 수락된다 (F2 P0).
+    /// 사전 조건: promise 세션이 성공(.succeeded)으로 종료된다.
+    /// 기대 결과: activeExternalDropSessionID가 해제되고 두 번째 accept가 true다.
+    func testListRepeatedPromiseDropAcceptedAfterTerminalSuccess() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let list = EntryListCoordinator(store: store)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(list.activeExternalDropSessionID, acquisition.sessionID)
+
+        let previousActive = store.state.entryOperations.activeExternalDrop
+        XCTAssertNotNil(previousActive)
+        store.send(.entryOperations(.externalDrop(.event(.succeeded(acquisition.sessionID)))))
+        XCTAssertNil(store.state.entryOperations.activeExternalDrop)
+
+        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
+            activeSessionID: &list.activeExternalDropSessionID,
+            previousActive: previousActive,
+            currentActive: store.state.entryOperations.activeExternalDrop,
+        )
+        XCTAssertNil(list.activeExternalDropSessionID)
+
+        XCTAssertTrue(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+        XCTAssertEqual(acquisition.beginCalls.count, 2, "종단 후 두 번째 accept는 다시 수락되어야 한다")
+    }
+
+    /// 검증 내용: List에서 실패 종단 후 같은 폴더의 다음 promise drop이 다시 수락된다 (F2 P0).
+    /// 사전 조건: promise 세션이 실패(.failed)로 종료된다.
+    /// 기대 결과: activeExternalDropSessionID가 해제되고 두 번째 accept가 true다.
+    func testListRepeatedPromiseDropAcceptedAfterTerminalFailure() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        let store = makeStore(transport: transport, recorder: recorder, currentPath: "/current") {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let list = EntryListCoordinator(store: store)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        XCTAssertTrue(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+        let previousActive = store.state.entryOperations.activeExternalDrop
+        XCTAssertNotNil(previousActive)
+
+        store.send(.entryOperations(.externalDrop(.event(.failed(acquisition.sessionID, .callbackError)))))
+        XCTAssertNil(store.state.entryOperations.activeExternalDrop)
+
+        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
+            activeSessionID: &list.activeExternalDropSessionID,
+            previousActive: previousActive,
+            currentActive: store.state.entryOperations.activeExternalDrop,
+        )
+        XCTAssertNil(list.activeExternalDropSessionID)
+
+        XCTAssertTrue(driveListAccept(
+            list: list,
+            info: info,
+            item: nil,
+            transport: transport,
+            acquisition: acquisition.client,
+        ))
+        XCTAssertEqual(acquisition.beginCalls.count, 2, "실패 종단 후 두 번째 accept는 다시 수락되어야 한다")
+    }
 }
 
 // MARK: - Support
@@ -402,6 +1638,7 @@ private extension EOP002ArrangeEntriesTests {
         transport: DragTransport,
         recorder: DropRecorder,
         currentPath: String = "/current",
+        additionalDependencies: ((inout DependencyValues) -> Void)? = nil,
     ) -> StoreOf<EntryViewLayoutFeature> {
         var state = EntryViewLayoutState()
         state.currentPath = currentPath
@@ -410,6 +1647,7 @@ private extension EOP002ArrangeEntriesTests {
         } withDependencies: {
             $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
             $0.entryLoadingClient = EntryLoadingClient.testValue
+            additionalDependencies?(&$0)
         }
     }
 
@@ -452,11 +1690,15 @@ private extension EOP002ArrangeEntriesTests {
         grid: EntryGridCoordinator,
         info: any NSDraggingInfo,
         transport: DragTransport,
+        acquisition: ExternalDropAcquisitionClient? = nil,
         collectionView: NSCollectionView = NSCollectionView(),
     ) -> Bool {
         var accepted = false
         withDependencies {
             $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+            if let acquisition {
+                $0.externalDropAcquisitionClient = acquisition
+            }
         } operation: {
             accepted = grid.collectionView(
                 collectionView,
@@ -474,14 +1716,67 @@ private extension EOP002ArrangeEntriesTests {
         info: any NSDraggingInfo,
         item: Any?,
         transport: DragTransport,
+        acquisition: ExternalDropAcquisitionClient? = nil,
     ) -> Bool {
         var accepted = false
         withDependencies {
             $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+            if let acquisition {
+                $0.externalDropAcquisitionClient = acquisition
+            }
         } operation: {
             accepted = list.outlineView(NSOutlineView(), acceptDrop: info, item: item, childIndex: 0)
         }
         return accepted
+    }
+
+    /// Grid `validateDrop`를 직접 구동해 제안된 drop operation을 반환한다.
+    /// 외부 promise drag의 검증 통과 여부(`.copy`)를 확인하는 데 사용한다.
+    /// `validateDrop` 내부가 bound `collectionView`(빈 view)를 사용하므로 view를 바인딩한다.
+    func driveGridValidate(
+        grid: EntryGridCoordinator,
+        info: any NSDraggingInfo,
+        transport: DragTransport,
+        currentPath _: String,
+    ) -> NSDragOperation {
+        let collectionView = NSCollectionView()
+        let boundView = EntryGridView() // weak `grid.view`가 살아 있도록 강한 참조 유지
+        grid.view = boundView
+        var proposedIndexPath: NSIndexPath? = IndexPath(item: 0, section: 0) as NSIndexPath
+        var proposedOperation = NSCollectionView.DropOperation.before
+        var result: NSDragOperation = []
+        withDependencies {
+            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+        } operation: {
+            result = withUnsafeMutablePointer(to: &proposedIndexPath) { indexPathPtr in
+                withUnsafeMutablePointer(to: &proposedOperation) { opPtr in
+                    grid.collectionView(
+                        collectionView,
+                        validateDrop: info,
+                        proposedIndexPath: AutoreleasingUnsafeMutablePointer(indexPathPtr),
+                        dropOperation: opPtr,
+                    )
+                }
+            }
+        }
+        return result
+    }
+
+    /// List `validateDrop`를 직접 구동해 제안된 drop operation을 반환한다.
+    /// 외부 promise drag의 검증 통과 여부(`.copy`)를 확인하는 데 사용한다.
+    func driveListValidate(
+        list: EntryListCoordinator,
+        info: any NSDraggingInfo,
+        transport: DragTransport,
+        currentPath _: String,
+    ) -> NSDragOperation {
+        var result: NSDragOperation = []
+        withDependencies {
+            $0.entryFileOpsClient = self.makeFileOpsClient(transport: transport)
+        } operation: {
+            result = list.outlineView(NSOutlineView(), validateDrop: info, proposedItem: nil, proposedChildIndex: 0)
+        }
+        return result
     }
 
     func driveGridAccept(
@@ -546,14 +1841,147 @@ private extension DragInfoFixture {
     static func makeMixedPasteboard(fileURL: URL, unsupportedText: String) -> NSPasteboard {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-mixed-\(UUID().uuidString)"))
         pasteboard.clearContents()
-        pasteboard.writeObjects([fileURL as NSURL, unsupportedText as NSString])
+        pasteboard.writeObjects([fileURL as NSURL])
+        // `unsupportedText`는 file-url 타입만 노출하되 유효한 파일 URL이 아닌 item으로 만든다.
+        // 구조적 타입뿐이므로 data-flavor로도 파일 URL로도 수용되지 않아 원자적 거절을 검증한다.
+        let unsupported = NSPasteboardItem()
+        unsupported.setData(
+            Data(unsupportedText.utf8),
+            forType: NSPasteboard.PasteboardType(UTType.fileURL.identifier),
+        )
+        pasteboard.writeObjects([unsupported])
         return pasteboard
     }
 
     static func makeUnsupportedOnlyPasteboard(text: String) -> NSPasteboard {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-unsupported-\(UUID().uuidString)"))
         pasteboard.clearContents()
-        pasteboard.writeObjects([text as NSString])
+        // file-url 타입만 노출하되 유효한 파일 URL이 아닌 item → 어떤 표현으로도 수용되지 않는다.
+        let item = NSPasteboardItem()
+        item.setData(Data(text.utf8), forType: NSPasteboard.PasteboardType(UTType.fileURL.identifier))
+        pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// `count`개의 file promise 항목만 가진 pasteboard (실제 파일은 쓰지 않는다).
+    static func makePromiseOnlyPasteboard(count: Int) -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-promise-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let providers = (0 ..< count).map { index in
+            NSFilePromiseProvider(
+                fileType: UTType.plainText.identifier,
+                delegate: FilePromiseProviderFixtureDelegate(filename: "promise-\(index).txt"),
+            )
+        }
+        pasteboard.writeObjects(providers)
+        return pasteboard
+    }
+
+    /// promise type과 file URL을 같은 logical item(pasteboard item 하나)에 함께 넣은 pasteboard.
+    /// 이는 cloud 파일처럼 promise와 즉시 URL을 동시에 제공하는 item을 재현한다.
+    static func makePromiseFileURLSameItemPasteboard(fileURL: URL) -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-sameitem-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(fileURL.absoluteString, forType: .fileURL)
+        item.setString(
+            "promise.txt",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-name"),
+        )
+        item.setString(
+            UTType.plainText.identifier,
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// Mail 메시지 드래그의 promise 조합을 재현한다 (probe 실측 타입 문자열 그대로).
+    /// `com.apple.pasteboard.promised-file-url` + `promised-file-content-type`을 선언해
+    /// `readObjects(forClasses:)`가 NSFilePromiseReceiver 1개(fileNames 빈)를 반환한다
+    /// (현대 Mail: receiver는 주되 파일명 메타데이터가 비어 있음, VOY-736).
+    static func makeLegacyPromiseMailPasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-legacy-mail-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            "message.eml",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        item.setString(
+            UTType.plainText.identifier,
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        item.setString("Fwd: hello", forType: .string)
+        pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    static func makeMailMessageURLPromisePasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-message-url-mail-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            "message://%3Cmessage-id@example.com%3E",
+            forType: NSPasteboard.PasteboardType("public.url"),
+        )
+        item.setString("Fwd: hello", forType: NSPasteboard.PasteboardType("public.url-name"))
+        if let automatorData = try? PropertyListSerialization.data(
+            fromPropertyList: [["id": 42, "subject": "Fwd: hello"]],
+            format: .binary,
+            options: 0,
+        ) {
+            item.setData(automatorData, forType: NSPasteboard.PasteboardType("com.apple.mail.PasteboardTypeAutomator"))
+        }
+        item.setString(
+            "message.eml",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        item.setString(
+            "public.email-message",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// Automator payload 없는 Mail 메시지 드래그를 재현한다. `message:` URL identity만
+    /// 노출하므로 조회 키가 RFC Message-ID로 폴백되고 파일명은 `public.url-name`에서
+    /// 파생된다 (구형 Mail/타 source 대응, VOY-736).
+    static func makeMailMessageURLOnlyPasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-message-url-only-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            "message://%3Cmessage-id@example.com%3E",
+            forType: NSPasteboard.PasteboardType("public.url"),
+        )
+        item.setString("Fwd: hello", forType: NSPasteboard.PasteboardType("public.url-name"))
+        item.setString(
+            "message.eml",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        item.setString(
+            "public.email-message",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// receiver 0개 레거시 promised-file 드래그를 재현한다. `promised-file-url`은 선언하되
+    /// 값이 파일 promise로 이행되지 않아 `readObjects(forClasses:)`가 0개를 반환하고,
+    /// 잔여 `.string` 플레이버만 남긴다. 레거시 data 폴백(receiver 0개)의 사전 조건이다.
+    static func makeZeroReceiverLegacyDataPasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-zero-recv-legacy-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            "not-a-real-promise-url",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        item.setString("Fwd: hello body", forType: .string)
+        pasteboard.writeObjects([item])
         return pasteboard
     }
 
