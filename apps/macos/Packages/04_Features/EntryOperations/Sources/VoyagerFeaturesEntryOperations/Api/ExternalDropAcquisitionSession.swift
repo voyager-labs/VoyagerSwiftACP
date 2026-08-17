@@ -1,3 +1,4 @@
+@preconcurrency import AppKit
 import Foundation
 import os
 import VoyagerShared
@@ -163,6 +164,36 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         )))
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
+        }
+    }
+
+    /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
+    func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
+        queue.addOperation { [weak self] in
+            guard let self else { return }
+            guard let bytes = flavor.load() else {
+                fail(reason: .dataMaterializationFailed)
+                return
+            }
+            materialize(dataFlavor: ExternalDropDataFlavor(
+                uti: flavor.uti,
+                bytes: bytes,
+                filename: flavor.filename,
+            ))
+        }
+    }
+
+    /// promise receiver를 세션 전용 큐에서 수신을 시작한다. AppKit는 completion handler를
+    /// non-main OperationQueue에서 호출하므로, lock-guarded `handleCallback`이 off-main에서
+    /// 안전하게 실행된다.
+    @MainActor
+    func startReceiving(receiver: NSFilePromiseReceiver, atDestination destination: URL, index: Int) {
+        receiver.receivePromisedFiles(
+            atDestination: destination,
+            options: [:],
+            operationQueue: queue,
+        ) { @Sendable [weak self] url, error in
+            self?.handleCallback(receiverIndex: index, url: url, error: error)
         }
     }
 
@@ -418,6 +449,16 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         guard !emittedTerminal else { return }
         emittedTerminal = true
         isFinished = true
+        // 실패/취소 종단에서도 staging을 반드시 정리한다. 성공(.succeeded)은 placement가
+        // staged 파일을 destination으로 복사한 뒤 `finish()`가 제거하므로 여기서 지우지 않는다.
+        switch event {
+        case .succeeded:
+            break
+        case .failed, .cancelled:
+            removeStagingLocked()
+        case .received:
+            break
+        }
         stagingObserver?.cancel()
         stagingObserver = nil
         stagingScanWorkItem?.cancel()

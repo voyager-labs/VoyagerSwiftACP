@@ -42,6 +42,9 @@ public struct ExternalDropAcceptedRequest: Equatable, Sendable {
     public let forcedCopy: Bool
     /// 이 세션 전용 staging 디렉터리 경로.
     public let stagingDirectory: String
+    /// mixed drop에서 promise/materialization 없이 즉시 획득 가능한 file URL 경로.
+    /// promise와 함께 온 즉시 URL이 조용히 누락되지 않도록 ordered import plan에 합쳐진다.
+    public let immediateURLPaths: [String]
 
     public init(
         sessionID: ExternalDropSessionID,
@@ -50,6 +53,7 @@ public struct ExternalDropAcceptedRequest: Equatable, Sendable {
         promisedOrdinals: [Int],
         forcedCopy: Bool,
         stagingDirectory: String,
+        immediateURLPaths: [String] = [],
     ) {
         self.sessionID = sessionID
         self.destination = destination
@@ -57,6 +61,7 @@ public struct ExternalDropAcceptedRequest: Equatable, Sendable {
         self.promisedOrdinals = promisedOrdinals
         self.forcedCopy = forcedCopy
         self.stagingDirectory = stagingDirectory
+        self.immediateURLPaths = immediateURLPaths
     }
 }
 

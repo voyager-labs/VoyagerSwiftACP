@@ -353,7 +353,9 @@ extension EntryViewLayoutDropValidationAdapter {
         validationLogger
             .info("acquisition path \(receivers.isEmpty ? "data-only" : "modern-promise", privacy: .public)")
         // promise/mixed/data 외부 drop은 항상 `.copy`를 사용하고 path 기반 move(`dropItems` false)를 내지 않는다.
-        let request = context.client.begin(receivers, combinedDataFlavors, destinationPath, true)
+        // mixed drop의 즉시 file URL은 promise/materialization과 함께 복사 배치에 포함시켜 누락을 막는다.
+        let immediateURLPaths = negotiation.immediateURLDescriptors.map(\.path)
+        let request = context.client.begin(receivers, combinedDataFlavors, destinationPath, true, immediateURLPaths)
         activeSessionID = request.sessionID
         context.sendAccepted(request)
         context.clearDropState()
