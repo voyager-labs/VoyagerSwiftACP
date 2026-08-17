@@ -177,7 +177,10 @@ public struct EntryExternalDropOperationsReducer {
         // 진행 중 placement가 있으면 새 세션으로 덮어써 첫 세션의 복사 완료·staging 정리·
         // 종합 reload가 유실되지 않도록 차단한다. (전체 취소/직렬화 배선은 별도 이슈로 분리)
         guard state.externalDropImportPlacement == nil else {
-            return .none
+            // 버려진 plan의 세션도 finish해 두 번째 staging이 남지 않게 정리한다.
+            return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
+                await acquisitionClient.finish(sessionID)
+            }
         }
         // 획득된 staged 파일을 item/callback ordinal 순서로 정렬하고, mixed drop의 즉시
         // file URL을 뒤에 이어 붙여 promise/materialization과 함께 복사 배치로 전달한다.

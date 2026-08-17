@@ -546,8 +546,10 @@ extension EntryViewLayoutDropValidationAdapter {
             }
             return url.path
         }
-        guard !stagedPaths.isEmpty else {
-            logger.info("legacy promise empty (session \(sessionID.rawValue, privacy: .public))")
+        // promised 이름 수와 실제 staging 물리화 수가 정확히 일치해야 한다. 일부만 성공한
+        // 나머지로 세션을 성공시켜 조용히 누락하는 대신 staging을 정리하고 전체를 거절한다.
+        guard !names.isEmpty, stagedPaths.count == names.count else {
+            logger.info("legacy promise incomplete (session \(sessionID.rawValue, privacy: .public))")
             try? FileManager.default.removeItem(at: stagingURL)
             context.clearDropState()
             return false

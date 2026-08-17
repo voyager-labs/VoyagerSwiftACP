@@ -3186,6 +3186,103 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
     }
 
+    /// 검증 내용: 첫 placement가 진행 중인 동안 도착한 두 번째 applyImport는 첫 placement를
+    /// 덮어쓰지 않고, 버려진 두 번째 세션도 staging이 남지 않도록 finish된다.
+    /// 사전 조건: 세션 1의 복사가 게이트로 대기 중(placement 진행 중)에 세션 2가 도착한다.
+    /// 기대 결과: placement는 세션 1을 유지하고 두 세션 모두 finish가 호출된다.
+    func testExternalDropImport_secondPlacementWhileInProgressIsDiscardedAndFinished() async throws {
+        final class PasteGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var continuations: [CheckedContinuation<Void, Never>] = []
+            private var opened = false
+
+            func wait() async {
+                await withCheckedContinuation { continuation in
+                    lock.lock()
+                    if opened {
+                        lock.unlock()
+                        continuation.resume()
+                        return
+                    }
+                    continuations.append(continuation)
+                    lock.unlock()
+                }
+            }
+
+            func open() {
+                lock.lock()
+                opened = true
+                let pending = continuations
+                continuations.removeAll()
+                lock.unlock()
+                pending.forEach { $0.resume() }
+            }
+        }
+
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let gate = PasteGate()
+        var fileOps = makeRecordedFileOpsClient(recorder: recorder)
+        let ungatedPaste = fileOps.pasteFile
+        fileOps.pasteFile = { sourceURL, destinationURL in
+            await gate.wait()
+            try await ungatedPaste(sourceURL, destinationURL)
+        }
+        let firstSession = ExternalDropSessionID()
+        let secondSession = ExternalDropSessionID()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = fileOps
+            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                events: { _ in AsyncStream { $0.finish() } },
+                cancel: { cleanup.recordCancel($0) },
+                finish: { cleanup.recordFinish($0) },
+                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+            )
+        }
+        store.exhaustivity = .off
+
+        func makePlan(sessionID: ExternalDropSessionID) -> ExternalDropImportPlan {
+            ExternalDropImportPlan(
+                sessionID: sessionID,
+                destination: dest.path,
+                forcedCopy: true,
+                orderedPromisedNames: ["a.txt"],
+                promisedOrdinals: [0],
+                receivedFiles: [
+                    .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                ],
+            )
+        }
+
+        await store.send(.externalDrop(.applyImport(makePlan(sessionID: firstSession))))
+        XCTAssertEqual(store.state.externalDropImportPlacement?.sessionID, firstSession)
+
+        // 세션 1의 복사가 게이트로 대기 중(placement 진행 중)에 세션 2가 도착한다.
+        await store.send(.externalDrop(.applyImport(makePlan(sessionID: secondSession))))
+        XCTAssertEqual(
+            store.state.externalDropImportPlacement?.sessionID,
+            firstSession,
+            "진행 중 placement를 새 세션이 덮어쓰면 안 된다",
+        )
+
+        gate.open()
+        await store.finish()
+
+        XCTAssertEqual(Set(cleanup.finishes), Set([firstSession, secondSession]))
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
     /// EOP-002-import_external_objects: 이름 충돌 stop은 해당 항목만 실패시키고 나머지는 유지한다.
     /// destination에 이미 같은 이름이 있으면 replace alert `.stop`에 따라 그 항목만 실패하고,
     /// 나머지 항목은 성공해 status가 `.partiallyApplied`가 된다.

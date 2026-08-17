@@ -1219,6 +1219,63 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(acceptedRequests.first?.immediateURLPaths, [immediateURL.path])
     }
 
+    /// 검증 내용 (VOY-736 회귀): legacy promise가 promised 이름 중 일부만 물리화하면
+    /// 나머지로 세션을 성공시키지 않고 staging을 정리한 뒤 전체 drop을 거절한다.
+    /// 사전 조건: namesOfPromisedFilesDropped가 이름 2개를 반환하지만 파일 1개만 쓴다.
+    /// 기대 결과: 드롭이 거절되고 beginLegacy/accepted 세션은 시작되지 않는다.
+    @MainActor
+    func testLegacyPromisePartialMaterializationRejectsEntireDrop() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerLegacyPartial-\(UUID().uuidString)")
+        XCTAssertNoThrow(try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true))
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let pasteboard = DragInfoFixture.makeLegacyPromiseMailPasteboard()
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: true,
+        )
+        let info = DragInfoFixture(
+            source: nil,
+            operationMask: [.copy],
+            pasteboard: pasteboard,
+            namesOfPromisedFiles: { staging in
+                let message = staging.appendingPathComponent("message.eml")
+                guard FileManager.default.createFile(atPath: message.path, contents: Data("m".utf8)) else {
+                    return nil
+                }
+                // promised 2개 중 1개만 실제로 쓴다.
+                return [message.lastPathComponent, "missing.eml"]
+            },
+        )
+
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var activeSessionID: ExternalDropSessionID?
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: acquisition.client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: {},
+            ),
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: destination.path,
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertNil(activeSessionID)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertTrue(acceptedRequests.isEmpty)
+        // 부분 물리화로 남은 staging도 정리된다.
+        let leftovers = (try? FileManager.default.contentsOfDirectory(
+            at: destination,
+            includingPropertiesForKeys: nil,
+        )) ?? []
+        XCTAssertTrue(leftovers.isEmpty, "거절 시 staging 디렉터리가 남으면 안 된다")
+    }
+
     /// VOY-736: legacy promise 이행 실패를 잔여 data representation 성공으로 강등하지 않는다.
     /// 사전 조건: legacy marker + modern receiver + `.string`이 있지만 source가 파일을 쓰지 않는다.
     /// 기대 결과: 드롭이 거절되고 modern/data acquisition 세션은 시작되지 않는다.
