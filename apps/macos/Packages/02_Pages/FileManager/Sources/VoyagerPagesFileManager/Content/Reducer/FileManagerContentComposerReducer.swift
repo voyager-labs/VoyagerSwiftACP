@@ -102,9 +102,9 @@ struct FileManagerContentComposerReducer {
         let isModeChanging = currentMode != layout
         let hasActiveRename = state.entryViewLayout.entryOperations.renamingItemId != nil
 
-        state.entryViewLayout.mode = layout
         userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
         return .concatenate(
+            .send(.entryViewLayout(.internal(.setMode(layout)))),
             syncComposerCollectionStateEffect(state),
             isModeChanging && hasActiveRename
                 ? .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))

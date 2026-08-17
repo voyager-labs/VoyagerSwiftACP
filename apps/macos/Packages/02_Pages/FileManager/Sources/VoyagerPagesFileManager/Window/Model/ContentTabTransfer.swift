@@ -164,6 +164,24 @@ public enum ContentTabTransfer {
         let ownedSessionIDs: Set<AiChatSessionID>
     }
 
+    struct WorkPlan {
+        let workUnits: [WorkUnit]
+        let semantics: TransferSemantics
+        let projectedWorkUnits: [ProjectedWorkUnit]
+        let targetPreparation: TargetPreparation
+    }
+
+    struct PreflightInput {
+        let source: FileManagerWindowState
+        let target: FileManagerWindowState
+        let orderedTabIDs: [ContentTabID]
+        let primaryTabID: ContentTabID
+        let sourceDomain: ContentTabDomain?
+        let targetDomain: ContentTabDomain?
+        let placement: ContentTabPlacement?
+        let pinnedAt: Date?
+    }
+
     public static func transfer(
         source: FileManagerWindowState,
         target: FileManagerWindowState,
@@ -227,7 +245,7 @@ public enum ContentTabTransfer {
         placement: ContentTabPlacement? = nil,
         pinnedAt: Date? = nil,
     ) -> Preflight {
-        preflight(PreflightRequest(
+        let input = PreflightInput(
             source: source,
             target: target,
             orderedTabIDs: orderedTabIDs,
@@ -236,7 +254,43 @@ public enum ContentTabTransfer {
             targetDomain: targetDomain,
             placement: placement,
             pinnedAt: pinnedAt,
-        ))
+        )
+        let windowIDs: WindowIDs
+        switch validatedWindowIDs(source: source, target: target) {
+        case let .success(value):
+            windowIDs = value
+        case let .failure(reason):
+            return .rejected(reason)
+        }
+        if let reason = windowBusyRejection(
+            source: source,
+            target: target,
+            orderedTabIDs: orderedTabIDs,
+            primaryTabID: primaryTabID,
+        ) {
+            return .rejected(reason)
+        }
+
+        let workPlan: WorkPlan
+        switch resolveWorkPlan(input) {
+        case let .success(value):
+            workPlan = value
+        case let .failure(reason):
+            return .rejected(reason)
+        }
+
+        let context = PreflightContext(
+            source: source,
+            target: target,
+            preparedTarget: workPlan.targetPreparation.state,
+            workUnits: workPlan.workUnits,
+            projectedWorkUnits: workPlan.projectedWorkUnits,
+            semantics: workPlan.targetPreparation.semantics,
+            pinnedAt: pinnedAt,
+            windowIDs: windowIDs,
+            primaryTabID: primaryTabID,
+        )
+        return .success(makeSuccessToken(context))
     }
 
     public static func apply(_ token: SuccessToken) -> Result {
@@ -257,243 +311,60 @@ public enum ContentTabTransfer {
             ? .closeSourceWindow(postCommit: postCommit)
             : .moved(postCommit: postCommit)
     }
-}
 
-extension ContentTabTransfer {
-    static func makeFingerprint(
-        _ state: FileManagerWindowState,
-        windowID: UUID,
-    ) -> WindowSnapshotFingerprint {
-        let owners = state.contentTabs.tabs.compactMap { item -> ContentOwnerFingerprint? in
-            guard let content = contentState(tabID: item.id, in: state) else { return nil }
-            let inspector = inspectorState(tabID: item.id, in: state)
-            let entryOperations = content.entryViewLayout.entryOperations
-            return ContentOwnerFingerprint(
-                tabID: item.id,
-                item: item,
-                pinnedRecord: state.contentTabs.pinnedRecords[item.id],
-                runtimePreservationRecord: state.pendingRuntimePreservationRecords[item.id],
-                loadingWindowID: entryOperations.windowID,
-                loadingOwnerID: entryOperations.loadingCancellationOwnerID,
-                undoOwnerID: entryOperations.undoOwnerID,
-                composerOwnerID: content.composer.cancellationOwnerID,
-                ownedSessionIDs: ownedSessionIDs(item: item, content: content, inspector: inspector),
-            )
+    static func resolveWorkPlan(_ input: PreflightInput) -> Swift.Result<WorkPlan, Rejection> {
+        let workUnits: [WorkUnit]
+        switch validatedWorkUnits(
+            source: input.source,
+            orderedTabIDs: input.orderedTabIDs,
+            primaryTabID: input.primaryTabID,
+        ) {
+        case let .success(value):
+            workUnits = value
+        case let .failure(reason):
+            return .failure(reason)
         }
-        return WindowSnapshotFingerprint(
-            windowID: windowID,
-            tabIDs: Array(state.contentTabs.tabs.ids),
-            activeTabID: state.contentTabs.activeTabID,
-            previousActiveTabID: state.contentTabs.previousActiveTabID,
-            selectedTabIDs: state.contentTabs.selectedTabIDs,
-            selectionAnchorID: state.contentTabs.selectionAnchorID,
-            owners: owners,
-        )
-    }
 
-    static func inspectorState(
-        tabID: ContentTabID,
-        in state: FileManagerWindowState,
-    ) -> FileManagerInspectorFeature.State? {
-        state.contentTabs.activeTabID == tabID ? state.inspector.tabSnapshot() : state.tabInspectorStates[tabID]
-    }
-}
-
-extension FileManagerWindowState {
-    mutating func insertBackgroundOwners(
-        _ payload: ContentTabTransfer.WorkUnit,
-        targetWindowID: UUID,
-    ) {
-        for (sessionID, var contentState) in payload.backgroundContent {
-            contentState.applyTransferWindowContext(windowID: targetWindowID)
-            backgroundAiChatStates[sessionID] = contentState
+        let semantics: TransferSemantics
+        switch validatedSemantics(
+            workUnits: workUnits,
+            sourceDomain: input.sourceDomain,
+            targetDomain: input.targetDomain,
+            placement: input.placement,
+        ) {
+        case let .success(value):
+            semantics = value
+        case let .failure(reason):
+            return .failure(reason)
         }
-        for (sessionID, inspectorState) in payload.backgroundInspector {
-            backgroundInspectorAiChatStates[sessionID] = inspectorState
+
+        let projectedWorkUnits: [ProjectedWorkUnit]
+        switch makeProjectedWorkUnits(workUnits: workUnits, semantics: semantics, pinnedAt: input.pinnedAt) {
+        case let .success(value):
+            projectedWorkUnits = value
+        case let .failure(reason):
+            return .failure(reason)
         }
-    }
 
-    func hasValidPinParity(tabID: ContentTabID) -> Bool {
-        guard let item = contentTabs.tabs[id: tabID] else { return false }
-        let record = contentTabs.pinnedRecords[tabID]
-        guard item.isPinned == (record != nil) else { return false }
-        guard let record else { return true }
-        return record.id == item.id.rawValue
-    }
-
-    func isPassivePinnedProjection(
-        tabID: ContentTabID,
-        sourceRecord: ContentTabPinnedRecord?,
-    ) -> Bool {
-        guard let item = contentTabs.tabs[id: tabID],
-              item.isPinned,
-              let sourceRecord,
-              let targetRecord = contentTabs.pinnedRecords[tabID],
-              sourceRecord.id == targetRecord.id,
-              targetRecord.id == item.id.rawValue,
-              targetRecord.page == item.page,
-              targetRecord.anchor == item.anchor,
-              targetRecord.title == item.title,
-              targetRecord.iconName == item.iconName,
-              !contentTabs.pendingPinnedRecordIDs.contains(tabID)
-        else { return false }
-
-        let targetContent = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
-        guard let targetContent else { return false }
-        var passiveContent = FileManagerContentFeature.State.initialContent(
-            for: item.anchor,
-            inheritingWindowContextFrom: targetContent,
-        )
-        passiveContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetContent
-            .entryViewLayout.entryOperations.loadingCancellationOwnerID
-        passiveContent.entryViewLayout.entryOperations.undoOwnerID = targetContent
-            .entryViewLayout.entryOperations.undoOwnerID
-        guard targetContent.isPassiveProjection(matching: passiveContent) else { return false }
-
-        if supportsInspector(tabID: tabID) {
-            let targetInspector = contentTabs.activeTabID == tabID ? inspector : tabInspectorStates[tabID]
-            let passiveInspector = FileManagerInspectorFeature.State().tabSnapshot()
-            guard let targetInspector,
-                  !targetInspector.inspectorVisible,
-                  !targetInspector.inspectorPaneExists,
-                  targetInspector.inspectorWidth == FileManagerInspectorLayoutMetrics.defaultWidth,
-                  targetInspector.activeMode == .chat,
-                  targetInspector.aiChat.isPassiveContentTabProjection(matching: passiveInspector.aiChat)
-            else { return false }
+        let targetPreparation: TargetPreparation
+        switch prepareTargetForInsertion(
+            input.target,
+            workUnits: projectedWorkUnits,
+            semantics: semantics,
+        ) {
+        case let .success(value):
+            targetPreparation = value
+        case let .failure(reason):
+            return .failure(reason)
         }
-        let ownedSessionIDs = targetContent.aiChat.contentTabTransferSessionIDs
-            .union((contentTabs.activeTabID == tabID ? inspector : tabInspectorStates[tabID])?.aiChat
-                .contentTabTransferSessionIDs ?? [])
-        return ownedSessionIDs.isDisjoint(with: Set(backgroundAiChatStates.keys))
-            && ownedSessionIDs.isDisjoint(with: Set(backgroundInspectorAiChatStates.keys))
-    }
-
-    var hasCompleteTransferOwnership: Bool {
-        if contentTabs.tabs.isEmpty {
-            return contentTabs.activeTabID == nil
-                && contentTabs.previousActiveTabID == nil
-                && tabContentStates.isEmpty
-                && tabInspectorStates.isEmpty
+        if let reason = batchCollisionRejection(workUnits: projectedWorkUnits, target: targetPreparation.state) {
+            return .failure(reason)
         }
-        guard let activeTabID = contentTabs.activeTabID,
-              contentTabs.tabs[id: activeTabID] != nil
-        else { return false }
-        let tabIDs = Set(contentTabs.tabs.ids)
-        guard Set(tabContentStates.keys).isSubset(of: tabIDs),
-              Set(tabInspectorStates.keys).isSubset(of: tabIDs)
-        else { return false }
-        for tabID in contentTabs.tabs.ids {
-            guard let cachedContent = tabContentStates[tabID] else { return false }
-            if tabID == activeTabID, cachedContent != content { return false }
-            if supportsInspector(tabID: tabID) {
-                guard let cachedInspector = tabInspectorStates[tabID] else { return false }
-                if tabID == activeTabID, cachedInspector != inspector.tabSnapshot() { return false }
-            } else if tabInspectorStates[tabID] != nil {
-                return false
-            }
-        }
-        return true
-    }
-
-    var aiChatAnchorSessionKeys: Set<String> {
-        Set(contentTabs.tabs.compactMap(\.anchor.aiChatSessionKey))
-    }
-
-    var transferOwnedAiChatSessionIDs: Set<AiChatSessionID> {
-        var sessionIDs = Set(backgroundAiChatStates.keys)
-        sessionIDs.formUnion(backgroundInspectorAiChatStates.keys)
-        sessionIDs.formUnion(content.aiChat.contentTabTransferSessionIDs)
-        sessionIDs.formUnion(inspector.aiChat.contentTabTransferSessionIDs)
-        for state in tabContentStates.values {
-            sessionIDs.formUnion(state.aiChat.contentTabTransferSessionIDs)
-        }
-        for state in tabInspectorStates.values {
-            sessionIDs.formUnion(state.aiChat.contentTabTransferSessionIDs)
-        }
-        return sessionIDs
-    }
-}
-
-public extension FileManagerWindowState {
-    func canAcceptContentTabMove(
-        tabID: ContentTabID,
-        sourcePinnedRecord: ContentTabPinnedRecord?,
-    ) -> Bool {
-        contentTabs.tabs.count < ContentTabConstants.maxTabs
-            || canReplacePassivePinnedContentTab(
-                tabID: tabID,
-                sourcePinnedRecord: sourcePinnedRecord,
-            )
-    }
-
-    func canReplacePassivePinnedContentTab(
-        tabID: ContentTabID,
-        sourcePinnedRecord: ContentTabPinnedRecord?,
-    ) -> Bool {
-        isPassivePinnedProjection(tabID: tabID, sourceRecord: sourcePinnedRecord)
-    }
-}
-
-extension FileManagerContentFeature.State {
-    func isPassiveProjection(matching baseline: Self) -> Bool {
-        navigation == baseline.navigation
-            && entryViewLayout == baseline.entryViewLayout
-            && composer == baseline.composer
-            && collection == baseline.collection
-            && aiChat.isPassiveContentTabProjection(matching: baseline.aiChat)
-            && pendingSelectEntryID == baseline.pendingSelectEntryID
-            && homeFavoriteItems == baseline.homeFavoriteItems
-            && homeLocationItems == baseline.homeLocationItems
-            && homeDirectoryItemCounts == baseline.homeDirectoryItemCounts
-            && homeChatHistoryItems == baseline.homeChatHistoryItems
-            && homeChatHistoryLoadFailed == baseline.homeChatHistoryLoadFailed
-            && resetComposerOnNextDirectoryNavigation == baseline.resetComposerOnNextDirectoryNavigation
-            && suppressAutomaticRefreshFeedback == baseline.suppressAutomaticRefreshFeedback
-    }
-
-    mutating func applyTransferWindowContext(windowID: UUID) {
-        entryViewLayout.entryOperations.windowID = windowID
-    }
-}
-
-extension ContentTabTransfer.EligibilityRejection {
-    init(_ rejection: ContentTabTransferEligibilityRejection) {
-        self = switch rejection {
-        case .pendingContentTabClose:
-            .pendingContentTabClose
-        case .pendingPinnedRecordPersistence:
-            .pendingPinnedRecordPersistence
-        case .pendingCollectionOperation:
-            .pendingCollectionOperation
-        case .pendingAiChatOperation:
-            .pendingAiChatOperation
-        case .malformedOwnership:
-            .malformedOwnership
-        }
-    }
-}
-
-extension AiChatFeature.State {
-    var contentTabTransferSessionIDs: Set<AiChatSessionID> {
-        var sessionIDs = Set<AiChatSessionID>()
-        if let sessionID { sessionIDs.insert(sessionID) }
-        if let restoreSessionID { sessionIDs.insert(restoreSessionID) }
-        if let pendingRequestStart { sessionIDs.insert(pendingRequestStart.sessionID) }
-        sessionIDs.formUnion(backgroundPendingRequestStarts.values.map(\.sessionID))
-        if let sessionID = executionPhase.lock?.context.sessionID { sessionIDs.insert(sessionID) }
-        sessionIDs.formUnion(backgroundExecutionPhases.values.compactMap { $0.lock?.context.sessionID })
-        return sessionIDs
-    }
-}
-
-extension ContentTabPageAnchor {
-    var aiChatSessionKey: String? {
-        guard case let .aiChat(sessionID) = self else { return nil }
-        return sessionID
-    }
-
-    var aiChatSessionID: AiChatSessionID? {
-        guard let aiChatSessionKey, let uuid = UUID(uuidString: aiChatSessionKey) else { return nil }
-        return AiChatSessionID(rawValue: uuid)
+        return .success(WorkPlan(
+            workUnits: workUnits,
+            semantics: semantics,
+            projectedWorkUnits: projectedWorkUnits,
+            targetPreparation: targetPreparation,
+        ))
     }
 }

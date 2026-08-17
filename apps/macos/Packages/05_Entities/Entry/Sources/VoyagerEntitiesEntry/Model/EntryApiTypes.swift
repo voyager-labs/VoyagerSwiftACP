@@ -6,12 +6,20 @@ public struct ApplicationInfo: Identifiable, Equatable, Sendable {
     public let name: String
     public let bundleID: String?
     public let isDefault: Bool
+    public let applicationURL: URL?
 
-    nonisolated public init(id: String, name: String, bundleID: String?, isDefault: Bool = false) {
+    nonisolated public init(
+        id: String,
+        name: String,
+        bundleID: String?,
+        isDefault: Bool = false,
+        applicationURL: URL? = nil,
+    ) {
         self.id = id
         self.name = name
         self.bundleID = bundleID
         self.isDefault = isDefault
+        self.applicationURL = applicationURL
     }
 }
 

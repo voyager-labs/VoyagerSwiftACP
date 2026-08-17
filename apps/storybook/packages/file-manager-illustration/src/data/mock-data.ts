@@ -1,4 +1,4 @@
-import type { EntryThumbnailComparisonEntry } from "../Entries/EntryThumbnailComparison"
+import type { EntryThumbnailComparisonEntry } from "../Domains/Entries/EntryThumbnailComparison"
 import type { ContextMenuAction, Entry, FileEntry } from "../model/types"
 import { entryThumbnailFixtures } from "./entry-thumbnail-fixtures"
 

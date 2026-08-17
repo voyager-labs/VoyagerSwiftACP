@@ -11,8 +11,11 @@ public struct EntryOpenClient: Sendable {
     public var openFinderInfo: @Sendable ([URL]) async throws -> Void
     public var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void
     public var performService: @Sendable (String, [URL]) async throws -> Void
+    public var serviceNames: @MainActor @Sendable () -> [String]
     public var revealInFinder: @Sendable ([URL]) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
+    public var applicationsForType: @Sendable (UTType, URL) async -> [ApplicationInfo]
+    public var invalidateApplicationsForType: @Sendable (String) async -> Void
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var trashDirectoryPath: @Sendable () -> String?
 
@@ -22,8 +25,11 @@ public struct EntryOpenClient: Sendable {
         openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
         shareItems: @escaping @Sendable ([URL], CGPoint?) async throws -> Void,
         performService: @escaping @Sendable (String, [URL]) async throws -> Void,
+        serviceNames: @escaping @MainActor @Sendable () -> [String] = { [] },
         revealInFinder: @escaping @Sendable ([URL]) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
+        applicationsForType: @escaping @Sendable (UTType, URL) async -> [ApplicationInfo],
+        invalidateApplicationsForType: @escaping @Sendable (String) async -> Void,
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         trashDirectoryPath: @escaping @Sendable () -> String?,
     ) {
@@ -32,14 +38,48 @@ public struct EntryOpenClient: Sendable {
         self.openFinderInfo = openFinderInfo
         self.shareItems = shareItems
         self.performService = performService
+        self.serviceNames = serviceNames
         self.revealInFinder = revealInFinder
         self.applicationsForFile = applicationsForFile
+        self.applicationsForType = applicationsForType
+        self.invalidateApplicationsForType = invalidateApplicationsForType
         self.defaultApplication = defaultApplication
         self.trashDirectoryPath = trashDirectoryPath
     }
 }
 
+actor ApplicationDiscoveryCache {
+    private var cached: [String: [ApplicationInfo]] = [:]
+    private var inFlight: [String: Task<[ApplicationInfo], Never>] = [:]
+    private var generations: [String: Int] = [:]
+
+    func applications(
+        for typeID: String,
+        load: @escaping @Sendable () async -> [ApplicationInfo],
+    ) async -> [ApplicationInfo] {
+        if let cached = cached[typeID] { return cached }
+        if let task = inFlight[typeID] { return await task.value }
+        let generation = generations[typeID, default: 0]
+        let task = Task { await load() }
+        inFlight[typeID] = task
+        let apps = await task.value
+        if generations[typeID, default: 0] == generation {
+            cached[typeID] = apps
+            inFlight[typeID] = nil
+        }
+        return apps
+    }
+
+    func invalidate(_ typeID: String) {
+        cached[typeID] = nil
+        generations[typeID, default: 0] += 1
+        inFlight[typeID]?.cancel()
+        inFlight[typeID] = nil
+    }
+}
+
 extension EntryOpenClient: DependencyKey {
+    fileprivate static let applicationDiscoveryCache = ApplicationDiscoveryCache()
     nonisolated public static var liveValue: EntryOpenClient {
         EntryOpenClient(
             open: EntryOpenLive.open,
@@ -47,8 +87,11 @@ extension EntryOpenClient: DependencyKey {
             openFinderInfo: EntryOpenLive.openFinderInfo,
             shareItems: EntryOpenLive.shareItems,
             performService: EntryOpenLive.performService,
+            serviceNames: { @MainActor in EntryOpenLive.serviceNames() },
             revealInFinder: EntryOpenLive.revealInFinder,
             applicationsForFile: EntryOpenLive.applicationsForFile,
+            applicationsForType: EntryOpenLive.applicationsForType,
+            invalidateApplicationsForType: EntryOpenLive.invalidateApplicationsForType,
             defaultApplication: EntryOpenLive.defaultApplication,
             trashDirectoryPath: EntryLoadingLive.trashDirectoryPath,
         )
@@ -66,6 +109,8 @@ extension EntryOpenClient: DependencyKey {
             performService: { _, _ in unimplemented() },
             revealInFinder: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
+            applicationsForType: { _, _ in unimplemented() },
+            invalidateApplicationsForType: { _ in },
             defaultApplication: { _ in unimplemented() },
             trashDirectoryPath: { nil },
         )
@@ -78,7 +123,6 @@ extension EntryOpenClient: DependencyKey {
             bundleID: "com.apple.preview",
         )
         let chromeInfo = ApplicationInfo(id: "com.google.Chrome", name: "Google Chrome", bundleID: "com.google.Chrome")
-        let otherInfo = ApplicationInfo(id: "other", name: "Other…", bundleID: nil)
 
         return EntryOpenClient(
             open: { _, _ in },
@@ -88,8 +132,12 @@ extension EntryOpenClient: DependencyKey {
             performService: { _, _ in },
             revealInFinder: { _ in },
             applicationsForFile: { _ async in
-                [previewInfo, chromeInfo, otherInfo]
+                [previewInfo, chromeInfo]
             },
+            applicationsForType: { _, _ async in
+                [previewInfo, chromeInfo]
+            },
+            invalidateApplicationsForType: { _ in },
             defaultApplication: { _ async in
                 previewInfo
             },
@@ -272,7 +320,12 @@ enum EntryOpenLive {
 
                     group.addTask { @MainActor in
                         let name = FileManager.default.displayName(atPath: appURL.path)
-                        return ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
+                        return ApplicationInfo(
+                            id: bundleID,
+                            name: name,
+                            bundleID: bundleID,
+                            applicationURL: appURL,
+                        )
                     }
                 }
 
@@ -285,6 +338,21 @@ enum EntryOpenLive {
 
             return apps
         }
+    }
+
+    nonisolated static var applicationsForType: @Sendable (UTType, URL) async -> [ApplicationInfo] {
+        let cache = EntryOpenClient.applicationDiscoveryCache
+        let loadApplications = applicationsForFile
+        return { type, url in
+            await cache.applications(for: type.identifier) {
+                await loadApplications(url)
+            }
+        }
+    }
+
+    nonisolated static var invalidateApplicationsForType: @Sendable (String) async -> Void {
+        let cache = EntryOpenClient.applicationDiscoveryCache
+        return { typeID in await cache.invalidate(typeID) }
     }
 
     nonisolated static var defaultApplication: @Sendable (UTType) async -> ApplicationInfo? {
@@ -303,9 +371,27 @@ enum EntryOpenLive {
                 FileManager.default.displayName(atPath: defaultAppURL.path)
             }
             return await MainActor.run {
-                ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
+                ApplicationInfo(
+                    id: bundleID,
+                    name: name,
+                    bundleID: bundleID,
+                    applicationURL: defaultAppURL,
+                )
             }
         }
+    }
+
+    @MainActor
+    static func serviceNames() -> [String] {
+        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+        NSApp.servicesMenu?.update()
+        return NSApp.servicesMenu?.items.compactMap { item -> String? in
+            guard !item.isSeparatorItem,
+                  item.action != nil,
+                  !item.title.isEmpty
+            else { return nil }
+            return item.title
+        } ?? []
     }
 }
 

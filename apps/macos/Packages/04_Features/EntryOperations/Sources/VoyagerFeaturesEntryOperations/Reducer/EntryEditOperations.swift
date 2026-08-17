@@ -25,6 +25,7 @@ struct EntryEditOperationsReducer {
                     await send(.lifecycle(.operationStarted(targetPath, .createFolder)))
                     do {
                         try await entryFileOpsClient.createFolder(parentURL, name)
+                        await send(.lifecycle(.pathsMutated([targetPath])))
                         await send(.lifecycle(.operationFinished(targetPath, .createFolder, .success(()))))
                         let record = EntryActionRecord(
                             operationKind: .createFolder,

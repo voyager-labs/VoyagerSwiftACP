@@ -37,6 +37,7 @@
 
   --macos-control-color: #fff;
   --macos-control-background-color: #fff;
+  --macos-chat-input-background-color: var(--macos-control-background-color);
   --macos-control-accent-color: #0a84ff;
   --macos-control-text-color: var(--macos-label-color);
   --macos-disabled-control-text-color: var(--macos-tertiary-label-color);
@@ -221,6 +222,7 @@
     --macos-quinary-system-fill: #ffffff0a;
     --macos-control-color: #2f3033cc;
     --macos-control-background-color: #202125d6;
+    --macos-chat-input-background-color: #2c2b28;
     --macos-disabled-control-text-color: var(--macos-tertiary-label-color);
     --macos-scrubber-textured-background-color: #7878803d;
     --macos-window-background-color: #1f2023eb;
@@ -285,6 +287,7 @@
   --macos-quinary-system-fill: #ffffff0a;
   --macos-control-color: #2f3033cc;
   --macos-control-background-color: #202125d6;
+  --macos-chat-input-background-color: #2c2b28;
   --macos-disabled-control-text-color: var(--macos-tertiary-label-color);
   --macos-scrubber-textured-background-color: #7878803d;
   --macos-window-background-color: #1f2023eb;

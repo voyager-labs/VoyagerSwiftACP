@@ -17,10 +17,10 @@ import XCTest
 // WindowManagerFeature의 윈도우 라이프사이클/포커스/라우팅을 검증하는
 // app-scoped 결정론적 TCA TestStore 테스트 모음.
 //
-// AC Map 대상:
-// - FMW-001-open_new_file_manager_window → focused automated test, app-scoped
-// - FMW-001-close_file_manager_window → focused automated test, app-scoped
-// - FMW-001-quit_voyager → focused automated test, app-scoped
+// FMW-001 생산 조합(open_new_file_manager_window, close_file_manager_window, quit_voyager)은
+// ControlFileManagerWindowFlowTests로 이동함.
+// 이 파일은 CTM 라우팅, generic 명령 격리, unfocused 윈도우 보존, activation tracker 등
+// 기술/세부 동작을 유지한다.
 //
 // 시각적 동작(full screen, minimize, fronting, keep-on-top)은 수동 QA/follow-up
 // 대상이므로 이 파일에서 단언하지 않는다.
@@ -72,6 +72,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         XCTAssertEqual(openCallCount.value, 0, "기존 window가 있으면 openInitialWindowIfNeeded는 open client를 다시 호출하지 않아야 한다")
     }
+
+    // MARK: - FMW-001-close_file_manager_window (detail)
 
     // MARK: - FMW-001-open_new_file_manager_window
 
@@ -592,6 +594,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertNotNil(store.state.windows[id: otherID])
         await store.finish()
     }
+
+    // MARK: - CTM-001-open_new_content_tab
 
     // MARK: - FMW-001-quit_voyager
 

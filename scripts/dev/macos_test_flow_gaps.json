@@ -25,6 +25,15 @@
       "canonical_path": "rcl/flows/collection_retrieval_flow.md",
       "reason": "Missing production collection retrieval flow",
       "missing_symbols": ["CollectionRetrievalFeature"]
+    },
+    "evm.content_pane_split": {
+      "canonical_path": "evm/flows/content_pane_split_flow.md",
+      "reason": "All EVM-003 interactions are planned/CBT-NEXT and no independent content-pane split composition exists",
+      "missing_symbols": [
+        "EVM-003 production command entry point",
+        "EVM-003 independent pane layout state owner",
+        "EVM-003 rendered pane composition"
+      ]
     }
   }
 }

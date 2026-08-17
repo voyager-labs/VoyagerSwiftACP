@@ -26,6 +26,10 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     public enum Delegate: CasePathable, Sendable {
         case navigateToPath(String)
         case openCollectionFile(URL)
+        case folderLoadEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
+        case folderLoadFinished(request: EntryFolderLoadRequest)
+        case folderLoadFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
+        case openInNewTab([String])
     }
 
     @CasePathable
@@ -48,12 +52,22 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Loading: CasePathable, Sendable {
-        case loadItems(path: String, showHidden: Bool)
-        case loadRecentItems(showHidden: Bool)
-        case loadTagItems(tagName: String, showHidden: Bool)
+        case loadItems(path: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
+        case loadRecentItems(showHidden: Bool, priority: EntryMetadataPriority = .none)
+        case loadTagItems(tagName: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadComputerItems
+        case cancelAndClearItems
         case itemsLoaded([EntryModel])
         case itemsLoadFailed
+        case streamEvent(EntryLoadingStreamEvent)
+        case streamFinished(generation: Int)
+        case streamFailed(generation: Int)
+        case loadFolderItems(EntryFolderLoadRequest)
+        case cancelFolderItems(EntryFolderLoadRequest.RequestID)
+        case cancelAllFolderItems
+        case folderStreamEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
+        case folderStreamFinished(request: EntryFolderLoadRequest)
+        case folderStreamFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
     }
 
     @CasePathable
@@ -92,9 +106,14 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case setDefaultAppWithOther(file: EntryModel)
         case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
         case loadApplicationsForFile(file: EntryModel)
-        case applicationsLoaded(String, [ApplicationInfo])
+        case applicationsLoaded(typeID: String, generation: Int, [ApplicationInfo])
         case loadCommonApplicationsForFiles(files: [EntryModel])
-        case commonApplicationsLoaded([ApplicationInfo])
+        case commonApplicationsLoaded(
+            generation: Int,
+            typeIDs: Set<String>,
+            applicationsByType: [String: [ApplicationInfo]],
+            [ApplicationInfo],
+        )
     }
 
     @CasePathable
@@ -162,6 +181,21 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     }
 }
 
+public enum EntryFolderLoadFailure: Equatable, Sendable {
+    case permissionDenied
+    case unavailable(description: String)
+}
+
+public struct EntryLoadingStreamEvent: Equatable, Sendable {
+    public let generation: Int
+    public let event: EntryLoadEvent
+
+    public init(generation: Int, event: EntryLoadEvent) {
+        self.generation = generation
+        self.event = event
+    }
+}
+
 public struct TagMutationRequest: Equatable, Sendable {
     public let mode: Mode
     public let tagName: String
@@ -204,53 +238,6 @@ public enum EntryActionReplayFailureReason: Equatable, Sendable {
     case ownerRecordMismatch
     case ownerBusy
     case operationFailed
-}
-
-public struct EntryDropValidationContext: Equatable, Sendable {
-    public let sourcePaths: [String]
-    public let destinationPath: String
-    public let allowedOperationsRawValue: UInt
-    public let prefersCopy: Bool
-
-    public init(
-        sourcePaths: [String],
-        destinationPath: String,
-        allowedOperationsRawValue: UInt,
-        prefersCopy: Bool,
-    ) {
-        self.sourcePaths = sourcePaths
-        self.destinationPath = destinationPath
-        self.allowedOperationsRawValue = allowedOperationsRawValue
-        self.prefersCopy = prefersCopy
-    }
-}
-
-public enum EntryDropResolvedOperation: Equatable, Sendable {
-    case none
-    case copy
-    case move
-}
-
-public struct EntryDropValidationResult: Equatable, Sendable {
-    public var destinationPath: String
-    public var resolvedOperation: EntryDropResolvedOperation
-    public var isOptionDrag: Bool
-
-    public init(
-        destinationPath: String,
-        resolvedOperation: EntryDropResolvedOperation,
-        isOptionDrag: Bool,
-    ) {
-        self.destinationPath = destinationPath
-        self.resolvedOperation = resolvedOperation
-        self.isOptionDrag = isOptionDrag
-    }
-
-    public static let empty = EntryDropValidationResult(
-        destinationPath: "",
-        resolvedOperation: .none,
-        isOptionDrag: false,
-    )
 }
 
 public struct EntryOperationsMutationImpact: Equatable, Sendable {

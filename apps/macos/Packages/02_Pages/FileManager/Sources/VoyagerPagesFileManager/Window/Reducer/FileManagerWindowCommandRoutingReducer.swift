@@ -167,6 +167,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard tabID == state.contentTabs.activeTabID else { return .none }
                 return .send(.delegate(.openPathInNewWindow(path)))
 
+            case let .tabContent(tabID, .delegate(.openInNewTab(paths))):
+                return routeOpenInNewTab(tabID: tabID, paths: paths, activeTabID: state.contentTabs.activeTabID)
+
             case let .tabContent(tabID, .delegate(.currentContextChanged(snapshot))):
                 guard tabID == state.contentTabs.activeTabID else { return .none }
                 return .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
@@ -389,4 +392,16 @@ struct FileManagerWindowCommandRoutingReducer {
             }
         }
     }
+}
+
+private func routeOpenInNewTab(
+    tabID: ContentTabID,
+    paths: [String],
+    activeTabID: ContentTabID?,
+) -> Effect<FileManagerWindowAction> {
+    guard tabID == activeTabID, !paths.isEmpty else { return .none }
+    let openEffects = paths.map { path -> Effect<FileManagerWindowAction> in
+        .send(.contentTabs(.open(.directory(path: path))))
+    }
+    return .concatenate(openEffects)
 }

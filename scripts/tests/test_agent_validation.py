@@ -79,14 +79,15 @@ Objective.
 
 - Use the `commit-message` skill.
 
-## TODOs
+## Implementation
 
-- [ ] 1. Fixture task
-  - **What to do**: Do it.
-  - **Must NOT do**: Do anything else.
-  - **Acceptance**: It is done. Evidence: validator output.
-  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.
-  - **Commit**: NO.
+### 1. Fixture task
+
+Implementation steps.
+
+**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.
+**Acceptance Criteria**: The validator accepts this task.
+**Evidence**: Validator output has no diagnostics.
 """
 
 
@@ -149,22 +150,6 @@ class AgentValidationTests(unittest.TestCase):
             result, payload = self.run_cli(VALIDATE, root, "--all")
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
-
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            mixed_plan = PLAN.replace(
-                "Context.", "Context. No executable behavior changes in docs tasks."
-            ).replace(
-                "RED evidence fails before implementation; GREEN evidence passes after implementation.",
-                "Run tests.",
-            )
-            self.write(root, ".sisyphus/plans/fixture.md", mixed_plan)
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "PLAN_TODO_TDD_EVIDENCE",
-                [item["code"] for item in payload["diagnostics"]],
-            )
 
     def test_invalid_harness_fixtures_have_exact_diagnostics(self) -> None:
         cases = {
@@ -505,55 +490,104 @@ class AgentValidationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(payload["mode"], "base-ref")
 
-    def test_plan_fixtures_are_structural_only(self) -> None:
+    def test_plan_tasks_do_not_require_checkbox_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.write(root, ".sisyphus/plans/valid.md", PLAN)
             result, payload = self.run_cli(VERIFY, root, "--all")
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
-            self.write(
-                root,
-                ".sisyphus/plans/valid.md",
-                PLAN.replace("- [ ] 1. Fixture task", "  - [ ] 1. Fixture task"),
-            )
+
+    def test_heading_prose_tasks_require_acceptance_evidence(self) -> None:
+        korean_plan = PLAN.replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "**수용 증거**: validator가 진단 없이 통과한다.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/korean.md", korean_plan)
             result, payload = self.run_cli(VERIFY, root, "--all")
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
-            self.write(
-                root,
-                ".sisyphus/plans/invalid.md",
-                PLAN.replace(
-                    "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                    "",
-                ),
-            )
-            result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
 
-            self.write(
-                root,
-                ".sisyphus/plans/invalid.md",
-                PLAN.replace(
-                    "- [ ] 1. Fixture task", "  - [ ] Implement feature"
-                ).replace(
-                    "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                    "",
-                ),
-            )
+        missing_task = PLAN.replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "Implementation steps only.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/missing.md", missing_task)
             result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_NUMBERING")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                [item["code"] for item in payload["diagnostics"]],
+                ["PLAN_TODO_CONTRACT", "PLAN_ACCEPTANCE_EVIDENCE"],
+            )
 
-            self.write(
-                root,
-                ".sisyphus/plans/invalid.md",
-                PLAN.replace(
-                    "  - **Acceptance**: It is done. Evidence: validator output.",
-                    "  Acceptance prose mentions **Acceptance** and evidence.",
-                ),
-            )
+        global_acceptance = PLAN.replace(
+            "## Implementation",
+            "## Acceptance Criteria\n\n**Acceptance**: Global acceptance.\n**Evidence**: Global evidence.\n\n## Implementation",
+        ).replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "Implementation steps only.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/global.md", global_acceptance)
             result, payload = self.run_cli(VERIFY, root, "--all")
-            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                [item["code"] for item in payload["diagnostics"]],
+                ["PLAN_TODO_CONTRACT", "PLAN_ACCEPTANCE_EVIDENCE"],
+            )
+
+        missing_evidence = PLAN.replace(
+            "**Evidence**: Validator output has no diagnostics.", ""
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/missing-evidence.md", missing_evidence)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_exact_diagnostic(result, payload, "PLAN_ACCEPTANCE_EVIDENCE")
+
+        missing_tdd = PLAN.replace(
+            "**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.",
+            "**QA**: Test output is recorded.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/missing-tdd.md", missing_tdd)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_TDD_EVIDENCE")
+
+        docs_only = PLAN.replace(
+            "**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.",
+            "**QA**: No executable behavior changes; docs-only validation is recorded.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/docs-only.md", docs_only)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
+
+        two_tasks = PLAN.replace(
+            "### 1. Fixture task",
+            "### 1. Fixture task\n\n**QA**: RED evidence fails; GREEN evidence passes.\n**Acceptance**: First task is covered.\n**Evidence**: First test output.\n\n### 2. Second task",
+        ).replace(
+            "**Acceptance Criteria**: The validator accepts this task.\n**Evidence**: Validator output has no diagnostics.",
+            "**QA**: RED evidence fails; GREEN evidence passes.\n**Acceptance**: Second task is covered.",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".sisyphus/plans/two-tasks.md", two_tasks)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_exact_diagnostic(result, payload, "PLAN_ACCEPTANCE_EVIDENCE")
+            second_task_line = two_tasks.splitlines().index("### 2. Second task") + 1
+            self.assertEqual(payload["diagnostics"][0]["line"], second_task_line)
 
     def test_every_emitted_diagnostic_has_an_exact_fixture(self) -> None:
         harness_cases = {
@@ -637,11 +671,17 @@ class AgentValidationTests(unittest.TestCase):
             "PLAN_MISSING_TITLE": PLAN.replace("# Fixture Plan", "Fixture Plan"),
             "PLAN_MISSING_SECTION": PLAN.replace("## Context", "## Background"),
             "PLAN_TODO_CONTRACT": PLAN.replace(
-                "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                "",
+                "### 1. Fixture task", "Implementation steps"
             ),
-            "PLAN_TODO_NUMBERING": PLAN.replace(
-                "- [ ] 1. Fixture task", "- [ ] Implement feature"
+            "PLAN_ACCEPTANCE_EVIDENCE": PLAN.replace(
+                "**Evidence**: Validator output has no diagnostics.", ""
+            ),
+            "PLAN_TODO_TDD_EVIDENCE": PLAN.replace(
+                "**QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.",
+                "**QA**: Test output is recorded.",
+            ),
+            "PLAN_CHECKBOX_TODO_RETIRED": PLAN.replace(
+                "Implementation steps.", "- [ ] Legacy task"
             ),
             "PLAN_MISSING_QUALITY_SECTION": PLAN.replace(
                 "## Test Ownership", "## Test Assignment"
@@ -655,12 +695,6 @@ class AgentValidationTests(unittest.TestCase):
             ),
             "PLAN_COMMIT_STRATEGY": PLAN.replace(
                 "`commit-message` skill", "normal Git workflow"
-            ),
-            "PLAN_ACCEPTANCE_EVIDENCE": PLAN.replace(
-                " Evidence: validator output.", ""
-            ),
-            "PLAN_TODO_TDD_EVIDENCE": PLAN.replace(
-                "RED evidence fails before implementation; ", ""
             ),
         }
         for code, content in plan_cases.items():
@@ -676,9 +710,6 @@ class AgentValidationTests(unittest.TestCase):
             no_source_plan = PLAN.replace(
                 "- RED evidence: failing fixture command.\n- GREEN evidence: passing fixture command.",
                 "- Source changes: no. No executable behavior changes; RED/GREEN evidence omitted.",
-            ).replace(
-                "RED evidence fails before implementation; GREEN evidence passes after implementation.",
-                "No executable behavior changes.",
             )
             self.write(root, ".sisyphus/plans/fixture.md", no_source_plan)
             result, payload = self.run_cli(VERIFY, root, "--all")
@@ -792,10 +823,7 @@ class AgentValidationTests(unittest.TestCase):
         self.write(
             root,
             relative,
-            PLAN.replace(
-                "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
-                "",
-            ),
+            PLAN.replace("## Test Ownership", "## Test Assignment"),
         )
         result, payload = self.run_cli(VERIFY, root, "--working-tree")
         self.assertNotEqual(result.returncode, 0)

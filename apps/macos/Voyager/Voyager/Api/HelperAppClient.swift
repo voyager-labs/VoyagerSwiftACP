@@ -9,14 +9,14 @@ public struct HelperAppClient: Sendable {
     public var stop: @Sendable () async -> Void
     public var isRunning: @Sendable () async -> Bool
     public var terminationEvents: @Sendable () -> AsyncStream<Void>
-    public var ensureRunning: @Sendable () async -> Void
+    public var ensureRunning: @Sendable (@MainActor @Sendable () -> Bool) async -> Void
 
     nonisolated public init(
         start: @escaping @Sendable () async -> Void,
         stop: @escaping @Sendable () async -> Void,
         isRunning: @escaping @Sendable () async -> Bool,
         terminationEvents: @escaping @Sendable () -> AsyncStream<Void>,
-        ensureRunning: @escaping @Sendable () async -> Void,
+        ensureRunning: @escaping @Sendable (@MainActor @Sendable () -> Bool) async -> Void,
     ) {
         self.start = start
         self.stop = stop
@@ -82,19 +82,13 @@ extension HelperAppClient: DependencyKey {
                     }
                 }
             },
-            ensureRunning: {
-                let running = await MainActor.run {
+            ensureRunning: { canLaunch in
+                await MainActor.run {
                     let helperInfo = resolveHelperInfo()
-                    return NSWorkspace.shared.runningApplications.contains { app in
+                    let running = NSWorkspace.shared.runningApplications.contains { app in
                         app.bundleIdentifier == helperInfo.bundleId
                     }
-                }
-
-                if running {
-                    return
-                }
-
-                await MainActor.run {
+                    guard !running, canLaunch() else { return }
                     launchHelper(resolveHelperInfo())
                 }
             },
@@ -111,7 +105,7 @@ extension HelperAppClient: DependencyKey {
             },
             isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
-            ensureRunning: {},
+            ensureRunning: { _ in },
         )
     }
 
@@ -125,7 +119,7 @@ extension HelperAppClient: DependencyKey {
             },
             isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
-            ensureRunning: {},
+            ensureRunning: { _ in },
         )
     }
 }
@@ -141,12 +135,17 @@ public extension HelperAppClient {
     func resolveAlignedState(
         stateClient: HelperStateClient,
         mainBundleVersion: String?,
+        canRestart: @escaping @MainActor @Sendable () -> Bool,
     ) async -> HelperState? {
-        let state = await requestStateWithFallback(stateClient: stateClient)
+        let state = await requestStateWithFallback(
+            stateClient: stateClient,
+            canRestart: canRestart,
+        )
         return await ensureAligned(
             state,
             stateClient: stateClient,
             mainBundleVersion: mainBundleVersion,
+            canRestart: canRestart,
         )
     }
 }
@@ -156,15 +155,18 @@ private extension HelperAppClient {
 
     func requestStateWithFallback(
         stateClient: HelperStateClient,
+        canRestart: @escaping @MainActor @Sendable () -> Bool,
     ) async -> HelperState? {
-        await start()
+        await ensureRunning(canRestart)
+        guard canRestart() else { return nil }
 
         if let state = await stateClient.resolve() {
             return state
         }
 
         await stop()
-        await start()
+        await ensureRunning(canRestart)
+        guard canRestart() else { return nil }
         return await stateClient.resolve()
     }
 
@@ -172,6 +174,7 @@ private extension HelperAppClient {
         _ state: HelperState?,
         stateClient: HelperStateClient,
         mainBundleVersion: String?,
+        canRestart: @escaping @MainActor @Sendable () -> Bool,
     ) async -> HelperState? {
         guard let state else {
             return state
@@ -183,7 +186,8 @@ private extension HelperAppClient {
 
         guard let helperVersion = state.helperBundleVersion else {
             await stop()
-            await start()
+            await ensureRunning(canRestart)
+            guard canRestart() else { return nil }
             return await stateClient.resolve()
         }
 
@@ -192,7 +196,8 @@ private extension HelperAppClient {
         }
 
         await stop()
-        await start()
+        await ensureRunning(canRestart)
+        guard canRestart() else { return nil }
         return await stateClient.resolve()
     }
 }

@@ -119,40 +119,37 @@ public extension FileOperationUndoManagerClient {
             deactivateAll: { registry.deactivateAll(windowID: $0) },
             undoManager: { registry.undoManager(for: $0) },
             registerUndo: { scope, expectedGeneration, record in
-                withRegistry(registry) {
-                    $0.registerUndo(scope, expectedGeneration: expectedGeneration, record: record)
-                }
+                liveRegisterUndo(registry, scope, expectedGeneration, record)
             },
             performUndoRedo: { scope, expectedGeneration, direction, expectedRecordID in
-                performUndoRedo(
-                    registry: registry,
-                    scope: scope,
-                    expectedGeneration: expectedGeneration,
-                    direction: direction,
-                    expectedRecordID: expectedRecordID,
-                )
+                livePerformUndoRedo(registry, scope, expectedGeneration, direction, expectedRecordID)
             },
             generation: { scope in
                 withRegistry(registry) { $0.generation(for: scope) }
             },
             registerUndoWithOwner: { scope, expectedGeneration, ownerID, record in
-                registerUndoWithOwner(
-                    registry: registry,
-                    scope: scope,
-                    expectedGeneration: expectedGeneration,
-                    ownerID: ownerID,
-                    record: record,
-                )
+                liveRegisterUndoWithOwner(registry, scope, expectedGeneration, ownerID, record)
             },
         )
     }
 
-    nonisolated private static func performUndoRedo(
-        registry: FileOperationUndoManagerRegistry,
-        scope: UndoManagerScope,
-        expectedGeneration: FileOperationUndoManagerRegistry.Generation,
-        direction: FileOperationUndoDirection,
-        expectedRecordID: UUID,
+    nonisolated private static func liveRegisterUndo(
+        _ registry: FileOperationUndoManagerRegistry,
+        _ scope: UndoManagerScope,
+        _ expectedGeneration: FileOperationUndoManagerRegistry.Generation,
+        _ record: EntryActionRecord,
+    ) -> Bool {
+        withRegistry(registry) {
+            $0.registerUndo(scope, expectedGeneration: expectedGeneration, record: record)
+        }
+    }
+
+    nonisolated private static func livePerformUndoRedo(
+        _ registry: FileOperationUndoManagerRegistry,
+        _ scope: UndoManagerScope,
+        _ expectedGeneration: FileOperationUndoManagerRegistry.Generation,
+        _ direction: FileOperationUndoDirection,
+        _ expectedRecordID: UUID,
     ) -> FileOperationUndoTransitionOutcome {
         withRegistry(registry) {
             $0.performUndoRedo(
@@ -164,12 +161,12 @@ public extension FileOperationUndoManagerClient {
         }
     }
 
-    nonisolated private static func registerUndoWithOwner(
-        registry: FileOperationUndoManagerRegistry,
-        scope: UndoManagerScope,
-        expectedGeneration: FileOperationUndoManagerRegistry.Generation,
-        ownerID: UUID,
-        record: EntryActionRecord,
+    nonisolated private static func liveRegisterUndoWithOwner(
+        _ registry: FileOperationUndoManagerRegistry,
+        _ scope: UndoManagerScope,
+        _ expectedGeneration: FileOperationUndoManagerRegistry.Generation,
+        _ ownerID: UUID,
+        _ record: EntryActionRecord,
     ) -> Bool {
         withRegistry(registry) {
             $0.registerUndo(

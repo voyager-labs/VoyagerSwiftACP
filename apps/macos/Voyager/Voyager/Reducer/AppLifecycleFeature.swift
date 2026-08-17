@@ -223,130 +223,78 @@ struct AppLifecycleFeature {
         var effects: [Effect<Action>] = []
         if !state.didStartHelper {
             state.didStartHelper = true
-            effects.append(helperMonitorEffect(
-                helperClient: helperAppClient,
-                stateClient: helperStateClient,
-            ))
+            effects.append(helperMonitorEffect())
         }
         if !state.didStartEntryCoreHealthProbe {
             state.didStartEntryCoreHealthProbe = true
-            let endpointClient = entryCoreEndpointClient
-            let entryCoreClient = entryCoreClient
-            let date = date
-            effects.append(
-                .run { send in
-                    let startedAt = date.now
-                    let endpoint: EntryCoreEndpoint
-                    do {
-                        endpoint = try endpointClient.resolve()
-                    } catch {
-                        await send(.entryCoreHealthProbeCompleted(.init(
-                            outcome: .unavailable,
-                            phase: .endpointResolution,
-                            duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                        )))
-                        return
-                    }
-                    do {
-                        _ = try await entryCoreClient.health(endpoint)
-                        await send(.entryCoreHealthProbeCompleted(.init(
-                            outcome: .healthy,
-                            phase: .response,
-                            duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                        )))
-                    } catch is CancellationError {
-                        return
-                    } catch let error as EntryCoreClientError {
-                        guard error != .cancelled else { return }
-                        await send(.entryCoreHealthProbeCompleted(
-                            entryCoreHealthProbeResult(
-                                for: error,
-                                duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                            ),
-                        ))
-                    } catch {
-                        await send(.entryCoreHealthProbeCompleted(.init(
-                            outcome: .failed,
-                            phase: .response,
-                            duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                        )))
-                    }
-                }
-                .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true),
-            )
+            effects.append(entryCoreHealthProbeEffect())
         }
         return .merge(effects)
     }
-}
 
-// MARK: - Helper effects
+    private func entryCoreHealthProbeEffect() -> Effect<Action> {
+        let date = date
+        let endpointClient = entryCoreEndpointClient
+        let entryCoreClient = entryCoreClient
 
-private func helperMonitorEffect(
-    helperClient: HelperAppClient,
-    stateClient: HelperStateClient,
-) -> Effect<AppLifecycleAction> {
-    .run { _ in
-        let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-
-        async let monitor: Void = {
-            var policy = HelperSupervisionPolicy()
-
-            for await _ in helperClient.terminationEvents() {
-                if await VoyagerTerminationCoordinator.shared.isTerminating() {
-                    continue
-                }
-
-                let decision = policy.recordRestartAttempt()
-
-                switch decision {
-                case .allowed:
-                    await helperClient.ensureRunning()
-
-                case let .cooldown(activeUntil):
-                    policy = await waitAndRetryIfNeeded(
-                        policy: policy,
-                        helperClient: helperClient,
-                        activeUntil: activeUntil,
-                    )
-
-                case let .graceWindow(activeUntil):
-                    policy = await waitAndRetryIfNeeded(
-                        policy: policy,
-                        helperClient: helperClient,
-                        activeUntil: activeUntil,
-                    )
-                }
+        return .run { send in
+            let startedAt = date.now
+            let endpoint: EntryCoreEndpoint
+            do {
+                endpoint = try endpointClient.resolve()
+            } catch {
+                await send(.entryCoreHealthProbeCompleted(.init(
+                    outcome: .unavailable,
+                    phase: .endpointResolution,
+                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                )))
+                return
             }
-        }()
-
-        let initialState = await helperClient.resolveAlignedState(
-            stateClient: stateClient,
-            mainBundleVersion: currentBundleVersion,
-        )
-        _ = initialState
-        _ = await monitor
-    }
-    .cancellable(id: "helperMonitor", cancelInFlight: true)
-}
-
-private func waitAndRetryIfNeeded(
-    policy: HelperSupervisionPolicy,
-    helperClient: HelperAppClient,
-    activeUntil: Date,
-) async -> HelperSupervisionPolicy {
-    var policy = policy
-    let delay = activeUntil.timeIntervalSinceNow
-    if delay > 0 {
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-        let isRunning = await helperClient.isRunning()
-        if !isRunning {
-            let newDecision = policy.recordRestartAttempt()
-            if case .allowed = newDecision {
-                await helperClient.ensureRunning()
+            do {
+                _ = try await entryCoreClient.health(endpoint)
+                await send(.entryCoreHealthProbeCompleted(.init(
+                    outcome: .healthy,
+                    phase: .response,
+                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                )))
+            } catch is CancellationError {
+                return
+            } catch let error as EntryCoreClientError {
+                guard error != .cancelled else { return }
+                await send(.entryCoreHealthProbeCompleted(
+                    entryCoreHealthProbeResult(
+                        for: error,
+                        duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                    ),
+                ))
+            } catch {
+                await send(.entryCoreHealthProbeCompleted(.init(
+                    outcome: .failed,
+                    phase: .response,
+                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                )))
             }
         }
+        .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true)
     }
-    return policy
+
+    private func helperMonitorEffect() -> Effect<Action> {
+        let date = date
+        let monitor = HelperMonitor(
+            helperClient: helperAppClient,
+            stateClient: helperStateClient,
+            clock: clock,
+            now: { date.now },
+            canRestart: { !VoyagerTerminationCoordinator.shared.isTerminating() },
+        )
+
+        return .run { _ in
+            await monitor.run(
+                mainBundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+            )
+        }
+        .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
+    }
 }
 
 private func isRunningXCTest() -> Bool {
@@ -370,7 +318,8 @@ private func observeSessionExpirationEffect(
     .cancellable(id: "sessionExpirationObserver", cancelInFlight: true)
 }
 
-actor VoyagerTerminationCoordinator {
+@MainActor
+final class VoyagerTerminationCoordinator {
     static let shared = VoyagerTerminationCoordinator()
 
     enum Reason {

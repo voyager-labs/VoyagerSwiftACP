@@ -1,18 +1,9 @@
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiChat
+import VoyagerFeaturesContentPageNavigation
 
 extension ContentTabTransfer {
-    struct PreflightRequest {
-        let source: FileManagerWindowState
-        let target: FileManagerWindowState
-        let orderedTabIDs: [ContentTabID]
-        let primaryTabID: ContentTabID
-        let sourceDomain: ContentTabDomain?
-        let targetDomain: ContentTabDomain?
-        let placement: ContentTabPlacement?
-        let pinnedAt: Date?
-    }
-
     struct WindowIDs {
         let source: UUID
         let target: UUID
@@ -41,15 +32,6 @@ extension ContentTabTransfer {
 
     struct TargetPreparation {
         let state: FileManagerWindowState
-        let semantics: TransferSemantics
-    }
-
-    struct TargetProjectionContext {
-        let prepared: FileManagerWindowState
-        let originalActiveID: ContentTabID?
-        let workUnits: [ProjectedWorkUnit]
-        let primaryTabID: ContentTabID
-        let windowID: UUID
         let semantics: TransferSemantics
     }
 
@@ -86,87 +68,86 @@ extension ContentTabTransfer {
     ) -> Swift.Result<[ProjectedWorkUnit], Rejection> {
         switch semantics {
         case .preserveDomain, .explicitSameDomain:
-            return .success(workUnits.map {
-                let runtimePreservationRecord: ContentTabPinnedRecord? = if $0.item.isPinned {
-                    $0.runtimePreservationRecord ?? $0.pinnedRecord
-                } else {
-                    nil
-                }
-                return ProjectedWorkUnit(
-                    source: $0,
-                    item: $0.item,
-                    pinnedRecord: $0.pinnedRecord,
-                    runtimePreservationRecord: runtimePreservationRecord,
-                )
-            })
+            .success(projectedPreservingUnits(workUnits))
         case let .explicitOppositeDomain(_, targetDomain, _):
-            let targetIsPinned = targetDomain == .pinned
-            if targetIsPinned, pinnedAt == nil {
-                return .failure(.missingPinnedTimestamp)
-            }
-            return makeOppositeDomainWorkUnits(
+            projectedOppositeDomainUnits(
                 workUnits: workUnits,
-                targetIsPinned: targetIsPinned,
+                targetDomain: targetDomain,
                 pinnedAt: pinnedAt,
             )
         }
     }
 
-    static func makeOppositeDomainWorkUnits(
-        workUnits: [WorkUnit],
-        targetIsPinned: Bool,
-        pinnedAt: Date?,
-    ) -> Swift.Result<[ProjectedWorkUnit], Rejection> {
-        do {
-            return try .success(workUnits.map { workUnit in
-                try makeOppositeDomainWorkUnit(
-                    workUnit: workUnit,
-                    targetIsPinned: targetIsPinned,
-                    pinnedAt: pinnedAt,
-                )
-            })
-        } catch let rejection as Rejection {
-            return .failure(rejection)
-        } catch {
-            return .failure(.sourcePinParity)
+    private static func projectedPreservingUnits(_ workUnits: [WorkUnit]) -> [ProjectedWorkUnit] {
+        workUnits.map { workUnit in
+            let runtimePreservationRecord: ContentTabPinnedRecord? = if workUnit.item.isPinned {
+                workUnit.runtimePreservationRecord ?? workUnit.pinnedRecord
+            } else {
+                nil
+            }
+            return ProjectedWorkUnit(
+                source: workUnit,
+                item: workUnit.item,
+                pinnedRecord: workUnit.pinnedRecord,
+                runtimePreservationRecord: runtimePreservationRecord,
+            )
         }
     }
 
-    static func makeOppositeDomainWorkUnit(
-        workUnit: WorkUnit,
-        targetIsPinned: Bool,
+    private static func projectedOppositeDomainUnits(
+        workUnits: [WorkUnit],
+        targetDomain: ContentTabDomain,
         pinnedAt: Date?,
-    ) throws -> ProjectedWorkUnit {
-        var item = workUnit.item
-        item.isPinned = targetIsPinned
-        let pinnedRecord: ContentTabPinnedRecord?
-        if targetIsPinned {
+    ) -> Swift.Result<[ProjectedWorkUnit], Rejection> {
+        let targetIsPinned = targetDomain == .pinned
+        guard targetIsPinned else {
+            return .success(projectedUnpinnedUnits(workUnits))
+        }
+        guard let resolvedPinnedAt = pinnedAt else {
+            return .failure(.missingPinnedTimestamp)
+        }
+        let projectedUnits = try? workUnits.map { workUnit -> ProjectedWorkUnit in
+            var item = workUnit.item
+            item.isPinned = true
+            let pinnedRecord: ContentTabPinnedRecord
             if let existing = workUnit.pinnedRecord ?? workUnit.runtimePreservationRecord {
                 pinnedRecord = existing
             } else {
-                guard let pinnedAt else { throw Rejection.missingPinnedTimestamp }
                 let created = ContentTabPinnedRecord(
                     id: item.id.rawValue,
                     page: item.page,
                     anchor: item.anchor,
                     title: item.title,
                     iconName: item.iconName,
-                    pinnedAt: pinnedAt,
+                    pinnedAt: resolvedPinnedAt,
                 )
                 guard created.isPageAnchorCompatible else { throw Rejection.sourcePinParity }
                 pinnedRecord = created
             }
-        } else {
-            pinnedRecord = nil
+            return ProjectedWorkUnit(
+                source: workUnit,
+                item: item,
+                pinnedRecord: pinnedRecord,
+                runtimePreservationRecord: workUnit.runtimePreservationRecord ?? pinnedRecord,
+            )
         }
-        return ProjectedWorkUnit(
-            source: workUnit,
-            item: item,
-            pinnedRecord: pinnedRecord,
-            runtimePreservationRecord: targetIsPinned
-                ? workUnit.runtimePreservationRecord ?? pinnedRecord
-                : nil,
-        )
+        if let projectedUnits {
+            return .success(projectedUnits)
+        }
+        return .failure(.sourcePinParity)
+    }
+
+    private static func projectedUnpinnedUnits(_ workUnits: [WorkUnit]) -> [ProjectedWorkUnit] {
+        workUnits.map { workUnit in
+            var item = workUnit.item
+            item.isPinned = false
+            return ProjectedWorkUnit(
+                source: workUnit,
+                item: item,
+                pinnedRecord: nil,
+                runtimePreservationRecord: nil,
+            )
+        }
     }
 
     static func windowBusyRejection(
@@ -521,88 +502,5 @@ extension ContentTabTransfer {
                 ContentTabDomain.domain(isPinned: $0.isPinned) == targetDomain
             })
         }
-    }
-
-    static func preflight(_ request: PreflightRequest) -> Preflight {
-        let windowIDs: WindowIDs
-        switch validatedWindowIDs(source: request.source, target: request.target) {
-        case let .success(value):
-            windowIDs = value
-        case let .failure(reason):
-            return .rejected(reason)
-        }
-        if let reason = windowBusyRejection(
-            source: request.source,
-            target: request.target,
-            orderedTabIDs: request.orderedTabIDs,
-            primaryTabID: request.primaryTabID,
-        ) {
-            return .rejected(reason)
-        }
-        let workUnits: [WorkUnit]
-        switch validatedWorkUnits(
-            source: request.source,
-            orderedTabIDs: request.orderedTabIDs,
-            primaryTabID: request.primaryTabID,
-        ) {
-        case let .success(value):
-            workUnits = value
-        case let .failure(reason):
-            return .rejected(reason)
-        }
-        let semantics: TransferSemantics
-        switch validatedSemantics(
-            workUnits: workUnits,
-            sourceDomain: request.sourceDomain,
-            targetDomain: request.targetDomain,
-            placement: request.placement,
-        ) {
-        case let .success(value):
-            semantics = value
-        case let .failure(reason):
-            return .rejected(reason)
-        }
-        return completePreflight(
-            request: request,
-            windowIDs: windowIDs,
-            workUnits: workUnits,
-            semantics: semantics,
-        )
-    }
-
-    static func completePreflight(
-        request: PreflightRequest,
-        windowIDs: WindowIDs,
-        workUnits: [WorkUnit],
-        semantics: TransferSemantics,
-    ) -> Preflight {
-        let projectedWorkUnits: [ProjectedWorkUnit]
-        switch makeProjectedWorkUnits(workUnits: workUnits, semantics: semantics, pinnedAt: request.pinnedAt) {
-        case let .success(value):
-            projectedWorkUnits = value
-        case let .failure(reason):
-            return .rejected(reason)
-        }
-        let targetPreparation: TargetPreparation
-        switch prepareTargetForInsertion(request.target, workUnits: projectedWorkUnits, semantics: semantics) {
-        case let .success(value):
-            targetPreparation = value
-        case let .failure(reason):
-            return .rejected(reason)
-        }
-        if let reason = batchCollisionRejection(workUnits: projectedWorkUnits, target: targetPreparation.state) {
-            return .rejected(reason)
-        }
-        return .success(makeSuccessToken(PreflightContext(
-            source: request.source,
-            target: request.target,
-            preparedTarget: targetPreparation.state,
-            workUnits: workUnits,
-            projectedWorkUnits: projectedWorkUnits,
-            semantics: targetPreparation.semantics,
-            pinnedAt: request.pinnedAt,
-            windowIDs: windowIDs,
-            primaryTabID: request.primaryTabID,
-        )))
     }
 }

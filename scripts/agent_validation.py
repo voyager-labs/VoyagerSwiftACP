@@ -28,20 +28,59 @@ V2_HEADINGS = [
     "Stop Conditions",
     "Verification",
 ]
-
-SPEC_TEST_FILENAME = re.compile(r"[A-Z]{2,4}\d{3}[A-Za-z0-9]*Tests\.swift")
-FLOW_TEST_FILENAME = re.compile(r"[A-Za-z0-9]*FlowTests\.swift")
-PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
+PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives"]
 PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
-PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
+PLAN_TASK_HEADING = re.compile(r"^### [1-9]\d*\.\s+\S")
+PLAN_TASK_FIELD = re.compile(
+    r"^\s*(?:[-*+]\s+)?\*\*(?P<label>[^*]+)\*\*\s*:\s*(?P<value>.*)$",
+    re.MULTILINE,
+)
+PLAN_INLINE_EVIDENCE = re.compile(
+    r"(?:evidence|증거)\s*:\s*(?P<value>\S.*)", re.IGNORECASE
+)
+PLAN_RED_EVIDENCE = re.compile(r"\bRED\b", re.IGNORECASE)
+PLAN_GREEN_EVIDENCE = re.compile(r"\bGREEN\b", re.IGNORECASE)
+PLAN_NO_SOURCE_CHANGES = re.compile(
+    r"no\s+source\s+changes|source\s+changes\s*:\s*no|"
+    r"no\s+executable\s+behavior\s+changes|docs?-only|문서[- ]?only|문서 변경만",
+    re.IGNORECASE,
+)
+PLAN_ACCEPTANCE_LABELS = {
+    "acceptance",
+    "acceptance criteria",
+    "수용 기준",
+    "인수 조건",
+}
+PLAN_EVIDENCE_LABELS = {
+    "evidence",
+    "verification evidence",
+    "증거",
+    "검증 증거",
+}
+PLAN_COMBINED_ACCEPTANCE_EVIDENCE_LABELS = {
+    "acceptance evidence",
+    "수용 증거",
+}
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
 SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+\.md)`")
 BARE_REFERENCE_LITERAL = re.compile(
     r"(?:see|refer to|load|read)\s+`([^`\s*]+\.md)`", re.IGNORECASE
 )
-CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
-TODO = re.compile(r"^\s{0,3}- \[[ xX]] \d+\. .+")
+LEGACY_CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
 LOCAL_ARTIFACT_PREFIXES = (".omo/", ".omx/", ".sisyphus/", ".codegraph/")
+SPEC_TEST_FILENAME = re.compile(r"[A-Z]{2,4}\d{3}[A-Za-z0-9]*Tests\.swift")
+FLOW_TEST_FILENAME = re.compile(r"[A-Za-z0-9]*FlowTests\.swift")
+# develop(voy-586)에서 기존 관행으로 작성된 테스트 파일. spec-owner suite로
+# 마이그레이션되기 전까지 토폴로지 검사에서 명시적으로 예외한다.
+LEGACY_MACOS_TEST_TOPOLOGY_PATHS = frozenset(
+    {
+        "apps/macos/Packages/02_Pages/FileManager/Tests/"
+        "VoyagerPagesFileManagerTests/Specs/"
+        "FileManagerHostFixturePhaseNotificationTests.swift",
+        "apps/macos/Packages/06_Shared/VoyagerShared/Tests/"
+        "VoyagerSharedTests/FileChangeScopePolicyTests.swift",
+    }
+)
 
 
 def diagnostic(
@@ -218,6 +257,7 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
         if (
             mode != "all"
             and path_string.startswith("apps/macos/")
+            and path_string not in LEGACY_MACOS_TEST_TOPOLOGY_PATHS
             and "/Tests/" in path_string
             and path.suffix == ".swift"
             and re.search(r"\bXCTestCase\b|@Test\b", path.read_text(encoding="utf-8"))
@@ -444,6 +484,74 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
             for index, line in enumerate(lines, 1)
             if line.startswith("## ")
         }
+        for index, line in enumerate(lines, 1):
+            if LEGACY_CHECKBOX_TODO.match(line):
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index,
+                        "PLAN_CHECKBOX_TODO_RETIRED",
+                        "plan checkbox TODOs are retired; keep execution status in runtime artifacts",
+                    )
+                )
+        task_indexes = [
+            index for index, line in enumerate(lines) if PLAN_TASK_HEADING.match(line)
+        ]
+        if not task_indexes:
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    root,
+                    1,
+                    "PLAN_TODO_CONTRACT",
+                    "plan requires at least one numbered ### N. task heading",
+                )
+            )
+        for index in task_indexes:
+            task_end = next(
+                (
+                    offset
+                    for offset in range(index + 1, len(lines))
+                    if lines[offset].startswith("## ")
+                    or lines[offset].startswith("### ")
+                ),
+                len(lines),
+            )
+            task_block = "\n".join(lines[index + 1 : task_end])
+            task_fields = plan_task_fields(task_block)
+            acceptance = task_fields["acceptance"]
+            evidence = task_fields["evidence"]
+            if not acceptance:
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_TODO_CONTRACT",
+                        "numbered task must name non-empty acceptance criteria",
+                    )
+                )
+            if not evidence:
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_ACCEPTANCE_EVIDENCE",
+                        "task acceptance criteria must name required evidence",
+                    )
+                )
+            if not plan_task_has_tdd_evidence(task_block):
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_TODO_TDD_EVIDENCE",
+                        "numbered task must name RED and GREEN evidence or an explicit no-source-change rationale",
+                    )
+                )
         for section in PLAN_SECTIONS:
             if section not in headings:
                 diagnostics.append(
@@ -524,86 +632,6 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                     "Commit Strategy must reference commit-message or justify an alternative",
                 )
             )
-        todo_start = headings.get("TODOs")
-        if todo_start is None:
-            continue
-        todo_end = min(
-            (line for line in headings.values() if line > todo_start),
-            default=len(lines) + 1,
-        )
-        todo_indexes = [
-            index
-            for index in range(todo_start, todo_end - 1)
-            if CHECKBOX_TODO.match(lines[index])
-        ]
-        for index in todo_indexes:
-            if not TODO.match(lines[index]):
-                diagnostics.append(
-                    diagnostic(
-                        path,
-                        root,
-                        index + 1,
-                        "PLAN_TODO_NUMBERING",
-                        "TODO checkbox must start with a numeric task identifier",
-                    )
-                )
-                continue
-            next_todo = next(
-                (offset for offset in todo_indexes if offset > index),
-                todo_end - 1,
-            )
-            block = "\n".join(lines[index + 1 : next_todo])
-            fields = {
-                field: plan_field_text(block, field) for field in PLAN_TODO_FIELDS
-            }
-            for field, value in fields.items():
-                if value is None:
-                    diagnostics.append(
-                        diagnostic(
-                            path,
-                            root,
-                            index + 1,
-                            "PLAN_TODO_CONTRACT",
-                            f"TODO is missing **{field}**",
-                        )
-                    )
-            acceptance = fields["Acceptance"]
-            if acceptance is not None and "evidence" not in acceptance.lower():
-                diagnostics.append(
-                    diagnostic(
-                        path,
-                        root,
-                        index + 1,
-                        "PLAN_ACCEPTANCE_EVIDENCE",
-                        "TODO Acceptance must name required evidence",
-                    )
-                )
-            qa = fields["QA"]
-            todo_has_no_source_changes = bool(
-                qa
-                and re.search(
-                    r"source changes:\s*no|no executable behavior changes",
-                    qa,
-                    re.IGNORECASE,
-                )
-            )
-            if (
-                qa is not None
-                and not todo_has_no_source_changes
-                and not (
-                    re.search(r"\bRED\b", qa, re.IGNORECASE)
-                    and re.search(r"\bGREEN\b", qa, re.IGNORECASE)
-                )
-            ):
-                diagnostics.append(
-                    diagnostic(
-                        path,
-                        root,
-                        index + 1,
-                        "PLAN_TODO_TDD_EVIDENCE",
-                        "TODO QA must name RED and GREEN evidence",
-                    )
-                )
     return diagnostics
 
 
@@ -619,13 +647,30 @@ def plan_section_text(
     return "\n".join(lines[start : end - 1]).strip()
 
 
-def plan_field_text(block: str, field: str) -> str | None:
-    match = re.search(
-        rf"^\s*- \*\*{re.escape(field)}\*\*:\s*(.*?)(?=^\s*- \*\*|\Z)",
-        block,
-        re.MULTILINE | re.DOTALL,
-    )
-    return match.group(1).strip() if match else None
+def plan_task_fields(block: str) -> dict[str, str]:
+    fields = {"acceptance": "", "evidence": ""}
+    for match in PLAN_TASK_FIELD.finditer(block):
+        label = " ".join(match.group("label").split()).casefold()
+        value = match.group("value").strip()
+        if not value:
+            continue
+        if label in PLAN_COMBINED_ACCEPTANCE_EVIDENCE_LABELS:
+            fields["acceptance"] = value
+            fields["evidence"] = value
+        elif label in PLAN_ACCEPTANCE_LABELS:
+            fields["acceptance"] = value
+            inline_evidence = PLAN_INLINE_EVIDENCE.search(value)
+            if inline_evidence and inline_evidence.group("value").strip():
+                fields["evidence"] = inline_evidence.group("value").strip()
+        elif label in PLAN_EVIDENCE_LABELS:
+            fields["evidence"] = value
+    return fields
+
+
+def plan_task_has_tdd_evidence(block: str) -> bool:
+    if PLAN_NO_SOURCE_CHANGES.search(block):
+        return True
+    return bool(PLAN_RED_EVIDENCE.search(block) and PLAN_GREEN_EVIDENCE.search(block))
 
 
 def json_result(name: str, diagnostics: list[Diagnostic], mode: str) -> str:

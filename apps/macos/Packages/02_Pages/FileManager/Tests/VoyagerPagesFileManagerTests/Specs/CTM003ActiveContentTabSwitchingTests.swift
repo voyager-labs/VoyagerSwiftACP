@@ -35,6 +35,7 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
 
         await store.send(.setCurrent(directoryID)) {
             $0.previousActiveTabID = homeID
+            $0.recentlyUsedTabIDs = [directoryID, homeID]
             $0.activeTabID = directoryID
         }
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state), directoryAnchor)
@@ -69,6 +70,7 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
 
         await store.send(.setCurrent(homeID)) {
             $0.previousActiveTabID = directoryID
+            $0.recentlyUsedTabIDs = [homeID, directoryID]
             $0.activeTabID = homeID
         }
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state), .homeDefault)
@@ -119,18 +121,16 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         let homeID = ContentTabID()
         let desktopAnchor = ContentTabPageAnchor.directory(path: "/Users/test/Desktop")
         let store = TestStore(
-            initialState: ContentTabState(
-                tabs: [ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: "Home",
-                    iconName: "house",
-                )],
-                activeTabID: homeID,
-                recentlyClosed: nil,
-            ),
+            initialState: ContentTabState(tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         } withDependencies: {
@@ -155,18 +155,16 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         let collectionURL = URL(fileURLWithPath: "/Users/test/Saved.voycoll")
         let collectionAnchor = ContentTabPageAnchor.collectionFile(url: collectionURL)
         let store = TestStore(
-            initialState: ContentTabState(
-                tabs: [ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: "Home",
-                    iconName: "house",
-                )],
-                activeTabID: homeID,
-                recentlyClosed: nil,
-            ),
+            initialState: ContentTabState(tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         }
@@ -187,18 +185,16 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         let homeID = ContentTabID()
         let recentsAnchor = ContentTabPageAnchor.virtualCollection(id: "Recents")
         let store = TestStore(
-            initialState: ContentTabState(
-                tabs: [ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: "Home",
-                    iconName: "house",
-                )],
-                activeTabID: homeID,
-                recentlyClosed: nil,
-            ),
+            initialState: ContentTabState(tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         }
@@ -223,18 +219,16 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         let desktopPath = "/Users/test/Desktop"
         let desktopAnchor = ContentTabPageAnchor.directory(path: desktopPath)
         let store = TestStore(
-            initialState: ContentTabState(
-                tabs: [ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: "Home",
-                    iconName: "house",
-                )],
-                activeTabID: homeID,
-                recentlyClosed: nil,
-            ),
+            initialState: ContentTabState(tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil),
         ) {
             ContentTabFeature()
         } withDependencies: {

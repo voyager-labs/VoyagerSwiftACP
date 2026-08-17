@@ -411,20 +411,11 @@ public extension CollectionStalenessClient {
         affectedPath: String,
         includeSubfolders: Bool,
     ) -> Bool {
-        let normalizedRoot = normalizePath(relevanceRoot)
-        let normalizedAffectedPath = normalizePath(affectedPath)
-        guard !normalizedRoot.isEmpty else { return false }
-
-        if includeSubfolders == false {
-            return normalizedAffectedPath == normalizedRoot
-                || URL(fileURLWithPath: normalizedAffectedPath).deletingLastPathComponent().standardizedFileURL
-                .path == normalizedRoot
-        }
-
-        return normalizedAffectedPath == normalizedRoot
-            || (normalizedRoot == "/"
-                ? normalizedAffectedPath.hasPrefix("/")
-                : normalizedAffectedPath.hasPrefix(normalizedRoot + "/"))
+        FileChangeScopePolicy.affects(
+            root: relevanceRoot,
+            path: affectedPath,
+            includeSubfolders: includeSubfolders,
+        )
     }
 
     nonisolated private static func isCollectionDocumentPath(_ changedPath: String, collectionPath: String) -> Bool {

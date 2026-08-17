@@ -18,6 +18,11 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private weak var windowSplitCoordinator: FileManagerWindowSplitCoordinator?
     private var cancellables: Set<AnyCancellable> = []
 
+    private struct FileManagerWindowSplitInputs {
+        let workspaceClient: WorkspaceClient
+        let materialOverride: FileManagerWindowMaterialOverride?
+    }
+
     public init(
         windowID: UUID,
         store: StoreOf<FileManagerFeature>,
@@ -43,14 +48,16 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.onWillClose = onWillClose
         self.initialWindowSizeProvider = initialWindowSizeProvider
 
-        let window = Self.makeWindow(WindowConfiguration(
+        let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
+            splitInputs: FileManagerWindowSplitInputs(
+                workspaceClient: workspaceClient,
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
-        ))
+        )
 
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
@@ -85,14 +92,16 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.onWillClose = onWillClose
         self.initialWindowSizeProvider = initialWindowSizeProvider
 
-        let window = Self.makeWindow(WindowConfiguration(
+        let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
+            splitInputs: FileManagerWindowSplitInputs(
+                workspaceClient: workspaceClient,
+                materialOverride: materialOverride,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: materialOverride,
-        ))
+        )
 
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
@@ -143,14 +152,16 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.onWillClose = onWillClose
         self.initialWindowSizeProvider = initialWindowSizeProvider
 
-        let window = Self.makeWindow(WindowConfiguration(
+        let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
+            splitInputs: FileManagerWindowSplitInputs(
+                workspaceClient: workspaceClient,
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
-        ))
+        )
 
         super.init(window: window)
         windowSplitCoordinator = window.contentViewController as? FileManagerWindowSplitCoordinator
@@ -179,11 +190,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
                 guard var tabContent = state.tabContentStates[tabID]
                     ?? (tabID == state.contentTabs.activeTabID ? state.content : nil)
                 else { continue }
+                let loadingCancellationOwnerID = UUID()
                 tabContent.entryViewLayout.entryOperations.resetForDuplicate(
                     windowID: windowID,
-                    loadingCancellationOwnerID: UUID(),
+                    loadingCancellationOwnerID: loadingCancellationOwnerID,
                     undoOwnerID: UUID(),
                 )
+                tabContent.composer.cancellationOwnerID = windowID
+                tabContent.entryViewLayout.collectionWindowID = windowID
+                tabContent.entryViewLayout.collectionLoadingCancellationOwnerID = loadingCancellationOwnerID
                 tabContent.entryViewLayout.selectedIds = []
                 tabContent.entryViewLayout.lastSelectedId = nil
                 tabContent.entryViewLayout.rangeAnchorId = nil
@@ -229,35 +244,27 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         }
     }
 
-    private struct WindowConfiguration {
-        let store: StoreOf<FileManagerFeature>
-        let path: String?
-        let workspaceClient: WorkspaceClient
-        let makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?
-        let initialWindowSizeProvider: (() -> NSSize?)?
-        let materialOverride: FileManagerWindowMaterialOverride?
-    }
-
-    private static func makeWindow(_ configuration: WindowConfiguration) -> NSWindow {
-        let contentViewController: NSViewController = if let makeContentViewController = configuration
-            .makeContentViewController
-        {
-            makeContentViewController(configuration.store, configuration.path)
+    private static func makeWindow(
+        store: StoreOf<FileManagerFeature>,
+        path: String?,
+        splitInputs: FileManagerWindowSplitInputs,
+        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
+        initialWindowSizeProvider: (() -> NSSize?)?,
+    ) -> NSWindow {
+        let contentViewController: NSViewController = if let makeContentViewController {
+            makeContentViewController(store, path)
         } else {
             FileManagerWindowSplitCoordinator(
-                store: configuration.store,
+                store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
-                workspaceClient: configuration.workspaceClient,
-                materialOverride: configuration.materialOverride,
+                workspaceClient: splitInputs.workspaceClient,
+                materialOverride: splitInputs.materialOverride,
             )
         }
 
         let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowChrome.configureWindowStyle(window)
-        FileManagerWindowChrome.applyInitialFrame(
-            window,
-            initialWindowSizeProvider: configuration.initialWindowSizeProvider,
-        )
+        FileManagerWindowChrome.applyInitialFrame(window, initialWindowSizeProvider: initialWindowSizeProvider)
         return window
     }
 

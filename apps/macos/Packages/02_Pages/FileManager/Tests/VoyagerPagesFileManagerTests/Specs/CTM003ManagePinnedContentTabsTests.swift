@@ -6743,9 +6743,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 id: ContentTabID(rawValue: "finder-favorite"),
                 title: "Favorite",
                 iconName: "folder",
-                filePath: "/Users/test/Favorite",
                 anchor: favoriteAnchor,
                 page: .directory,
+                filePath: "/Users/test/Favorite",
             ),
         ])
         let restoredState = ContentTabState(

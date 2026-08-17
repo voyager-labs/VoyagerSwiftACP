@@ -17,7 +17,10 @@ enum FileManagerAiChatContextAdapter {
 
     static func makeCurrentContextSnapshot(content state: FileManagerContentState) -> AiChatCurrentContextSnapshot {
         let currentViewReference = makeCurrentViewReference(navigation: state.navigation)
-        let selectedEntries = state.entryViewLayout.displayOrderItems
+        let selectionSource = state.entryViewLayout.hierarchyProjectionIsActive
+            ? state.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true)
+            : state.entryViewLayout.displayOrderItems
+        let selectedEntries = selectionSource
             .filter { state.entryViewLayout.selectedIds.contains($0.id) }
 
         return AiChatCurrentContextSnapshot(
@@ -98,12 +101,18 @@ enum FileManagerAiChatContextAdapter {
             return "AI Chat Sessions"
 
         case let .collection(collectionNavigation):
-            switch collectionNavigation.kind {
-            case .temporary:
-                return "New Collection"
-            case let .file(_, name):
-                return name
-            }
+            return collectionTitle(for: collectionNavigation)
+        }
+    }
+
+    private static func collectionTitle(
+        for collectionNavigation: ContentPageCollectionNavigation,
+    ) -> String {
+        switch collectionNavigation.kind {
+        case .temporary:
+            "New Collection"
+        case let .file(_, name):
+            name
         }
     }
 

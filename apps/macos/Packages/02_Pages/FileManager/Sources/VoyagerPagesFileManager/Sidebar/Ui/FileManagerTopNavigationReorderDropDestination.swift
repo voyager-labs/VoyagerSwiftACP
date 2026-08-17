@@ -326,28 +326,39 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
             return false
         }
 
-        let result = performResolvedDrop(payload: payload, movePayload: resolved.move)
-        isValid = result
-        return result
+        // 외부 창 explicit same/opposite-domain 경계 drop: consumed token 위에서 semantic route를
+        // 분류한 뒤 정확히 하나의 typed transfer callback을 dispatch한다. canonical ContentTabMoveRequest
+        // lifecycle으로 합쳐지므로 transfer-then-pin 두 단계를 만들지 않는다.
+        if handleForeignExplicitTransfer(movePayload: resolved.move) {
+            isValid = true
+            return true
+        }
+
+        if handleDomainTransition(movePayload: resolved.move) {
+            isValid = true
+            return true
+        }
+
+        guard payload.dragScopeID == configuration.dragScopeID,
+              payload.dragScopeID.boundaryOwner == configuration.boundary.owner,
+              payload.sourceID != configuration.boundary.anchorID,
+              configuration.boundaryOwnerForItem(payload.sourceID) == configuration.boundary.owner
+        else { return false }
+
+        configuration.onReorder(FileManagerTopNavigationReorderDropResult(
+            sourceID: payload.sourceID,
+            anchorID: configuration.boundary.anchorID,
+            placement: configuration.boundary.placement,
+        ))
+        isValid = true
+        return true
     }
 
-    private func performResolvedDrop(
-        payload: FileManagerTopNavigationReorderDragPayload,
+    private func handleForeignExplicitTransfer(
         movePayload: ContentTabDragPayload?,
     ) -> Bool {
-        if let movePayload {
-            if let result = performForeignExplicitTransfer(movePayload) {
-                return result
-            }
-            if let result = performDomainTransition(movePayload) {
-                return result
-            }
-        }
-        return performReorder(payload)
-    }
-
-    private func performForeignExplicitTransfer(_ movePayload: ContentTabDragPayload) -> Bool? {
-        guard let targetWindowID = configuration.targetWindowID,
+        guard let movePayload,
+              let targetWindowID = configuration.targetWindowID,
               let targetDomain = configuration.boundary.contentTabDomain,
               let placement = configuration.boundary.semanticPlacement,
               movePayload.sourceWindowID != targetWindowID,
@@ -357,9 +368,7 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
               Set(movePayload.orderedTabIDs).count == movePayload.orderedTabIDs.count,
               movePayload.orderedTabIDs.contains(movePayload.initiatingTabID),
               validTarget(placement: placement, domain: targetDomain)
-        else {
-            return nil
-        }
+        else { return false }
 
         let route = ContentTabDropRouteProjection.route(
             payload: movePayload,
@@ -377,8 +386,11 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
         }
     }
 
-    private func performDomainTransition(_ movePayload: ContentTabDragPayload) -> Bool? {
-        guard let targetWindowID = configuration.targetWindowID,
+    private func handleDomainTransition(
+        movePayload: ContentTabDragPayload?,
+    ) -> Bool {
+        guard let movePayload,
+              let targetWindowID = configuration.targetWindowID,
               let targetDomain = configuration.boundary.contentTabDomain,
               let sourceDomain = movePayload.sourceDomain,
               let operationID = movePayload.operationID,
@@ -389,9 +401,7 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
               movePayload.orderedTabIDs.contains(movePayload.initiatingTabID),
               movePayload.sourceWindowID == targetWindowID,
               validTarget(placement: placement, domain: targetDomain)
-        else {
-            return nil
-        }
+        else { return false }
 
         configuration.onDomainTransition(.init(
             operationID: operationID,
@@ -401,21 +411,6 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
             initiatingTabID: movePayload.initiatingTabID,
             orderedTabIDs: movePayload.orderedTabIDs,
             placement: placement,
-        ))
-        return true
-    }
-
-    private func performReorder(_ payload: FileManagerTopNavigationReorderDragPayload) -> Bool {
-        guard payload.dragScopeID == configuration.dragScopeID,
-              payload.dragScopeID.boundaryOwner == configuration.boundary.owner,
-              payload.sourceID != configuration.boundary.anchorID,
-              configuration.boundaryOwnerForItem(payload.sourceID) == configuration.boundary.owner
-        else { return false }
-
-        configuration.onReorder(FileManagerTopNavigationReorderDropResult(
-            sourceID: payload.sourceID,
-            anchorID: configuration.boundary.anchorID,
-            placement: configuration.boundary.placement,
         ))
         return true
     }

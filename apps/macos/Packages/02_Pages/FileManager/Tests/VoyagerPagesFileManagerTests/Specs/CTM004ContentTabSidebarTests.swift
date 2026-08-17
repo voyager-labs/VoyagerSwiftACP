@@ -1073,9 +1073,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "finder-projects"),
                 title: "Projects",
                 iconName: "folder",
-                filePath: "/Users/test/Projects",
                 anchor: .directory(path: "/Users/test/Projects"),
                 page: .directory,
+                filePath: "/Users/test/Projects",
             ),
         ])
 
@@ -2274,7 +2274,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let center = NSPoint(x: 21, y: 21)
 
         XCTAssertNil(view.hitTest(center))
-        XCTAssertTrue(container.hitTest(center) === button)
+        XCTAssertIdentical(container.hitTest(center), button)
         XCTAssertTrue(view.registeredDraggedTypes.contains(.fileManagerTopNavigationReorder))
 
         sessionStore.begin(
@@ -2284,8 +2284,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             ),
         )
 
-        XCTAssertTrue(view.hitTest(center) === view)
-        XCTAssertTrue(container.hitTest(center) === view)
+        XCTAssertIdentical(view.hitTest(center), view)
+        XCTAssertIdentical(container.hitTest(center), view)
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: Location 타일은 native pointer owner에서 drag를 시작함
@@ -4057,9 +4057,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "projection-source-favorite"),
                 title: "Projection Source Favorite",
                 iconName: "folder",
-                filePath: "/projection/source/favorite",
                 anchor: .directory(path: "/projection/source/favorite"),
                 page: .directory,
+                filePath: "/projection/source/favorite",
             ),
         ])
         state.content.homeFavoriteItems = [
@@ -4067,9 +4067,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "preserved-home-favorite"),
                 title: "Preserved Home Favorite",
                 iconName: "folder",
-                filePath: "/preserved/home/favorite",
                 anchor: .directory(path: "/preserved/home/favorite"),
                 page: .directory,
+                filePath: "/preserved/home/favorite",
             ),
         ]
     }
@@ -5024,8 +5024,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(store.state.undoRedoPhase, .idle)
         XCTAssertEqual(store.state.content.entryViewLayout.entryOperations, activeOperations)
-        XCTAssertTrue(store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoRecords
-            .isEmpty == true)
+        XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoRecords
+            .isEmpty, true)
         XCTAssertEqual(
             store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.redoRecords,
             [record],
@@ -5769,21 +5769,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .pasteFileMove,
             .success(()),
         )))))
-        let reload = AnyCasePath<FileManagerContentAction, Void>(
-            embed: { _ in
-                .entryViewLayout(.entryOperations(.loading(.loadItems(
-                    path: directoryPath,
-                    showHidden: false,
-                ))))
-            },
-            extract: { action in
-                guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, false)))) = action,
-                      path == directoryPath
-                else { return nil }
-                return ()
-            },
-        )
-        await clipboardStore.receive(reload)
+        let isExpectedReload: (FileManagerContentAction) -> Bool = { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden, _)))) = action else {
+                return false
+            }
+            return path == directoryPath && !showHidden
+        }
+        await clipboardStore.receive(isExpectedReload)
         await clipboardStore.finish()
 
         let dropStore = TestStore(initialState: contentState) {
