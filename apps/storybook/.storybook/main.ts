@@ -9,6 +9,11 @@ const config: StorybookConfig = {
       titlePrefix: "File Manager",
       files: "**/*.stories.tsx",
     },
+    {
+      directory: "../packages/settings-illustration/src",
+      titlePrefix: "Settings",
+      files: "**/*.stories.tsx",
+    },
   ],
   addons: ["@storybook/addon-docs", "@storybook/addon-mcp"],
   framework: "@storybook/react-vite",

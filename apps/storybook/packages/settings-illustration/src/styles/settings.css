@@ -1,0 +1,329 @@
+/* Settings 일러스트레이션 전용 스타일.
+ * 모든 색상은 --macos-* 토큰 또는 그 --set-* 별칭에서만 가져온다.
+ * 컴포넌트 레벨 원시 색상은 허용하지 않는다.
+ */
+
+/* SF Pro 폰트 @font-face. fonts/sf-pro/ 에서 제공되는 번들 폰트를 로드한다.
+ * @font-face 블록은 [data-settings-illustration] 범위 밖에 있어야 한다. */
+@font-face {
+  font-family: "Voyager SF Pro Text";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  src: local("SF Pro Text"), local("SFProText-Regular"),
+    url("/fonts/sf-pro/SF-Pro-Text-Regular.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Text";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+  src: local("SF Pro Text Medium"), local("SFProText-Medium"),
+    url("/fonts/sf-pro/SF-Pro-Text-Medium.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Text";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 600;
+  src: local("SF Pro Text Semibold"), local("SFProText-Semibold"),
+    url("/fonts/sf-pro/SF-Pro-Text-Semibold.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Text";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+  src: local("SF Pro Text Bold"), local("SFProText-Bold"), url("/fonts/sf-pro/SF-Pro-Text-Bold.otf")
+    format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Display";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  src: local("SF Pro Display"), local("SFProDisplay-Regular"),
+    url("/fonts/sf-pro/SF-Pro-Display-Regular.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Display";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+  src: local("SF Pro Display Medium"), local("SFProDisplay-Medium"),
+    url("/fonts/sf-pro/SF-Pro-Display-Medium.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Display";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 600;
+  src: local("SF Pro Display Semibold"), local("SFProDisplay-Semibold"),
+    url("/fonts/sf-pro/SF-Pro-Display-Semibold.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Display";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+  src: local("SF Pro Display Bold"), local("SFProDisplay-Bold"),
+    url("/fonts/sf-pro/SF-Pro-Display-Bold.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Symbols";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 1 1000;
+  src: local(".SF Symbols"), local("SF Pro Symbols"), url("/fonts/sf-pro/SF-Pro-Symbols.otf")
+    format("opentype");
+}
+
+[data-settings-illustration] {
+  /* --macos-* 토큰에 대한 Settings 전용 별칭. 컴포넌트는 이 별칭만 참조한다. */
+  --set-canvas: var(--macos-under-page-background-color);
+  --set-window-bg: var(--macos-window-background-color);
+  --set-window-border: var(--macos-window-border-color);
+  --set-titlebar-bg: var(--macos-material-titlebar);
+  --set-content-bg: var(--macos-control-background-color);
+  --set-row-alt-bg: var(--macos-entry-list-alternate-row-background-color);
+  --set-selection-bg: var(--macos-sidebar-selection-background);
+  --set-selection-hover-bg: var(--macos-sidebar-hover-fill);
+  --set-accent: var(--macos-control-accent-color);
+  --set-selected-text: var(--macos-selected-text-color);
+  --set-selected-content-bg: var(--macos-selected-content-background-color);
+  --set-text-primary: var(--macos-label-color);
+  --set-text-secondary: var(--macos-secondary-label-color);
+  --set-text-tertiary: var(--macos-tertiary-label-color);
+  --set-separator: var(--macos-separator-color);
+  --set-separator-strong: var(--macos-separator-strong-color);
+  --set-control-bg: var(--macos-control-color);
+  --set-disabled-text: var(--macos-disabled-control-text-color);
+  --set-system-fill: var(--macos-system-fill);
+  --set-secondary-fill: var(--macos-secondary-system-fill);
+
+  /* grouped form(카드형 섹션)의 제어 배경. controlBackgroundColor에 대응한다. */
+  --set-form-bg: var(--macos-control-background-color);
+  --set-status-connected: var(--macos-system-green);
+  --set-status-not-connected: var(--macos-tertiary-label-color);
+
+  /* 폰트 스택 별칭. */
+  --set-font-text: "Voyager SF Pro Text", "Voyager SF Pro Display", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --set-font-display: "Voyager SF Pro Display", "Voyager SF Pro Text", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --set-font-symbols: "Voyager SF Pro Symbols", ".SF Symbols", "SF Pro Symbols";
+
+  /* Settings 특화 기하 치수. */
+  --set-titlebar-height: 52px;
+  --set-pane-padding: 20px;
+  --set-row-gap: 8px;
+  --set-radius-control: 6px;
+  --set-radius-row: 6px;
+}
+
+[data-settings-illustration] {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+  background: var(--set-canvas);
+  color: var(--set-text-primary);
+  font-family: var(--set-font-text);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis-weight: none;
+}
+
+[data-settings-illustration] button,
+[data-settings-illustration] select {
+  font: inherit;
+}
+
+[data-settings-illustration] button {
+  cursor: default;
+}
+
+[data-settings-illustration] .stage {
+  display: grid;
+  width: 100%;
+  min-height: 100dvh;
+  overflow: auto;
+  place-items: center;
+  padding: 32px;
+  box-sizing: border-box;
+  background: radial-gradient(circle at 50% 18%, var(--set-secondary-fill), transparent 34rem),
+    var(--set-canvas);
+}
+
+/* macOS System Settings 창 셸: 네이티브 TabView .frame(width:600, height:400)에 대응. */
+[data-settings-illustration] .mac-window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 600px;
+  height: 400px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--set-window-border);
+  background: var(--set-window-bg);
+  box-shadow: 0 22px 48px var(--macos-shadow-color);
+}
+
+[data-settings-illustration] .mac-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--set-titlebar-height);
+  flex: none;
+  padding: 0 14px;
+  background: var(--set-titlebar-bg);
+  border-bottom: 1px solid var(--set-separator);
+}
+
+[data-settings-illustration] .traffic-lights {
+  display: flex;
+  gap: 8px;
+}
+
+[data-settings-illustration] .traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+[data-settings-illustration] .traffic-light.close {
+  background: var(--macos-system-red);
+}
+[data-settings-illustration] .traffic-light.minimize {
+  background: var(--macos-system-yellow);
+}
+[data-settings-illustration] .traffic-light.zoom {
+  background: var(--macos-system-green);
+}
+
+[data-settings-illustration] .titlebar-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--set-text-secondary);
+}
+
+/* 상단 탭 바 스타일은 재사용 컴포넌트인 TabBar로 이동: styles/tab-bar.css 참조. */
+
+/* 탭 콘텐츠 pane. pane 내부 스크롤은 공유 .settings-form이 담당한다. */
+[data-settings-illustration] .settings-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--set-content-bg);
+}
+
+/* ---- 공유 폼 프리미티브 (General/Appearance/AI pane 공용) ---- */
+
+/* 스크롤 가능한 pane 래퍼. */
+[data-settings-illustration] .settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* 카드형 섹션 그룹. */
+[data-settings-illustration] .settings-section {
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--set-form-bg);
+}
+
+[data-settings-illustration] .settings-section-header {
+  margin: 0;
+  padding: 8px 12px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--set-text-secondary);
+}
+
+/* label 좌 / control 우 레이아웃 행. */
+[data-settings-illustration] .settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 10px 12px;
+}
+
+[data-settings-illustration] .settings-row + .settings-row {
+  border-top: 1px solid var(--set-separator);
+}
+
+/* 분할 세그먼트 컨트롤. */
+[data-settings-illustration] .segmented {
+  display: inline-flex;
+  height: 24px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--set-secondary-fill);
+}
+
+[data-settings-illustration] .segmented button {
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--set-text-primary);
+}
+
+[data-settings-illustration] .segmented button.is-active {
+  background: var(--set-accent);
+  color: var(--set-selected-text);
+}
+
+/* disclosure 행: title + chevron. */
+[data-settings-illustration] .disclosure-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 10px 12px;
+  cursor: default;
+}
+
+[data-settings-illustration] .disclosure-row .disclosure-chevron {
+  transition: transform 160ms ease;
+}
+
+[data-settings-illustration] .disclosure-row.is-open .disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+/* 하단 각주 텍스트. */
+[data-settings-illustration] .footnote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--set-text-secondary);
+}
+
+/* 연결 상태 점. */
+[data-settings-illustration] .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--set-status-not-connected);
+}
+
+[data-settings-illustration] .status-dot.is-connected {
+  background: var(--set-status-connected);
+}
+
+[data-settings-illustration] .status-dot.is-not-connected {
+  background: var(--set-status-not-connected);
+}
