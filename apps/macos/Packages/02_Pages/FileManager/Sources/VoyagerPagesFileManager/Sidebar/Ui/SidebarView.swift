@@ -413,6 +413,9 @@ struct SidebarView: View {
             onActivate: {
                 sidebarStore.send(.delegate(.selectContentTab(item.id)))
             },
+            onReturnToPinnedLocation: {
+                sidebarStore.send(.delegate(.returnContentTabToPinnedLocation(item.id)))
+            },
             onToggleSelection: {
                 sidebarStore.send(.view(.toggleContentTabSelection(item.id)))
             },

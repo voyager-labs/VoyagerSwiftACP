@@ -542,6 +542,7 @@ struct ContentTabSidebarRow: View {
     let pinPresentation: ContentTabPinPresentation
     let closePresentation: ContentTabClosePresentation
     let onActivate: () -> Void
+    let onReturnToPinnedLocation: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
@@ -586,6 +587,7 @@ struct ContentTabSidebarRow: View {
             trailingActionSystemName: trailingAction.systemName,
             isTrailingActionEnabled: closePresentation.isEnabled,
             onActivate: handlePrimaryAction,
+            onReturnToPinnedLocation: onReturnToPinnedLocation,
             onToggleSelection: handleToggleSelection,
             onSelectRange: handleSelectRange,
             onDuplicate: onDuplicate,
@@ -674,6 +676,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let trailingActionSystemName: String
     let isTrailingActionEnabled: Bool
     let onActivate: () -> Void
+    let onReturnToPinnedLocation: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
@@ -708,6 +711,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             tabID: item.id,
             duplicateAccessibilityIdentifier: duplicateAccessibilityIdentifier,
             isPinned: item.isPinned,
+            isReturnToPinnedLocationEnabled: item.canReturnToPinnedLocation,
             isEnabled: true,
             reorderDragSource: reorderDragSource,
             moveTargets: moveTargets,
@@ -717,6 +721,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onToggleSelection: onToggleSelection,
             onSelectRange: onSelectRange,
             onDuplicate: onDuplicate,
+            onReturnToPinnedLocation: onReturnToPinnedLocation,
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onClose,
@@ -809,6 +814,69 @@ final class ContentTabSidebarTrailingActionButton: NSButton {
     }
 }
 
+@MainActor
+final class ContentTabSidebarPinnedLocationButton: NSButton {
+    var onContextMenuRequested: (NSEvent) -> Void = { _ in }
+    private var isPointerHovered = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+        ))
+    }
+
+    override func mouseEntered(with _: NSEvent) {
+        isPointerHovered = true
+        updateHoverPresentation()
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        isPointerHovered = false
+        updateHoverPresentation()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateHoverPresentation()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0, event.modifierFlags.contains(.control) else {
+            super.mouseDown(with: event)
+            return
+        }
+        onContextMenuRequested(event)
+    }
+
+    func updateInteraction(isVisible: Bool, isEnabled: Bool) {
+        isHidden = !isVisible
+        self.isEnabled = isEnabled
+        if !isVisible || !isEnabled {
+            isPointerHovered = false
+        }
+        updateHoverPresentation()
+    }
+
+    private func updateHoverPresentation() {
+        image = nil
+        guard isPointerHovered, !isHidden, isEnabled else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            return
+        }
+        let color = switch effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) {
+        case .darkAqua:
+            NSColor.white.withAlphaComponent(0.08)
+        default:
+            NSColor.black.withAlphaComponent(0.06)
+        }
+        layer?.backgroundColor = color.cgColor
+    }
+}
+
 final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private enum PointerRoute {
         case activate
@@ -832,6 +900,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private static let reorderDragThreshold: CGFloat = 4
 
     private let presentationView = ContentTabSidebarPresentationHostingView(rootView: AnyView(EmptyView()))
+    private let pinnedLocationButton = ContentTabSidebarPinnedLocationButton()
     private let trailingActionButton = ContentTabSidebarTrailingActionButton()
     private var pointerState = PointerState.idle
     private var pointerRoute: PointerRoute?
@@ -843,6 +912,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var onMove: (UUID) -> Void = { _ in }
 
     private var onActivate: () -> Void = {}
+    private var onReturnToPinnedLocation: () -> Void = {}
     private var onToggleSelection: () -> Void = {}
     private var onSelectRange: () -> Void = {}
     private var onDuplicate: (() -> Void)?
@@ -862,6 +932,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var usesUnpinCommand = false
     private var showsCloseCommand = true
     private var isPinned = false
+    private var isReturnToPinnedLocationEnabled = false
 
     var dragSessionStartOverride: (([NSDraggingItem], NSEvent) -> Void)?
 
@@ -886,12 +957,14 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         let tabID: ContentTabID?
         let duplicateAccessibilityIdentifier: String
         let isPinned: Bool
+        let isReturnToPinnedLocationEnabled: Bool
         let isEnabled: Bool
         let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
         let moveTargets: [ContentTabMoveTarget]
         let moveTitle: String
         let isMovePending: Bool
         let onActivate: () -> Void
+        let onReturnToPinnedLocation: () -> Void
         let onToggleSelection: () -> Void
         let onSelectRange: () -> Void
         let onDuplicate: (() -> Void)?
@@ -921,6 +994,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             tabID: ContentTabID? = nil,
             duplicateAccessibilityIdentifier: String,
             isPinned: Bool,
+            isReturnToPinnedLocationEnabled: Bool = true,
             isEnabled: Bool,
             reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration? = nil,
             moveTargets: [ContentTabMoveTarget] = [],
@@ -930,6 +1004,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             onToggleSelection: @escaping () -> Void = {},
             onSelectRange: @escaping () -> Void = {},
             onDuplicate: (() -> Void)? = nil,
+            onReturnToPinnedLocation: @escaping () -> Void = {},
             onPin: (() -> Void)? = nil,
             onUnpin: (() -> Void)? = nil,
             onClose: @escaping () -> Void = {},
@@ -955,12 +1030,14 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             self.tabID = tabID
             self.duplicateAccessibilityIdentifier = duplicateAccessibilityIdentifier
             self.isPinned = isPinned
+            self.isReturnToPinnedLocationEnabled = isReturnToPinnedLocationEnabled
             self.isEnabled = isEnabled
             self.reorderDragSource = reorderDragSource
             self.moveTargets = moveTargets
             self.moveTitle = moveTitle
             self.isMovePending = isMovePending
             self.onActivate = onActivate
+            self.onReturnToPinnedLocation = onReturnToPinnedLocation
             self.onToggleSelection = onToggleSelection
             self.onSelectRange = onSelectRange
             self.onDuplicate = onDuplicate
@@ -993,6 +1070,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         isMovePending = configuration.isMovePending
         onMove = configuration.onMove
         onActivate = configuration.onActivate
+        onReturnToPinnedLocation = configuration.onReturnToPinnedLocation
         onToggleSelection = configuration.onToggleSelection
         onSelectRange = configuration.onSelectRange
         onDuplicate = configuration.onDuplicate
@@ -1011,6 +1089,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         isCloseEnabled = configuration.isCloseEnabled ?? configuration.isEnabled
         usesUnpinCommand = configuration.usesUnpinCommand ?? configuration.isPinned
         showsCloseCommand = configuration.showsCloseCommand ?? !configuration.isPinned
+        pinnedLocationButton.updateInteraction(
+            isVisible: configuration.isPinned && configuration.isReturnToPinnedLocationEnabled,
+            isEnabled: configuration.isEnabled && configuration.isReturnToPinnedLocationEnabled,
+        )
         trailingActionButton.image = NSImage(
             systemSymbolName: configuration.trailingActionSystemName,
             accessibilityDescription: nil,
@@ -1020,6 +1102,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             isEnabled: configuration.isTrailingActionEnabled,
         )
         isPinned = configuration.isPinned
+        isReturnToPinnedLocationEnabled = configuration.isReturnToPinnedLocationEnabled
         isEnabled = configuration.isEnabled
         presentationView.rootView = configuration.rootView
         setAccessibilityLabel(configuration.accessibilityLabel)
@@ -1029,10 +1112,12 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         }
         let contextMenu = makeContextMenu()
         menu = contextMenu
+        pinnedLocationButton.menu = contextMenu
         trailingActionButton.menu = contextMenu
         presentationView.invalidateIntrinsicContentSize()
         invalidateIntrinsicContentSize()
         presentationView.needsLayout = true
+        pinnedLocationButton.needsLayout = true
         trailingActionButton.needsLayout = true
         needsLayout = true
     }
@@ -1118,6 +1203,22 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         presentationView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         addSubview(presentationView)
 
+        pinnedLocationButton.translatesAutoresizingMaskIntoConstraints = false
+        pinnedLocationButton.title = ""
+        pinnedLocationButton.isBordered = false
+        pinnedLocationButton.focusRingType = .none
+        pinnedLocationButton.wantsLayer = true
+        pinnedLocationButton.layer?.cornerRadius = 4
+        pinnedLocationButton.target = self
+        pinnedLocationButton.action = #selector(returnToPinnedLocation)
+        pinnedLocationButton.onContextMenuRequested = { [weak self] event in
+            guard let self, let menu = pinnedLocationButton.menu else { return }
+            NSMenu.popUpContextMenu(menu, with: event, for: pinnedLocationButton)
+        }
+        pinnedLocationButton.setAccessibilityElement(true)
+        pinnedLocationButton.setAccessibilityLabel("Return to Pinned Location")
+        addSubview(pinnedLocationButton)
+
         trailingActionButton.translatesAutoresizingMaskIntoConstraints = false
         trailingActionButton.isBordered = false
         trailingActionButton.imagePosition = .imageOnly
@@ -1140,6 +1241,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             presentationView.trailingAnchor.constraint(equalTo: trailingAnchor),
             presentationView.topAnchor.constraint(equalTo: topAnchor),
             presentationView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            pinnedLocationButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            pinnedLocationButton.topAnchor.constraint(equalTo: topAnchor),
+            pinnedLocationButton.bottomAnchor.constraint(equalTo: bottomAnchor),
+            pinnedLocationButton.widthAnchor.constraint(equalToConstant: 36),
             trailingActionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             trailingActionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             trailingActionButton.widthAnchor.constraint(equalToConstant: 18),
@@ -1296,6 +1401,14 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         duplicateItem.identifier = NSUserInterfaceItemIdentifier(duplicateAccessibilityIdentifier)
         duplicateItem.isEnabled = isDuplicateEnabled && onDuplicate != nil
         menu.addItem(duplicateItem)
+        if isPinned {
+            let returnItem = menuItem(
+                title: "Return to Pinned Location",
+                action: #selector(returnToPinnedLocation),
+            )
+            returnItem.isEnabled = isEnabled && isReturnToPinnedLocationEnabled
+            menu.addItem(returnItem)
+        }
         let pinItem = menuItem(
             title: pinTitle,
             action: usesUnpinCommand ? #selector(unpin) : #selector(pin),
@@ -1347,6 +1460,11 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     @objc private func duplicate() {
         guard isDuplicateEnabled else { return }
         onDuplicate?()
+    }
+
+    @objc private func returnToPinnedLocation() {
+        guard isPinned, isEnabled, isReturnToPinnedLocationEnabled else { return }
+        onReturnToPinnedLocation()
     }
 
     @objc private func pin() {
