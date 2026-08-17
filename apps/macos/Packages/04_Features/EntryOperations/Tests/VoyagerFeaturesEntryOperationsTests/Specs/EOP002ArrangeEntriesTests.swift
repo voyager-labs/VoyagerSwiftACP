@@ -2071,6 +2071,43 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    /// 검증 내용: data flavor가 확정된 promise 파일명과 같은 이름을 산출하면 promise 이름을
+    /// 피해 다른 이름으로 물리화되고, promise 콜백도 충돌 없이 수용돼 세션이 성공한다.
+    /// 사전 조건: fileNames ["Clip 1.txt"] receiver와 동일 filename의 data flavor 1건.
+    /// 기대 결과: data는 `Clip 1 2.txt`로 staging에 쓰이고 promise 파일도 received로 등록된다.
+    func testExternalDropMaterialization_dataFlavorAvoidsPromisedFilename() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DataPromiseCollision")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["Clip 1.txt"])
+        let flavor = ExternalDropDataFlavor(
+            uti: "public.utf8-plain-text",
+            bytes: Data("text".utf8),
+            filename: "Clip 1.txt",
+        )
+        let request = client.begin([receiver], [flavor], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+
+        // data flavor는 promise 이름을 피해 고유 이름으로 물리화된다.
+        let dataStaged = staging.appendingPathComponent("Clip 1 2.txt")
+        XCTAssertEqual(try Data(contentsOf: dataStaged), Data("text".utf8))
+
+        // provider가 promise 파일을 쓰고 콜백을 보고한다 (data와 경로가 다르므로 충돌 없음).
+        let promised = staging.appendingPathComponent("Clip 1.txt")
+        try Data("promise".utf8).write(to: promised)
+        receiver.invokeReader(url: promised, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 2)
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
     /// 검증 내용: preferredFilenameExtension이 없는 pasteboard 전용 UTI도 supertype 계층에서 확장자를 유도한다.
     /// 사전 조건: `public.utf8-plain-text`는 직접 확장자가 없지만 `public.plain-text`(txt)를 조상으로 갖는다.
     /// 기대 결과: `fileExtension(for:)`가 "txt"를 반환하고 `filename`이 `.txt` 확장자를 갖는다.
@@ -2657,7 +2694,6 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
-
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
         let request = client.begin([receiver], [], "/dest", false, [])
         client.finish(request.sessionID)
@@ -2674,6 +2710,36 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: lateURL.path))
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertTrue(events.isEmpty)
+    }
+
+    /// 검증 내용: 종단된 세션은 tombstone 기간 후 registry에서 회수돼 장시간 실행에서
+    /// sessions/queue/bufferedEvents가 무한 증가하지 않는다.
+    /// 사전 조건: 짧은 tombstone(0.05s)의 live client로 세션을 성공 종료한다.
+    /// 기대 결과: tombstone 경과 후 events 조회가 buffered 이벤트 없이 즉시 종료된다.
+    func testExternalDropAcquisition_finishedSessionIsReclaimedAfterTombstone() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("Reclaim")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient.live(
+            fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot),
+            sessionTombstoneSeconds: 0.05,
+        )
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: staged)
+        receiver.invokeReader(url: staged, error: nil)
+
+        var events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        client.finish(request.sessionID)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        events = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertTrue(events.isEmpty, "tombstone 경과 후 세션이 회수돼 buffered 이벤트가 없어야 한다")
     }
 
     /// EOP-002-import_external_objects: cancel은 staging을 즉시 제거하고 `.cancelled`를 낸다.
