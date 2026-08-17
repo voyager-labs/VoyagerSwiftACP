@@ -175,13 +175,13 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomePageAnchorSelected(anchor, activeTabID: tabID)
+                return handleHomePageAnchorSelected(anchor, activeTabID: tabID, state: state)
 
             case let .tabContent(tabID, .delegate(.homeChatHistorySessionSelected(sessionID))):
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID)
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID, state: state)
 
             case let .sidebar(.delegate(.selectFixedLocation(id))):
                 guard let activeTabID = state.contentTabs.activeTabID,
@@ -189,7 +189,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 else { return .none }
                 let anchor = ContentTabPageAnchor.directory(path: location.path)
                 return .concatenate(
-                    .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                    updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
                     .send(.navigation(.view(.navigateToPath(location.path)))),
                 )
 
@@ -435,8 +435,10 @@ struct FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         guard case .aiChat = state.contentTabs.tabs[id: tabID]?.anchor else { return .none }
         let sessionIDString = sessionID.rawValue.uuidString
-        let updateAnchorEffect: Effect<Action> = .send(
-            .contentTabs(.updateActivePageAnchor(tabID, .aiChat(sessionID: sessionIDString))),
+        let updateAnchorEffect = updateContentTabPageAnchorEffect(
+            tabID: tabID,
+            anchor: .aiChat(sessionID: sessionIDString),
+            state: state,
         )
         let routingEffect: Effect<Action> = if tabID == state.contentTabs.activeTabID {
             .merge(
@@ -456,6 +458,7 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleHomeChatHistorySessionSelected(
         _ sessionID: AiChatSessionID,
         activeTabID: ContentTabID,
+        state: State,
     ) -> Effect<Action> {
         let sessionString = sessionID.rawValue.uuidString
         let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionString)
@@ -480,7 +483,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
         return .concatenate(
             .send(.inspector(.closeChat)),
-            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+            updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
             .send(.navigation(.view(.showAiChat(sessionString)))),
             .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
             providerLoadEffect,
@@ -490,11 +493,12 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleHomePageAnchorSelected(
         _ anchor: ContentTabPageAnchor,
         activeTabID: ContentTabID,
+        state: State,
     ) -> Effect<Action> {
         switch anchor {
         case let .directory(path):
             return .concatenate(
-                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
                 .send(.navigation(.view(.navigateToPath(path)))),
             )
 
@@ -503,7 +507,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .homeDefault,
              .virtualCollection:
-            return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+            return updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state)
 
         case let .aiChat(sessionID):
             guard let rawSessionID = UUID(uuidString: sessionID) else { return .none }
@@ -529,7 +533,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
             return .concatenate(
                 .send(.inspector(.closeChat)),
-                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
                 .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.navigation(.view(.showAiChat(sessionID)))),
                 .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
