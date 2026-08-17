@@ -117,6 +117,10 @@ struct AppMenuCommands: Commands {
         }
 
         CommandMenu("Go") {
+            Button("Show Recent Tabs") {
+                send(.app(.presentContentTabSwitcher))
+            }
+
             Button("Last Used Tab") {
                 send(.app(.selectMostRecentlyUsedContentTab))
             }
