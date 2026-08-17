@@ -26,4 +26,12 @@ public extension VoyagerCollectionFile {
             fallbackExcludedScopes: excludedScopes,
         )
     }
+
+    func isEmptyDefinition(
+        resolvedFilters: AppliedFiltersUtils.ResolutionResult,
+    ) -> Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && resolvedFilters.scopes.isEmpty
+            && resolvedFilters.conditions.isEmpty
+    }
 }

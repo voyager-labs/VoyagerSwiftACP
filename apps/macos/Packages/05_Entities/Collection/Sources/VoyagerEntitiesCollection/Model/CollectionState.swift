@@ -236,9 +236,7 @@ public extension CollectionState {
                 isStale: isStale,
             ),
             hydratedOpenPayload: hydratedOpenPayload,
-            isEmptyDefinition: trimmedQuery.isEmpty
-                && resolved.scopes.isEmpty
-                && resolved.conditions.isEmpty,
+            isEmptyDefinition: file.isEmptyDefinition(resolvedFilters: resolved),
             unsupportedFilterKeys: resolved.unknownKeys,
         )
     }
