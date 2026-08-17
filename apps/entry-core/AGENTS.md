@@ -33,7 +33,7 @@ Do not duplicate detailed assertions across these owners. Pair behavior changes 
 
 From the repository root, use `mise run entry-core-check` as the complete verification entry point. Focused commands are available as `entry-core-build`, `entry-core-test`, `entry-core-test-race`, and `entry-core-smoke`.
 
-When root harness or guidance changes, also run `python3 -m scripts.validate_harness` and `git diff --check`. Keep `go vet`, gofmt cleanliness, single-module output, `go.sum` presence, `go.work` absence, the pinned module allowlist (`go list -m all | sort` diff), and the `AutoMigrate(` ban as required invariants.
+When root harness or guidance changes, also run `python3 -m scripts.validate_harness` and `git diff --check`. Keep `go vet`, gofmt cleanliness, single-module output, `go.sum` presence, `go mod verify`, `go.work` absence, and the `AutoMigrate(` ban as required invariants.
 
 ## Cross-boundary changes
 
