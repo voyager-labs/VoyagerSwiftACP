@@ -430,6 +430,7 @@ extension FileManagerWindowRoutingReducer {
                 shouldResyncContentNavigation,
                 state: &state,
                 aiConnectionsFileClient: aiConnectionsFileClient,
+                restorePendingCollectionHistory: mode == .authoritative,
             ),
             closeInspectorForActiveAiChatEffect(state: state),
             reconcileUndoManagerScopesEffect(
