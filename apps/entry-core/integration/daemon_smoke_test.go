@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -86,7 +87,105 @@ func TestDaemonProcessSmoke(t *testing.T) {
 	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("daemon process residue remains after reap: %v", err)
 	}
-	assertMetadataOnlyLogs(t, daemon.stdout.String(), daemon.stderr.String())
+	assertMetadataOnlyLogs(t, daemon.stdout.String(), daemon.stderr.String(), socketOnlyAllowedLogLines())
+
+	t.Run("persistence restart", func(t *testing.T) {
+		dbPath := filepath.Join(tempRoot, "entry-core.db")
+
+		firstBoot := startDaemonWithDatabase(t, daemonPath, socketPath, dbPath)
+		waitForSocket(t, firstBoot, socketPath, 15*time.Second)
+		assertCLIResult(t, cliPath, socketPath, "ping", "{\"message\":\"pong\"}\n")
+		if err := firstBoot.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("send SIGTERM to first boot: %v", err)
+		}
+		if err := firstBoot.wait(5 * time.Second); err != nil {
+			t.Fatalf("first boot did not exit after SIGTERM: %v; stderr=%q", err, firstBoot.stderr.String())
+		}
+		if _, err := os.Lstat(socketPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("socket remains after first boot exit: %v", err)
+		}
+		assertMetadataOnlyLogs(
+			t,
+			firstBoot.stdout.String(),
+			firstBoot.stderr.String(),
+			map[string]bool{
+				"entry-core-daemon: started in foreground":              true,
+				"entry-core-daemon: received terminated; shutting down": true,
+				"entry-core-daemon: stopped":                            true,
+				"entry-core-daemon: workspace metadata initialized":     true,
+			},
+		)
+		if !strings.Contains(firstBoot.stderr.String(), "workspace metadata initialized") {
+			t.Fatalf("first boot stderr=%q, want workspace metadata initialized", firstBoot.stderr.String())
+		}
+
+		restart := startDaemonWithDatabase(t, daemonPath, socketPath, dbPath)
+		waitForSocket(t, restart, socketPath, 15*time.Second)
+		assertCLIResult(t, cliPath, socketPath, "ping", "{\"message\":\"pong\"}\n")
+		if err := restart.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("send SIGTERM to restart: %v", err)
+		}
+		if err := restart.wait(5 * time.Second); err != nil {
+			t.Fatalf("restart did not exit after SIGTERM: %v; stderr=%q", err, restart.stderr.String())
+		}
+		if _, err := os.Lstat(socketPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("socket remains after restart exit: %v", err)
+		}
+		assertMetadataOnlyLogs(
+			t,
+			restart.stdout.String(),
+			restart.stderr.String(),
+			map[string]bool{
+				"entry-core-daemon: started in foreground":              true,
+				"entry-core-daemon: received terminated; shutting down": true,
+				"entry-core-daemon: stopped":                            true,
+				"entry-core-daemon: workspace metadata restored":        true,
+			},
+		)
+		if !strings.Contains(restart.stderr.String(), "workspace metadata restored") {
+			t.Fatalf("restart stderr=%q, want workspace metadata restored", restart.stderr.String())
+		}
+	})
+
+	t.Run("corrupt database fails closed", func(t *testing.T) {
+		corruptPath := filepath.Join(tempRoot, "corrupt.db")
+		corruptData := make([]byte, 256)
+		if _, err := rand.Read(corruptData); err != nil {
+			t.Fatalf("read random corrupt bytes: %v", err)
+		}
+		if err := os.WriteFile(corruptPath, corruptData, 0o600); err != nil {
+			t.Fatalf("write corrupt database file: %v", err)
+		}
+
+		daemon := startDaemonWithDatabase(t, daemonPath, socketPath, corruptPath)
+		if !daemon.reaped(15 * time.Second) {
+			t.Fatalf("daemon did not exit on corrupt database within 15s; stderr=%q", daemon.stderr.String())
+		}
+		if daemon.cmd.ProcessState == nil || !daemon.cmd.ProcessState.Exited() || daemon.cmd.ProcessState.ExitCode() != 1 {
+			t.Fatalf("daemon exit = %v, want exit 1; stderr=%q", daemon.cmd.ProcessState, daemon.stderr.String())
+		}
+		if _, err := os.Lstat(socketPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("socket was created for corrupt database: %v", err)
+		}
+		if got := daemon.stdout.String(); got != "" {
+			t.Fatalf("daemon stdout=%q, want empty", got)
+		}
+		stderr := daemon.stderr.String()
+		if !strings.Contains(stderr, "startup failed: database open failed") {
+			t.Fatalf("daemon stderr=%q, want startup failed: database open failed", stderr)
+		}
+		if strings.Contains(stderr, "started in foreground") {
+			t.Fatalf("daemon stderr=%q, must not reach serve on corrupt database", stderr)
+		}
+	})
+}
+
+func socketOnlyAllowedLogLines() map[string]bool {
+	return map[string]bool{
+		"entry-core-daemon: started in foreground":              true,
+		"entry-core-daemon: received terminated; shutting down": true,
+		"entry-core-daemon: stopped":                            true,
+	}
 }
 
 func entryCoreModuleRoot(t *testing.T) string {
@@ -128,8 +227,18 @@ type daemonProcess struct {
 
 func startDaemon(t *testing.T, daemonPath, socketPath string) *daemonProcess {
 	t.Helper()
+	return launchDaemon(t, daemonPath, "--socket", socketPath)
+}
+
+func startDaemonWithDatabase(t *testing.T, daemonPath, socketPath, dbPath string) *daemonProcess {
+	t.Helper()
+	return launchDaemon(t, daemonPath, "--socket", socketPath, "--database", dbPath)
+}
+
+func launchDaemon(t *testing.T, daemonPath string, argv ...string) *daemonProcess {
+	t.Helper()
 	process := &daemonProcess{
-		cmd:  exec.Command(daemonPath, "--socket", socketPath),
+		cmd:  exec.Command(daemonPath, argv...),
 		done: make(chan struct{}),
 	}
 	process.cmd.Stdout = &process.stdout
@@ -170,6 +279,19 @@ func (process *daemonProcess) wait(timeout time.Duration) error {
 		return process.err
 	case <-timer.C:
 		return fmt.Errorf("timed out after %s", timeout)
+	}
+}
+
+// reaped reports whether the process has been reaped (waited on) within the
+// timeout, regardless of its exit code.
+func (process *daemonProcess) reaped(timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-process.done:
+		return true
+	case <-timer.C:
+		return false
 	}
 }
 
@@ -249,7 +371,7 @@ func sendMalformedRequest(t *testing.T, socketPath string) {
 	}
 }
 
-func assertMetadataOnlyLogs(t *testing.T, stdout, stderr string) {
+func assertMetadataOnlyLogs(t *testing.T, stdout, stderr string, allowed map[string]bool) {
 	t.Helper()
 	if stdout != "" {
 		t.Fatalf("daemon stdout=%q, want empty", stdout)
@@ -258,11 +380,6 @@ func assertMetadataOnlyLogs(t *testing.T, stdout, stderr string) {
 		if strings.Contains(stderr, sensitive) {
 			t.Fatal("daemon stderr leaked malformed request data")
 		}
-	}
-	allowed := map[string]bool{
-		"entry-core-daemon: started in foreground":              true,
-		"entry-core-daemon: received terminated; shutting down": true,
-		"entry-core-daemon: stopped":                            true,
 	}
 	lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
 	if len(lines) != len(allowed) {
