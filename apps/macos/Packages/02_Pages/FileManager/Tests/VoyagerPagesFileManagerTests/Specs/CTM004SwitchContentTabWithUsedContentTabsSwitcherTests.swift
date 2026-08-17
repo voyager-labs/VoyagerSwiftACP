@@ -384,30 +384,27 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
 
     /// CTM-004-dismiss_content_tab_switcher_without_mutation: mounted overlay의 dismiss wiring이 Content Tab을 보존한다.
     /// package에서 검증 가능한 reducer action과 whole-window source wiring이 같은 view dismiss 경로를 사용하는지 고정한다.
-    /// - 검증 내용: whole-window ZStack, Store-derived presentation, shell hit-test containment, Escape/backdrop dismiss
-    /// action, semantic snapshot
+    /// - 검증 내용: switcher shell focus 확보, Escape dismiss action, semantic snapshot
     /// - 사전 조건: two-tab window에 presentation을 표시한 상태와 canonical main-container source
     /// - 기대 결과: overlay dismiss 후 presentation만 nil이 되고 Content Tab semantic snapshot은 byte-equivalent이다.
     @MainActor
-    func testMountedOverlayDismissesWithoutContentTabMutation() async throws {
+    func testMountedSwitcherFocusAndDismissPreserveContentTabs() async throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
+        let switcherSource = try String(
             contentsOf: packageRoot.appendingPathComponent(
-                "Sources/VoyagerPagesFileManager/Window/Ui/FileManagerWindowMainContainerView.swift",
+                "Sources/VoyagerPagesFileManager/Window/Ui/FileManagerContentTabSwitcherView.swift",
             ),
             encoding: .utf8,
         )
 
-        XCTAssertTrue(source.contains("ZStack"))
-        XCTAssertTrue(source.contains("contentTabSwitcherPresentation"))
-        XCTAssertTrue(source.contains("FileManagerContentTabSwitcherView"))
-        XCTAssertTrue(source.contains("contentShape(Rectangle())"))
-        XCTAssertTrue(source.contains("onExitCommand"))
-        XCTAssertTrue(source.contains(".view(.dismissContentTabSwitcher)"))
+        XCTAssertTrue(switcherSource.contains("@FocusState private var isSwitcherFocused"))
+        XCTAssertTrue(switcherSource.contains(".focused($isSwitcherFocused)"))
+        XCTAssertTrue(switcherSource.contains(".onAppear { isSwitcherFocused = true }"))
+        XCTAssertTrue(switcherSource.contains(".onExitCommand(perform: onDismiss)"))
 
         let initialState = makeSwitcherWindowState(prefix: "mounted")
         let snapshot = ContentTabSemanticSnapshot(initialState)

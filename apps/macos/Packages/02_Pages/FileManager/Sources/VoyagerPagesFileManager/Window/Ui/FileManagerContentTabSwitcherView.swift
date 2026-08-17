@@ -55,6 +55,7 @@ struct FileManagerContentTabSwitcherView: View {
 
     @Environment(\.colorScheme)
     private var colorScheme
+    @FocusState private var isSwitcherFocused: Bool
 
     init(
         viewState: ContentTabSwitcherViewState,
@@ -71,6 +72,10 @@ struct FileManagerContentTabSwitcherView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .focusable()
+        .focused($isSwitcherFocused)
+        .onAppear { isSwitcherFocused = true }
+        .onExitCommand(perform: onDismiss)
     }
 
     private enum Metrics {
