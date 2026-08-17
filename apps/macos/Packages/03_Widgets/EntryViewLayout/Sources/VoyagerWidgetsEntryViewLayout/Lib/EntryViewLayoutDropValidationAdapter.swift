@@ -332,18 +332,18 @@ extension EntryViewLayoutDropValidationAdapter {
                 destinationPath: destinationPath,
             )
         }
-        let receivers = promiseReceivers(from: draggingInfo, promisedOrdinals: negotiation.promisedOrdinals)
-        let combinedDataFlavors = dataFlavorPayloads(from: draggingInfo.draggingPasteboard, negotiation: negotiation)
-        // 진입 요약: negotiation이 확정한 표현 수/종류와 receiver 구조만 로깅한다(파일명·경로 금지).
-        let emptyReceiverFileNames = receivers.isEmpty || receivers.allSatisfy(\.fileNames.isEmpty)
-        validationLogger.info(
-            """
-            acquisition begin promised=\(negotiation.promisedOrdinals.count, privacy: .public) \
-            immediate=\(negotiation.immediateURLDescriptors.count, privacy: .public) \
-            data=\(combinedDataFlavors.count, privacy: .public) \
-            receivers=\(receivers.count, privacy: .public) \
-            emptyReceiverFileNames=\(emptyReceiverFileNames, privacy: .public)
-            """,
+        guard let (receivers, combinedDataFlavors) = resolvedAcquisitionInputs(
+            from: draggingInfo,
+            negotiation: negotiation,
+        ) else {
+            validationLogger.info("acquisition rejected receiver/data count mismatch")
+            context.clearDropState()
+            return false
+        }
+        logAcquisitionBegin(
+            receivers: receivers,
+            combinedDataFlavors: combinedDataFlavors,
+            negotiation: negotiation,
         )
         guard !receivers.isEmpty || !combinedDataFlavors.isEmpty else {
             validationLogger.info("acquisition rejected no-receivers")
@@ -360,6 +360,44 @@ extension EntryViewLayoutDropValidationAdapter {
         context.sendAccepted(request)
         context.clearDropState()
         return true
+    }
+
+    /// receiver/data-flavor 추출을 수행하되, negotiation이 확정한 promised/data 수와
+    /// 실제 추출 결과 수가 일치하지 않으면 일부 logical item의 조용한 누락을 막기 위해
+    /// nil(전체 거절)을 반환한다.
+    @MainActor
+    private static func resolvedAcquisitionInputs(
+        from draggingInfo: any NSDraggingInfo,
+        negotiation: ExternalDropNegotiation,
+    ) -> ([NSFilePromiseReceiver], [ExternalDropDataFlavor])? {
+        guard let receivers = promiseReceivers(from: draggingInfo, promisedOrdinals: negotiation.promisedOrdinals),
+              let combinedDataFlavors = dataFlavorPayloads(
+                  from: draggingInfo.draggingPasteboard,
+                  negotiation: negotiation,
+              )
+        else {
+            return nil
+        }
+        return (receivers, combinedDataFlavors)
+    }
+
+    /// 획득 진입 요약 로깅. negotiation이 확정한 표현 수/종류와 receiver 구조만 기록한다(파일명·경로 금지).
+    @MainActor
+    private static func logAcquisitionBegin(
+        receivers: [NSFilePromiseReceiver],
+        combinedDataFlavors: [ExternalDropDataFlavor],
+        negotiation: ExternalDropNegotiation,
+    ) {
+        let emptyReceiverFileNames = receivers.isEmpty || receivers.allSatisfy(\.fileNames.isEmpty)
+        validationLogger.info(
+            """
+            acquisition begin promised=\(negotiation.promisedOrdinals.count, privacy: .public) \
+            immediate=\(negotiation.immediateURLDescriptors.count, privacy: .public) \
+            data=\(combinedDataFlavors.count, privacy: .public) \
+            receivers=\(receivers.count, privacy: .public) \
+            emptyReceiverFileNames=\(emptyReceiverFileNames, privacy: .public)
+            """,
+        )
     }
 
     @MainActor
@@ -535,11 +573,13 @@ extension EntryViewLayoutDropValidationAdapter {
     ///
     /// AppKit drop 계약대로 active `NSDraggingInfo`의 dragging item을 열거해 receiver를 받는다.
     /// 테스트 fixture처럼 열거 결과가 없는 경우에만 pasteboard reading으로 보완한다.
+    /// negotiation이 확정한 promised 수와 수신된 receiver 수가 정확히 일치하지 않으면
+    /// 일부 logical item이 조용히 누락되는 것을 막기 위해 nil(전체 거절)을 반환한다.
     @MainActor
     static func promiseReceivers(
         from draggingInfo: any NSDraggingInfo,
         promisedOrdinals: [Int],
-    ) -> [NSFilePromiseReceiver] {
+    ) -> [NSFilePromiseReceiver]? {
         guard !promisedOrdinals.isEmpty else { return [] }
         var receivers: [NSFilePromiseReceiver] = []
         draggingInfo.enumerateDraggingItems(
@@ -557,25 +597,29 @@ extension EntryViewLayoutDropValidationAdapter {
                 options: [:],
             ) as? [NSFilePromiseReceiver] ?? []
         }
-        let count = min(receivers.count, promisedOrdinals.count)
-        return Array(receivers.prefix(count))
+        guard receivers.count == promisedOrdinals.count else {
+            return nil
+        }
+        return receivers
     }
 
     /// negotiation이 확정한 data-flavor ordinal/UTI 순서대로 pasteboard에서 바이트를 추출해
     /// Sendable `ExternalDropDataFlavor`로 변환한다. pasteboard item(AppKit)은 여기서 소비하고
     /// 넘어가는 값은 전부 Sendable이다. 바이트는 그대로(변환 없이) 보존한다.
+    /// negotiation이 확정한 data-flavor 수와 실제 추출된 payload 수가 일치하지 않으면
+    /// 일부 logical item이 조용히 누락되는 것을 막기 위해 nil(전체 거절)을 반환한다.
     @MainActor
     static func dataFlavorPayloads(
         from pasteboard: NSPasteboard,
         negotiation: ExternalDropNegotiation,
-    ) -> [ExternalDropDataFlavor] {
+    ) -> [ExternalDropDataFlavor]? {
         guard let items = pasteboard.pasteboardItems else { return [] }
         var result: [ExternalDropDataFlavor] = []
         result.reserveCapacity(negotiation.dataFlavors.count)
         for descriptor in negotiation.dataFlavors {
-            guard items.indices.contains(descriptor.ordinal) else { continue }
+            guard items.indices.contains(descriptor.ordinal) else { return nil }
             let item = items[descriptor.ordinal]
-            guard let bytes = item.data(forType: NSPasteboard.PasteboardType(descriptor.uti)) else { continue }
+            guard let bytes = item.data(forType: NSPasteboard.PasteboardType(descriptor.uti)) else { return nil }
             let filename = ExternalDropDataFlavorNaming.filename(
                 uti: descriptor.uti,
                 bytes: bytes,

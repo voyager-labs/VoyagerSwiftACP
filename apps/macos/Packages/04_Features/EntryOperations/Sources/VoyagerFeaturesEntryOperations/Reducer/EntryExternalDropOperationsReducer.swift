@@ -75,6 +75,11 @@ public struct EntryExternalDropOperationsReducer {
                 return startPlacement(plan: plan, state: &state)
 
             // Todo 7: placement 항목의 종단을 추적해 모든 항목이 끝나면 정확히 한 번 종합 완료를 emit한다.
+            case let .lifecycle(.pathsMutated(paths)):
+                // 복사 배치가 source(staging) → destination 쌍을 보고하면 매핑을 캡처한다.
+                // 종합 결과에는 staging이 아닌 실제 destination 경로를 담기 위함이다.
+                return captureDestinationPaths(paths: paths, state: &state)
+
             case let .lifecycle(.operationFinished(path, kind, result)):
                 guard kind == .externalObjectImportItem,
                       let placement = state.externalDropImportPlacement,
@@ -85,7 +90,8 @@ public struct EntryExternalDropOperationsReducer {
                 state.externalDropImportPlacement?.pendingPaths.remove(path)
                 switch result {
                 case .success:
-                    state.externalDropImportPlacement?.succeededPaths.append(path)
+                    let destinationPath = state.externalDropImportPlacement?.destinationBySource[path] ?? path
+                    state.externalDropImportPlacement?.succeededPaths.append(destinationPath)
                 case .failure:
                     state.externalDropImportPlacement?.failedPaths.append(path)
                 }
@@ -192,6 +198,23 @@ public struct EntryExternalDropOperationsReducer {
             operation: .copy,
             operationKind: .externalObjectImportItem,
         )))
+    }
+
+    /// 복사 배치가 `.pathsMutated([source, destination])`으로 보고한 경로 쌍에서 source(staging)를
+    /// 키로 destination을 기록한다. source는 pendingPaths에 속하고 destination은 그 짝이다.
+    private func captureDestinationPaths(paths: [String], state: inout State) -> Effect<Action> {
+        guard let placement = state.externalDropImportPlacement, !placement.pendingPaths.isEmpty else {
+            return .none
+        }
+        for source in placement.pendingPaths where paths.contains(source) {
+            guard let destination = paths.first(where: { $0 != source }),
+                  state.externalDropImportPlacement?.destinationBySource[source] == nil
+            else {
+                continue
+            }
+            state.externalDropImportPlacement?.destinationBySource[source] = destination
+        }
+        return .none
     }
 
     private func finishPlacementIfComplete(state: inout State) -> Effect<Action> {

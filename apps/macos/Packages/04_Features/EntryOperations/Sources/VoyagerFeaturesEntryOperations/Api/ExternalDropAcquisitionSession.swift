@@ -21,6 +21,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 미정 수신기 중 첫 성공 콜백이 도착해 완료된 index 집합.
     private var completedIndeterminateReceivers: Set<Int> = []
     private var receivedStagedPaths: Set<String> = []
+    /// data flavor 파일명 충돌을 회피하기 위한 세션 내 사용 파일명 집합(소문자 키).
+    private var usedStagedFilenames: Set<String> = []
     private var nextItemOrdinal: Int = 0
     private var callbackCounts: [Int: Int] = [:]
     private var pendingCancelledCallbacks: [Int: Int] = [:]
@@ -117,7 +119,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard !isCancelled, !isFinished, !emittedTerminal else { return }
-        let url = URL(fileURLWithPath: stagingDirectory).appendingPathComponent(dataFlavor.filename)
+        // 같은 text 첫 줄 + UTI를 가진 data flavor가 같은 파일명을 만들면 두 번째 write가
+        // 첫 번째 파일을 덮어쓴다. 세션 내에서 고유한 이름을 예약해 충돌을 회피한다.
+        let filename = uniqueStagedFilename(for: dataFlavor.filename)
+        let url = URL(fileURLWithPath: stagingDirectory).appendingPathComponent(filename)
         do {
             try dataFlavor.bytes.write(to: url)
         } catch {
@@ -167,6 +172,20 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
     }
 
+    /// data flavor 파일명이 세션 내에서 고유하도록 ` <n>` 접미로 충돌을 회피한다.
+    /// caller는 lock을 보유해야 한다.
+    private func uniqueStagedFilename(for original: String) -> String {
+        var candidate = original
+        var counter = 1
+        while !usedStagedFilenames.insert(candidate.lowercased()).inserted {
+            counter += 1
+            let ext = (original as NSString).pathExtension
+            let base = (original as NSString).deletingPathExtension
+            candidate = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+        }
+        return candidate
+    }
+
     /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
     func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
         queue.addOperation { [weak self] in
@@ -201,16 +220,19 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         AsyncStream { continuation in
             lock.lock()
             self.continuation = continuation
+            // buffered 이벤트를 lock을 보유한 채 순서대로 drain한다. 그렇지 않으면 snapshot 후
+            // lock을 풀고 replay하는 사이 다른 스레드의 종단 emit이 continuation을 finish시켜
+            // buffered `.received`가 yield 실패로 유실될 수 있다.
             let buffered = bufferedEvents
             let terminal = emittedTerminal
-            lock.unlock()
-
             for event in buffered {
                 continuation.yield(event)
             }
             if terminal {
                 continuation.finish()
+                self.continuation = nil
             }
+            lock.unlock()
         }
     }
 
@@ -398,8 +420,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     }
 
     /// 취소/종료 이후 도착한 지연 콜백의 reported output과 staging을 재삭제한다. 이벤트는 내지 않는다.
+    /// staging 밖 URL(예: source 앱이 늦게 보고한 원본 파일)은 containment 검증 없이
+    /// 삭제하면 사용자 파일이 제거될 수 있으므로 staging 내부 경로에만 재삭제를 적용한다.
     private func removeLateCallbackArtifacts(reportedURL: URL?, staging: String, fileManager: FileManagerClient) {
-        if let reportedURL {
+        if let reportedURL, isInsideStaging(reportedURL) {
             try? fileManager.removeItem(reportedURL)
         }
         try? fileManager.removeItem(URL(fileURLWithPath: staging))
