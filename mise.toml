@@ -674,6 +674,10 @@ rsc.io/sampler v1.3.0
 ALLOWLIST
 '''
 
+[tasks.entry-core-migration-validate]
+description = "Entry Core embedded migration 디렉터리 무결성 검증 (atlas.sum vs 실제 파일)"
+dir = "apps/entry-core"
+run = "mise exec -- atlas migrate validate --dir-format golang-migrate --dir file://internal/persistence/sqlite/migrations"
 
 [tasks.entry-core-swift-test]
 description = "VoyagerEntryCoreClient unit 테스트 (process smoke 제외)"
