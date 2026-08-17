@@ -6,7 +6,7 @@ import Foundation
 import XCTest
 
 @MainActor
-final class RCL005ComposeCollectionConditionsTestsUnitDisplay: XCTestCase {
+final class RCL005ComposeCollectionConditionsUnitDisplayTests: XCTestCase {
     // MARK: - RCL-005-change_collection_condition_value
 
     /// RCL-005-change_collection_condition_value: 첫 단위 값 commit은 선택한 표시 단위를 보존한다.

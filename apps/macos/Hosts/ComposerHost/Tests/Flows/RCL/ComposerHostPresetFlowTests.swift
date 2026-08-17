@@ -2,7 +2,7 @@
 import XCTest
 
 @MainActor
-final class ComposerHostPresetTests: XCTestCase {
+final class ComposerHostPresetFlowTests: XCTestCase {
     func testPresetsHaveUniqueStableScenarioIDs() {
         let presets = ComposerHostPreset.allCases
 

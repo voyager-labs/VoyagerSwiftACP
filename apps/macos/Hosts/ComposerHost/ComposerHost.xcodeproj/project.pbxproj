@@ -33,9 +33,9 @@
 		B40000000000000000000033 /* Exceptions for "ComposerHost" folder in "ComposerHost" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"Tests/ComposerHostFixtureTests.swift",
-				"Tests/ComposerHostPresetTests.swift",
-				"Tests/ComposerHostSandboxTests.swift",
+				"Tests/Flows/RCL/ComposerHostFixtureFlowTests.swift",
+				"Tests/Flows/RCL/ComposerHostPresetFlowTests.swift",
+				"Tests/Flows/RCL/ComposerHostSandboxFlowTests.swift",
 			);
 			target = B40000000000000000000006 /* ComposerHost */;
 		};

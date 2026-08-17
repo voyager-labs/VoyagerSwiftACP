@@ -3,7 +3,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class ComposerHostSandboxTests: XCTestCase {
+final class ComposerHostSandboxFlowTests: XCTestCase {
     func testRegistryCoversRequiredPropertyAndOperatorContracts() throws {
         let registry = ComposerHostSandbox.makeRegistryClient()
 

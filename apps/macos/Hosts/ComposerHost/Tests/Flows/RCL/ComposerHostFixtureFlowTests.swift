@@ -4,7 +4,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class ComposerHostFixtureTests: XCTestCase {
+final class ComposerHostFixtureFlowTests: XCTestCase {
     func testFixtureRootResolvesFromExplicitProjectRoot() throws {
         let root = try ComposerHostFixtureTestResources.root()
 
@@ -13,7 +13,7 @@ final class ComposerHostFixtureTests: XCTestCase {
     }
 
     func testFixtureRootRejectsAnExplicitMissingProjectRoot() {
-        let missingProjectRoot = "/ComposerHostFixtureTests-missing-project-root"
+        let missingProjectRoot = "/ComposerHostFixtureFlowTests-missing-project-root"
 
         XCTAssertThrowsError(try ComposerHostFixtureRootResolver.resolve(
             environment: ["VOYAGER_PROJECT_ROOT": missingProjectRoot],
@@ -58,7 +58,7 @@ final class ComposerHostFixtureTests: XCTestCase {
 
     func testCorpusLoaderEmitsPackageWithoutItsChildAndEvaluatorKeepsIt() throws {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ComposerHostFixtureTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ComposerHostFixtureFlowTests-\(UUID().uuidString)", isDirectory: true)
         let package = root.appendingPathComponent("Sample.voycoll", isDirectory: true)
         let child = package.appendingPathComponent("payload.json")
         let payload = Data("fixture payload".utf8)
@@ -113,7 +113,7 @@ final class ComposerHostFixtureTests: XCTestCase {
     }
 }
 
-extension ComposerHostFixtureTests {
+extension ComposerHostFixtureFlowTests {
     private func assertRegistryStringOperators() {
         assertRegistryMatch("name_stem", "cn", .string("voyager"), ["documents/Voyager Plan.md"])
         assertRegistryMatch("name_stem", "nc", .string("report"), [
@@ -437,7 +437,7 @@ extension ComposerHostFixtureTests {
         let fixtureRoot = try ComposerHostFixtureTestResources.root()
         let source = fixtureRoot.appendingPathComponent("collections/condition_collection.voycoll", isDirectory: true)
         let sandbox = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ComposerHostFixtureTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ComposerHostFixtureFlowTests-\(UUID().uuidString)", isDirectory: true)
         let copiedCollection = sandbox.appendingPathComponent("invalid_condition.voycoll", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: sandbox) }
 
