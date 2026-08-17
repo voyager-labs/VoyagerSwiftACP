@@ -8,12 +8,31 @@ struct FileManagerWindowMainContainerView: View {
     let keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator
 
     var body: some View {
-        MainContainerViewControllerRepresentable(
-            store: store,
-            isDark: isDark,
-            materialOverride: materialOverride,
-            keyCommandFocusCoordinator: keyCommandFocusCoordinator,
-        )
+        ZStack {
+            MainContainerViewControllerRepresentable(
+                store: store,
+                isDark: isDark,
+                materialOverride: materialOverride,
+                keyCommandFocusCoordinator: keyCommandFocusCoordinator,
+            )
+
+            if let presentation = store.contentTabSwitcherPresentation {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("file-manager.content-tab-switcher.backdrop")
+                    .onTapGesture(perform: dismissContentTabSwitcher)
+
+                FileManagerContentTabSwitcherView(
+                    viewState: ContentTabSwitcherViewState.make(
+                        source: presentation.source,
+                        contentTabs: store.contentTabs,
+                    ),
+                    onDismiss: dismissContentTabSwitcher,
+                )
+                .onExitCommand(perform: dismissContentTabSwitcher)
+            }
+        }
         .alert(
             "Tab Could Not Be Moved",
             isPresented: contentTabMoveFailureIsPresented,
@@ -53,6 +72,10 @@ struct FileManagerWindowMainContainerView: View {
     private func dismissContentTabMoveFailure() {
         guard let requestID = store.contentTabMoveFailurePresentation?.requestID else { return }
         store.send(.view(.dismissContentTabMoveFailure(requestID: requestID)))
+    }
+
+    private func dismissContentTabSwitcher() {
+        store.send(.view(.dismissContentTabSwitcher))
     }
 }
 
