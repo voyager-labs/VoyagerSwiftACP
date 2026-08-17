@@ -148,13 +148,25 @@ extension FileManagerWindowRoutingReducer {
                 guard state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs[id: tabID] != nil
                 else { return .none }
-                return .merge(
-                    .concatenate(
-                        .send(.contentTabs(.setCurrent(tabID))),
-                        .send(.contentTabs(.collapseSelectionToActive)),
-                    ),
-                    brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
-                )
+                return .send(.selectContentTab(tabID))
+
+            case let .selectContentTab(tabID):
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
+                return selectContentTabEffect(tabID: tabID, state: &state)
+
+            case let .sidebar(.delegate(.returnContentTabToPinnedLocation(tabID))):
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
+                return .send(.returnContentTabToPinnedLocation(tabID))
+
+            case let .returnContentTabToPinnedLocation(tabID):
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
+                return returnContentTabToPinnedLocationEffect(tabID: tabID, state: &state)
 
             case let .sidebar(.delegate(.closeContentTab(tabID))):
                 guard state.contentTabRowInteractionSurface.isCloseEnabled else { return .none }
