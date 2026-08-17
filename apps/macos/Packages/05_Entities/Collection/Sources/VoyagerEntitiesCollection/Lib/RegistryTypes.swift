@@ -175,13 +175,13 @@ public enum ValueCount: Decodable, Equatable, Sendable {
     }
 }
 
-public struct RegistryContractValidationError: Error, CustomStringConvertible, Sendable {
-    public let propertyKey: String
-    public let operatorCode: String
-    public let type: SystemPropertyTypeKey
-    public let reason: String
+struct RegistryContractValidationError: Error, CustomStringConvertible {
+    let propertyKey: String
+    let operatorCode: String
+    let type: SystemPropertyTypeKey
+    let reason: String
 
-    public var description: String {
+    var description: String {
         let contract = "property \(propertyKey), operator \(operatorCode), type \(type.rawValue)"
         return "Invalid condition registry contract for \(contract): \(reason)"
     }
