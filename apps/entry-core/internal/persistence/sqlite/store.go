@@ -48,6 +48,7 @@ type Store struct {
 	sqlDB     *sql.DB
 	closeOnce sync.Once
 	closeErr  error
+	txState   txState
 }
 
 // SQLDB returns the underlying *sql.DB (single-connection pool), primarily for
