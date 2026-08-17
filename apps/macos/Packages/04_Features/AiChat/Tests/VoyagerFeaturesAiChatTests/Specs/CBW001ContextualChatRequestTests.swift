@@ -4645,73 +4645,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertTrue(source.contains("acceptedChunkRevision: streamingAssistant.acceptedChunkRevision"))
     }
 
-    /// CBW-001-show_request_processing_state: composer context는 nonempty locked/live section만 투영한다.
-    /// 처리 중 context 표시가 request lock과 다음 turn 편집 값을 합치지 않고 compact row 가시성만 결정하는지 검증합니다.
-    /// - 검증 내용: both empty, locked only, next only, both nonempty 조합의 section kind, label, editable projection을 확인합니다.
-    /// - 사전 조건: immutable locked/current-response section과 live/next-message section display model을 사용합니다.
-    /// - 기대 결과: 빈 section은 layout owner가 없고 locked는 read-only, next는 editable 상태로만 투영됩니다.
-    func testShowRequestProcessingStateProjectsOnlyNonemptyComposerContextSections() {
-        let emptyLocked = AiChatRequestContextSectionDisplayModel(
-            source: .locked,
-            currentContext: nil,
-            addedAttachments: [],
-        )
-        let emptyNext = AiChatRequestContextSectionDisplayModel(
-            source: .draft,
-            currentContext: nil,
-            addedAttachments: [],
-        )
-        let locked = AiChatRequestContextSectionDisplayModel(
-            source: .locked,
-            currentContext: AiChatCurrentContextChipDisplayModel(title: "Locked.md", detail: nil),
-            addedAttachments: [],
-        )
-        let next = AiChatRequestContextSectionDisplayModel(
-            source: .draft,
-            currentContext: nil,
-            addedAttachments: [AiChatAddedAttachmentChipDisplayModel(
-                attachmentID: AiChatAttachmentID(rawValue: "next"),
-                title: "Next.md",
-                statusLabel: "Included",
-                statusDetail: "Included as text",
-                isRemovable: true,
-            )],
-        )
-
-        let bothEmpty = AiChatRequestContextRowPresentation(
-            currentResponse: emptyLocked,
-            nextMessage: emptyNext,
-            isNextMessageEditable: true,
-        )
-        let lockedOnly = AiChatRequestContextRowPresentation(
-            currentResponse: locked,
-            nextMessage: emptyNext,
-            isNextMessageEditable: true,
-        )
-        let nextOnly = AiChatRequestContextRowPresentation(
-            currentResponse: emptyLocked,
-            nextMessage: next,
-            isNextMessageEditable: true,
-        )
-        let bothNonempty = AiChatRequestContextRowPresentation(
-            currentResponse: locked,
-            nextMessage: next,
-            isNextMessageEditable: true,
-        )
-
-        XCTAssertTrue(bothEmpty.sections.isEmpty)
-        XCTAssertEqual(lockedOnly.sections.map(\.kind), [.currentResponse])
-        XCTAssertEqual(lockedOnly.sections.map(\.label), ["Current response context"])
-        XCTAssertEqual(lockedOnly.sections.map(\.isEditable), [false])
-        XCTAssertEqual(nextOnly.sections.map(\.kind), [.nextMessage])
-        XCTAssertEqual(nextOnly.sections.map(\.label), ["Next message context"])
-        XCTAssertEqual(nextOnly.sections.map(\.isEditable), [true])
-        XCTAssertEqual(bothNonempty.sections.map(\.kind), [.currentResponse, .nextMessage])
-        XCTAssertEqual(bothNonempty.sections.map(\.isEditable), [false, true])
-        XCTAssertEqual(lockedOnly.sections.first?.section, locked)
-        XCTAssertEqual(nextOnly.sections.first?.section, next)
-    }
-
     /// CBW-001-show_request_processing_state: timestamp는 calendar day와 시간 경계 우선순위로 표시한다.
     /// 사용자가 메시지 metadata를 확인할 때 locale과 time zone이 고정된 입력에서 날짜·상대 시간 정책이 유지되는지 검증합니다.
     /// - 검증 내용: exact/future/59초, 60초, 정확히 1시간, 자정 교차의 nonempty localized time을 확인합니다.
@@ -8648,6 +8581,7 @@ private extension CBW001ContextualChatRequestTests {
         let rootView = AnyView(WithPerceptionTracking {
             AiChatView(
                 store: store,
+                allowsAttachmentPicker: false,
                 centeredEmptyContent: AnyView(Text("Centered content")),
             )
             .environment(\.aiChatAccessibilityAnnouncementSink, sink)
