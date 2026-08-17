@@ -1,5 +1,85 @@
 @preconcurrency import AppKit
 import Foundation
+import UniformTypeIdentifiers
+
+/// file promise provider 쓰기(fixture pasteboard 구성)용 최소 delegate.
+/// 실제 파일을 쓰지 않고 UTI/type 선언만 하므로 검증에는 promise type 존재만 사용한다.
+final class FilePromiseProviderFixtureDelegate: NSObject, NSFilePromiseProviderDelegate {
+    let filename: String
+
+    init(filename: String) {
+        self.filename = filename
+    }
+
+    func filePromiseProvider(_: NSFilePromiseProvider, fileNameForType _: String) -> String {
+        filename
+    }
+
+    func filePromiseProvider(
+        _: NSFilePromiseProvider,
+        writePromiseTo _: URL,
+        completionHandler: @escaping (Error?) -> Void,
+    ) {
+        completionHandler(nil)
+    }
+
+    func operationQueue(for _: NSFilePromiseProvider) -> OperationQueue {
+        .main
+    }
+}
+
+/// data-flavor 전용 pasteboard fixture.
+/// promise/file URL/legacy filename 없이 임의의 UTI + 바이트만 담는 pasteboard를 구성한다.
+/// `dataFlavors`는 `[(uti: String, data: Data)]` 순서대로 item을 만든다.
+/// 외부 drop의 universal data-flavor 검증(형식 하드코딩 없음)을 위한 테스트 픽스처다.
+func makeDataOnlyPasteboard(_ dataFlavors: [(uti: String, data: Data)]) -> NSPasteboard {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-DataOnly-\(UUID().uuidString)"))
+    pasteboard.clearContents()
+    for flavor in dataFlavors {
+        let item = NSPasteboardItem()
+        item.setData(flavor.data, forType: NSPasteboard.PasteboardType(flavor.uti))
+        pasteboard.writeObjects([item])
+    }
+    return pasteboard
+}
+
+/// promise item과 data-flavor item을 섞은 pasteboard fixture.
+/// promise는 `count`개만큼, data는 `dataFlavors` 순서대로 뒤에 추가한다.
+/// 혼합 drag(promise + data)의 inspection/negotiation 검증을 위한 픽스처다.
+func makePromiseDataMixedPasteboard(
+    promiseCount: Int,
+    dataFlavors: [(uti: String, data: Data)],
+) -> NSPasteboard {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-PromiseData-\(UUID().uuidString)"))
+    pasteboard.clearContents()
+    for _ in 0 ..< promiseCount {
+        pasteboard.writeObjects([
+            NSFilePromiseProvider(
+                fileType: UTType.plainText.identifier,
+                delegate: FilePromiseProviderFixtureDelegate(filename: "promise.txt"),
+            ),
+        ])
+    }
+    for flavor in dataFlavors {
+        let item = NSPasteboardItem()
+        item.setData(flavor.data, forType: NSPasteboard.PasteboardType(flavor.uti))
+        pasteboard.writeObjects([item])
+    }
+    return pasteboard
+}
+
+/// Numbers 셀 드래그 조합(단일 item에 iWork 네이티브 UTI + 텍스트 플레이버) pasteboard fixture.
+/// `public.utf8-plain-text`는 셀 값, `com.apple.iWork.TSPNativeData`는 네이티브 표현이다.
+/// 실측(probe) pasteboard의 조합을 그대로 재현한다.
+func makeNumbersCellPasteboard() -> NSPasteboard {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-Numbers-\(UUID().uuidString)"))
+    pasteboard.clearContents()
+    let item = NSPasteboardItem()
+    item.setData(Data([0x01, 0x02, 0x03]), forType: NSPasteboard.PasteboardType("com.apple.iWork.TSPNativeData"))
+    item.setString("2024-06-12 08:00:000", forType: .string)
+    pasteboard.writeObjects([item])
+    return pasteboard
+}
 
 /// 최소 `NSDraggingInfo` fixture.
 /// EntryViewLayout EOP-002 drop 시나리오가 3개 이상의 테스트에서
@@ -18,6 +98,11 @@ final class DragInfoFixture: NSObject, NSDraggingInfo {
     var animatesToDestination = false
     var numberOfValidItemsForDrop = 0
     var springLoadingHighlight: NSSpringLoadingHighlight = .none
+    private(set) var enumerateDraggingItemsCallCount = 0
+
+    /// 레거시 promised-file 드래그 시뮬레이션용 hook. `atDestination`에 파일을 쓰고 이름을 반환한다.
+    /// 기본은 nil(파일 약속 없음)로, 기존 테스트 동작을 유지한다.
+    var namesOfPromisedFilesHandler: (@Sendable (URL) -> [String]?)?
 
     @MainActor
     init(
@@ -25,6 +110,7 @@ final class DragInfoFixture: NSObject, NSDraggingInfo {
         operationMask: NSDragOperation = [.copy, .move],
         pasteboard: NSPasteboard? = nil,
         location: NSPoint = .zero,
+        namesOfPromisedFiles: (@Sendable (URL) -> [String]?)? = nil,
     ) {
         draggingSource = source
         draggingSourceOperationMask = operationMask
@@ -32,13 +118,14 @@ final class DragInfoFixture: NSObject, NSDraggingInfo {
             ?? NSPasteboard(name: NSPasteboard.Name("EOP002-Fixture-\(UUID().uuidString)"))
         draggingLocation = location
         draggedImageLocation = location
+        namesOfPromisedFilesHandler = namesOfPromisedFiles
         super.init()
     }
 
     func slideDraggedImage(to _: NSPoint) {}
 
-    override func namesOfPromisedFilesDropped(atDestination _: URL) -> [String]? {
-        nil
+    override func namesOfPromisedFilesDropped(atDestination destination: URL) -> [String]? {
+        namesOfPromisedFilesHandler?(destination)
     }
 
     func enumerateDraggingItems(
@@ -47,7 +134,9 @@ final class DragInfoFixture: NSObject, NSDraggingInfo {
         classes _: [AnyClass],
         searchOptions _: [NSPasteboard.ReadingOptionKey: Any],
         using _: @escaping (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void,
-    ) {}
+    ) {
+        enumerateDraggingItemsCallCount += 1
+    }
 
     func resetSpringLoading() {}
 }
