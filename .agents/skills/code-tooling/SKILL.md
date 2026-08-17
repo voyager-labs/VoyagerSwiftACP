@@ -115,6 +115,7 @@ This matrix owns executor selection and applies to interactive agents, while rep
 #### Verification proportionality
 
 - Match verification depth to the change: use the smallest relevant check for a narrow edit, and expand to broader tests only when the change crosses module or runtime boundaries.
+- For genuinely presentation-only edits—such as spacing, color, typography, control sizing, or visual alignment changes with no state, action, API, package, or interaction-semantic change—do not spend time on full test suites, full-app builds, or broad runtime QA by default. Prefer a targeted lint/format check or no automated check when the edit is self-evident; run compile or surface verification only when the user requests it or the change can affect behavior.
 - Do not repeat full build, full test, lint, and diff checks after every intermediate edit when a focused check provides sufficient evidence.
 - Treat Oracle as an escalation path for architecture decisions, hard debugging, repeated verification failure, security/performance risk, or significant post-implementation review—not as a default step for every request.
 

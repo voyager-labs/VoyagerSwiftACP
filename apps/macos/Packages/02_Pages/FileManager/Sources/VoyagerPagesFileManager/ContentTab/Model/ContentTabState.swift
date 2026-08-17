@@ -222,11 +222,17 @@ public extension ContentTabState {
         )
     }
 
+    struct PinnedRecordRestoration: Equatable {
+        public let state: ContentTabState
+        public let didCompact: Bool
+        public let droppedCount: Int
+    }
+
     static func restoringPinnedRecords(
         from store: ContentTabPinnedRecordStore,
         maxTabs: Int = ContentTabConstants.maxTabs,
         isRestorableAnchor: (ContentTabPageAnchor) -> Bool = { _ in true },
-    ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
+    ) -> PinnedRecordRestoration {
         let collection = collectRestorableRecords(
             from: store,
             maxTabs: maxTabs,
@@ -234,14 +240,14 @@ public extension ContentTabState {
         )
 
         guard !collection.records.isEmpty else {
-            return (
+            return PinnedRecordRestoration(
                 state: .withHomeTab(),
                 didCompact: collection.didCompact,
                 droppedCount: collection.excludedCount,
             )
         }
 
-        return (
+        return PinnedRecordRestoration(
             state: makeRestoredState(from: collection),
             didCompact: collection.didCompact,
             droppedCount: collection.excludedCount,

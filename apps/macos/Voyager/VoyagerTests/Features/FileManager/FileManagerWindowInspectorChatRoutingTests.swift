@@ -742,6 +742,13 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         case context
     }
 
+    private struct PendingInspectorSeedMutationContext {
+        let requestID: UUID
+        let transientSessionID: AiChatSessionID
+        let seededModel: AiProviderModel
+        let alternateModel: AiProviderModel
+    }
+
     private func assertPendingInspectorSeedMutationIsIgnored(
         _ mutation: PendingInspectorSeedMutation,
     ) async throws {
@@ -787,62 +794,109 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         let transientSessionID = try XCTUnwrap(store.state.inspector.aiChat.sessionID)
         XCTAssertEqual(store.state.inspector.aiChat.preparedTransientSessionID, transientSessionID)
         await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+        let context = PendingInspectorSeedMutationContext(
+            requestID: requestID,
+            transientSessionID: transientSessionID,
+            seededModel: seededModel,
+            alternateModel: alternateModel,
+        )
 
-        switch mutation {
-        case .draft:
-            await store.send(.inspector(.aiChat(.draftTextChanged("User draft"))))
-        case .attachment:
-            await store.send(.inspector(.aiChat(.attachmentPickerSelection(transientSessionID, [
-                URL(fileURLWithPath: "/tmp/inspector-pending.txt"),
-            ]))))
-        case .model:
-            await store.send(.inspector(.aiChat(.modelListLoaded(
-                requestID: requestID,
-                provider: .openai,
-                models: [seededModel, alternateModel],
-            ))))
-            await store.send(.inspector(.aiChat(.selectedModelChanged(alternateModel.id))))
-        case .thinking:
-            await store.send(.inspector(.aiChat(.modelListLoaded(
-                requestID: requestID,
-                provider: .openai,
-                models: [seededModel, alternateModel],
-            ))))
-            await store.send(.inspector(.aiChat(.selectedModelChanged(seededModel.id))))
-            await store.send(.inspector(.aiChat(.selectedThinkingChanged(.effort(.low)))))
-        case .context:
-            await store.send(.inspector(.aiChat(.currentContextChanged(.init(summary: "User context")))))
-        }
-
-        switch mutation {
-        case .model, .thinking:
-            break
-        case .draft, .attachment, .context:
-            await store.send(.inspector(.aiChat(.modelListLoaded(
-                requestID: requestID,
-                provider: .openai,
-                models: [seededModel, alternateModel],
-            ))))
-        }
+        await sendPendingInspectorSeedMutation(mutation, to: store, context: context)
+        await completePendingInspectorSeedMutation(mutation, to: store, context: context)
         await store.finish()
 
-        switch mutation {
-        case .draft:
-            XCTAssertEqual(store.state.inspector.aiChat.draftText, "User draft")
-        case .attachment:
-            XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
-        case .model:
-            XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, alternateModel.id)
-        case .thinking:
-            XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, seededModel.id)
-            XCTAssertEqual(store.state.inspector.aiChat.selectedThinking, .effort(.low))
-        case .context:
-            XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "User context")
-        }
+        assertPendingInspectorSeedMutation(mutation, state: store.state.inspector.aiChat, context: context)
         XCTAssertEqual(store.state.inspector.aiChat.sessionID, transientSessionID)
         XCTAssertNil(store.state.inspector.aiChat.preparedTransientSessionID)
         XCTAssertNil(store.state.pendingAiChatNewChat)
         XCTAssertEqual(saveCount.value, 0)
+    }
+
+    private func sendPendingInspectorSeedMutation(
+        _ mutation: PendingInspectorSeedMutation,
+        to store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        context: PendingInspectorSeedMutationContext,
+    ) async {
+        switch mutation {
+        case .draft:
+            await store.send(.inspector(.aiChat(.draftTextChanged("User draft"))))
+        case .attachment:
+            await store.send(.inspector(.aiChat(.attachmentPickerSelection(context.transientSessionID, [
+                URL(fileURLWithPath: "/tmp/inspector-pending.txt"),
+            ]))))
+        case .model:
+            await sendPendingInspectorModelSelection(
+                alternateModelID: context.alternateModel.id,
+                to: store,
+                context: context,
+            )
+        case .thinking:
+            await sendPendingInspectorThinkingSelection(to: store, context: context)
+        case .context:
+            await store.send(.inspector(.aiChat(.currentContextChanged(.init(summary: "User context")))))
+        }
+    }
+
+    private func sendPendingInspectorModelSelection(
+        alternateModelID: AiModelHandle,
+        to store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        context: PendingInspectorSeedMutationContext,
+    ) async {
+        await sendPendingInspectorModelList(to: store, context: context)
+        await store.send(.inspector(.aiChat(.selectedModelChanged(alternateModelID))))
+    }
+
+    private func sendPendingInspectorThinkingSelection(
+        to store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        context: PendingInspectorSeedMutationContext,
+    ) async {
+        await sendPendingInspectorModelList(to: store, context: context)
+        await store.send(.inspector(.aiChat(.selectedModelChanged(context.seededModel.id))))
+        await store.send(.inspector(.aiChat(.selectedThinkingChanged(.effort(.low)))))
+    }
+
+    private func completePendingInspectorSeedMutation(
+        _ mutation: PendingInspectorSeedMutation,
+        to store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        context: PendingInspectorSeedMutationContext,
+    ) async {
+        switch mutation {
+        case .model, .thinking:
+            break
+        case .draft, .attachment, .context:
+            await sendPendingInspectorModelList(to: store, context: context)
+        }
+    }
+
+    private func sendPendingInspectorModelList(
+        to store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        context: PendingInspectorSeedMutationContext,
+    ) async {
+        await store.send(.inspector(.aiChat(.modelListLoaded(
+            requestID: context.requestID,
+            provider: .openai,
+            models: [context.seededModel, context.alternateModel],
+        ))))
+    }
+
+    private func assertPendingInspectorSeedMutation(
+        _ mutation: PendingInspectorSeedMutation,
+        state: AiChatFeature.State,
+        context: PendingInspectorSeedMutationContext,
+    ) {
+        switch mutation {
+        case .draft:
+            XCTAssertEqual(state.draftText, "User draft")
+        case .attachment:
+            XCTAssertEqual(state.addedAttachments.count, 1)
+        case .model:
+            XCTAssertEqual(state.selectedModelHandle, context.alternateModel.id)
+        case .thinking:
+            XCTAssertEqual(state.selectedModelHandle, context.seededModel.id)
+            XCTAssertEqual(state.selectedThinking, .effort(.low))
+        case .context:
+            XCTAssertEqual(state.currentContext.summary, "User context")
+        }
     }
 
     func testContentExplicitModelSelectionCapturesPostReductionNormalizedPair() async {

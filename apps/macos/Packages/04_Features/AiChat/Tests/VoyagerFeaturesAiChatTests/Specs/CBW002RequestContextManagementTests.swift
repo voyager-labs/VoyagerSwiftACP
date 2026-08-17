@@ -80,7 +80,7 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertEqual(displayModel.currentResponse?.source, .locked)
         XCTAssertEqual(displayModel.currentResponse?.currentContext?.title, "Locked.md")
         XCTAssertEqual(displayModel.currentResponse?.addedAttachments.map(\.title), ["LockedNotes.txt"])
-        XCTAssertTrue(displayModel.currentResponse?.addedAttachments.allSatisfy { !$0.isRemovable } == true)
+        XCTAssertEqual(displayModel.currentResponse?.addedAttachments.allSatisfy { !$0.isRemovable }, true)
         XCTAssertEqual(state.executionPhase.lock, originalLock)
     }
 
@@ -1515,7 +1515,13 @@ private extension CBW002RequestContextManagementTests {
     }
 
     func makeCBW002AttachmentSessionID() -> AiChatSessionID {
-        AiChatSessionID(rawValue: UUID(uuidString: "22222222-2222-3333-4444-000000000002")!)
+        AiChatSessionID(rawValue: UUID(uuid: (
+            0x22, 0x22, 0x22, 0x22,
+            0x22, 0x22,
+            0x33, 0x33,
+            0x44, 0x44,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+        )))
     }
 
     func makeCBW002TemporaryDirectory() throws -> URL {

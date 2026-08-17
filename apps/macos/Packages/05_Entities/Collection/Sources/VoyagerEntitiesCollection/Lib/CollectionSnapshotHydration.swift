@@ -151,25 +151,26 @@ public enum CollectionSnapshotHydration {
 
     private static func collectionConditions(from conditions: [Condition]) -> [CollectionCondition] {
         conditions.compactMap { condition -> CollectionCondition? in
-            guard condition.isActive,
-                  let operatorCode = condition.operatorCode,
-                  let arity = condition.operatorValueArity
+            if let opaqueSource = condition.opaqueSource {
+                return opaqueSource
+            }
+            guard condition.isExecutionReady,
+                  let operation = condition.operation
             else {
                 return nil
             }
 
-            if arity == 0 {
-                return .init(propertyKey: condition.propertyKey, operatorCode: operatorCode, value: nil)
+            if operation.valueContract.count == .fixed(0) {
+                return .init(propertyKey: condition.property.key, operatorCode: operation.code, value: nil)
             }
 
-            guard let values = condition.values,
-                  values.count >= arity,
-                  let encoded = ConditionValueEncoder.encode(condition: condition, values: values)
+            guard condition.values != nil,
+                  let encoded = ConditionCodec.encode(condition: condition)
             else {
                 return nil
             }
 
-            return .init(propertyKey: condition.propertyKey, operatorCode: operatorCode, value: encoded)
+            return .init(propertyKey: condition.property.key, operatorCode: operation.code, value: encoded)
         }
     }
 

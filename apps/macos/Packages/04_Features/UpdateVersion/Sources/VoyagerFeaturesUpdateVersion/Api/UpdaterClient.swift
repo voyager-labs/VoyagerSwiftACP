@@ -224,7 +224,8 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
                     return
                 }
                 result.set(.success(data))
-            }.resume()
+            }
+            .resume()
         guard semaphore.wait(timeout: .now() + 10) == .success else {
             throw CandidateVerificationError.manifestUnavailable
         }

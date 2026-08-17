@@ -1267,7 +1267,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         var state = EntryViewLayoutState()
         state.isCollectionMode = true
         state.collectionReplaceEpoch = 4
-        state.activeCollectionAppendExpectedBatchIndices = [10: 0, 20: 0]
+        state.activeAppendExpectedBatchIndices = [10: 0, 20: 0]
         let reducer = EntryViewLayoutFeature()
 
         _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
@@ -1281,7 +1281,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             event: .coreBatch(items: [a, b], batchIndex: 0),
         )))
         XCTAssertEqual(state.collectionItems.map(\.id), [a.id, b.id])
-        XCTAssertEqual(state.activeCollectionAppendExpectedBatchIndices, [10: 1, 20: 1])
+        XCTAssertEqual(state.activeAppendExpectedBatchIndices, [10: 1, 20: 1])
 
         _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
             epoch: 4,
@@ -1312,7 +1312,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.isCollectionMode = true
         state.collectionReplaceEpoch = 5
         state.collectionItems = [removed]
-        state.activeCollectionAppendExpectedBatchIndices = [30: 0]
+        state.activeAppendExpectedBatchIndices = [30: 0]
         let reducer = EntryViewLayoutFeature()
 
         _ = reducer.reduce(into: &state, action: .internal(.removeCollectionPaths([removed.fullPath])))
@@ -1362,7 +1362,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.isCollectionMode = true
         state.collectionReplaceEpoch = 7
         state.collectionItems = [EntryModel.temporaryFolder(id: "/tmp/clear", name: "clear")]
-        state.activeCollectionAppendExpectedBatchIndices = [40: 0]
+        state.activeAppendExpectedBatchIndices = [40: 0]
         state.isCollectionContentLoading = true
 
         _ = EntryViewLayoutFeature().reduce(into: &state, action: .internal(.clearCollectionPresentation))
@@ -1370,7 +1370,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(state.collectionReplaceEpoch, 8)
         XCTAssertFalse(state.isCollectionMode)
         XCTAssertTrue(state.collectionItems.isEmpty)
-        XCTAssertTrue(state.activeCollectionAppendExpectedBatchIndices.isEmpty)
+        XCTAssertTrue(state.activeAppendExpectedBatchIndices.isEmpty)
         XCTAssertFalse(state.isCollectionContentLoading)
     }
 

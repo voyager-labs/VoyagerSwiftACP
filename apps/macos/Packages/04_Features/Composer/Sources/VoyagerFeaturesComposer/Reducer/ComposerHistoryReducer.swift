@@ -19,18 +19,19 @@ struct ComposerHistoryReducer {
                 guard let previous = state.history.popLast() else { return .none }
                 let current = FilterSnapshot(
                     scopeSelection: state.scopeEditor.selection,
-                    conditions: state.conditions,
-                    conditionDisplayByKey: state.conditionDisplayByKey,
+                    conditionEditors: state.conditionEditors,
                     includeSubfolders: state.scopeEditor.includeSubfolders,
                     includeDirectories: state.includeDirectories,
                 )
                 state.redoHistory.append(current)
                 state.scopeEditor.selection = previous.scopeSelection
-                state.conditions = previous.conditions
-                state.conditionDisplayByKey = previous.conditionDisplayByKey
+                state.conditionEditors = IdentifiedArray(uniqueElements: previous.conditionEditors.map { editor in
+                    var editor = editor
+                    editor.resetTransientState()
+                    return editor
+                })
                 state.scopeEditor.includeSubfolders = previous.includeSubfolders
                 state.includeDirectories = previous.includeDirectories
-                updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after, state.shouldAutoApplyScopeChange {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
@@ -43,18 +44,19 @@ struct ComposerHistoryReducer {
                 guard let next = state.redoHistory.popLast() else { return .none }
                 let current = FilterSnapshot(
                     scopeSelection: state.scopeEditor.selection,
-                    conditions: state.conditions,
-                    conditionDisplayByKey: state.conditionDisplayByKey,
+                    conditionEditors: state.conditionEditors,
                     includeSubfolders: state.scopeEditor.includeSubfolders,
                     includeDirectories: state.includeDirectories,
                 )
                 state.history.append(current)
                 state.scopeEditor.selection = next.scopeSelection
-                state.conditions = next.conditions
-                state.conditionDisplayByKey = next.conditionDisplayByKey
+                state.conditionEditors = IdentifiedArray(uniqueElements: next.conditionEditors.map { editor in
+                    var editor = editor
+                    editor.resetTransientState()
+                    return editor
+                })
                 state.scopeEditor.includeSubfolders = next.includeSubfolders
                 state.includeDirectories = next.includeDirectories
-                updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after, state.shouldAutoApplyScopeChange {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)

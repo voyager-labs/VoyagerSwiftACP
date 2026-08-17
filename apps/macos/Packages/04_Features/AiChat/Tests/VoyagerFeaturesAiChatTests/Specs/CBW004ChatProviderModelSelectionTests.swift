@@ -1891,7 +1891,6 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "No models available")
     }
 
-    /// 현재 loaded model 목록에 없는 선택 모델로 regenerate가 차단되는지 검증
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
     /// CBW-004-show_unavailable_chat_model_state: Regenerate Is Blocked When Selected Model Is Not In Current Loaded

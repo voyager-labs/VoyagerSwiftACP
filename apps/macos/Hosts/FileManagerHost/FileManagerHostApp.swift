@@ -255,6 +255,11 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
             keyEquivalent: "",
         ).target = self
 
+        installViewMenu(in: hostMenu)
+        installPaneMenu(in: hostMenu)
+    }
+
+    private func installViewMenu(in hostMenu: NSMenu) {
         let viewMenu = NSMenu(title: "View")
         viewMenu.addItem(
             withTitle: "Icon View",
@@ -267,7 +272,9 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
             keyEquivalent: "",
         ).target = self
         hostMenu.setSubmenu(viewMenu, for: hostMenu.addItem(withTitle: "View", action: nil, keyEquivalent: ""))
+    }
 
+    private func installPaneMenu(in hostMenu: NSMenu) {
         let paneMenu = NSMenu(title: "Panes")
         paneMenu.addItem(
             withTitle: "Show Chat History",
@@ -513,23 +520,8 @@ private enum FileManagerHostMaterialOption: String, CaseIterable, Identifiable {
     }
 
     init?(material: NSVisualEffectView.Material) {
-        switch material {
-        case .sidebar: self = .sidebar
-        case .windowBackground: self = .windowBackground
-        case .underWindowBackground: self = .underWindowBackground
-        case .contentBackground: self = .contentBackground
-        case .headerView: self = .headerView
-        case .hudWindow: self = .hudWindow
-        case .fullScreenUI: self = .fullScreenUI
-        case .titlebar: self = .titlebar
-        case .selection: self = .selection
-        case .menu: self = .menu
-        case .popover: self = .popover
-        case .sheet: self = .sheet
-        case .toolTip: self = .toolTip
-        case .underPageBackground: self = .underPageBackground
-        default: return nil
-        }
+        guard let matched = Self.allCases.first(where: { $0.material == material }) else { return nil }
+        self = matched
     }
 }
 

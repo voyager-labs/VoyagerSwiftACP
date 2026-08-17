@@ -1,4 +1,5 @@
 // swift-tools-version:6.0
+import Foundation
 import PackageDescription
 
 let kPackage = Package(
@@ -19,7 +20,9 @@ let kPackage = Package(
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.22.3"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.10.0"),
+        .package(url: "https://github.com/pointfreeco/swift-identified-collections", exact: "1.1.1"),
         .package(url: "https://github.com/pointfreeco/swift-perception", exact: "2.0.8"),
+        .package(url: "https://github.com/johnno1962/HotSwiftUI", from: "1.2.5"),
     ],
     targets: [
         .target(
@@ -34,8 +37,13 @@ let kPackage = Package(
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
+                .product(name: "HotSwiftUI", package: "HotSwiftUI"),
             ],
+            linkerSettings: ProcessInfo.processInfo.environment["RUNNING_VIA_INJECTION_NEXT"] == nil
+                ? []
+                : [.unsafeFlags(["-Xlinker", "-interposable"], .when(configuration: .debug))],
         ),
         .testTarget(
             name: "VoyagerFeaturesComposerTests",

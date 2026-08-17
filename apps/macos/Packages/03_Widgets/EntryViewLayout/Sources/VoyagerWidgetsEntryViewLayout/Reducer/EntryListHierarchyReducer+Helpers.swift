@@ -66,19 +66,7 @@ extension EntryListHierarchyReducer {
         if !reloadIDs.isEmpty {
             state.advanceOutlineProjectionRevision()
         }
-        for id in reloadIDs {
-            guard let folder = folder(id: id, in: state) else { continue }
-            guard folder.supportsListHierarchyExpansion else { continue }
-            if state.hierarchy.expandedFolderIDs.contains(id) {
-                effects.append(startLoad(folder: folder, id: id, state: &state))
-            } else {
-                var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
-                nodeState.folder = FolderSnapshot()
-                nodeState.loadPhase = FolderLoadPhase.idle
-                nodeState.generation &+= 1
-                state.hierarchy.nodesByID[id] = nodeState
-            }
-        }
+        appendReloadEffects(for: reloadIDs, into: &effects, state: &state)
 
         state.reconcileSelectionWithVisibleEntries()
         var reconcileEffects: [Effect<Action>] = []
@@ -92,6 +80,30 @@ extension EntryListHierarchyReducer {
             reconcileEffects.append(.send(.delegate(.selectionChanged)))
         }
         return .merge(effects + reconcileEffects)
+    }
+
+    private func appendReloadEffects(
+        for reloadIDs: Set<EntryModel.ID>,
+        into effects: inout [Effect<Action>],
+        state: inout State,
+    ) {
+        for id in reloadIDs {
+            guard let folder = folder(id: id, in: state) else { continue }
+            guard folder.supportsListHierarchyExpansion else { continue }
+            if state.hierarchy.expandedFolderIDs.contains(id) {
+                effects.append(startLoad(folder: folder, id: id, state: &state))
+            } else {
+                resetIdleNodeState(folderID: id, state: &state)
+            }
+        }
+    }
+
+    private func resetIdleNodeState(folderID: EntryModel.ID, state: inout State) {
+        var nodeState = state.hierarchy.nodesByID[folderID] ?? FolderNodeState()
+        nodeState.folder = FolderSnapshot()
+        nodeState.loadPhase = FolderLoadPhase.idle
+        nodeState.generation &+= 1
+        state.hierarchy.nodesByID[folderID] = nodeState
     }
 
     func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {

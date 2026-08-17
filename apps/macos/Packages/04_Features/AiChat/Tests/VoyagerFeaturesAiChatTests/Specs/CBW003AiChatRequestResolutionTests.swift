@@ -8,7 +8,6 @@ import XCTest
 
 @MainActor
 final class CBW003AiChatRequestResolutionTests: XCTestCase {
-    /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
     // MARK: - CBW-003-prepare_contextual_chat_request
 
     func testRequestContextResolutionCancelIDIsScopedByResolutionID() {
@@ -181,7 +180,6 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(firstLock.context.selectedThinking, .effort(.medium))
     }
 
-    /// session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
     // MARK: - CBW-003-prepare_contextual_chat_request
 
     /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Drops Provider Native Binary Payload Metadata

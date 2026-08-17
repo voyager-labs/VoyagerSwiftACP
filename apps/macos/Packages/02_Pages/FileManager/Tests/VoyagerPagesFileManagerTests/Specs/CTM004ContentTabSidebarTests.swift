@@ -800,7 +800,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
-        XCTAssertFalse(store.state.contentTabs.tabs.contains { $0.isPinned })
+        XCTAssertFalse(store.state.contentTabs.tabs.contains(where: \.isPinned))
     }
 
     /// CTM-004-home_dashboard_projection: active Home의 onAppear projection은 live/cache parity를 유지한다.
@@ -1073,9 +1073,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "finder-projects"),
                 title: "Projects",
                 iconName: "folder",
-                filePath: "/Users/test/Projects",
                 anchor: .directory(path: "/Users/test/Projects"),
                 page: .directory,
+                filePath: "/Users/test/Projects",
             ),
         ])
 
@@ -4057,9 +4057,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "projection-source-favorite"),
                 title: "Projection Source Favorite",
                 iconName: "folder",
-                filePath: "/projection/source/favorite",
                 anchor: .directory(path: "/projection/source/favorite"),
                 page: .directory,
+                filePath: "/projection/source/favorite",
             ),
         ])
         state.content.homeFavoriteItems = [
@@ -4067,9 +4067,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "preserved-home-favorite"),
                 title: "Preserved Home Favorite",
                 iconName: "folder",
-                filePath: "/preserved/home/favorite",
                 anchor: .directory(path: "/preserved/home/favorite"),
                 page: .directory,
+                filePath: "/preserved/home/favorite",
             ),
         ]
     }

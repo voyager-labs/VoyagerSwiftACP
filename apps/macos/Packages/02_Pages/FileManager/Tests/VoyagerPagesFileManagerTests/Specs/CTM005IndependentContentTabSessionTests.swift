@@ -2,6 +2,7 @@ import ComposableArchitecture
 import CoreServices
 import Foundation
 import VoyagerEntitiesAi
+@_spi(Testing)
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
@@ -1068,18 +1069,26 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         )
         state.content.composer.text = "find invoices"
         state.content.composer.scopes = ["/Users/test/Documents"]
-        state.content.composer.conditions = [
-            Condition(
-                propertyKey: "kind",
-                propertyLabel: "Kind",
-                propertyType: "string",
-                operatorCode: "eq",
-                operatorLabel: "Equals",
-                operatorValueArity: 1,
-                operatorValueUIKind: "singleText",
-                valueType: "string",
-                values: ["pdf"],
-                isActive: true,
+        state.content.composer.conditionEditors = [
+            ConditionEditorState(
+                id: UUID(),
+                condition: Condition(
+                    property: .init(
+                        key: "kind",
+                        label: "Kind",
+                        type: .string,
+                        unitContract: nil,
+                        operatorOptions: [.init(code: "eq", label: "Equals")],
+                    ),
+                    operation: .init(
+                        code: "eq",
+                        label: "Equals",
+                        valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+                    ),
+                    values: ["pdf"],
+                    availability: .available,
+                    opaqueSource: nil,
+                ),
             ),
         ]
         state.syncActiveTabContentState()
@@ -1548,7 +1557,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         contentA.entryViewLayout.isCollectionContentLoading = true
         contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
         contentA.entryViewLayout.expectedCollectionReplaceBatchIndex = 1
-        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeAppendExpectedBatchIndices = [7: 1]
         contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
         let state = makeCloseTestState(
             tabs: [
@@ -1584,7 +1593,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(Array(previousLayout?.collectionItems ?? []), [collectionItem])
         XCTAssertEqual(previousLayout?.isCollectionContentLoading, false)
         XCTAssertEqual(previousLayout?.activeCollectionReplacePaths, [])
-        XCTAssertEqual(previousLayout?.activeCollectionAppendExpectedBatchIndices, [:])
+        XCTAssertEqual(previousLayout?.activeAppendExpectedBatchIndices, [:])
         XCTAssertEqual(previousLayout?.activeCollectionAppendPaths, [:])
     }
 
@@ -1608,7 +1617,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         contentA.entryViewLayout.isCollectionMode = true
         contentA.entryViewLayout.isCollectionContentLoading = true
         contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
-        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeAppendExpectedBatchIndices = [7: 1]
         contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
         let state = makeCloseTestState(
             tabs: [makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A")],
@@ -1625,7 +1634,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertNotNil(store.state.content.entryViewLayout.entryOperations.folderLoadingContexts[request.id])
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionContentLoading)
         XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionReplacePaths, ["/tmp/A/pending.txt"])
-        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionAppendExpectedBatchIndices, [7: 1])
+        XCTAssertEqual(store.state.content.entryViewLayout.activeAppendExpectedBatchIndices, [7: 1])
     }
 
     /// CTM-005-independent_content_tab_session: 존재하지 않는 tab 선택은 진행 중 load를 유지함
@@ -1649,7 +1658,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         contentA.entryViewLayout.isCollectionMode = true
         contentA.entryViewLayout.isCollectionContentLoading = true
         contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
-        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeAppendExpectedBatchIndices = [7: 1]
         contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
         let state = makeCloseTestState(
             tabs: [makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A")],
@@ -1667,7 +1676,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertNotNil(store.state.content.entryViewLayout.entryOperations.folderLoadingContexts[request.id])
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionContentLoading)
         XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionReplacePaths, ["/tmp/A/pending.txt"])
-        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionAppendExpectedBatchIndices, [7: 1])
+        XCTAssertEqual(store.state.content.entryViewLayout.activeAppendExpectedBatchIndices, [7: 1])
     }
 
     /// CTM-005-independent_content_tab_session: inactive tab close 시 nested folder stream 취소
@@ -7482,7 +7491,7 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.backgroundInspectorAiChatSnapshotPersisted(fixture.snapshot))
+        await store.send(.backgroundInspectorSnapshotPersisted(fixture.snapshot))
 
         XCTAssertEqual(store.state.backgroundInspectorAiChatStates.count, 2)
         for backgroundInspector in store.state.backgroundInspectorAiChatStates.values {
@@ -7490,7 +7499,7 @@ extension CTM005IndependentContentTabSessionTests {
             XCTAssertNotNil(backgroundInspector.aiChat.backgroundExecutionPhases[fixture.aliasRequestID])
         }
 
-        await store.send(.backgroundInspectorAiChatSnapshotPersisted(fixture.aliasSnapshot))
+        await store.send(.backgroundInspectorSnapshotPersisted(fixture.aliasSnapshot))
 
         XCTAssertTrue(store.state.backgroundInspectorAiChatStates.isEmpty)
         await store.finish()
@@ -9817,7 +9826,7 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.inspector(.aiChat(.executionEvent(.final(response: response)))))
 
         await store.receive { action in
-            guard case let .backgroundInspectorAiChatSnapshotPersisted(snapshot) = action else { return false }
+            guard case let .backgroundInspectorSnapshotPersisted(snapshot) = action else { return false }
             let summary = AiChatSessionSummary(snapshot: snapshot)
             return summary.sessionID == inspectorSessionID
         } assert: { state in
@@ -13349,10 +13358,10 @@ private extension CTM005IndependentContentTabSessionTests {
             runID: runID,
             context: requestContext,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: modelHandle,
             selectedModelRow: catalogRow,
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
         )
     }
 

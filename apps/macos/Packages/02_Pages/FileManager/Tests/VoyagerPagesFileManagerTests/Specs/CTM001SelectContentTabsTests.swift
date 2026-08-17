@@ -1444,17 +1444,17 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             id: ContentTabID(rawValue: "source-favorite"),
             title: "Source Favorite",
             iconName: "folder",
-            filePath: "/source/favorite",
             anchor: .directory(path: "/source/favorite"),
             page: .directory,
+            filePath: "/source/favorite",
         )
         let preservedFavorite = FileManagerHomeFavoriteItem(
             id: ContentTabID(rawValue: "preserved-favorite"),
             title: "Preserved Favorite",
             iconName: "folder",
-            filePath: "/preserved/favorite",
             anchor: .directory(path: "/preserved/favorite"),
             page: .directory,
+            filePath: "/preserved/favorite",
         )
         let sidebarSentinel = Self.sidebarSentinel()
         var state = FileManagerFeature.State()

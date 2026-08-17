@@ -57,6 +57,9 @@ public struct RegistrySnapshot: Sendable {
                 labels[key] = label
                 types[key] = definition.type
                 if let unitSpec = definition.unitSpec {
+                    guard Condition.UnitContract(systemPropertyUnitSpec: unitSpec) != nil else {
+                        preconditionFailure("Invalid unit factor: \(key)")
+                    }
                     unitSpecs[key] = unitSpec
                 }
                 if let legacyKeys = definition.legacyKeys {
@@ -95,29 +98,75 @@ public struct RegistrySnapshot: Sendable {
             guard let operatorDefaults = conditionRegistry.propertyTypes[typeKey] else {
                 preconditionFailure("property_types 누락: \(typeKey)")
             }
-            let options = operatorDefaults.operators.filter { code in
+            let propertyType = SystemPropertyTypeKey(rawType: property.definition.type)
+            let options = operatorDefaults.operators.compactMap { code -> String? in
                 guard let definition = conditionRegistry.operators[code] else {
-                    return false
+                    preconditionFailure("operator 정의 누락: \(property.key) / \(code) / \(typeKey)")
                 }
-                return isValidOperator(definition: definition, typeKey: typeKey)
+                do {
+                    _ = try validateConditionContract(
+                        propertyKey: property.key,
+                        operatorCode: code,
+                        type: propertyType,
+                        definition: definition,
+                    )
+                    return code
+                } catch {
+                    preconditionFailure(String(describing: error))
+                }
             }
             operatorMap[property.key] = options
         }
         return operatorMap
     }
 
-    private static func isValidOperator(
+    static func validateConditionContract(
+        propertyKey: String,
+        operatorCode: String,
+        type: SystemPropertyTypeKey,
         definition: OperatorDefinition,
-        typeKey: String,
-    ) -> Bool {
+    ) throws -> Condition.ValueContract {
+        let error: (String) -> RegistryContractValidationError = { reason in
+            RegistryContractValidationError(
+                propertyKey: propertyKey,
+                operatorCode: operatorCode,
+                type: type,
+                reason: reason,
+            )
+        }
         guard let label = definition.uiLabel, !label.isEmpty else {
-            return false
+            throw error("ui_label is missing")
         }
-        guard let uiValueRaw = definition.uiValueKind?[typeKey], !uiValueRaw.isEmpty else {
-            return false
+        guard let allowedTypes = definition.allowedTypes, allowedTypes.contains(type.rawValue) else {
+            throw error("allowed_types does not include the property type")
         }
-        _ = label
-        return true
+        guard let shape = definition.valueShape, let count = definition.valueCount else {
+            throw error("value_shape or value_count is missing")
+        }
+        guard let inputRaw = definition.uiValueKind?[type.rawValue],
+              let input = Condition.ValueInputKind(registryValue: inputRaw)
+        else {
+            throw error("ui_value_kind is missing or unsupported")
+        }
+
+        let isLegal = switch (shape, count, input) {
+        case (.none, .fixed(0), .none),
+             (.single, .fixed(1), .singleText),
+             (.single, .fixed(1), .singleNumber),
+             (.single, .fixed(1), .singleDate),
+             (.single, .fixed(1), .toggle),
+             (.range, .fixed(2), .rangeDate),
+             (.range, .fixed(2), .rangeNumber),
+             (.list, .multiple, .listText),
+             (.list, .multiple, .listNumber):
+            true
+        default:
+            false
+        }
+        guard isLegal else {
+            throw error("value_shape/value_count/ui_value_kind combination is illegal")
+        }
+        return Condition.ValueContract(shape: shape, count: count, input: input)
     }
 
     public static func load() -> RegistrySnapshot {

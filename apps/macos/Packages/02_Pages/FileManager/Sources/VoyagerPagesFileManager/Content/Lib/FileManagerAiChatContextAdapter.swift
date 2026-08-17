@@ -101,12 +101,18 @@ enum FileManagerAiChatContextAdapter {
             return "AI Chat Sessions"
 
         case let .collection(collectionNavigation):
-            switch collectionNavigation.kind {
-            case .temporary:
-                return "New Collection"
-            case let .file(_, name):
-                return name
-            }
+            return collectionTitle(for: collectionNavigation)
+        }
+    }
+
+    private static func collectionTitle(
+        for collectionNavigation: ContentPageCollectionNavigation,
+    ) -> String {
+        switch collectionNavigation.kind {
+        case .temporary:
+            "New Collection"
+        case let .file(_, name):
+            name
         }
     }
 

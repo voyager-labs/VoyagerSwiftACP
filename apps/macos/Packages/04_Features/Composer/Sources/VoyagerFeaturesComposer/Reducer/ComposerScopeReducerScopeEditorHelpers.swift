@@ -143,12 +143,9 @@ func handleClearAll(
         entryLoadingClient: entryLoadingClient,
     )
     state.scopeEditor.treeNeighborhoodSeedItems = []
-    state.conditions = []
+    state.conditionEditors = []
     state.includeDirectories = false
-    state.conditionDisplayByKey = [:]
-    state.operatorOptionsByKey = [:]
     state.propertyPicker = .init()
-    state.operatorPicker = .init()
     state.valuePicker = .init()
     state.isLoadingFilters = false
     state.lastFiltersResponse = nil

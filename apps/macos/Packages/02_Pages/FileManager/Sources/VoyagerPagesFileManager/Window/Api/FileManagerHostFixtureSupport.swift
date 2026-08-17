@@ -267,16 +267,16 @@ enum FileManagerHostFixturePhase: String {
     case collectionFinished
 
     func log(count: Int, windowID: UUID) {
-        log(count: count, preset: nil, windowID: windowID, requestID: nil, errorCode: nil, rowCount: nil)
+        log(preset: nil, windowID: windowID, requestID: nil, errorCode: nil, rowCount: nil, count: count)
     }
 
     func log(
-        count: Int = 0,
         preset: String?,
         windowID: UUID,
         requestID: UUID? = nil,
         errorCode: Int? = nil,
         rowCount: Int? = nil,
+        count: Int = 0,
     ) {
         let metadata = [
             preset.map { "preset=\($0)" },
@@ -332,6 +332,13 @@ private final class FileManagerHostFixtureProgressiveLoadingCoordinator: @unchec
 }
 
 private enum FileManagerHostFixtureProgressiveLoading {
+    private struct FileManagerHostEntryStreamContext {
+        let preset: String?
+        let windowID: UUID
+        let isCurrent: @Sendable () -> Bool
+        let continuation: AsyncThrowingStream<EntryLoadEvent, Error>.Continuation
+    }
+
     static func stream(
         scenario: FileManagerHostScenario,
         preset: String?,
@@ -344,12 +351,14 @@ private enum FileManagerHostFixtureProgressiveLoading {
             let task = Task {
                 await runStream(
                     scenario: scenario,
-                    preset: preset,
                     requestID: requestID,
-                    windowID: windowID,
                     shouldDenyPermission: shouldDenyPermission,
-                    isCurrent: isCurrent,
-                    continuation: continuation,
+                    context: FileManagerHostEntryStreamContext(
+                        preset: preset,
+                        windowID: windowID,
+                        isCurrent: isCurrent,
+                        continuation: continuation,
+                    ),
                 )
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
@@ -358,167 +367,193 @@ private enum FileManagerHostFixtureProgressiveLoading {
 
     private static func runStream(
         scenario: FileManagerHostScenario,
-        preset: String?,
         requestID: Int,
-        windowID: UUID,
         shouldDenyPermission: Bool,
-        isCurrent: @escaping @Sendable () -> Bool,
-        continuation: AsyncThrowingStream<EntryLoadEvent, Error>.Continuation,
+        context: FileManagerHostEntryStreamContext,
     ) async {
         do {
             try await produceStream(
                 scenario: scenario,
-                preset: preset,
                 requestID: requestID,
-                windowID: windowID,
                 shouldDenyPermission: shouldDenyPermission,
-                isCurrent: isCurrent,
-                continuation: continuation,
+                context: context,
             )
         } catch is CancellationError {
-            continuation.finish()
+            context.continuation.finish()
         } catch {
-            continuation.finish(throwing: error)
+            context.continuation.finish(throwing: error)
         }
     }
 
     private static func produceStream(
         scenario: FileManagerHostScenario,
-        preset: String?,
         requestID: Int,
-        windowID: UUID,
         shouldDenyPermission: Bool,
-        isCurrent: @escaping @Sendable () -> Bool,
-        continuation: AsyncThrowingStream<EntryLoadEvent, Error>.Continuation,
+        context: FileManagerHostEntryStreamContext,
     ) async throws {
         let notificationRequestID = requestUUID(
             scenario: scenario,
             requestID: requestID,
-            windowID: windowID,
+            windowID: context.windowID,
         )
-        try await Task.sleep(for: .milliseconds(100))
-        guard isCurrent() else {
-            FileManagerHostFixturePhase.cancelled.log(
-                preset: preset,
-                windowID: windowID,
-                requestID: notificationRequestID,
-            )
-            return continuation.finish()
-        }
+        if try await finishIfStreamCancelled(
+            milliseconds: 100,
+            notificationRequestID: notificationRequestID,
+            context: context,
+        ) { return }
         FileManagerHostFixturePhase.waiting.log(
-            preset: preset,
-            windowID: windowID,
+            preset: context.preset,
+            windowID: context.windowID,
             requestID: notificationRequestID,
         )
-        try await Task.sleep(for: .milliseconds(300))
-        guard isCurrent() else {
-            FileManagerHostFixturePhase.cancelled.log(
-                preset: preset,
-                windowID: windowID,
-                requestID: notificationRequestID,
-            )
-            return continuation.finish()
-        }
+        if try await finishIfStreamCancelled(
+            milliseconds: 300,
+            notificationRequestID: notificationRequestID,
+            context: context,
+        ) { return }
 
         if scenario.permission != .none {
-            if shouldDenyPermission {
-                FileManagerHostFixturePhase.permissionDenied.log(
-                    preset: preset,
-                    windowID: windowID,
-                    requestID: notificationRequestID,
-                    errorCode: NSFileReadNoPermissionError,
-                )
-                throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError)
-            }
-            FileManagerHostFixturePhase.retryStarted.log(
-                preset: preset,
-                windowID: windowID,
-                requestID: notificationRequestID,
+            return try await producePermissionStream(
+                shouldDenyPermission: shouldDenyPermission,
+                notificationRequestID: notificationRequestID,
+                context: context,
             )
-            let children = FileManagerHostFixtureSampleData.permissionChildren
-            continuation.yield(.coreBatch(items: children, batchIndex: 0))
-            continuation.yield(.coreFinished(batchCount: 1))
-            FileManagerHostFixturePhase.retrySucceeded.log(
-                count: children.count,
-                preset: preset,
-                windowID: windowID,
-                requestID: notificationRequestID,
-                rowCount: children.count,
-            )
-            continuation.finish()
-            return
         }
 
+        try await produceProgressiveStream(
+            scenario: scenario,
+            notificationRequestID: notificationRequestID,
+            context: context,
+        )
+    }
+
+    private static func produceProgressiveStream(
+        scenario: FileManagerHostScenario,
+        notificationRequestID: UUID,
+        context: FileManagerHostEntryStreamContext,
+    ) async throws {
         let children = scenario.largeFolder == .none
             ? FileManagerHostFixtureSampleData.progressiveChildren
             : FileManagerHostFixtureSampleData.largeFolderEntries
         let firstBatchCount = min(32, children.count)
-        continuation.yield(.coreBatch(items: Array(children.prefix(firstBatchCount)), batchIndex: 0))
+        context.continuation.yield(.coreBatch(items: Array(children.prefix(firstBatchCount)), batchIndex: 0))
         FileManagerHostFixturePhase.firstBatch.log(
-            count: firstBatchCount,
-            preset: preset,
-            windowID: windowID,
+            preset: context.preset,
+            windowID: context.windowID,
             requestID: notificationRequestID,
             rowCount: children.count,
+            count: firstBatchCount,
         )
         guard scenario.progressiveEntryLoading != .partialFailure else {
             FileManagerHostFixturePhase.partialFailure.log(
-                count: firstBatchCount,
-                preset: preset,
-                windowID: windowID,
+                preset: context.preset,
+                windowID: context.windowID,
                 requestID: notificationRequestID,
                 rowCount: firstBatchCount,
+                count: firstBatchCount,
             )
             throw FileManagerHostFixtureProgressiveLoadingError.partialFailure
         }
 
         try await finishEntryStream(
             children: children,
-            preset: preset,
-            windowID: windowID,
-            requestID: notificationRequestID,
             firstBatchCount: firstBatchCount,
-            isCurrent: isCurrent,
-            continuation: continuation,
+            notificationRequestID: notificationRequestID,
+            context: context,
         )
+    }
+
+    private static func finishIfStreamCancelled(
+        milliseconds: UInt64,
+        notificationRequestID: UUID,
+        context: FileManagerHostEntryStreamContext,
+    ) async throws -> Bool {
+        try await Task.sleep(for: .milliseconds(milliseconds))
+        guard context.isCurrent() else {
+            FileManagerHostFixturePhase.cancelled.log(
+                preset: context.preset,
+                windowID: context.windowID,
+                requestID: notificationRequestID,
+            )
+            context.continuation.finish()
+            return true
+        }
+        return false
+    }
+
+    private static func producePermissionStream(
+        shouldDenyPermission: Bool,
+        notificationRequestID: UUID,
+        context: FileManagerHostEntryStreamContext,
+    ) async throws {
+        if shouldDenyPermission {
+            FileManagerHostFixturePhase.permissionDenied.log(
+                preset: context.preset,
+                windowID: context.windowID,
+                requestID: notificationRequestID,
+                errorCode: NSFileReadNoPermissionError,
+            )
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError)
+        }
+        FileManagerHostFixturePhase.retryStarted.log(
+            preset: context.preset,
+            windowID: context.windowID,
+            requestID: notificationRequestID,
+        )
+        let children = FileManagerHostFixtureSampleData.permissionChildren
+        context.continuation.yield(.coreBatch(items: children, batchIndex: 0))
+        context.continuation.yield(.coreFinished(batchCount: 1))
+        FileManagerHostFixturePhase.retrySucceeded.log(
+            preset: context.preset,
+            windowID: context.windowID,
+            requestID: notificationRequestID,
+            rowCount: children.count,
+            count: children.count,
+        )
+        context.continuation.finish()
     }
 
     private static func finishEntryStream(
         children: [EntryModel],
-        preset: String?,
-        windowID: UUID,
-        requestID: UUID,
         firstBatchCount: Int,
-        isCurrent: @escaping @Sendable () -> Bool,
-        continuation: AsyncThrowingStream<EntryLoadEvent, Error>.Continuation,
+        notificationRequestID: UUID,
+        context: FileManagerHostEntryStreamContext,
     ) async throws {
         try await Task.sleep(for: .milliseconds(300))
-        guard isCurrent() else {
-            FileManagerHostFixturePhase.cancelled.log(preset: preset, windowID: windowID, requestID: requestID)
-            return continuation.finish()
+        guard context.isCurrent() else {
+            FileManagerHostFixturePhase.cancelled.log(
+                preset: context.preset,
+                windowID: context.windowID,
+                requestID: notificationRequestID,
+            )
+            return context.continuation.finish()
         }
         var nextBatchIndex = 1
         var offset = firstBatchCount
         while offset < children.count {
             let end = min(offset + 32, children.count)
-            continuation.yield(.coreBatch(items: Array(children[offset ..< end]), batchIndex: nextBatchIndex))
+            context.continuation.yield(.coreBatch(items: Array(children[offset ..< end]), batchIndex: nextBatchIndex))
             nextBatchIndex += 1
             offset = end
         }
-        continuation.yield(.coreFinished(batchCount: nextBatchIndex))
+        context.continuation.yield(.coreFinished(batchCount: nextBatchIndex))
         FileManagerHostFixturePhase.coreFinished.log(
-            count: children.count,
-            preset: preset,
-            windowID: windowID,
-            requestID: requestID,
+            preset: context.preset,
+            windowID: context.windowID,
+            requestID: notificationRequestID,
             rowCount: children.count,
+            count: children.count,
         )
         try await Task.sleep(for: .milliseconds(300))
-        guard isCurrent() else {
-            FileManagerHostFixturePhase.cancelled.log(preset: preset, windowID: windowID, requestID: requestID)
-            return continuation.finish()
+        guard context.isCurrent() else {
+            FileManagerHostFixturePhase.cancelled.log(
+                preset: context.preset,
+                windowID: context.windowID,
+                requestID: notificationRequestID,
+            )
+            return context.continuation.finish()
         }
-        continuation.yield(.metadataPatches(children.map {
+        context.continuation.yield(.metadataPatches(children.map {
             .spotlight(
                 id: $0.id,
                 kind: "Fixture Text Document",
@@ -526,13 +561,13 @@ private enum FileManagerHostFixtureProgressiveLoading {
                 lastOpenedDate: nil,
             )
         }))
-        continuation.finish()
+        context.continuation.finish()
         FileManagerHostFixturePhase.streamFinished.log(
-            count: children.count,
-            preset: preset,
-            windowID: windowID,
-            requestID: requestID,
+            preset: context.preset,
+            windowID: context.windowID,
+            requestID: notificationRequestID,
             rowCount: children.count,
+            count: children.count,
         )
     }
 

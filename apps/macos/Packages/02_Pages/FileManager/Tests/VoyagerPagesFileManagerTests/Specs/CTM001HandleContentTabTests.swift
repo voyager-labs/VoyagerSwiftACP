@@ -172,10 +172,10 @@ private func makeBatchAiRequestLock(sessionID: AiChatSessionID) -> AiChatRequest
             context: context,
             messages: [AiChatMessage(role: .user, content: "shared request")],
         ),
-        persistenceTranscriptHistory: nil,
         selectedModelHandle: modelHandle,
         selectedModelRow: modelRow,
         assistantReplacementIndex: nil,
+        persistenceTranscriptHistory: nil,
     )
 }
 

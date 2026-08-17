@@ -8,6 +8,11 @@ import VoyagerEntitiesAi
 import VoyagerShared
 import XCTest
 
+private typealias IndexedSyntaxHighlightingContinuation = CheckedContinuation<
+    [AiChatSyntaxHighlightingClient.Run],
+    Never,
+>
+
 @MainActor
 final class CBW001ContextualChatRequestTests: XCTestCase {
     // MARK: - CBW-001-open_contextual_chat
@@ -899,7 +904,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertGreaterThan(lineTexts.count, 1, "capped 폭에서 텍스트는 줄바꿈되어야 한다")
         for lineText in lineTexts {
             XCTAssertNotEqual(
-                lineText.trimmingCharacters(in: .whitespacesAndNewlines), "줘.",
+                lineText.trimmingCharacters(in: .whitespacesAndNewlines),
+                "줘.",
                 "어떤 줄도 `줘.`만 단독으로 가지면 안 된다",
             )
         }
@@ -936,7 +942,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         XCTAssertGreaterThan(scrollView.frame.width, 0, "selectable surface must have positive width")
         XCTAssertLessThan(
-            scrollView.frame.width, 300,
+            scrollView.frame.width,
+            300,
             "short user bubble must hug natural width (expect ~200pt), not fill 600pt transcript",
         )
     }
@@ -961,7 +968,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         let availableTextWidth = hostWidth - 16 - 28 // Spacer minLength + horizontal padding
         XCTAssertLessThanOrEqual(
-            scrollView.frame.width, availableTextWidth + 1,
+            scrollView.frame.width,
+            availableTextWidth + 1,
             "long user bubble must not escape available width",
         )
 
@@ -985,7 +993,9 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let coordinator = AiChatSelectableOutputText.Coordinator()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 0, height: 0),
-            styleMask: [.titled], backing: .buffered, defer: false,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         window.contentView = coordinator.scrollView
@@ -1020,14 +1030,17 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let coordinator = AiChatSelectableOutputText.Coordinator()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 0, height: 0),
-            styleMask: [.titled], backing: .buffered, defer: false,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         window.contentView = coordinator.scrollView
         defer { window.close() }
 
         coordinator.update(
-            blockID: .init(rawValue: "zero-fits"), attributedText: NSAttributedString(string: text),
+            blockID: .init(rawValue: "zero-fits"),
+            attributedText: NSAttributedString(string: text),
             sizingMode: .fitsContent,
         )
 
@@ -1876,7 +1889,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         XCTAssertFalse(firstResult?.isEligibleForDisplay ?? false)
         XCTAssertNotNil(secondResult)
-        XCTAssertTrue(secondResult?.isEligibleForDisplay == true)
+        XCTAssertEqual(secondResult?.isEligibleForDisplay, true)
     }
 
     /// CBW-001-render_assistant_markdown: 같은 세션에서 code row가 교체 후 복원되면 highlight freshness를 갱신한다.
@@ -4055,10 +4068,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
     }
 
     private actor IndexedSyntaxHighlightingRecorder {
-        private typealias Continuation = CheckedContinuation<[AiChatSyntaxHighlightingClient.Run], Never>
-
         private var invocationTotal = 0
-        private var continuations: [Int: Continuation] = [:]
+        private var continuations: [Int: IndexedSyntaxHighlightingContinuation] = [:]
 
         func invocationCount() -> Int {
             invocationTotal
@@ -8513,8 +8524,10 @@ private struct AiChatMetadataSourceSubtrees {
 
 private func aiChatMetadataSourceSubtrees() throws -> AiChatMetadataSourceSubtrees {
     let packageRoot = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
     let uiRoot = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui")
     let conversation = try String(
         contentsOf: uiRoot.appendingPathComponent("AiChatConversationSurface.swift"), encoding: .utf8,

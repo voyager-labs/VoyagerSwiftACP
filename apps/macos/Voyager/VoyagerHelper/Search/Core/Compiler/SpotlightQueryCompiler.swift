@@ -12,6 +12,7 @@ struct SpotlightQueryCompiler {
     struct CompilePlan {
         let predicate: String
         let pushdownConditions: [SearchConditionPayload]
+        let pathConditions: [SearchConditionPayload]
     }
 
     enum CompileError: Error, LocalizedError {
@@ -82,6 +83,7 @@ struct SpotlightQueryCompiler {
             return CompilePlan(
                 predicate: Self.basePredicate,
                 pushdownConditions: [],
+                pathConditions: [],
             )
         }
 
@@ -89,30 +91,59 @@ struct SpotlightQueryCompiler {
         clauses.reserveCapacity(conditions.count + 1)
         var pushdownConditions: [SearchConditionPayload] = []
         pushdownConditions.reserveCapacity(conditions.count)
+        var pathConditions: [SearchConditionPayload] = []
 
         for condition in conditions {
-            let validated = try validateCondition(condition)
+            if let historical = historicalResolution(for: condition), historical.isPathDerived {
+                pathConditions.append(historical.normalizedPayload(from: condition))
+                continue
+            }
+            let (compiledCondition, validated) = try preparedCondition(condition)
 
             guard let attribute = resolveAttributeName(
                 mapping: validated.mapping,
             ) else {
-                throw CompileError.missingMDItemAttribute(condition.propertyKey)
+                throw CompileError.missingMDItemAttribute(compiledCondition.propertyKey)
             }
 
             let clause = try buildClause(
                 attribute: attribute,
                 typeKey: validated.typeKey,
                 dateMdqueryOperator: validated.dateMdqueryOperator,
-                condition: condition,
+                condition: compiledCondition,
             )
             clauses.append(clause)
-            pushdownConditions.append(condition)
+            pushdownConditions.append(compiledCondition)
         }
 
         return CompilePlan(
             predicate: clauses.joined(separator: " && "),
             pushdownConditions: pushdownConditions,
+            pathConditions: pathConditions,
         )
+    }
+
+    private func preparedCondition(
+        _ condition: SearchConditionPayload,
+    ) throws -> (SearchConditionPayload, ValidatedCondition) {
+        do {
+            return try (condition, validateCondition(condition))
+        } catch {
+            guard let historical = historicalResolution(for: condition),
+                  let mapping = conditionBuilder.propertyMap[historical.propertyKey]
+            else {
+                throw error
+            }
+            let normalized = historical.normalizedPayload(from: condition)
+            return try (
+                normalized,
+                validateHistoricalCondition(
+                    normalized,
+                    resolution: historical,
+                    mapping: mapping,
+                ),
+            )
+        }
     }
 
     static let basePredicate = "kMDItemContentTypeTree == \"public.item\""
@@ -197,6 +228,69 @@ extension SpotlightQueryCompiler {
         )
     }
 
+    private func historicalResolution(
+        for condition: SearchConditionPayload,
+    ) -> HistoricalConditionCompatibility.Resolution? {
+        let canonicalKey = conditionBuilder.propertyMap[condition.propertyKey] == nil
+            ? conditionBuilder.legacyKeyMap[condition.propertyKey]
+            : condition.propertyKey
+        let currentType = canonicalKey.flatMap { key in
+            conditionBuilder.propertyMap[key].map { SystemPropertyTypeKey(rawType: $0.type) }
+        }
+        return HistoricalConditionCompatibility.resolution(
+            for: condition,
+            canonicalPropertyKey: canonicalKey,
+            currentPropertyType: currentType,
+        )
+    }
+
+    private func validateHistoricalCondition(
+        _ condition: SearchConditionPayload,
+        resolution: HistoricalConditionCompatibility.Resolution,
+        mapping: SearchConditionBuilder.PropertyMapping,
+    ) throws -> ValidatedCondition {
+        do {
+            try conditionBuilder.validateValue(
+                resolution.valueContract.count,
+                operatorCode: condition.operator,
+                value: condition.value,
+                propertyKey: condition.propertyKey,
+            )
+        } catch {
+            throw CompileError.invalidValue(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
+        return ValidatedCondition(
+            mapping: mapping,
+            typeKey: resolution.propertyType.rawValue,
+            dateMdqueryOperator: historicalDateOperator(
+                type: resolution.propertyType,
+                operatorCode: resolution.operatorCode,
+            ),
+        )
+    }
+
+    private func historicalDateOperator(
+        type: SystemPropertyTypeKey,
+        operatorCode: String,
+    ) -> DateMdqueryOperator? {
+        guard type == .date else { return nil }
+        let operators: [String: DateMdqueryOperator] = [
+            "btw": .range,
+            "eq": .eq,
+            "gt": .gt,
+            "gte": .gte,
+            "lt": .lt,
+            "lte": .lte,
+            "nbtw": .notRange,
+            "neq": .neq,
+            "today": .today,
+        ]
+        return operators[operatorCode]
+    }
+
     private func resolveDateMdqueryOperator(
         typeKey: String,
         operatorMeta: OperatorDefinition,
@@ -245,13 +339,12 @@ extension SpotlightQueryCompiler {
         dateMdqueryOperator: DateMdqueryOperator?,
         condition: SearchConditionPayload,
     ) throws -> String {
-        let operatorCode = condition.operator
-
-        if operatorCode == "exists" {
-            return "\(attribute) != nil"
-        }
-        if operatorCode == "empty" {
-            return "(\(attribute) == nil || \(attribute) == \"\")"
+        if let clause = try buildUniversalClause(
+            attribute: attribute,
+            typeKey: typeKey,
+            condition: condition,
+        ) {
+            return clause
         }
 
         switch typeKey {
@@ -279,6 +372,25 @@ extension SpotlightQueryCompiler {
             return try buildBooleanClause(attribute: attribute, condition: condition)
         default:
             throw CompileError.unsupportedPropertyType(typeKey)
+        }
+    }
+
+    private func buildUniversalClause(
+        attribute: String,
+        typeKey: String,
+        condition: SearchConditionPayload,
+    ) throws -> String? {
+        switch (typeKey, condition.operator) {
+        case (_, "exists"):
+            "\(attribute) != nil"
+        case (_, "empty"):
+            "(\(attribute) == nil || \(attribute) == \"\")"
+        case ("string", "any"), ("string", "all"), ("string", "none"), ("string", "miss"):
+            try buildHistoricalStringListClause(attribute: attribute, condition: condition)
+        case ("number", "in"):
+            try buildHistoricalNumberListClause(attribute: attribute, condition: condition)
+        default:
+            nil
         }
     }
 
@@ -330,12 +442,44 @@ extension SpotlightQueryCompiler {
         }
     }
 
+    private func buildHistoricalStringListClause(
+        attribute: String,
+        condition: SearchConditionPayload,
+    ) throws -> String {
+        let values = try readStringList(
+            condition.value,
+            propertyKey: condition.propertyKey,
+            operatorCode: condition.operator,
+        )
+        let comparisons = values.map { value in
+            let pattern = condition.propertyKey == "extension"
+                ? token(for: value, propertyKey: condition.propertyKey)
+                : "*\(value)*"
+            return "\(attribute) == \"\(escapeLiteral(pattern))\""
+        }
+        switch condition.operator {
+        case "any":
+            return "(" + comparisons.joined(separator: " || ") + ")"
+        case "all":
+            return "(" + comparisons.joined(separator: " && ") + ")"
+        case "none":
+            return "(" + comparisons.map { "!(\($0))" }.joined(separator: " && ") + ")"
+        case "miss":
+            return "(" + comparisons.map { "!(\($0))" }.joined(separator: " || ") + ")"
+        default:
+            throw CompileError.unsupportedOperator(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
+    }
+
     private func buildCategoricalClause(
         attribute: String,
         condition: SearchConditionPayload,
     ) throws -> String {
         switch condition.operator {
-        case "any", "none":
+        case "any", "all", "none", "miss":
             let values = try readStringList(
                 condition.value,
                 propertyKey: condition.propertyKey,
@@ -353,7 +497,12 @@ extension SpotlightQueryCompiler {
                     .map { "!(\($0))" }
                     .joined(separator: " && ") + ")"
             }
-            return "(" + comparisons.joined(separator: " || ") + ")"
+            if condition.operator == "miss" {
+                return "(" + comparisons
+                    .map { "!(\($0))" }
+                    .joined(separator: " || ") + ")"
+            }
+            return "(" + comparisons.joined(separator: condition.operator == "all" ? " && " : " || ") + ")"
         case "eq", "neq", "cn", "nc", "sw", "ew", "rx":
             return try buildStringClause(attribute: attribute, condition: condition)
         default:
@@ -407,6 +556,9 @@ extension SpotlightQueryCompiler {
         value: String,
         propertyKey: String,
     ) -> String {
+        if propertyKey == "file_kind" {
+            return "\(attribute) == \"*\(escapeLiteral(value))*\"cd"
+        }
         guard propertyKey == "tag_names" else {
             return "\(attribute) == \"\(escapeLiteral(value))\""
         }
@@ -476,11 +628,25 @@ extension SpotlightQueryCompiler {
         }
     }
 
+    private func buildHistoricalNumberListClause(
+        attribute: String,
+        condition: SearchConditionPayload,
+    ) throws -> String {
+        let values = try readNumberList(
+            condition.value,
+            propertyKey: condition.propertyKey,
+            operatorCode: condition.operator,
+        )
+        return "(" + values
+            .map { "\(attribute) == \(formatNumber($0))" }
+            .joined(separator: " || ") + ")"
+    }
+
     private func buildBooleanClause(
         attribute: String,
         condition: SearchConditionPayload,
     ) throws -> String {
-        guard condition.operator == "eq" else {
+        guard ["eq", "neq"].contains(condition.operator) else {
             throw CompileError.unsupportedOperator(
                 propertyKey: condition.propertyKey,
                 operatorCode: condition.operator,
@@ -492,6 +658,7 @@ extension SpotlightQueryCompiler {
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
         )
-        return "\(attribute) == \(boolValue ? "TRUE" : "FALSE")"
+        let comparison = condition.operator == "eq" ? "==" : "!="
+        return "\(attribute) \(comparison) \(boolValue ? "TRUE" : "FALSE")"
     }
 }

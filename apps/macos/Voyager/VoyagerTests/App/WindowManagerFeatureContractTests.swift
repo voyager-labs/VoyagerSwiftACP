@@ -4,7 +4,8 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesAiChat
@@ -8098,7 +8099,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         movedContent.entryViewLayout.isCollectionMode = true
         movedContent.entryViewLayout.collectionReplaceEpoch = 3
         movedContent.entryViewLayout.activeCollectionReplacePaths = ["/collection-lifecycle/replace.txt"]
-        movedContent.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 0]
+        movedContent.entryViewLayout.activeAppendExpectedBatchIndices = [7: 0]
         movedContent.entryViewLayout.activeCollectionAppendPaths = [7: ["/collection-lifecycle/append.txt"]]
         movedContent.entryViewLayout.nextCollectionAppendToken = 7
         // target restart가 같은 moved URL을 두 번째로 재호출하도록, moved folder를 expanded .loadingCore로 시드한다.
@@ -11671,15 +11672,39 @@ private enum WindowManagerBuiltInCollectionTestRegistry {
         propertyUnitSpec: { _ in nil },
         operatorCodes: { _ in ["any", "gt", "neq"] },
         operatorDefinition: { OperatorDefinition(uiLabel: $0, uiValueKind: nil) },
-        operatorValueUIKind: { code, typeKey in
-            switch (code, typeKey) {
-            case ("any", "categorical"): "listText"
-            case ("gt", "date"): "singleDate"
-            case ("neq", "string"): "singleText"
-            default: "singleText"
-            }
-        },
         resolvePropertyKey: { .canonical($0) },
+        resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+            let contract: Condition.ValueContract
+            let type: SystemPropertyTypeKey
+            switch propertyKey {
+            case "tag_names":
+                contract = .init(shape: .list, count: .multiple, input: .listText)
+                type = .categorical
+            case "last_used_date":
+                contract = .init(shape: .single, count: .fixed(1), input: .singleDate)
+                type = .date
+            default:
+                contract = .init(shape: .single, count: .fixed(1), input: .singleText)
+                type = .string
+            }
+            return Condition(
+                property: .init(
+                    key: propertyKey,
+                    label: propertyKey,
+                    type: type,
+                    unitContract: nil,
+                    operatorOptions: ["any", "gt", "neq"].map {
+                        .init(code: $0, label: $0)
+                    },
+                ),
+                operation: operatorCode.map {
+                    .init(code: $0, label: $0, valueContract: contract)
+                },
+                values: values,
+                availability: .available,
+                opaqueSource: sourcePayload,
+            )
+        },
     )
 }
 

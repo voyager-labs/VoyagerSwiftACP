@@ -203,6 +203,11 @@ extension FileManagerWindowCommandRoutingReducer {
         return .none
     }
 
+    private func handleDuplicateActiveContentTab(state: inout State) -> Effect<Action> {
+        guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+        return handleDuplicateContentTabRequested(sourceID: activeTabID, state: &state)
+    }
+
     func routeContentTabCommand(
         _ command: Action.WindowCommand,
         state: inout State,
@@ -210,37 +215,36 @@ extension FileManagerWindowCommandRoutingReducer {
         switch command {
         case .openNewContentTab,
              .selectContentTab:
-            return handleContentTabCommand(command, state: state)
+            handleContentTabCommand(command, state: state)
 
         case .closeActiveContentTab:
-            return state.contentTabs.activeTabID
+            state.contentTabs.activeTabID
                 .map { Effect<Action>.send(.closeContentTabRequested($0)) }
                 ?? Effect<Action>.none
 
         case .closeSelectedContentTabs:
-            return .send(.requestCloseSelectedContentTabs)
+            .send(.requestCloseSelectedContentTabs)
 
         case .toggleActiveContentTabPin:
-            return toggleActiveContentTabPin(state: state)
+            toggleActiveContentTabPin(state: state)
 
         case .restoreLastClosedContentTab:
-            return handleRestoreLastClosedContentTab(state: &state)
+            handleRestoreLastClosedContentTab(state: &state)
 
         case let .duplicateContentTab(sourceID):
-            return handleDuplicateContentTabRequested(sourceID: sourceID, state: &state)
+            handleDuplicateContentTabRequested(sourceID: sourceID, state: &state)
 
         case .duplicateActiveContentTab:
-            guard let activeTabID = state.contentTabs.activeTabID else { return .none }
-            return handleDuplicateContentTabRequested(sourceID: activeTabID, state: &state)
+            handleDuplicateActiveContentTab(state: &state)
 
         case .duplicateSelectedContentTabs:
-            return handleDuplicateSelectedContentTabsRequested(state: &state)
+            handleDuplicateSelectedContentTabsRequested(state: &state)
 
         case .selectMostRecentlyUsedContentTab:
-            return handleSelectMostRecentlyUsedContentTab(state: &state)
+            handleSelectMostRecentlyUsedContentTab(state: &state)
 
         default:
-            return nil
+            nil
         }
     }
 

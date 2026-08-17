@@ -67,7 +67,7 @@ public struct EntryViewLayoutState: Equatable {
     public var collectionReplaceEpoch = 0
     public var activeCollectionReplacePaths: [String] = []
     public var expectedCollectionReplaceBatchIndex = 0
-    public var activeCollectionAppendExpectedBatchIndices: [Int: Int] = [:]
+    public var activeAppendExpectedBatchIndices: [Int: Int] = [:]
     public var activeCollectionAppendPaths: [Int: [String]] = [:]
     public var finishedCollectionAppendTokens: Set<Int> = []
     public var nextCollectionAppendToken = 0
@@ -94,9 +94,10 @@ public struct EntryViewLayoutState: Equatable {
             sections: entryArrangements.groupedItems.isEmpty
                 ? [.ungrouped(items: entries)]
                 : entryArrangements.groupedItems.enumerated().map { index, group in
+                    // 빈 groupName은 groupKey .none(ungrouped)을 뜻하므로 group header 없이 flat 렌더링한다.
                     EntryViewLayoutSection(
                         id: group.groupName.isEmpty ? "group-\(index)" : group.groupName,
-                        title: group.groupName,
+                        title: group.groupName.isEmpty ? nil : group.groupName,
                         colorCode: group.colorCode,
                         items: group.items,
                         isCollapsed: entryArrangements.collapsedGroups.contains(group.groupName),
@@ -243,7 +244,7 @@ public struct EntryViewLayoutState: Equatable {
         isCollectionContentLoading = false
         activeCollectionReplacePaths = []
         expectedCollectionReplaceBatchIndex = 0
-        activeCollectionAppendExpectedBatchIndices = [:]
+        activeAppendExpectedBatchIndices = [:]
         activeCollectionAppendPaths = [:]
         finishedCollectionAppendTokens = []
         collectionCoreFinished = false
