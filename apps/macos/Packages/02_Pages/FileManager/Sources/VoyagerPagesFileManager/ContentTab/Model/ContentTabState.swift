@@ -202,6 +202,12 @@ public extension ContentTabState {
                 continue
             }
 
+            guard record.isSupportedPinnedContentTab else {
+                didCompact = true
+                totalExcluded += 1
+                continue
+            }
+
             guard isRestorableAnchor(record.anchor) else {
                 didCompact = true
                 totalExcluded += 1
