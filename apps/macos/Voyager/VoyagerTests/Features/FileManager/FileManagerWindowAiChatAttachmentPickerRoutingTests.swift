@@ -1,7 +1,6 @@
 import AppKit
 import ApplicationServices
 import ComposableArchitecture
-import PerceptionCore
 import SwiftUI
 @testable import Voyager
 import VoyagerEntitiesAi
@@ -17,11 +16,6 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
     func testAiChatHostsExposeAttachmentPickerOnlyInInspector() async throws {
         _ = NSApplication.shared
         // production hosting 경로와 AX 계약만 검증하며, 하위 뷰의 기존 Perception 경고는 이 테스트 범위가 아닙니다.
-        let wasPerceptionCheckingEnabled = PerceptionCore.isPerceptionCheckingEnabled
-        PerceptionCore.isPerceptionCheckingEnabled = false
-        defer {
-            PerceptionCore.isPerceptionCheckingEnabled = wasPerceptionCheckingEnabled
-        }
         let aiChatState = makeMountedAiChatState()
         var inspectorState = FileManagerInspectorFeature.State()
         inspectorState.aiChat = aiChatState
@@ -74,13 +68,11 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         } withDependencies: {
             $0.continuousClock = ImmediateClock()
         }
-        let contentController = NSHostingController(rootView: WithPerceptionTracking {
-            FileManagerAiChatPageView(
-                store: contentStore,
-                chromeProps: self.makeAiChatChromeProps(),
-                onNavigationAction: { _ in },
-            )
-        })
+        let contentController = NSHostingController(rootView: FileManagerAiChatPageView(
+            store: contentStore,
+            chromeProps: makeAiChatChromeProps(),
+            onNavigationAction: { _ in },
+        ))
         let contentWindow = makeWindow(hosting: contentController)
         contentWindow.title = "VOY-748 Content AX Host"
         defer {
