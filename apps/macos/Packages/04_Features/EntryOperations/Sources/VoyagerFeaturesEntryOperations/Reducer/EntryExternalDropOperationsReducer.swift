@@ -120,8 +120,16 @@ public struct EntryExternalDropOperationsReducer {
         state.activeExternalDrop = ExternalDropActiveSession(request: request)
         state.externalObjectImportStatus = .pending
         return .run { [acquisitionClient, sessionID = request.sessionID] send in
-            for await event in await acquisitionClient.events(sessionID) {
-                await send(.externalDrop(.event(event)))
+            await withTaskCancellationHandler {
+                for await event in await acquisitionClient.events(sessionID) {
+                    await send(.externalDrop(.event(event)))
+                }
+            } onCancel: {
+                // effect 취소(창/탭 닫힘, child store 제거) 시 획득 세션을 정리해
+                // receiver 작업과 staging이 남지 않게 한다. cancel은 멱등이다.
+                Task { @MainActor in
+                    acquisitionClient.cancel(sessionID)
+                }
             }
         }
         .cancellable(id: CancelID.externalDrop(request.sessionID), cancelInFlight: true)

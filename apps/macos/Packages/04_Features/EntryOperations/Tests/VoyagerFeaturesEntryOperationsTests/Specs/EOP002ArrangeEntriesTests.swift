@@ -2712,6 +2712,62 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
+    /// 검증 내용: `.succeeded` emit 후(reducer가 placement 복사를 시작하기 전) 도착한 늦은
+    /// 콜백은 staging을 제거하지 않는다. placement가 staging 파일을 읽는 중 삭제되면 복사가
+    /// 실패하므로, staging 정리는 finish/cancel의 책임으로 남긴다.
+    /// 사전 조건: 미정 receiver가 성공 종단 후 늦은 콜백으로 staging에 새 파일을 쓴다.
+    /// 기대 결과: staging 디렉터리가 보존되고 추가 이벤트는 없다.
+    func testExternalDropAcquisition_lateCallbackAfterSuccessPreservesStaging() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LateAfterSuccess")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let first = staging.appendingPathComponent("first.eml")
+        try Data("one".utf8).write(to: first)
+        receiver.invokeReader(url: first, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staging.path))
+
+        // 성공 종단 후 늦은 콜백: staging이 보존돼야 한다.
+        let late = staging.appendingPathComponent("late.eml")
+        try Data("late".utf8).write(to: late)
+        receiver.invokeReader(url: late, error: nil)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staging.path), "성공 후 늦은 콜백은 staging을 보존해야 한다")
+    }
+
+    /// 검증 내용: `.succeeded` emit 후(placement 시작 전) cancel이 와도 staging을 제거한다.
+    /// 성공 종단 직후 finish 호출자가 사라질 수 있으므로 staging 영구 잔류를 막는다.
+    /// 사전 조건: 세션이 성공 종단된 직후 cancel을 호출한다.
+    /// 기대 결과: staging이 제거되고 `.cancelled` 재-emit은 없다(이미 성공 종단됨).
+    func testExternalDropAcquisition_cancelAfterSuccessRemovesStaging() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CancelAfterSuccess")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: staged)
+        receiver.invokeReader(url: staged, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        client.cancel(request.sessionID)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
+    }
+
     /// 검증 내용: 종단된 세션은 tombstone 기간 후 registry에서 회수돼 장시간 실행에서
     /// sessions/queue/bufferedEvents가 무한 증가하지 않는다.
     /// 사전 조건: 짧은 tombstone(0.05s)의 live client로 세션을 성공 종료한다.
