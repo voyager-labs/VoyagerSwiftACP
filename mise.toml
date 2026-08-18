@@ -35,6 +35,11 @@ version = "3.7.4"
 [tools."github:ast-grep/ast-grep"]
 version = "0.43.0"
 
+# Atlas CLI: DB schema migration (aqua backend; upstream GitHub releases carry
+# no binary assets, so the github-releases backend cannot install it — pin 1.3.0)
+[tools."aqua:ariga/atlas"]
+version = "1.3.0"
+
 # ── Tasks ─────────────────────────────────────────────────────
 
 # 온보딩: clone 후 한 번 실행
@@ -195,11 +200,17 @@ run = '''
 set -eu
 go vet ./...
 test -z "$(gofmt -l .)"
-test "$(go list -m all)" = "github.com/voyager-labs/voyager-app/apps/entry-core"
-test ! -f go.sum
+test -f go.sum
+go mod verify
+test -z "$(git grep -n 'AutoMigrate(' -- '*.go')"
 test ! -f go.work
 test ! -f ../../go.work
 '''
+
+[tasks.entry-core-migration-validate]
+description = "Entry Core embedded migration 디렉터리 무결성 검증 (atlas.sum vs 실제 파일)"
+dir = "apps/entry-core"
+run = "mise exec -- atlas migrate validate --dir-format golang-migrate --dir file://internal/persistence/sqlite/migrations"
 
 [tasks.entry-core-swift-test]
 description = "VoyagerEntryCoreClient unit 테스트 (process smoke 제외)"
