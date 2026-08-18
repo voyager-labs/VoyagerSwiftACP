@@ -167,7 +167,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             context: .init(
                 client: externalDropAcquisitionClient,
                 sendAccepted: { [weak self] request in
-                    self?.sendEntryOperations(.externalDrop(.accepted(request: request)))
+                    self?.store.send(.view(.externalDropAccepted(request: request)))
                 },
                 clearDropState: { [weak self] in
                     self?.clearExternalDropDropState()
@@ -187,7 +187,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             activeSessionID: &activeExternalDropSessionID,
             client: externalDropAcquisitionClient,
             sendCancelSession: { [weak self] sessionID in
-                self?.sendEntryOperations(.externalDrop(.cancelSession(sessionID)))
+                self?.store.send(.view(.externalDropCancelSession(sessionID)))
             },
         )
     }

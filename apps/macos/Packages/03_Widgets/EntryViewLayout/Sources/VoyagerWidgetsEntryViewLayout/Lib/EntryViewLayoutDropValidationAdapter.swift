@@ -424,7 +424,9 @@ extension EntryViewLayoutDropValidationAdapter {
 
     /// 레거시 promised-file 폴백: `acceptDrop` 내부에서 source에 staging으로의 파일 쓰기를 요청하고,
     /// 쓰여진 파일을 staging에서 검증해 세션에 received-item으로 주입한다.
-    /// 가드레일 준수: 이 호출은 acceptDrop 콜백 내부에서만 수행한다.
+    /// 가드레일 준수: 이 호출은 acceptDrop 콜백 내부에서만 수행한다. staging 생성·검증·실패
+    /// 정리는 acquisition client가 단일 소유하고, adapter는 `namesOfPromisedFilesDropped` 호출과
+    /// semantic 결과 전달만 담당한다.
     @MainActor
     private static func beginLegacyPromisedFiles(
         activeSessionID: inout ExternalDropSessionID?,
@@ -433,44 +435,27 @@ extension EntryViewLayoutDropValidationAdapter {
         negotiation: ExternalDropNegotiation,
         destinationPath: String,
     ) -> Bool {
-        let sessionID = ExternalDropSessionID()
-        let stagingURL = URL(fileURLWithPath: destinationPath, isDirectory: true)
-            .appendingPathComponent(".voyager-external-drop-\(sessionID.rawValue)")
-        do {
-            try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
-        } catch {
+        guard let stagingPath = context.client.prepareLegacyStaging(destinationPath) else {
+            logger.info("legacy promise staging prepare failed")
             context.clearDropState()
             return false
         }
-
+        let stagingURL = URL(fileURLWithPath: stagingPath, isDirectory: true)
         // source가 staging에 파일을 동기적으로 쓴다(acceptDrop 콜백 내부).
         let names = draggingInfo.namesOfPromisedFilesDropped(atDestination: stagingURL) ?? []
-        let stagedPaths = names.compactMap { name -> String? in
-            // 일부 source는 절대 경로를, 일부는 이름만 반환한다. 둘 다 staging 내로 정규화한다.
-            let url = name.hasPrefix("/")
-                ? URL(fileURLWithPath: name).standardizedFileURL
-                : stagingURL.appendingPathComponent(name).standardizedFileURL
-            guard FileManager.default.fileExists(atPath: url.path),
-                  isInsideDirectory(url.path, of: stagingURL.path)
-            else {
-                return nil
-            }
-            return url.path
-        }
-        // negotiated cardinality와 반환 수가 정확히 일치해야 한다. negotiation이 확정한
-        // promised item 수보다 적은 이름만 반환되면 일부 항목을 조용히 누락하는 성공을
-        // 막기 위해 staging을 정리하고 전체를 거절한다. 실제 staging 물리화 수(names와
-        // 일치)까지 검증해 부분 성공도 차단한다.
-        guard !names.isEmpty,
-              names.count == negotiation.promisedOrdinals.count,
-              stagedPaths.count == names.count
-        else {
-            logger.info("legacy promise incomplete (session \(sessionID.rawValue, privacy: .public))")
-            try? FileManager.default.removeItem(at: stagingURL)
+        // negotiation이 확정한 promised cardinality와 staging 안 실제 물리화·존재·containment를
+        // client의 finalizeLegacyStaging이 단일 검증하고, 불일치 시 staging을 정리한 뒤 전체를
+        // 거절한다(조용한 부분 누락/잔류 차단).
+        guard let stagedPaths = context.client.finalizeLegacyStaging(
+            names,
+            negotiation.promisedOrdinals.count,
+            stagingPath,
+        ) else {
+            logger.info("legacy promise incomplete")
             context.clearDropState()
             return false
         }
-        let request = context.client.beginLegacy(stagedPaths, stagingURL.path, destinationPath, true)
+        let request = context.client.beginLegacy(stagedPaths, stagingPath, destinationPath, true)
         // legacy 경로도 negotiation이 확정한 즉시 URL을 병합해 modern 경로와 동일한
         // ordered placement plan으로 전달한다(조용한 누락 방지).
         let mergedRequest = ExternalDropAcceptedRequest(
@@ -487,12 +472,6 @@ extension EntryViewLayoutDropValidationAdapter {
         context.clearDropState()
         logger.info("legacy fallback invoked files=\(stagedPaths.count, privacy: .public)")
         return true
-    }
-
-    private static func isInsideDirectory(_ path: String, of directory: String) -> Bool {
-        let dirComponents = URL(fileURLWithPath: directory).standardizedFileURL.pathComponents
-        let fileComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
-        return fileComponents.starts(with: dirComponents) && fileComponents.count > dirComponents.count
     }
 
     private static let logger = Logger(subsystem: "fm.voyager.external-drop", category: "legacy-fallback")

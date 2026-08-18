@@ -110,6 +110,35 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
         client.cancel = { [self] sessionID in
             cancelledSessionIDs.append(sessionID)
         }
+        client.prepareLegacyStaging = { [self] destinationPath in
+            let stagingURL = URL(fileURLWithPath: destinationPath, isDirectory: true)
+                .appendingPathComponent(".voyager-external-drop-\(sessionID.rawValue)")
+            do {
+                try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+                return stagingURL.path
+            } catch {
+                return nil
+            }
+        }
+        client.finalizeLegacyStaging = { [self] names, expectedCount, stagingDirectory in
+            let stagingURL = URL(fileURLWithPath: stagingDirectory, isDirectory: true)
+            guard !names.isEmpty, names.count == expectedCount else {
+                try? FileManager.default.removeItem(at: stagingURL)
+                return nil
+            }
+            let staged = names.compactMap { name -> String? in
+                let url = name.hasPrefix("/")
+                    ? URL(fileURLWithPath: name).standardizedFileURL
+                    : stagingURL.appendingPathComponent(name).standardizedFileURL
+                guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+                return url.path
+            }
+            guard staged.count == names.count else {
+                try? FileManager.default.removeItem(at: stagingURL)
+                return nil
+            }
+            return staged
+        }
         return client
     }
 }

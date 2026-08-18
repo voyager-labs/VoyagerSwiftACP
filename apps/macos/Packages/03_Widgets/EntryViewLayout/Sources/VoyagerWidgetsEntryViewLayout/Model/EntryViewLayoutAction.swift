@@ -61,6 +61,10 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case startDrag(paths: [String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        // 외부 drop 획득 세션의 semantic view action. coordinator가 child reducer에
+        // 직접 주입하지 않고 이 경계를 통해 EntryViewLayoutFeature가 라우팅한다.
+        case externalDropAccepted(request: ExternalDropAcceptedRequest)
+        case externalDropCancelSession(ExternalDropSessionID)
         case openSelectedItem
         case executeCommand(String)
         case openPathInNewWindow(String)

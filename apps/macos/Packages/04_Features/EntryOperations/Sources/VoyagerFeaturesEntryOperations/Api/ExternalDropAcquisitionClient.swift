@@ -35,6 +35,16 @@ public struct ExternalDropAcquisitionClient: Sendable {
         [String], String, String, Bool,
     ) -> ExternalDropAcceptedRequest
 
+    /// 레거시 promised-file 폴백의 staging 디렉터리를 destination 하위에 준비한다.
+    /// 주입된 `FileManagerClient`로 생성하며, 실패 시 nil을 반환한다.
+    public var prepareLegacyStaging: @MainActor @Sendable (String) -> String?
+
+    /// 준비된 레거시 staging 안에서 source가 써 둔 이름/경로를 정규화·검증한다. `names`가
+    /// 비어 있지 않고 `expectedCount`와 정확히 일치하며, 각 이름이 staging 안의 실제 존재
+    /// 파일이어야 한다. 하나라도 불일치하면 staging을 제거하고 nil(전체 거절)을 반환한다.
+    /// 파일시스템 경계와 실패 정리를 client가 단일 소유한다.
+    public var finalizeLegacyStaging: @MainActor @Sendable ([String], Int, String) -> [String]?
+
     nonisolated public init(
         begin: @escaping @MainActor @Sendable (
             [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String],
@@ -43,12 +53,16 @@ public struct ExternalDropAcquisitionClient: Sendable {
         cancel: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
         finish: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
         beginLegacy: @escaping @MainActor @Sendable ([String], String, String, Bool) -> ExternalDropAcceptedRequest,
+        prepareLegacyStaging: @escaping @MainActor @Sendable (String) -> String?,
+        finalizeLegacyStaging: @escaping @MainActor @Sendable ([String], Int, String) -> [String]?,
     ) {
         self.begin = begin
         self.events = events
         self.cancel = cancel
         self.finish = finish
         self.beginLegacy = beginLegacy
+        self.prepareLegacyStaging = prepareLegacyStaging
+        self.finalizeLegacyStaging = finalizeLegacyStaging
     }
 }
 
@@ -120,6 +134,8 @@ enum ExternalDropAcquisitionLive {
                     stagingDirectory: stagingDirectory,
                 )
             },
+            prepareLegacyStaging: { _ in nil },
+            finalizeLegacyStaging: { _, _, _ in nil },
         )
     }
 
@@ -158,6 +174,12 @@ enum ExternalDropAcquisitionLive {
                     destination: destination,
                     forcedCopy: forcedCopy,
                 )
+            },
+            prepareLegacyStaging: { destinationPath in
+                store.prepareLegacyStaging(destinationPath: destinationPath)
+            },
+            finalizeLegacyStaging: { names, expectedCount, stagingDirectory in
+                store.finalizeLegacyStaging(names, expectedCount: expectedCount, stagingDirectory: stagingDirectory)
             },
         )
     }
@@ -249,6 +271,64 @@ private final class ExternalDropAcquisitionStore {
             stagingDirectory: stagingURL.path,
             immediateURLPaths: immediateURLPaths,
         )
+    }
+
+    /// 레거시 promised-file 폴백 staging 디렉터리를 destination 하위에 준비한다.
+    /// 주입된 fileManager로 생성하며, 실패 시 nil을 반환해 전체 drop을 거절한다.
+    @MainActor
+    func prepareLegacyStaging(destinationPath: String) -> String? {
+        let sessionID = ExternalDropSessionID()
+        let stagingURL = URL(fileURLWithPath: destinationPath, isDirectory: true)
+            .appendingPathComponent(".voyager-external-drop-\(sessionID.rawValue)")
+        do {
+            try fileManager.createDirectory(stagingURL, true, nil)
+            return stagingURL.path
+        } catch {
+            return nil
+        }
+    }
+
+    /// 레거시 staging 안에서 source가 써 둔 이름/경로를 정규화·검증한다. `names`가 비어
+    /// 있지 않고 `expectedCount`와 정확히 일치하며, 각 이름이 staging 안의 실제 존재 파일이어야
+    /// 한다. 하나라도 불일치하면 staging을 제거하고 nil(전체 거절)을 반환한다. 파일시스템
+    /// 경계와 실패 정리를 client가 단일 소유한다. `names`는 `namesOfPromisedFilesDropped`가
+    /// 반환한 원본(절대 경로 또는 이름)이다.
+    @MainActor
+    func finalizeLegacyStaging(
+        _ names: [String],
+        expectedCount: Int,
+        stagingDirectory: String,
+    ) -> [String]? {
+        let stagingURL = URL(fileURLWithPath: stagingDirectory, isDirectory: true)
+        guard !names.isEmpty, names.count == expectedCount else {
+            try? fileManager.removeItem(stagingURL)
+            return nil
+        }
+        let stagedPaths = names.compactMap { name -> String? in
+            let url = name.hasPrefix("/")
+                ? URL(fileURLWithPath: name).standardizedFileURL
+                : stagingURL.appendingPathComponent(name).standardizedFileURL
+            guard fileManager.fileExists(url.path),
+                  isInsideDirectory(url.path, of: stagingURL.path)
+            else {
+                return nil
+            }
+            return url.path
+        }
+        guard stagedPaths.count == names.count else {
+            try? fileManager.removeItem(stagingURL)
+            return nil
+        }
+        return stagedPaths
+    }
+
+    /// `path`가 `directory`의 진정한 하위 경로인지 검사한다(자기 자신 제외). containment
+    /// 검증은 파일시스템 경계를 소유하는 client가 단일 수행한다.
+    @MainActor
+    private func isInsideDirectory(_ path: String, of directory: String) -> Bool {
+        let dirComponents = URL(fileURLWithPath: directory).standardizedFileURL.pathComponents
+        let fileComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        return fileComponents.starts(with: dirComponents) && fileComponents.count > dirComponents.count
     }
 
     /// 레거시 promised-file 폴백 세션을 시작한다. `stagedPaths`는 이미 staging에 물리화된

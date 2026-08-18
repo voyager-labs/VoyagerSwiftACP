@@ -140,10 +140,6 @@ public final class EntryListCoordinator: NSObject {
         store.state
     }
 
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
     weak var view: EntryListView?
     var didBind = false
     var scrollView: NSScrollView {

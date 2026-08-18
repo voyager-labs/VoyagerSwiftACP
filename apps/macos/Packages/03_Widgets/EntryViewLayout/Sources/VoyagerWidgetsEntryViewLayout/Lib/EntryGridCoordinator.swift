@@ -14,10 +14,6 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         store.state
     }
 
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
     weak var view: EntryGridView?
     var didBind = false
     var scrollView: NSScrollView {
