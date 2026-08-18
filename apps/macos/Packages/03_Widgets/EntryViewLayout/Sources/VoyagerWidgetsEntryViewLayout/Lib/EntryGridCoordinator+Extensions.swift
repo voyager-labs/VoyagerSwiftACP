@@ -411,7 +411,6 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         }
         guard !paths.isEmpty else { return }
         entryFileOpsClient.saveDragPaths(paths)
-        entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
     }
 
     public func collectionView(
@@ -422,7 +421,6 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
         entryFileOpsClient.saveDragPaths([])
-        entryFileOpsClient.saveDragWithOption(false)
         clearDropTargetState()
         store.send(.view(.setDropTargeted(false)))
     }
@@ -631,12 +629,11 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         if isInternal {
             return .init(
                 sourcePaths: transportPaths,
-                wantsCopy: entryFileOpsClient.loadDragWithOption(),
+                wantsCopy: NSEvent.modifierFlags.contains(.option),
                 isInternal: true,
             )
         }
         entryFileOpsClient.saveDragPaths([])
-        entryFileOpsClient.saveDragWithOption(false)
         return .init(
             sourcePaths: EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard),
             wantsCopy: NSEvent.modifierFlags.contains(.option),

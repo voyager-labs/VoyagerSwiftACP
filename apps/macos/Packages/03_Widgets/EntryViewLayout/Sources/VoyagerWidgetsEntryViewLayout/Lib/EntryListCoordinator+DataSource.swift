@@ -204,12 +204,11 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         if isInternal {
             return .init(
                 sourcePaths: transportPaths,
-                wantsCopy: entryFileOpsClient.loadDragWithOption(),
+                wantsCopy: NSEvent.modifierFlags.contains(.option),
                 isInternal: true,
             )
         }
         entryFileOpsClient.saveDragPaths([])
-        entryFileOpsClient.saveDragWithOption(false)
         return .init(
             sourcePaths: EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard),
             wantsCopy: NSEvent.modifierFlags.contains(.option),

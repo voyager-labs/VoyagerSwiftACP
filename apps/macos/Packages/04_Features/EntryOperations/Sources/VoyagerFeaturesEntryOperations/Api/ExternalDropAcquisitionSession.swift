@@ -181,7 +181,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         defer { lock.unlock() }
         guard !isCancelled, !isFinished, !emittedTerminal else { return }
         for filename in filenames {
-            usedStagedFilenames.insert(filename.lowercased())
+            usedStagedFilenames.insert(stagedFilenameKey(filename))
         }
     }
 
@@ -190,13 +190,23 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private func uniqueStagedFilename(for original: String) -> String {
         var candidate = original
         var counter = 1
-        while !usedStagedFilenames.insert(candidate.lowercased()).inserted {
+        while !usedStagedFilenames.insert(stagedFilenameKey(candidate)).inserted {
             counter += 1
             let ext = (original as NSString).pathExtension
             let base = (original as NSString).deletingPathExtension
             candidate = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
         }
         return candidate
+    }
+
+    /// staging 볼륨에서 파일명이 filesystem상 동일하게 취급되는지 판정하는 canonical key.
+    /// 기본 APFS처럼 case-insensitive + Unicode 정규화 볼륨에서는 조합형 `é`와 분해형
+    /// `e◌́`가 같은 파일로 취급되므로, 예약/충돌 판정도 같은 동등성으로 수행해 두 번째
+    /// payload가 첫 파일을 조용히 덮어쓰지 않게 한다. `EntryClipboardOperationsSupport`의
+    /// destinationNameKey와 동일한 정규화(case folding + canonical mapping)를 적용한다.
+    private func stagedFilenameKey(_ name: String) -> String {
+        name.folding(options: [.caseInsensitive], locale: nil)
+            .precomposedStringWithCanonicalMapping
     }
 
     /// promise receiver를 세션 전용 큐에서 수신을 시작한다. AppKit는 completion handler를
