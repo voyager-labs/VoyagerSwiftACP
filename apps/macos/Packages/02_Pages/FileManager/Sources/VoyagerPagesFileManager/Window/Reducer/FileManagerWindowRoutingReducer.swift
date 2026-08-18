@@ -86,6 +86,7 @@ struct FileManagerWindowRoutingReducer {
 
     func returnContentTabToPinnedLocationEffect(
         tabID: ContentTabID,
+        pendingSelectEntryID: String?,
         state: inout State,
     ) -> Effect<Action> {
         guard state.contentTabs.tabs[id: tabID]?.isPinned == true,
@@ -96,7 +97,10 @@ struct FileManagerWindowRoutingReducer {
         guard state.contentTabs.activeTabID == tabID else {
             return .concatenate(
                 .send(.contentTabs(.setCurrent(tabID))),
-                .send(.returnContentTabToPinnedLocation(tabID)),
+                .send(.returnContentTabToPinnedLocation(
+                    tabID,
+                    pendingSelectEntryID: pendingSelectEntryID,
+                )),
             )
         }
 
@@ -105,6 +109,7 @@ struct FileManagerWindowRoutingReducer {
             record: record,
             leadingEffect: .none,
             state: &state,
+            pendingSelectEntryID: pendingSelectEntryID,
         )
     }
 
@@ -113,7 +118,16 @@ struct FileManagerWindowRoutingReducer {
         record: ContentTabPinnedRecord,
         leadingEffect: Effect<Action>,
         state: inout State,
+        pendingSelectEntryID: String? = nil,
     ) -> Effect<Action> {
+        if let pendingSelectEntryID {
+            let request = ExternalContentTabReservation(
+                id: tabID,
+                anchor: record.anchor,
+                pendingSelectEntryID: pendingSelectEntryID,
+            )
+            guard request.isValidExternalReservation else { return .none }
+        }
         guard !isBrokenPinnedAnchor(record.anchor) else {
             return .concatenate(
                 leadingEffect,
@@ -147,6 +161,7 @@ struct FileManagerWindowRoutingReducer {
             .send(.applyPinnedContentTabRuntimeNavigation(
                 tabID: tabID,
                 navigationState: navigationState,
+                pendingSelectEntryID: pendingSelectEntryID,
             )),
         )
     }
@@ -176,25 +191,25 @@ struct FileManagerWindowRoutingReducer {
     func applyPinnedContentTabRuntimeNavigation(
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
+        pendingSelectEntryID: String?,
         state: inout State,
     ) -> Effect<Action> {
-        let computerName = fileManagerClient.displayName("/")
         guard let tab = state.contentTabs.tabs[id: tabID],
               tab.isPinned,
-              let anchor = contentTabAnchor(
-                  for: navigationState,
-                  computerName: computerName,
-              )
+              let anchor = pinnedAnchor(for: navigationState)
         else { return .none }
 
         let isActiveTab = state.contentTabs.activeTabID == tabID
-        let targetContentState: FileManagerContentState? = isActiveTab
-            ? state.content
-            : state.tabContentStates[tabID]
+        applyExternalPendingSelection(
+            pendingSelectEntryID,
+            tabID: tabID,
+            anchor: anchor,
+            isActiveTab: isActiveTab,
+            state: &state,
+        )
+        let targetContentState: FileManagerContentState? = isActiveTab ? state.content : state.tabContentStates[tabID]
         let currentNavigationState = targetContentState?.navigation.navigationState
-        let currentAnchor = currentNavigationState.flatMap {
-            contentTabAnchor(for: $0, computerName: computerName)
-        }
+        let currentAnchor = currentNavigationState.flatMap(pinnedAnchor)
         if anchor.isCollectionFileAnchor, currentAnchor == anchor {
             return isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
         }
@@ -233,6 +248,35 @@ struct FileManagerWindowRoutingReducer {
             .send(.navigation(.internal(.applyPinnedPeerNavigationState(navigationState)))),
             handleNavigateToState(navigationState, state: &state),
         )
+    }
+
+    private func pinnedAnchor(for navigationState: ContentPageNavigationRoute) -> ContentTabPageAnchor? {
+        contentTabAnchor(
+            for: navigationState,
+            computerName: fileManagerClient.displayName("/"),
+        )
+    }
+
+    private func applyExternalPendingSelection(
+        _ pendingSelectEntryID: String?,
+        tabID: ContentTabID,
+        anchor: ContentTabPageAnchor,
+        isActiveTab: Bool,
+        state: inout State,
+    ) {
+        guard let pendingSelectEntryID else { return }
+        if isActiveTab {
+            state.content.pendingSelectEntryID = pendingSelectEntryID
+            state.syncActiveTabContentState()
+            return
+        }
+        var contentState = state.tabContentStates[tabID]
+            ?? FileManagerContentFeature.State.initialContent(
+                for: anchor,
+                inheritingWindowContextFrom: state.content,
+            )
+        contentState.pendingSelectEntryID = pendingSelectEntryID
+        state.tabContentStates[tabID] = contentState
     }
 
     private func applyPinnedContentTabRuntimeNavigationToInactiveTab(

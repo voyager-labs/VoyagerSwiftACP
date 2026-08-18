@@ -14,10 +14,11 @@ extension FileManagerWindowRoutingReducer {
     var routingBody: some ReducerOf<Self> {
         Reduce<Self.State, Self.Action> { state, action in
             switch action {
-            case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState):
+            case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState, pendingSelectEntryID):
                 return applyPinnedContentTabRuntimeNavigation(
                     tabID: tabID,
                     navigationState: navigationState,
+                    pendingSelectEntryID: pendingSelectEntryID,
                     state: &state,
                 )
 
@@ -150,11 +151,15 @@ extension FileManagerWindowRoutingReducer {
                 else { return .none }
                 return .send(.returnContentTabToPinnedLocation(tabID))
 
-            case let .returnContentTabToPinnedLocation(tabID):
+            case let .returnContentTabToPinnedLocation(tabID, pendingSelectEntryID):
                 guard state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs[id: tabID] != nil
                 else { return .none }
-                return returnContentTabToPinnedLocationEffect(tabID: tabID, state: &state)
+                return returnContentTabToPinnedLocationEffect(
+                    tabID: tabID,
+                    pendingSelectEntryID: pendingSelectEntryID,
+                    state: &state,
+                )
 
             case let .sidebar(.delegate(.closeContentTab(tabID))):
                 guard state.contentTabRowInteractionSurface.isCloseEnabled else { return .none }

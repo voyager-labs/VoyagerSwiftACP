@@ -6583,6 +6583,47 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 외부 파일 요청은 durable anchor 복귀 뒤 선택 대상을 보존
+    /// 외부 open이 pinned Directory의 저장 위치를 재사용할 때 해당 파일 선택이 navigation handoff에 유실되지 않는지 검증한다.
+    /// - 검증 내용: durable anchor 복귀, pendingSelectEntryID 적용, pinned record 불변
+    /// - 사전 조건: runtime /Runtime, durable /Pinned인 active pinned Directory tab과 /Pinned/report.txt 외부 요청
+    /// - 기대 결과: 현재 경로는 /Pinned이고 pending selection은 report.txt이며 record는 변경되지 않음
+    func testReturnActivePinnedTabToPinnedLocationAppliesExternalPendingSelection() async {
+        let pinnedID = ContentTabID(rawValue: "pinned-directory")
+        let durablePath = "/Users/test/Pinned"
+        let pendingSelectEntryID = "\(durablePath)/report.txt"
+        let durableAnchor: ContentTabPageAnchor = .directory(path: durablePath)
+        let record = Self.pinnedRecord(id: pinnedID, anchor: durableAnchor, title: "Pinned", iconName: "folder")
+        var state = ContentTabTestStateBuilder.pinnedDirectoryWindowState(
+            tabID: pinnedID,
+            path: durablePath,
+            record: record,
+        )
+        state.contentTabs.tabs[id: pinnedID]?.anchor = .directory(path: "/Users/test/Runtime")
+        state.content.navigation.seedInitialFolderPath("/Users/test/Runtime")
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+        }
+        // store.exhaustivity = .off: directory load child action보다 durable 복귀와 pending selection 결과를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.returnContentTabToPinnedLocation(
+            pinnedID,
+            pendingSelectEntryID: pendingSelectEntryID,
+        ))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, durablePath)
+        XCTAssertEqual(store.state.content.pendingSelectEntryID, pendingSelectEntryID)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned Directory 재선택 시 durable anchor로 복귀
     /// 이미 활성인 sidebar row 재선택도 pinned record의 최초 위치를 기존 navigation lifecycle로 적용하는지 검증한다.
     /// - 검증 내용: active identity 유지, durable anchor 복귀, pinned record 불변

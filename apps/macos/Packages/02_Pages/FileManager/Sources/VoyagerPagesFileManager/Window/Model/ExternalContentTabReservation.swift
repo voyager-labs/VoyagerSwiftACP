@@ -17,6 +17,30 @@ public struct ExternalContentTabReservation: Equatable, Sendable {
 }
 
 public extension FileManagerWindowState {
+    mutating func applyExternalPendingSelection(
+        _ pendingSelectEntryID: String?,
+        tabID: ContentTabID,
+        anchor: ContentTabPageAnchor,
+    ) -> Bool {
+        let request = ExternalContentTabReservation(
+            id: tabID,
+            anchor: anchor,
+            pendingSelectEntryID: pendingSelectEntryID,
+        )
+        guard request.isValidExternalReservation,
+              contentTabs.tabs[id: tabID]?.anchor == anchor
+        else { return false }
+
+        if contentTabs.activeTabID == tabID {
+            content.pendingSelectEntryID = pendingSelectEntryID
+            syncActiveTabContentState()
+        } else {
+            guard tabContentStates[tabID] != nil else { return false }
+            tabContentStates[tabID]?.pendingSelectEntryID = pendingSelectEntryID
+        }
+        return true
+    }
+
     @discardableResult
     mutating func reserveExternalContentTabs(
         _ reservations: [ExternalContentTabReservation],
