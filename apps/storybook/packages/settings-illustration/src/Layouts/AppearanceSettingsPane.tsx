@@ -1,3 +1,4 @@
+import { Toggle } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import "../styles/appearance-pane.css"
 
@@ -41,13 +42,8 @@ export const AppearanceSettingsPane: FC<AppearanceSettingsPaneProps> = ({
         <h2 className="settings-section-header">File display</h2>
         <div className="settings-row">
           <span className="settings-row-label">Show Hidden Files</span>
-          <button
-            type="button"
-            className="toggle"
-            role="switch"
-            aria-checked="false"
-            aria-label="Show Hidden Files"
-          />
+          {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+          <Toggle checked={false} onChange={() => {}} />
         </div>
       </section>
 

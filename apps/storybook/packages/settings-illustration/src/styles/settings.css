@@ -102,27 +102,6 @@
   border-bottom: 1px solid var(--set-separator);
 }
 
-[data-settings-illustration] .traffic-lights {
-  display: flex;
-  gap: 8px;
-}
-
-[data-settings-illustration] .traffic-light {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-[data-settings-illustration] .traffic-light.close {
-  background: var(--macos-system-red);
-}
-[data-settings-illustration] .traffic-light.minimize {
-  background: var(--macos-system-yellow);
-}
-[data-settings-illustration] .traffic-light.zoom {
-  background: var(--macos-system-green);
-}
-
 [data-settings-illustration] .titlebar-label {
   font-size: 13px;
   font-weight: 600;

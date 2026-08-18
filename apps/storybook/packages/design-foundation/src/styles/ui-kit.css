@@ -41,13 +41,41 @@
 
   --fm-motion-fast: 120ms;
 
+  /* 색상 계열 — --macos-* 토큰으로 직접 환원 */
+  --fm-control: var(--macos-control-color);
+  --fm-control-hover: var(--macos-secondary-system-fill);
+  --fm-control-pressed: var(--macos-tertiary-system-fill);
+  --fm-selection: var(--macos-unemphasized-selected-content-background-color);
+  --fm-selection-label: var(--macos-control-accent-color);
+  --fm-focus-ring: var(--macos-keyboard-focus-indicator-color);
+  --fm-text-primary: var(--macos-label-color);
+  --fm-text-secondary: var(--macos-secondary-label-color);
+  --fm-text-tertiary: var(--macos-tertiary-label-color);
+  --fm-text-quaternary: var(--macos-quaternary-label-color);
+  --fm-text-on-accent: var(--macos-alternate-selected-control-text-color);
+  --fm-separator: var(--macos-separator-color);
+  --fm-separator-strong: var(--macos-separator-strong-color);
+  --fm-window-border: var(--macos-window-border-color);
+  --fm-elevated: var(--macos-material-popover);
+  --fm-blue: var(--macos-system-blue);
+  --fm-blue-pressed: color-mix(in srgb, var(--macos-system-blue) 82%, black);
+  --fm-red: var(--macos-system-red);
+  --fm-yellow: var(--macos-system-yellow);
+  --fm-green: var(--macos-system-green);
+  --fm-amber: var(--macos-system-orange);
+
   /* color-mix 유도값 — --macos-* 기반으로 표현 */
-  --fm-control-inner-highlight: color-mix(in srgb, var(--swiftui-white) 68%, transparent);
   --fm-danger-outline: color-mix(in srgb, var(--macos-system-red) 40%, transparent);
   --fm-warning-outline: color-mix(in srgb, var(--macos-system-orange) 40%, transparent);
+
+  /* control glass 오버레이 — fmi 값 그대로 복사 (--macos-*로 환원 불가한 리터럴) */
+  --fm-control-inner-highlight: #ffffffad;
+  --fm-control-gloss-top: #ffffffd1;
+  --fm-control-outline: #ffffff5c;
 
   /* 백드롭/섀도 — --macos-*로 환원 불가한 리터럴 필터/섀도 값 */
   --fm-backdrop-blur: saturate(210%) blur(34px);
   --fm-shadow-card: 0 1px 2px #0000000f, 0 18px 42px #00000012;
+  --fm-shadow-paper: 0 1px 2px #00000024;
   --fm-shadow-window: 0 28px 72px #0000003d, 0 8px 24px #0000001f;
 }

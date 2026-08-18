@@ -5,6 +5,7 @@
 /* 스타일 — UI kit이 자체 로드되도록 진입점에서 import한다. */
 import "./styles/ui-kit.css"
 import "./styles/atoms.css"
+import "./styles/controls.css"
 import "./styles/form-controls.css"
 import "./styles/menu-controls.css"
 import "./styles/feedback.css"

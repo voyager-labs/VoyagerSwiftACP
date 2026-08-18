@@ -1,3 +1,4 @@
+import { Toggle } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import "../styles/general-pane.css"
 
@@ -14,11 +15,13 @@ export const GeneralSettingsPane: FC = () => {
       <section className="settings-section">
         <div className="settings-row">
           <span className="settings-row-label">Launch at startup</span>
-          <span className="toggle" aria-hidden="true" />
+          {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+          <Toggle checked onChange={() => {}} />
         </div>
         <div className="settings-row">
           <span className="settings-row-label">Alert before app quit</span>
-          <span className="toggle" aria-hidden="true" />
+          {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+          <Toggle checked onChange={() => {}} />
         </div>
       </section>
 
@@ -26,7 +29,8 @@ export const GeneralSettingsPane: FC = () => {
         <h2 className="settings-section-header">Updates</h2>
         <div className="settings-row">
           <span className="settings-row-label">Automatically download and install updates</span>
-          <span className="toggle" aria-hidden="true" />
+          {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+          <Toggle checked onChange={() => {}} />
         </div>
         <div className="settings-divider" aria-hidden="true" />
         <div className="settings-row">

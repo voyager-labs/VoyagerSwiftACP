@@ -1,4 +1,4 @@
-import { TabBar, type TabBarItem } from "@voyager-labs/design-foundation"
+import { TabBar, type TabBarItem, TrafficLights } from "@voyager-labs/design-foundation"
 import { useState } from "react"
 import type { FC } from "react"
 import { AiSettingsPane } from "./Layouts/AiSettingsPane"
@@ -28,11 +28,7 @@ export const SettingsWindow: FC<SettingsIllustrationProps> = ({ state }) => {
       <main className="stage">
         <section className="mac-window" aria-label="Voyager Settings">
           <div className="mac-titlebar">
-            <div className="traffic-lights" aria-hidden="true">
-              <span className="traffic-light close" />
-              <span className="traffic-light minimize" />
-              <span className="traffic-light zoom" />
-            </div>
+            <TrafficLights />
             <span className="titlebar-label">Settings</span>
           </div>
           <TabBar
