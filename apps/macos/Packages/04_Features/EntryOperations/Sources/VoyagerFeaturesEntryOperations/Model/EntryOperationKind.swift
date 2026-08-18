@@ -12,6 +12,7 @@ public enum OperationKind: Equatable, Hashable, Sendable {
     case pasteFileCopy
     case pasteFileMove
     case pasteFileDuplicate
+    case externalObjectImportItem
     case rename
     case moveToTrash
     case deleteImmediately
@@ -43,7 +44,8 @@ public enum OperationKind: Equatable, Hashable, Sendable {
              .revealInFinder,
              .deleteImmediately,
              .compress,
-             .extract:
+             .extract,
+             .externalObjectImportItem:
             false
         }
     }

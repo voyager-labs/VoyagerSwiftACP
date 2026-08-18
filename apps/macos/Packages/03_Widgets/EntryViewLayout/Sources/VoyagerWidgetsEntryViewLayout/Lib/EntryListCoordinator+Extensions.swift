@@ -71,7 +71,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.view(.startDrag(paths: paths)))
+        entryFileOpsClient.saveDragPaths(paths)
+        entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
     }
 
     public func outlineView(
@@ -81,7 +82,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        store.send(.view(.startDrag(paths: [])))
+        entryFileOpsClient.saveDragPaths([])
+        entryFileOpsClient.saveDragWithOption(false)
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -356,6 +358,11 @@ extension EntryListCoordinator {
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
+        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
+            activeSessionID: &activeExternalDropSessionID,
+            previousActive: previous.activeExternalDrop,
+            currentActive: snapshot.activeExternalDrop,
+        )
     }
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -605,6 +612,10 @@ extension EntryListCoordinator {
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
+            // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
+            MainActor.assumeIsolated {
+                cancelActiveExternalDropSession()
+            }
             resetThumbnailSession()
             restoredScrollForCurrentPath = false
         }
