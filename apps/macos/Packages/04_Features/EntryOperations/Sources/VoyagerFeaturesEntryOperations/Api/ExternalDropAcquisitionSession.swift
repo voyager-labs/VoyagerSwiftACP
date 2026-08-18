@@ -252,14 +252,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// reader 콜백. non-main OperationQueue에서 실행된다.
     func handleCallback(receiverIndex: Int, url: URL?, error: Error?) {
         lock.lock()
-
-        // 취소/종료 이후 지연 콜백: reported output/staging만 재삭제하고 이벤트는 내지 않는다.
-        if isCancelled || isFinished || emittedTerminal {
-            let reportedURL = url
-            let staging = stagingDirectory
-            let fm = fileManager
-            lock.unlock()
-            removeLateCallbackArtifacts(reportedURL: reportedURL, staging: staging, fileManager: fm)
+        if handleTerminalCallback(reportedURL: url) {
             return
         }
 
@@ -474,16 +467,41 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         try? fileManager.removeItem(URL(fileURLWithPath: staging))
     }
 
+    /// 취소/종료 이후 지연 콜백을 처리하고 staging을 정리한다. 성공 종단(.succeeded)은
+    /// emittedTerminal과 isFinished를 함께 세우므로, 이때는 staging을 건드리지 않는다.
+    /// 성공 직후 reducer가 placement(복사)를 시작하므로 staging은 `finish()`가 정리할
+    /// 때까지 보존돼야 한다. caller는 lock을 보유해야 하며, true를 반환하면 호출자가
+    /// unlock 후 반환해야 한다.
+    private func handleTerminalCallback(reportedURL: URL?) -> Bool {
+        if isCancelled || (isFinished && !emittedTerminal) {
+            let staging = stagingDirectory
+            let fm = fileManager
+            lock.unlock()
+            removeLateCallbackArtifacts(reportedURL: reportedURL, staging: staging, fileManager: fm)
+            return true
+        }
+        if emittedTerminal {
+            lock.unlock()
+            return true
+        }
+        return false
+    }
+
     /// 취소: 세션 무효화, 로컬 큐 취소, staging 즉시 제거, `.cancelled` 이벤트.
     /// provider-side cancellation은 주장하지 않는다.
-    func cancel(fileManager: FileManagerClient) {
+    /// `.succeeded` emit 후(성공 종단 직후, reducer가 아직 placement를 시작하기 전) 취소가
+    /// 와도 staging은 제거한다. 그렇지 않으면 finish 호출자가 사라져 staging이 영구 잔류한다.
+    /// 이때 `.cancelled`는 이미 종단이 나갔으므로 emit하지 않는다.
+    func cancel(fileManager _: FileManagerClient) {
         lock.lock()
         defer { lock.unlock() }
-        guard !isFinished, !emittedTerminal else { return }
+        guard !isCancelled, !(isFinished && !emittedTerminal) else { return }
         isCancelled = true
         queue.cancelAllOperations()
-        emitTerminalLocked(.cancelled(sessionID))
-        try? fileManager.removeItem(URL(fileURLWithPath: stagingDirectory))
+        if !emittedTerminal {
+            emitTerminalLocked(.cancelled(sessionID))
+        }
+        removeStagingLocked()
     }
 
     /// 정상 종료: 멱등. staging을 정확히 한 번 제거한다. `.succeeded` 종단 후 호출돼도

@@ -561,9 +561,14 @@ extension EntryViewLayoutDropValidationAdapter {
             }
             return url.path
         }
-        // promised 이름 수와 실제 staging 물리화 수가 정확히 일치해야 한다. 일부만 성공한
-        // 나머지로 세션을 성공시켜 조용히 누락하는 대신 staging을 정리하고 전체를 거절한다.
-        guard !names.isEmpty, stagedPaths.count == names.count else {
+        // negotiated cardinality와 반환 수가 정확히 일치해야 한다. negotiation이 확정한
+        // promised item 수보다 적은 이름만 반환되면 일부 항목을 조용히 누락하는 성공을
+        // 막기 위해 staging을 정리하고 전체를 거절한다. 실제 staging 물리화 수(names와
+        // 일치)까지 검증해 부분 성공도 차단한다.
+        guard !names.isEmpty,
+              names.count == negotiation.promisedOrdinals.count,
+              stagedPaths.count == names.count
+        else {
             logger.info("legacy promise incomplete (session \(sessionID.rawValue, privacy: .public))")
             try? FileManager.default.removeItem(at: stagingURL)
             context.clearDropState()

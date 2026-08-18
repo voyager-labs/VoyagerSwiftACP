@@ -1219,6 +1219,65 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(acceptedRequests.first?.immediateURLPaths, [immediateURL.path])
     }
 
+    /// 검증 내용 (VOY-736 리뷰): legacy promised-file 폴백에서 source가 negotiated promised
+    /// item 수보다 많은 이름을 반환해도 거절한다. negotiation이 확정한 cardinality와
+    /// 반환 수가 일치해야 하며, 초과 반환은 일부 항목 누락 징후로 간주해 staging을
+    /// 정리하고 drop 전체를 거절한다.
+    /// 사전 조건: legacy pasteboard(promised item 1개)에서 namesOfPromisedFiles가 파일
+    /// 2개를 staging에 쓰고 이름 2개를 반환한다.
+    /// 기대 결과: accepted == false, legacy begin 호출 없음, staging 제거됨.
+    @MainActor
+    func testLegacyPromiseOverReportedNamesRejectsEntireDrop() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerLegacyOverReport-\(UUID().uuidString)")
+        XCTAssertNoThrow(try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true))
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let pasteboard = DragInfoFixture.makeLegacyMixedPasteboard(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerLegacyImmediate-\(UUID().uuidString).txt"))
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: true,
+        )
+        XCTAssertEqual(negotiation.promisedOrdinals.count, 1)
+
+        let info = DragInfoFixture(
+            source: nil,
+            operationMask: [.copy],
+            pasteboard: pasteboard,
+            namesOfPromisedFiles: { staging in
+                let first = staging.appendingPathComponent("first.eml")
+                let second = staging.appendingPathComponent("second.eml")
+                guard FileManager.default.createFile(atPath: first.path, contents: Data("1".utf8)),
+                      FileManager.default.createFile(atPath: second.path, contents: Data("2".utf8))
+                else {
+                    return nil
+                }
+                return ["first.eml", "second.eml"]
+            },
+        )
+
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var activeSessionID: ExternalDropSessionID?
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: acquisition.client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: {},
+            ),
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: destination.path,
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertTrue(acceptedRequests.isEmpty)
+        XCTAssertNil(activeSessionID)
+    }
+
     /// 검증 내용 (VOY-736 회귀): 혼합 drop의 즉시 file URL이 canonical 검증을 통과하지
     /// 못하면(예: destination 자체를 복사하려는 경우) drop 전체를 거절한다.
     /// 사전 조건: promise item과 destination 디렉터리 자체를 가리키는 즉시 file URL item.
