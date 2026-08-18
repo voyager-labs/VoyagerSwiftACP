@@ -34,6 +34,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var isCancelled = false
     private var isFinished = false
     private var emittedTerminal = false
+    /// 성공 종단(.succeeded) emit 후 placement 복사가 끝나 `finish()`가 staging을 제거했는지 여부.
+    /// 성공 직후 staging은 복사 대상이라 보존하지만, finish 이후 늦은 콜백이 staging 경로에
+    /// 파일/디렉터리를 재생성하면 잔류하므로 재정리 대상으로 구분한다.
+    private var placementFinished = false
     private var removedStaging = false
     private var bufferedEvents: [ExternalDropAcquisitionEvent] = []
     private var continuation: AsyncStream<ExternalDropAcquisitionEvent>.Continuation?
@@ -452,12 +456,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     }
 
     /// 취소/종료 이후 지연 콜백을 처리하고 staging을 정리한다. 성공 종단(.succeeded)은
-    /// emittedTerminal과 isFinished를 함께 세우므로, 이때는 staging을 건드리지 않는다.
-    /// 성공 직후 reducer가 placement(복사)를 시작하므로 staging은 `finish()`가 정리할
-    /// 때까지 보존돼야 한다. caller는 lock을 보유해야 하며, true를 반환하면 호출자가
-    /// unlock 후 반환해야 한다.
+    /// emittedTerminal과 isFinished를 함께 세우므로, placement 복사가 끝나기 전(finish 전)에는
+    /// staging을 건드리지 않는다. 성공 직후 reducer가 placement(복사)를 시작하므로 staging은
+    /// `finish()`가 정리할 때까지 보존돼야 한다. finish 이후 늦은 콜백이 staging 경로를
+    /// 재생성하면 잔류하므로 재정리한다. caller는 lock을 보유해야 하며, true를 반환하면
+    /// 호출자가 unlock 후 반환해야 한다.
     private func handleTerminalCallback(reportedURL: URL?) -> Bool {
-        if isCancelled || (isFinished && !emittedTerminal) {
+        if isCancelled || (isFinished && !emittedTerminal) || (emittedTerminal && placementFinished) {
             let staging = stagingDirectory
             let fm = fileManager
             lock.unlock()
@@ -495,6 +500,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         defer { lock.unlock() }
         guard !isCancelled else { return }
         removeStagingLocked()
+        // 성공 종단 후에도 finish가 오면 staging은 이미 제거됐으므로, 이후 도착한 늦은
+        // 콜백이 재생성한 파일/디렉터리를 handleTerminalCallback이 재정리하도록 표시한다.
+        placementFinished = true
         if isFinished { return }
         isFinished = true
         queue.cancelAllOperations()
