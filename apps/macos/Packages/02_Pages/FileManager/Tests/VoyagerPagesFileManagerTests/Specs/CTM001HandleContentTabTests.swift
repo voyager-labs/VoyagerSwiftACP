@@ -7135,6 +7135,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000450")),
             url: URL(fileURLWithPath: "/tmp/open.voycoll"),
             sourceRoute: .home,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
         )
         XCTAssertEqual(
             opening.transferEligibility(tabID: tabID),

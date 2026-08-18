@@ -11,23 +11,28 @@ struct ContentPageNavigationStateReducer {
         Reduce { state, action in
             switch action {
             case .internal(.rollbackBackHistoryOnce):
-                rollbackBackHistoryOnce(state: &state)
+                return rollbackBackHistoryOnce(state: &state)
+
+            case let .internal(.restoreHistory(back, forward)):
+                state.backHistory = back
+                state.forwardHistory = forward
+                return .none
 
             case let .internal(.appendBackHistory(entry)):
-                appendBackHistory(entry, state: &state)
+                return appendBackHistory(entry, state: &state)
 
             case .internal(.clearForwardHistory):
-                clearForwardHistory(state: &state)
+                return clearForwardHistory(state: &state)
 
             case let .internal(.setNavigationState(navigationState)),
                  let .internal(.applyPinnedPeerNavigationState(navigationState)):
-                setNavigationState(navigationState, state: &state)
+                return setNavigationState(navigationState, state: &state)
 
             case let .internal(.setPendingNavigation(pending)):
-                setPendingNavigation(pending, state: &state)
+                return setPendingNavigation(pending, state: &state)
 
             default:
-                .none
+                return .none
             }
         }
     }

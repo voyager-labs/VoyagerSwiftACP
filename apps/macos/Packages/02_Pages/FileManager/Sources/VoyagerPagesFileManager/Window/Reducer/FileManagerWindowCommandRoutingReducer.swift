@@ -178,13 +178,13 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomePageAnchorSelected(anchor, activeTabID: tabID)
+                return handleHomePageAnchorSelected(anchor, activeTabID: tabID, state: state)
 
             case let .tabContent(tabID, .delegate(.homeChatHistorySessionSelected(sessionID))):
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID)
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID, state: state)
 
             case let .sidebar(.delegate(.selectFixedLocation(id))):
                 guard let activeTabID = state.contentTabs.activeTabID,
@@ -192,7 +192,11 @@ struct FileManagerWindowCommandRoutingReducer {
                 else { return .none }
                 let anchor = ContentTabPageAnchor.directory(path: location.path)
                 return .concatenate(
-                    .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                    updateContentTabPageAnchorEffect(
+                        tabID: activeTabID,
+                        anchor: anchor,
+                        state: state,
+                    ),
                     .send(.navigation(.view(.navigateToPath(location.path)))),
                 )
 

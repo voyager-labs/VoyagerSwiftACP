@@ -170,6 +170,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
     )
+    case selectContentTab(ContentTabID)
+    case returnContentTabToPinnedLocation(ContentTabID)
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])

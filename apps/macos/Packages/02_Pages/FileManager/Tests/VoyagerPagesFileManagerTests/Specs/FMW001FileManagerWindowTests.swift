@@ -3144,9 +3144,9 @@ extension FMW001FileManagerWindowTests {
 
     /// FMW-001-move_content_tab_to_window: pending move는 다른 tab 선택 routing을 차단하지 않는다.
     /// 진행 중인 tab의 move control만 제한하고 일반 row navigation은 유지하는 계약을 검증한다.
-    /// - 검증 내용: pending request가 있어도 다른 tab select delegate가 setCurrent와 selection collapse로 전달된다.
+    /// - 검증 내용: pending request가 있어도 다른 tab select delegate가 window selection, setCurrent, selection collapse로 전달된다.
     /// - 사전 조건: 한 tab에 pending move가 있고 별도의 target tab이 존재한다.
-    /// - 기대 결과: 다른 tab의 setCurrent와 collapseSelectionToActive action이 순서대로 방출된다.
+    /// - 기대 결과: 다른 tab의 selectContentTab, setCurrent, collapseSelectionToActive action이 순서대로 방출된다.
     func testContentTabMovePendingPreservesUnrelatedTabSelection() async throws {
         let request = try makeContentTabMoveRequest()
         let otherTabID = ContentTabID(rawValue: "unrelated-tab")
@@ -3170,6 +3170,10 @@ extension FMW001FileManagerWindowTests {
         }
 
         await store.send(.sidebar(.delegate(.selectContentTab(otherTabID))))
+        await store.receive { action in
+            guard case let .selectContentTab(id) = action else { return false }
+            return id == otherTabID
+        }
         await store.receive(\.contentTabs.setCurrent, otherTabID)
         await store.receive(\.contentTabs.collapseSelectionToActive)
     }

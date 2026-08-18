@@ -62,6 +62,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
     public enum Delegate: CasePathable, Sendable {
         case selectFixedLocation(FileManagerFixedLocationItem.ID)
         case selectContentTab(ContentTabID)
+        case returnContentTabToPinnedLocation(ContentTabID)
         case toggleContentTabSelection(ContentTabID)
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive

@@ -21,18 +21,6 @@ extension FileManagerWindowRoutingReducer {
                     state: &state,
                 )
 
-            case .navigation(.view(.navigateToPath)),
-                 .navigation(.view(.showRecents)),
-                 .navigation(.view(.showComputer)),
-                 .navigation(.view(.showTag)),
-                 .navigation(.view(.showAiChat)),
-                 .navigation(.view(.showAiChatSessions)),
-                 .navigation(.view(.goBack)),
-                 .navigation(.view(.goForward)),
-                 .navigation(.view(.goToHistoryIndex)),
-                 .navigation(.view(.goToEnclosingDirectory)):
-                return cancelPendingCollectionOpen(state: &state)
-
             case let .requestSelectedContentTabPinMutation(target):
                 return handleRequestSelectedContentTabPinMutation(target: target, state: &state)
 
@@ -148,13 +136,25 @@ extension FileManagerWindowRoutingReducer {
                 guard state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs[id: tabID] != nil
                 else { return .none }
-                return .merge(
-                    .concatenate(
-                        .send(.contentTabs(.setCurrent(tabID))),
-                        .send(.contentTabs(.collapseSelectionToActive)),
-                    ),
-                    brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
-                )
+                return .send(.selectContentTab(tabID))
+
+            case let .selectContentTab(tabID):
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
+                return selectContentTabEffect(tabID: tabID, state: &state)
+
+            case let .sidebar(.delegate(.returnContentTabToPinnedLocation(tabID))):
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
+                return .send(.returnContentTabToPinnedLocation(tabID))
+
+            case let .returnContentTabToPinnedLocation(tabID):
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.contentTabs.tabs[id: tabID] != nil
+                else { return .none }
+                return returnContentTabToPinnedLocationEffect(tabID: tabID, state: &state)
 
             case let .sidebar(.delegate(.closeContentTab(tabID))):
                 guard state.contentTabRowInteractionSurface.isCloseEnabled else { return .none }
