@@ -252,12 +252,17 @@ extension AppRootFeature {
     ) -> Effect<Action> {
         guard var active = state.activeExternalOpenBatch,
               active.batch.request.batchID == completion.batchID,
-              active.phase == .applying
+              active.phase == .applying || active.phase == .activating
         else { return .none }
 
         switch completion.result {
         case let .success(plan):
-            guard active.placementPlan == plan else { return .none }
+            guard plan.batchID == completion.batchID else { return .none }
+            active.placementPlan = plan
+            if active.phase == .activating {
+                state.activeExternalOpenBatch = active
+                return .send(.windowManager(.placement(.activate(plan))))
+            }
             active.phase = .alerting
             state.activeExternalOpenBatch = active
             return continueExternalOpenAfterAlert(state: &state)
@@ -351,11 +356,24 @@ extension AppRootFeature {
             if case .failure = item.outcome { return true }
             return false
         }
-        let successfulItemIDs = orderedItems.compactMap { item -> UUID? in
-            if case .success = item.outcome { return item.itemID }
-            return nil
+        let placementItems = orderedItems.compactMap { item -> ExternalOpenPlacementRequest.Item? in
+            guard case let .success(destination) = item.outcome else { return nil }
+            return switch destination {
+            case let .collection(path):
+                .init(
+                    itemID: item.itemID,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: path).standardizedFileURL),
+                    pendingSelectEntryID: nil,
+                )
+            case let .directory(path, revealPath):
+                .init(
+                    itemID: item.itemID,
+                    anchor: .directory(path: URL(fileURLWithPath: path).standardizedFileURL.path),
+                    pendingSelectEntryID: revealPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+                )
+            }
         }
-        if successfulItemIDs.isEmpty {
+        if placementItems.isEmpty {
             active.phase = .alerting
             state.activeExternalOpenBatch = active
             return continueExternalOpenAfterAlert(state: &state)
@@ -365,7 +383,7 @@ extension AppRootFeature {
         state.activeExternalOpenBatch = active
         return .send(.windowManager(.placement(.plan(.init(
             batchID: result.batchID,
-            itemIDs: successfulItemIDs,
+            items: placementItems,
             preferredWindowIDs: active.preferredWindowIDs,
         )))))
     }
@@ -416,23 +434,7 @@ extension AppRootFeature {
               Set(plannedItems.map(\.itemID)) == Set(destinations.keys)
         else { return nil }
 
-        return plannedItems.reduce(into: [UUID: ExternalContentTabReservation]()) { result, item in
-            guard let destination = destinations[item.itemID] else { return }
-            let reservation: ExternalContentTabReservation = switch destination {
-            case let .collection(path):
-                .init(
-                    id: item.tabID,
-                    anchor: .collectionFile(url: URL(fileURLWithPath: path)),
-                )
-            case let .directory(path, revealPath):
-                .init(
-                    id: item.tabID,
-                    anchor: .directory(path: path),
-                    pendingSelectEntryID: revealPath,
-                )
-            }
-            result[item.itemID] = reservation
-        }
+        return plan.reservationsByItemID
     }
 
     func continueExternalOpenAfterAlert(state: inout State) -> Effect<Action> {

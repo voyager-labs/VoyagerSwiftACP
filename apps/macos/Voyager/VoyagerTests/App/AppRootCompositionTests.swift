@@ -1087,12 +1087,94 @@ final class AppRootCompositionTests: XCTestCase {
             guard case let .windowManager(.placement(.apply(plan, reservationsByItemID))) = action else {
                 return false
             }
-            let appliedAnchors = plan.windows.flatMap { window in
-                window.items.compactMap { reservationsByItemID[$0.itemID]?.anchor }
-            }
-            return appliedAnchors == expectedAnchors
+            return plan.orderedItems.map(\.anchor) == expectedAnchors
+                && reservationsByItemID.count == expectedAnchors.count
         }
         await store.finish()
+    }
+
+    /// 동일 directory route의 folder/file 요청은 AppRoot 경계에서도 기존 Content Tab 하나로 수렴한다.
+    /// - 검증 내용: normalized item 순서, 기존 tab identity 재사용, 신규 reservation 미생성
+    /// - 사전 조건: `/tmp/shared`를 표시하는 live window가 있고 같은 폴더와 그 안의 파일을 연속으로 요청함
+    /// - 기대 결과: 두 item이 기존 tab을 공유하고 마지막 파일 reveal을 유지하며 capacity를 소비하지 않음
+    func testBatchNormalizationReusesExistingTabAndConvergesDuplicateRoute() async {
+        let batchID = UUID(180)
+        let folderItemID = UUID(181)
+        let fileItemID = UUID(182)
+        let windowID = UUID(183)
+        let folderURL = URL(fileURLWithPath: "/tmp/shared")
+        let fileURL = URL(fileURLWithPath: "/tmp/shared/report.txt")
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: folderItemID, index: 0, url: folderURL, source: .systemOpenEvent, mode: .open),
+                .init(itemID: fileItemID, index: 1, url: fileURL, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let result = ExternalFileRouterBatchResult(
+            batchID: batchID,
+            items: [
+                .init(
+                    itemID: folderItemID,
+                    index: 0,
+                    url: folderURL,
+                    source: .systemOpenEvent,
+                    mode: .open,
+                    outcome: .success(.directory(path: folderURL.path, revealPath: nil)),
+                ),
+                .init(
+                    itemID: fileItemID,
+                    index: 1,
+                    url: fileURL,
+                    source: .systemOpenEvent,
+                    mode: .open,
+                    outcome: .success(.directory(path: folderURL.path, revealPath: fileURL.path)),
+                ),
+            ],
+        )
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
+        initialState.windowManager.windows = [
+            .init(id: windowID, window: .makeInitial(path: folderURL.path)),
+        ]
+        initialState.windowManager.focusedWindowID = windowID
+        initialState.windowManager.lastUsedWindowIDs = [windowID]
+        initialState.activeExternalOpenBatch = .init(
+            batch: .init(request: request, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [windowID],
+        )
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+        }
+        // store.exhaustivity = .off: WindowManager의 native activation 세부 action은 해당 owner suite가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.externalFileRouter(.delegate(.batchNormalized(result))))
+        await store.receive { action in
+            guard case let .windowManager(.placement(.apply(plan, reservationsByItemID))) = action else {
+                return false
+            }
+            let items = plan.orderedItems
+            return items.map(\.itemID) == [folderItemID, fileItemID]
+                && Set(items.map(\.tabID)).count == 1
+                && items.allSatisfy { !$0.requiresReservation }
+                && items.last?.pendingSelectEntryID == fileURL.path
+                && reservationsByItemID.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.windowManager.windows.count, 1)
+        XCTAssertEqual(store.state.windowManager.windows[id: windowID]?.window.contentTabs.tabs.count, 1)
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: windowID]?.window.content.pendingSelectEntryID,
+            fileURL.path,
+        )
     }
 
     /// termination이 시작되면 normalizing batch를 새 identity로 queue front에 되돌리고 Router batch를 취소한다.
@@ -1273,7 +1355,11 @@ final class AppRootCompositionTests: XCTestCase {
                 .init(
                     windowID: windowID,
                     isNewWindow: true,
-                    items: [.init(itemID: itemID, tabID: tabID)],
+                    items: [.init(
+                        itemID: itemID,
+                        tabID: tabID,
+                        anchor: .directory(path: url.path),
+                    )],
                 ),
             ],
         )
@@ -1352,7 +1438,11 @@ final class AppRootCompositionTests: XCTestCase {
                 .init(
                     windowID: windowID,
                     isNewWindow: true,
-                    items: [.init(itemID: itemID, tabID: tabID)],
+                    items: [.init(
+                        itemID: itemID,
+                        tabID: tabID,
+                        anchor: .directory(path: url.path),
+                    )],
                 ),
             ],
         )
@@ -1901,7 +1991,11 @@ final class AppRootCompositionTests: XCTestCase {
                 .init(
                     windowID: windowID,
                     isNewWindow: true,
-                    items: [.init(itemID: itemID, tabID: tabID)],
+                    items: [.init(
+                        itemID: itemID,
+                        tabID: tabID,
+                        anchor: .directory(path: fileURL.path),
+                    )],
                 ),
             ],
         )
