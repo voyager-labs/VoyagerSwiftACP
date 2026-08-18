@@ -4,14 +4,33 @@ import os
 import VoyagerShared
 
 /// 세션별 획득 상태. AppKit receiver는 저장하지 않고 callback closure만 캡처한다.
+///
+/// 수명주기와 staging 제거는 별도 소유자로 분리해, 고칠 때마다 새 edge-case 구멍이
+/// 생기던 암묵적 불린 4중주(isCancelled/isFinished/emittedTerminal/removedStaging)를
+/// 명시적 `Phase` + `StagingDirectory`로 대체한다.
 final class ExternalDropAcquisitionSession: @unchecked Sendable {
+    /// 세션의 명시적 수명주기 상태. terminal은 정확히 한 번, staging 제거는 정확히 한 번
+    /// 수행되도록 상태 전이로 강제한다. 불린 조합이 아닌 단일 열거형이라 상태 불변식이
+    /// 암묵적이지 않다.
+    enum Phase: Equatable {
+        /// 수신 중. staging 존재, terminal 미발행.
+        case acquiring
+        /// `.succeeded` 발행. placement 복사가 끝날 때까지 staging을 보존한다.
+        case succeededAwaitingPlacement
+        /// 종료됨. staging이 이미 제거됨(실패/취소 종단, 성공+finish, 성공+cancel).
+        case finished
+    }
+
     let sessionID: ExternalDropSessionID
-    let stagingDirectory: String
+    private let staging: StagingDirectory
     private let fileManager: FileManagerClient
     private let queue: OperationQueue
     private let observationQueue: DispatchQueue
 
     private let lock = NSLock()
+    private var phase: Phase = .acquiring
+    /// 발행된 terminal 이벤트. 정확히 한 번 발행을 보장하기 위해 저장한다.
+    private var terminalEvent: ExternalDropAcquisitionEvent?
     private var expectedCardinality: Int = 0
     private var receivedCount: Int = 0
     /// 결정적(파일명 있는 수신기 + data flavor) 기여 중 실제 수신된 수. 종단 판정에 쓴다.
@@ -21,7 +40,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 미정 수신기 중 첫 성공 콜백이 도착해 완료된 index 집합.
     private var completedIndeterminateReceivers: Set<Int> = []
     private var receivedStagedPaths: Set<String> = []
-    /// data flavor 파일명 충돌을 회피하기 위한 세션 내 사용 파일명 집합(소문자 키).
+    /// data flavor 파일명 충돌을 회피하기 위한 세션 내 사용 파일명 집합(canonical key).
     private var usedStagedFilenames: Set<String> = []
     private var nextItemOrdinal: Int = 0
     private var callbackCounts: [Int: Int] = [:]
@@ -30,11 +49,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var stagingScanWorkItem: DispatchWorkItem?
     /// 미정(fileNames 빈) 수신기의 다중 파일 콜백을 수용하기 위한 quiescence 타이머.
     private var indeterminateQuiescenceWorkItem: DispatchWorkItem?
-    private var stagingObserver: DispatchSourceFileSystemObject?
-    private var isCancelled = false
-    private var isFinished = false
-    private var emittedTerminal = false
-    private var removedStaging = false
     private var bufferedEvents: [ExternalDropAcquisitionEvent] = []
     private var continuation: AsyncStream<ExternalDropAcquisitionEvent>.Continuation?
 
@@ -45,7 +59,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         queue: OperationQueue,
     ) {
         self.sessionID = sessionID
-        self.stagingDirectory = stagingDirectory
+        staging = StagingDirectory(path: stagingDirectory, fileManager: fileManager)
         self.fileManager = fileManager
         self.queue = queue
         observationQueue = DispatchQueue(label: "fm.voyager.external-drop.\(sessionID.rawValue)")
@@ -54,9 +68,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func startStagingObservation() {
         lock.lock()
         defer { lock.unlock() }
-        guard stagingObserver == nil else { return }
+        guard phase == .acquiring, staging.observer == nil else { return }
 
-        let fileDescriptor = Darwin.open(stagingDirectory, O_EVTONLY)
+        let fileDescriptor = Darwin.open(staging.path, O_EVTONLY)
         guard fileDescriptor >= 0 else { return }
         let observer = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fileDescriptor,
@@ -69,7 +83,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         observer.setCancelHandler {
             Darwin.close(fileDescriptor)
         }
-        stagingObserver = observer
+        staging.attachObserver(observer)
         observer.activate()
     }
 
@@ -81,7 +95,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func finalizeCardinality(fileNamesByReceiver: [[String]], dataCount: Int) {
         lock.lock()
         defer { lock.unlock() }
-        guard !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
 
         var determinate = dataCount
         for (index, fileNames) in fileNamesByReceiver.enumerated() {
@@ -108,7 +122,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func finalizeLegacyCardinality(_ count: Int) {
         lock.lock()
         defer { lock.unlock() }
-        guard !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         expectedCardinality = count
         if count == 0 {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
@@ -120,11 +134,11 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func materialize(dataFlavor: ExternalDropDataFlavor) {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         // 같은 text 첫 줄 + UTI를 가진 data flavor가 같은 파일명을 만들면 두 번째 write가
         // 첫 번째 파일을 덮어쓴다. 세션 내에서 고유한 이름을 예약해 충돌을 회피한다.
         let filename = uniqueStagedFilename(for: dataFlavor.filename)
-        let url = URL(fileURLWithPath: stagingDirectory).appendingPathComponent(filename)
+        let url = URL(fileURLWithPath: staging.path).appendingPathComponent(filename)
         do {
             try dataFlavor.bytes.write(to: url)
         } catch {
@@ -152,7 +166,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func registerLegacyStagedFile(stagedPath: String) {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         let url = URL(fileURLWithPath: stagedPath)
         guard fileManager.fileExists(url.path), isInsideStaging(url) else {
             emitTerminalLocked(.failed(sessionID, .outsideStaging))
@@ -179,7 +193,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func reserveStagedFilenames(_ filenames: [String]) {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         for filename in filenames {
             usedStagedFilenames.insert(stagedFilenameKey(filename))
         }
@@ -231,11 +245,11 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             // lock을 풀고 replay하는 사이 다른 스레드의 종단 emit이 continuation을 finish시켜
             // buffered `.received`가 yield 실패로 유실될 수 있다.
             let buffered = bufferedEvents
-            let terminal = emittedTerminal
+            let terminal = terminalEvent
             for event in buffered {
                 continuation.yield(event)
             }
-            if terminal {
+            if terminal != nil {
                 continuation.finish()
                 self.continuation = nil
             }
@@ -297,7 +311,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         registerReceivedFile(receiverIndex: receiverIndex, url: resolvedURL, callbackOrdinal: callbackOrdinal)
         // reconcile로 복구된 error 콜백 중 미정 수신기 것은 quiescence 종단 판정에 맡긴다.
         // 기존 계약(취소 error + staged file = 성공)을 유지한다.
-        if error != nil, !emittedTerminal, !indeterminateReceivers.contains(receiverIndex) {
+        if error != nil, phase == .acquiring, !indeterminateReceivers.contains(receiverIndex) {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
         lock.unlock()
@@ -342,7 +356,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private func scheduleStagingScan() {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
 
         stagingScanWorkItem?.cancel()
         let scan = DispatchWorkItem { [weak self] in
@@ -355,7 +369,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private func handleStagingWrite() {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         stagingScanWorkItem = nil
 
         let pending = pendingCancelledCallbacks.sorted { $0.key < $1.key }
@@ -367,14 +381,14 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             callbackErrorTimeouts.removeValue(forKey: receiverIndex)?.cancel()
             guard receivedStagedPaths.insert(url.standardizedFileURL.path).inserted else { continue }
             registerReceivedFile(receiverIndex: receiverIndex, url: url, callbackOrdinal: callbackOrdinal)
-            if emittedTerminal { return }
+            if phase != .acquiring { return }
         }
     }
 
     private func failPendingCallback(receiverIndex: Int) {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !isFinished, !emittedTerminal,
+        guard phase == .acquiring,
               pendingCancelledCallbacks.removeValue(forKey: receiverIndex) != nil
         else {
             return
@@ -384,7 +398,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     }
 
     private func unregisteredStagingURLs() -> [URL] {
-        let stagingURL = URL(fileURLWithPath: stagingDirectory)
+        let stagingURL = URL(fileURLWithPath: staging.path)
         guard let entries = try? fileManager.contentsOfDirectory(stagingURL, nil, []) else { return [] }
         return entries
             .filter {
@@ -432,7 +446,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 여러 파일이 콜백으로 전달될 때 첫 callback만으로 완료 처리하지 않도록 한다.
     /// caller는 lock을 보유해야 한다.
     private func scheduleIndeterminateQuiescenceLocked() {
-        guard !emittedTerminal, !isFinished, !isCancelled else { return }
+        guard phase == .acquiring else { return }
         indeterminateQuiescenceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.evaluateIndeterminateCompletion()
@@ -445,7 +459,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         indeterminateQuiescenceWorkItem = nil
-        guard !isCancelled, !isFinished, !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
         }
@@ -454,32 +468,32 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 취소/종료 이후 도착한 지연 콜백의 reported output과 staging을 재삭제한다. 이벤트는 내지 않는다.
     /// staging 밖 URL(예: source 앱이 늦게 보고한 원본 파일)은 containment 검증 없이
     /// 삭제하면 사용자 파일이 제거될 수 있으므로 staging 내부 경로에만 재삭제를 적용한다.
-    private func removeLateCallbackArtifacts(reportedURL: URL?, staging: String, fileManager: FileManagerClient) {
+    private func removeLateCallbackArtifacts(reportedURL: URL?) {
         if let reportedURL, isInsideStaging(reportedURL) {
             try? fileManager.removeItem(reportedURL)
         }
-        try? fileManager.removeItem(URL(fileURLWithPath: staging))
+        staging.removeIfPresent()
     }
 
-    /// 취소/종료 이후 지연 콜백을 처리하고 staging을 정리한다. 성공 종단(.succeeded)은
-    /// emittedTerminal과 isFinished를 함께 세우지만, placement 복사가 끝나기 전(finish 전)에는
-    /// staging을 건드리지 않는다. 성공 직후 reducer가 placement(복사)를 시작하므로 staging은
-    /// `finish()`가 정리할 때까지 보존돼야 한다. staging이 이미 제거된 상태(실패/취소 종단,
-    /// 또는 성공+finish)에서 늦은 콜백이 경로를 재생성하면 잔류하므로 재정리한다.
+    /// 취소/종료 이후 지연 콜백을 처리하고 staging을 정리한다. staging이 이미 제거된 상태에서
+    /// 늦은 콜백이 경로를 재생성하면 잔류하므로 재정리한다. placement 복사가 끝나기 전
+    /// (`.succeededAwaitingPlacement`, staging 보존 중)에는 staging을 건드리지 않는다.
     /// caller는 lock을 보유해야 하며, true를 반환하면 호출자가 unlock 후 반환해야 한다.
+    /// false를 반환하면 정상 수신 콜백으로 계속 처리한다.
     private func handleTerminalCallback(reportedURL: URL?) -> Bool {
-        if isCancelled || (isFinished && !emittedTerminal) || (emittedTerminal && removedStaging) {
-            let staging = stagingDirectory
-            let fm = fileManager
+        // acquiring: 아직 수신 중이면 정상 처리 경로로 진행한다.
+        if phase == .acquiring {
+            return false
+        }
+        // 그 외(terminal 이미 발행): staging이 아직 보존 중(succeededAwaitingPlacement)이면
+        // 정리하지 않고, staging이 이미 제거됐으면 늦은 콜백이 재생성한 경로를 재정리한다.
+        if staging.isRemoved {
             lock.unlock()
-            removeLateCallbackArtifacts(reportedURL: reportedURL, staging: staging, fileManager: fm)
+            removeLateCallbackArtifacts(reportedURL: reportedURL)
             return true
         }
-        if emittedTerminal {
-            lock.unlock()
-            return true
-        }
-        return false
+        lock.unlock()
+        return true
     }
 
     /// 취소: 세션 무효화, 로컬 큐 취소, staging 즉시 제거, `.cancelled` 이벤트.
@@ -490,32 +504,29 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func cancel(fileManager _: FileManagerClient) {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled, !(isFinished && !emittedTerminal) else { return }
-        isCancelled = true
+        guard phase == .acquiring || phase == .succeededAwaitingPlacement else { return }
         queue.cancelAllOperations()
-        if !emittedTerminal {
+        switch phase {
+        case .acquiring:
             emitTerminalLocked(.cancelled(sessionID))
+        case .succeededAwaitingPlacement:
+            // 이미 성공 종단 발행, staging만 제거한다. `.cancelled`는 재발행하지 않는다.
+            staging.remove()
+            phase = .finished
+        case .finished:
+            break
         }
-        removeStagingLocked()
     }
 
     /// 정상 종료: 멱등. staging을 정확히 한 번 제거한다. `.succeeded` 종단 후 호출돼도
-    /// (이미 `isFinished`로 표시됐어도) staging을 정리한다.
+    /// (이미 성공 종단으로 표시됐어도) staging을 정리한다.
     func finish() {
         lock.lock()
         defer { lock.unlock() }
-        guard !isCancelled else { return }
-        removeStagingLocked()
-        if isFinished { return }
-        isFinished = true
+        guard phase == .acquiring || phase == .succeededAwaitingPlacement else { return }
+        staging.remove()
         queue.cancelAllOperations()
-    }
-
-    /// staging 디렉터리를 정확히 한 번 제거한다 (멱등). caller는 lock을 보유해야 한다.
-    private func removeStagingLocked() {
-        guard !removedStaging else { return }
-        removedStaging = true
-        try? fileManager.removeItem(URL(fileURLWithPath: stagingDirectory))
+        phase = .finished
     }
 
     // MARK: - Event emission (caller must hold lock)
@@ -527,30 +538,22 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         continuation?.yield(event)
     }
 
+    /// terminal 이벤트를 정확히 한 번 발행한다. `.succeeded`는 placement 복사가 끝날 때까지
+    /// staging을 보존하고(`.succeededAwaitingPlacement`), 실패/취소는 즉시 staging을 제거한다.
+    /// caller는 lock을 보유해야 한다.
     private func emitTerminalLocked(_ event: ExternalDropAcquisitionEvent) {
-        guard !emittedTerminal else { return }
-        emittedTerminal = true
-        isFinished = true
-        // 실패/취소 종단에서도 staging을 반드시 정리한다. 성공(.succeeded)은 placement가
-        // staged 파일을 destination으로 복사한 뒤 `finish()`가 제거하므로 여기서 지우지 않는다.
+        guard terminalEvent == nil else { return }
+        terminalEvent = event
         switch event {
         case .succeeded:
-            break
+            phase = .succeededAwaitingPlacement
         case .failed, .cancelled:
-            removeStagingLocked()
+            staging.remove()
+            phase = .finished
         case .received:
             break
         }
-        stagingObserver?.cancel()
-        stagingObserver = nil
-        stagingScanWorkItem?.cancel()
-        stagingScanWorkItem = nil
-        indeterminateQuiescenceWorkItem?.cancel()
-        indeterminateQuiescenceWorkItem = nil
-        callbackErrorTimeouts.values.forEach { $0.cancel() }
-        callbackErrorTimeouts.removeAll()
-        pendingCancelledCallbacks.removeAll()
-        queue.cancelAllOperations()
+        teardownLocked()
         bufferedEvents.append(event)
         continuation?.yield(event)
         continuation?.finish()
@@ -576,8 +579,22 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
     }
 
+    /// terminal 발행 후 진행 중인 타이머·큐·관찰을 정리한다. caller는 lock을 보유해야 한다.
+    private func teardownLocked() {
+        staging.observer?.cancel()
+        staging.detachObserver()
+        stagingScanWorkItem?.cancel()
+        stagingScanWorkItem = nil
+        indeterminateQuiescenceWorkItem?.cancel()
+        indeterminateQuiescenceWorkItem = nil
+        callbackErrorTimeouts.values.forEach { $0.cancel() }
+        callbackErrorTimeouts.removeAll()
+        pendingCancelledCallbacks.removeAll()
+        queue.cancelAllOperations()
+    }
+
     private func isInsideStaging(_ url: URL) -> Bool {
-        let stagingComponents = URL(fileURLWithPath: stagingDirectory)
+        let stagingComponents = URL(fileURLWithPath: staging.path)
             .standardizedFileURL
             .pathComponents
         let fileComponents = url.standardizedFileURL.pathComponents
@@ -613,9 +630,44 @@ extension ExternalDropAcquisitionSession {
     func fail(reason: ExternalDropRejectReason) {
         lock.lock()
         defer { lock.unlock() }
-        guard !emittedTerminal else { return }
+        guard phase == .acquiring else { return }
         emitTerminalLocked(.failed(sessionID, reason))
     }
 
     private static let indeterminateNameMarker = "NSFilePromiseUnknown"
+}
+
+/// 세션 staging 디렉터리의 수명주기 소유자. 생성 경로와 제거 상태를 단일 소유해
+/// "정확히 한 번 제거"가 상태 전이로 보장된다.
+private final class StagingDirectory {
+    let path: String
+    private let fileManager: FileManagerClient
+    private(set) var isRemoved = false
+    /// 파일시스템 관찰 소스. 외부에서 attach/teardown을 관리한다.
+    var observer: DispatchSourceFileSystemObject?
+
+    init(path: String, fileManager: FileManagerClient) {
+        self.path = path
+        self.fileManager = fileManager
+    }
+
+    func attachObserver(_ observer: DispatchSourceFileSystemObject) {
+        self.observer = observer
+    }
+
+    func detachObserver() {
+        observer = nil
+    }
+
+    /// staging을 정확히 한 번 제거한다(멱등).
+    func remove() {
+        guard !isRemoved else { return }
+        isRemoved = true
+        try? fileManager.removeItem(URL(fileURLWithPath: path))
+    }
+
+    /// 이미 제거됐으면 아무것도 하지 않고, 그렇지 않으면 제거한다(늦은 콜백 재생성 대비).
+    func removeIfPresent() {
+        remove()
+    }
 }
