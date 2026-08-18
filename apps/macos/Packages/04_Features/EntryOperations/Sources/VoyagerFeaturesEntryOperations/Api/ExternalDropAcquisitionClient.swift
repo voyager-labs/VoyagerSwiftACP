@@ -53,9 +53,10 @@ public struct ExternalDropAcquisitionClient: Sendable {
 }
 
 extension ExternalDropAcquisitionClient: DependencyKey {
-    public static var liveValue: ExternalDropAcquisitionClient {
-        live(fileManager: .liveValue)
-    }
+    /// coordinator(begin)와 reducer(events)가 같은 session registry를 공유하도록
+    /// 단일 인스턴스로 고정한다. computed var면 접근마다 새 store가 만들어져
+    /// reducer가 다른 registry에서 빈 stream을 받아 import가 영구 pending이 된다.
+    public static let liveValue: ExternalDropAcquisitionClient = live(fileManager: .liveValue)
 
     public static func live(
         fileManager: FileManagerClient,
