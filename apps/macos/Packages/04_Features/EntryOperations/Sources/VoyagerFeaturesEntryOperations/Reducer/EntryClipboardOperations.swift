@@ -240,13 +240,22 @@ struct EntryClipboardOperationsReducer {
                 )
 
             case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)):
-                return pasteItemsEffect(
+                var effect = pasteItemsEffect(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
                     mutationImpactDestinationPath: nil,
                 )
+                // 외부 drop placement(.externalObjectImportItem) 복사는 세션별 CancelID로
+                // 등록해 resetForDuplicate가 진행 중 복사를 취소할 수 있게 한다. staging이
+                // 정리된 뒤에도 복사가 계속되면 불필요한 실패/완료 액션이 유입된다.
+                if operationKind == .externalObjectImportItem,
+                   let sessionID = state.externalDropImportPlacement?.sessionID
+                {
+                    effect = effect.cancellable(id: CancelID.externalDrop(sessionID))
+                }
+                return effect
 
             case let .clipboard(.performDrop(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
