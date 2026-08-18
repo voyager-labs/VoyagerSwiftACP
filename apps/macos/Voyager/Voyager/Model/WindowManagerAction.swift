@@ -239,7 +239,7 @@ enum ExternalOpenPlacementPlanner {
             candidateWindowIDs = request.preferredWindowIDs.filter(liveMRU.contains)
         }
         guard let windowID = candidateWindowIDs.first(where: {
-            state.windows[id: $0] != nil
+            state.windows[id: $0]?.window.isExternalOpenRouteEligible == true
                 && !state.closingWindowIDs.contains($0)
                 && !state.pendingWindowOpenIDs.contains($0)
         }),
@@ -279,7 +279,10 @@ enum ExternalOpenPlacementPlanner {
         let liveWindowIDs = orderedLiveWindowIDs(state: state)
         for activeOnly in [true, false] {
             for windowID in liveWindowIDs {
-                guard let contentTabs = state.windows[id: windowID]?.window.contentTabs else { continue }
+                guard let window = state.windows[id: windowID]?.window,
+                      window.isExternalOpenRouteEligible
+                else { continue }
+                let contentTabs = window.contentTabs
                 for tab in contentTabs.tabs where tab.anchor == anchor {
                     if !activeOnly || tab.id == contentTabs.activeTabID {
                         return (windowID, tab.id)
@@ -304,12 +307,13 @@ enum ExternalOpenPlacementPlanner {
         let liveWindowIDs = orderedLiveWindowIDs(state: state)
         for activeOnly in [true, false] {
             for windowID in liveWindowIDs {
-                guard let contentTabs = state.windows[id: windowID]?.window.contentTabs else { continue }
+                guard let window = state.windows[id: windowID]?.window,
+                      window.isExternalOpenRouteEligible
+                else { continue }
+                let contentTabs = window.contentTabs
                 for tab in contentTabs.tabs where tab.isPinned {
                     guard !activeOnly || tab.id == contentTabs.activeTabID,
-                          let record = contentTabs.pinnedRecords[tab.id],
-                          record.isPageAnchorCompatible,
-                          record.anchor == anchor
+                          window.canReturnContentTabToPinnedLocation(tab.id, matching: anchor)
                     else { continue }
                     return .init(
                         windowID: windowID,
@@ -328,7 +332,8 @@ enum ExternalOpenPlacementPlanner {
         for windowID in candidates where !result.contains(windowID) {
             guard state.windows[id: windowID] != nil,
                   !state.closingWindowIDs.contains(windowID),
-                  !state.pendingWindowOpenIDs.contains(windowID)
+                  !state.pendingWindowOpenIDs.contains(windowID),
+                  state.windows[id: windowID]?.window.isExternalOpenRouteEligible == true
             else { continue }
             result.append(windowID)
         }
@@ -512,7 +517,8 @@ enum ExternalOpenPlacementApplication {
             guard !excludedWindowIDs.contains(placementWindow.windowID),
                   !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
-                  let window = state.windows[id: placementWindow.windowID]?.window
+                  let window = state.windows[id: placementWindow.windowID]?.window,
+                  window.isExternalOpenRouteEligible
             else { continue }
             if placementWindow.isNewWindow,
                state.externalWindowBatchIDs[placementWindow.windowID] != plan.batchID
@@ -552,6 +558,7 @@ enum ExternalOpenPlacementApplication {
               let window = FileManagerWindowFeature.State.makeExternalInitial(
                   reservations: reservations,
                   windowID: placement.windowID,
+                  activeTabID: placement.items.last?.tabID,
               )
         else { return false }
         windows.append(.init(id: placement.windowID, window: window))
@@ -564,14 +571,11 @@ enum ExternalOpenPlacementApplication {
         in windows: inout IdentifiedArrayOf<WindowSessionFeature.State>,
     ) -> ExistingWindowActivation? {
         guard var window = windows[id: placement.windowID]?.window,
-              window.pendingSelectedContentTabClose == nil,
+              window.isExternalOpenRouteEligible,
               placement.items.filter({ !$0.requiresReservation }).allSatisfy({ item in
                   guard let tab = window.contentTabs.tabs[id: item.tabID] else { return false }
                   if item.requiresPinnedAnchorReturn {
-                      guard tab.isPinned,
-                            let record = window.contentTabs.pinnedRecords[item.tabID]
-                      else { return false }
-                      return record.isPageAnchorCompatible && record.anchor == item.anchor
+                      return window.canReturnContentTabToPinnedLocation(item.tabID, matching: item.anchor)
                   }
                   return tab.anchor == item.anchor
               }),
@@ -604,6 +608,15 @@ enum ExternalOpenPlacementApplication {
             activeTabID: activeItem.tabID,
             pinnedAnchorReturns: pinnedAnchorReturns,
         )
+    }
+}
+
+private extension FileManagerWindowState {
+    var isExternalOpenRouteEligible: Bool {
+        !isClosing
+            && pendingSelectedContentTabClose == nil
+            && pendingContentTabClose == nil
+            && pendingContentTabTeardown == nil
     }
 }
 

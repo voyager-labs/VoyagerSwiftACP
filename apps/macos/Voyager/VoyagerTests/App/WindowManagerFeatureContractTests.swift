@@ -9202,6 +9202,71 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         ])
     }
 
+    /// 저장되지 않은 runtime Collection이 있는 pinned tab은 durable 외부 열기 재사용 후보에서 제외된다.
+    /// - 검증 내용: dirty pinned tab identity 미재사용과 신규 reservation 계획
+    /// - 사전 조건: pinned tab의 runtime Collection에 저장되지 않은 변경이 있고 durable anchor는 외부 요청과 일치함
+    /// - 기대 결과: canonical 복귀가 거부될 tab 대신 새 tab identity가 할당됨
+    func testPlacementSkipsDirtyPinnedCollectionDurableMatch() throws {
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "dirty-pinned-collection")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/runtime.voycoll")
+        let durableURL = URL(fileURLWithPath: "/tmp/durable.voycoll")
+        let runtimeAnchor = ContentTabPageAnchor.collectionFile(url: runtimeURL)
+        let durableAnchor = ContentTabPageAnchor.collectionFile(url: durableURL)
+        let sourceContext = CollectionContext(query: "source", scopes: ["/tmp/source"], conditions: [])
+        let dirtyContext = CollectionContext(query: "dirty", scopes: ["/tmp/source"], conditions: [])
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = dirtyContext
+        content.collection.collectionSession.metadata.baseline = .init(context: sourceContext)
+        var fileManagerWindow = FileManagerWindowFeature.State.makeInitial(path: "/tmp")
+        fileManagerWindow.content = content
+        fileManagerWindow.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: runtimeAnchor,
+                    isPinned: true,
+                ),
+            ],
+            activeTabID: tabID,
+            pinnedRecords: [
+                tabID: .init(
+                    id: tabID.rawValue,
+                    page: .collection,
+                    anchor: durableAnchor,
+                    title: "Durable",
+                    iconName: "rectangle.stack",
+                    pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                ),
+            ],
+        )
+        fileManagerWindow.tabContentStates[tabID] = content
+        var state = WindowManagerFeature.State()
+        state.windows = [.init(id: windowID, window: fileManagerWindow)]
+        let itemID = UUID()
+        let generatedTabID = UUID()
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [.init(itemID: itemID, anchor: durableAnchor, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: generatedTabID,
+        )
+        let plan = try result.get()
+        let item = try XCTUnwrap(plan.orderedItems.first)
+
+        XCTAssertEqual(plan.windows.first?.windowID, windowID)
+        XCTAssertEqual(item.tabID, ContentTabID(rawValue: generatedTabID.uuidString))
+        XCTAssertTrue(item.requiresReservation)
+        XCTAssertFalse(item.requiresPinnedAnchorReturn)
+    }
+
     /// runtime exact route는 active durable-only pinned 후보보다 항상 먼저 재사용된다.
     /// - 검증 내용: runtime exact 우선순위와 pinned-anchor return 불필요 표시
     /// - 사전 조건: focused active pinned tab은 durable anchor만 일치하고 다른 window의 background tab은 runtime route가 일치함
@@ -9290,6 +9355,44 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window.windowID, generatedWindowID)
     }
 
+    /// 새 window에 A-B-A 순서로 수렴한 duplicate route도 마지막 입력 A를 active tab으로 유지한다.
+    /// - 검증 내용: reservation 중복 제거와 원래 입력 순서 기반 active tab
+    /// - 사전 조건: live window가 없고 서로 다른 두 route가 A-B-A 순서로 요청됨
+    /// - 기대 결과: 두 tab만 생성되지만 새 window의 active tab은 마지막 요청 A임
+    func testPlacementApplicationActivatesLastDuplicateRouteInNewWindow() throws {
+        let firstRoute = ContentTabPageAnchor.directory(path: "/tmp/a")
+        let secondRoute = ContentTabPageAnchor.directory(path: "/tmp/b")
+        let firstTabID = UUID()
+        let secondTabID = UUID()
+        let windowID = UUID()
+        var generatedIDs = [firstTabID, secondTabID, windowID]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [
+                .init(itemID: UUID(), anchor: firstRoute, pendingSelectEntryID: nil),
+                .init(itemID: UUID(), anchor: secondRoute, pendingSelectEntryID: nil),
+                .init(itemID: UUID(), anchor: firstRoute, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: WindowManagerFeature.State(),
+            generateUUID: generatedIDs.removeFirst(),
+        )
+        let plan = try result.get()
+
+        let application = try XCTUnwrap(ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: plan.reservationsByItemID,
+            to: WindowManagerFeature.State(),
+        ))
+        let window = try XCTUnwrap(application.windows[id: windowID]?.window)
+
+        XCTAssertEqual(window.contentTabs.tabs.count, 2)
+        XCTAssertEqual(window.contentTabs.activeTabID, ContentTabID(rawValue: firstTabID.uuidString))
+    }
+
     /// active exact match가 없으면 MRU window의 exact route를 선택하고 closing window는 제외한다.
     /// - 검증 내용: MRU 우선순위와 closing/pending 제외
     /// - 사전 조건: 동일 route가 stable-first closing window와 MRU live window의 background tab에 존재함
@@ -9337,6 +9440,59 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(plan.windows.first?.windowID, mruWindowID)
         XCTAssertEqual(plan.windows.first?.items.first?.tabID, mruTabID)
         XCTAssertEqual(plan.windows.first?.items.first?.requiresReservation, false)
+    }
+
+    /// close, teardown 또는 window disappear 중인 exact-route tab은 apply와 retry planning 모두에서 재사용하지 않는다.
+    /// - 검증 내용: stale apply 거부와 lifecycle-busy window 제외 후 신규 identity 재계획
+    /// - 사전 조건: exact-route tab이 planning 뒤 pending close, pending teardown 또는 window closing 상태로 전환됨
+    /// - 기대 결과: 기존 plan application은 실패하고 retry plan은 새 window/tab을 예약함
+    func testPlacementRejectsTabsPendingCloseOrTeardownAndReplansNewIdentity() throws {
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "pending-close-route")
+        let route = ContentTabPageAnchor.directory(path: "/tmp/pending-close")
+        var state = WindowManagerFeature.State()
+        state.windows = [Self.makeRouteWindow(id: windowID, tabs: [(tabID, route)], activeTabID: tabID)]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [.init(itemID: UUID(), anchor: route, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+        let initialResult = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let initialPlan = try initialResult.get()
+        var closeState = state
+        closeState.windows[id: windowID]?.window.pendingContentTabClose = .init(tabID: tabID)
+        var teardownState = state
+        teardownState.windows[id: windowID]?.window.pendingContentTabTeardown = .init(
+            requestID: UUID(),
+            tabID: tabID,
+            ownerID: UUID(),
+        )
+        var closingState = state
+        closingState.windows[id: windowID]?.window.isClosing = true
+
+        for busyState in [closeState, teardownState, closingState] {
+            XCTAssertNil(ExternalOpenPlacementApplication.apply(
+                initialPlan,
+                reservationsByItemID: [:],
+                to: busyState,
+            ))
+            var generatedIDs = [UUID(), UUID()]
+            let retryResult = ExternalOpenPlacementPlanner.make(
+                request,
+                state: busyState,
+                generateUUID: generatedIDs.removeFirst(),
+            )
+            let retryPlan = try retryResult.get()
+
+            XCTAssertEqual(retryPlan.windows.count, 1)
+            XCTAssertTrue(retryPlan.windows[0].isNewWindow)
+            XCTAssertTrue(retryPlan.orderedItems[0].requiresReservation)
+            XCTAssertNotEqual(retryPlan.orderedItems[0].tabID, tabID)
+        }
     }
 
     /// 같은 directory route를 재사용하는 regular-file 요청은 batch의 마지막 reveal target을 적용한다.
