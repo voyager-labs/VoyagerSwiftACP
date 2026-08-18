@@ -318,6 +318,7 @@ public struct FileManagerWindowState: Equatable {
     public static func makeExternalInitial(
         reservations: [ExternalContentTabReservation],
         windowID: UUID? = nil,
+        activeTabID: ContentTabID? = nil,
     ) -> Self? {
         guard canReserveExternalContentTabs(
             reservations,
@@ -333,8 +334,10 @@ public struct FileManagerWindowState: Equatable {
             for: reservations,
             inheritingWindowContextFrom: windowContext,
         )
-        guard let activeReservation = reservations.last,
-              let activeContent = snapshots.content[activeReservation.id]
+        guard let activeReservation = activeTabID
+            .flatMap({ activeTabID in reservations.first(where: { $0.id == activeTabID }) })
+            ?? reservations.last,
+            let activeContent = snapshots.content[activeReservation.id]
         else { return nil }
 
         var tabs = ContentTabState().tabs
@@ -344,7 +347,9 @@ public struct FileManagerWindowState: Equatable {
                 anchor: reservation.anchor,
             ))
         }
-        let previousActiveTabID = reservations.dropLast().last?.id
+        let recentTabIDs = [activeReservation.id]
+            + reservations.reversed().map(\.id).filter { $0 != activeReservation.id }
+        let previousActiveTabID = recentTabIDs.dropFirst().first
         var state = Self(
             externalContent: activeContent,
             externalContentStates: snapshots.content,
@@ -353,7 +358,7 @@ public struct FileManagerWindowState: Equatable {
                 tabs: tabs,
                 activeTabID: activeReservation.id,
                 previousActiveTabID: previousActiveTabID,
-                recentlyUsedTabIDs: reservations.reversed().map(\.id),
+                recentlyUsedTabIDs: recentTabIDs,
             ),
             externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
             windowID: windowID,

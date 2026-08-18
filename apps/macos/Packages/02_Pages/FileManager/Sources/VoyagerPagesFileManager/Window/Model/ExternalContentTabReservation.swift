@@ -17,6 +17,24 @@ public struct ExternalContentTabReservation: Equatable, Sendable {
 }
 
 public extension FileManagerWindowState {
+    func canReturnContentTabToPinnedLocation(
+        _ tabID: ContentTabID,
+        matching anchor: ContentTabPageAnchor,
+    ) -> Bool {
+        guard let tab = contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let record = contentTabs.pinnedRecords[tabID],
+              record.isSupportedPinnedContentTab,
+              record.anchor == anchor
+        else { return false }
+
+        guard case .collectionFile = anchor,
+              tab.anchor != anchor
+        else { return true }
+        let tabContent = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
+        return tabContent?.hasUnsavedCollectionChanges == false
+    }
+
     mutating func applyExternalPendingSelection(
         _ pendingSelectEntryID: String?,
         tabID: ContentTabID,
