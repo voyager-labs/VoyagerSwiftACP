@@ -2872,52 +2872,6 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
     }
 
-    /// VOY-736: beginDeferred는 load 클로저를 세션 큐에서 실행해 main thread를 차단하지 않고,
-    /// 로드가 끝난 뒤에야 `.received`/`.succeeded` 종단 이벤트를 낸다 (Mail 다중 MB source 대응).
-    /// - 검증 내용: beginDeferred 반환 즉시 request가 나오고, 로드 완료 후 staging에 verbatim 바이트가 쓰이며 종단 `.succeeded`가 온다.
-    /// - 사전 조건: load 클로저가 고정 바이트를 반환하는 deferred flavor 1건.
-    /// - 기대 결과: staged 파일이 filename 그대로 생성되고 내용이 byte-for-byte 일치하며 events가 `.succeeded`로 끝난다.
-    func testExternalDropAcquisition_beginDeferredMaterializesAndSucceeds() async throws {
-        let temporaryRoot = try makeAcquisitionTempRoot("DeferredFlavor")
-        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
-        let client = ExternalDropAcquisitionClient
-            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
-
-        let bytes = Data("Message-ID: <deferred@example.com>\r\n\r\nBody".utf8)
-        let flavor = ExternalDropDeferredFlavor(uti: "com.apple.mail.email", filename: "Fwd- hello.eml") {
-            bytes
-        }
-
-        let request = client.beginDeferred([flavor], "/dest", true)
-
-        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertEqual(events.last, .succeeded(request.sessionID))
-
-        let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
-            .appendingPathComponent("Fwd- hello.eml")
-        XCTAssertEqual(try Data(contentsOf: stagedURL), bytes)
-    }
-
-    /// VOY-736: beginDeferred의 load 실패는 타입화된 실패로 종단 처리된다.
-    /// - 검증 내용: load가 nil을 반환하면 `.failed(dataMaterializationFailed)` 종단 이벤트만 나온다.
-    /// - 사전 조건: nil을 반환하는 deferred flavor 1건.
-    /// - 기대 결과: events가 `.failed(sessionID, .dataMaterializationFailed)`로 끝난다.
-    func testExternalDropAcquisition_beginDeferredLoadFailureFails() async throws {
-        let temporaryRoot = try makeAcquisitionTempRoot("DeferredFail")
-        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
-        let client = ExternalDropAcquisitionClient
-            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
-
-        let flavor = ExternalDropDeferredFlavor(uti: "com.apple.mail.email", filename: "unavailable.eml") {
-            nil
-        }
-
-        let request = client.beginDeferred([flavor], "/dest", true)
-
-        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertEqual(events.last, .failed(request.sessionID, .dataMaterializationFailed))
-    }
-
     // MARK: - EOP-002-import_external_objects (all-promises barrier)
 
     /// EOP-002-import_external_objects: 받아들인 혼합 요청은 all-promises 성공 전까지 배치를 보류한다.

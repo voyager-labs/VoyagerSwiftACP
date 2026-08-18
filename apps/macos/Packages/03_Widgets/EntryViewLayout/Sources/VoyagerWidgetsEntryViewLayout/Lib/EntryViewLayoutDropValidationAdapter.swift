@@ -283,11 +283,6 @@ enum EntryViewLayoutDropValidationAdapter {
 // MARK: - Shared external-drop acquisition coordinator logic (Grid/List)
 
 extension EntryViewLayoutDropValidationAdapter {
-    private struct MailMessageDropDescriptor {
-        var lookup: MailMessageSourceLookup
-        var subject: String?
-    }
-
     /// 외부 drop 획득 세션을 시작할 때 coordinator가 공급하는 획득/알림 클로저 모음.
     /// `function_parameter_count` 린트 제약을 위해 하나의 컨텍스트로 묶는다.
     struct ExternalDropAcquisitionContext {
@@ -327,14 +322,6 @@ extension EntryViewLayoutDropValidationAdapter {
             validationLogger.info("acquisition rejected immediate-url containment")
             context.clearDropState()
             return false
-        }
-        if let accepted = beginMailMessageDrop(
-            activeSessionID: &activeSessionID,
-            context: context,
-            pasteboard: draggingInfo.draggingPasteboard,
-            destinationPath: destinationPath,
-        ) {
-            return accepted
         }
         if !negotiation.promisedOrdinals.isEmpty,
            declaresLegacyFilePromise(in: draggingInfo.draggingPasteboard)
@@ -414,97 +401,6 @@ extension EntryViewLayoutDropValidationAdapter {
             emptyReceiverFileNames=\(emptyReceiverFileNames, privacy: .public)
             """,
         )
-    }
-
-    @MainActor
-    private static func beginMailMessageDrop(
-        activeSessionID: inout ExternalDropSessionID?,
-        context: ExternalDropAcquisitionContext,
-        pasteboard: NSPasteboard,
-        destinationPath: String,
-    ) -> Bool? {
-        guard let deferredFlavors = mailDeferredFlavors(
-            from: pasteboard,
-            loadSource: context.client.loadMailSource,
-        ) else {
-            return nil
-        }
-        guard !deferredFlavors.isEmpty else {
-            validationLogger.info("acquisition rejected mail-identity-unusable")
-            context.clearDropState()
-            return false
-        }
-        // Mail 원문 export는 다중 MB `source` 전송에 수 초가 걸리므로 acceptDrop 동기
-        // 경로에서 분리한다. load는 세션 OperationQueue에서 실행되고 결과는 기존
-        // `.received`/종단 이벤트 스트림으로 흐른다.
-        let request = context.client.beginDeferred(deferredFlavors, destinationPath, true)
-        activeSessionID = request.sessionID
-        context.sendAccepted(request)
-        context.clearDropState()
-        validationLogger.info("acquisition path message-url files=\(deferredFlavors.count, privacy: .public)")
-        return true
-    }
-
-    @MainActor
-    private static func mailDeferredFlavors(
-        from pasteboard: NSPasteboard,
-        loadSource: @escaping @Sendable (MailMessageSourceLookup) -> Data?,
-    ) -> [ExternalDropDeferredFlavor]? {
-        guard let items = pasteboard.pasteboardItems, !items.isEmpty else { return nil }
-        var descriptors: [MailMessageDropDescriptor] = []
-        for item in items {
-            guard let itemDescriptors = mailMessageDescriptors(from: item) else { return nil }
-            descriptors.append(contentsOf: itemDescriptors)
-        }
-        guard !descriptors.isEmpty else { return nil }
-
-        var result: [ExternalDropDeferredFlavor] = []
-        var usedFilenames = Set<String>()
-        result.reserveCapacity(descriptors.count)
-        let emailUTI = UTType(filenameExtension: "eml")?.identifier ?? "com.apple.mail.email"
-        for (ordinal, descriptor) in descriptors.enumerated() {
-            let filename = ExternalDropDataFlavorNaming.mailMessageFilename(
-                subject: descriptor.subject,
-                ordinal: ordinal + 1,
-                usedFilenames: &usedFilenames,
-            )
-            let lookup = descriptor.lookup
-            result.append(ExternalDropDeferredFlavor(uti: emailUTI, filename: filename) {
-                loadSource(lookup)
-            })
-        }
-        return result
-    }
-
-    private static func mailMessageDescriptors(from item: NSPasteboardItem) -> [MailMessageDropDescriptor]? {
-        let automatorType = NSPasteboard.PasteboardType("com.apple.mail.PasteboardTypeAutomator")
-        if let data = item.data(forType: automatorType),
-           let records = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-           as? [[String: Any]],
-           !records.isEmpty
-        {
-            let descriptors = records.compactMap { record -> MailMessageDropDescriptor? in
-                guard let number = record["id"] as? NSNumber, number.intValue > 0 else { return nil }
-                return MailMessageDropDescriptor(
-                    lookup: MailMessageSourceLookup(numericID: number.intValue, messageID: nil),
-                    subject: record["subject"] as? String,
-                )
-            }
-            return descriptors.count == records.count ? descriptors : []
-        }
-
-        let urlType = NSPasteboard.PasteboardType("public.url")
-        guard let rawURL = item.string(forType: urlType),
-              let lookup = MailMessageSourceLookup(pasteboardURL: rawURL)
-        else {
-            return nil
-        }
-        return [
-            MailMessageDropDescriptor(
-                lookup: lookup,
-                subject: item.string(forType: NSPasteboard.PasteboardType("public.url-name")),
-            ),
-        ]
     }
 
     /// 레거시 promise 유형 상수들. type 존재 여부로만 판정한다(포맷 switch 없음).
