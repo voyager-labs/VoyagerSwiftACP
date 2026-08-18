@@ -247,6 +247,9 @@ extension FileManagerWindowCommandRoutingReducer {
         case .selectMostRecentlyUsedContentTab:
             handleSelectMostRecentlyUsedContentTab(state: &state)
 
+        case let .presentContentTabSwitcher(source):
+            handlePresentContentTabSwitcher(source: source, state: &state)
+
         default:
             nil
         }
@@ -408,17 +411,7 @@ extension FileManagerWindowCommandRoutingReducer {
     }
 
     func handleSelectMostRecentlyUsedContentTab(state: inout State) -> Effect<Action> {
-        guard !state.isClosing,
-              state.pendingSelectedContentTabClose == nil,
-              state.pendingContentTabClose == nil,
-              state.pendingContentTabTeardown == nil,
-              state.pendingSelectedContentTabPinMutation == nil,
-              state.pendingContentTabMove == nil,
-              state.contentTabMoveParticipantRequestID == nil,
-              state.pendingTopNavigationIntents.isEmpty,
-              state.contentTabs.pendingPinnedRecordIDs.isEmpty
-        else { return .none }
-        if case .tearingDownTab = state.undoRedoPhase { return .none }
+        guard canRouteRecentContentTabInteraction(state) else { return .none }
 
         guard let targetID = state.contentTabs.takeMostRecentlyUsedInactiveTabID() else {
             return unavailableRecentlyUsedContentTabFeedbackEffect()

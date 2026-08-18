@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 extension FileManagerHostFixturePhaseNotificationTests {
     func testPresetAxesAndStateDataAreDeterministic() {
-        XCTAssertEqual(FileManagerHostPreset.allCases.count, 10)
+        XCTAssertEqual(FileManagerHostPreset.allCases.count, 15)
         XCTAssertEqual(FileManagerHostPreset.delayedRootNavigation.scenario.delayedNavigation, .rootNavigation)
         XCTAssertEqual(FileManagerHostPreset.delayedTabSwitch.scenario.delayedNavigation, .tabSwitch)
         XCTAssertEqual(FileManagerHostPreset.permissionDenied.scenario.permission, .denied)

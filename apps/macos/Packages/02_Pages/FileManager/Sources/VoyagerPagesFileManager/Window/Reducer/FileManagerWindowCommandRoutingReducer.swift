@@ -160,6 +160,10 @@ struct FileManagerWindowCommandRoutingReducer {
             case .request(.reopenChat):
                 return handleAiChatReopenRequest(state: &state)
 
+            case .view(.dismissContentTabSwitcher):
+                state.contentTabSwitcherPresentation = nil
+                return .none
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 

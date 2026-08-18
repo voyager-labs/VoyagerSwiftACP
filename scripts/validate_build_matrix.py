@@ -170,6 +170,7 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
         "RUNNING_VIA_INJECTION_NEXT",
     },
     "apps/macos/Packages/02_Pages/FileManager/Sources/VoyagerPagesFileManager/Window/Api/FileManagerHostScenario.swift": {
+        "FILE_MANAGER_HOST_APPEARANCE",
         "FILE_MANAGER_HOST_SCENARIO",
     },
     "apps/macos/Packages/02_Pages/Onboarding/Sources/VoyagerPagesOnboarding/Api/OnboardingWindowClient.swift": {

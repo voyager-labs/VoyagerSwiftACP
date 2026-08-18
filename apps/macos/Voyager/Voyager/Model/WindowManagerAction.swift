@@ -402,6 +402,7 @@ enum WindowManagerAction: CasePathable {
         case restoreLastClosedTab
         case duplicateTab
         case selectContentTab(position: Int)
+        case presentContentTabSwitcher
         case selectMostRecentlyUsedContentTab
         case newFolder
         case open

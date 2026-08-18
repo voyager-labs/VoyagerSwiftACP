@@ -235,6 +235,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     @CasePathable
     public enum View: Sendable {
         case dismissContentTabMoveFailure(requestID: UUID)
+        case dismissContentTabSwitcher
     }
 
     @CasePathable
@@ -346,6 +347,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openNewContentTab
         case selectContentTab(position: Int)
         case selectMostRecentlyUsedContentTab
+        case presentContentTabSwitcher(source: FileManagerContentTabSwitcherPresentation.Source)
         case closeActiveContentTab
         case closeSelectedContentTabs
         case toggleActiveContentTabPin

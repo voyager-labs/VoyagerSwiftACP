@@ -50,6 +50,132 @@ final class ContentTabBrowsingFlowTests: XCTestCase {
         let focusedWindow = try XCTUnwrap(store.state.windowManager.windows[id: focusedWindowID]?.window)
         XCTAssertEqual(focusedWindow.contentTabs.activeTabID, thirdID)
     }
+
+    // FLOW-PATH: MenuCommandsFeature -> WindowManagerFeature -> focused WindowSessionFeature -> FileManagerWindowFeature
+
+    /// CTM-004-present_content_tab_switcher: focused window에만 Content Tab 전환기를 표시하고 닫는다.
+    /// main-app menu command를 포함한 production reducer composition 전체의 aggregate 결과를 검증한다.
+    /// - 검증 내용: pending window의 기존 command 전달, switcher command no-op, menu command routing, focused window
+    /// presentation locality, sibling presentation absence, 양쪽 Content Tab snapshot 불변
+    /// - 사전 조건: 실제 MenuCommandsFeature와 WindowManagerFeature 아래 서로 다른 Content Tab을 가진 두 WindowSessionFeature,
+    /// open 완료 전 focused window identity
+    /// - 기대 결과: pending focused window에서도 기존 command는 전달하지만 switcher는 표시하지 않고, open 완료 후 main-app
+    /// menu command는 focused window만 표시하며, focused view dismiss action은 양쪽 window snapshot을 보존한 채 표시를 해제한다.
+    func testFocusedWindowContentTabSwitcherPresentationIsLocal() async throws {
+        let focusedWindowID = UUID()
+        let siblingWindowID = UUID()
+        let focusedTabIDs = [
+            ContentTabID(rawValue: "focused-first"),
+            ContentTabID(rawValue: "focused-second"),
+        ]
+        let siblingTabIDs = [
+            ContentTabID(rawValue: "sibling-first"),
+            ContentTabID(rawValue: "sibling-second"),
+        ]
+
+        var initialState = AppRootState()
+        initialState.windowManager.windows = [
+            WindowSessionState(
+                id: focusedWindowID,
+                window: makeContentTabBrowsingWindow(
+                    tabIDs: focusedTabIDs,
+                    activeTabID: focusedTabIDs[0],
+                ),
+            ),
+            WindowSessionState(
+                id: siblingWindowID,
+                window: makeContentTabBrowsingWindow(
+                    tabIDs: siblingTabIDs,
+                    activeTabID: siblingTabIDs[1],
+                ),
+            ),
+        ]
+        initialState.windowManager.focusedWindowID = focusedWindowID
+        initialState.windowManager.pendingWindowOpenIDs = [focusedWindowID]
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: aggregate flow asserts scoped presentation and complete Content Tab snapshots, not
+        // internal effects.
+        store.exhaustivity = .off
+
+        var initialSnapshots: [UUID: ContentTabState] = [:]
+        for windowID in [focusedWindowID, siblingWindowID] {
+            initialSnapshots[windowID] = try XCTUnwrap(
+                store.state.windowManager.windows[id: windowID]?.window.contentTabs,
+            )
+        }
+
+        await store.send(.windowManager(.event(.windowBecameKey(focusedWindowID))))
+        await store.send(.windowManager(.file(.quickLook)))
+        await store.receive {
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.request(.quickLookSelectedItem)),
+            ))) = $0
+            else { return false }
+            return id == focusedWindowID
+        }
+        await store.send(.menuCommands(.view(.app(.presentContentTabSwitcher))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertNil(
+            store.state.windowManager.windows[id: focusedWindowID]?.window.contentTabSwitcherPresentation,
+        )
+        XCTAssertNil(
+            store.state.windowManager.windows[id: siblingWindowID]?.window.contentTabSwitcherPresentation,
+        )
+
+        await store.send(.windowManager(.windowOpenCompleted(
+            id: focusedWindowID,
+            shouldBootstrapDefaultWindow: false,
+            isRegistered: true,
+        ))) {
+            $0.windowManager.pendingWindowOpenIDs.remove(focusedWindowID)
+        }
+
+        await store.send(.menuCommands(.view(.app(.presentContentTabSwitcher))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: focusedWindowID]?.window.contentTabSwitcherPresentation,
+            .init(source: .automatic),
+        )
+        XCTAssertNil(
+            store.state.windowManager.windows[id: siblingWindowID]?.window.contentTabSwitcherPresentation,
+        )
+        for windowID in [focusedWindowID, siblingWindowID] {
+            XCTAssertEqual(
+                store.state.windowManager.windows[id: windowID]?.window.contentTabs,
+                initialSnapshots[windowID],
+            )
+        }
+
+        await store.send(.windowManager(.windows(.element(
+            id: focusedWindowID,
+            action: .window(.view(.dismissContentTabSwitcher)),
+        ))))
+
+        XCTAssertNil(
+            store.state.windowManager.windows[id: focusedWindowID]?.window.contentTabSwitcherPresentation,
+        )
+        XCTAssertNil(
+            store.state.windowManager.windows[id: siblingWindowID]?.window.contentTabSwitcherPresentation,
+        )
+        for windowID in [focusedWindowID, siblingWindowID] {
+            XCTAssertEqual(
+                store.state.windowManager.windows[id: windowID]?.window.contentTabs,
+                initialSnapshots[windowID],
+            )
+        }
+    }
 }
 
 private func makeContentTabBrowsingWindow(
