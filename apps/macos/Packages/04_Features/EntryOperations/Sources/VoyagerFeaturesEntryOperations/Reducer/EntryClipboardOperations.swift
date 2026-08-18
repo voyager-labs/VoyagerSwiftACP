@@ -332,15 +332,19 @@ struct EntryClipboardOperationsReducer {
             }
         }
         // placement 복사 effect가 취소(창 닫힘 등 child store 제거)되면 획득 세션을
-        // finish해 staging과 session registry가 영구 잔류하지 않게 정리한다.
+        // finish해 staging과 session registry가 영구 잔류하지 않게 정리한다. finish는
+        // copyLoop가 종료된 뒤(현재 동기 pasteFile이 반환된 후)에만 수행해, 복사 도중
+        // staging이 제거돼 부분 실패/잔류가 생기지 않게 한다. 정상 완료는 reducer의
+        // finishPlacementIfComplete가 담당하므로 취소된 경우에만 여기서 정리한다.
         return .run { send in
-            try await withTaskCancellationHandler {
-                try await copyLoop(send)
-            } onCancel: {
-                Task { @MainActor in
-                    onCancelCleanup()
+            defer {
+                if Task.isCancelled {
+                    Task { @MainActor in
+                        onCancelCleanup()
+                    }
                 }
             }
+            try await copyLoop(send)
         }
     }
 }
