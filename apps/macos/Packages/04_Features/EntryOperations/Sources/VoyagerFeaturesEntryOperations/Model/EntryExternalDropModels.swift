@@ -112,66 +112,6 @@ public struct ExternalDropDataFlavor: Equatable, Sendable {
     }
 }
 
-/// 지연 data-flavor 물리화 요청 한 건. `load`는 획득 세션이 소유한 OperationQueue에서
-/// main thread 차단 없이 실행되며, 반환된 바이트가 로드 완료 후 staging에 verbatim으로 쓰인다.
-/// 다중 MB 원문(Mail `source` export 등)을 acceptDrop 동기 경로에서 꺼내기 위해 사용한다.
-public struct ExternalDropDeferredFlavor: Sendable {
-    /// 물리화할 형식의 UTI.
-    public let uti: String
-    /// staging에 쓸 최종 파일명 (base name + 확장자).
-    public let filename: String
-    /// 원본 바이트를 비동기로 로드한다. nil을 반환하면 타입화 실패로 종단 처리된다.
-    public let load: @Sendable () -> Data?
-
-    public init(uti: String, filename: String, load: @escaping @Sendable () -> Data?) {
-        self.uti = uti
-        self.filename = filename
-        self.load = load
-    }
-}
-
-/// Mail 메시지 드래그의 원문 조회 키. Mail Automator payload의 numeric ID를 우선하고
-/// 없으면 `message:` URL의 RFC Message-ID로 조회한다.
-public struct MailMessageSourceLookup: Equatable, Sendable {
-    /// Mail scripting의 mailbox 내부 numeric ID.
-    public let numericID: Int?
-    /// RFC 5322 Message-ID (`message:` URL에서 추출).
-    public let messageID: String?
-
-    public init(numericID: Int?, messageID: String?) {
-        self.numericID = numericID
-        self.messageID = messageID
-    }
-
-    /// `message:<Message-ID>` pasteboard URL에서 조회 키를 만든다. 스킴 불일치,
-    /// percent-encoding 실패, 빈 값, CR/LF/NUL 포함, 998바이트 초과는 nil을 반환한다.
-    public init?(pasteboardURL rawURL: String) {
-        guard let separator = rawURL.firstIndex(of: ":"),
-              rawURL[..<separator].lowercased() == "message"
-        else {
-            return nil
-        }
-        var encoded = String(rawURL[rawURL.index(after: separator)...])
-        while encoded.hasPrefix("/") {
-            encoded.removeFirst()
-        }
-        guard let decoded = encoded.removingPercentEncoding else { return nil }
-        let messageID = decoded.trimmingCharacters(
-            in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "<>")),
-        )
-        guard !messageID.isEmpty,
-              messageID.utf8.count <= 998,
-              !messageID.contains("\r"),
-              !messageID.contains("\n"),
-              !messageID.contains("\0")
-        else {
-            return nil
-        }
-        numericID = nil
-        self.messageID = messageID
-    }
-}
-
 /// data-flavor 파일명 파생 규칙. 형식별 목록 없이 UTI/바이트만으로 이름을 결정한다.
 /// 확장자는 `UTType.preferredFilenameExtension`에서 얻고, 없으면 supertype 계층을
 /// 탐사하며, 그래도 없으면 단일 fallback 상수를 쓴다.
@@ -228,31 +168,6 @@ public enum ExternalDropDataFlavorNaming {
         let ext = fileExtension(for: uti)
         let base = baseName(uti: uti, bytes: bytes, ordinal: ordinal)
         return ext.isEmpty ? base : "\(base).\(ext)"
-    }
-
-    /// Mail 메시지 제목 기반 `.eml` 파일명. 공백 축약·경로 구분자 치환·180자 제한을
-    /// 적용하고 빈 제목이면 `Mail Message <n>`을 쓰며, 세션 내 중복은 ` <n>` 접미로 회피한다.
-    public static func mailMessageFilename(
-        subject: String?,
-        ordinal: Int,
-        usedFilenames: inout Set<String>,
-    ) -> String {
-        let collapsed = subject?
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ") ?? ""
-        let sanitized = collapsed
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseName = sanitized.isEmpty ? "Mail Message \(ordinal)" : String(sanitized.prefix(180))
-        let filename = "\(baseName).eml"
-        guard !usedFilenames.contains(filename.lowercased()) else {
-            let duplicate = "\(baseName) \(ordinal).eml"
-            usedFilenames.insert(duplicate.lowercased())
-            return duplicate
-        }
-        usedFilenames.insert(filename.lowercased())
-        return filename
     }
 
     private static func isTextFlavor(_ uti: String) -> Bool {
