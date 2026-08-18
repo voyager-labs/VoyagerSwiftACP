@@ -9095,6 +9095,414 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
     // MARK: - External Open Placement
 
+    /// 현재 active tab의 exact route가 다른 window의 동일 route보다 먼저 재사용된다.
+    /// - 검증 내용: 기존 window/tab identity와 reservation 필요 여부
+    /// - 사전 조건: 동일 directory route가 active tab과 background tab에 각각 존재함
+    /// - 기대 결과: active tab을 가리키는 reuse plan만 생성되고 새 ID를 소비하지 않음
+    func testPlacementReusesActiveExactRouteWithoutAllocation() throws {
+        let activeWindowID = UUID()
+        let backgroundWindowID = UUID()
+        let activeTabID = ContentTabID(rawValue: "active-route")
+        let backgroundTabID = ContentTabID(rawValue: "background-route")
+        let route = ContentTabPageAnchor.directory(path: "/tmp/existing")
+        var state = WindowManagerFeature.State()
+        state.windows = [
+            Self.makeRouteWindow(
+                id: backgroundWindowID,
+                tabs: [
+                    (ContentTabID(rawValue: "background-active"), .directory(path: "/tmp/other")),
+                    (backgroundTabID, route),
+                ],
+                activeTabID: ContentTabID(rawValue: "background-active"),
+            ),
+            Self.makeRouteWindow(
+                id: activeWindowID,
+                tabs: [(activeTabID, route)],
+                activeTabID: activeTabID,
+            ),
+        ]
+        state.lastUsedWindowIDs = [backgroundWindowID, activeWindowID]
+        let itemID = UUID()
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [.init(itemID: itemID, anchor: route, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [backgroundWindowID, activeWindowID],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let plan = try XCTUnwrap(try result.get())
+
+        XCTAssertEqual(plan.windows.count, 1)
+        let window = try XCTUnwrap(plan.windows.first)
+        XCTAssertEqual(window.items.count, 1)
+        let item = try XCTUnwrap(window.items.first)
+        XCTAssertEqual(window.windowID, activeWindowID)
+        XCTAssertEqual(item.itemID, itemID)
+        XCTAssertEqual(item.tabID, activeTabID)
+        XCTAssertFalse(item.requiresReservation)
+    }
+
+    /// runtime route가 달라도 durable pinned anchor가 exact route이면 기존 pinned tab을 복귀 대상으로 재사용한다.
+    /// - 검증 내용: durable pinned identity, reservation 미생성, 마지막 regular-file reveal 전달
+    /// - 사전 조건: pinned tab의 runtime route와 durable anchor가 다르고 외부 파일의 parent가 durable anchor와 같음
+    /// - 기대 결과: 새 ID를 소비하지 않고 기존 tab에 pinned-anchor return과 reveal이 함께 계획됨
+    func testPlacementReusesDurablePinnedAnchorAndCarriesLastReveal() throws {
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "durable-pinned-route")
+        let runtimeAnchor = ContentTabPageAnchor.directory(path: "/tmp/runtime")
+        let durableAnchor = ContentTabPageAnchor.directory(path: "/tmp/durable")
+        let lastReveal = "/tmp/durable/last.txt"
+        var window = Self.makeRouteWindow(
+            id: windowID,
+            tabs: [(tabID, runtimeAnchor)],
+            activeTabID: tabID,
+        )
+        window.window.contentTabs.tabs[id: tabID]?.isPinned = true
+        window.window.contentTabs.pinnedRecords[tabID] = .init(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: durableAnchor,
+            title: "Durable",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [window]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [
+                .init(itemID: UUID(), anchor: durableAnchor, pendingSelectEntryID: "/tmp/durable/first.txt"),
+                .init(itemID: UUID(), anchor: durableAnchor, pendingSelectEntryID: lastReveal),
+            ],
+            preferredWindowIDs: [],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let plan = try result.get()
+        let application = try XCTUnwrap(ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: [:],
+            to: state,
+        ))
+
+        XCTAssertEqual(plan.windows.first?.windowID, windowID)
+        XCTAssertEqual(Set(plan.orderedItems.map(\.tabID)), [tabID])
+        XCTAssertTrue(plan.orderedItems.allSatisfy(\.requiresPinnedAnchorReturn))
+        XCTAssertTrue(plan.reservationsByItemID.isEmpty)
+        XCTAssertEqual(application.existingWindowActivations.first?.pinnedAnchorReturns, [
+            .init(tabID: tabID, pendingSelectEntryID: lastReveal),
+        ])
+    }
+
+    /// runtime exact route는 active durable-only pinned 후보보다 항상 먼저 재사용된다.
+    /// - 검증 내용: runtime exact 우선순위와 pinned-anchor return 불필요 표시
+    /// - 사전 조건: focused active pinned tab은 durable anchor만 일치하고 다른 window의 background tab은 runtime route가 일치함
+    /// - 기대 결과: runtime exact tab이 선택되고 durable return은 계획되지 않음
+    func testPlacementPrefersRuntimeExactRouteOverDurablePinnedAnchor() throws {
+        let durableWindowID = UUID()
+        let runtimeWindowID = UUID()
+        let durableTabID = ContentTabID(rawValue: "durable-only")
+        let runtimeTabID = ContentTabID(rawValue: "runtime-exact")
+        let route = ContentTabPageAnchor.directory(path: "/tmp/priority")
+        var durableWindow = Self.makeRouteWindow(
+            id: durableWindowID,
+            tabs: [(durableTabID, .directory(path: "/tmp/elsewhere"))],
+            activeTabID: durableTabID,
+        )
+        durableWindow.window.contentTabs.tabs[id: durableTabID]?.isPinned = true
+        durableWindow.window.contentTabs.pinnedRecords[durableTabID] = .init(
+            id: durableTabID.rawValue,
+            page: .directory,
+            anchor: route,
+            title: "Durable",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        let runtimeWindow = Self.makeRouteWindow(
+            id: runtimeWindowID,
+            tabs: [
+                (ContentTabID(rawValue: "runtime-active"), .directory(path: "/tmp/active")),
+                (runtimeTabID, route),
+            ],
+            activeTabID: ContentTabID(rawValue: "runtime-active"),
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [durableWindow, runtimeWindow]
+        state.focusedWindowID = durableWindowID
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [.init(itemID: UUID(), anchor: route, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let plan = try result.get()
+
+        XCTAssertEqual(plan.windows.first?.windowID, runtimeWindowID)
+        XCTAssertEqual(plan.orderedItems.first?.tabID, runtimeTabID)
+        XCTAssertEqual(plan.orderedItems.first?.requiresPinnedAnchorReturn, false)
+    }
+
+    /// 동일 batch의 동일 route는 하나의 tab identity로 수렴하고 capacity를 한 번만 소비한다.
+    /// - 검증 내용: duplicate route의 shared tab/window identity와 reservation 개수
+    /// - 사전 조건: live window가 없고 동일 directory route 요청이 세 번 들어옴
+    /// - 기대 결과: window/tab ID는 하나씩만 생성되고 첫 item만 reservation을 요구함
+    func testPlacementConvergesDuplicateRoutesAndOnlyAllocatesNewRoutes() throws {
+        let route = ContentTabPageAnchor.directory(path: "/tmp/duplicate")
+        let itemIDs = [UUID(), UUID(), UUID()]
+        let generatedTabID = UUID()
+        let generatedWindowID = UUID()
+        var generatedIDs = [generatedTabID, generatedWindowID]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: itemIDs.map {
+                .init(itemID: $0, anchor: route, pendingSelectEntryID: nil)
+            },
+            preferredWindowIDs: [],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: WindowManagerFeature.State(),
+            generateUUID: generatedIDs.removeFirst(),
+        )
+        let plan = try XCTUnwrap(try result.get())
+
+        XCTAssertEqual(plan.windows.count, 1)
+        let window = try XCTUnwrap(plan.windows.first)
+        let items: [ExternalOpenPlacementPlan.Item] = window.items
+        XCTAssertTrue(generatedIDs.isEmpty)
+        XCTAssertEqual(items.map(\.itemID), itemIDs)
+        XCTAssertEqual(Set(items.map(\.tabID)), [ContentTabID(rawValue: generatedTabID.uuidString)])
+        XCTAssertEqual(items.filter(\.requiresReservation).count, 1)
+        XCTAssertEqual(window.windowID, generatedWindowID)
+    }
+
+    /// active exact match가 없으면 MRU window의 exact route를 선택하고 closing window는 제외한다.
+    /// - 검증 내용: MRU 우선순위와 closing/pending 제외
+    /// - 사전 조건: 동일 route가 stable-first closing window와 MRU live window의 background tab에 존재함
+    /// - 기대 결과: live MRU window/tab identity가 reservation 없이 선택됨
+    func testPlacementChoosesLiveMRUExactRouteBeforeStableOrder() throws {
+        let closingWindowID = UUID()
+        let mruWindowID = UUID()
+        let route = ContentTabPageAnchor.directory(path: "/tmp/mru-route")
+        let closingTabID = ContentTabID(rawValue: "closing-route")
+        let mruTabID = ContentTabID(rawValue: "mru-route")
+        var state = WindowManagerFeature.State()
+        state.windows = [
+            Self.makeRouteWindow(
+                id: closingWindowID,
+                tabs: [
+                    (ContentTabID(rawValue: "closing-active"), .directory(path: "/tmp/closing-active")),
+                    (closingTabID, route),
+                ],
+                activeTabID: ContentTabID(rawValue: "closing-active"),
+            ),
+            Self.makeRouteWindow(
+                id: mruWindowID,
+                tabs: [
+                    (ContentTabID(rawValue: "mru-active"), .directory(path: "/tmp/mru-active")),
+                    (mruTabID, route),
+                ],
+                activeTabID: ContentTabID(rawValue: "mru-active"),
+            ),
+        ]
+        state.lastUsedWindowIDs = [mruWindowID, closingWindowID]
+        state.closingWindowIDs = [closingWindowID]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [.init(itemID: UUID(), anchor: route, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let plan = try result.get()
+
+        XCTAssertEqual(plan.windows.first?.windowID, mruWindowID)
+        XCTAssertEqual(plan.windows.first?.items.first?.tabID, mruTabID)
+        XCTAssertEqual(plan.windows.first?.items.first?.requiresReservation, false)
+    }
+
+    /// 같은 directory route를 재사용하는 regular-file 요청은 batch의 마지막 reveal target을 적용한다.
+    /// - 검증 내용: reused tab identity 유지와 pending selection last-wins
+    /// - 사전 조건: 기존 directory tab과 같은 parent를 가진 파일 요청 두 개가 순서대로 계획됨
+    /// - 기대 결과: 새 tab 없이 기존 tab state의 pending selection이 마지막 파일로 갱신됨
+    func testPlacementApplicationReusesDirectoryTabAndAppliesLastRevealSelection() throws {
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "reused-reveal")
+        let route = ContentTabPageAnchor.directory(path: "/tmp/reused")
+        var state = WindowManagerFeature.State()
+        state.windows = [Self.makeRouteWindow(id: windowID, tabs: [(tabID, route)], activeTabID: tabID)]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [
+                .init(itemID: UUID(), anchor: route, pendingSelectEntryID: "/tmp/reused/first.txt"),
+                .init(itemID: UUID(), anchor: route, pendingSelectEntryID: "/tmp/reused/last.txt"),
+            ],
+            preferredWindowIDs: [],
+        )
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let plan = try result.get()
+
+        let application = try XCTUnwrap(ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: [:],
+            to: state,
+        ))
+        let window = try XCTUnwrap(application.windows[id: windowID]?.window)
+
+        XCTAssertEqual(window.contentTabs.tabs.map(\.id), [tabID])
+        XCTAssertEqual(window.content.pendingSelectEntryID, "/tmp/reused/last.txt")
+        XCTAssertEqual(application.existingWindowActivations.first?.activeTabID, tabID)
+    }
+
+    /// 재사용 대상으로 계획한 tab이 apply 전에 바뀌면 같은 request를 현재 live route로 한 번 다시 계획한다.
+    /// - 검증 내용: stale target 무변경과 retryCount 1 replacement plan의 surviving route 재사용
+    /// - 사전 조건: 최초 target anchor는 변경됐고 다른 window에 동일 route tab이 생존함
+    /// - 기대 결과: 새 reservation 없이 surviving tab identity로 apply가 재시도됨
+    func testPlacementApplicationReplansStaleReuseTargetOnce() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let route = ContentTabPageAnchor.directory(path: "/tmp/replan")
+        let staleWindowID = UUID()
+        let staleTabID = ContentTabID(rawValue: "stale-reuse")
+        let survivingWindowID = UUID()
+        let survivingTabID = ContentTabID(rawValue: "surviving-reuse")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [.init(itemID: itemID, anchor: route, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+        let stalePlan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(
+                windowID: staleWindowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: itemID,
+                    tabID: staleTabID,
+                    anchor: route,
+                    requiresReservation: false,
+                )],
+            )],
+            request: request,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeRouteWindow(
+                id: staleWindowID,
+                tabs: [(staleTabID, .directory(path: "/tmp/changed"))],
+                activeTabID: staleTabID,
+            ),
+            Self.makeRouteWindow(
+                id: survivingWindowID,
+                tabs: [(survivingTabID, route)],
+                activeTabID: survivingTabID,
+            ),
+        ]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+        // store.exhaustivity = .off: replacement apply 이후 canonical tab handoff는 기존 application owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(plan: stalePlan, reservationsByItemID: [:])))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.retryCount == 1
+                && plan.windows.first?.windowID == survivingWindowID
+                && plan.windows.first?.items.first?.tabID == survivingTabID
+                && plan.windows.first?.items.first?.requiresReservation == false
+                && reservationsByItemID.isEmpty
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows[id: staleWindowID]?.window.contentTabs.tabs[id: staleTabID]?.anchor,
+                       .directory(path: "/tmp/changed"))
+        XCTAssertEqual(store.state.windows[id: survivingWindowID]?.window.contentTabs.activeTabID, survivingTabID)
+    }
+
+    /// activation 전에 유일한 reuse target이 사라지면 동일 request를 새 tab으로 한 번 복구한다.
+    /// - 검증 내용: retryCount 1, 신규 reservation 1개, 새 window/tab application
+    /// - 사전 조건: 최초 reuse plan의 window와 tab이 activation 시점에는 존재하지 않음
+    /// - 기대 결과: 무한 재시도 없이 새 identity를 생성해 apply 단계로 복귀함
+    func testPlacementActivationRecoversMissingOnlyReuseTargetOnce() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let route = ContentTabPageAnchor.directory(path: "/tmp/activation-recovery")
+        let missingWindowID = UUID()
+        let missingTabID = ContentTabID(rawValue: "missing-reuse")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [.init(itemID: itemID, anchor: route, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+        let stalePlan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(
+                windowID: missingWindowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: itemID,
+                    tabID: missingTabID,
+                    anchor: route,
+                    requiresReservation: false,
+                )],
+            )],
+            request: request,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(stalePlan)))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.retryCount == 1
+                && plan.windows.count == 1
+                && plan.windows[0].isNewWindow
+                && plan.windows[0].items.count == 1
+                && plan.windows[0].items[0].requiresReservation
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows.count, 1)
+        XCTAssertEqual(store.state.windows.first?.window.contentTabs.tabs.count, 1)
+        XCTAssertEqual(store.state.windows.first?.window.contentTabs.tabs.first?.anchor, route)
+    }
+
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
     func testWindowLifecycleMaintainsRuntimeMRUIndependentlyFromFocus() async {
         let firstID = UUID()
@@ -9173,7 +9581,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         initialState.lastUsedWindowIDs = [unrelatedID, survivingID]
         let request = ExternalOpenPlacementRequest(
             batchID: batchID,
-            itemIDs: [itemID],
+            items: Self.makePlacementItems([itemID]),
             preferredWindowIDs: [closedID, survivingID],
         )
         let store = TestStore(initialState: initialState) {
@@ -9216,7 +9624,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: [itemID],
+            items: Self.makePlacementItems([itemID]),
             preferredWindowIDs: [],
         ))))
         await store.receive { action in
@@ -9251,7 +9659,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: [itemID],
+            items: Self.makePlacementItems([itemID]),
             preferredWindowIDs: [],
         ))))
         await store.receive { action in
@@ -9285,7 +9693,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: [itemID],
+            items: Self.makePlacementItems([itemID]),
             preferredWindowIDs: [],
         ))))
         await store.receive { action in
@@ -9317,7 +9725,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: itemIDs,
+            items: Self.makePlacementItems(itemIDs),
             preferredWindowIDs: [closedID],
         ))))
         await store.receive { action in
@@ -9352,7 +9760,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: itemIDs,
+            items: Self.makePlacementItems(itemIDs),
             preferredWindowIDs: [preferredID, olderID],
         ))))
         await store.receive { action in
@@ -9402,7 +9810,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
             await store.send(.placement(.plan(.init(
                 batchID: UUID(),
-                itemIDs: itemIDs,
+                items: Self.makePlacementItems(itemIDs),
                 preferredWindowIDs: [preferredID],
             ))))
             await store.receive { action in
@@ -9424,7 +9832,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let itemIDs = [UUID(), UUID()]
         let request = ExternalOpenPlacementRequest(
             batchID: UUID(),
-            itemIDs: itemIDs,
+            items: Self.makePlacementItems(itemIDs),
             preferredWindowIDs: [preferredID],
         )
         var initialState = WindowManagerFeature.State()
@@ -9467,7 +9875,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: [UUID(), UUID()],
+            items: Self.makePlacementItems([UUID(), UUID()]),
             preferredWindowIDs: [],
         ))))
         await store.receive { action in
@@ -9490,7 +9898,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await duplicateStore.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: [duplicateItemID, duplicateItemID],
+            items: Self.makePlacementItems([duplicateItemID, duplicateItemID]),
             preferredWindowIDs: [],
         ))))
         await duplicateStore.receive { action in
@@ -9512,7 +9920,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await impossibleStore.send(.placement(.plan(.init(
             batchID: UUID(),
-            itemIDs: [UUID()],
+            items: Self.makePlacementItems([UUID()]),
             preferredWindowIDs: [impossibleID],
         ))))
         await impossibleStore.receive { action in
@@ -9538,19 +9946,20 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.uuid = .constant(existingID)
         }
         let batchID = UUID()
-
-        await store.send(.placement(.plan(.init(
+        let request = ExternalOpenPlacementRequest(
             batchID: batchID,
-            itemIDs: [],
+            items: [],
             preferredWindowIDs: [existingID],
-        ))))
+        )
+
+        await store.send(.placement(.plan(request)))
         await store.receive { action in
             guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
                   case let .success(plan) = completion.result
             else {
                 return false
             }
-            return plan == .init(batchID: batchID, windows: [])
+            return plan == .init(batchID: batchID, windows: [], request: request)
         }
         XCTAssertEqual(store.state, initialState)
     }
@@ -9565,7 +9974,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.placement(.plan(.init(
             batchID: batchID,
-            itemIDs: [duplicateItemID, duplicateItemID],
+            items: Self.makePlacementItems([duplicateItemID, duplicateItemID]),
             preferredWindowIDs: [],
         ))))
         await store.receive { action in
@@ -9691,13 +10100,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             let windows: IdentifiedArrayOf<WindowSessionState> = [
                 .init(id: windowID, window: window),
             ]
+            var state = WindowManagerFeature.State()
+            state.windows = windows
 
             let application = ExternalOpenPlacementApplication.apply(
                 plan,
                 reservationsByItemID: [
                     itemID: .init(id: reservedTabID, anchor: .directory(path: "/blocked")),
                 ],
-                to: windows,
+                to: state,
             )
 
             XCTAssertNil(application)
@@ -9738,8 +10149,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     windowID: windowID,
                     isNewWindow: false,
                     items: [
-                        .init(itemID: firstItemID, tabID: firstTabID),
-                        .init(itemID: secondItemID, tabID: secondTabID),
+                        .init(
+                            itemID: firstItemID,
+                            tabID: firstTabID,
+                            anchor: .directory(path: "/external-first"),
+                        ),
+                        .init(
+                            itemID: secondItemID,
+                            tabID: secondTabID,
+                            anchor: .directory(path: "/external-second"),
+                        ),
                     ],
                 ),
             ],
@@ -9844,8 +10263,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     windowID: windowID,
                     isNewWindow: true,
                     items: [
-                        .init(itemID: directoryItemID, tabID: directoryTabID),
-                        .init(itemID: collectionItemID, tabID: collectionTabID),
+                        .init(
+                            itemID: directoryItemID,
+                            tabID: directoryTabID,
+                            anchor: .directory(path: "/tmp"),
+                        ),
+                        .init(
+                            itemID: collectionItemID,
+                            tabID: collectionTabID,
+                            anchor: .collectionFile(url: collectionURL),
+                        ),
                     ],
                 ),
             ],
@@ -9925,14 +10352,22 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 .init(
                     windowID: firstWindowID,
                     isNewWindow: true,
-                    items: zip(itemIDs.prefix(20), tabIDs.prefix(20)).map {
-                        .init(itemID: $0.0, tabID: $0.1)
+                    items: zip(itemIDs.prefix(20), tabIDs.prefix(20)).enumerated().map { index, pair in
+                        .init(
+                            itemID: pair.0,
+                            tabID: pair.1,
+                            anchor: .directory(path: "/external/\(index)"),
+                        )
                     },
                 ),
                 .init(
                     windowID: secondWindowID,
                     isNewWindow: true,
-                    items: [.init(itemID: itemIDs[20], tabID: tabIDs[20])],
+                    items: [.init(
+                        itemID: itemIDs[20],
+                        tabID: tabIDs[20],
+                        anchor: .directory(path: "/external/20"),
+                    )],
                 ),
             ],
         )
@@ -10060,12 +10495,20 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 .init(
                     windowID: existingWindowID,
                     isNewWindow: false,
-                    items: [.init(itemID: existingItemID, tabID: existingTabID)],
+                    items: [.init(
+                        itemID: existingItemID,
+                        tabID: existingTabID,
+                        anchor: .directory(path: "/existing/reserved"),
+                    )],
                 ),
                 .init(
                     windowID: newWindowID,
                     isNewWindow: true,
-                    items: [.init(itemID: newItemID, tabID: newTabID)],
+                    items: [.init(
+                        itemID: newItemID,
+                        tabID: newTabID,
+                        anchor: .directory(path: "/new"),
+                    )],
                 ),
             ],
         )
@@ -11562,6 +12005,38 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             activeTabID: tabs.first?.id,
         )
         return WindowSessionState(id: id, window: window)
+    }
+
+    private static func makeRouteWindow(
+        id: UUID,
+        tabs: [(ContentTabID, ContentTabPageAnchor)],
+        activeTabID: ContentTabID,
+    ) -> WindowSessionState {
+        var window = FileManagerWindowFeature.State.makeInitial(path: "/route-window")
+        window.contentTabs = ContentTabState(
+            tabs: .init(uniqueElements: tabs.map { tabID, anchor in
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: anchor,
+                    isPinned: false,
+                )
+            }),
+            activeTabID: activeTabID,
+        )
+        return WindowSessionState(id: id, window: window)
+    }
+
+    private static func makePlacementItems(
+        _ itemIDs: [UUID],
+    ) -> [ExternalOpenPlacementRequest.Item] {
+        itemIDs.map { itemID in
+            .init(
+                itemID: itemID,
+                anchor: .virtualCollection(id: "external-open-\(itemID.uuidString)"),
+                pendingSelectEntryID: nil,
+            )
+        }
     }
 
     private static func prepareContentTabMoveRequest(

@@ -14,6 +14,19 @@ extension WindowManagerFeature {
             state: state,
             excluding: excludedWindowIDs,
         ) else {
+            if let request = plan.request?.retryRequest,
+               case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+                   request,
+                   state: state,
+                   generateUUID: uuid(),
+               )
+            {
+                state.externalOpenActivationAttempt = nil
+                return .send(.placement(.apply(
+                    plan: replacementPlan,
+                    reservationsByItemID: replacementPlan.reservationsByItemID,
+                )))
+            }
             state.authorizedExternalOpenBatchID = nil
             state.externalOpenActivationAttempt = nil
             return .send(.delegate(.externalOpenActivationCompleted(batchID: plan.batchID)))
@@ -96,6 +109,15 @@ extension WindowManagerFeature {
                     id: activation.windowID,
                     action: .window(.activateExternalContentTabUndoScopes(activation.tabIDs)),
                 ))),
+            ] + activation.pinnedAnchorReturns.map { pinnedReturn in
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.returnContentTabToPinnedLocation(
+                        pinnedReturn.tabID,
+                        pendingSelectEntryID: pinnedReturn.pendingSelectEntryID,
+                    )),
+                )))
+            } + [
                 .send(.windows(.element(
                     id: activation.windowID,
                     action: .window(.contentTabs(.setCurrent(activation.activeTabID))),

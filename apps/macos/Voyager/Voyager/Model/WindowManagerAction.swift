@@ -24,13 +24,77 @@ struct ExternalOpenPlacementApplicationCompletion: Equatable {
 
 struct ExternalOpenPlacementRequest: Equatable {
     let batchID: UUID
-    let itemIDs: [UUID]
+    let items: [Item]
     let preferredWindowIDs: [WindowManagerState.WindowID]
+    let retryCount: Int
+
+    var itemIDs: [UUID] {
+        items.map(\.itemID)
+    }
+
+    struct Item: Equatable {
+        let itemID: UUID
+        let anchor: ContentTabPageAnchor
+        let pendingSelectEntryID: String?
+    }
+
+    init(
+        batchID: UUID,
+        items: [Item],
+        preferredWindowIDs: [WindowManagerState.WindowID],
+        retryCount: Int = 0,
+    ) {
+        self.batchID = batchID
+        self.items = items
+        self.preferredWindowIDs = preferredWindowIDs
+        self.retryCount = retryCount
+    }
+
+    var retryRequest: Self? {
+        guard retryCount == 0 else { return nil }
+        return .init(
+            batchID: batchID,
+            items: items,
+            preferredWindowIDs: preferredWindowIDs,
+            retryCount: 1,
+        )
+    }
 }
 
 struct ExternalOpenPlacementPlan: Equatable {
     let batchID: UUID
     let windows: [Window]
+    let request: ExternalOpenPlacementRequest?
+
+    init(
+        batchID: UUID,
+        windows: [Window],
+        request: ExternalOpenPlacementRequest? = nil,
+    ) {
+        self.batchID = batchID
+        self.windows = windows
+        self.request = request
+    }
+
+    var orderedItems: [Item] {
+        guard let request else { return windows.flatMap(\.items) }
+        let itemsByID = Dictionary(uniqueKeysWithValues: windows.flatMap(\.items).map { ($0.itemID, $0) })
+        return request.itemIDs.compactMap { itemsByID[$0] }
+    }
+
+    var reservationsByItemID: [UUID: ExternalContentTabReservation] {
+        let lastItemsByTabID = orderedItems.reduce(into: [ContentTabID: Item]()) { result, item in
+            result[item.tabID] = item
+        }
+        return orderedItems.reduce(into: [:]) { result, item in
+            guard item.requiresReservation else { return }
+            result[item.itemID] = .init(
+                id: item.tabID,
+                anchor: item.anchor,
+                pendingSelectEntryID: lastItemsByTabID[item.tabID]?.pendingSelectEntryID,
+            )
+        }
+    }
 
     struct Window: Equatable {
         let windowID: WindowManagerState.WindowID
@@ -41,6 +105,26 @@ struct ExternalOpenPlacementPlan: Equatable {
     struct Item: Equatable {
         let itemID: UUID
         let tabID: ContentTabID
+        let anchor: ContentTabPageAnchor
+        let pendingSelectEntryID: String?
+        let requiresReservation: Bool
+        let requiresPinnedAnchorReturn: Bool
+
+        init(
+            itemID: UUID,
+            tabID: ContentTabID,
+            anchor: ContentTabPageAnchor = .homeDefault,
+            pendingSelectEntryID: String? = nil,
+            requiresReservation: Bool = true,
+            requiresPinnedAnchorReturn: Bool = false,
+        ) {
+            self.itemID = itemID
+            self.tabID = tabID
+            self.anchor = anchor
+            self.pendingSelectEntryID = pendingSelectEntryID
+            self.requiresReservation = requiresReservation
+            self.requiresPinnedAnchorReturn = requiresPinnedAnchorReturn
+        }
     }
 }
 
@@ -63,6 +147,17 @@ enum ExternalOpenPlacementPlanner {
         let itemCount: Int
     }
 
+    private struct RoutePlacement {
+        let anchor: ContentTabPageAnchor
+        let tabID: ContentTabID
+    }
+
+    private struct RouteMatch {
+        let windowID: WindowManagerState.WindowID
+        let tabID: ContentTabID
+        let requiresPinnedAnchorReturn: Bool
+    }
+
     static func make(
         _ request: ExternalOpenPlacementRequest,
         state: WindowManagerState,
@@ -72,26 +167,31 @@ enum ExternalOpenPlacementPlanner {
             return .failure(.duplicateItemID(duplicateItemID))
         }
         guard !request.itemIDs.isEmpty else {
-            return .success(.init(batchID: request.batchID, windows: []))
+            return .success(.init(batchID: request.batchID, windows: [], request: request))
         }
 
-        let targetResult = existingTarget(for: request, state: state)
+        let uniqueNewItems = firstItemsWithoutRouteMatch(request.items, state: state)
+        let targetResult = existingTarget(
+            for: request,
+            newItemCount: uniqueNewItems.count,
+            state: state,
+        )
         guard case let .success(target) = targetResult else {
-            return targetResult.map { _ in .init(batchID: request.batchID, windows: []) }
+            return targetResult.map { _ in .init(batchID: request.batchID, windows: [], request: request) }
         }
 
         var allocatedRawIDs = existingRawIDs(in: state)
-        let itemsResult = allocateItems(
-            request.itemIDs,
+        let placementsResult = allocateRoutePlacements(
+            uniqueNewItems,
             generateUUID: generateUUID,
             allocatedRawIDs: &allocatedRawIDs,
         )
-        guard case let .success(items) = itemsResult else {
-            return itemsResult.map { _ in .init(batchID: request.batchID, windows: []) }
+        guard case let .success(newPlacements) = placementsResult else {
+            return placementsResult.map { _ in .init(batchID: request.batchID, windows: [], request: request) }
         }
 
         let existingItemCount = target?.itemCount ?? 0
-        let overflowItemCount = items.count - existingItemCount
+        let overflowItemCount = newPlacements.count - existingItemCount
         let newWindowCount = (overflowItemCount + ContentTabConstants.maxTabs - 1)
             / ContentTabConstants.maxTabs
         let windowIDsResult = allocateWindowIDs(
@@ -100,12 +200,19 @@ enum ExternalOpenPlacementPlanner {
             allocatedRawIDs: &allocatedRawIDs,
         )
         guard case let .success(newWindowIDs) = windowIDsResult else {
-            return windowIDsResult.map { _ in .init(batchID: request.batchID, windows: []) }
+            return windowIDsResult.map { _ in .init(batchID: request.batchID, windows: [], request: request) }
         }
 
         return .success(.init(
             batchID: request.batchID,
-            windows: makeWindows(target: target, items: items, newWindowIDs: newWindowIDs),
+            windows: makeWindows(
+                request: request,
+                state: state,
+                target: target,
+                newPlacements: newPlacements,
+                newWindowIDs: newWindowIDs,
+            ),
+            request: request,
         ))
     }
 
@@ -116,8 +223,10 @@ enum ExternalOpenPlacementPlanner {
 
     private static func existingTarget(
         for request: ExternalOpenPlacementRequest,
+        newItemCount: Int,
         state: WindowManagerState,
     ) -> Result<ExistingTarget?, ExternalOpenPlacementFailure> {
+        guard newItemCount > 0 else { return .success(nil) }
         let candidateWindowIDs: [WindowManagerState.WindowID]
         if request.preferredWindowIDs.isEmpty {
             var fallbackWindowIDs = state.lastUsedWindowIDs
@@ -145,8 +254,85 @@ enum ExternalOpenPlacementPlanner {
         }
         return .success(.init(
             windowID: windowID,
-            itemCount: min(request.itemIDs.count, ContentTabConstants.maxTabs - tabCount),
+            itemCount: min(newItemCount, ContentTabConstants.maxTabs - tabCount),
         ))
+    }
+
+    private static func firstItemsWithoutRouteMatch(
+        _ items: [ExternalOpenPlacementRequest.Item],
+        state: WindowManagerState,
+    ) -> [ExternalOpenPlacementRequest.Item] {
+        var anchors: [ContentTabPageAnchor] = []
+        return items.filter { item in
+            guard routeMatch(for: item.anchor, state: state) == nil,
+                  !anchors.contains(item.anchor)
+            else { return false }
+            anchors.append(item.anchor)
+            return true
+        }
+    }
+
+    private static func runtimeMatch(
+        for anchor: ContentTabPageAnchor,
+        state: WindowManagerState,
+    ) -> (WindowManagerState.WindowID, ContentTabID)? {
+        let liveWindowIDs = orderedLiveWindowIDs(state: state)
+        for activeOnly in [true, false] {
+            for windowID in liveWindowIDs {
+                guard let contentTabs = state.windows[id: windowID]?.window.contentTabs else { continue }
+                for tab in contentTabs.tabs where tab.anchor == anchor {
+                    if !activeOnly || tab.id == contentTabs.activeTabID {
+                        return (windowID, tab.id)
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func routeMatch(
+        for anchor: ContentTabPageAnchor,
+        state: WindowManagerState,
+    ) -> RouteMatch? {
+        if let runtimeMatch = runtimeMatch(for: anchor, state: state) {
+            return .init(
+                windowID: runtimeMatch.0,
+                tabID: runtimeMatch.1,
+                requiresPinnedAnchorReturn: false,
+            )
+        }
+        let liveWindowIDs = orderedLiveWindowIDs(state: state)
+        for activeOnly in [true, false] {
+            for windowID in liveWindowIDs {
+                guard let contentTabs = state.windows[id: windowID]?.window.contentTabs else { continue }
+                for tab in contentTabs.tabs where tab.isPinned {
+                    guard !activeOnly || tab.id == contentTabs.activeTabID,
+                          let record = contentTabs.pinnedRecords[tab.id],
+                          record.isPageAnchorCompatible,
+                          record.anchor == anchor
+                    else { continue }
+                    return .init(
+                        windowID: windowID,
+                        tabID: tab.id,
+                        requiresPinnedAnchorReturn: true,
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func orderedLiveWindowIDs(state: WindowManagerState) -> [WindowManagerState.WindowID] {
+        var result: [WindowManagerState.WindowID] = []
+        let candidates = [state.focusedWindowID].compactMap(\.self) + state.lastUsedWindowIDs + state.windows.ids
+        for windowID in candidates where !result.contains(windowID) {
+            guard state.windows[id: windowID] != nil,
+                  !state.closingWindowIDs.contains(windowID),
+                  !state.pendingWindowOpenIDs.contains(windowID)
+            else { continue }
+            result.append(windowID)
+        }
+        return result
     }
 
     private static func existingRawIDs(in state: WindowManagerState) -> Set<String> {
@@ -157,24 +343,24 @@ enum ExternalOpenPlacementPlanner {
         return rawIDs
     }
 
-    private static func allocateItems(
-        _ itemIDs: [UUID],
+    private static func allocateRoutePlacements(
+        _ items: [ExternalOpenPlacementRequest.Item],
         generateUUID: () -> UUID,
         allocatedRawIDs: inout Set<String>,
-    ) -> Result<[ExternalOpenPlacementPlan.Item], ExternalOpenPlacementFailure> {
-        var items: [ExternalOpenPlacementPlan.Item] = []
-        items.reserveCapacity(itemIDs.count)
-        for itemID in itemIDs {
+    ) -> Result<[RoutePlacement], ExternalOpenPlacementFailure> {
+        var placements: [RoutePlacement] = []
+        placements.reserveCapacity(items.count)
+        for item in items {
             let generatedID = generateUUID()
             guard allocatedRawIDs.insert(generatedID.uuidString).inserted else {
                 return .failure(.duplicateAllocatedID(generatedID))
             }
-            items.append(.init(
-                itemID: itemID,
+            placements.append(.init(
+                anchor: item.anchor,
                 tabID: ContentTabID(rawValue: generatedID.uuidString),
             ))
         }
-        return .success(items)
+        return .success(placements)
     }
 
     private static func allocateWindowIDs(
@@ -195,35 +381,76 @@ enum ExternalOpenPlacementPlanner {
     }
 
     private static func makeWindows(
+        request: ExternalOpenPlacementRequest,
+        state: WindowManagerState,
         target: ExistingTarget?,
-        items: [ExternalOpenPlacementPlan.Item],
+        newPlacements: [RoutePlacement],
         newWindowIDs: [UUID],
     ) -> [ExternalOpenPlacementPlan.Window] {
-        let existingItemCount = target?.itemCount ?? 0
         var windows: [ExternalOpenPlacementPlan.Window] = []
-        if let target, target.itemCount > 0 {
-            windows.append(.init(
-                windowID: target.windowID,
-                isNewWindow: false,
-                items: Array(items.prefix(target.itemCount)),
-            ))
-        }
-
-        var overflowItems = items.dropFirst(existingItemCount)
-        for windowID in newWindowIDs {
-            let chunk = Array(overflowItems.prefix(ContentTabConstants.maxTabs))
-            windows.append(.init(windowID: windowID, isNewWindow: true, items: chunk))
-            overflowItems = overflowItems.dropFirst(chunk.count)
+        for requestItem in request.items {
+            let matchedPlacement = routeMatch(for: requestItem.anchor, state: state)
+            let newPlacementIndex = newPlacements.firstIndex(where: { $0.anchor == requestItem.anchor })
+            guard matchedPlacement != nil || newPlacementIndex != nil else { continue }
+            let windowID: UUID
+            let tabID: ContentTabID
+            let requiresReservation: Bool
+            let requiresPinnedAnchorReturn: Bool
+            if let matchedPlacement {
+                windowID = matchedPlacement.windowID
+                tabID = matchedPlacement.tabID
+                requiresReservation = false
+                requiresPinnedAnchorReturn = matchedPlacement.requiresPinnedAnchorReturn
+            } else if let newPlacementIndex {
+                tabID = newPlacements[newPlacementIndex].tabID
+                if newPlacementIndex < (target?.itemCount ?? 0), let target {
+                    windowID = target.windowID
+                } else {
+                    let overflowIndex = newPlacementIndex - (target?.itemCount ?? 0)
+                    windowID = newWindowIDs[overflowIndex / ContentTabConstants.maxTabs]
+                }
+                requiresReservation = !windows.flatMap(\.items).contains(where: { $0.tabID == tabID })
+                requiresPinnedAnchorReturn = false
+            } else {
+                continue
+            }
+            let item = ExternalOpenPlacementPlan.Item(
+                itemID: requestItem.itemID,
+                tabID: tabID,
+                anchor: requestItem.anchor,
+                pendingSelectEntryID: requestItem.pendingSelectEntryID,
+                requiresReservation: requiresReservation,
+                requiresPinnedAnchorReturn: requiresPinnedAnchorReturn,
+            )
+            if let index = windows.firstIndex(where: { $0.windowID == windowID }) {
+                windows[index] = .init(
+                    windowID: windows[index].windowID,
+                    isNewWindow: windows[index].isNewWindow,
+                    items: windows[index].items + [item],
+                )
+            } else {
+                windows.append(.init(
+                    windowID: windowID,
+                    isNewWindow: newWindowIDs.contains(windowID),
+                    items: [item],
+                ))
+            }
         }
         return windows
     }
 }
 
 enum ExternalOpenPlacementApplication {
+    struct PinnedAnchorReturn: Equatable {
+        let tabID: ContentTabID
+        let pendingSelectEntryID: String?
+    }
+
     struct ExistingWindowActivation {
         let windowID: WindowManagerState.WindowID
         let tabIDs: [ContentTabID]
         let activeTabID: ContentTabID
+        let pinnedAnchorReturns: [PinnedAnchorReturn]
     }
 
     struct Result {
@@ -235,46 +462,35 @@ enum ExternalOpenPlacementApplication {
     static func apply(
         _ plan: ExternalOpenPlacementPlan,
         reservationsByItemID: [UUID: ExternalContentTabReservation],
-        to windows: IdentifiedArrayOf<WindowSessionFeature.State>,
+        to state: WindowManagerState,
     ) -> Result? {
-        let plannedItems = plan.windows.flatMap(\.items)
-        guard plannedItems.count == reservationsByItemID.count,
-              Set(plannedItems.map(\.itemID)) == Set(reservationsByItemID.keys)
-        else { return nil }
+        guard reservationsAreValid(for: plan, reservationsByItemID: reservationsByItemID) else { return nil }
 
-        var updatedWindows = windows
+        var updatedWindows = state.windows
         var newWindowIDs: [WindowManagerState.WindowID] = []
         var existingWindowActivations: [ExistingWindowActivation] = []
         for placementWindow in plan.windows {
-            let reservations = placementWindow.items.compactMap { item -> ExternalContentTabReservation? in
-                guard let reservation = reservationsByItemID[item.itemID],
-                      reservation.id == item.tabID
-                else { return nil }
-                return reservation
+            guard !state.closingWindowIDs.contains(placementWindow.windowID),
+                  !state.pendingWindowOpenIDs.contains(placementWindow.windowID)
+            else { return nil }
+            let reservations = placementWindow.items.compactMap { item in
+                item.requiresReservation ? reservationsByItemID[item.itemID] : nil
             }
-            guard reservations.count == placementWindow.items.count else { return nil }
 
             if placementWindow.isNewWindow {
-                guard updatedWindows[id: placementWindow.windowID] == nil,
-                      let window = FileManagerWindowFeature.State.makeExternalInitial(
-                          reservations: reservations,
-                          windowID: placementWindow.windowID,
-                      )
-                else { return nil }
-                updatedWindows.append(.init(id: placementWindow.windowID, window: window))
+                guard appendNewWindow(
+                    placementWindow,
+                    reservations: reservations,
+                    to: &updatedWindows,
+                ) else { return nil }
                 newWindowIDs.append(placementWindow.windowID)
             } else {
-                guard var window = updatedWindows[id: placementWindow.windowID]?.window,
-                      window.pendingSelectedContentTabClose == nil,
-                      window.reserveExternalContentTabs(reservations)
-                else { return nil }
-                updatedWindows[id: placementWindow.windowID]?.window = window
-                guard let activeReservation = reservations.last else { return nil }
-                existingWindowActivations.append(.init(
-                    windowID: placementWindow.windowID,
-                    tabIDs: reservations.map(\.id),
-                    activeTabID: activeReservation.id,
-                ))
+                guard let activation = updateExistingWindow(
+                    placementWindow,
+                    reservations: reservations,
+                    in: &updatedWindows,
+                ) else { return nil }
+                existingWindowActivations.append(activation)
             }
         }
         return Result(
@@ -289,7 +505,10 @@ enum ExternalOpenPlacementApplication {
         state: WindowManagerState,
         excluding excludedWindowIDs: Set<WindowManagerState.WindowID> = [],
     ) -> WindowManagerState.WindowID? {
-        for placementWindow in plan.windows.reversed() {
+        for item in plan.orderedItems.reversed() {
+            guard let placementWindow = plan.windows.first(where: { window in
+                window.items.contains(where: { $0.itemID == item.itemID })
+            }) else { continue }
             guard !excludedWindowIDs.contains(placementWindow.windowID),
                   !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
@@ -300,13 +519,91 @@ enum ExternalOpenPlacementApplication {
             {
                 continue
             }
-            if placementWindow.items.reversed().contains(where: {
-                window.contentTabs.tabs[id: $0.tabID] != nil
-            }) {
+            if window.contentTabs.tabs[id: item.tabID] != nil {
                 return placementWindow.windowID
             }
         }
         return nil
+    }
+
+    private static func reservationsAreValid(
+        for plan: ExternalOpenPlacementPlan,
+        reservationsByItemID: [UUID: ExternalContentTabReservation],
+    ) -> Bool {
+        let reservationItems = plan.windows.flatMap(\.items).filter(\.requiresReservation)
+        guard reservationItems.count == reservationsByItemID.count,
+              Set(reservationItems.map(\.itemID)) == Set(reservationsByItemID.keys)
+        else { return false }
+        return reservationItems.allSatisfy { item in
+            reservationsByItemID[item.itemID] == .init(
+                id: item.tabID,
+                anchor: item.anchor,
+                pendingSelectEntryID: plan.orderedItems.last(where: { $0.tabID == item.tabID })?.pendingSelectEntryID,
+            )
+        }
+    }
+
+    private static func appendNewWindow(
+        _ placement: ExternalOpenPlacementPlan.Window,
+        reservations: [ExternalContentTabReservation],
+        to windows: inout IdentifiedArrayOf<WindowSessionFeature.State>,
+    ) -> Bool {
+        guard windows[id: placement.windowID] == nil,
+              let window = FileManagerWindowFeature.State.makeExternalInitial(
+                  reservations: reservations,
+                  windowID: placement.windowID,
+              )
+        else { return false }
+        windows.append(.init(id: placement.windowID, window: window))
+        return true
+    }
+
+    private static func updateExistingWindow(
+        _ placement: ExternalOpenPlacementPlan.Window,
+        reservations: [ExternalContentTabReservation],
+        in windows: inout IdentifiedArrayOf<WindowSessionFeature.State>,
+    ) -> ExistingWindowActivation? {
+        guard var window = windows[id: placement.windowID]?.window,
+              window.pendingSelectedContentTabClose == nil,
+              placement.items.filter({ !$0.requiresReservation }).allSatisfy({ item in
+                  guard let tab = window.contentTabs.tabs[id: item.tabID] else { return false }
+                  if item.requiresPinnedAnchorReturn {
+                      guard tab.isPinned,
+                            let record = window.contentTabs.pinnedRecords[item.tabID]
+                      else { return false }
+                      return record.isPageAnchorCompatible && record.anchor == item.anchor
+                  }
+                  return tab.anchor == item.anchor
+              }),
+              reservations.isEmpty || window.reserveExternalContentTabs(reservations)
+        else { return nil }
+        for item in placement.items where !item.requiresPinnedAnchorReturn {
+            guard window.applyExternalPendingSelection(
+                item.pendingSelectEntryID,
+                tabID: item.tabID,
+                anchor: item.anchor,
+            ) else { return nil }
+        }
+        windows[id: placement.windowID]?.window = window
+        guard let activeItem = placement.items.last else { return nil }
+        var pinnedAnchorReturns: [PinnedAnchorReturn] = []
+        for item in placement.items where item.requiresPinnedAnchorReturn {
+            let pinnedReturn = PinnedAnchorReturn(
+                tabID: item.tabID,
+                pendingSelectEntryID: placement.items.last(where: { $0.tabID == item.tabID })?.pendingSelectEntryID,
+            )
+            if let index = pinnedAnchorReturns.firstIndex(where: { $0.tabID == item.tabID }) {
+                pinnedAnchorReturns[index] = pinnedReturn
+            } else {
+                pinnedAnchorReturns.append(pinnedReturn)
+            }
+        }
+        return .init(
+            windowID: placement.windowID,
+            tabIDs: reservations.map(\.id),
+            activeTabID: activeItem.tabID,
+            pinnedAnchorReturns: pinnedAnchorReturns,
+        )
     }
 }
 

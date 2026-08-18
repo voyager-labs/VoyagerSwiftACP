@@ -32,8 +32,20 @@ extension WindowManagerFeature {
         guard let application = ExternalOpenPlacementApplication.apply(
             plan,
             reservationsByItemID: reservationsByItemID,
-            to: state.windows,
+            to: state,
         ) else {
+            if let request = plan.request?.retryRequest,
+               case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+                   request,
+                   state: state,
+                   generateUUID: uuid(),
+               )
+            {
+                return .send(.placement(.apply(
+                    plan: replacementPlan,
+                    reservationsByItemID: replacementPlan.reservationsByItemID,
+                )))
+            }
             state.authorizedExternalOpenBatchID = nil
             return .send(.delegate(.externalOpenApplyCompleted(.init(
                 batchID: plan.batchID,
@@ -51,19 +63,7 @@ extension WindowManagerFeature {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
 
-        var effects = externalOpenActivationEffects(application.existingWindowActivations)
-        effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
-            [
-                appPreferencesEffect(for: windowID, preferences: state.appPreferences),
-                Effect.run { [fileManagerWindowClient] _ in
-                    await fileManagerWindowClient.open(windowID)
-                },
-                Effect.send(.windows(.element(
-                    id: windowID,
-                    action: .window(.resyncActiveCollectionNavigation),
-                ))),
-            ]
-        })
+        var effects = externalOpenCommitEffects(application, state: state)
         if state.defaultWindowBootstrapWindowIDs.isEmpty,
            state.defaultWindowBootstrapRequestID != nil
         {
@@ -75,6 +75,25 @@ extension WindowManagerFeature {
             result: .success(plan),
         )))))
         return .concatenate(effects)
+    }
+
+    private func externalOpenCommitEffects(
+        _ application: ExternalOpenPlacementApplication.Result,
+        state: State,
+    ) -> [Effect<Action>] {
+        externalOpenActivationEffects(application.existingWindowActivations)
+            + application.newWindowIDs.flatMap { windowID in
+                [
+                    appPreferencesEffect(for: windowID, preferences: state.appPreferences),
+                    Effect.run { [fileManagerWindowClient] _ in
+                        await fileManagerWindowClient.open(windowID)
+                    },
+                    Effect.send(.windows(.element(
+                        id: windowID,
+                        action: .window(.resyncActiveCollectionNavigation),
+                    ))),
+                ]
+            }
     }
 
     func routeFindCommand(_ state: State) -> Effect<Action> {
