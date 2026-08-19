@@ -246,17 +246,8 @@ struct WindowManagerFeature {
                     return retryExternalOpenActivation(after: attempt, state: &state)
 
                 case .becameKey:
-                    let survivingWindowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
-                        for: attempt.plan,
-                        state: state,
-                        excluding: attempt.excludedWindowIDs,
-                    )
-                    guard survivingWindowID == attempt.windowID else {
-                        return retryExternalOpenActivation(after: attempt, state: &state)
-                    }
-                    state.authorizedExternalOpenBatchID = nil
-                    state.externalOpenActivationAttempt = nil
-                    return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
+                    state.externalOpenActivationBecameKey = true
+                    return completeExternalOpenActivationIfSettled(state: &state)
                 }
 
             case let .contentTabMoveRequest(request):
@@ -453,6 +444,10 @@ struct WindowManagerFeature {
 
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
+
+            case .windows(.element(id: _, action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged)))),
+                 .windows(.element(id: _, action: .window(.navigation(.internal(.collectionFileLoaded))))):
+                return completeExternalOpenActivationIfSettled(state: &state)
 
             case let .windows(.element(id: _, action: action)):
                 switch action {

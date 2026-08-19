@@ -27,6 +27,7 @@ struct ExternalOpenPlacementRequest: Equatable {
     let items: [Item]
     let preferredWindowIDs: [WindowManagerState.WindowID]
     let retryCount: Int
+    let excludedTabIDs: Set<ContentTabID>
 
     var itemIDs: [UUID] {
         items.map(\.itemID)
@@ -43,20 +44,27 @@ struct ExternalOpenPlacementRequest: Equatable {
         items: [Item],
         preferredWindowIDs: [WindowManagerState.WindowID],
         retryCount: Int = 0,
+        excludedTabIDs: Set<ContentTabID> = [],
     ) {
         self.batchID = batchID
         self.items = items
         self.preferredWindowIDs = preferredWindowIDs
         self.retryCount = retryCount
+        self.excludedTabIDs = excludedTabIDs
     }
 
     var retryRequest: Self? {
+        retryExcluding([])
+    }
+
+    func retryExcluding(_ tabIDs: Set<ContentTabID>) -> Self? {
         guard retryCount == 0 else { return nil }
         return .init(
             batchID: batchID,
             items: items,
             preferredWindowIDs: preferredWindowIDs,
             retryCount: 1,
+            excludedTabIDs: excludedTabIDs.union(tabIDs),
         )
     }
 }
@@ -168,11 +176,13 @@ enum ExternalOpenPlacementPlanner {
         if let duplicateItemID = firstDuplicate(in: request.itemIDs) {
             return .failure(.duplicateItemID(duplicateItemID))
         }
-        guard !request.itemIDs.isEmpty else {
-            return .success(.init(batchID: request.batchID, windows: [], request: request))
-        }
+        guard !request.itemIDs.isEmpty else { return emptyPlan(request) }
 
-        let routeAssignments = routeAssignments(for: request.items, state: state)
+        let routeAssignments = routeAssignments(
+            for: request.items,
+            state: state,
+            excludedTabIDs: request.excludedTabIDs,
+        )
         let uniqueNewItems = firstItemsWithoutRouteMatch(request.items, routeAssignments: routeAssignments)
         let targetResult = existingTarget(
             for: request,
@@ -180,7 +190,7 @@ enum ExternalOpenPlacementPlanner {
             state: state,
         )
         guard case let .success(target) = targetResult else {
-            return targetResult.map { _ in .init(batchID: request.batchID, windows: [], request: request) }
+            return failureEmptyPlan(targetResult, batchID: request.batchID, request: request)
         }
 
         var allocatedRawIDs = existingRawIDs(in: state)
@@ -190,7 +200,7 @@ enum ExternalOpenPlacementPlanner {
             allocatedRawIDs: &allocatedRawIDs,
         )
         guard case let .success(newPlacements) = placementsResult else {
-            return placementsResult.map { _ in .init(batchID: request.batchID, windows: [], request: request) }
+            return failureEmptyPlan(placementsResult, batchID: request.batchID, request: request)
         }
 
         let existingItemCount = target?.itemCount ?? 0
@@ -216,6 +226,20 @@ enum ExternalOpenPlacementPlanner {
             ),
             request: request,
         ))
+    }
+
+    private static func emptyPlan(
+        _ request: ExternalOpenPlacementRequest,
+    ) -> Result<ExternalOpenPlacementPlan, ExternalOpenPlacementFailure> {
+        .success(.init(batchID: request.batchID, windows: [], request: request))
+    }
+
+    private static func failureEmptyPlan(
+        _ result: Result<some Any, ExternalOpenPlacementFailure>,
+        batchID: UUID,
+        request: ExternalOpenPlacementRequest,
+    ) -> Result<ExternalOpenPlacementPlan, ExternalOpenPlacementFailure> {
+        result.map { _ in .init(batchID: batchID, windows: [], request: request) }
     }
 
     private static func firstDuplicate(in itemIDs: [UUID]) -> UUID? {
@@ -335,9 +359,10 @@ enum ExternalOpenPlacementPlanner {
     private static func routeAssignments(
         for items: [ExternalOpenPlacementRequest.Item],
         state: WindowManagerState,
+        excludedTabIDs: Set<ContentTabID>,
     ) -> [RouteAssignment] {
         var assignments: [RouteAssignment] = []
-        var assignedTabIDs = Set<ContentTabID>()
+        var assignedTabIDs = excludedTabIDs
         for item in items where !assignments.contains(where: { $0.anchor == item.anchor }) {
             let match = routeMatch(for: item.anchor, state: state, excludingTabIDs: assignedTabIDs)
             if let match { assignedTabIDs.insert(match.tabID) }

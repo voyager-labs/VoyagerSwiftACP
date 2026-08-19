@@ -10073,6 +10073,59 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
+    /// pinned Collection 복귀가 아직 pending이면 becameKey만으로 activation을 끝내지 않는다.
+    /// - 검증 내용: pendingCollectionOpenRequest가 있으면 batch authorization이 유지됨
+    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection, open request pending
+    /// - 기대 결과: becameKey 이후에도 activationCompleted가 없고 attempt가 남음
+    func testPlacementActivationWaitsForPendingPinnedCollectionReturn() async {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: true)
+        let store = TestStore(initialState: fixture.state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: native open 이후 window lifecycle은 기존 activation owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(fixture.plan)))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
+        XCTAssertNotNil(store.state.externalOpenActivationAttempt)
+        XCTAssertTrue(store.state.externalOpenActivationBecameKey)
+    }
+
+    /// pinned Collection 복귀가 실패해 runtime이 그대로면 배치를 한 번 재계획한다.
+    /// - 검증 내용: pending이 없고 runtime != durable collection이면 retry apply가 신규 reservation을 만듦
+    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection, pending 없음
+    /// - 기대 결과: retryCount 1 신규 tab reservation
+    func testPlacementActivationReplansWhenPinnedCollectionReturnFailed() async {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let store = TestStore(initialState: fixture.state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(fixture.plan)))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let windowID = fixture.plan.windows[0].windowID
+        let tabs = store.state.windows[id: windowID]?.window.contentTabs.tabs
+        XCTAssertGreaterThan(tabs?.count ?? 0, 1)
+        XCTAssertEqual(tabs?.ids.contains(fixture.tabID), true)
+        XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
+    }
+
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
     func testWindowLifecycleMaintainsRuntimeMRUIndependentlyFromFocus() async {
         let firstID = UUID()
@@ -12575,6 +12628,80 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             activeTabID: tabs.first?.id,
         )
         return WindowSessionState(id: id, window: window)
+    }
+
+    private struct PinnedCollectionActivationFixture {
+        let plan: ExternalOpenPlacementPlan
+        let state: WindowManagerFeature.State
+        let tabID: ContentTabID
+    }
+
+    private static func makePinnedCollectionActivationFixture(
+        pendingOpen: Bool,
+    ) -> PinnedCollectionActivationFixture {
+        let batchID = UUID()
+        let windowID = UUID()
+        let itemID = UUID()
+        let tabID = ContentTabID(rawValue: "pinned-collection-return")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/runtime-wait.voycoll")
+        let durableURL = URL(fileURLWithPath: "/tmp/durable-wait.voycoll")
+        let runtimeAnchor = ContentTabPageAnchor.collectionFile(url: runtimeURL)
+        let durableAnchor = ContentTabPageAnchor.collectionFile(url: durableURL)
+        var window = FileManagerWindowFeature.State.makeInitial(path: "/tmp")
+        window.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: runtimeAnchor,
+                    isPinned: true,
+                ),
+            ],
+            activeTabID: tabID,
+            pinnedRecords: [
+                tabID: .init(
+                    id: tabID.rawValue,
+                    page: .collection,
+                    anchor: durableAnchor,
+                    title: "Durable Collection",
+                    iconName: "rectangle.stack",
+                    pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                ),
+            ],
+        )
+        if pendingOpen {
+            window.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+                id: UUID(),
+                url: durableURL,
+                sourceRoute: .folder("/tmp"),
+                prePrepareBackHistory: [],
+                prePrepareForwardHistory: [],
+            )
+        }
+        var state = WindowManagerFeature.State()
+        state.windows = [.init(id: windowID, window: window)]
+        state.authorizedExternalOpenBatchID = batchID
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [.init(itemID: itemID, anchor: durableAnchor, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: itemID,
+                    tabID: tabID,
+                    anchor: durableAnchor,
+                    requiresReservation: false,
+                    requiresPinnedAnchorReturn: true,
+                )],
+            )],
+            request: request,
+        )
+        return .init(plan: plan, state: state, tabID: tabID)
     }
 
     private static func makeRouteWindow(
