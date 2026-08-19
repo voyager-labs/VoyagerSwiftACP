@@ -129,14 +129,14 @@ struct RuntimeAdapterCatalogTechnicalTests {
 
             capabilitySnapshot: .allSupported,
 
-            contextPolicy: RuntimeContextPolicy(
+            storedContext: RuntimeStoredContext(contextPolicy: RuntimeContextPolicy(
                 branchReference: "feat/voy-696",
 
                 authorizationGeneration: 1,
 
                 localCorrelation: "local-a",
 
-            ),
+            )),
 
             projection: projection,
 
@@ -310,7 +310,7 @@ struct RuntimeAdapterCatalogTechnicalTests {
 
             capabilitySnapshot: .allSupported,
 
-            contextPolicy: makeContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: makeContext()),
 
             projection: .running,
 
