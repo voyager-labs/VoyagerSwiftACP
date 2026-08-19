@@ -76,8 +76,6 @@ struct AppLifecycleFeature {
     var notificationCenterClient
     @Dependency(\.deviceIdentityClient)
     var deviceIdentityClient
-    @Dependency(\.productAnalyticsClient)
-    var productAnalyticsClient
     @Dependency(\.appTechnicalSentryClient)
     var appTechnicalSentryClient
     @Dependency(\.entryCoreEndpointClient)
@@ -114,7 +112,6 @@ struct AppLifecycleFeature {
                 }
                 let appVersion = AppVersionInfo.shortVersion
                 let deviceIdentityClient = deviceIdentityClient
-                let productAnalyticsClient = productAnalyticsClient
                 let appTechnicalSentryClient = appTechnicalSentryClient
                 appTechnicalSentryClient.startIfNeeded(appVersion, nil, "app")
                 let identityEffect = Effect<Action>.run { _ in
@@ -124,18 +121,10 @@ struct AppLifecycleFeature {
                         return normalized.isEmpty ? nil : normalized
                     }.value
 
-                    await withTaskGroup(of: Void.self) { group in
-                        group.addTask {
-                            await productAnalyticsClient.setDeviceIdentity(userId)
+                    if let userId {
+                        await MainActor.run {
+                            appTechnicalSentryClient.updateUser(userId)
                         }
-                        if let userId {
-                            group.addTask {
-                                await MainActor.run {
-                                    appTechnicalSentryClient.updateUser(userId)
-                                }
-                            }
-                        }
-                        await group.waitForAll()
                     }
                 }
                 return .merge(

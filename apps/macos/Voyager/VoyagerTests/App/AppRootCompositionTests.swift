@@ -663,7 +663,7 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.launch(.willFinishLaunching))
 
         XCTAssertEqual(deviceIdentityCalls.value, 1)
-        XCTAssertEqual(analyticsIdentities.value, ["test-device-id"])
+        XCTAssertTrue(analyticsIdentities.value.isEmpty)
         await store.finish()
     }
 
@@ -706,18 +706,15 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    func testMalformedIdentityBecomesUnavailableForAnalytics() async {
-        let analyticsIdentities = LockIsolated<[String?]>([])
+    func testMalformedIdentityDoesNotUpdateSentry() async {
+        let sentryUserUpdates = LockIsolated<[String]>([])
         let store = TestStore(initialState: AppLifecycleFeature.State()) {
             AppLifecycleFeature()
         } withDependencies: {
             $0.deviceIdentityClient = DeviceIdentityClient(deviceId: { " \n\t" })
-            $0.productAnalyticsClient = ProductAnalyticsClient(
-                capture: { _ in },
-                setDeviceIdentity: { identity in
-                    analyticsIdentities.withValue { $0.append(identity) }
-                },
-            )
+            $0.appTechnicalSentryClient.updateUser = { identity in
+                sentryUserUpdates.withValue { $0.append(identity) }
+            }
             $0.notificationCenterClient.notifications = { _, _ in
                 AsyncStream { $0.finish() }
             }
@@ -728,19 +725,16 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.launch(.willFinishLaunching))
         await store.finish()
 
-        XCTAssertEqual(analyticsIdentities.value, [nil])
+        XCTAssertTrue(sentryUserUpdates.value.isEmpty)
     }
 
     func testLaunchCallerReturnsWhileIdentityAcquisitionIsBlocked() async {
         let deviceIdentityCalls = LockIsolated(0)
         let sentryIdentities = LockIsolated<[String?]>([])
         let sentryUserUpdates = LockIsolated<[String]>([])
-        let analyticsIdentities = LockIsolated<[String?]>([])
         let identityStarted = expectation(description: "Identity acquisition starts")
         let sentryUserUpdated = expectation(description: "Sentry user updates independently")
-        let fanOutCompleted = expectation(description: "Identity fan-out completes")
         let identityRelease = DispatchSemaphore(value: 0)
-        let analyticsRelease = AsyncStream<Void>.makeStream()
         let store = Store(initialState: AppLifecycleFeature.State()) {
             AppLifecycleFeature()
         } withDependencies: {
@@ -750,16 +744,6 @@ final class AppRootCompositionTests: XCTestCase {
                 identityRelease.wait()
                 return " \n test-device-id \t"
             })
-            $0.productAnalyticsClient = ProductAnalyticsClient(
-                capture: { _ in },
-                setDeviceIdentity: { identity in
-                    analyticsIdentities.withValue { $0.append(identity) }
-                    for await _ in analyticsRelease.stream {
-                        break
-                    }
-                    fanOutCompleted.fulfill()
-                },
-            )
             $0.appTechnicalSentryClient = AppTechnicalSentryClient(
                 startIfNeeded: { _, userId, _ in
                     sentryIdentities.withValue { $0.append(userId) }
@@ -782,18 +766,11 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertLessThan(launchElapsed, .seconds(1))
         XCTAssertEqual(deviceIdentityCalls.value, 1)
         XCTAssertEqual(sentryIdentities.value, [nil])
-        XCTAssertTrue(analyticsIdentities.value.isEmpty)
 
         identityRelease.signal()
         await fulfillment(of: [sentryUserUpdated], timeout: 1)
         XCTAssertEqual(sentryIdentities.value, [nil])
         XCTAssertEqual(sentryUserUpdates.value, ["test-device-id"])
-
-        analyticsRelease.continuation.yield(())
-        analyticsRelease.continuation.finish()
-        await fulfillment(of: [fanOutCompleted], timeout: 1)
-
-        XCTAssertEqual(analyticsIdentities.value, ["test-device-id"])
     }
 
     func testLaunchCallerReturnsAfterSchedulingIdentityAcquisition() async {

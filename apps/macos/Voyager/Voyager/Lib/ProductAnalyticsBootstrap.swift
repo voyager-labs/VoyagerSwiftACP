@@ -5,8 +5,9 @@ private actor ProductAnalyticsRuntime {
     private let provider: PostHogProductAnalyticsProvider
     private var cachedDeviceIdentity: String?
 
-    init(provider: PostHogProductAnalyticsProvider) {
+    init(provider: PostHogProductAnalyticsProvider, deviceIdentity: String) {
         self.provider = provider
+        cachedDeviceIdentity = deviceIdentity
     }
 
     func capture(_ request: ProductAnalyticsCaptureRequest) async {
@@ -28,12 +29,17 @@ public enum ProductAnalyticsBootstrap {
         let host: String
     }
 
+    static let installationIDKey = "ProductAnalytics.installationID"
+
     @MainActor
     public static func makeClient(
         environment: [String: String]? = nil,
         urlSessionConfiguration: URLSessionConfiguration? = nil,
         flushAt: Int = 20,
+        userDefaults: UserDefaults = .standard,
+        makeInstallationID: @escaping @Sendable () -> UUID = UUID.init,
     ) -> ProductAnalyticsClient {
+        let installationID = persistedInstallationID(in: userDefaults, makeInstallationID: makeInstallationID)
         guard let configuration = configuration(environment: environment) else {
             return .disabled
         }
@@ -45,7 +51,7 @@ public enum ProductAnalyticsBootstrap {
         ) else {
             return .disabled
         }
-        let runtime = ProductAnalyticsRuntime(provider: provider)
+        let runtime = ProductAnalyticsRuntime(provider: provider, deviceIdentity: installationID)
         return ProductAnalyticsClient(capture: { request in
             Task { await runtime.capture(request) }
         }, setDeviceIdentity: { deviceID in
@@ -53,6 +59,18 @@ public enum ProductAnalyticsBootstrap {
         }, deviceIdentity: {
             await runtime.deviceIdentity()
         })
+    }
+
+    static func persistedInstallationID(
+        in userDefaults: UserDefaults,
+        makeInstallationID: @escaping @Sendable () -> UUID = UUID.init,
+    ) -> String {
+        if let value = userDefaults.string(forKey: installationIDKey), !value.isEmpty {
+            return value
+        }
+        let value = makeInstallationID().uuidString
+        userDefaults.set(value, forKey: installationIDKey)
+        return value
     }
 
     static func configuration(environment: [String: String]?) -> Configuration? {
