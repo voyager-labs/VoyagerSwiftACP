@@ -9530,9 +9530,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(plan.windows.first?.items.first?.requiresReservation, false)
     }
 
-    /// close, teardown 또는 window disappear 중인 exact-route tab은 apply와 retry planning 모두에서 재사용하지 않는다.
-    /// - 검증 내용: stale apply 거부와 lifecycle-busy window 제외 후 신규 identity 재계획
-    /// - 사전 조건: exact-route tab이 planning 뒤 pending close, pending teardown 또는 window closing 상태로 전환됨
+    /// close, teardown, disappear, 또는 content-tab move 참여 중인 exact-route tab은 apply와 retry planning 모두에서 재사용하지 않는다.
+    /// - 검증 내용: stale apply 거부와 lifecycle/move-busy window 제외 후 신규 identity 재계획
+    /// - 사전 조건: exact-route tab이 planning 뒤 pending close, teardown, closing, 또는 move participant 상태로 전환됨
     /// - 기대 결과: 기존 plan application은 실패하고 retry plan은 새 window/tab을 예약함
     func testPlacementRejectsTabsPendingCloseOrTeardownAndReplansNewIdentity() throws {
         let windowID = UUID()
@@ -9561,8 +9561,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         var closingState = state
         closingState.windows[id: windowID]?.window.isClosing = true
+        var moveState = state
+        moveState.windows[id: windowID]?.window.contentTabMoveParticipantRequestID = UUID()
 
-        for busyState in [closeState, teardownState, closingState] {
+        for busyState in [closeState, teardownState, closingState, moveState] {
             XCTAssertNil(ExternalOpenPlacementApplication.apply(
                 initialPlan,
                 reservationsByItemID: [:],

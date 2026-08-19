@@ -643,6 +643,7 @@ private extension FileManagerWindowState {
             && pendingSelectedContentTabClose == nil
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
+            && contentTabMoveParticipantRequestID == nil
     }
 
     func stillMatchesExternalOpenItem(_ item: ExternalOpenPlacementPlan.Item) -> Bool {
