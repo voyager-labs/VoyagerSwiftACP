@@ -9202,6 +9202,65 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         ])
     }
 
+    /// 하나의 pinned tab이 서로 다른 runtime/durable route 요청에 중복 배정되지 않는다.
+    /// - 검증 내용: durable route 재사용과 runtime route 신규 reservation의 서로 다른 tab identity
+    /// - 사전 조건: pinned tab의 runtime route B와 durable anchor A가 같은 batch에서 A-B 순서로 요청됨
+    /// - 기대 결과: A는 pinned tab으로 복귀하고 B는 새 tab을 생성해 마지막 요청 B가 유지됨
+    func testPlacementDoesNotAssignPinnedTabToDifferentRoutesInSameBatch() throws {
+        let windowID = UUID()
+        let pinnedTabID = ContentTabID(rawValue: "dual-route-pinned")
+        let durableAnchor = ContentTabPageAnchor.directory(path: "/tmp/durable-a")
+        let runtimeAnchor = ContentTabPageAnchor.directory(path: "/tmp/runtime-b")
+        let generatedTabID = UUID()
+        var window = Self.makeRouteWindow(
+            id: windowID,
+            tabs: [(pinnedTabID, runtimeAnchor)],
+            activeTabID: pinnedTabID,
+        )
+        window.window.contentTabs.tabs[id: pinnedTabID]?.isPinned = true
+        window.window.contentTabs.pinnedRecords[pinnedTabID] = .init(
+            id: pinnedTabID.rawValue,
+            page: .directory,
+            anchor: durableAnchor,
+            title: "Durable A",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [window]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [
+                .init(itemID: UUID(), anchor: durableAnchor, pendingSelectEntryID: nil),
+                .init(itemID: UUID(), anchor: runtimeAnchor, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: generatedTabID,
+        )
+        let plan = try result.get()
+        let application = try XCTUnwrap(ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: plan.reservationsByItemID,
+            to: state,
+        ))
+        let appliedWindow = try XCTUnwrap(application.windows[id: windowID]?.window)
+
+        XCTAssertEqual(plan.orderedItems[0].tabID, pinnedTabID)
+        XCTAssertTrue(plan.orderedItems[0].requiresPinnedAnchorReturn)
+        XCTAssertEqual(plan.orderedItems[1].tabID, ContentTabID(rawValue: generatedTabID.uuidString))
+        XCTAssertTrue(plan.orderedItems[1].requiresReservation)
+        XCTAssertEqual(appliedWindow.contentTabs.tabs.count, 2)
+        XCTAssertEqual(
+            application.existingWindowActivations.first?.activeTabID,
+            ContentTabID(rawValue: generatedTabID.uuidString),
+        )
+    }
+
     /// 저장되지 않은 runtime Collection이 있는 pinned tab은 durable 외부 열기 재사용 후보에서 제외된다.
     /// - 검증 내용: Collection 및 Directory durable route에서 dirty pinned tab identity 미재사용과 신규 reservation 계획
     /// - 사전 조건: pinned tab의 runtime Collection에 저장되지 않은 변경이 있고 durable anchor는 외부 요청과 일치함

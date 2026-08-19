@@ -142,6 +142,8 @@ enum ExternalOpenPlacementFailure: Error, Equatable {
 }
 
 enum ExternalOpenPlacementPlanner {
+    private typealias RouteAssignment = (anchor: ContentTabPageAnchor, match: RouteMatch?)
+
     private struct ExistingTarget {
         let windowID: WindowManagerState.WindowID
         let itemCount: Int
@@ -170,7 +172,8 @@ enum ExternalOpenPlacementPlanner {
             return .success(.init(batchID: request.batchID, windows: [], request: request))
         }
 
-        let uniqueNewItems = firstItemsWithoutRouteMatch(request.items, state: state)
+        let routeAssignments = routeAssignments(for: request.items, state: state)
+        let uniqueNewItems = firstItemsWithoutRouteMatch(request.items, routeAssignments: routeAssignments)
         let targetResult = existingTarget(
             for: request,
             newItemCount: uniqueNewItems.count,
@@ -192,8 +195,7 @@ enum ExternalOpenPlacementPlanner {
 
         let existingItemCount = target?.itemCount ?? 0
         let overflowItemCount = newPlacements.count - existingItemCount
-        let newWindowCount = (overflowItemCount + ContentTabConstants.maxTabs - 1)
-            / ContentTabConstants.maxTabs
+        let newWindowCount = (overflowItemCount + ContentTabConstants.maxTabs - 1) / ContentTabConstants.maxTabs
         let windowIDsResult = allocateWindowIDs(
             count: newWindowCount,
             generateUUID: generateUUID,
@@ -207,10 +209,10 @@ enum ExternalOpenPlacementPlanner {
             batchID: request.batchID,
             windows: makeWindows(
                 request: request,
-                state: state,
                 target: target,
                 newPlacements: newPlacements,
                 newWindowIDs: newWindowIDs,
+                routeAssignments: routeAssignments,
             ),
             request: request,
         ))
@@ -260,11 +262,11 @@ enum ExternalOpenPlacementPlanner {
 
     private static func firstItemsWithoutRouteMatch(
         _ items: [ExternalOpenPlacementRequest.Item],
-        state: WindowManagerState,
+        routeAssignments: [RouteAssignment],
     ) -> [ExternalOpenPlacementRequest.Item] {
         var anchors: [ContentTabPageAnchor] = []
         return items.filter { item in
-            guard routeMatch(for: item.anchor, state: state) == nil,
+            guard routeAssignments.first(where: { $0.anchor == item.anchor })?.match == nil,
                   !anchors.contains(item.anchor)
             else { return false }
             anchors.append(item.anchor)
@@ -275,6 +277,7 @@ enum ExternalOpenPlacementPlanner {
     private static func runtimeMatch(
         for anchor: ContentTabPageAnchor,
         state: WindowManagerState,
+        excludingTabIDs: Set<ContentTabID>,
     ) -> (WindowManagerState.WindowID, ContentTabID)? {
         let liveWindowIDs = orderedLiveWindowIDs(state: state)
         for activeOnly in [true, false] {
@@ -284,6 +287,7 @@ enum ExternalOpenPlacementPlanner {
                 else { continue }
                 let contentTabs = window.contentTabs
                 for tab in contentTabs.tabs where tab.anchor == anchor {
+                    guard !excludingTabIDs.contains(tab.id) else { continue }
                     if !activeOnly || tab.id == contentTabs.activeTabID {
                         return (windowID, tab.id)
                     }
@@ -296,8 +300,9 @@ enum ExternalOpenPlacementPlanner {
     private static func routeMatch(
         for anchor: ContentTabPageAnchor,
         state: WindowManagerState,
+        excludingTabIDs: Set<ContentTabID>,
     ) -> RouteMatch? {
-        if let runtimeMatch = runtimeMatch(for: anchor, state: state) {
+        if let runtimeMatch = runtimeMatch(for: anchor, state: state, excludingTabIDs: excludingTabIDs) {
             return .init(
                 windowID: runtimeMatch.0,
                 tabID: runtimeMatch.1,
@@ -312,7 +317,8 @@ enum ExternalOpenPlacementPlanner {
                 else { continue }
                 let contentTabs = window.contentTabs
                 for tab in contentTabs.tabs where tab.isPinned {
-                    guard !activeOnly || tab.id == contentTabs.activeTabID,
+                    guard !excludingTabIDs.contains(tab.id),
+                          !activeOnly || tab.id == contentTabs.activeTabID,
                           window.canReturnContentTabToPinnedLocation(tab.id, matching: anchor)
                     else { continue }
                     return .init(
@@ -324,6 +330,20 @@ enum ExternalOpenPlacementPlanner {
             }
         }
         return nil
+    }
+
+    private static func routeAssignments(
+        for items: [ExternalOpenPlacementRequest.Item],
+        state: WindowManagerState,
+    ) -> [RouteAssignment] {
+        var assignments: [RouteAssignment] = []
+        var assignedTabIDs = Set<ContentTabID>()
+        for item in items where !assignments.contains(where: { $0.anchor == item.anchor }) {
+            let match = routeMatch(for: item.anchor, state: state, excludingTabIDs: assignedTabIDs)
+            if let match { assignedTabIDs.insert(match.tabID) }
+            assignments.append((anchor: item.anchor, match: match))
+        }
+        return assignments
     }
 
     private static func orderedLiveWindowIDs(state: WindowManagerState) -> [WindowManagerState.WindowID] {
@@ -387,14 +407,14 @@ enum ExternalOpenPlacementPlanner {
 
     private static func makeWindows(
         request: ExternalOpenPlacementRequest,
-        state: WindowManagerState,
         target: ExistingTarget?,
         newPlacements: [RoutePlacement],
         newWindowIDs: [UUID],
+        routeAssignments: [RouteAssignment],
     ) -> [ExternalOpenPlacementPlan.Window] {
         var windows: [ExternalOpenPlacementPlan.Window] = []
         for requestItem in request.items {
-            let matchedPlacement = routeMatch(for: requestItem.anchor, state: state)
+            let matchedPlacement = routeAssignments.first(where: { $0.anchor == requestItem.anchor })?.match
             let newPlacementIndex = newPlacements.firstIndex(where: { $0.anchor == requestItem.anchor })
             guard matchedPlacement != nil || newPlacementIndex != nil else { continue }
             let windowID: UUID
