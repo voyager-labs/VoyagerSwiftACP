@@ -558,7 +558,13 @@ class CheckCiReferencesTests(unittest.TestCase):
             script_path.write_text(
                 f'CONFIGURATION="${{CONFIGURATION:-{PROD_RELEASE}}}"\n'
             )
-            workflow_path.write_text("on: push\n")
+            workflow_path.write_text(
+                "- name: Build, notarize, package release payload\n"
+                "  env:\n"
+                "    PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ vars.PUBLIC_POSTHOG_PROJECT_TOKEN }}\n"
+                "    PUBLIC_POSTHOG_HOST: ${{ vars.PUBLIC_POSTHOG_HOST }}\n"
+                "- name: Upload artifacts\n"
+            )
             with (
                 mock.patch("scripts.validate_build_matrix.CI_SCRIPT", script_path),
                 mock.patch(
@@ -570,10 +576,24 @@ class CheckCiReferencesTests(unittest.TestCase):
                 check_ci_references(errors)
                 self.assertEqual(errors, [])
 
+    def test_requires_production_posthog_vars_in_build_step(self) -> None:
+        content = Path(".github/workflows/release-macos-prod.yml").read_text()
+        build_step = content.split(
+            "- name: Build, notarize, package release payload", 1
+        )[1]
+        self.assertIn(
+            "PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ vars.PUBLIC_POSTHOG_PROJECT_TOKEN }}",
+            build_step,
+        )
+        self.assertIn(
+            "PUBLIC_POSTHOG_HOST: ${{ vars.PUBLIC_POSTHOG_HOST }}", build_step
+        )
+
 
 class ProductionReleasePostHogTests(unittest.TestCase):
     release_script = Path("scripts/ci/release-macos-prod.sh")
     copy_script = Path("scripts/build/copy-bundled-env-files.sh")
+
     def test_missing_token_fails_before_archive_without_value_leakage(self) -> None:
         result = self._run_release({"PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"})
         self.assertNotEqual(result.returncode, 0)
@@ -849,6 +869,7 @@ class ProductionReleasePostHogTests(unittest.TestCase):
             text=True,
             check=False,
         )
+
 
 class MainFunctionTests(unittest.TestCase):
     """Tests for main()."""
