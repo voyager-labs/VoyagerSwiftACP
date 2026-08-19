@@ -1,6 +1,6 @@
 import type { FC } from "react"
 import { SFSymbol } from "../Foundations/SFSymbol"
-import { LocationShortcuts } from "../Patterns/LocationShortcuts"
+import { LocationShortcuts } from "../Patterns/Sidebar/LocationShortcuts"
 import { SidebarNavItem } from "../UI/Navigation/SidebarNavItem"
 import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../model/types"
 

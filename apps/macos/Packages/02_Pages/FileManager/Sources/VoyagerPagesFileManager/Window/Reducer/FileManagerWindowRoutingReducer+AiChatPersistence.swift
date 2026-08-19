@@ -121,9 +121,9 @@ func refreshAiChatFollowUpFromBackgroundIfNeeded(
     if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
-            snapshot: payload.snapshot,
             backgroundAiChat: backgroundAiChat,
             state: &state,
+            snapshot: payload.snapshot,
             skipsActiveContent: skipsActiveContent,
             skipsActiveInspector: skipsActiveInspector,
         )
@@ -191,9 +191,9 @@ func handleBackgroundAiChatSnapshotPersisted(
     admitFreshAiChatContentForPersistedSnapshotIfNeeded(summary: summary, state: &state)
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
-        snapshot: snapshot,
         backgroundAiChat: backgroundContent.aiChat,
         state: &state,
+        snapshot: snapshot,
     )
     removeBackgroundAiChatOwnerFromContentAliases(
         ownerRemoval,
@@ -216,9 +216,9 @@ func handleBackgroundInspectorAiChatSnapshotPersisted(
     admitFreshAiChatContentForPersistedSnapshotIfNeeded(summary: summary, state: &state)
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
-        snapshot: snapshot,
         backgroundAiChat: inspectorState.aiChat,
         state: &state,
+        snapshot: snapshot,
     )
     removeBackgroundAiChatOwnerFromInspectorAliases(
         ownerRemoval,
@@ -483,9 +483,9 @@ func admitFreshAiChatContentForPersistedSnapshotIfNeeded(
 
 func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     summary: AiChatSessionSummary,
-    snapshot: AiChatSessionSnapshot? = nil,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
+    snapshot: AiChatSessionSnapshot? = nil,
     skipsActiveContent: Bool = false,
     skipsActiveInspector: Bool = false,
 ) {
@@ -494,8 +494,8 @@ func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     {
         state.content.aiChat.applyBackgroundSnapshot(
             summary: summary,
-            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
+            snapshot: snapshot,
         )
         state.syncActiveTabContentState()
     }
@@ -509,8 +509,8 @@ func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         }
         state.tabContentStates[tabID]?.aiChat.applyBackgroundSnapshot(
             summary: summary,
-            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
+            snapshot: snapshot,
         )
     }
 
@@ -519,8 +519,8 @@ func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     {
         state.inspector.aiChat.applyBackgroundSnapshot(
             summary: summary,
-            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
+            snapshot: snapshot,
         )
         state.syncActiveTabInspectorState()
     }
@@ -534,8 +534,8 @@ func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         }
         state.tabInspectorStates[tabID]?.aiChat.applyBackgroundSnapshot(
             summary: summary,
-            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
+            snapshot: snapshot,
         )
     }
 }
@@ -727,8 +727,8 @@ extension AiChatFeature.State {
 
     mutating func applyBackgroundSnapshot(
         summary: AiChatSessionSummary,
-        snapshot: AiChatSessionSnapshot? = nil,
         backgroundAiChat: AiChatFeature.State,
+        snapshot: AiChatSessionSnapshot? = nil,
     ) {
         let mergeResult = sessionList.replaceRowIfNewer(summary)
         guard mergeResult.acceptsRow else { return }

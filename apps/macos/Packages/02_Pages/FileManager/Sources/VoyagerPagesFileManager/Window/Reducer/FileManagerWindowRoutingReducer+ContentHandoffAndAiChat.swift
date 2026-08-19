@@ -198,14 +198,27 @@ func activeTabHandoffEffect(
     state: inout FileManagerWindowState,
     aiConnectionsFileClient: AIConnectionsFileClient,
     skipAiChatCancel: Bool = false,
+    restorePendingCollectionHistory: Bool = false,
 ) -> Effect<FileManagerWindowAction> {
     guard shouldResyncContentNavigation else {
         return .none
+    }
+    let restoreHistoryEffect: Effect<FileManagerWindowAction> = if restorePendingCollectionHistory,
+                                                                   let request = state
+                                                                   .pendingCollectionOpenRequest
+    {
+        .send(.navigation(.internal(.restoreHistory(
+            back: request.prePrepareBackHistory,
+            forward: request.prePrepareForwardHistory,
+        ))))
+    } else {
+        .none
     }
     state.pendingCollectionOpenRequest = nil
     let navigationEffect = resyncContentNavigationEffect(state: state)
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
+        restoreHistoryEffect,
         .merge(
             navigationEffect,
             restartAiChatProviderLoadOnTabRestoreEffect(
@@ -228,12 +241,28 @@ func cancelInFlightContentEffectsOnTabSwitch(
                 ownerID: previousContent.entryViewLayout.entryOperations.loadingCancellationOwnerID,
             ))
         } ?? .none
+    let previousTabContentCancellationEffect: Effect<FileManagerWindowAction> = state.contentTabs.previousActiveTabID
+        .flatMap { previousTabID in
+            state.tabContentStates[previousTabID].map { _ in
+                .merge(
+                    .send(.tabContent(
+                        tabID: previousTabID,
+                        action: .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))),
+                    )),
+                    .send(.tabContent(
+                        tabID: previousTabID,
+                        action: .entryViewLayout(.internal(.cancelCollectionMaterialization)),
+                    )),
+                )
+            }
+        } ?? .none
 
     return .merge(
         .cancel(id: OpenCollectionFileCancelID(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
         loadingCancellationEffect,
+        previousTabContentCancellationEffect,
         state.contentTabs.previousActiveTabID
             .map { .cancel(id: HomeAiChatOpenCancelID(tabID: $0)) }
             ?? .none,
@@ -582,24 +611,18 @@ func routeBackgroundAiChatAction(
         from: aiChatAction,
         backgroundAiChat: backgroundContent.aiChat,
     )
-    let effect = AiChatFeature()
-        .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
-        .map { action in
-            if case let .sessionSnapshotSaved(summary, persistedSnapshot, _, _) = action,
-               let context = finalSnapshotContext,
-               let snapshot = persistedSnapshot ?? makeOffscreenFinalSnapshot(summary: summary, context: context)
-            {
-                return FileManagerWindowAction.backgroundAiChatSnapshotPersisted(snapshot)
-            }
-            return FileManagerWindowAction.backgroundAiChat(action)
-        }
+    let effect = reduceBackgroundAiChatAction(
+        aiChatAction,
+        into: &backgroundContent,
+        finalSnapshotContext: finalSnapshotContext,
+    )
 
     if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
-            snapshot: payload.snapshot,
             backgroundAiChat: backgroundContent.aiChat,
             state: &state,
+            snapshot: payload.snapshot,
         )
     } else if let failedContext = failedAiChatContext(from: aiChatAction) {
         refreshAiChatFailureFromBackgroundIfNeeded(
@@ -623,4 +646,22 @@ func routeBackgroundAiChatAction(
     }
 
     return effect
+}
+
+private func reduceBackgroundAiChatAction(
+    _ aiChatAction: AiChatAction,
+    into backgroundContent: inout FileManagerContentFeature.State,
+    finalSnapshotContext: BackgroundFinalSnapshotContext?,
+) -> Effect<FileManagerWindowAction> {
+    AiChatFeature()
+        .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
+        .map { action in
+            if case let .sessionSnapshotSaved(summary, persistedSnapshot, _, _) = action,
+               let context = finalSnapshotContext,
+               let snapshot = persistedSnapshot ?? makeOffscreenFinalSnapshot(summary: summary, context: context)
+            {
+                return FileManagerWindowAction.backgroundAiChatSnapshotPersisted(snapshot)
+            }
+            return FileManagerWindowAction.backgroundAiChat(action)
+        }
 }

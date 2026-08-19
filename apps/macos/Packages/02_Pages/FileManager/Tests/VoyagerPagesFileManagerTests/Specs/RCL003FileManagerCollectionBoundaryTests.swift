@@ -201,7 +201,13 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
             FileManagerContentSyncReducer()
         }
 
-        await store.send(.externalFileSystemChanged([changedPath]))
+        await store.send(.externalFileSystemChanged([
+            FileChangeGatewayEvent(
+                path: changedPath,
+                flags: UInt32(kFSEventStreamEventFlagItemModified),
+                emittedAt: .distantPast,
+            ),
+        ]))
         await store.receive { action in
             guard case let .collection(.externalPathsChanged(paths)) = action else {
                 return false

@@ -77,6 +77,63 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertFalse(sidebarItems[2].isPinned)
     }
 
+    /// CTM-004-sidebar_projection_content_tabs: pinned location 복귀 가능 여부를 runtime/durable anchor 차이로 투영함
+    /// 이미 durable anchor에 있는 pinned tab과 이탈한 pinned tab의 affordance eligibility를 검증한다.
+    /// - 검증 내용: 동일 anchor는 return disabled, 다른 anchor는 return enabled
+    /// - 사전 조건: 두 pinned Directory tab과 각각의 immutable pinned record
+    /// - 기대 결과: exact tab은 false, divergent tab은 true
+    func testSidebarProjection_enablesPinnedLocationReturnOnlyAfterRuntimeDiverges() {
+        let exactID = ContentTabID(rawValue: "exact")
+        let divergentID = ContentTabID(rawValue: "divergent")
+        let pinnedAt = Date(timeIntervalSince1970: 443)
+        let state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: exactID,
+                    page: .directory,
+                    anchor: .directory(path: "/Pinned/Exact"),
+                    isPinned: true,
+                    title: "Exact",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: divergentID,
+                    page: .directory,
+                    anchor: .directory(path: "/Runtime"),
+                    isPinned: true,
+                    title: "Divergent",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: exactID,
+            recentlyClosed: nil,
+            pinnedRecords: [
+                exactID: ContentTabPinnedRecord(
+                    id: exactID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: "/Pinned/Exact"),
+                    title: "Exact",
+                    iconName: "folder",
+                    pinnedAt: pinnedAt,
+                ),
+                divergentID: ContentTabPinnedRecord(
+                    id: divergentID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: "/Pinned/Divergent"),
+                    title: "Divergent",
+                    iconName: "folder",
+                    pinnedAt: pinnedAt,
+                ),
+            ],
+        )
+
+        let items = ContentTabProjection.sidebarItems(from: state)
+
+        XCTAssertEqual(items.map(\.id), [exactID, divergentID])
+        XCTAssertFalse(items[0].canReturnToPinnedLocation)
+        XCTAssertTrue(items[1].canReturnToPinnedLocation)
+    }
+
     /// CTM-004-sidebar_projection_content_tabs: Sidebar projection은 정확히 하나의 tab만 active로 표시함
     /// activeTabID와 일치하는 항목만 isActive == true가 되는 정책을 검증한다.
     /// - 검증 내용: Directory tab이 active일 때 정확히 한 항목 isActive == true, 해당 id == directoryID
@@ -800,7 +857,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
-        XCTAssertFalse(store.state.contentTabs.tabs.contains { $0.isPinned })
+        XCTAssertFalse(store.state.contentTabs.tabs.contains(where: \.isPinned))
     }
 
     /// CTM-004-home_dashboard_projection: active Home의 onAppear projection은 live/cache parity를 유지한다.
@@ -1073,9 +1130,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "finder-projects"),
                 title: "Projects",
                 iconName: "folder",
-                filePath: "/Users/test/Projects",
                 anchor: .directory(path: "/Users/test/Projects"),
                 page: .directory,
+                filePath: "/Users/test/Projects",
             ),
         ])
 
@@ -2274,7 +2331,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let center = NSPoint(x: 21, y: 21)
 
         XCTAssertNil(view.hitTest(center))
-        XCTAssertTrue(container.hitTest(center) === button)
+        XCTAssertIdentical(container.hitTest(center), button)
         XCTAssertTrue(view.registeredDraggedTypes.contains(.fileManagerTopNavigationReorder))
 
         sessionStore.begin(
@@ -2284,8 +2341,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             ),
         )
 
-        XCTAssertTrue(view.hitTest(center) === view)
-        XCTAssertTrue(container.hitTest(center) === view)
+        XCTAssertIdentical(view.hitTest(center), view)
+        XCTAssertIdentical(container.hitTest(center), view)
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: Location 타일은 native pointer owner에서 drag를 시작함
@@ -4057,9 +4114,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "projection-source-favorite"),
                 title: "Projection Source Favorite",
                 iconName: "folder",
-                filePath: "/projection/source/favorite",
                 anchor: .directory(path: "/projection/source/favorite"),
                 page: .directory,
+                filePath: "/projection/source/favorite",
             ),
         ])
         state.content.homeFavoriteItems = [
@@ -4067,9 +4124,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 id: ContentTabID(rawValue: "preserved-home-favorite"),
                 title: "Preserved Home Favorite",
                 iconName: "folder",
-                filePath: "/preserved/home/favorite",
                 anchor: .directory(path: "/preserved/home/favorite"),
                 page: .directory,
+                filePath: "/preserved/home/favorite",
             ),
         ]
     }
@@ -5024,8 +5081,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(store.state.undoRedoPhase, .idle)
         XCTAssertEqual(store.state.content.entryViewLayout.entryOperations, activeOperations)
-        XCTAssertTrue(store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoRecords
-            .isEmpty == true)
+        XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoRecords
+            .isEmpty, true)
         XCTAssertEqual(
             store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.redoRecords,
             [record],
@@ -5769,21 +5826,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .pasteFileMove,
             .success(()),
         )))))
-        let reload = AnyCasePath<FileManagerContentAction, Void>(
-            embed: { _ in
-                .entryViewLayout(.entryOperations(.loading(.loadItems(
-                    path: directoryPath,
-                    showHidden: false,
-                ))))
-            },
-            extract: { action in
-                guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, false)))) = action,
-                      path == directoryPath
-                else { return nil }
-                return ()
-            },
-        )
-        await clipboardStore.receive(reload)
+        let isExpectedReload: (FileManagerContentAction) -> Bool = { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden, _)))) = action else {
+                return false
+            }
+            return path == directoryPath && !showHidden
+        }
+        await clipboardStore.receive(isExpectedReload)
         await clipboardStore.finish()
 
         let dropStore = TestStore(initialState: contentState) {
@@ -6801,14 +6850,14 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// production row와 같은 Pin/Close presentation 조합이 bulk pinned에서도 두 command를 함께 노출하는지 검증한다.
     /// - 검증 내용: selected pinned/unpinned와 single pinned의 native NSMenu title matrix
     /// - 사전 조건: clicked row가 2-selection에 포함되거나 단일 pinned fallback인 presentation
-    /// - 기대 결과: bulk pinned는 Unpin+Close, bulk unpinned는 Pin+Close, single pinned는 Unpin만 제공한다.
+    /// - 기대 결과: pinned 메뉴는 Return to Pinned Location을 포함하고 bulk/single Pin·Unpin·Close 구성을 유지한다.
     func testSidebarNativeMenuComposesPinSelectorAndCloseVisibilityIndependently() {
         _ = NSApplication.shared
         let clickedID = ContentTabID(rawValue: "native-menu-clicked")
         let selectedIDs: Set<ContentTabID> = [clickedID, ContentTabID(rawValue: "native-menu-peer")]
 
         assertNativeMenuTitles(
-            ["Duplicate", "Unpin 2 Tabs", "Close 2 Tabs"],
+            ["Duplicate", "Return to Pinned Location", "Unpin 2 Tabs", "Close 2 Tabs"],
             clickedID: clickedID,
             isPinned: true,
             validSelectedTabIDs: selectedIDs,
@@ -6820,7 +6869,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             validSelectedTabIDs: selectedIDs,
         )
         assertNativeMenuTitles(
-            ["Duplicate", "Unpin"],
+            ["Duplicate", "Return to Pinned Location", "Unpin"],
             clickedID: clickedID,
             isPinned: true,
             validSelectedTabIDs: [clickedID],

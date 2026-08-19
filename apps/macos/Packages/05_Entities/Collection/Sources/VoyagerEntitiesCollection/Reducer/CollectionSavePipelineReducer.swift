@@ -221,25 +221,30 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
     results.reserveCapacity(conditions.count)
 
     for condition in conditions {
-        guard condition.isActive else { continue }
-        guard let op = condition.operatorCode, let arity = condition.operatorValueArity else {
-            throw CollectionSaveValidationError.incompleteCondition(condition.propertyLabel)
+        guard condition.availability == .available else {
+            if let opaqueSource = condition.opaqueSource {
+                results.append(opaqueSource)
+            }
+            continue
+        }
+        guard let operation = condition.operation else {
+            throw CollectionSaveValidationError.incompleteCondition(condition.property.label)
         }
 
-        if arity == 0 {
-            results.append(.init(propertyKey: condition.propertyKey, operatorCode: op, value: nil))
+        if operation.valueContract.count == .fixed(0) {
+            results.append(.init(propertyKey: condition.property.key, operatorCode: operation.code, value: nil))
             continue
         }
 
-        guard let values = condition.values, values.count >= arity else {
-            throw CollectionSaveValidationError.incompleteCondition(condition.propertyLabel)
+        guard condition.isExecutionReady, condition.values != nil else {
+            throw CollectionSaveValidationError.incompleteCondition(condition.property.label)
         }
 
-        guard let encoded = ConditionValueEncoder.encode(condition: condition, values: values) else {
-            throw CollectionSaveValidationError.invalidConditionValue(condition.propertyLabel)
+        guard let encoded = ConditionCodec.encode(condition: condition) else {
+            throw CollectionSaveValidationError.invalidConditionValue(condition.property.label)
         }
 
-        results.append(.init(propertyKey: condition.propertyKey, operatorCode: op, value: encoded))
+        results.append(.init(propertyKey: condition.property.key, operatorCode: operation.code, value: encoded))
     }
 
     return results

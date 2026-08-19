@@ -1,12 +1,9 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
 import Foundation
+import SwiftNavigation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 extension EntryGridCoordinator {
@@ -16,27 +13,26 @@ extension EntryGridCoordinator {
     }
 
     public func observeRenderLoop() {
-        renderObservationCancellable?.cancel()
-        renderObservationCancellable = store.publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                let snapshot = RenderSnapshot(state: state)
+        observe { [weak self] in
+            guard let self else { return }
+            let snapshot = RenderSnapshot(state: state)
+            guard isRenderObservationEnabled else { return }
 
-                guard let previous = lastRenderSnapshot else {
-                    lastRenderSnapshot = snapshot
-                    return
-                }
-
-                handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
+            guard let previous = lastRenderSnapshot else {
                 lastRenderSnapshot = snapshot
+                return
             }
+
+            handleSnapshotChanges(previous: previous, snapshot: snapshot)
+            lastRenderSnapshot = snapshot
+        }
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if shouldRebuildSections(previous: previous, snapshot: snapshot) {
             rebuildSectionsAndReload()
+        } else if !applyIncrementalEntryRemoval(previous: previous, snapshot: snapshot) {
+            reloadVisibleItemsForEntryContentChange(previous: previous, snapshot: snapshot)
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
         reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
@@ -48,11 +44,71 @@ extension EntryGridCoordinator {
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
+            activeSessionID: &activeExternalDropSessionID,
+            previousActive: previous.activeExternalDrop,
+            currentActive: snapshot.activeExternalDrop,
+        )
     }
 
     func shouldRebuildSections(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
-        previous.entries != snapshot.entries || previous.groupKey != snapshot.groupKey
-            || previous.groupedItems != snapshot.groupedItems || previous.collapsedGroups != snapshot.collapsedGroups
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        guard changes.sectionStructureChanged || changes.groupExpansionChanged else { return false }
+        guard !changes.groupExpansionChanged else { return true }
+
+        let previousSections = previous.presentation.sections
+        let nextSections = snapshot.presentation.sections
+        let isSingleUngroupedSection = previousSections.count == 1
+            && nextSections.count == 1
+            && previousSections[0].title == nil
+            && nextSections[0].title == nil
+        guard isSingleUngroupedSection else { return true }
+
+        let previousIDs = previous.entries.map(\.id)
+        let nextIDs = snapshot.entries.map(\.id)
+        return !canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs)
+    }
+
+    func reloadVisibleItemsForEntryContentChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        let changedIDs = snapshot.presentation.changes(from: previous.presentation).updatedEntryIDs
+        guard !changedIDs.isEmpty else { return }
+        updateSectionsFromState()
+        let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
+            collectionView.indexPathsForVisibleItems()
+        }
+        let changedIndexPaths = Set(changedIDs.compactMap { indexPathByEntryId[$0] })
+            .intersection(visibleIndexPaths)
+        guard !changedIndexPaths.isEmpty else { return }
+        MainActor.assumeIsolated {
+            collectionView.reloadItems(at: changedIndexPaths)
+        }
+    }
+
+    func applyIncrementalEntryRemoval(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+        let previousIDs = previous.entries.map(\.id)
+        let nextIDs = snapshot.entries.map(\.id)
+        guard canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs) else { return false }
+
+        let nextIDSet = Set(nextIDs)
+        let removedIndexPaths = Set(previousIDs.enumerated().compactMap { index, id in
+            nextIDSet.contains(id) ? nil : IndexPath(item: index, section: 0)
+        })
+        updateSectionsFromState()
+        MainActor.assumeIsolated {
+            collectionView.performBatchUpdates {
+                collectionView.deleteItems(at: removedIndexPaths)
+            }
+        }
+        return true
+    }
+
+    func canApplyIncrementalEntryRemoval(
+        previousIDs: [EntryModel.ID],
+        nextIDs: [EntryModel.ID],
+    ) -> Bool {
+        let nextIDSet = Set(nextIDs)
+        return previousIDs.count > nextIDs.count
+            && previousIDs.filter(nextIDSet.contains) == nextIDs
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -60,8 +116,7 @@ extension EntryGridCoordinator {
     }
 
     func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.clipboardItems != snapshot.clipboardItems
-            || previous.clipboardOperation != snapshot.clipboardOperation else { return }
+        guard previous.clipboardCutPaths != snapshot.clipboardCutPaths else { return }
         reloadVisibleItems()
     }
 
@@ -92,13 +147,17 @@ extension EntryGridCoordinator {
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
+            // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
+            MainActor.assumeIsolated {
+                cancelActiveExternalDropSession()
+            }
             resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
     }
 
     func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        guard previous.outlineProjectionRevision != snapshot.outlineProjectionRevision else { return }
         refreshThumbnailProjectionForVisibleArea()
     }
 
@@ -148,7 +207,6 @@ extension EntryGridCoordinator {
 
         guard !paths.isEmpty else { return }
         pruneThumbnailSession(keeping: paths)
-        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
         reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: paths))
     }
 
@@ -234,8 +292,8 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
         }
 
         let entry = sections[indexPath.section].items[indexPath.item]
-        let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
-            && state.entryOperations.clipboardOperation == .cut
+        let isCut = state.entryOperations.clipboardOperation == .cut
+            && state.entryOperations.clipboardItems.contains(entry.fullPath)
         let isRenaming = state.entryOperations.renamingItemId == entry.id
         let thumbnail = thumbnailImagesByPath[entry.fullPath]
         let isDropTargeted = dropTargetEntryId == entry.id
@@ -252,13 +310,16 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
-                self?.sendEntryOperations(.edit(.updateRenamingText(text)))
+                guard let self else { return }
+                store.send(.view(.startRename(item: entry, text: text)))
             },
             onRenameCommit: { [weak self] in
-                self?.sendEntryOperations(.edit(.commitRename))
+                guard let self else { return }
+                store.send(.view(.commitRename(itemID: entry.id, newName: state.entryOperations.renamingText)))
             },
             onRenameCancel: { [weak self] in
-                self?.sendEntryOperations(.edit(.cancelRename))
+                guard let self else { return }
+                store.send(.delegate(.renameCanceled))
             },
         ))
         let isSelected = state.selectedIds.contains(entry.id)
@@ -302,7 +363,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             onToggle: { [weak self] in
                 guard let self else { return }
                 if let title = section.title {
-                    sendEntryArrangements(.toggleCollapsedGroup(title))
+                    store.send(.view(.toggleGroup(title)))
                 }
             },
         )
@@ -349,9 +410,8 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        let isOptionDrag = NSEvent.modifierFlags.contains(.option)
-        entryFileOpsClient.saveDragWithOption(isOptionDrag)
-        sendEntryOperations(.routing(.saveDragPaths(paths)))
+        entryFileOpsClient.saveDragPaths(paths)
+        entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
     }
 
     public func collectionView(
@@ -361,15 +421,15 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
+        entryFileOpsClient.saveDragPaths([])
         entryFileOpsClient.saveDragWithOption(false)
-        sendEntryOperations(.routing(.saveDragPaths([])))
         clearDropTargetState()
         store.send(.view(.setDropTargeted(false)))
     }
 
     @MainActor
     public func collectionView(
-        _: NSCollectionView,
+        _ collectionView: NSCollectionView,
         validateDrop draggingInfo: any NSDraggingInfo,
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>,
@@ -391,7 +451,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var targetEntryId: EntryModel.ID?
         if let entry = entry(at: indexPath),
            entry.isFolder,
-           !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
+           !entry.isPackage
         {
             destinationPath = entry.fullPath
             targetEntryId = entry.id
@@ -399,18 +459,25 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         } else {
             proposedDropOperation.pointee = .before
         }
-        let sourcePaths = entryFileOpsClient.loadDragPaths()
-        let wantsCopy = sourcePaths.isEmpty
-            ? NSEvent.modifierFlags.contains(.option)
-            : entryFileOpsClient.loadDragWithOption()
-        let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.routing(.validateDrop(context: .init(
-            sourcePaths: sourcePaths,
+        let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
+        // 단, 외부 promise/mixed drag는 source path가 없어도 pasteboard가 지원 표현을
+        // 노출하면 `.copy`를 제안해 acceptDrop이 획득 세션을 시작할 수 있게 한다.
+        guard !origin.sourcePaths.isEmpty else {
+            return resolveEmptySourceDropOperation(
+                origin: origin,
+                draggingInfo: draggingInfo,
+                targetEntryId: targetEntryId,
+                destinationPath: destinationPath,
+            )
+        }
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
-            allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy,
-        ))))
-        let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
+            allowedOperations: draggingInfo.draggingSourceOperationMask,
+            prefersCopy: origin.wantsCopy,
+        )
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
         validatedDropDestinationPath = operation.isEmpty ? nil : destinationPath
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
@@ -418,70 +485,163 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         return operation
     }
 
-    // swiftlint:disable:next function_body_length
+    /// 빈 source(외부 promise/mixed drag 포함)의 drop operation을 결정한다.
+    /// 외부 drag가 source path 없이 pasteboard의 지원 표현을 노출하면 `.copy`를 제안하고,
+    /// 그 외(내부 빈 drag, 지원하지 않는 외부 drag)는 no-op으로 거절한다.
+    @MainActor
+    private func resolveEmptySourceDropOperation(
+        origin: EntryViewLayoutDropValidationAdapter.DropOrigin,
+        draggingInfo: any NSDraggingInfo,
+        targetEntryId: EntryModel.ID?,
+        destinationPath: String,
+    ) -> NSDragOperation {
+        let hasRepresentation = !origin.isInternal
+            && EntryViewLayoutDropValidationAdapter
+            .hasSupportedExternalRepresentation(in: draggingInfo.draggingPasteboard)
+        let operationRawValue = hasRepresentation ? NSDragOperation.copy.rawValue : NSDragOperation().rawValue
+        EntryViewLayoutDropValidationAdapter.validationLogger.info(
+            "grid empty rep=\(hasRepresentation, privacy: .public) op=\(operationRawValue, privacy: .public)",
+        )
+        if hasRepresentation {
+            setDropTargetEntryId(targetEntryId)
+            validatedDropDestinationPath = destinationPath
+            store.send(.view(.setDropTargeted(true)))
+            return .copy
+        }
+        setDropTargetEntryId(nil)
+        validatedDropDestinationPath = nil
+        store.send(.view(.setDropTargeted(false)))
+        return []
+    }
+
     public func collectionView(
-        _: NSCollectionView,
+        _ collectionView: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
         indexPath _: IndexPath,
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
+        // accept-time destination: validate에서 current target을 기준으로 확정한 destination을 사용한다.
+        // Grid 테스트 seam은 accept indexPath를 실제 entry로 해석할 수 없어 validate destination을 따른다.
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
-        var internalPaths = entryFileOpsClient.loadDragPaths()
-        if internalPaths.isEmpty,
-           let source = draggingInfo.draggingSource,
-           (source as AnyObject) === collectionView
-        {
-            let pb = draggingInfo.draggingPasteboard
-            let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-            if let urls = pb.readObjects(forClasses: [NSURL.self], options: opts) as? [URL],
-               !urls.isEmpty
-            {
-                let recovered = urls.map(\.path)
-                entryFileOpsClient.saveDragPaths(recovered)
-                entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
-                internalPaths = recovered
-            }
-        }
-        let wantsCopy = internalPaths.isEmpty
-            ? NSEvent.modifierFlags.contains(.option)
-            : entryFileOpsClient.loadDragWithOption()
-        let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.routing(.validateDrop(context: .init(
-            sourcePaths: internalPaths,
-            destinationPath: destinationPath,
-            allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy,
-        ))))
-        let validation = state.entryOperations.dropValidationResult
-        let resolvedOperation = dragOperation(from: validation.resolvedOperation)
-        guard !resolvedOperation.isEmpty else {
-            clearDropTargetState()
-            store.send(.view(.setDropTargeted(false)))
-            return false
-        }
-        if !internalPaths.isEmpty {
-            sendEntryOperations(.routing(.dropItems(
-                sourcePaths: internalPaths,
+        let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        // promise/mixed 외부 drop은 path 기반 이동이 아니라 ExternalDropAcquisitionClient로
+        // 획득 세션을 시작하고, 그 결과를 EntryOperations에 accepted action으로 전달한다.
+        // promise-only는 source path가 없어 아래 empty-source guard보다 먼저 처리해야 한다.
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: draggingInfo.draggingPasteboard,
+            wantsCopy: origin.wantsCopy,
+        )
+        if !negotiation.promisedOrdinals.isEmpty || !negotiation.dataFlavors.isEmpty {
+            return beginExternalDropAcquisition(
+                draggingInfo: draggingInfo,
+                negotiation: negotiation,
                 destinationPath: destinationPath,
-                isOptionDrag: validation.isOptionDrag,
-            )))
-            return true
+            )
         }
-        let pasteboard = draggingInfo.draggingPasteboard
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty
-        else {
+        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
+        guard !origin.sourcePaths.isEmpty else {
+            entryFileOpsClient.saveDragPaths([])
             clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        sendEntryOperations(.routing(.dropItems(
-            sourcePaths: urls.map(\.path),
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            sourcePaths: origin.sourcePaths,
+            destinationPath: destinationPath,
+            allowedOperations: draggingInfo.draggingSourceOperationMask,
+            prefersCopy: origin.wantsCopy,
+        )
+        let resolvedOperation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
+        guard !resolvedOperation.isEmpty else {
+            // accept-reject terminal path: transport/visual 상태를 정리한다.
+            entryFileOpsClient.saveDragPaths([])
+            clearDropTargetState()
+            store.send(.view(.setDropTargeted(false)))
+            return false
+        }
+        store.send(.view(.dropItems(
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
         )))
+        if !origin.isInternal {
+            // 외부 accept는 transport를 정리하고 visual highlight를 유지하지 않는다.
+            // 내부 accept transport 정리는 `draggingSession endedAt` + `EntryViewLayoutDragStateClearRuleSet`이 담당한다.
+            entryFileOpsClient.saveDragPaths([])
+            clearDropTargetState()
+            store.send(.view(.setDropTargeted(false)))
+        }
         return true
+    }
+
+    /// 외부 drop 세션 진입/거절 시 transport·visual highlight를 정리한다 (Grid 기존 동작 유지).
+    @MainActor
+    func clearExternalDropDropState() {
+        entryFileOpsClient.saveDragPaths([])
+        clearDropTargetState()
+        store.send(.view(.setDropTargeted(false)))
+    }
+
+    /// promise/mixed 외부 drop의 획득 세션을 시작한다. 공유 adapter 구현에 위임한다.
+    @MainActor
+    private func beginExternalDropAcquisition(
+        draggingInfo: any NSDraggingInfo,
+        negotiation: EntryViewLayoutDropValidationAdapter.ExternalDropNegotiation,
+        destinationPath: String,
+    ) -> Bool {
+        EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeExternalDropSessionID,
+            context: .init(
+                client: externalDropAcquisitionClient,
+                sendAccepted: { [weak self] request in
+                    self?.sendEntryOperations(.externalDrop(.accepted(request: request)))
+                },
+                clearDropState: { [weak self] in
+                    self?.clearExternalDropDropState()
+                },
+            ),
+            draggingInfo: draggingInfo,
+            negotiation: negotiation,
+            destinationPath: destinationPath,
+        )
+    }
+
+    /// 현재 활성 외부 drop 획득 세션이 있으면 해당 세션만 취소하고 정리한다.
+    /// representable teardown / current-path change에서 호출되며, 취소된 세션이 다음 Grid/List 세션을 오염시키지 않는다.
+    @MainActor
+    func cancelActiveExternalDropSession() {
+        EntryViewLayoutDropValidationAdapter.cancelActiveExternalDropSession(
+            activeSessionID: &activeExternalDropSessionID,
+            client: externalDropAcquisitionClient,
+            sendCancelSession: { [weak self] sessionID in
+                self?.sendEntryOperations(.externalDrop(.cancelSession(sessionID)))
+            },
+        )
+    }
+
+    /// 내부/외부 drop origin과 active source path를 결정한다.
+    /// 외부 session 진입 시 stale 내부 transport를 무효화한다 (FIX 7).
+    @MainActor
+    private func resolveDropOrigin(
+        _ draggingInfo: any NSDraggingInfo,
+        ownView: AnyObject?,
+    ) -> EntryViewLayoutDropValidationAdapter.DropOrigin {
+        let transportPaths = entryFileOpsClient.loadDragPaths()
+        let isInternal = EntryViewLayoutDropValidationAdapter.isInternalDrag(draggingInfo, ownView: ownView)
+        if isInternal {
+            return .init(
+                sourcePaths: transportPaths,
+                wantsCopy: entryFileOpsClient.loadDragWithOption(),
+                isInternal: true,
+            )
+        }
+        entryFileOpsClient.saveDragPaths([])
+        entryFileOpsClient.saveDragWithOption(false)
+        return .init(
+            sourcePaths: EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard),
+            wantsCopy: NSEvent.modifierFlags.contains(.option),
+            isInternal: false,
+        )
     }
 
     public func updateSelectionFromCollectionView(_ collectionView: NSCollectionView) {
@@ -493,7 +653,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         let lastSelectedId = selectedIndexPaths.max().flatMap { entry(at: $0)?.id }
         let selectedEntries = selectedIndexPaths.compactMap { entry(at: $0) }
         preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.internal(.setSelectionState(
+        store.send(.view(.updateSelection(
             ids: selectedIds,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,

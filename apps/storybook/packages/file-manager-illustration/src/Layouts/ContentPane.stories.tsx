@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { FileToolbar } from "../Patterns/FileToolbar"
-import { StatusBar } from "../Patterns/StatusBar"
+import { FileToolbar } from "../Patterns/Content/FileToolbar"
+import { StatusBar } from "../Patterns/Content/StatusBar"
 import { files, noSelection } from "../data/mock-data"
 import { directoryBreadcrumb } from "../lib/navigation-data"
 import { FileManagerPrimaryContent } from "./FileManagerPrimaryContent"
@@ -33,10 +33,11 @@ export const ContentPane: Story = {
           <FileToolbar
             title="Directory"
             content="directory"
-            viewMode="grid"
+            viewMode={args.viewMode}
             showSidebarButton
             onViewModeChange={() => undefined}
             onToggleSidebar={() => undefined}
+            onNewChat={() => undefined}
           />
           <FileManagerPrimaryContent {...args} />
           <StatusBar
@@ -47,4 +48,12 @@ export const ContentPane: Story = {
       </main>
     </div>
   ),
+}
+
+export const ListView: Story = {
+  ...ContentPane,
+  args: {
+    ...ContentPane.args,
+    viewMode: "list",
+  },
 }

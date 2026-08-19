@@ -43,14 +43,12 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     func contextMenuCreateNewFolder() {
         guard configuration.canPerformEntryCommands else { return }
         store.send(
-            .entryViewLayout(
-                .entryOperations(
-                    .edit(.createNewFolder(
-                        parentPath: store.state.navigation.currentPath,
-                        siblingNames: store.state.entryViewLayout.entries.map(\.name),
-                    )),
-                ),
-            ),
+            .entryViewLayout(.entryOperations(
+                .edit(.createNewFolder(
+                    parentPath: store.state.navigation.currentPath,
+                    siblingNames: store.state.entryViewLayout.entries.map(\.name),
+                )),
+            )),
         )
     }
 
@@ -93,20 +91,16 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     func contextMenuEmptyTrash() {
         guard configuration.canPerformEntryCommands else { return }
         store.send(
-            .entryViewLayout(
-                .entryOperations(
-                    .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath))),
-                ),
-            ),
+            .entryViewLayout(.entryOperations(
+                .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath))),
+            )),
         )
     }
 
     @objc
     func contextMenuPaste() {
         guard configuration.canPasteItems else { return }
-        store.send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-            .pasteItems(destinationPath: store.state.navigation.currentPath),
-        )))))
+        store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
     }
 
     @objc

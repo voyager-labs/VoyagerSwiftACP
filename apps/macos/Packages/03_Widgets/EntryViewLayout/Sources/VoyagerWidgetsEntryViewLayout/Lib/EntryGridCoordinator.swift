@@ -1,12 +1,11 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+@MainActor
 public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     typealias Section = EntryGridSection
     typealias RenderSnapshot = EntryGridRenderSnapshot
@@ -17,10 +16,6 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
 
     func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
         store.send(.entryOperations(action))
-    }
-
-    func sendEntryArrangements(_ action: EntryArrangementsFeature.Action) {
-        store.send(.entryArrangements(action))
     }
 
     weak var view: EntryGridView?
@@ -48,27 +43,29 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var hasRestoredScrollPosition = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
+    /// Grid가 아직 완료되지 않은 외부 drop 획득 세션. AppKit/coordinator 소유로 TCA state에 두지 않는다.
+    var activeExternalDropSessionID: ExternalDropSessionID?
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var lassoAutoscrollController: EntryGridLassoAutoscrollController?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
-    var renderObservationCancellable: AnyCancellable?
+    var isRenderObservationEnabled = true
     let thumbnailPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    @Dependency(\.entryOpenClient)
-    var entryOpenClient
-    @Dependency(\.entryLoadingClient)
-    var entryLoadingClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.externalDropAcquisitionClient)
+    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.entryOpenClient)
+    var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12
@@ -141,19 +138,13 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     }
 
     func rebuildSectionsAndReload() {
-        sections = makeSections(state: state)
-        indexPathByEntryId = [:]
+        updateSectionsFromState()
         let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
         clearDropTargetState()
         if hadDropTarget {
             updateDropTargetBorder(isTargeted: false)
             if state.isDropTargeted {
                 store.send(.view(.setDropTargeted(false)))
-            }
-        }
-        for (sectionIndex, section) in sections.enumerated() {
-            for (itemIndex, entry) in section.items.enumerated() {
-                indexPathByEntryId[entry.id] = IndexPath(item: itemIndex, section: sectionIndex)
             }
         }
         collectionView.reloadData()
@@ -168,27 +159,24 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
     }
 
-    func makeSections(state: EntryViewLayoutState) -> [Section] {
-        if state.entryArrangements.groupKey == .none {
-            return [
-                Section(
-                    title: nil,
-                    colorCode: nil,
-                    count: state.entries.count,
-                    items: Array(state.entries),
-                    isCollapsed: false,
-                ),
-            ]
+    func updateSectionsFromState() {
+        sections = makeSections(state: state)
+        indexPathByEntryId = [:]
+        for (sectionIndex, section) in sections.enumerated() {
+            for (itemIndex, entry) in section.items.enumerated() {
+                indexPathByEntryId[entry.id] = IndexPath(item: itemIndex, section: sectionIndex)
+            }
         }
-        return state.entryArrangements.groupedItems.map { group in
-            let showHeader = !group.groupName.isEmpty && state.entryArrangements.groupKey != .name
-            let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
-            return Section(
-                title: showHeader ? group.groupName : nil,
-                colorCode: group.colorCode,
-                count: group.count,
-                items: isCollapsed ? [] : group.items,
-                isCollapsed: isCollapsed,
+    }
+
+    func makeSections(state: EntryViewLayoutState) -> [Section] {
+        state.presentation.sections.map { section in
+            Section(
+                title: section.title,
+                colorCode: section.colorCode,
+                count: section.count,
+                items: section.visibleItems,
+                isCollapsed: section.isCollapsed,
             )
         }
     }
@@ -221,7 +209,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         let itemWidth = makeItemSize().width
         let columns = max(1, Int((availableWidth + minSpacing) / (itemWidth + minSpacing)))
         if state.gridColumnCount != columns {
-            store.send(.internal(.updateGridColumnCount(columns)))
+            store.send(.view(.updateGridColumnCount(columns)))
         }
     }
 
@@ -260,7 +248,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
 extension EntryGridCoordinator {
     func saveScrollPosition() {
         let offset = scrollView.contentView.bounds.origin
-        store.send(.delegate(.saveScrollOffset(offset, forPath: state.currentPath)))
+        store.send(.view(.saveScrollOffset(offset, forPath: state.currentPath)))
     }
 
     func restoreScrollPositionIfNeeded() {
@@ -279,11 +267,11 @@ extension EntryGridCoordinator {
         guard state.shouldScrollToSelection else { return }
         let targetId = state.lastSelectedId ?? state.selectedIds.first
         guard let targetId, let indexPath = indexPathByEntryId[targetId] else {
-            store.send(.internal(.resetScrollFlag))
+            store.send(.view(.resetScrollFlag))
             return
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
-        store.send(.internal(.resetScrollFlag))
+        store.send(.view(.resetScrollFlag))
     }
 
     func reloadVisibleItems() {
@@ -374,7 +362,7 @@ extension EntryGridCoordinator {
     }
 
     var isTrashFolder: Bool {
-        guard let trashPath = entryOpenClient.trashDirectoryPath()
+        guard let trashPath = state.trashDirectoryPath
         else {
             return false
         }
@@ -397,7 +385,7 @@ extension EntryGridCoordinator {
             action: { [weak self] in
                 guard let self else { return }
                 saveScrollPosition()
-                store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
+                store.send(.view(.openEntry(entry)))
             },
         )
     }
@@ -464,7 +452,7 @@ extension EntryGridCoordinator {
         if !isFinal {
             guard ids != lastLassoSelectedIds else { return }
             lastLassoSelectedIds = ids
-            store.send(.internal(.setSelectionState(
+            store.send(.view(.updateSelection(
                 ids: ids,
                 lastSelectedId: lastSelectedId,
                 rangeAnchorId: lastSelectedId,
@@ -475,7 +463,7 @@ extension EntryGridCoordinator {
         lastLassoSelectedIds = []
         let selectedEntries = indexPaths.compactMap { entry(at: $0) }
         preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.internal(.setSelectionState(
+        store.send(.view(.updateSelection(
             ids: ids,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,

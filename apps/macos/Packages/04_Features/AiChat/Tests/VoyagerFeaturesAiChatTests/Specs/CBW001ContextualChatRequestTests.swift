@@ -8,6 +8,11 @@ import VoyagerEntitiesAi
 import VoyagerShared
 import XCTest
 
+private typealias IndexedSyntaxHighlightingContinuation = CheckedContinuation<
+    [AiChatSyntaxHighlightingClient.Run],
+    Never,
+>
+
 @MainActor
 final class CBW001ContextualChatRequestTests: XCTestCase {
     // MARK: - CBW-001-open_contextual_chat
@@ -899,7 +904,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertGreaterThan(lineTexts.count, 1, "capped 폭에서 텍스트는 줄바꿈되어야 한다")
         for lineText in lineTexts {
             XCTAssertNotEqual(
-                lineText.trimmingCharacters(in: .whitespacesAndNewlines), "줘.",
+                lineText.trimmingCharacters(in: .whitespacesAndNewlines),
+                "줘.",
                 "어떤 줄도 `줘.`만 단독으로 가지면 안 된다",
             )
         }
@@ -936,7 +942,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         XCTAssertGreaterThan(scrollView.frame.width, 0, "selectable surface must have positive width")
         XCTAssertLessThan(
-            scrollView.frame.width, 300,
+            scrollView.frame.width,
+            300,
             "short user bubble must hug natural width (expect ~200pt), not fill 600pt transcript",
         )
     }
@@ -961,7 +968,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         let availableTextWidth = hostWidth - 16 - 28 // Spacer minLength + horizontal padding
         XCTAssertLessThanOrEqual(
-            scrollView.frame.width, availableTextWidth + 1,
+            scrollView.frame.width,
+            availableTextWidth + 1,
             "long user bubble must not escape available width",
         )
 
@@ -985,7 +993,9 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let coordinator = AiChatSelectableOutputText.Coordinator()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 0, height: 0),
-            styleMask: [.titled], backing: .buffered, defer: false,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         window.contentView = coordinator.scrollView
@@ -1020,14 +1030,17 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let coordinator = AiChatSelectableOutputText.Coordinator()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 0, height: 0),
-            styleMask: [.titled], backing: .buffered, defer: false,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         window.contentView = coordinator.scrollView
         defer { window.close() }
 
         coordinator.update(
-            blockID: .init(rawValue: "zero-fits"), attributedText: NSAttributedString(string: text),
+            blockID: .init(rawValue: "zero-fits"),
+            attributedText: NSAttributedString(string: text),
             sizingMode: .fitsContent,
         )
 
@@ -1876,7 +1889,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         XCTAssertFalse(firstResult?.isEligibleForDisplay ?? false)
         XCTAssertNotNil(secondResult)
-        XCTAssertTrue(secondResult?.isEligibleForDisplay == true)
+        XCTAssertEqual(secondResult?.isEligibleForDisplay, true)
     }
 
     /// CBW-001-render_assistant_markdown: 같은 세션에서 code row가 교체 후 복원되면 highlight freshness를 갱신한다.
@@ -4055,10 +4068,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
     }
 
     private actor IndexedSyntaxHighlightingRecorder {
-        private typealias Continuation = CheckedContinuation<[AiChatSyntaxHighlightingClient.Run], Never>
-
         private var invocationTotal = 0
-        private var continuations: [Int: Continuation] = [:]
+        private var continuations: [Int: IndexedSyntaxHighlightingContinuation] = [:]
 
         func invocationCount() -> Int {
             invocationTotal
@@ -4632,73 +4643,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             XCTAssertFalse(cardSource.contains(contract), "Unexpected whole-card fade contract: \(contract)")
         }
         XCTAssertTrue(source.contains("acceptedChunkRevision: streamingAssistant.acceptedChunkRevision"))
-    }
-
-    /// CBW-001-show_request_processing_state: composer context는 nonempty locked/live section만 투영한다.
-    /// 처리 중 context 표시가 request lock과 다음 turn 편집 값을 합치지 않고 compact row 가시성만 결정하는지 검증합니다.
-    /// - 검증 내용: both empty, locked only, next only, both nonempty 조합의 section kind, label, editable projection을 확인합니다.
-    /// - 사전 조건: immutable locked/current-response section과 live/next-message section display model을 사용합니다.
-    /// - 기대 결과: 빈 section은 layout owner가 없고 locked는 read-only, next는 editable 상태로만 투영됩니다.
-    func testShowRequestProcessingStateProjectsOnlyNonemptyComposerContextSections() {
-        let emptyLocked = AiChatRequestContextSectionDisplayModel(
-            source: .locked,
-            currentContext: nil,
-            addedAttachments: [],
-        )
-        let emptyNext = AiChatRequestContextSectionDisplayModel(
-            source: .draft,
-            currentContext: nil,
-            addedAttachments: [],
-        )
-        let locked = AiChatRequestContextSectionDisplayModel(
-            source: .locked,
-            currentContext: AiChatCurrentContextChipDisplayModel(title: "Locked.md", detail: nil),
-            addedAttachments: [],
-        )
-        let next = AiChatRequestContextSectionDisplayModel(
-            source: .draft,
-            currentContext: nil,
-            addedAttachments: [AiChatAddedAttachmentChipDisplayModel(
-                attachmentID: AiChatAttachmentID(rawValue: "next"),
-                title: "Next.md",
-                statusLabel: "Included",
-                statusDetail: "Included as text",
-                isRemovable: true,
-            )],
-        )
-
-        let bothEmpty = AiChatRequestContextRowPresentation(
-            currentResponse: emptyLocked,
-            nextMessage: emptyNext,
-            isNextMessageEditable: true,
-        )
-        let lockedOnly = AiChatRequestContextRowPresentation(
-            currentResponse: locked,
-            nextMessage: emptyNext,
-            isNextMessageEditable: true,
-        )
-        let nextOnly = AiChatRequestContextRowPresentation(
-            currentResponse: emptyLocked,
-            nextMessage: next,
-            isNextMessageEditable: true,
-        )
-        let bothNonempty = AiChatRequestContextRowPresentation(
-            currentResponse: locked,
-            nextMessage: next,
-            isNextMessageEditable: true,
-        )
-
-        XCTAssertTrue(bothEmpty.sections.isEmpty)
-        XCTAssertEqual(lockedOnly.sections.map(\.kind), [.currentResponse])
-        XCTAssertEqual(lockedOnly.sections.map(\.label), ["Current response context"])
-        XCTAssertEqual(lockedOnly.sections.map(\.isEditable), [false])
-        XCTAssertEqual(nextOnly.sections.map(\.kind), [.nextMessage])
-        XCTAssertEqual(nextOnly.sections.map(\.label), ["Next message context"])
-        XCTAssertEqual(nextOnly.sections.map(\.isEditable), [true])
-        XCTAssertEqual(bothNonempty.sections.map(\.kind), [.currentResponse, .nextMessage])
-        XCTAssertEqual(bothNonempty.sections.map(\.isEditable), [false, true])
-        XCTAssertEqual(lockedOnly.sections.first?.section, locked)
-        XCTAssertEqual(nextOnly.sections.first?.section, next)
     }
 
     /// CBW-001-show_request_processing_state: timestamp는 calendar day와 시간 경계 우선순위로 표시한다.
@@ -8513,8 +8457,10 @@ private struct AiChatMetadataSourceSubtrees {
 
 private func aiChatMetadataSourceSubtrees() throws -> AiChatMetadataSourceSubtrees {
     let packageRoot = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
     let uiRoot = packageRoot.appendingPathComponent("Sources/VoyagerFeaturesAiChat/Ui")
     let conversation = try String(
         contentsOf: uiRoot.appendingPathComponent("AiChatConversationSurface.swift"), encoding: .utf8,
@@ -8635,6 +8581,7 @@ private extension CBW001ContextualChatRequestTests {
         let rootView = AnyView(WithPerceptionTracking {
             AiChatView(
                 store: store,
+                allowsAttachmentPicker: false,
                 centeredEmptyContent: AnyView(Text("Centered content")),
             )
             .environment(\.aiChatAccessibilityAnnouncementSink, sink)

@@ -116,6 +116,13 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("w", modifiers: [.command, .option])
         }
 
+        CommandGroup(after: .windowArrangement) {
+            Button("Show Recent Tabs…") {
+                send(.app(.presentContentTabSwitcher))
+            }
+            .keyboardShortcut(.tab, modifiers: [.control, .command])
+        }
+
         CommandMenu("Go") {
             Button("Last Used Tab") {
                 send(.app(.selectMostRecentlyUsedContentTab))

@@ -63,7 +63,7 @@ public struct AiChatFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
-            if action.invalidatesPendingNewChatPreparation(in: state) {
+            if invalidatesPendingNewChatPreparation(action, in: state) {
                 state.newChatPreparationMutationTracker.value &+= 1
             }
             switch action {
@@ -115,7 +115,7 @@ public struct AiChatFeature {
             case let .prepareTransientNewChatWithContext(snapshot, seed):
                 return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
 
-            case let .prepareUnpersistedNewChatWithContextIfCurrent(snapshot, provenance, seed):
+            case let .prepareUnpersistedNewChatIfActive(snapshot, provenance, seed):
                 guard state.newChatPreparationProvenance == provenance else { return .none }
                 return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
 
@@ -546,25 +546,26 @@ public struct AiChatFeature {
     }
 }
 
-private extension AiChatAction {
-    func invalidatesPendingNewChatPreparation(in state: AiChatFeature.State) -> Bool {
-        switch self {
-        case let .selectedModelChanged(handle):
-            guard let handle else { return true }
-            return state.normalizedSelectionHandle(handle) != nil
-        case .selectedThinkingChanged,
-             .currentContextChanged,
-             .draftTextChanged,
-             .removeAddedAttachment,
-             .folderStructureModeChanged:
-            return true
-        case let .attachmentPickerSelection(originSessionID, _),
-             let .attachmentDrop(originSessionID, _),
-             let .attachmentDropSelection(originSessionID, _):
-            return state.sessionID == originSessionID
-        default:
-            return false
-        }
+private func invalidatesPendingNewChatPreparation(
+    _ action: AiChatAction,
+    in state: AiChatFeature.State,
+) -> Bool {
+    switch action {
+    case let .selectedModelChanged(handle):
+        guard let handle else { return true }
+        return state.normalizedSelectionHandle(handle) != nil
+    case .selectedThinkingChanged,
+         .currentContextChanged,
+         .draftTextChanged,
+         .removeAddedAttachment,
+         .folderStructureModeChanged:
+        return true
+    case let .attachmentPickerSelection(originSessionID, _),
+         let .attachmentDrop(originSessionID, _),
+         let .attachmentDropSelection(originSessionID, _):
+        return state.sessionID == originSessionID
+    default:
+        return false
     }
 }
 

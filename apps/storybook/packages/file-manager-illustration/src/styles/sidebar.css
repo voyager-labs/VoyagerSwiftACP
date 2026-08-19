@@ -263,7 +263,7 @@
 [data-file-manager-illustration] .sidebar-divider {
   height: 1px;
   margin: var(--fm-space-3) var(--fm-space-6);
-  background: var(--fm-separator);
+  background: var(--fm-separator-emphasis);
 }
 
 [data-file-manager-illustration] .sidebar-new-tab {

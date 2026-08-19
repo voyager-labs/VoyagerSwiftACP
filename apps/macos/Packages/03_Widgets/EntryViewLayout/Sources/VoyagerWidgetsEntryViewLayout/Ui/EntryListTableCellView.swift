@@ -15,6 +15,7 @@ struct EntryListEntryCellViewConfiguration {
         let thumbnail: NSImage?
         let isHidden: Bool
         let isCut: Bool
+        let isLoadingChildren: Bool
         let isRenaming: Bool
         let renamingText: String
         let workspaceClient: VoyagerShared.WorkspaceClient
@@ -25,6 +26,7 @@ struct EntryListEntryCellViewConfiguration {
 }
 
 private enum EntryListCellTextFieldStyle {
+    @MainActor
     static func applyDefaultTextTruncation(to textField: NSTextField) {
         textField.usesSingleLineMode = true
         textField.lineBreakMode = .byTruncatingTail
@@ -136,9 +138,72 @@ final class EntryListGroupHeaderCellView: NSTableCellView {
 
 final class EntryListEmptyCellView: NSTableCellView {}
 
+final class EntryListStatusCellView: NSTableCellView {
+    private let titleField = NSTextField(labelWithString: "")
+    private let retryButton = NSButton(title: "", target: nil, action: nil)
+    private var onRetry: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupViews()
+    }
+
+    func configure(title: String, retryTitle: String?, onRetry: @escaping () -> Void) {
+        titleField.stringValue = title
+        self.onRetry = onRetry
+        let isRetryVisible = retryTitle != nil
+        retryButton.title = retryTitle ?? ""
+        retryButton.setAccessibilityLabel(retryTitle)
+        retryButton.isEnabled = isRetryVisible
+        retryButton.isHidden = !isRetryVisible
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        retryButton.isHidden ? [titleField] : [titleField, retryButton]
+    }
+
+    private func setupViews() {
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+        titleField.textColor = .secondaryLabelColor
+        titleField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        retryButton.translatesAutoresizingMaskIntoConstraints = false
+        retryButton.bezelStyle = .inline
+        retryButton.identifier = NSUserInterfaceItemIdentifier("entry-status-retry-button")
+        retryButton.setAccessibilityElement(true)
+        retryButton.setAccessibilityIdentifier("entry-status-retry-button")
+        retryButton.setAccessibilityRole(.button)
+        retryButton.setAccessibilityParent(self)
+        retryButton.target = self
+        retryButton.action = #selector(retry)
+        addSubview(titleField)
+        addSubview(retryButton)
+        NSLayoutConstraint.activate([
+            titleField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            titleField.trailingAnchor.constraint(lessThanOrEqualTo: retryButton.leadingAnchor, constant: -8),
+            titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            retryButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+            retryButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @objc
+    private func retry() {
+        onRetry?()
+    }
+}
+
 final class EntryListEntryCellView: NSTableCellView {
     private let customImageView = NSImageView()
     private let customTextField = NSTextField(string: "")
+    private let loadingIndicator = NSProgressIndicator()
     private let tagStackView = NSStackView()
 
     private var iconWidthConstraint: NSLayoutConstraint?
@@ -147,6 +212,7 @@ final class EntryListEntryCellView: NSTableCellView {
     private var textLeadingToViewConstraint: NSLayoutConstraint?
     private var textTrailingToViewConstraint: NSLayoutConstraint?
     private var textTrailingToTagsConstraint: NSLayoutConstraint?
+    private var textTrailingToSpinnerConstraint: NSLayoutConstraint?
 
     private var entryName: String = ""
     private var entryIsFolder: Bool = false
@@ -168,21 +234,10 @@ final class EntryListEntryCellView: NSTableCellView {
     }
 
     private func setupViews() {
-        customImageView.translatesAutoresizingMaskIntoConstraints = false
-        customImageView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(customImageView)
-        imageView = customImageView
-
-        customTextField.translatesAutoresizingMaskIntoConstraints = false
-        EntryListCellTextFieldStyle.applyDefaultTextTruncation(to: customTextField)
-        addSubview(customTextField)
-        textField = customTextField
-
-        tagStackView.translatesAutoresizingMaskIntoConstraints = false
-        tagStackView.orientation = .horizontal
-        tagStackView.alignment = .centerY
-        tagStackView.spacing = -3
-        addSubview(tagStackView)
+        setupImageView()
+        setupTextField()
+        setupLoadingIndicator()
+        setupTagStackView()
 
         let iconLeading = customImageView.leadingAnchor.constraint(equalTo: leadingAnchor)
         let iconCenterY = customImageView.centerYAnchor.constraint(equalTo: centerYAnchor)
@@ -204,6 +259,11 @@ final class EntryListEntryCellView: NSTableCellView {
             constant: -8,
         )
         textTrailingToTagsConstraint = textTrailingToTags
+        let textTrailingToSpinner = customTextField.trailingAnchor.constraint(
+            lessThanOrEqualTo: loadingIndicator.leadingAnchor,
+            constant: -4,
+        )
+        textTrailingToSpinnerConstraint = textTrailingToSpinner
         let textCenterY = customTextField.centerYAnchor.constraint(equalTo: centerYAnchor)
 
         NSLayoutConstraint.activate([
@@ -213,11 +273,44 @@ final class EntryListEntryCellView: NSTableCellView {
             iconHeight,
             textTrailingToView,
             textCenterY,
+            loadingIndicator.centerYAnchor.constraint(equalTo: centerYAnchor),
+            loadingIndicator.trailingAnchor.constraint(lessThanOrEqualTo: tagStackView.leadingAnchor, constant: -4),
             tagStackView.trailingAnchor.constraint(equalTo: trailingAnchor),
             tagStackView.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
         applyDisplayStyle()
+    }
+
+    private func setupImageView() {
+        customImageView.translatesAutoresizingMaskIntoConstraints = false
+        customImageView.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(customImageView)
+        imageView = customImageView
+    }
+
+    private func setupTextField() {
+        customTextField.translatesAutoresizingMaskIntoConstraints = false
+        EntryListCellTextFieldStyle.applyDefaultTextTruncation(to: customTextField)
+        addSubview(customTextField)
+        textField = customTextField
+    }
+
+    private func setupTagStackView() {
+        tagStackView.translatesAutoresizingMaskIntoConstraints = false
+        tagStackView.orientation = .horizontal
+        tagStackView.alignment = .centerY
+        tagStackView.spacing = -3
+        addSubview(tagStackView)
+    }
+
+    private func setupLoadingIndicator() {
+        loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
+        loadingIndicator.style = .spinning
+        loadingIndicator.controlSize = .small
+        loadingIndicator.isDisplayedWhenStopped = false
+        loadingIndicator.setAccessibilityLabel("Loading folder contents")
+        addSubview(loadingIndicator)
     }
 
     func configure(_ configuration: EntryListEntryCellViewConfiguration) {
@@ -299,11 +392,13 @@ final class EntryListEntryCellView: NSTableCellView {
 
         if isRenaming {
             resetTagDisplayForEditing()
+            setLoadingIndicatorVisible(false)
             customTextField.setAccessibilityLabel(context.renamingText)
             applyRenamingStyle(text: context.renamingText)
         } else {
             applyDisplayStyle()
             configureNameDisplay(name: context.model.name, tags: context.model.facets.tags, textSize: context.textSize)
+            setLoadingIndicatorVisible(context.model.isFolder && context.isLoadingChildren)
         }
     }
 
@@ -368,6 +463,7 @@ final class EntryListEntryCellView: NSTableCellView {
         }
         tagStackView.isHidden = true
         textTrailingToTagsConstraint?.isActive = false
+        textTrailingToSpinnerConstraint?.isActive = false
         textTrailingToViewConstraint?.isActive = true
     }
 
@@ -375,13 +471,27 @@ final class EntryListEntryCellView: NSTableCellView {
         customImageView.isHidden = true
         customImageView.image = nil
         tagStackView.isHidden = true
+        setLoadingIndicatorVisible(false)
         textTrailingToTagsConstraint?.isActive = false
+        textTrailingToSpinnerConstraint?.isActive = false
         textTrailingToViewConstraint?.isActive = true
         textLeadingToIconConstraint?.isActive = false
         textLeadingToViewConstraint?.isActive = true
         customTextField.font = .systemFont(ofSize: textSize)
         EntryListCellTextFieldStyle.applyDefaultTextTruncation(to: customTextField)
         applyDisplayStyle()
+    }
+
+    private func setLoadingIndicatorVisible(_ isVisible: Bool) {
+        loadingIndicator.isHidden = !isVisible
+        textTrailingToSpinnerConstraint?.isActive = isVisible
+        if isVisible {
+            textTrailingToTagsConstraint?.isActive = false
+            textTrailingToViewConstraint?.isActive = false
+            loadingIndicator.startAnimation(nil)
+        } else {
+            loadingIndicator.stopAnimation(nil)
+        }
     }
 
     private func applyDisplayStyle() {

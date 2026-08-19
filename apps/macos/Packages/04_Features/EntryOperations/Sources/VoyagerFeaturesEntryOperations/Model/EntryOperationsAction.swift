@@ -21,11 +21,33 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     case archive(Archive)
     case tagging(Tagging)
     case undoRedo(UndoRedo)
+    case externalDrop(ExternalDrop)
+
+    @CasePathable
+    public enum ExternalDrop: CasePathable, Sendable {
+        /// Grid/List `acceptDrop`이 동기적으로 받아들인 획득 요청. 배리어 세션을 연다.
+        case accepted(request: ExternalDropAcceptedRequest)
+        /// reducer가 구독한 획득 이벤트 스트림에서 온 이벤트.
+        case event(ExternalDropAcquisitionEvent)
+        /// 정확한 세션을 취소한다 (멱등).
+        case cancelSession(ExternalDropSessionID)
+        /// 정확한 세션을 정상 종료한다 (멱등).
+        case finishSession(ExternalDropSessionID)
+        /// internal: all-promises 성공 시 reducer가 emit하는 import-placement action.
+        /// 실제 복사 배치는 Todo 7 seam이 이 action을 소비해 수행한다.
+        case applyImport(ExternalDropImportPlan)
+        /// internal: placement의 모든 항목이 종료된 뒤 reducer가 emit하는 종합 완료 action.
+        /// 성공 목적지 경로/실패와 종단 상태를 담으며, FileManager가 정확히 한 번 reload한다.
+        case importFinished(ExternalDropImportResult)
+    }
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
         case navigateToPath(String)
         case openCollectionFile(URL)
+        case folderLoadEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
+        case folderLoadFinished(request: EntryFolderLoadRequest)
+        case folderLoadFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
         case openInNewTab([String])
     }
 
@@ -49,12 +71,22 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Loading: CasePathable, Sendable {
-        case loadItems(path: String, showHidden: Bool)
-        case loadRecentItems(showHidden: Bool)
-        case loadTagItems(tagName: String, showHidden: Bool)
+        case loadItems(path: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
+        case loadRecentItems(showHidden: Bool, priority: EntryMetadataPriority = .none)
+        case loadTagItems(tagName: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadComputerItems
+        case cancelAndClearItems
         case itemsLoaded([EntryModel])
         case itemsLoadFailed
+        case streamEvent(EntryLoadingStreamEvent)
+        case streamFinished(generation: Int)
+        case streamFailed(generation: Int)
+        case loadFolderItems(EntryFolderLoadRequest)
+        case cancelFolderItems(EntryFolderLoadRequest.RequestID)
+        case cancelAllFolderItems
+        case folderStreamEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
+        case folderStreamFinished(request: EntryFolderLoadRequest)
+        case folderStreamFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
     }
 
     @CasePathable
@@ -168,6 +200,21 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     }
 }
 
+public enum EntryFolderLoadFailure: Equatable, Sendable {
+    case permissionDenied
+    case unavailable(description: String)
+}
+
+public struct EntryLoadingStreamEvent: Equatable, Sendable {
+    public let generation: Int
+    public let event: EntryLoadEvent
+
+    public init(generation: Int, event: EntryLoadEvent) {
+        self.generation = generation
+        self.event = event
+    }
+}
+
 public struct TagMutationRequest: Equatable, Sendable {
     public let mode: Mode
     public let tagName: String
@@ -210,53 +257,6 @@ public enum EntryActionReplayFailureReason: Equatable, Sendable {
     case ownerRecordMismatch
     case ownerBusy
     case operationFailed
-}
-
-public struct EntryDropValidationContext: Equatable, Sendable {
-    public let sourcePaths: [String]
-    public let destinationPath: String
-    public let allowedOperationsRawValue: UInt
-    public let prefersCopy: Bool
-
-    public init(
-        sourcePaths: [String],
-        destinationPath: String,
-        allowedOperationsRawValue: UInt,
-        prefersCopy: Bool,
-    ) {
-        self.sourcePaths = sourcePaths
-        self.destinationPath = destinationPath
-        self.allowedOperationsRawValue = allowedOperationsRawValue
-        self.prefersCopy = prefersCopy
-    }
-}
-
-public enum EntryDropResolvedOperation: Equatable, Sendable {
-    case none
-    case copy
-    case move
-}
-
-public struct EntryDropValidationResult: Equatable, Sendable {
-    public var destinationPath: String
-    public var resolvedOperation: EntryDropResolvedOperation
-    public var isOptionDrag: Bool
-
-    public init(
-        destinationPath: String,
-        resolvedOperation: EntryDropResolvedOperation,
-        isOptionDrag: Bool,
-    ) {
-        self.destinationPath = destinationPath
-        self.resolvedOperation = resolvedOperation
-        self.isOptionDrag = isOptionDrag
-    }
-
-    public static let empty = EntryDropValidationResult(
-        destinationPath: "",
-        resolvedOperation: .none,
-        isOptionDrag: false,
-    )
 }
 
 public struct EntryOperationsMutationImpact: Equatable, Sendable {

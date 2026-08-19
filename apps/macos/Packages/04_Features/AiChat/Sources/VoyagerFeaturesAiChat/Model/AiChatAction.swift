@@ -52,7 +52,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
         AiChatCurrentContextSnapshot,
         AiChatNewChatSelectionSeed,
     )
-    case prepareUnpersistedNewChatWithContextIfCurrent(
+    case prepareUnpersistedNewChatIfActive(
         AiChatCurrentContextSnapshot,
         provenance: AiChatNewChatPreparationProvenance,
         seed: AiChatNewChatSelectionSeed?,

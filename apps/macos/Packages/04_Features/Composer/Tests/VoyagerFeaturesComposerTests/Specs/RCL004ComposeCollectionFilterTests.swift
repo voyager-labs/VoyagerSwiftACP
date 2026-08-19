@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
@@ -181,6 +182,7 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
 
         withDependencies {
             $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
         } operation: {
             _ = ComposerFeature().reduce(into: &state, action: .searchResponse(requestID, .success(response)))
         }
@@ -314,7 +316,24 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         var state = ComposerState()
         state.text = "keep this query"
         state.scopes = ["/VoyagerFixtures/Documents"]
-        state.conditions = [Condition(propertyKey: "kind", propertyLabel: "Kind", propertyType: "string")]
+        state.conditionEditors = [
+            .init(
+                id: UUID(),
+                condition: .init(
+                    property: .init(
+                        key: "kind",
+                        label: "Kind",
+                        type: .string,
+                        unitContract: nil,
+                        operatorOptions: [],
+                    ),
+                    operation: nil,
+                    values: nil,
+                    availability: .available,
+                    opaqueSource: nil,
+                ),
+            ),
+        ]
         state.isLoadingSearch = true
         state.isLoadingFilters = true
         state.isFilteringInFlight = true
@@ -346,7 +365,7 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertEqual(state.queryRenderPhase, .idle)
         XCTAssertEqual(state.text, "keep this query")
         XCTAssertEqual(state.scopes, ["/VoyagerFixtures/Documents"])
-        XCTAssertEqual(state.conditions.map(\.propertyKey), ["kind"])
+        XCTAssertEqual(state.conditions.map(\.property.key), ["kind"])
     }
 
     /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 effect를 함께 취소함
@@ -737,8 +756,33 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
                     uiValueKind: ["string": "singleText"],
                 )
             },
-            operatorValueUIKind: { _, _ in "singleText" },
             resolvePropertyKey: { .canonical($0) },
+            resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+                let property = Condition.Property(
+                    key: propertyKey,
+                    label: "Kind",
+                    type: .string,
+                    unitContract: nil,
+                    operatorOptions: [
+                        .init(code: "eq", label: "Equals"),
+                        .init(code: "contains", label: "Contains"),
+                    ],
+                )
+                let operation = operatorCode.map { code in
+                    Condition.Operation(
+                        code: code,
+                        label: code == "eq" ? "Equals" : "Contains",
+                        valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+                    )
+                }
+                return Condition(
+                    property: property,
+                    operation: operation,
+                    values: values,
+                    availability: .available,
+                    opaqueSource: sourcePayload,
+                )
+            },
         )
     }
 }

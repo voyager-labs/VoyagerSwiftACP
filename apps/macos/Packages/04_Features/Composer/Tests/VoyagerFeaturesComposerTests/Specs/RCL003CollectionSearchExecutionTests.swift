@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
@@ -14,11 +15,14 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
     /// - 검증 내용: applyFilters request payload, lastFiltersResponse, loading 해제 확인
     /// - 사전 조건: collection scope와 deterministic condition이 준비된 Composer 상태
     /// - 기대 결과: SearchClient가 filter request를 받고 성공 response가 reducer 상태에 반영됨
-    func testExecuteFilteredCollectionRetrieval_withPreparedFilters_callsSearchClientAndStoresResponse() async {
+    func testExecuteFilteredCollectionRetrieval_withPreparedFilters_callsSearchClientAndStoresResponse() async throws {
         let recorder = ApplyFiltersRecorder()
         var initialState = ComposerState()
         initialState.scopes = ["/VoyagerFixtures/Documents"]
-        initialState.conditions = [makeKindCondition()]
+        let conditionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000020"))
+        initialState.conditionEditors = [
+            .init(id: conditionID, condition: makeKindCondition()),
+        ]
         initialState.isCollectionMode = true
 
         let store = TestStore(initialState: initialState) {
@@ -41,6 +45,7 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         await store.send(.applyFilters)
         await store.receive(\.internal.filtersResponse)
 
+        XCTAssertEqual(recorder.count, 1)
         XCTAssertEqual(recorder.last()?.filters.scopes, ["/VoyagerFixtures/Documents"])
         XCTAssertEqual(recorder.last()?.filters.conditions.map(\.propertyKey), ["kind"])
         XCTAssertEqual(store.state.lastFiltersResponse?.itemCount, 2)
@@ -57,7 +62,7 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         let recorder = ApplyFiltersRecorder()
         var initialState = ComposerState()
         initialState.scopes = ["/VoyagerFixtures/Documents"]
-        initialState.conditions = []
+        initialState.conditionEditors = []
         initialState.isCollectionMode = true
 
         let store = TestStore(initialState: initialState) {
@@ -92,7 +97,7 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         let recorder = ApplyFiltersRecorder()
         var initialState = ComposerState()
         initialState.scopes = ["/VoyagerFixtures/Documents"]
-        initialState.conditions = []
+        initialState.conditionEditors = []
         initialState.isCollectionMode = false
 
         let store = TestStore(initialState: initialState) {
@@ -145,19 +150,51 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertFalse(state.isLoadingSearch)
     }
 
-    private func makeKindCondition() -> Condition {
-        Condition(
-            propertyKey: "kind",
-            propertyLabel: "Kind",
-            propertyType: "string",
-            operatorCode: "eq",
-            operatorLabel: "Equals",
-            operatorValueArity: 1,
-            operatorValueUIKind: "singleText",
-            valueType: "string",
-            values: ["pdf"],
-            isActive: true,
-        )
+    /// RCL-003-execute_filtered_collection_retrieval: value commit은 filter 실행을 한 번만 시작한다.
+    /// parent condition mutation이 실제 SearchClient chain으로 이어질 때 중복 apply effect를 만들지 않는지 검증한다.
+    /// - 검증 내용: single value commit, one applyFilters request, committed payload
+    /// - 사전 조건: 실행 가능한 kind condition을 가진 collection-mode Composer
+    /// - 기대 결과: 새 value가 포함된 filter request가 정확히 한 번 실행되고 response가 반영됨
+    func testExecuteFilteredCollectionRetrieval_valueCommitCallsSearchClientExactlyOnce() async throws {
+        let recorder = ApplyFiltersRecorder()
+        let conditionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000021"))
+        var initialState = ComposerState()
+        initialState.scopes = ["/VoyagerFixtures/Documents"]
+        initialState.conditionEditors = [.init(id: conditionID, condition: makeKindCondition())]
+        initialState.isCollectionMode = true
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeRegistryClient()
+            $0.searchClient.applyFilters = { request in
+                recorder.record(request)
+                return SearchResponsePayload(
+                    itemCount: 1,
+                    appliedFilters: request.filters.asAppliedFiltersPayload,
+                    items: nil,
+                    error: nil,
+                )
+            }
+        }
+        // value commit은 내부 filtersResponse까지 발생하므로 외부 실행 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.conditionEditor(.element(
+            id: conditionID,
+            action: .delegate(.commitValues(
+                values: ["image"],
+                displayValues: ["image"],
+                selectedUnitCode: nil,
+            )),
+        )))
+        await store.receive(\.internal.filtersResponse)
+
+        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(recorder.last()?.filters.conditions.map(\.propertyKey), ["kind"])
+        XCTAssertEqual(recorder.last()?.filters.conditions.first?.value, .string("image"))
+        XCTAssertEqual(store.state.conditionEditors[id: conditionID]?.condition.values, ["image"])
+        XCTAssertEqual(store.state.lastFiltersResponse?.itemCount, 1)
     }
 }
 
@@ -180,8 +217,33 @@ private func makeRegistryClient() -> RegistryClient {
                 uiValueKind: ["string": "singleText"],
             )
         },
-        operatorValueUIKind: { _, _ in "singleText" },
         resolvePropertyKey: { .canonical($0) },
+        resolveCondition: { _, _, values, sourcePayload in
+            makeKindCondition(values: values, sourcePayload: sourcePayload)
+        },
+    )
+}
+
+private func makeKindCondition(
+    values: [String]? = ["pdf"],
+    sourcePayload: CollectionCondition? = nil,
+) -> Condition {
+    Condition(
+        property: .init(
+            key: "kind",
+            label: "Kind",
+            type: .string,
+            unitContract: nil,
+            operatorOptions: [.init(code: "eq", label: "Equals")],
+        ),
+        operation: .init(
+            code: "eq",
+            label: "Equals",
+            valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+        ),
+        values: values,
+        availability: .available,
+        opaqueSource: sourcePayload,
     )
 }
 

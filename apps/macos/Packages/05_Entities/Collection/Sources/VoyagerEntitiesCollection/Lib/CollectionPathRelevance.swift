@@ -1,4 +1,4 @@
-import Foundation
+import VoyagerShared
 
 nonisolated public func collectionChangeIsRelevant(
     changedPaths: [String],
@@ -6,43 +6,25 @@ nonisolated public func collectionChangeIsRelevant(
     excludedScopes: [String] = [],
     includeSubfolders: Bool = true,
 ) -> Bool {
-    let normalizedScopes = scopes.compactMap { scope -> String? in
-        guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
-        return URL(fileURLWithPath: scope).standardizedFileURL.path
-    }
-    let normalizedExcludedScopes = excludedScopes.compactMap { scope -> String? in
-        guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
-        return URL(fileURLWithPath: scope).standardizedFileURL.path
-    }
-    let isDescendantOrEqual: @Sendable (String, String) -> Bool = { path, excludedScope in
-        if path == excludedScope { return true }
-        let prefix = excludedScope == "/" ? "/" : excludedScope + "/"
-        return path.hasPrefix(prefix)
-    }
+    let validScopes = scopes.filter { !$0.isEmpty && $0.hasPrefix("/") }
+    let validExcludedScopes = excludedScopes.filter { !$0.isEmpty && $0.hasPrefix("/") }
 
-    guard !normalizedScopes.isEmpty else {
+    guard !validScopes.isEmpty else {
         return true
     }
 
     return changedPaths.contains { changedPath in
-        let normalizedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.path
-        if normalizedExcludedScopes.contains(where: { isDescendantOrEqual(normalizedPath, $0) }) {
+        if validExcludedScopes.contains(where: {
+            FileChangeScopePolicy.affects(root: $0, path: changedPath, includeSubfolders: true)
+        }) {
             return false
         }
-        return normalizedScopes.contains { scopePath in
-            guard includeSubfolders else {
-                if normalizedPath == scopePath {
-                    return true
-                }
-                let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL
-                    .path
-                return parentPath == scopePath
-            }
-            if normalizedPath == scopePath {
-                return true
-            }
-            let scopePrefix = scopePath == "/" ? "/" : scopePath + "/"
-            return normalizedPath.hasPrefix(scopePrefix)
+        return validScopes.contains { scopePath in
+            FileChangeScopePolicy.affects(
+                root: scopePath,
+                path: changedPath,
+                includeSubfolders: includeSubfolders,
+            )
         }
     }
 }

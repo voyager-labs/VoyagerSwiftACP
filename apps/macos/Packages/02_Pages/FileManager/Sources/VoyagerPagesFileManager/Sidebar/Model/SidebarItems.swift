@@ -16,22 +16,22 @@ public enum FileManagerSidebarTopNavigationItem: Equatable, Sendable, Identifiab
 }
 
 public enum SidebarItems {
-    public struct LocationItem: Equatable, Sendable {
-        public enum Kind: Equatable, Sendable {
-            case directory
-            case trash
-        }
+    public enum Kind: Equatable, Sendable {
+        case directory
+        case trash
+    }
 
+    public struct LocationItem: Equatable, Sendable {
         public let name: String
         public let url: URL
         public let iconName: String
-        public let kind: Kind
+        public let kind: SidebarItems.Kind
 
         nonisolated public init(
             name: String,
             url: URL,
             iconName: String,
-            kind: Kind = .directory,
+            kind: SidebarItems.Kind = .directory,
         ) {
             self.name = name
             self.url = url

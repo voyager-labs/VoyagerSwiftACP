@@ -71,6 +71,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.quickLook, .file(.quickLook)),
             (.restoreLastClosedTab, .file(.restoreLastClosedTab)),
             (.duplicateTab, .file(.duplicateTab)),
+            (.presentContentTabSwitcher, .file(.presentContentTabSwitcher)),
             (.selectMostRecentlyUsedContentTab, .file(.selectMostRecentlyUsedContentTab)),
         ]
 
@@ -680,6 +681,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
                  (.file(.quickLook), .file(.quickLook)),
                  (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)),
                  (.file(.duplicateTab), .file(.duplicateTab)),
+                 (.file(.presentContentTabSwitcher), .file(.presentContentTabSwitcher)),
                  (.file(.selectMostRecentlyUsedContentTab), .file(.selectMostRecentlyUsedContentTab)):
                 return true
             default:

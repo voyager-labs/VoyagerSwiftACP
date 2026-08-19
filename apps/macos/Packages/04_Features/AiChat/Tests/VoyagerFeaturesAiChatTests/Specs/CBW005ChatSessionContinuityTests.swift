@@ -40,6 +40,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let hostingView = NSHostingView(rootView: WithPerceptionTracking {
             AiChatView(
                 store: store,
+                allowsAttachmentPicker: false,
                 centeredEmptyContent: AnyView(Text("Centered content")),
             )
         })
@@ -62,8 +63,8 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             ofType: AiChatInputTextView.AttachmentDroppingTextView.self,
         ))
 
-        XCTAssertTrue(transcriptInput === centeredInput)
-        XCTAssertTrue(window.firstResponder === centeredInput)
+        XCTAssertIdentical(transcriptInput, centeredInput)
+        XCTAssertIdentical(window.firstResponder, centeredInput)
         XCTAssertEqual(store.withState { $0.draftText }, "Transcript draft")
 
         store.send(.draftTextChanged("Centered draft restored"))
@@ -74,8 +75,8 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             ofType: AiChatInputTextView.AttachmentDroppingTextView.self,
         ))
 
-        XCTAssertTrue(restoredCenteredInput === centeredInput)
-        XCTAssertTrue(window.firstResponder === centeredInput)
+        XCTAssertIdentical(restoredCenteredInput, centeredInput)
+        XCTAssertIdentical(window.firstResponder, centeredInput)
         XCTAssertEqual(store.withState { $0.draftText }, "Centered draft restored")
     }
 
@@ -7394,7 +7395,6 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(displayModel.sections.isEmpty)
     }
 
-    /// back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
     // MARK: - CBW-005-continue_chat_conversation_session
 
     /// CBW-005-continue_chat_conversation_session: In Flight Chat Continues From Session History And Updates Session
