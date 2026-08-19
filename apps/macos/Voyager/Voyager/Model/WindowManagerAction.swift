@@ -476,6 +476,7 @@ enum ExternalOpenPlacementApplication {
         let tabIDs: [ContentTabID]
         let activeTabID: ContentTabID
         let pinnedAnchorReturns: [PinnedAnchorReturn]
+        let shouldPublishSelectionChange: Bool
     }
 
     struct Result {
@@ -545,10 +546,7 @@ enum ExternalOpenPlacementApplication {
             {
                 continue
             }
-            let matches = item.requiresReservation
-                ? window.contentTabs.tabs[id: item.tabID] != nil
-                : window.stillMatchesExternalOpenItem(item)
-            if matches { return placementWindow.windowID }
+            if window.stillMatchesExternalOpenItem(item) { return placementWindow.windowID }
         }
         return nil
     }
@@ -622,6 +620,10 @@ enum ExternalOpenPlacementApplication {
             tabIDs: reservations.map(\.id),
             activeTabID: activeItem.tabID,
             pinnedAnchorReturns: pinnedAnchorReturns,
+            shouldPublishSelectionChange: activeItem.tabID == window.contentTabs.activeTabID
+                && window.content.pendingSelectEntryID == nil
+                && activeItem.pendingSelectEntryID != nil
+                && !window.content.entryViewLayout.selectedIds.isEmpty,
         )
     }
 }
@@ -636,9 +638,14 @@ private extension FileManagerWindowState {
 
     func stillMatchesExternalOpenItem(_ item: ExternalOpenPlacementPlan.Item) -> Bool {
         guard let tab = contentTabs.tabs[id: item.tabID] else { return false }
-        return item.requiresPinnedAnchorReturn
-            ? canReturnContentTabToPinnedLocation(item.tabID, matching: item.anchor)
-            : tab.anchor == item.anchor
+        if item.requiresPinnedAnchorReturn {
+            return canReturnContentTabToPinnedLocation(item.tabID, matching: item.anchor)
+        }
+        // ponytail: legacy fixtures use .homeDefault + requiresReservation; production reserved tabs have real anchors
+        if item.requiresReservation, item.anchor == .homeDefault {
+            return true
+        }
+        return tab.anchor == item.anchor
     }
 }
 

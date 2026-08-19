@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerPagesFileManager
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 extension WindowManagerFeature {
     func startExternalOpenActivation(
@@ -127,7 +128,14 @@ extension WindowManagerFeature {
                     id: activation.windowID,
                     action: .window(.contentTabs(.collapseSelectionToActive)),
                 ))),
-            ]
+            ] + (activation.shouldPublishSelectionChange
+                ? [
+                    .send(.windows(.element(
+                        id: activation.windowID,
+                        action: .window(.content(.entryViewLayout(.delegate(.selectionChanged)))),
+                    ))),
+                ]
+                : [])
         }
     }
 }

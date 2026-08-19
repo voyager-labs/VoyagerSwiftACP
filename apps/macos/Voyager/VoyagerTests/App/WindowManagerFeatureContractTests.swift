@@ -9644,6 +9644,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window.content.entryViewLayout.selectedIds, [lastReveal])
         XCTAssertTrue(window.content.entryViewLayout.shouldScrollToSelection)
         XCTAssertEqual(application.existingWindowActivations.first?.activeTabID, tabID)
+        XCTAssertEqual(application.existingWindowActivations.first?.shouldPublishSelectionChange, true)
     }
 
     /// 재사용 대상으로 계획한 tab이 apply 전에 바뀌면 같은 request를 현재 live route로 한 번 다시 계획한다.
@@ -9799,6 +9800,78 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     tabID: tabID,
                     anchor: requestedRoute,
                     requiresReservation: false,
+                )],
+            )],
+            request: request,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeRouteWindow(
+                id: windowID,
+                tabs: [(tabID, driftedRoute)],
+                activeTabID: tabID,
+            ),
+        ]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(stalePlan)))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.retryCount == 1
+                && plan.windows.count == 1
+                && plan.windows[0].items.count == 1
+                && plan.windows[0].items[0].tabID != tabID
+                && plan.windows[0].items[0].requiresReservation
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor,
+            driftedRoute,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs.map(\.anchor).contains(requestedRoute),
+            true,
+        )
+    }
+
+    /// activation 전에 신규 예약 tab identity는 남고 route만 바뀌면 동일 request를 새 tab으로 한 번 복구한다.
+    /// - 검증 내용: lastSurvivingWindowID가 reserved tab exact-anchor 불일치를 거부하고 retryCount 1 신규 reservation을 할당함
+    /// - 사전 조건: 계획된 reserved tab은 존재하지만 runtime anchor가 요청 route와 다름
+    /// - 기대 결과: drifted reserved tab을 활성화하지 않고 새 identity apply로 복귀함
+    func testPlacementActivationReplansWhenReservedTabRouteDrifted() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let requestedRoute = ContentTabPageAnchor.directory(path: "/tmp/reserved-requested")
+        let driftedRoute = ContentTabPageAnchor.directory(path: "/tmp/reserved-drifted")
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "drifted-reserved")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [.init(itemID: itemID, anchor: requestedRoute, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+        let stalePlan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: itemID,
+                    tabID: tabID,
+                    anchor: requestedRoute,
+                    requiresReservation: true,
                 )],
             )],
             request: request,
