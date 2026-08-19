@@ -2,7 +2,10 @@
 
 actor InMemoryRuntimeStateStore: RuntimeStateStore {
     private var state: RuntimeStoredState?
+    private let failingLoadNumbers: Set<Int>
+    private let loadErrors: [Int: RuntimeStateStoreError]
     private let failingSaveNumbers: Set<Int>
+    private let conflictingSaveNumbers: Set<Int>
     private let loadGates: [Int: RuntimeTestGate]
     private let saveDelays: [Int: Duration]
     private let saveGates: [Int: RuntimeTestGate]
@@ -13,13 +16,19 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
 
     init(
         state: RuntimeStoredState? = nil,
+        failingLoadNumbers: Set<Int> = [],
+        loadErrors: [Int: RuntimeStateStoreError] = [:],
         failingSaveNumbers: Set<Int> = [],
+        conflictingSaveNumbers: Set<Int> = [],
         loadGates: [Int: RuntimeTestGate] = [:],
         saveDelays: [Int: Duration] = [:],
         saveGates: [Int: RuntimeTestGate] = [:],
     ) {
         self.state = state
+        self.failingLoadNumbers = failingLoadNumbers
+        self.loadErrors = loadErrors
         self.failingSaveNumbers = failingSaveNumbers
+        self.conflictingSaveNumbers = conflictingSaveNumbers
         self.loadGates = loadGates
         self.saveDelays = saveDelays
         self.saveGates = saveGates
@@ -29,10 +38,16 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         loadCount += 1
         resumeLoadCountWaiters()
         await loadGates[loadCount]?.wait()
+        if let error = loadErrors[loadCount] {
+            throw error
+        }
+        if failingLoadNumbers.contains(loadCount) {
+            throw RuntimeStateStoreError.unavailable
+        }
         return state
     }
 
-    func save(_ state: RuntimeStoredState) async throws {
+    func seed(_ state: RuntimeStoredState) async throws {
         saveCount += 1
         resumeSaveCountWaiters()
         if let delay = saveDelays[saveCount] {
@@ -40,9 +55,46 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         }
         await saveGates[saveCount]?.wait()
         if failingSaveNumbers.contains(saveCount) {
-            throw StoreFailure.save
+            throw RuntimeStateStoreError.unavailable
         }
         self.state = state
+    }
+
+    func apply(_ mutation: RuntimeStateMutation) async throws -> RuntimeStateMutationResult {
+        guard mutation.host.rawValue.isRuntimeBounded,
+              mutation.expected?.externalAgentSessionReference == nil || mutation.expected?
+              .externalAgentSessionReference == mutation.host,
+              mutation.replacement?.externalAgentSessionReference == nil || mutation.replacement?
+              .externalAgentSessionReference == mutation.host
+        else { throw RuntimeStateStoreError.invalidSnapshot }
+        saveCount += 1
+        resumeSaveCountWaiters()
+        if let delay = saveDelays[saveCount] { try await Task.sleep(for: delay) }
+        await saveGates[saveCount]?.wait()
+        if failingSaveNumbers.contains(saveCount) { throw RuntimeStateStoreError.unavailable }
+        let loaded = state
+        let current = loaded ?? RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
+        let existing = current.sessions.first { $0.externalAgentSessionReference == mutation.host }
+        if conflictingSaveNumbers.contains(saveCount) { return .conflict(loaded) }
+        if conflictingSaveNumbers.contains(saveCount) { return .conflict(loaded) }
+        guard existing == mutation.expected else { return .conflict(loaded) }
+        if let replacement = mutation.replacement,
+           current.sessions
+           .contains(where: {
+               $0.externalAgentSessionReference != mutation.host && $0.runReference == replacement.runReference
+           })
+        {
+            return .conflict(loaded)
+        }
+        let sessions = current.sessions
+            .filter { $0.externalAgentSessionReference != mutation.host } + (mutation.replacement.map { [$0] } ?? [])
+        let committed = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: sessions
+                .sorted { $0.externalAgentSessionReference.rawValue < $1.externalAgentSessionReference.rawValue },
+        )
+        state = committed
+        return .committed(committed)
     }
 
     func currentState() -> RuntimeStoredState? {
@@ -82,14 +134,13 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
             continuation.resume()
         }
     }
-
-    enum StoreFailure: Error { case save }
 }
 
-actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore, RuntimeStateStoreHostMutation {
+actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore {
     private var state: RuntimeStoredState?
     private let failingLoadNumbers: Set<Int>
     private let failingUpdateNumbers: Set<Int>
+    private let conflictingUpdateStates: [Int: RuntimeStoredState]
     private let updateGates: [Int: RuntimeTestGate]
     private(set) var loadCount = 0
     private(set) var updateCount = 0
@@ -99,54 +150,61 @@ actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore, RuntimeStat
         state: RuntimeStoredState? = nil,
         failingLoadNumbers: Set<Int> = [],
         failingUpdateNumbers: Set<Int> = [],
+        conflictingUpdateStates: [Int: RuntimeStoredState] = [:],
         updateGates: [Int: RuntimeTestGate] = [:],
     ) {
         self.state = state
         self.failingLoadNumbers = failingLoadNumbers
         self.failingUpdateNumbers = failingUpdateNumbers
+        self.conflictingUpdateStates = conflictingUpdateStates
         self.updateGates = updateGates
     }
 
     func load() async throws -> RuntimeStoredState? {
         loadCount += 1
         if failingLoadNumbers.contains(loadCount) {
-            throw StoreFailure.load
+            throw RuntimeStateStoreError.unavailable
         }
         return state
     }
 
-    func save(_ state: RuntimeStoredState) async throws {
+    func seed(_ state: RuntimeStoredState) async throws {
         self.state = state
     }
 
-    func updateHost(
-        _ host: ExternalAgentSessionReference,
-        expected: RuntimeStoredSession?,
-        replacement: RuntimeStoredSession?,
-    ) async throws -> RuntimeStoredState {
+    func apply(_ mutation: RuntimeStateMutation) async throws -> RuntimeStateMutationResult {
         updateCount += 1
         resumeUpdateCountWaiters()
         await updateGates[updateCount]?.wait()
         if failingUpdateNumbers.contains(updateCount) {
-            throw StoreFailure.update
+            throw RuntimeStateStoreError.unavailable
         }
 
-        var sessions = state?.sessions ?? []
-        let current = sessions.first { $0.externalAgentSessionReference == host }
-        guard RuntimeStoredSession.hasSamePersistedState(current, expected) else {
-            throw StoreFailure.update
+        let loaded = state
+        if let conflictingState = conflictingUpdateStates[updateCount] {
+            state = conflictingState
+            return .conflict(conflictingState)
         }
-        sessions.removeAll { $0.externalAgentSessionReference == host }
-        if let replacement {
-            sessions.append(replacement)
+        var sessions = loaded?.sessions ?? []
+        let current = sessions.first { $0.externalAgentSessionReference == mutation.host }
+        guard current == mutation.expected else { return .conflict(loaded) }
+        if let replacement = mutation.replacement,
+           sessions
+           .contains(where: {
+               $0.externalAgentSessionReference != mutation.host && $0.runReference == replacement.runReference
+           })
+        {
+            return .conflict(loaded)
         }
+        sessions.removeAll { $0.externalAgentSessionReference == mutation.host }
+        if let replacement = mutation.replacement { sessions.append(replacement) }
         sessions.sort { $0.externalAgentSessionReference.rawValue < $1.externalAgentSessionReference.rawValue }
         let committed = RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: sessions,
         )
         state = committed
-        return committed
+        return .committed(committed)
     }
 
     func currentState() -> RuntimeStoredState? {
@@ -171,6 +229,24 @@ actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore, RuntimeStat
             continuation.resume()
         }
     }
+}
 
-    enum StoreFailure: Error { case load, update }
+extension RuntimeFileStateStore {
+    func seed(_ state: RuntimeStoredState) async throws {
+        let current = try await load()
+        for session in current?.sessions ?? [] {
+            _ = try await apply(RuntimeStateMutation(
+                host: session.externalAgentSessionReference,
+                expected: session,
+                replacement: nil,
+            ))
+        }
+        for session in state.sessions {
+            _ = try await apply(RuntimeStateMutation(
+                host: session.externalAgentSessionReference,
+                expected: nil,
+                replacement: session,
+            ))
+        }
+    }
 }
