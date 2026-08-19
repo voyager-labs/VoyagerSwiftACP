@@ -12,7 +12,7 @@
 # 사용법:
 #   scripts/dev/macos-launch.sh \
 #     --scheme Voyager-Dev \
-#     --configuration Debug \
+#     --configuration Dev-Debug \
 #     [--workspace <path>]   \
 #     [--derived-data <path>] \
 #     [--injection-next] \
@@ -21,11 +21,11 @@
 #
 # 예시:
 #   # Voyager Dev Debug 빌드 후 실행
-#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Debug \
+#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Dev-Debug \
 #     --env VOYAGER_PROJECT_ROOT="$(pwd)"
 #
 #   # 빌드만 (런치하지 않음)
-#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Debug --no-launch
+#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Dev-Debug --no-launch
 
 set -euo pipefail
 
@@ -71,6 +71,13 @@ if [[ -z "$SCHEME" ]]; then
   echo "오류: --scheme 이 필요합니다." >&2
   exit 1
 fi
+
+case "$CONFIGURATION" in
+  Dev-Debug|Dev-Release|Prod-Debug|Prod-Release) ;;
+  *)
+    echo "오류: 지원하지 않는 --configuration 값입니다: '$CONFIGURATION'. 허용 값: Dev-Debug, Dev-Release, Prod-Debug, Prod-Release." >&2
+    exit 2 ;;
+esac
 
 if [[ "$INJECTION_NEXT" -eq 1 ]]; then
   if [[ "$SCHEME" != "FileManagerHost-Dev" || "$CONFIGURATION" != "Dev-Debug" ]]; then
