@@ -438,7 +438,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-detect_session_expiry",
@@ -449,7 +449,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-exchange_handoff_token",
@@ -460,7 +460,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-restore_account_session",
@@ -471,7 +471,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-sign_out_account",
@@ -482,7 +482,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-start_account_sign_in",
@@ -493,7 +493,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-validate_account_session",
@@ -504,7 +504,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-001-web_sign_out",
@@ -515,7 +515,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-002-check_entitlement_status",
@@ -526,7 +526,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-002-determine_app_unlock_state",
@@ -537,7 +537,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-002-evaluate_access_level",
@@ -548,7 +548,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-002-handle_entitlement_change",
@@ -559,7 +559,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-002-show_paywall_cta",
@@ -570,7 +570,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ACC-003-guard_session_lapse",
@@ -581,7 +581,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-001-cancel_active_chat_request",
@@ -592,7 +592,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-001-open_contextual_chat",
@@ -603,7 +603,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-001-regenerate_chat_response",
@@ -614,7 +614,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-001-show_request_processing_state",
@@ -625,7 +625,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-001-submit_chat_request",
@@ -636,7 +636,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_attachment_by_drop",
@@ -647,7 +647,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_attachment_from_picker",
@@ -658,7 +658,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_context_from_picker",
@@ -669,7 +669,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_inline_attachment",
@@ -680,7 +680,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_inline_context_reference",
@@ -691,7 +691,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_selection_as_request_context",
@@ -702,7 +702,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-add_selection_to_context",
@@ -713,7 +713,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-capture_request_context_snapshot",
@@ -724,7 +724,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-change_context_folder_structure_mode",
@@ -735,7 +735,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-edit_request_context",
@@ -746,7 +746,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-remove_request_context",
@@ -757,7 +757,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-002-show_request_context",
@@ -768,7 +768,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-003-build_contextual_request_payload",
@@ -779,7 +779,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-003-generate_contextual_chat_response",
@@ -790,7 +790,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-003-prepare_contextual_chat_request",
@@ -801,7 +801,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-003-show_request_resolution_failure",
@@ -812,7 +812,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-003-show_response_references",
@@ -823,7 +823,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-003-stream_contextual_chat_response",
@@ -834,7 +834,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-open_chat_model_selector",
@@ -845,7 +845,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-open_chat_provider_selector",
@@ -856,7 +856,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-select_active_chat_model",
@@ -867,7 +867,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-select_active_chat_provider",
@@ -878,7 +878,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-select_chat_model_thinking",
@@ -889,7 +889,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-show_active_chat_provider_and_model",
@@ -900,7 +900,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-show_available_chat_models",
@@ -911,7 +911,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-show_available_chat_providers",
@@ -922,7 +922,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-004-show_unavailable_chat_model_state",
@@ -933,7 +933,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-continue_chat_conversation_session",
@@ -944,7 +944,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-delete_chat_conversation_session",
@@ -955,7 +955,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-open_chat_conversation_session",
@@ -966,7 +966,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-rename_chat_conversation_session",
@@ -977,7 +977,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-restore_chat_conversation_session",
@@ -988,7 +988,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-search_chat_conversation_sessions",
@@ -999,7 +999,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-show_active_conversation_session",
@@ -1010,7 +1010,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-show_chat_session_list",
@@ -1021,7 +1021,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-show_chat_session_restore_failure",
@@ -1032,7 +1032,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-show_rebind_required_state",
@@ -1043,7 +1043,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-005-start_chat_conversation_session",
@@ -1054,7 +1054,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-006-cancel_entry_work_request",
@@ -1065,7 +1065,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-006-open_entry_work_request",
@@ -1076,7 +1076,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-006-regenerate_entry_work_plan",
@@ -1087,7 +1087,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-006-revise_entry_work_request",
@@ -1098,7 +1098,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-006-show_entry_work_request_processing_state",
@@ -1109,7 +1109,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-006-submit_entry_work_request",
@@ -1120,7 +1120,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-007-add_entry_work_attachment",
@@ -1131,7 +1131,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-007-add_selection_to_entry_work_context",
@@ -1142,7 +1142,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-007-capture_entry_work_context_snapshot",
@@ -1153,7 +1153,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-007-edit_entry_work_context",
@@ -1164,7 +1164,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-007-show_entry_work_context",
@@ -1175,7 +1175,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-007-show_entry_work_context_warning",
@@ -1186,7 +1186,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-approve_entry_work_plan",
@@ -1197,7 +1197,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-build_entry_work_planner_payload",
@@ -1208,7 +1208,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-decode_entry_operation_proposals",
@@ -1219,7 +1219,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-generate_entry_work_plan",
@@ -1230,7 +1230,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-prepare_entry_work_request",
@@ -1241,7 +1241,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-revise_entry_work_plan",
@@ -1252,7 +1252,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-show_entry_work_plan_preview",
@@ -1263,7 +1263,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-show_entry_work_resolution_failure",
@@ -1274,7 +1274,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-008-validate_entry_work_plan",
@@ -1285,7 +1285,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-continue_chat_from_entry_work_result",
@@ -1296,7 +1296,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-dispatch_approved_entry_work_to_eop",
@@ -1307,7 +1307,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-open_entry_work_result_location",
@@ -1318,7 +1318,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-show_entry_work_execution_progress",
@@ -1329,7 +1329,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-show_entry_work_partial_failure",
@@ -1340,7 +1340,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-show_entry_work_result_references",
@@ -1351,7 +1351,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CBW-009-show_entry_work_result_summary",
@@ -1362,7 +1362,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-001-add_new_custom_property_on_entry",
@@ -1373,7 +1373,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-001-delete_custom_property",
@@ -1384,7 +1384,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-001-edit_custom_property_value",
@@ -1395,7 +1395,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-001-rename_custom_property_key",
@@ -1406,7 +1406,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-analyze_custom_property_usage",
@@ -1417,7 +1417,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-create_custom_property_schema",
@@ -1428,7 +1428,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-delete_custom_property_schema",
@@ -1439,7 +1439,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-detect_redundant_custom_properties",
@@ -1450,7 +1450,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-disable_custom_property_schema",
@@ -1461,7 +1461,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-disable_unused_custom_property",
@@ -1472,7 +1472,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-edit_custom_property_schema",
@@ -1483,7 +1483,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-merge_custom_property_schemas",
@@ -1494,7 +1494,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-migrate_custom_property_values",
@@ -1505,7 +1505,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-open_custom_property_schema_list",
@@ -1516,7 +1516,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-002-rollback_custom_property_migration",
@@ -1527,7 +1527,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-003-create_computed_property",
@@ -1538,7 +1538,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-003-edit_computed_property_formula",
@@ -1549,7 +1549,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-003-preview_computed_property_result",
@@ -1560,7 +1560,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CEP-003-view_computed_property_errors",
@@ -1571,7 +1571,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-001-close_command_palette",
@@ -1582,7 +1582,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-001-execute_last_command_again",
@@ -1593,7 +1593,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-001-execute_selected_command",
@@ -1604,7 +1604,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-001-open_command_palette",
@@ -1615,7 +1615,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-002-search_commands_by_query",
@@ -1626,7 +1626,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-002-show_available_commands",
@@ -1637,7 +1637,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-002-show_contextual_command_suggestions",
@@ -1648,7 +1648,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-002-update_command_ranking_by_usage",
@@ -1659,7 +1659,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-complete_path_in_navigation_input",
@@ -1670,7 +1670,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-focus_navigation_input_field",
@@ -1681,7 +1681,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-open_chat_from_chat_title",
@@ -1692,7 +1692,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-open_collection_from_collection_title",
@@ -1703,7 +1703,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-open_directory_from_path_input",
@@ -1714,7 +1714,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-search_navigation_targets_from_input",
@@ -1725,7 +1725,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-003-show_navigation_results_in_palette",
@@ -1736,7 +1736,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-004-change_command_palette_shortcut",
@@ -1747,7 +1747,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-004-pin_command_as_favorite",
@@ -1758,7 +1758,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-004-reset_command_palette_settings",
@@ -1769,7 +1769,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-004-toggle_experimental_commands_visibility",
@@ -1780,7 +1780,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-004-toggle_palette_availability_scope",
@@ -1791,7 +1791,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-004-unpin_command_from_favorites",
@@ -1802,7 +1802,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-005-build_command_arguments_from_text",
@@ -1813,7 +1813,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-005-match_parsed_command_to_existing_actions",
@@ -1824,7 +1824,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-005-parse_natural_language_command",
@@ -1835,7 +1835,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CMP-005-route_unmatched_request_to_chat",
@@ -1846,7 +1846,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-browse_overflowing_content_tabs",
@@ -1857,7 +1857,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-close_content_tab",
@@ -1868,7 +1868,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-close_other_content_tabs",
@@ -1879,7 +1879,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-close_selected_content_tabs",
@@ -1890,7 +1890,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-drop_entries_on_directory_content_tab_rows",
@@ -1901,7 +1901,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-duplicate_content_tab",
@@ -1912,7 +1912,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-duplicate_selected_content_tabs",
@@ -1923,7 +1923,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-move_content_tab_to_another_file_manager_window",
@@ -1934,7 +1934,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-move_content_tab_to_new_file_manager_window",
@@ -1945,7 +1945,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-move_selected_content_tabs_to_another_file_manager_window",
@@ -1956,7 +1956,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-open_new_content_tab",
@@ -1967,7 +1967,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-reorder_content_tab",
@@ -1978,7 +1978,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-reorder_selected_content_tabs",
@@ -1989,7 +1989,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-restore_last_closed_tab",
@@ -2000,7 +2000,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-001-select_content_tabs",
@@ -2011,7 +2011,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-002-set_current_content_tab_by_number",
@@ -2022,7 +2022,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-002-set_current_content_tab_by_sidebar_row",
@@ -2033,7 +2033,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-002-set_current_content_tab_to_last_used",
@@ -2044,7 +2044,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-002-set_current_content_tab_to_next",
@@ -2055,7 +2055,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-002-set_current_content_tab_to_previous",
@@ -2066,7 +2066,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-003-change_content_tab_icon",
@@ -2077,7 +2077,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-003-go_to_anchored_path_of_pinned_tab",
@@ -2088,7 +2088,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-003-pin_content_tab_s",
@@ -2099,7 +2099,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-003-rename_content_tab",
@@ -2110,7 +2110,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-003-seed_built_in_pinned_content_tabs",
@@ -2121,7 +2121,7 @@
       "legacy_aliases": [],
       "identity_policy": "device",
       "property_allowlist": ["result_status", "source_surface"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "CTM-003-unpin_content_tab_s",
@@ -2132,7 +2132,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-004-move_to_next_tab_in_used_content_tabs_switcher",
@@ -2143,7 +2143,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-004-move_to_previous_in_used_content_tabs_switcher",
@@ -2154,7 +2154,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "CTM-004-switch_content_tab_via_used_content_tabs_switcher",
@@ -2165,7 +2165,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-001-bridge_external_file_system_changes_to_app",
@@ -2176,7 +2176,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-001-index_new_entries",
@@ -2187,7 +2187,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-001-observe_external_file_system_changes",
@@ -2198,7 +2198,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-001-reindex_all_entries",
@@ -2209,7 +2209,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-001-run_initial_indexing",
@@ -2220,7 +2220,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-001-update_index_for_changed_entries",
@@ -2231,7 +2231,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-002-pause_entry_indexing",
@@ -2242,7 +2242,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-002-resume_entry_indexing",
@@ -2253,7 +2253,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-002-retry_selected_indexing_failure",
@@ -2264,7 +2264,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-002-show_indexing_failures",
@@ -2275,7 +2275,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-002-show_indexing_status",
@@ -2286,7 +2286,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-create_indexing_exclusion_rule",
@@ -2297,7 +2297,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-delete_indexing_exclusion_rule",
@@ -2308,7 +2308,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-edit_indexing_exclusion_rules",
@@ -2319,7 +2319,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-exclude_selected_entries_from_indexing",
@@ -2330,7 +2330,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-show_indexed_entries",
@@ -2341,7 +2341,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-show_indexing_exclusion_rules",
@@ -2352,7 +2352,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-003-update_indexing_exclusion_rule",
@@ -2363,7 +2363,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-004-index_system_property",
@@ -2374,7 +2374,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-005-index_content_based_properties",
@@ -2385,7 +2385,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-005-re_extract_content_based_properties_for_selection",
@@ -2396,7 +2396,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-006-extract_document_properties",
@@ -2407,7 +2407,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-007-extract_code_properties",
@@ -2418,7 +2418,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-008-extract_sheet_properties",
@@ -2429,7 +2429,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-009-extract_image_properties",
@@ -2440,7 +2440,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-010-extract_audio_properties",
@@ -2451,7 +2451,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-011-extract_video_properties",
@@ -2462,7 +2462,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-012-index_entry_embeddings",
@@ -2473,7 +2473,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-013-compute_document_embeddings",
@@ -2484,7 +2484,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-014-compute_code_embeddings",
@@ -2495,7 +2495,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-015-compute_sheet_embeddings",
@@ -2506,7 +2506,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-016-compute_image_embeddings",
@@ -2517,7 +2517,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-017-compute_audio_embeddings",
@@ -2528,7 +2528,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EIX-018-compute_video_embeddings",
@@ -2539,7 +2539,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-001-open_entry_with_default_app",
@@ -2550,7 +2550,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-001-open_entry_with_selected_app",
@@ -2561,7 +2561,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-001-quick_look_entry",
@@ -2572,7 +2572,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-001-set_default_app_for_entry",
@@ -2583,7 +2583,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-copy_entries",
@@ -2594,7 +2594,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-create_entry_alias",
@@ -2605,7 +2605,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-create_new_folder",
@@ -2616,7 +2616,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-cut_entries",
@@ -2627,7 +2627,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-duplicate_entries",
@@ -2638,7 +2638,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-move_entries",
@@ -2649,7 +2649,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-002-paste_entries",
@@ -2660,7 +2660,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-003-delete_entries_immediately",
@@ -2671,7 +2671,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-003-empty_trash",
@@ -2682,7 +2682,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-003-move_entries_to_trash",
@@ -2693,7 +2693,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-003-put_deleted_entries_back",
@@ -2704,7 +2704,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-003-redo_entry_action",
@@ -2715,7 +2715,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-003-undo_entry_action",
@@ -2726,7 +2726,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-004-batch_rename_entries",
@@ -2737,7 +2737,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-004-change_entry_permissions",
@@ -2748,7 +2748,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-004-edit_entry_tags",
@@ -2759,7 +2759,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-004-get_entry_info",
@@ -2770,7 +2770,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-004-rename_entry",
@@ -2781,7 +2781,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-005-compress_entries",
@@ -2792,7 +2792,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-005-extract_compressed_files",
@@ -2803,7 +2803,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-006-copy_absolute_paths_of_entries",
@@ -2814,7 +2814,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-006-copy_relative_paths_of_entries",
@@ -2825,7 +2825,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-006-copy_urls_of_entries",
@@ -2836,7 +2836,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-007-reveal_entries_in_finder",
@@ -2847,7 +2847,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-007-share_entries_via_system_share_sheet",
@@ -2858,7 +2858,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-007-show_quick_action_menu",
@@ -2869,7 +2869,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EOP-007-show_services",
@@ -2880,7 +2880,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-forward_page_history",
@@ -2891,7 +2891,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-go_page_history_back",
@@ -2902,7 +2902,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-go_to_enclosing_directory",
@@ -2913,7 +2913,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-navigate_pages",
@@ -2924,7 +2924,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-reload_directory_page_on_external_change",
@@ -2935,7 +2935,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-show_page_history",
@@ -2946,7 +2946,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-001-view_current_page_title",
@@ -2957,7 +2957,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-customize_list_view_column",
@@ -2968,7 +2968,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-set_entries_view_as_column",
@@ -2979,7 +2979,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-set_entries_view_as_graph",
@@ -2990,7 +2990,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-set_entries_view_as_icon_grid",
@@ -3001,7 +3001,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-set_entries_view_as_list_table",
@@ -3012,7 +3012,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-show_hide_hidden_entry",
@@ -3023,7 +3023,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-show_selected_entry_counts",
@@ -3034,7 +3034,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-update_entry_selection",
@@ -3045,7 +3045,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-002-view_entry_counts_in_current_page",
@@ -3056,7 +3056,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-003-adjust_split_content_pane_size",
@@ -3067,7 +3067,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-003-convert_split_pane_orientation",
@@ -3078,7 +3078,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-003-separate_split_content_pane",
@@ -3089,7 +3089,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-003-split_content_pane_vertically_horizontally",
@@ -3100,7 +3100,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-003-switch_focus_between_split_panes",
@@ -3111,7 +3111,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-004-group_entries_by_property",
@@ -3122,7 +3122,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "EVM-004-sort_entries_by_property",
@@ -3133,7 +3133,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-adjust_file_manager_window_size",
@@ -3144,7 +3144,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-close_file_manager_window",
@@ -3155,7 +3155,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-enter_full_screen_for_file_manager_window",
@@ -3166,7 +3166,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-exit_full_screen_for_file_manager_window",
@@ -3177,7 +3177,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-keep_file_manager_window_on_top",
@@ -3188,7 +3188,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-minimize_file_manager_window",
@@ -3199,7 +3199,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-001-open_new_file_manager_window",
@@ -3210,7 +3210,7 @@
       "legacy_aliases": [],
       "identity_policy": "device",
       "property_allowlist": ["result_status", "source_surface"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "FMW-001-quit_voyager",
@@ -3221,7 +3221,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-adjust_inspector_pane_width",
@@ -3232,7 +3232,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-adjust_sidebar_width",
@@ -3243,7 +3243,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-draw_hidden_sidebar",
@@ -3254,7 +3254,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-hide_inspector_pane",
@@ -3265,7 +3265,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-hide_sidebar",
@@ -3276,7 +3276,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-show_inspector_pane",
@@ -3287,7 +3287,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-002-show_sidebar",
@@ -3298,7 +3298,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-003-handle_deep_link",
@@ -3309,7 +3309,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "FMW-003-open_external_path",
@@ -3320,7 +3320,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "MFB-001-format_structued_file_privew_in_quick_look",
@@ -3331,7 +3331,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "MFB-001-hightlght_code_syntax_in_quick_look",
@@ -3342,7 +3342,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "MFB-001-quick_look_archive_entries",
@@ -3353,7 +3353,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "MFB-001-quick_look_directory_entries",
@@ -3364,7 +3364,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-advance_onboarding_step",
@@ -3375,7 +3375,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-complete_onboarding_session",
@@ -3386,7 +3386,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-go_back_onboarding_step",
@@ -3397,7 +3397,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-resume_onboarding_session",
@@ -3408,7 +3408,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-show_onboarding_step",
@@ -3419,7 +3419,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-start_onboarding_session",
@@ -3430,7 +3430,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-001-update_onboarding_step_state",
@@ -3441,7 +3441,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-002-apply_access_unlock_result",
@@ -3452,7 +3452,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-002-show_access_unlock_status",
@@ -3463,7 +3463,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-002-start_access_unlock_recovery",
@@ -3474,7 +3474,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-003-refresh_onboarding_permission_status",
@@ -3485,7 +3485,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-003-request_onboarding_permission_access",
@@ -3496,7 +3496,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-003-show_onboarding_permission_status",
@@ -3507,7 +3507,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-004-show_onboarding_ai_provider_setup",
@@ -3518,7 +3518,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-004-skip_ai_provider_setup_during_onboarding",
@@ -3529,7 +3529,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "ONB-004-start_ai_provider_connection_from_onboarding",
@@ -3540,7 +3540,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-add_directory_to_collection_scope",
@@ -3551,7 +3551,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-collapse_collection_filter_composer",
@@ -3562,7 +3562,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-exclude_directory_from_collection_scope",
@@ -3573,7 +3573,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-open_collection_filter_composer",
@@ -3584,7 +3584,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-open_collection_scope_menu",
@@ -3595,7 +3595,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-redo_collection_filter_changes",
@@ -3606,7 +3606,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-remove_directory_from_collection_scope",
@@ -3617,7 +3617,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-restore_directory_to_collection_scope",
@@ -3628,7 +3628,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-search_collection_scope_candidates",
@@ -3639,7 +3639,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-show_collection_scope_candidate_disambiguation",
@@ -3650,7 +3650,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-show_collection_scope_change_feedback",
@@ -3661,7 +3661,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-show_collection_scope_exceptions",
@@ -3672,7 +3672,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-show_collection_scope_summary",
@@ -3683,7 +3683,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-toggle_collection_scope_subfolder_inclusion",
@@ -3694,7 +3694,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-001-undo_collection_filter_changes",
@@ -3705,7 +3705,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-alert_unsaved_collection_filter_changes",
@@ -3716,7 +3716,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-delete_collection",
@@ -3727,7 +3727,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-discard_collection_filter_changes",
@@ -3738,7 +3738,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-ensure_built_in_collections",
@@ -3749,7 +3749,7 @@
       "legacy_aliases": [],
       "identity_policy": "device",
       "property_allowlist": ["result_status", "source_surface"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "RCL-002-import_smart_folder_as_collection",
@@ -3760,7 +3760,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-indicate_unsaved_collection_filter_changes",
@@ -3771,7 +3771,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-open_saved_collection",
@@ -3782,7 +3782,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-rename_collection",
@@ -3793,7 +3793,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-restore_saved_collection_snapshot",
@@ -3804,7 +3804,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-save_collection_filter_changes",
@@ -3815,7 +3815,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-save_current_filter_as_new_collection",
@@ -3826,7 +3826,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-002-show_restored_collection_snapshot",
@@ -3837,7 +3837,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-apply_deterministic_filters",
@@ -3848,7 +3848,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-combine_hybrid_scores",
@@ -3859,7 +3859,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-evaluate_text_query_condition_lexically",
@@ -3870,7 +3870,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-evaluate_text_query_condition_semantically",
@@ -3881,7 +3881,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-execute_filtered_collection_retrieval",
@@ -3892,7 +3892,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-indicate_collection_results_staleness",
@@ -3903,7 +3903,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-invalidate_closed_collection_staleness_on_external_change",
@@ -3914,7 +3914,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-mark_collection_results_as_stale",
@@ -3925,7 +3925,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-mark_open_collection_as_stale_on_external_change",
@@ -3936,7 +3936,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-rank_entries_by_relevance",
@@ -3947,7 +3947,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-refresh_collection_results",
@@ -3958,7 +3958,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-refresh_stale_collection_results_on_reopen",
@@ -3969,7 +3969,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-request_collection_results_refresh",
@@ -3980,7 +3980,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-003-update_collection_results_on_filter_change",
@@ -3991,7 +3991,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-apply_all_generated_filter_suggestions",
@@ -4002,7 +4002,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-apply_generated_filter_changes",
@@ -4013,7 +4013,7 @@
       "legacy_aliases": ["voyager_composer_filters_apply"],
       "identity_policy": "device",
       "property_allowlist": ["failure_reason", "result_status", "source_surface"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "RCL-004-apply_generated_filter_suggestion",
@@ -4024,7 +4024,7 @@
       "legacy_aliases": ["voyager_filters_roundtrip_duration_ms"],
       "identity_policy": "device",
       "property_allowlist": ["duration_ms"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "RCL-004-coalesce_repeated_query_failure_feedback",
@@ -4035,7 +4035,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-generate_filter_changes_from_query",
@@ -4046,7 +4046,7 @@
       "legacy_aliases": ["voyager_search_roundtrip_duration_ms"],
       "identity_policy": "device",
       "property_allowlist": ["duration_ms"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "RCL-004-generate_filter_suggestions_from_query",
@@ -4057,7 +4057,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-reject_all_generated_filter_suggestions",
@@ -4068,7 +4068,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-reject_generated_filter_suggestion",
@@ -4079,7 +4079,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-show_generated_filter_suggestions",
@@ -4090,7 +4090,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-show_query_conversion_failure_feedback",
@@ -4101,7 +4101,7 @@
       "legacy_aliases": ["voyager_search_cancel", "voyager_search_result"],
       "identity_policy": "device",
       "property_allowlist": ["failure_reason", "result_status", "source_surface"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "RCL-004-show_query_execution_failure_feedback",
@@ -4112,7 +4112,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-004-submit_collection_filter_query",
@@ -4123,7 +4123,7 @@
       "legacy_aliases": ["voyager_composer_submit", "voyager_search_resubmit", "voyager_search_submit"],
       "identity_policy": "device",
       "property_allowlist": ["result_status", "source_surface"],
-      "related_issues": []
+      "related_issues": ["VOY-527"]
     },
     {
       "interaction_id": "RCL-004-type_collection_filter_query",
@@ -4134,7 +4134,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-005-add_collection_condition",
@@ -4145,7 +4145,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-005-change_collection_condition_operator",
@@ -4156,7 +4156,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-005-change_collection_condition_property",
@@ -4167,7 +4167,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-005-change_collection_condition_value",
@@ -4178,7 +4178,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "RCL-005-delete_collection_condition",
@@ -4189,7 +4189,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-001-close_settings_window",
@@ -4200,7 +4200,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-001-open_settings_window",
@@ -4211,7 +4211,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-001-switch_setting_tabs",
@@ -4222,7 +4222,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-check_for_updates",
@@ -4233,7 +4233,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-configure_initial_page",
@@ -4244,7 +4244,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-export_user_settings_data",
@@ -4255,7 +4255,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-import_user_settings_data",
@@ -4266,7 +4266,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-set_voyager_as_default_file_manager",
@@ -4277,7 +4277,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-show_current_version_info",
@@ -4288,7 +4288,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-toggle_alert_before_app_quit",
@@ -4299,7 +4299,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-toggle_automatic_update_install",
@@ -4310,7 +4310,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-002-toggle_launch_at_startup",
@@ -4321,7 +4321,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-003-adjust_icon_size",
@@ -4332,7 +4332,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-003-adjust_text_size",
@@ -4343,7 +4343,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-003-switch_theme_mode",
@@ -4354,7 +4354,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-005-cutstomize_keyboard_shortcuts",
@@ -4365,7 +4365,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-005-highlight_keyboard_shortcut_conflicts",
@@ -4376,7 +4376,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-005-restore_default_keyboard_shortcuts",
@@ -4387,7 +4387,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-007-connect_ai_provider",
@@ -4398,7 +4398,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-007-disconnect_ai_provider",
@@ -4409,7 +4409,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-007-restore_ai_provider_connection_status",
@@ -4420,7 +4420,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-007-show_ai_provider_list",
@@ -4431,7 +4431,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-008-open_entitlement_management",
@@ -4442,7 +4442,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-008-show_account_status",
@@ -4453,7 +4453,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-008-sign_out_account",
@@ -4464,7 +4464,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-008-start_account_sign_in",
@@ -4475,7 +4475,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-apply_collection_search_ai_settings_to_query_conversion",
@@ -4486,7 +4486,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-load_collection_search_ai_model_options",
@@ -4497,7 +4497,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-normalize_unavailable_collection_search_ai_settings",
@@ -4508,7 +4508,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-reset_collection_search_ai_settings",
@@ -4519,7 +4519,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-select_collection_search_ai_model",
@@ -4530,7 +4530,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-select_collection_search_ai_provider",
@@ -4541,7 +4541,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-select_collection_search_ai_thinking",
@@ -4552,7 +4552,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-009-show_collection_search_ai_settings_section",
@@ -4563,7 +4563,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-010-restore_default_file_viewer_to_finder",
@@ -4574,7 +4574,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     },
     {
       "interaction_id": "SET-010-set_as_default_file_viewer",
@@ -4585,7 +4585,7 @@
       "legacy_aliases": [],
       "identity_policy": "none",
       "property_allowlist": [],
-      "related_issues": []
+      "related_issues": ["VOY-691"]
     }
   ]
 }

@@ -478,6 +478,8 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             platform: context.platform,
             source: context.source,
             properties: properties,
+            sourceProject: context.sourceProject,
+            identifiers: .init(interactionID: record.interactionID, featureID: record.featureID),
         )
         return .capture(.init(event: event))
     }
@@ -505,6 +507,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             platform: context.platform,
             source: context.source,
             properties: properties,
+            sourceProject: context.sourceProject,
         )
         return .capture(.init(event: event))
     }

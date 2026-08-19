@@ -9,6 +9,12 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         XCTAssertEqual(ProductAnalyticsRegistry.load(bundle: appBundle).records.count, 378)
 
         let registry = ProductAnalyticsRegistry.load(bundle: appBundle)
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .implemented }), 8)
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .tbd }), 370)
+        XCTAssertTrue(registry.records.filter { $0.implementationStatus == .implemented }
+            .allSatisfy { $0.relatedIssues == ["VOY-527"] })
+        XCTAssertTrue(registry.records.filter { $0.implementationStatus == .tbd }
+            .allSatisfy { $0.relatedIssues == ["VOY-691"] })
         for interactionID in [
             "FMW-001-close_file_manager_window",
             "FMW-002-adjust_sidebar_width",
@@ -152,6 +158,43 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
 
         XCTAssertEqual(result, .drop(.unregistered))
         XCTAssertEqual(recorder.count, 0)
+    }
+
+    func testRetiredCollectionSaveResultsRemainUnregisteredDrops() {
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+
+        for metricKey in ["voyager_collection_filter_save_result", "voyager_composer_open"] {
+            XCTAssertEqual(
+                registry.resolve(metricKey: metricKey, identity: .device("test-device-id")),
+                .drop(.unregistered),
+            )
+        }
+    }
+
+    func testCanonicalIdentifiersAreTypedAndPreserveProviderNames() {
+        let registry = ProductAnalyticsRegistry(records: [
+            .init(
+                interactionID: "RCL-001-open_collection_scope_menu",
+                featureID: "RCL-001",
+                implementationStatus: .implemented,
+                sentryMetricKeys: ["typed_metric"],
+                posthogEventName: "typed_event",
+                legacyAliases: [],
+                identityPolicy: .device,
+                propertyAllowlist: [],
+                relatedIssues: ["VOY-527"],
+            ),
+        ])
+
+        guard case let .capture(request) = registry.resolve(
+            metricKey: "typed_metric",
+            identity: .device("installation-id"),
+        ) else {
+            return XCTFail("expected typed identifier capture")
+        }
+        XCTAssertEqual(request.event.sourceProject, "app")
+        XCTAssertEqual(request.event.identifiers?.interactionID, "RCL-001-open_collection_scope_menu")
+        XCTAssertEqual(request.event.identifiers?.featureID, "RCL-001")
     }
 
     func testCanonicalMetricCapturesAllowlistedEnvelope() {
