@@ -531,7 +531,8 @@ enum ExternalOpenPlacementApplication {
         state: WindowManagerState,
         excluding excludedWindowIDs: Set<WindowManagerState.WindowID> = [],
     ) -> WindowManagerState.WindowID? {
-        for item in plan.orderedItems.reversed() {
+        var lastMatch: WindowManagerState.WindowID?
+        for item in plan.orderedItems {
             guard let placementWindow = plan.windows.first(where: { window in
                 window.items.contains(where: { $0.itemID == item.itemID })
             }) else { continue }
@@ -546,9 +547,13 @@ enum ExternalOpenPlacementApplication {
             {
                 continue
             }
-            if window.stillMatchesExternalOpenItem(item) { return placementWindow.windowID }
+            if window.stillMatchesExternalOpenItem(item) {
+                lastMatch = placementWindow.windowID
+            } else if window.contentTabs.tabs[id: item.tabID] != nil {
+                return nil
+            }
         }
-        return nil
+        return lastMatch
     }
 
     private static func reservationsAreValid(
@@ -620,10 +625,14 @@ enum ExternalOpenPlacementApplication {
             tabIDs: reservations.map(\.id),
             activeTabID: activeItem.tabID,
             pinnedAnchorReturns: pinnedAnchorReturns,
-            shouldPublishSelectionChange: activeItem.tabID == window.contentTabs.activeTabID
-                && window.content.pendingSelectEntryID == nil
-                && activeItem.pendingSelectEntryID != nil
-                && !window.content.entryViewLayout.selectedIds.isEmpty,
+            shouldPublishSelectionChange: {
+                let publishedContent = activeItem.tabID == window.contentTabs.activeTabID
+                    ? window.content
+                    : window.tabContentStates[activeItem.tabID]
+                return activeItem.pendingSelectEntryID != nil
+                    && publishedContent?.pendingSelectEntryID == nil
+                    && !(publishedContent?.entryViewLayout.selectedIds.isEmpty ?? true)
+            }(),
         )
     }
 }

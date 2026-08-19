@@ -9647,6 +9647,77 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(application.existingWindowActivations.first?.shouldPublishSelectionChange, true)
     }
 
+    /// 비활성 Directory tab을 파일 열기로 재사용해도 즉시 selection 변경을 activation delegate로 넘긴다.
+    /// - 검증 내용: inactive snapshot에서 pending 소비, shouldPublishSelectionChange true
+    /// - 사전 조건: 다른 tab이 활성, 재사용 Directory tab snapshot에 대상 파일이 이미 로드됨
+    /// - 기대 결과: snapshot selectedIds가 마지막 파일이고 activation이 selectionChanged를 예약함
+    func testPlacementApplicationPublishesSelectionChangeForInactiveReusedDirectoryTab() throws {
+        let windowID = UUID()
+        let activeTabID = ContentTabID(rawValue: "active-other")
+        let reusedTabID = ContentTabID(rawValue: "inactive-reused")
+        let route = ContentTabPageAnchor.directory(path: "/tmp/inactive-reused")
+        let lastReveal = "/tmp/inactive-reused/last.txt"
+        var reusedWindow = Self.makeRouteWindow(
+            id: windowID,
+            tabs: [
+                (activeTabID, .directory(path: "/tmp/active-other")),
+                (reusedTabID, route),
+            ],
+            activeTabID: activeTabID,
+        )
+        var snapshot = FileManagerContentState()
+        snapshot.navigation.seedInitialFolderPath("/tmp/inactive-reused")
+        snapshot.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
+            uniqueElements: [
+                EntryModel(
+                    name: "last.txt",
+                    fullPath: lastReveal,
+                    isFolder: false,
+                    isHidden: false,
+                    size: 1,
+                    modifiedDate: Date(timeIntervalSince1970: 0),
+                    fileExtension: "txt",
+                    facets: .init(
+                        createdDate: Date(timeIntervalSince1970: 0),
+                        addedDate: Date(timeIntervalSince1970: 0),
+                        lastOpenedDate: nil,
+                        kind: "Text",
+                        creatorApplication: nil,
+                        tags: nil,
+                        supplementaryMetadata: nil,
+                    ),
+                ),
+            ],
+        )
+        reusedWindow.window.tabContentStates[reusedTabID] = snapshot
+        var state = WindowManagerFeature.State()
+        state.windows = [reusedWindow]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [
+                .init(itemID: UUID(), anchor: route, pendingSelectEntryID: lastReveal),
+            ],
+            preferredWindowIDs: [],
+        )
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: UUID(),
+        )
+        let plan = try result.get()
+        let application = try XCTUnwrap(ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: [:],
+            to: state,
+        ))
+        let window = try XCTUnwrap(application.windows[id: windowID]?.window)
+
+        XCTAssertEqual(application.existingWindowActivations.first?.activeTabID, reusedTabID)
+        XCTAssertEqual(application.existingWindowActivations.first?.shouldPublishSelectionChange, true)
+        XCTAssertNil(window.tabContentStates[reusedTabID]?.pendingSelectEntryID)
+        XCTAssertEqual(window.tabContentStates[reusedTabID]?.entryViewLayout.selectedIds, [lastReveal])
+    }
+
     /// 재사용 대상으로 계획한 tab이 apply 전에 바뀌면 같은 request를 현재 live route로 한 번 다시 계획한다.
     /// - 검증 내용: stale target 무변경과 retryCount 1 replacement plan의 surviving route 재사용
     /// - 사전 조건: 최초 target anchor는 변경됐고 다른 window에 동일 route tab이 생존함
@@ -9914,6 +9985,88 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         XCTAssertEqual(
             store.state.windows[id: windowID]?.window.contentTabs.tabs.map(\.anchor).contains(requestedRoute),
+            true,
+        )
+    }
+
+    /// 혼합 batch에서 마지막 route만 drift해도 전체 배치를 한 번 재계획한다.
+    /// - 검증 내용: lastSurvivingWindowID가 살아있는 drifted tab을 만나면 nil을 반환하고 retry apply가 전체 request를 재해석함
+    /// - 사전 조건: A는 exact reuse, B는 같은 window에서 route drift
+    /// - 기대 결과: A는 기존 tab 재사용, B는 신규 reservation, retryCount 1
+    func testPlacementActivationReplansWholeBatchWhenLaterRouteDrifted() async {
+        let batchID = UUID()
+        let itemAID = UUID()
+        let itemBID = UUID()
+        let routeA = ContentTabPageAnchor.directory(path: "/tmp/batch-a")
+        let routeB = ContentTabPageAnchor.directory(path: "/tmp/batch-b")
+        let driftedB = ContentTabPageAnchor.directory(path: "/tmp/batch-b-drifted")
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "batch-a")
+        let tabB = ContentTabID(rawValue: "batch-b")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemAID, anchor: routeA, pendingSelectEntryID: nil),
+                .init(itemID: itemBID, anchor: routeB, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let stalePlan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [
+                    .init(itemID: itemAID, tabID: tabA, anchor: routeA, requiresReservation: false),
+                    .init(itemID: itemBID, tabID: tabB, anchor: routeB, requiresReservation: false),
+                ],
+            )],
+            request: request,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeRouteWindow(
+                id: windowID,
+                tabs: [(tabA, routeA), (tabB, driftedB)],
+                activeTabID: tabA,
+            ),
+        ]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(stalePlan)))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            let items = plan.orderedItems
+            return plan.request?.retryCount == 1
+                && items.count == 2
+                && items[0].tabID == tabA
+                && items[0].requiresReservation == false
+                && items[1].tabID != tabB
+                && items[1].requiresReservation
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs[id: tabA]?.anchor,
+            routeA,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs[id: tabB]?.anchor,
+            driftedB,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs.map(\.anchor).contains(routeB),
             true,
         )
     }
