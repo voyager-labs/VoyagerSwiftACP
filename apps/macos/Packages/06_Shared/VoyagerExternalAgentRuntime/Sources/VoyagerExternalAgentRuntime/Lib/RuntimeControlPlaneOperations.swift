@@ -20,7 +20,7 @@ public extension RuntimeControlPlane {
                 requestID: requestID,
                 operationID: operationID,
                 runReference: session.runReference,
-                authorizationGeneration: session.contextPolicy.authorizationGeneration,
+                authorizationGeneration: session.storedContext.authorizationGeneration,
             ))
         } catch is CancellationError {
             throw CancellationError()
@@ -88,7 +88,7 @@ public extension RuntimeControlPlane {
             return .stale
         }
         guard let providerInternalSessionReference = stored.providerInternalSessionReference,
-              stored.contextPolicy.hasSameExecutionContext(as: expectedContext),
+              stored.storedContext == RuntimeStoredContext(contextPolicy: expectedContext),
               let adapter = adapters[stored.adapterID],
               stored.providerNamespace == adapter.descriptor.providerNamespace,
               stored.adapterVersion == adapter.descriptor.adapterVersion,
@@ -128,17 +128,6 @@ public extension RuntimeControlPlane {
         _ original: Session,
         at host: ExternalAgentSessionReference,
     ) async throws -> RuntimeRestoreResult {
-        guard store is any RuntimeStateStoreHostMutation else {
-            return try await mutateAfterPersistedTransitions { plane in
-                try Task.checkCancellation()
-                guard plane.sessionUnchanged(original, at: host),
-                      var current = plane.sessions[host]
-                else { return .stale }
-                _ = current.issueLease(RuntimeLease.restored)
-                plane.sessions[host] = current
-                return .restored
-            }
-        }
         do {
             return try await commit(host: host) { plane, registry in
                 guard plane.sessionUnchanged(original, at: host, in: registry),
@@ -150,7 +139,7 @@ public extension RuntimeControlPlane {
                 registry[host] = current
                 return .restored
             }
-        } catch RuntimeHostError.persistenceFailure {
+        } catch RuntimeHostError.persistenceConflict {
             return .stale
         }
     }
