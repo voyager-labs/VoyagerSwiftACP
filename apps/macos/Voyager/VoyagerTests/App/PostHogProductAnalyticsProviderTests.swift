@@ -43,22 +43,27 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         client.capture(.init(event: makeEvent()))
     }
 
-    func testConfiguredClientCachesIdentityWithoutGlobalState() async {
+    func testConfiguredClientCachesIdentityWithoutGlobalState() async throws {
+        let firstDefaults =
+            try XCTUnwrap(UserDefaults(suiteName: "ProductAnalyticsProviderTests.first.\(UUID().uuidString)"))
+        let secondDefaults =
+            try XCTUnwrap(UserDefaults(suiteName: "ProductAnalyticsProviderTests.second.\(UUID().uuidString)"))
         let first = ProductAnalyticsBootstrap.makeClient(environment: [
             "PUBLIC_POSTHOG_PROJECT_TOKEN": "runtime-project-token-placeholder",
             "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
-        ])
+        ], userDefaults: firstDefaults)
         let second = ProductAnalyticsBootstrap.makeClient(environment: [
             "PUBLIC_POSTHOG_PROJECT_TOKEN": "runtime-project-token-placeholder",
             "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
-        ])
+        ], userDefaults: secondDefaults)
 
         await first.setDeviceIdentity("first-runtime-device-id")
 
         let firstIdentity = await first.deviceIdentity()
         let secondIdentity = await second.deviceIdentity()
         XCTAssertEqual(firstIdentity, "first-runtime-device-id")
-        XCTAssertNil(secondIdentity)
+        XCTAssertNotNil(secondIdentity)
+        XCTAssertNotEqual(secondIdentity, firstIdentity)
     }
 
     func testDisabledClientDoesNotCacheIdentity() async {
@@ -133,7 +138,8 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         XCTAssertEqual(properties["interaction_id"] as? String, "RCL-001-open_collection_scope_menu")
         XCTAssertEqual(properties["target_count"] as? Int, 2)
         XCTAssertTrue(Set([
-            "app_version", "environment", "event_version", "platform", "source", "interaction_id", "target_count",
+            "app_version", "environment", "event_version", "platform", "source", "source_project", "interaction_id",
+            "feature_id", "target_count",
         ]).isSubset(of: properties.keys))
         XCTAssertFalse(properties.keys.contains("raw_path"))
         XCTAssertFalse(properties.keys.contains("user_prompt"))
@@ -223,6 +229,46 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         _ = await interceptor.nextRequest()
     }
 
+    func testInstallationIdentityIsPersistedAndReused() throws {
+        let suiteName = "ProductAnalyticsBootstrapTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let expected = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+
+        let first = ProductAnalyticsBootstrap.persistedInstallationID(
+            in: defaults,
+            makeInstallationID: { expected },
+        )
+        let second = ProductAnalyticsBootstrap.persistedInstallationID(
+            in: defaults,
+            makeInstallationID: { XCTFail("must reuse persisted installation ID")
+                return UUID()
+            },
+        )
+
+        XCTAssertEqual(first, expected.uuidString)
+        XCTAssertEqual(second, first)
+    }
+
+    func testConfiguredBootstrapStartsWithPersistedInstallationIdentity() async throws {
+        let suiteName = "ProductAnalyticsBootstrapTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let expected = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
+
+        let client = ProductAnalyticsBootstrap.makeClient(
+            environment: [
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": "identity-startup-token",
+                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
+            ],
+            userDefaults: defaults,
+            makeInstallationID: { expected },
+        )
+
+        let identity = await client.deviceIdentity()
+        XCTAssertEqual(identity, expected.uuidString)
+    }
+
     private func makeEvent(
         distinctID: String? = "device-test-id",
         eventName: String = "collection_scope_menu_opened",
@@ -239,6 +285,11 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
                 "interaction_id": .string("RCL-001-open_collection_scope_menu"),
                 "target_count": .integer(2),
             ],
+            sourceProject: "app",
+            identifiers: .init(
+                interactionID: "RCL-001-open_collection_scope_menu",
+                featureID: "RCL-001",
+            ),
         )
     }
 }

@@ -55,6 +55,8 @@ public struct ProductAnalyticsEvent: Codable, Equatable, Sendable {
     public let appVersion: String
     public let platform: String
     public let source: String
+    public let sourceProject: String
+    public let identifiers: ProductAnalyticsIdentifiers?
     public let properties: [String: ProductAnalyticsPropertyValue]
 
     public init(
@@ -67,6 +69,8 @@ public struct ProductAnalyticsEvent: Codable, Equatable, Sendable {
         source: String,
         properties: [String: ProductAnalyticsPropertyValue],
         eventVersion: ProductAnalyticsEventVersion = .init(rawValue: "1"),
+        sourceProject: String = "app",
+        identifiers: ProductAnalyticsIdentifiers? = nil,
     ) {
         self.eventName = eventName
         self.eventVersion = eventVersion
@@ -76,7 +80,24 @@ public struct ProductAnalyticsEvent: Codable, Equatable, Sendable {
         self.appVersion = appVersion
         self.platform = platform
         self.source = source
+        self.sourceProject = sourceProject
+        self.identifiers = identifiers
         self.properties = properties
+    }
+}
+
+public struct ProductAnalyticsIdentifiers: Codable, Equatable, Sendable {
+    public let interactionID: String
+    public let featureID: String
+
+    public init(interactionID: String, featureID: String) {
+        self.interactionID = interactionID
+        self.featureID = featureID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case interactionID = "interaction_id"
+        case featureID = "feature_id"
     }
 }
 
@@ -100,6 +121,7 @@ public struct ProductAnalyticsEventContext: Equatable, Sendable {
     public let appVersion: String
     public let platform: String
     public let source: String
+    public let sourceProject: String
 
     public init(
         occurredAtUTC: Date,
@@ -107,11 +129,13 @@ public struct ProductAnalyticsEventContext: Equatable, Sendable {
         appVersion: String,
         platform: String,
         source: String,
+        sourceProject: String = "app",
     ) {
         self.occurredAtUTC = occurredAtUTC
         self.environment = environment
         self.appVersion = appVersion
         self.platform = platform
         self.source = source
+        self.sourceProject = sourceProject
     }
 }

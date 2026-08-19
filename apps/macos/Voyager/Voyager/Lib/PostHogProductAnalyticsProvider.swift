@@ -50,6 +50,11 @@ public actor PostHogProductAnalyticsProvider {
         properties["app_version"] = event.appVersion
         properties["platform"] = event.platform
         properties["source"] = event.source
+        properties["source_project"] = event.sourceProject
+        if let identifiers = event.identifiers {
+            properties["interaction_id"] = identifiers.interactionID
+            properties["feature_id"] = identifiers.featureID
+        }
 
         sdk.capture(
             event.eventName.rawValue,
