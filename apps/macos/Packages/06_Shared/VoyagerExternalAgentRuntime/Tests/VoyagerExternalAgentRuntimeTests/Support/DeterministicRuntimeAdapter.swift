@@ -44,14 +44,15 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private var approvalCount = 0
     private var queuedInputCount = 0
     private var restartBindings: [RuntimeRestartBinding] = []
+    private var restartBindingCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var approvalRequests: [RuntimeApprovalRequest] = []
 
     init(
         id: String,
         providerNamespace: String? = nil,
-        transport: RuntimeTransportKind,
+        transport: RuntimeTransportKind = .processJSONL,
         capabilities: RuntimeCapabilities = .allSupported,
-        eventsByLaunch: [[RuntimeEventEnvelope]],
+        eventsByLaunch: [[RuntimeEventEnvelope]] = [[]],
         clock: DeterministicRuntimeClock = .live,
         IDs: DeterministicRuntimeIDs = .sequential,
         launchDelay: Duration = .zero,
@@ -194,6 +195,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         for binding: RuntimeRestartBinding,
     ) async throws -> RuntimeRestartCompatibility {
         restartBindings.append(binding)
+        resumeRestartBindingCountWaiters()
         if restartDelay != .zero {
             try await clock.sleep(restartDelay)
         }
@@ -242,6 +244,13 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         }
     }
 
+    func waitForRestartBindingCount(_ minimumCount: Int) async {
+        guard restartBindings.count < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            restartBindingCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
     private func resumeLaunchCountWaiters() {
         let ready = launchCountWaiters.filter { $0.0 <= launchCount }
         launchCountWaiters.removeAll { $0.0 <= launchCount }
@@ -261,6 +270,14 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private func resumeTerminalResultCountWaiters() {
         let ready = terminalResultCountWaiters.filter { $0.0 <= terminalResultCount }
         terminalResultCountWaiters.removeAll { $0.0 <= terminalResultCount }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
+
+    private func resumeRestartBindingCountWaiters() {
+        let ready = restartBindingCountWaiters.filter { $0.0 <= restartBindings.count }
+        restartBindingCountWaiters.removeAll { $0.0 <= restartBindings.count }
         for (_, continuation) in ready {
             continuation.resume()
         }

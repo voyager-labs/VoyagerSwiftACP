@@ -16,28 +16,25 @@ extension RuntimeControlPlane {
             try Task.checkCancellation()
             var candidate = sessions
             let result = try mutation(self, &candidate)
-            let state = RuntimeStoredState(
-                schemaVersion: RuntimeStoredState.currentSchemaVersion,
-                sessions: candidate.values.map(\.stored).sorted {
-                    $0.externalAgentSessionReference.rawValue < $1.externalAgentSessionReference.rawValue
-                },
-            )
             do {
-                if let store = store as? any RuntimeStateStoreHostMutation {
-                    let committed = try await store.updateHost(
-                        host,
-                        expected: sessions[host]?.stored,
-                        replacement: candidate[host]?.stored,
-                    )
-                    sessions = reconciledRegistry(from: committed, preferring: candidate)
-                } else {
-                    try await store.save(state)
-                    sessions = candidate
+                let outcome = try await store.apply(RuntimeStateMutation(
+                    host: host,
+                    expected: sessions[host]?.stored,
+                    replacement: candidate[host]?.stored,
+                ))
+                switch outcome {
+                case let .committed(committed):
+                    let validated = try validatedPersistedState(committed)
+                    sessions = reconciledRegistry(candidate: candidate, persisted: validated)
+                case .conflict:
+                    throw RuntimeHostError.persistenceConflict
                 }
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as RuntimeStateStoreError {
+                throw mapStoreError(error)
             } catch {
-                throw RuntimeHostError.persistenceFailure
+                throw error
             }
             releasePersistenceMutation()
             return result
@@ -55,46 +52,40 @@ extension RuntimeControlPlane {
         return try mutation(self)
     }
 
-    func loadPersistedTerminalResult(
-        host: ExternalAgentSessionReference,
-        runReference: RuntimeRunReference,
-        expectedSession: Session? = nil,
-    ) async throws -> RuntimeResult? {
+    func withPersistedState<T: Sendable>(
+        _ body: @Sendable (isolated RuntimeControlPlane, RuntimeStoredState?) throws -> T,
+    ) async throws -> T {
         try await acquirePersistenceMutation()
         defer { releasePersistenceMutation() }
         try Task.checkCancellation()
         let state: RuntimeStoredState?
         do {
-            state = try await store.load()?.validatedForRuntime()
+            if let loaded = try await store.load() {
+                state = try validatedPersistedState(loaded)
+            } else {
+                state = nil
+            }
         } catch is CancellationError {
             throw CancellationError()
+        } catch let error as RuntimeStateStoreError {
+            throw mapStoreError(error)
         } catch let error as RuntimeHostError {
             throw error
         } catch {
             throw RuntimeHostError.persistenceFailure
         }
-        if let expectedSession, sessions[host] != expectedSession {
-            try Task.checkCancellation()
-            return nil
+        return try body(self, state)
+    }
+
+    func mapStoreError(_ error: RuntimeStateStoreError) -> RuntimeHostError {
+        switch error {
+        case .invalidSnapshot:
+            .invalidPersistedState
+        case .unavailable:
+            .persistenceFailure
+        case let .unsupportedSchemaVersion(version):
+            .unsupportedSchemaVersion(version)
         }
-        guard let stored = state?.sessions.first(where: {
-            $0.externalAgentSessionReference == host && $0.runReference == runReference
-        }), outcome(for: stored.projection) != nil
-        else {
-            try Task.checkCancellation()
-            return nil
-        }
-        if let current = sessions[host] {
-            sessions[host] = Session(
-                stored: stored,
-                lease: current.lease,
-                revision: current.revision,
-            )
-        } else {
-            sessions[host] = Session(stored: stored)
-        }
-        try Task.checkCancellation()
-        return storedTerminalResult(host: host, runReference: runReference)
     }
 
     private func acquirePersistenceMutation() async throws {
@@ -121,18 +112,5 @@ extension RuntimeControlPlane {
     private func finishPendingPersistenceMutation(_ host: ExternalAgentSessionReference) {
         let remaining = pendingPersistenceMutations[host, default: 0] - 1
         pendingPersistenceMutations[host] = remaining > 0 ? remaining : nil
-    }
-
-    private func reconciledRegistry(
-        from state: RuntimeStoredState,
-        preferring candidate: SessionRegistry,
-    ) -> SessionRegistry {
-        Dictionary(uniqueKeysWithValues: state.sessions.map { stored in
-            let host = stored.externalAgentSessionReference
-            if let preferred = candidate[host], preferred.stored.hasSamePersistedState(as: stored) {
-                return (host, preferred)
-            }
-            return (host, Session(stored: stored))
-        })
     }
 }

@@ -3,7 +3,8 @@ import Foundation
 public enum RuntimeHostError: Error, Equatable, Sendable {
     case activeRunExists, duplicateRunReference, duplicateAdapterRegistration, adapterNotFound(RuntimeAdapterID)
     case capabilityUnknown(RuntimeCapability), capabilityUnsupported(RuntimeCapability)
-    case unsupportedSchemaVersion(Int), migrationUnavailable(Int), migrationFailed, persistenceFailure, invalidEvent
+    case unsupportedSchemaVersion(Int), persistenceFailure
+    case persistenceConflict, invalidPersistedState, invalidEvent
     case malformedAdapterResponse, adapterUnavailable
     case adapterFailure(RuntimeAdapterFailureKind, RuntimeDiagnosticCode)
     case restartIncompatible, staleRestartBinding

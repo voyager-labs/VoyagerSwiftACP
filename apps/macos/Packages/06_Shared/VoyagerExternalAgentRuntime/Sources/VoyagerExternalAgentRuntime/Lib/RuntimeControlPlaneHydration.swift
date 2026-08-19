@@ -3,39 +3,161 @@ import Foundation
 extension RuntimeControlPlane {
     func hydrateIfNeeded() async throws {
         guard !hydrated else { return }
+        let generation: UInt64
         let task: Task<RuntimeStoredState?, Error>
-        if let hydrationTask {
-            task = hydrationTask
+        if let currentTask = hydrationTask {
+            generation = hydrationGeneration
+            task = currentTask
         } else {
+            hydrationGeneration &+= 1
+            generation = hydrationGeneration
             let store = store
             task = Task { try await store.load() }
             hydrationTask = task
         }
-        let state: RuntimeStoredState?
-        do {
-            state = try await task.value
-        } catch let error as RuntimeHostError {
-            hydrationTask = nil
-            throw error
-        } catch {
-            hydrationTask = nil
-            throw RuntimeHostError.persistenceFailure
-        }
-        do {
-            try await mutateAfterPersistedTransitions { plane in
-                guard !plane.hydrated else { return }
-                let storedSessions = try state?.validatedForRuntime().sessions ?? []
-                for stored in storedSessions {
-                    guard plane.sessions[stored.externalAgentSessionReference] == nil else { continue }
-                    plane.sessions[stored.externalAgentSessionReference] = Session(stored: stored)
-                }
-                plane.hydrated = true
-                plane.hydrationTask = nil
+        hydrationWaiterCounts[generation, default: 0] += 1
+        resumeHydrationWaiterAdmissionContinuations()
+        let result = await task.result
+        hydrationDeliveryOrdinal += 1
+        if hydrationDeliveryPauseOrdinal == hydrationDeliveryOrdinal
+            || (hydrationDeliveryPauseBackground && Task.currentPriority == .background)
+        {
+            hydrationDeliveryPauseOrdinal = nil
+            hydrationDeliveryPauseBackground = false
+            hydrationDeliveryIsPaused = true
+            let observers = hydrationPauseObservedContinuations
+            hydrationPauseObservedContinuations.removeAll()
+            for continuation in observers {
+                continuation.resume()
             }
-        } catch {
-            hydrationTask = nil
-            throw error
+            await withCheckedContinuation { continuation in
+                hydrationDeliveryPauseContinuation = continuation
+            }
+            hydrationDeliveryIsPaused = false
         }
+        let isLastWaiter = finishHydrationWaiter(generation)
+
+        if Task.isCancelled {
+            if isLastWaiter {
+                hydrationTask = nil
+            }
+            throw CancellationError()
+        }
+
+        try handleHydrationResult(result, generation: generation)
+    }
+
+    private func finishHydrationWaiter(_ generation: UInt64) -> Bool {
+        guard let waiters = hydrationWaiterCounts[generation] else { return false }
+        if waiters == 1 {
+            hydrationWaiterCounts.removeValue(forKey: generation)
+        } else {
+            hydrationWaiterCounts[generation] = waiters - 1
+        }
+        return generation == hydrationGeneration && waiters == 1
+    }
+
+    private func clearHydrationTask(ifMatching generation: UInt64) {
+        guard generation == hydrationGeneration else { return }
+        hydrationTask = nil
+    }
+
+    func pauseHydrationDelivery(at ordinal: Int) {
+        hydrationDeliveryOrdinal = 0
+        hydrationDeliveryPauseOrdinal = ordinal
+    }
+
+    func pauseBackgroundHydrationDelivery() {
+        hydrationDeliveryPauseBackground = true
+    }
+
+    func waitForHydrationWaiters(_ minimum: Int) async {
+        guard hydrationWaiterCount < minimum else { return }
+        await withCheckedContinuation { continuation in
+            hydrationWaiterAdmissionContinuations.append((minimum, continuation))
+        }
+    }
+
+    func waitForHydrationDeliveryPause() async {
+        guard !hydrationDeliveryIsPaused else { return }
+        await withCheckedContinuation { continuation in
+            hydrationPauseObservedContinuations.append(continuation)
+        }
+    }
+
+    func resumeHydrationDelivery() {
+        hydrationDeliveryPauseContinuation?.resume()
+        hydrationDeliveryPauseContinuation = nil
+    }
+
+    private func resumeHydrationWaiterAdmissionContinuations() {
+        let ready = hydrationWaiterAdmissionContinuations.filter { $0.0 <= hydrationWaiterCount }
+        hydrationWaiterAdmissionContinuations.removeAll { $0.0 <= hydrationWaiterCount }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
+
+    private func handleHydrationResult(
+        _ result: Result<RuntimeStoredState?, any Error>,
+        generation: UInt64,
+    ) throws {
+        switch result {
+        case let .failure(error):
+            try handleHydrationFailure(error, generation: generation)
+        case let .success(state):
+            try installHydrationState(state, generation: generation)
+        }
+    }
+
+    private func handleHydrationFailure(_ error: any Error, generation: UInt64) throws {
+        if generation == hydrationGeneration {
+            hydrationTask = nil
+        }
+        if error is CancellationError {
+            throw CancellationError()
+        }
+        if let error = error as? RuntimeStateStoreError {
+            throw mapStoreError(error)
+        }
+        throw RuntimeHostError.persistenceFailure
+    }
+
+    private func installHydrationState(
+        _ state: RuntimeStoredState?,
+        generation: UInt64,
+    ) throws {
+        guard !hydrated else {
+            clearHydrationTask(ifMatching: generation)
+            return
+        }
+        do {
+            let candidate = try makeHydrationCandidate(state)
+            guard generation == hydrationGeneration, hydrationTask != nil else { return }
+            sessions = candidate
+            hydrated = true
+            hydrationInstallCount += 1
+            hydrationTask = nil
+        } catch is CancellationError {
+            clearHydrationTask(ifMatching: generation)
+            throw CancellationError()
+        } catch let error as RuntimeStateStoreError {
+            clearHydrationTask(ifMatching: generation)
+            throw mapStoreError(error)
+        } catch let error as RuntimeHostError {
+            clearHydrationTask(ifMatching: generation)
+            throw error
+        } catch {
+            clearHydrationTask(ifMatching: generation)
+            throw RuntimeHostError.invalidPersistedState
+        }
+    }
+
+    private func makeHydrationCandidate(_ state: RuntimeStoredState?) throws -> SessionRegistry {
+        let storedSessions = try state.map(validatedPersistedState)?.sessions ?? []
+        return Dictionary(uniqueKeysWithValues: storedSessions.map { stored in
+            (stored.externalAgentSessionReference, Session(stored: stored))
+        })
     }
 }
 
@@ -48,7 +170,7 @@ extension RuntimeStoredSession {
             adapterID: adapterID,
             adapterVersion: adapterVersion,
             capabilitySnapshot: capabilitySnapshot,
-            contextPolicy: contextPolicy,
+            storedContext: storedContext,
             projection: projection,
             providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
@@ -77,7 +199,7 @@ extension RuntimeStoredSession {
             adapterID: adapterID,
             adapterVersion: adapterVersion,
             capabilitySnapshot: capabilitySnapshot,
-            contextPolicy: contextPolicy,
+            storedContext: storedContext,
             projection: projection,
             providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
@@ -104,7 +226,7 @@ extension RuntimeStoredSession {
             adapterID: adapterID,
             adapterVersion: adapterVersion,
             capabilitySnapshot: capabilitySnapshot,
-            contextPolicy: contextPolicy,
+            storedContext: storedContext,
             projection: projection,
             providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,
