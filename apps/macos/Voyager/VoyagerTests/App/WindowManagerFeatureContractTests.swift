@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import CoreServices
 import Foundation
+import IdentifiedCollections
 @testable import Voyager
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
@@ -9582,21 +9583,45 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
-    /// 같은 directory route를 재사용하는 regular-file 요청은 batch의 마지막 reveal target을 적용한다.
-    /// - 검증 내용: reused tab identity 유지와 pending selection last-wins
-    /// - 사전 조건: 기존 directory tab과 같은 parent를 가진 파일 요청 두 개가 순서대로 계획됨
-    /// - 기대 결과: 새 tab 없이 기존 tab state의 pending selection이 마지막 파일로 갱신됨
+    /// 같은 directory route를 재사용하는 regular-file 요청은 batch의 마지막 reveal target을 즉시 선택한다.
+    /// - 검증 내용: reused tab identity 유지와 last-wins 선택 소비
+    /// - 사전 조건: 기존 directory tab과 같은 parent를 가진 파일 요청 두 개가 순서대로 계획되고 파일이 이미 로드됨
+    /// - 기대 결과: 새 tab 없이 pending이 소비되고 마지막 파일이 selectedIds에 반영됨
     func testPlacementApplicationReusesDirectoryTabAndAppliesLastRevealSelection() throws {
         let windowID = UUID()
         let tabID = ContentTabID(rawValue: "reused-reveal")
         let route = ContentTabPageAnchor.directory(path: "/tmp/reused")
+        let lastReveal = "/tmp/reused/last.txt"
+        var reusedWindow = Self.makeRouteWindow(id: windowID, tabs: [(tabID, route)], activeTabID: tabID)
+        reusedWindow.window.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
+            uniqueElements: [
+                EntryModel(
+                    name: "last.txt",
+                    fullPath: lastReveal,
+                    isFolder: false,
+                    isHidden: false,
+                    size: 1,
+                    modifiedDate: Date(timeIntervalSince1970: 0),
+                    fileExtension: "txt",
+                    facets: .init(
+                        createdDate: Date(timeIntervalSince1970: 0),
+                        addedDate: Date(timeIntervalSince1970: 0),
+                        lastOpenedDate: nil,
+                        kind: "Text",
+                        creatorApplication: nil,
+                        tags: nil,
+                        supplementaryMetadata: nil,
+                    ),
+                ),
+            ],
+        )
         var state = WindowManagerFeature.State()
-        state.windows = [Self.makeRouteWindow(id: windowID, tabs: [(tabID, route)], activeTabID: tabID)]
+        state.windows = [reusedWindow]
         let request = ExternalOpenPlacementRequest(
             batchID: UUID(),
             items: [
                 .init(itemID: UUID(), anchor: route, pendingSelectEntryID: "/tmp/reused/first.txt"),
-                .init(itemID: UUID(), anchor: route, pendingSelectEntryID: "/tmp/reused/last.txt"),
+                .init(itemID: UUID(), anchor: route, pendingSelectEntryID: lastReveal),
             ],
             preferredWindowIDs: [],
         )
@@ -9615,7 +9640,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let window = try XCTUnwrap(application.windows[id: windowID]?.window)
 
         XCTAssertEqual(window.contentTabs.tabs.map(\.id), [tabID])
-        XCTAssertEqual(window.content.pendingSelectEntryID, "/tmp/reused/last.txt")
+        XCTAssertNil(window.content.pendingSelectEntryID)
+        XCTAssertEqual(window.content.entryViewLayout.selectedIds, [lastReveal])
+        XCTAssertTrue(window.content.entryViewLayout.shouldScrollToSelection)
         XCTAssertEqual(application.existingWindowActivations.first?.activeTabID, tabID)
     }
 

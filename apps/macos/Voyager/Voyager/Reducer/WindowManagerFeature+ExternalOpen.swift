@@ -115,6 +115,7 @@ extension WindowManagerFeature {
                     action: .window(.returnContentTabToPinnedLocation(
                         pinnedReturn.tabID,
                         pendingSelectEntryID: pinnedReturn.pendingSelectEntryID,
+                        activateIfNeeded: pinnedReturn.tabID == activation.activeTabID,
                     )),
                 )))
             } + [
