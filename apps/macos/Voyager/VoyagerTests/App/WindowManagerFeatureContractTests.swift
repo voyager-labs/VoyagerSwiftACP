@@ -9773,6 +9773,78 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state.windows.first?.window.contentTabs.tabs.first?.anchor, route)
     }
 
+    /// activation 전에 재사용 tab identity는 남고 route만 바뀌면 동일 request를 새 tab으로 한 번 복구한다.
+    /// - 검증 내용: lastSurvivingWindowID가 exact-anchor 불일치를 거부하고 retryCount 1 신규 reservation을 할당함
+    /// - 사전 조건: 계획된 reuse tab은 존재하지만 runtime anchor가 요청 route와 다름
+    /// - 기대 결과: drifted tab을 활성화하지 않고 새 identity apply로 복귀함
+    func testPlacementActivationReplansWhenReusedTabRouteDrifted() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let requestedRoute = ContentTabPageAnchor.directory(path: "/tmp/requested")
+        let driftedRoute = ContentTabPageAnchor.directory(path: "/tmp/drifted")
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "drifted-reuse")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [.init(itemID: itemID, anchor: requestedRoute, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+        let stalePlan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: itemID,
+                    tabID: tabID,
+                    anchor: requestedRoute,
+                    requiresReservation: false,
+                )],
+            )],
+            request: request,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeRouteWindow(
+                id: windowID,
+                tabs: [(tabID, driftedRoute)],
+                activeTabID: tabID,
+            ),
+        ]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(stalePlan)))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.retryCount == 1
+                && plan.windows.count == 1
+                && plan.windows[0].items.count == 1
+                && plan.windows[0].items[0].tabID != tabID
+                && plan.windows[0].items[0].requiresReservation
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor,
+            driftedRoute,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs.map(\.anchor).contains(requestedRoute),
+            true,
+        )
+    }
+
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
     func testWindowLifecycleMaintainsRuntimeMRUIndependentlyFromFocus() async {
         let firstID = UUID()

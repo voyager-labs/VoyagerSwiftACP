@@ -545,9 +545,10 @@ enum ExternalOpenPlacementApplication {
             {
                 continue
             }
-            if window.contentTabs.tabs[id: item.tabID] != nil {
-                return placementWindow.windowID
-            }
+            let matches = item.requiresReservation
+                ? window.contentTabs.tabs[id: item.tabID] != nil
+                : window.stillMatchesExternalOpenItem(item)
+            if matches { return placementWindow.windowID }
         }
         return nil
     }
@@ -592,13 +593,7 @@ enum ExternalOpenPlacementApplication {
     ) -> ExistingWindowActivation? {
         guard var window = windows[id: placement.windowID]?.window,
               window.isExternalOpenRouteEligible,
-              placement.items.filter({ !$0.requiresReservation }).allSatisfy({ item in
-                  guard let tab = window.contentTabs.tabs[id: item.tabID] else { return false }
-                  if item.requiresPinnedAnchorReturn {
-                      return window.canReturnContentTabToPinnedLocation(item.tabID, matching: item.anchor)
-                  }
-                  return tab.anchor == item.anchor
-              }),
+              placement.items.filter({ !$0.requiresReservation }).allSatisfy(window.stillMatchesExternalOpenItem),
               reservations.isEmpty || window.reserveExternalContentTabs(reservations)
         else { return nil }
         for item in placement.items where !item.requiresPinnedAnchorReturn {
@@ -637,6 +632,13 @@ private extension FileManagerWindowState {
             && pendingSelectedContentTabClose == nil
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
+    }
+
+    func stillMatchesExternalOpenItem(_ item: ExternalOpenPlacementPlan.Item) -> Bool {
+        guard let tab = contentTabs.tabs[id: item.tabID] else { return false }
+        return item.requiresPinnedAnchorReturn
+            ? canReturnContentTabToPinnedLocation(item.tabID, matching: item.anchor)
+            : tab.anchor == item.anchor
     }
 }
 
