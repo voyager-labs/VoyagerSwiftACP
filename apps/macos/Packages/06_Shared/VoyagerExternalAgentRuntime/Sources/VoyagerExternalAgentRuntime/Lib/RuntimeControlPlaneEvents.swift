@@ -35,16 +35,37 @@ extension RuntimeControlPlane {
             }
             try Task.checkCancellation()
             if let persistedTerminal { return persistedTerminal }
-            return try await commit(host: host) { plane, registry in
-                try plane.apply(
-                    event,
-                    host: host,
-                    expectedSource: expectedSource,
-                    terminal: terminal,
-                    in: &registry,
-                )
+            do {
+                return try await commit(host: host) { plane, registry in
+                    try plane.apply(
+                        event,
+                        host: host,
+                        expectedSource: expectedSource,
+                        terminal: terminal,
+                        in: &registry,
+                    )
+                }
+            } catch RuntimeHostError.persistenceConflict {
+                return try await reconcileTerminalEventConflict(event, host: host)
             }
         }
+    }
+
+    private func reconcileTerminalEventConflict(
+        _ event: RuntimeEventEnvelope,
+        host: ExternalAgentSessionReference,
+    ) async throws -> RuntimeResult {
+        let terminal = try await withPersistedState { plane, loaded -> RuntimeResult? in
+            guard let loaded else { return nil }
+            plane.sessions = plane.reconciledRegistry(candidate: plane.sessions, persisted: loaded)
+            guard let session = plane.sessions[host],
+                  session.stored.runReference == event.runReference
+            else { return nil }
+            return plane.terminalResult(for: session.stored)
+        }
+        try Task.checkCancellation()
+        guard let terminal else { throw RuntimeHostError.persistenceConflict }
+        return terminal
     }
 
     private func validateEventAdmission(

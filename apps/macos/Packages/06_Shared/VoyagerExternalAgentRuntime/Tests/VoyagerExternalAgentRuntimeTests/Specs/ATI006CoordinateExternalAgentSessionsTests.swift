@@ -175,6 +175,50 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await store.updateCount == 4)
     }
 
+    /// ATI-006-coordinate_external_agent_launch: receipt persistence cancellation detaches the launch owner.
+    /// Provider receipt 이후 저장 중 caller가 취소되어도 started provider ownership을 정리 가능한 상태로 남기는지 검증한다.
+    /// - 검증 내용: caller cancellation, receipt를 포함한 interruption cleanup, exact launch lease 해제, provider 중복 실행 방지.
+    /// - 사전 조건: receipt 저장인 세 번째 save가 cancellation-aware delay에서 대기한다.
+    /// - 기대 결과: caller는 CancellationError를 받고 detached owner는 후속 terminal evidence에서 정확히 해제된다.
+    @Test
+    func `receipt persistence cancellation detaches the launch owner`() async throws {
+        let host: ExternalAgentSessionReference = "host-receipt-cancellation"
+        let run = RuntimeRunReference("run-receipt-cancellation")
+        let store = InMemoryRuntimeStateStore(saveDelays: [3: .seconds(2)])
+        let adapter = DeterministicRuntimeAdapter(id: "sdk")
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let runTask = Task { try await plane.run(request) }
+        await store.waitForSaveCount(3)
+        runTask.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await runTask.value
+        }
+        #expect(await plane.projection(for: host) == .launching)
+        #expect(await plane.sessions[host]?.lease == .detachedLaunching(2))
+        #expect(await adapter.counts().launch == 1)
+        #expect(await store.saveCount == 3)
+
+        let terminal = RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("receipt-cancellation-terminal"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("receipt-cancellation-terminal"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: host,
+            runReference: run,
+            kind: .interrupted,
+        )
+        #expect(try await plane.ingestHostEvent(terminal)?.outcome == .interrupted)
+        #expect(await plane.projection(for: host) == .interrupted)
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+        #expect(await store.saveCount == 4)
+    }
+
     // MARK: - ATI-006-project_external_agent_run_events
 
     /// ATI-006-project_external_agent_run_events: terminal event persistence retries only a conflict.
@@ -232,6 +276,53 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             #expect(await plane.projection(for: host) == .interrupted)
             #expect(await store.saveCount == 5)
         }
+    }
+
+    /// ATI-006-project_external_agent_run_events: second terminal CAS conflict adopts the durable terminal.
+    /// 첫 terminal conflict read-repair 뒤 retry CAS도 충돌하면 최신 동일 run terminal로 다시 수렴하는지 검증한다.
+    /// - 검증 내용: 두 번의 host-event CAS conflict, public terminal result, local/durable terminal projection, bounded update
+    /// count.
+    /// - 사전 조건: 첫 conflict는 running snapshot을, 두 번째 conflict는 동일 host/run completed snapshot을 원자적으로 설치한다.
+    /// - 기대 결과: caller는 persistenceConflict 대신 completed 결과를 받고 local registry도 durable terminal과 일치한다.
+    @Test
+    func `second terminal CAS conflict adopts the durable terminal`() async throws {
+        let host: ExternalAgentSessionReference = "host-second-terminal-conflict"
+        let run = RuntimeRunReference("run-second-terminal-conflict")
+        let running = reviewerBlockerTestsMakeRunningSession(
+            host: host,
+            run: run,
+            context: reviewerBlockerTestsMakeCanonicalContext(),
+        )
+        let runningState = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [running],
+        )
+        let terminal = running.withProjection(.completed)
+        let terminalState = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [terminal],
+        )
+        let store = DeterministicHostMutationRuntimeStateStore(
+            state: runningState,
+            conflictingUpdateStates: [1: runningState, 2: terminalState],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        let event = RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("second-terminal-conflict"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("second-terminal-conflict"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: host,
+            runReference: run,
+            kind: .completed,
+        )
+
+        #expect(try await plane.ingestHostEvent(event)?.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+        #expect(await store.currentState()?.sessions == [terminal])
+        #expect(await store.updateCount == 2)
     }
 
     /// ATI-006-project_external_agent_run_events: stale host terminal conflict adopts the durable terminal.

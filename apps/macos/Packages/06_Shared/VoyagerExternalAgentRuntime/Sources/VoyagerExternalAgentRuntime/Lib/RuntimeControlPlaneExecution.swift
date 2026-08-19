@@ -53,11 +53,17 @@ extension RuntimeControlPlane {
                     in: &registry,
                 )
             }
+        } catch is CancellationError {
+            try await propagateLaunchCancellation(host: reservation.host, lease: reservation.lease)
         } catch RuntimeHostError.persistenceFailure {
             try? await reconcileStartedProviderFailure(reservation: reservation, receipt: receipt)
             throw RuntimeHostError.persistenceFailure
         } catch RuntimeHostError.persistenceConflict {
-            return try await resolveReceiptConflict(receipt, request: request, reservation: reservation)
+            do {
+                return try await resolveReceiptConflict(receipt, request: request, reservation: reservation)
+            } catch is CancellationError {
+                try await propagateLaunchCancellation(host: reservation.host, lease: reservation.lease)
+            }
         } catch {
             try? await reconcileStartedProviderFailure(
                 reservation: reservation,
