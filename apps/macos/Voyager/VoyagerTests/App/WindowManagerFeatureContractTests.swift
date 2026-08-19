@@ -9203,10 +9203,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// 저장되지 않은 runtime Collection이 있는 pinned tab은 durable 외부 열기 재사용 후보에서 제외된다.
-    /// - 검증 내용: dirty pinned tab identity 미재사용과 신규 reservation 계획
+    /// - 검증 내용: Collection 및 Directory durable route에서 dirty pinned tab identity 미재사용과 신규 reservation 계획
     /// - 사전 조건: pinned tab의 runtime Collection에 저장되지 않은 변경이 있고 durable anchor는 외부 요청과 일치함
     /// - 기대 결과: canonical 복귀가 거부될 tab 대신 새 tab identity가 할당됨
-    func testPlacementSkipsDirtyPinnedCollectionDurableMatch() throws {
+    func testPlacementSkipsDirtyPinnedCollectionDurableRouteMatch() throws {
         let windowID = UUID()
         let tabID = ContentTabID(rawValue: "dirty-pinned-collection")
         let runtimeURL = URL(fileURLWithPath: "/tmp/runtime.voycoll")
@@ -9265,6 +9265,34 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(item.tabID, ContentTabID(rawValue: generatedTabID.uuidString))
         XCTAssertTrue(item.requiresReservation)
         XCTAssertFalse(item.requiresPinnedAnchorReturn)
+
+        let durableDirectoryAnchor = ContentTabPageAnchor.directory(path: "/tmp/durable")
+        let generatedDirectoryTabID = UUID()
+        fileManagerWindow.contentTabs.pinnedRecords[tabID] = .init(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: durableDirectoryAnchor,
+            title: "Durable Directory",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        state.windows = [.init(id: windowID, window: fileManagerWindow)]
+        let directoryRequest = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            items: [.init(itemID: UUID(), anchor: durableDirectoryAnchor, pendingSelectEntryID: nil)],
+            preferredWindowIDs: [],
+        )
+
+        let directoryResult = ExternalOpenPlacementPlanner.make(
+            directoryRequest,
+            state: state,
+            generateUUID: generatedDirectoryTabID,
+        )
+        let directoryItem = try XCTUnwrap(directoryResult.get().orderedItems.first)
+
+        XCTAssertEqual(directoryItem.tabID, ContentTabID(rawValue: generatedDirectoryTabID.uuidString))
+        XCTAssertTrue(directoryItem.requiresReservation)
+        XCTAssertFalse(directoryItem.requiresPinnedAnchorReturn)
     }
 
     /// runtime exact route는 active durable-only pinned 후보보다 항상 먼저 재사용된다.

@@ -28,9 +28,7 @@ public extension FileManagerWindowState {
               record.anchor == anchor
         else { return false }
 
-        guard case .collectionFile = anchor,
-              tab.anchor != anchor
-        else { return true }
+        guard tab.anchor != anchor else { return true }
         let tabContent = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
         return tabContent?.hasUnsavedCollectionChanges == false
     }
