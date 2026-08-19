@@ -133,7 +133,6 @@ extension RuntimeControlPlane {
         }
         do {
             let candidate = try makeHydrationCandidate(state)
-            try validateHydrationLifecycle(candidate)
             guard generation == hydrationGeneration, hydrationTask != nil else { return }
             sessions = candidate
             hydrated = true
@@ -155,20 +154,10 @@ extension RuntimeControlPlane {
     }
 
     private func makeHydrationCandidate(_ state: RuntimeStoredState?) throws -> SessionRegistry {
-        let storedSessions = try state?.validatedForRuntime().sessions ?? []
+        let storedSessions = try state.map(validatedPersistedState)?.sessions ?? []
         return Dictionary(uniqueKeysWithValues: storedSessions.map { stored in
             (stored.externalAgentSessionReference, Session(stored: stored))
         })
-    }
-
-    private func validateHydrationLifecycle(_ candidate: SessionRegistry) throws {
-        for session in candidate.values {
-            if session.stored.projection.requiresProviderSessionReference,
-               session.stored.providerInternalSessionReference == nil
-            {
-                throw RuntimeHostError.invalidPersistedState
-            }
-        }
     }
 }
 

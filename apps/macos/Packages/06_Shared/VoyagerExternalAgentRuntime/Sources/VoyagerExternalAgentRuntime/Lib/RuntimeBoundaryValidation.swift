@@ -21,6 +21,16 @@ extension String {
 }
 
 extension RuntimeControlPlane {
+    func validatedPersistedState(_ state: RuntimeStoredState) throws -> RuntimeStoredState {
+        let validated = try state.validatedForRuntime()
+        for session in validated.sessions where session.projection.requiresProviderSessionReference
+            && session.providerInternalSessionReference == nil
+        {
+            throw RuntimeHostError.invalidPersistedState
+        }
+        return validated
+    }
+
     func validateBoundary(_ request: RuntimeLaunchRequest) throws {
         let context = request.contextPolicy
         guard request.externalAgentSessionReference.rawValue.isRuntimeBounded,
