@@ -87,6 +87,7 @@ struct FileManagerWindowRoutingReducer {
     func returnContentTabToPinnedLocationEffect(
         tabID: ContentTabID,
         pendingSelectEntryID: String?,
+        activateIfNeeded: Bool,
         state: inout State,
     ) -> Effect<Action> {
         guard state.contentTabs.tabs[id: tabID]?.isPinned == true,
@@ -95,12 +96,20 @@ struct FileManagerWindowRoutingReducer {
         else { return .none }
 
         guard state.contentTabs.activeTabID == tabID else {
-            return .concatenate(
-                .send(.contentTabs(.setCurrent(tabID))),
-                .send(.returnContentTabToPinnedLocation(
-                    tabID,
-                    pendingSelectEntryID: pendingSelectEntryID,
-                )),
+            if activateIfNeeded {
+                return .concatenate(
+                    .send(.contentTabs(.setCurrent(tabID))),
+                    .send(.returnContentTabToPinnedLocation(
+                        tabID,
+                        pendingSelectEntryID: pendingSelectEntryID,
+                    )),
+                )
+            }
+            return returnInactiveContentTabToPinnedLocationWithoutActivation(
+                tabID: tabID,
+                record: record,
+                pendingSelectEntryID: pendingSelectEntryID,
+                state: &state,
             )
         }
 
@@ -267,6 +276,7 @@ struct FileManagerWindowRoutingReducer {
         guard let pendingSelectEntryID else { return }
         if isActiveTab {
             state.content.pendingSelectEntryID = pendingSelectEntryID
+            state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
             state.syncActiveTabContentState()
             return
         }
@@ -276,7 +286,37 @@ struct FileManagerWindowRoutingReducer {
                 inheritingWindowContextFrom: state.content,
             )
         contentState.pendingSelectEntryID = pendingSelectEntryID
+        contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
         state.tabContentStates[tabID] = contentState
+    }
+
+    private func returnInactiveContentTabToPinnedLocationWithoutActivation(
+        tabID: ContentTabID,
+        record: ContentTabPinnedRecord,
+        pendingSelectEntryID: String?,
+        state: inout State,
+    ) -> Effect<Action> {
+        if let pendingSelectEntryID {
+            let request = ExternalContentTabReservation(
+                id: tabID,
+                anchor: record.anchor,
+                pendingSelectEntryID: pendingSelectEntryID,
+            )
+            guard request.isValidExternalReservation else { return .none }
+        }
+        guard !isBrokenPinnedAnchor(record.anchor) else {
+            return brokenPinnedTabFeedbackEffect(tabID: tabID, state: state)
+        }
+        let navigationState = contentState(
+            for: record.anchor,
+            inheritingWindowContextFrom: state.content,
+        ).navigation.navigationState
+        return applyPinnedContentTabRuntimeNavigation(
+            tabID: tabID,
+            navigationState: navigationState,
+            pendingSelectEntryID: pendingSelectEntryID,
+            state: &state,
+        )
     }
 
     private func applyPinnedContentTabRuntimeNavigationToInactiveTab(

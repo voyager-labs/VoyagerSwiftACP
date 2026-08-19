@@ -172,7 +172,11 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         pendingSelectEntryID: String? = nil,
     )
     case selectContentTab(ContentTabID)
-    case returnContentTabToPinnedLocation(ContentTabID, pendingSelectEntryID: String? = nil)
+    case returnContentTabToPinnedLocation(
+        ContentTabID,
+        pendingSelectEntryID: String? = nil,
+        activateIfNeeded: Bool = true,
+    )
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])

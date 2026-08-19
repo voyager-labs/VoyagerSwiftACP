@@ -151,13 +151,14 @@ extension FileManagerWindowRoutingReducer {
                 else { return .none }
                 return .send(.returnContentTabToPinnedLocation(tabID))
 
-            case let .returnContentTabToPinnedLocation(tabID, pendingSelectEntryID):
+            case let .returnContentTabToPinnedLocation(tabID, pendingSelectEntryID, activateIfNeeded):
                 guard state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs[id: tabID] != nil
                 else { return .none }
                 return returnContentTabToPinnedLocationEffect(
                     tabID: tabID,
                     pendingSelectEntryID: pendingSelectEntryID,
+                    activateIfNeeded: activateIfNeeded,
                     state: &state,
                 )
 
