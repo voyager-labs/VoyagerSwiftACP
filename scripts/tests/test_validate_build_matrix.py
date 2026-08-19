@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -567,6 +569,71 @@ class CheckCiReferencesTests(unittest.TestCase):
                 check_ci_references(errors)
                 self.assertEqual(errors, [])
 
+
+class ProductionReleasePostHogTests(unittest.TestCase):
+    release_script = Path("scripts/ci/release-macos-prod.sh")
+    def test_missing_token_fails_before_archive_without_value_leakage(self) -> None:
+        result = self._run_release({"PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PUBLIC_POSTHOG_PROJECT_TOKEN", result.stderr)
+        self.assertNotIn("https://us.i.posthog.com", result.stdout + result.stderr)
+
+    def test_missing_host_fails_before_archive_without_value_leakage(self) -> None:
+        token = "phc_fixture_token_123"
+        result = self._run_release({"PUBLIC_POSTHOG_PROJECT_TOKEN": token})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PUBLIC_POSTHOG_HOST", result.stderr)
+        self.assertNotIn(token, result.stdout + result.stderr)
+
+    def test_malformed_host_fails_without_value_leakage(self) -> None:
+        token = "phc_fixture_token_123"
+        host = "posthog.example.test/path\nleak"
+        result = self._run_release(
+            {
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": token,
+                "PUBLIC_POSTHOG_HOST": host,
+            }
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PUBLIC_POSTHOG_HOST", result.stderr)
+        self.assertNotIn(host, result.stdout + result.stderr)
+        self.assertNotIn(token, result.stdout + result.stderr)
+
+    def test_invalid_host_port_fails_before_release_prerequisites(self) -> None:
+        for host in (
+            "https://us.i.posthog.com:not-a-port",
+            "https://us.i.posthog.com:65536",
+        ):
+            with self.subTest(host=host):
+                result = self._run_release(
+                    {
+                        "PUBLIC_POSTHOG_PROJECT_TOKEN": "phc_fixture_token_123",
+                        "PUBLIC_POSTHOG_HOST": host,
+                    }
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("PUBLIC_POSTHOG_HOST", result.stderr)
+                self.assertNotIn(host, result.stdout + result.stderr)
+                self.assertNotIn("DOWNLOADS_BASE_URL", result.stderr)
+
+    def _run_release(
+        self, posthog_env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        env = {
+            **os.environ,
+            "VERSION": "0.8.2",
+            "CONFIGURATION": "Prod-Release",
+            "SCHEME": "Voyager-Prod",
+            "VOYAGER_RELEASED_AT": "2026-08-19T00:00:00Z",
+            **posthog_env,
+        }
+        return subprocess.run(
+            [str(self.release_script), "build-notarize"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 class MainFunctionTests(unittest.TestCase):
     """Tests for main()."""
