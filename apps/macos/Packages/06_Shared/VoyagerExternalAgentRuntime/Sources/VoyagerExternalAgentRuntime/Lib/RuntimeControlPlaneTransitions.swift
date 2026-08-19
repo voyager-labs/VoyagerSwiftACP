@@ -67,7 +67,7 @@ extension RuntimeControlPlane {
             adapterID: descriptor.id,
             adapterVersion: descriptor.adapterVersion,
             capabilitySnapshot: descriptor.capabilities,
-            contextPolicy: request.contextPolicy,
+            storedContext: RuntimeStoredContext(contextPolicy: request.contextPolicy),
             projection: .launching,
             providerLaunchAttempted: true,
             lastSequence: current.stored.lastSequence,
@@ -245,11 +245,6 @@ extension RuntimeControlPlane {
         sessions[host] = session
     }
 
-    func terminalResult(for stored: RuntimeStoredSession) -> RuntimeResult? {
-        guard let outcome = outcome(for: stored.projection) else { return nil }
-        return RuntimeResult(runReference: stored.runReference, outcome: outcome, artifactReferences: [])
-    }
-
     func outcome(for projection: RuntimeProjection) -> RuntimeOutcome? {
         switch projection {
         case .completed: .completed
@@ -313,7 +308,7 @@ extension RuntimeStoredSession {
             adapterID: adapterID,
             adapterVersion: adapterVersion,
             capabilitySnapshot: capabilitySnapshot,
-            contextPolicy: contextPolicy,
+            storedContext: storedContext,
             projection: projection,
             providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,

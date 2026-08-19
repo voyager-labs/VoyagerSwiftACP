@@ -67,10 +67,24 @@ public actor RuntimeControlPlane {
     var adapters: [RuntimeAdapterID: any ExternalAgentRuntimeAdapter] = [:]
     var sessions: SessionRegistry = [:]
     var hydrationTask: Task<RuntimeStoredState?, Error>?
+    var hydrationGeneration: UInt64 = 0
+    var hydrationWaiterCounts: [UInt64: Int] = [:]
+    var hydrationDeliveryOrdinal = 0
+    var hydrationDeliveryPauseOrdinal: Int?
+    var hydrationDeliveryPauseBackground = false
+    var hydrationDeliveryPauseContinuation: CheckedContinuation<Void, Never>?
+    var hydrationWaiterAdmissionContinuations: [(Int, CheckedContinuation<Void, Never>)] = []
+    var hydrationPauseObservedContinuations: [CheckedContinuation<Void, Never>] = []
+    var hydrationDeliveryIsPaused = false
+    var hydrationInstallCount = 0
     var hydrated = false
     var persistenceMutationLocked = false
     var persistenceMutationWaiters: [CheckedContinuation<Void, Never>] = []
     var pendingPersistenceMutations: [ExternalAgentSessionReference: Int] = [:]
+
+    var hydrationWaiterCount: Int {
+        hydrationWaiterCounts.values.reduce(0, +)
+    }
 
     public init(store: any RuntimeStateStore) {
         self.store = store
@@ -94,274 +108,6 @@ public actor RuntimeControlPlane {
 
     public func adapterDescriptor(for id: RuntimeAdapterID) -> RuntimeAdapterDescriptor? {
         adapters[id]?.descriptor
-    }
-
-    public func run(_ request: RuntimeLaunchRequest) async throws -> RuntimeResult {
-        try await hydrateIfNeeded()
-        if try await retireOrphanedDirectRunIfNeeded(request) {
-            throw RuntimeHostError.duplicateRunReference
-        }
-        let reservation = try await commit(host: request.externalAgentSessionReference) { plane, registry in
-            try plane.reserveTransition(request, in: &registry)
-        }
-        let receipt: RuntimeLaunchReceipt
-        do {
-            receipt = try await reservation.adapter.launch(request)
-        } catch is CancellationError {
-            try await propagateLaunchCancellation(host: reservation.host, lease: reservation.lease)
-        } catch {
-            return try await resolveLaunchFailure(
-                error,
-                reservation: reservation,
-                runReference: request.runReference,
-            )
-        }
-        let receiptTransition: ReceiptTransition
-        do {
-            receiptTransition = try await commit(host: reservation.host) { plane, registry in
-                try plane.recordReceiptTransition(
-                    receipt,
-                    request: request,
-                    descriptor: reservation.descriptor,
-                    lease: reservation.lease,
-                    in: &registry,
-                )
-            }
-        } catch RuntimeHostError.persistenceFailure {
-            try? await reconcileStartedProviderFailure(
-                reservation: reservation,
-                receipt: receipt,
-            )
-            throw RuntimeHostError.persistenceFailure
-        } catch {
-            try? await reconcileStartedProviderFailure(reservation: reservation)
-            throw error
-        }
-        switch receiptTransition {
-        case let .terminal(result):
-            return result
-        case let .consuming(lease):
-            return try await consumeAndFinish(
-                receipt,
-                reservation: reservation,
-                lease: lease,
-            )
-        }
-    }
-
-    private func propagateLaunchCancellation(
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-    ) async throws -> Never {
-        await detachLaunchOwner(host: host, lease: lease)
-        throw CancellationError()
-    }
-
-    private func detachLaunchOwner(host: ExternalAgentSessionReference, lease: UInt64) async {
-        try? await mutateAfterPersistedTransitions { plane in
-            plane.detachLaunchOwnerTransition(host: host, lease: lease)
-        }
-    }
-
-    private func resolveLaunchFailure(
-        _ error: any Error,
-        reservation: RunReservation,
-        runReference: RuntimeRunReference,
-    ) async throws -> RuntimeResult {
-        let primary = normalizeAdapterError(error)
-        do {
-            let terminal = try await commit(host: reservation.host, { plane, registry in
-                plane.failLaunchTransition(
-                    host: reservation.host,
-                    lease: reservation.lease,
-                    in: &registry,
-                )
-            })
-            try Task.checkCancellation()
-            if let terminal {
-                return terminal
-            }
-        } catch {
-            do {
-                try Task.checkCancellation()
-                if let terminal = try await persistedTerminalResult(
-                    host: reservation.host,
-                    runReference: runReference,
-                ), let reconciled = try await reconcileLaunchFailureTerminal(
-                    terminal,
-                    host: reservation.host,
-                    runReference: runReference,
-                    lease: reservation.lease,
-                ) {
-                    try Task.checkCancellation()
-                    return reconciled
-                }
-            } catch is CancellationError {
-                await detachLaunchOwner(host: reservation.host, lease: reservation.lease)
-                throw CancellationError()
-            } catch {
-                // 원래 adapter 오류를 우선하기 위해 fallback persistence 오류는 무시한다.
-            }
-        }
-        throw primary
-    }
-
-    private func reconcileLaunchFailureTerminal(
-        _ terminal: RuntimeResult,
-        host: ExternalAgentSessionReference,
-        runReference: RuntimeRunReference,
-        lease: UInt64,
-    ) async throws -> RuntimeResult? {
-        try await mutateAfterPersistedTransitions { plane in
-            guard var session = plane.sessions[host],
-                  session.stored.runReference == runReference,
-                  session.lease == .launching(lease),
-                  session.stored.projection.isTerminal
-            else { return nil }
-            session.lease = .none
-            session.revision += 1
-            plane.sessions[host] = session
-            return terminal
-        }
-    }
-
-    private func consumeAndFinish(
-        _ receipt: RuntimeLaunchReceipt,
-        reservation: RunReservation,
-        lease: UInt64,
-    ) async throws -> RuntimeResult {
-        let result: RuntimeResult
-        do {
-            result = try await consume(receipt, from: reservation.adapter, host: reservation.host)
-        } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
-            try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
-            throw RuntimeHostError.persistenceFailure
-        } catch is CancellationError {
-            try? await detachConsumerOwner(host: reservation.host, lease: lease)
-            throw CancellationError()
-        } catch {
-            let primary = (error as? RuntimeHostError) ?? normalizeAdapterError(error)
-            _ = try? await commit(host: reservation.host) { plane, registry in
-                try plane.interruptTransition(
-                    host: reservation.host,
-                    lease: lease,
-                    in: &registry,
-                )
-            }
-            throw primary
-        }
-        if let terminal = try await reconcileConsumedResult(
-            result,
-            host: reservation.host,
-            lease: lease,
-        ) {
-            return terminal
-        }
-        do {
-            return try await persistTerminalResult(result, host: reservation.host, lease: lease)
-        } catch {
-            try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
-            throw error
-        }
-    }
-
-    func reconcileConsumedResult(
-        _ result: RuntimeResult,
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-    ) async throws -> RuntimeResult? {
-        try await mutateAfterPersistedTransitions { plane in
-            guard var session = plane.sessions[host],
-                  session.stored.runReference == result.runReference,
-                  session.lease == .consuming(lease) || session.lease == .resuming(lease),
-                  let terminal = plane.terminalResult(for: session.stored)
-            else { return nil }
-            session.lease = .none
-            session.revision += 1
-            plane.sessions[host] = session
-            return terminal.outcome == result.outcome ? result : terminal
-        }
-    }
-
-    func detachConsumerOwner(
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-    ) async throws {
-        try await mutateAfterPersistedTransitions { plane in
-            plane.detachConsumerOwnerTransition(host: host, lease: lease, in: &plane.sessions)
-        }
-    }
-
-    func recoverTerminalPersistenceClaim(
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-    ) async throws {
-        try await mutateAfterPersistedTransitions { plane in
-            plane.recoverTerminalPersistenceClaimTransition(host: host, lease: lease)
-        }
-    }
-
-    func persistTerminalResult(
-        _ result: RuntimeResult,
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-    ) async throws -> RuntimeResult {
-        do {
-            let terminal = try await commit(host: host) { plane, registry in
-                try plane.finishTransition(result, host: host, lease: lease, in: &registry)
-            }
-            try Task.checkCancellation()
-            return terminal
-        } catch RuntimeHostError.persistenceFailure {
-            try Task.checkCancellation()
-            if try await loadPersistedTerminalResult(host: host, runReference: result.runReference) != nil,
-               let terminal = try await reconcileConsumedResult(result, host: host, lease: lease)
-            {
-                try Task.checkCancellation()
-                return terminal
-            }
-            do {
-                let terminal = try await commit(host: host) { plane, registry in
-                    try plane.finishTransition(result, host: host, lease: lease, in: &registry)
-                }
-                try Task.checkCancellation()
-                return terminal
-            } catch RuntimeHostError.persistenceFailure {
-                try Task.checkCancellation()
-                if try await loadPersistedTerminalResult(host: host, runReference: result.runReference) != nil,
-                   let terminal = try await reconcileConsumedResult(result, host: host, lease: lease)
-                {
-                    try Task.checkCancellation()
-                    return terminal
-                }
-                throw RuntimeHostError.persistenceFailure
-            }
-        }
-    }
-
-    private func reconcileStartedProviderFailure(
-        reservation: RunReservation,
-        receipt: RuntimeLaunchReceipt? = nil,
-    ) async throws {
-        do {
-            try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
-        } catch RuntimeHostError.persistenceFailure {
-            try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
-        }
-    }
-
-    private func persistStartedProviderFailure(
-        reservation: RunReservation,
-        receipt: RuntimeLaunchReceipt?,
-    ) async throws {
-        _ = try await commit(host: reservation.host) { plane, registry in
-            try plane.interruptTransition(
-                host: reservation.host,
-                lease: reservation.lease,
-                in: &registry,
-                receipt: receipt,
-            )
-        }
     }
 
     public func projection(for host: ExternalAgentSessionReference) -> RuntimeProjection? {
@@ -393,7 +139,7 @@ extension RuntimeStoredSession {
             adapterID: adapterID,
             adapterVersion: adapterVersion,
             capabilitySnapshot: capabilitySnapshot,
-            contextPolicy: contextPolicy,
+            storedContext: storedContext,
             projection: projection,
             providerLaunchAttempted: providerLaunchAttempted,
             lastSequence: lastSequence,

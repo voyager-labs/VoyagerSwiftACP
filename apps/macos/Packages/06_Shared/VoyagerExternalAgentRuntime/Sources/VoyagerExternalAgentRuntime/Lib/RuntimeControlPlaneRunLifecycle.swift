@@ -121,10 +121,10 @@ extension RuntimeControlPlane {
     ) async throws -> ProviderEventDisposition {
         do {
             return try await acceptProviderEvent(event, host: host)
-        } catch RuntimeHostError.persistenceFailure where providerTerminalOutcome(for: event) != nil {
+        } catch RuntimeHostError.persistenceConflict where providerTerminalOutcome(for: event) != nil {
             do {
                 return try await acceptProviderEvent(event, host: host)
-            } catch RuntimeHostError.persistenceFailure {
+            } catch RuntimeHostError.persistenceConflict {
                 throw RuntimeTerminalEventPersistenceError.persistenceFailure
             }
         } catch let error as RuntimeHostError {
@@ -194,7 +194,20 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
     ) async throws -> RuntimeResult? {
-        try await loadPersistedTerminalResult(host: host, runReference: runReference)
+        try await withPersistedState { plane, loaded in
+            guard let adopted = plane.adoptingPersistedTerminal(
+                host: host,
+                runReference: runReference,
+                expectedSession: plane.sessions[host],
+                loaded: loaded,
+            ) else {
+                try Task.checkCancellation()
+                return nil
+            }
+            plane.sessions[host] = adopted
+            try Task.checkCancellation()
+            return plane.terminalResult(for: adopted.stored)
+        }
     }
 
     func storedTerminalResult(
@@ -202,14 +215,9 @@ extension RuntimeControlPlane {
         runReference: RuntimeRunReference,
     ) -> RuntimeResult? {
         guard let stored = sessions[host]?.stored,
-              stored.runReference == runReference,
-              let outcome = outcome(for: stored.projection)
+              stored.runReference == runReference
         else { return nil }
-        return RuntimeResult(
-            runReference: runReference,
-            outcome: outcome,
-            artifactReferences: [],
-        )
+        return terminalResult(for: stored)
     }
 }
 
@@ -224,6 +232,6 @@ extension RuntimeStoredSession {
             && adapterVersion == descriptor.adapterVersion
             && providerBranch == descriptor.providerBranch
             && capabilitySnapshot == descriptor.capabilities
-            && contextPolicy.hasSameExecutionContext(as: request.contextPolicy)
+            && storedContext == RuntimeStoredContext(contextPolicy: request.contextPolicy)
     }
 }
