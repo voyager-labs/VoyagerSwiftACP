@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import IdentifiedCollections
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -408,6 +409,45 @@ final class FMW003PendingSelectionTests: XCTestCase {
         XCTAssertNil(store.state.content.pendingSelectEntryID)
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [filePath])
         XCTAssertTrue(store.state.content.entryViewLayout.shouldScrollToSelection)
+    }
+
+    /// FMW-003-handle_external_file_open_requests: 이미 로드된 Directory tab은 pending selection을 즉시 소비한다.
+    /// 같은 tab이 다시 활성화되지 않아도 이미 있는 entries에서 파일을 선택하는지 검증한다.
+    /// - 검증 내용: pending 저장 후 loaded entries 매칭, pending 제거, selection/scroll 반영
+    /// - 사전 조건: active Directory tab에 대상 파일이 이미 로드되어 있음
+    /// - 기대 결과: itemsLoaded 없이 selectedIds가 대상 파일이고 pendingSelectEntryID는 nil
+    func test_applyExternalPendingSelection_alreadyLoadedMatchingEntry_appliesSelectionImmediately() {
+        let tabID = ContentTabID(rawValue: "reused-directory")
+        let directoryPath = "/tmp/reused"
+        let filePath = "/tmp/reused/last.txt"
+        let entry = Self.makeEntry(fullPath: filePath)
+        var state = FileManagerWindowState()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "reused",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+        )
+        state.content.navigation.seedInitialFolderPath(directoryPath)
+        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(uniqueElements: [entry])
+        state.syncActiveTabContentState()
+
+        XCTAssertTrue(state.applyExternalPendingSelection(
+            filePath,
+            tabID: tabID,
+            anchor: .directory(path: directoryPath),
+        ))
+        XCTAssertNil(state.content.pendingSelectEntryID)
+        XCTAssertEqual(state.content.entryViewLayout.selectedIds, [filePath])
+        XCTAssertEqual(state.content.entryViewLayout.lastSelectedId, filePath)
+        XCTAssertTrue(state.content.entryViewLayout.shouldScrollToSelection)
     }
 }
 

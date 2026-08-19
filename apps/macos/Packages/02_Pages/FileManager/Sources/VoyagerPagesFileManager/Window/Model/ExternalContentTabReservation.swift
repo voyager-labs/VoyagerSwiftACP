@@ -49,10 +49,12 @@ public extension FileManagerWindowState {
 
         if contentTabs.activeTabID == tabID {
             content.pendingSelectEntryID = pendingSelectEntryID
+            content.consumeExternalPendingSelectionIfAlreadyLoaded()
             syncActiveTabContentState()
         } else {
             guard tabContentStates[tabID] != nil else { return false }
             tabContentStates[tabID]?.pendingSelectEntryID = pendingSelectEntryID
+            tabContentStates[tabID]?.consumeExternalPendingSelectionIfAlreadyLoaded()
         }
         return true
     }
