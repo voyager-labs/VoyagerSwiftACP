@@ -40,7 +40,7 @@ public extension RuntimeControlPlane {
                 adapterID: descriptor.id,
                 adapterVersion: descriptor.adapterVersion,
                 capabilitySnapshot: descriptor.capabilities,
-                contextPolicy: request.contextPolicy,
+                storedContext: RuntimeStoredContext(contextPolicy: request.contextPolicy),
                 projection: projection.projection,
                 providerLaunchAttempted: false,
                 lastSequence: 0,
@@ -64,11 +64,18 @@ private extension RuntimeControlPlane {
               !current.stored.projection.isTerminal,
               current.stored.runReference != request.runReference
         else { return }
-        _ = try await loadPersistedTerminalResult(
-            host: host,
-            runReference: current.stored.runReference,
-            expectedSession: current,
-        )
+        try await withPersistedState { plane, loaded in
+            guard plane.sessions[host] == current,
+                  let adopted = plane.adoptingPersistedTerminal(
+                      host: host,
+                      runReference: current.stored.runReference,
+                      expectedSession: current,
+                      loaded: loaded,
+                  )
+            else { return }
+            plane.sessions[host] = adopted
+        }
+        try Task.checkCancellation()
     }
 
     func validatePrelaunchTransition(
