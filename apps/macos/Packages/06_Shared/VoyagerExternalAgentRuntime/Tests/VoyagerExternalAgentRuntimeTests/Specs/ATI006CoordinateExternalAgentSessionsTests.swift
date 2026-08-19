@@ -32,6 +32,22 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         }
     }
 
+    enum CommittedSnapshotFailure: String, CaseIterable {
+        case duplicateHosts
+        case futureSchema
+        case invalidBounds
+        case missingProviderReference
+
+        var hostError: RuntimeHostError {
+            switch self {
+            case .futureSchema:
+                .unsupportedSchemaVersion(RuntimeStoredState.currentSchemaVersion + 1)
+            case .duplicateHosts, .invalidBounds, .missingProviderReference:
+                .invalidPersistedState
+            }
+        }
+    }
+
     enum OperationCancellationCase: String {
         case approval
         case queuedInput
@@ -369,6 +385,50 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await currentPlane.projection(for: host) == .interrupted)
     }
 
+    /// ATI-006-project_external_agent_run_events: conflict read-repair validates loaded lifecycle state.
+    /// terminal conflict가 public store의 lifecycle-invalid snapshot을 읽어도 live registry에 설치하지 않는지 검증한다.
+    /// - 검증 내용: host terminal CAS conflict, running provider-reference 검증, local registry 원자성.
+    /// - 사전 조건: plane은 valid running session을 hydrate했고 store는 동일 run의 provider-reference 없는 snapshot으로 교체된다.
+    /// - 기대 결과: invalidPersistedState를 반환하고 기존 running session과 provider binding을 그대로 유지한다.
+    @Test
+    func `conflict read-repair validates loaded lifecycle state`() async throws {
+        let host: ExternalAgentSessionReference = "host-conflict-read-validation"
+        let run = RuntimeRunReference("run-conflict-read-validation")
+        let stored = reviewerBlockerTestsMakeRunningSession(
+            host: host,
+            run: run,
+            context: reviewerBlockerTestsMakeCanonicalContext(),
+        )
+        let store = InMemoryRuntimeStateStore(state: storageBoundaryTestsMakeState([stored]))
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.hydrateIfNeeded()
+        let malformed = makeEqualitySession(
+            storedContext: stored.storedContext,
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: nil,
+            runReference: run,
+            projection: .running,
+        )
+        await store.replaceState(storageBoundaryTestsMakeState([malformed]))
+        let event = RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("conflict-read-validation"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("conflict-read-validation"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: host,
+            runReference: run,
+            kind: .interrupted,
+        )
+
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
+            _ = try await plane.ingestHostEvent(event)
+        }
+        #expect(await plane.sessions[host]?.stored == stored)
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await store.saveCount == 1)
+    }
+
     /// ATI-006-project_external_agent_run_events: finish persistence retries only a conflict.
     /// 실제 terminal-only provider 경로에서 finish commit의 conflict retry와 storage fail-closed를 검증한다.
     /// - 검증 내용: finish commit, public result, durable projection, active lease cleanup.
@@ -483,6 +543,71 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     }
 
     // MARK: - ATI-006-coordinate_external_agent_launch
+
+    /// ATI-006-coordinate_external_agent_launch: committed store result validates before reconciliation.
+    /// public state store가 malformed committed snapshot을 반환해도 live registry에 설치하기 전에 fail-closed하는지 검증한다.
+    /// - 검증 내용: future schema, persisted bounds, lifecycle provider-reference 검증과 registry/provider side effect 격리.
+    /// - 사전 조건: prelaunch apply가 구조 또는 lifecycle 계약을 위반하는 committed snapshot을 반환한다.
+    /// - 기대 결과: typed host error를 반환하고 malformed session을 설치하거나 provider를 launch하지 않는다.
+    @Test(arguments: CommittedSnapshotFailure.allCases)
+    func `committed store result validates before reconciliation`(
+        failure: CommittedSnapshotFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-committed-validation-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-committed-validation-\(failure.rawValue)")
+        let malformed = makeMalformedCommittedState(failure, host: host, run: run)
+        let store = InMemoryRuntimeStateStore(committedSaveStates: [1: malformed])
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        await #expect(throws: failure.hostError) {
+            try await plane.projectPrelaunch(
+                makeLaunch(host: host, run: run, adapterID: "sdk"),
+                as: .policyReady,
+            )
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await adapter.counts().launch == 0)
+        #expect(await store.saveCount == 1)
+    }
+
+    private func makeMalformedCommittedState(
+        _ failure: CommittedSnapshotFailure,
+        host: ExternalAgentSessionReference,
+        run: RuntimeRunReference,
+    ) -> RuntimeStoredState {
+        switch failure {
+        case .duplicateHosts:
+            return storageBoundaryTestsMakeState([
+                storageBoundaryTestsMakeStored(host: host, run: run),
+                storageBoundaryTestsMakeStored(
+                    host: host,
+                    run: RuntimeRunReference("\(run.rawValue)-duplicate"),
+                ),
+            ])
+        case .futureSchema:
+            return RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion + 1,
+                sessions: [],
+            )
+        case .invalidBounds:
+            return storageBoundaryTestsMakeState([
+                storageBoundaryTestsMakeStored(host: host, run: run, acceptedEventCount: -1),
+            ])
+        case .missingProviderReference:
+            let stored = storageBoundaryTestsMakeStored(host: host, run: run)
+            return storageBoundaryTestsMakeState([
+                makeEqualitySession(
+                    storedContext: stored.storedContext,
+                    externalAgentSessionReference: host,
+                    providerInternalSessionReference: nil,
+                    runReference: run,
+                    projection: .running,
+                ),
+            ])
+        }
+    }
 
     /// ATI-006-coordinate_external_agent_launch: prelaunch persistence is distinct from non-persisting operation
     /// admission.

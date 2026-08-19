@@ -6,6 +6,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
     private let loadErrors: [Int: RuntimeStateStoreError]
     private let failingSaveNumbers: Set<Int>
     private let conflictingSaveNumbers: Set<Int>
+    private let committedSaveStates: [Int: RuntimeStoredState]
     private let loadGates: [Int: RuntimeTestGate]
     private let saveDelays: [Int: Duration]
     private let saveGates: [Int: RuntimeTestGate]
@@ -20,6 +21,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         loadErrors: [Int: RuntimeStateStoreError] = [:],
         failingSaveNumbers: Set<Int> = [],
         conflictingSaveNumbers: Set<Int> = [],
+        committedSaveStates: [Int: RuntimeStoredState] = [:],
         loadGates: [Int: RuntimeTestGate] = [:],
         saveDelays: [Int: Duration] = [:],
         saveGates: [Int: RuntimeTestGate] = [:],
@@ -29,6 +31,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         self.loadErrors = loadErrors
         self.failingSaveNumbers = failingSaveNumbers
         self.conflictingSaveNumbers = conflictingSaveNumbers
+        self.committedSaveStates = committedSaveStates
         self.loadGates = loadGates
         self.saveDelays = saveDelays
         self.saveGates = saveGates
@@ -76,7 +79,10 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         let current = loaded ?? RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
         let existing = current.sessions.first { $0.externalAgentSessionReference == mutation.host }
         if conflictingSaveNumbers.contains(saveCount) { return .conflict(loaded) }
-        if conflictingSaveNumbers.contains(saveCount) { return .conflict(loaded) }
+        if let committed = committedSaveStates[saveCount] {
+            state = committed
+            return .committed(committed)
+        }
         guard existing == mutation.expected else { return .conflict(loaded) }
         if let replacement = mutation.replacement,
            current.sessions

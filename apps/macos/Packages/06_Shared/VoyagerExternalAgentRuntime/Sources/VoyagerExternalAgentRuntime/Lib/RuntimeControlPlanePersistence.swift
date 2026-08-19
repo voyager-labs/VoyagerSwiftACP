@@ -24,7 +24,8 @@ extension RuntimeControlPlane {
                 ))
                 switch outcome {
                 case let .committed(committed):
-                    sessions = reconciledRegistry(candidate: candidate, persisted: committed)
+                    let validated = try validatedPersistedState(committed)
+                    sessions = reconciledRegistry(candidate: candidate, persisted: validated)
                 case .conflict:
                     throw RuntimeHostError.persistenceConflict
                 }
@@ -59,11 +60,17 @@ extension RuntimeControlPlane {
         try Task.checkCancellation()
         let state: RuntimeStoredState?
         do {
-            state = try await store.load()?.validatedForRuntime()
+            if let loaded = try await store.load() {
+                state = try validatedPersistedState(loaded)
+            } else {
+                state = nil
+            }
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as RuntimeStateStoreError {
             throw mapStoreError(error)
+        } catch let error as RuntimeHostError {
+            throw error
         } catch {
             throw RuntimeHostError.persistenceFailure
         }
