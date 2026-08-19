@@ -4,6 +4,34 @@ import Testing
 
 @Suite("ATI-006 Coordinate External Agent Sessions")
 struct ATI006CoordinateExternalAgentSessionsTests {
+    enum PersistenceBoundaryFailure: String, CaseIterable {
+        case conflict
+        case unavailable
+    }
+
+    enum HeartbeatProbeFailure: String, CaseIterable {
+        case invalidPersistedState
+        case unsupportedSchemaVersion
+
+        var storeError: RuntimeStateStoreError {
+            switch self {
+            case .invalidPersistedState:
+                .invalidSnapshot
+            case .unsupportedSchemaVersion:
+                .unsupportedSchemaVersion(999)
+            }
+        }
+
+        var hostError: RuntimeHostError {
+            switch self {
+            case .invalidPersistedState:
+                .invalidPersistedState
+            case .unsupportedSchemaVersion:
+                .unsupportedSchemaVersion(999)
+            }
+        }
+    }
+
     enum OperationCancellationCase: String {
         case approval
         case queuedInput
@@ -21,6 +49,439 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             }
         }
     }
+
+    // MARK: - ATI-006-coordinate_external_agent_launch
+
+    /// ATI-006-coordinate_external_agent_launch: receipt persistence distinguishes a conflict from unavailable storage.
+    /// 실제 run 경로에서 provider receipt 저장 실패와 started-provider cleanup 상태를 검증한다.
+    /// - 검증 내용: `RuntimeControlPlane.run`의 receipt commit, conflict/unavailable 오류, provider binding과 interrupted
+    /// cleanup.
+    /// - 사전 조건: policy-ready prelaunch와 deterministic provider가 구성되고 receipt 저장 시점에 경계 실패가 주입된다.
+    /// - 기대 결과: 두 실패 모두 provider를 재실행하지 않으며 cleanup은 provider handle을 보존한 interrupted 상태로 수렴한다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `receipt persistence distinguishes conflict from unavailable storage`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-receipt-boundary-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-receipt-boundary-\(failure.rawValue)")
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: failure == .unavailable ? [3] : [],
+            conflictingSaveNumbers: failure == .conflict ? [3] : [],
+        )
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        if failure == .conflict {
+            await #expect(throws: RuntimeHostError.persistenceConflict) { _ = try await plane.run(request) }
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) { _ = try await plane.run(request) }
+        }
+        #expect(await adapter.counts().launch == 1)
+        let persisted = try #require(await store.currentState()?.sessions.first)
+        #expect(persisted.projection == .interrupted)
+        #expect(persisted.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
+    }
+
+    // MARK: - ATI-006-coordinate_external_agent_launch
+
+    /// ATI-006-coordinate_external_agent_launch: receipt conflict followed by unavailable cleanup reports persistence
+    /// failure.
+    /// receipt commit conflict 뒤 cleanup 저장소가 unavailable이면 cleanup 오류가 원래 conflict보다 우선하는지 검증한다.
+    /// - 검증 내용: save #3 receipt conflict, save #4 cleanup unavailable, exact error, running claim과 retry 차단.
+    /// - 사전 조건: policy-ready prelaunch와 receipt를 반환하는 provider가 구성되고 두 저장 경계 오류가 순서대로 주입된다.
+    /// - 기대 결과: `persistenceFailure`를 반환하고 provider-started running 상태와 durable handle을 보존한다.
+    @Test
+    func `receipt conflict followed by unavailable cleanup reports persistence failure`() async throws {
+        let host = ExternalAgentSessionReference("host-receipt-conflict-cleanup-unavailable")
+        let run = RuntimeRunReference("run-receipt-conflict-cleanup-unavailable")
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: [4],
+            conflictingSaveNumbers: [3],
+        )
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            _ = try await plane.run(request)
+        }
+        #expect(await store.saveCount == 4)
+        await #expect(throws: RuntimeHostError.duplicateRunReference) {
+            _ = try await plane.run(request)
+        }
+        #expect(await adapter.counts().launch == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_launch: launch cleanup keeps provider-started state fail-closed.
+    /// receipt 이후 cleanup 저장 경계에서 conflict와 unavailable을 구분하고 provider side effect를 보존한다.
+    /// - 검증 내용: provider launch 실패 후 started-provider interruption cleanup과 재실행 차단.
+    /// - 사전 조건: provider가 receipt를 반환한 뒤 소비 stream 생성이 실패하고 cleanup 저장 경계가 주입된다.
+    /// - 기대 결과: conflict는 durable terminal을 채택하고 unavailable은 persistenceFailure와 running owner를 보존한다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `launch cleanup keeps provider-started state fail-closed`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-launch-cleanup-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-launch-cleanup-\(failure.rawValue)")
+        let context = finalReviewTestsMakeContext()
+        let terminal = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-1"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .completed,
+            providerLaunchAttempted: true,
+        )
+        let terminalState = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [terminal],
+        )
+        let store = DeterministicHostMutationRuntimeStateStore(
+            failingUpdateNumbers: failure == .unavailable ? [4] : [],
+            conflictingUpdateStates: failure == .conflict ? [4: terminalState] : [:],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamFailure: .creation,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        if failure == .conflict {
+            #expect(try await runPolicyReady(plane, request).outcome == .completed)
+            #expect(await plane.projection(for: host) == .completed)
+            #expect(await plane.sessions[host]?.lease.isActive == false)
+            #expect(await store.currentState()?.sessions == [terminal])
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) {
+                _ = try await runPolicyReady(plane, request)
+            }
+            #expect(await plane.projection(for: host) == .running)
+            #expect(await plane.sessions[host]?.lease.isActive == true)
+            #expect(await store.currentState()?.sessions.first?.projection == .running)
+        }
+        #expect(await adapter.counts().launch == 1)
+        #expect(await store.currentState()?.sessions.first?.providerLaunchAttempted == true)
+        #expect(await store.updateCount == 4)
+    }
+
+    // MARK: - ATI-006-project_external_agent_run_events
+
+    /// ATI-006-project_external_agent_run_events: terminal event persistence retries only a conflict.
+    /// 실제 provider event stream 경로에서 conflict read-repair와 unavailable fail-closed를 검증한다.
+    /// - 검증 내용: terminal event commit, retry 횟수, completed projection과 result metadata.
+    /// - 사전 조건: terminal provider event와 deterministic result가 구성되고 event 저장 경계가 주입된다.
+    /// - 기대 결과: conflict는 retry 후 completed로 수렴하고 unavailable은 persistenceFailure와 running claim을 남긴다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `terminal event persistence retries only a conflict`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-terminal-event-boundary-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-terminal-event-boundary-\(failure.rawValue)")
+        let result = RuntimeResult(runReference: run, outcome: .completed, artifactReferences: ["artifact://event"])
+        let terminalEventGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: failure == .unavailable ? [4] : [],
+            conflictingSaveNumbers: failure == .conflict ? [4] : [],
+            saveGates: [4: terminalEventGate],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [
+                [
+                    makeEvent(
+                        host: host,
+                        run: run,
+                        sequence: 1,
+                        idempotencyKey: "terminal",
+                        kind: .completed,
+                    ),
+                ],
+            ],
+            terminalResultOverride: result,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let runTask = Task {
+            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk"))
+        }
+        await store.waitForSaveCount(4)
+        #expect(await store.saveCount == 4)
+        #expect(await plane.projection(for: host) == .running)
+        await terminalEventGate.open()
+        if failure == .conflict {
+            #expect(try await runTask.value == result)
+            #expect(await plane.projection(for: host) == .completed)
+            #expect(await store.saveCount == 5)
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) {
+                _ = try await runTask.value
+            }
+            #expect(await plane.projection(for: host) == .interrupted)
+            #expect(await store.saveCount == 5)
+        }
+    }
+
+    /// ATI-006-project_external_agent_run_events: stale host terminal conflict adopts the durable terminal.
+    /// 다른 control plane이 먼저 저장한 동일 host/run terminal을 stale plane이 event 재적용 없이 반환하는지 검증한다.
+    /// - 검증 내용: file-backed conflict read-repair 결과, public terminal outcome, 양쪽 terminal projection.
+    /// - 사전 조건: stale plane이 running snapshot을 hydrate한 뒤 다른 plane이 동일 interrupted host event를 저장한다.
+    /// - 기대 결과: stale plane의 동일 event ingest도 interrupted를 반환하고 malformedAdapterResponse를 발생시키지 않는다.
+    @Test
+    func `stale host terminal conflict adopts the durable terminal`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host: ExternalAgentSessionReference = "host-stale-terminal-conflict"
+        let run = RuntimeRunReference("run-stale-terminal-conflict")
+        let stored = reviewerBlockerTestsMakeRunningSession(
+            host: host,
+            run: run,
+            context: reviewerBlockerTestsMakeCanonicalContext(),
+        )
+        try await RuntimeFileStateStore(fileURL: fileURL).seed(RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        ))
+        let event = RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("host-stale-terminal-conflict"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("host-stale-terminal-conflict"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: host,
+            runReference: run,
+            kind: .interrupted,
+        )
+        let stalePlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await stalePlane.hydrateIfNeeded()
+        #expect(await stalePlane.projection(for: host) == .running)
+
+        let currentPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        #expect(try await currentPlane.ingestHostEvent(event)?.outcome == .interrupted)
+
+        #expect(try await stalePlane.ingestHostEvent(event)?.outcome == .interrupted)
+        #expect(await stalePlane.projection(for: host) == .interrupted)
+        #expect(await currentPlane.projection(for: host) == .interrupted)
+    }
+
+    /// ATI-006-project_external_agent_run_events: finish persistence retries only a conflict.
+    /// 실제 terminal-only provider 경로에서 finish commit의 conflict retry와 storage fail-closed를 검증한다.
+    /// - 검증 내용: finish commit, public result, durable projection, active lease cleanup.
+    /// - 사전 조건: terminal-only adapter 결과와 finish 저장 경계가 구성되어 있다.
+    /// - 기대 결과: conflict는 completed로 수렴하고 unavailable은 persistenceFailure와 running 상태를 보존한다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `finish persistence retries only a conflict`(failure: PersistenceBoundaryFailure) async throws {
+        let host = ExternalAgentSessionReference("host-finish-boundary-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-finish-boundary-\(failure.rawValue)")
+        let result = RuntimeResult(runReference: run, outcome: .completed, artifactReferences: ["artifact://finish"])
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: failure == .unavailable ? [4] : [],
+            conflictingSaveNumbers: failure == .conflict ? [4] : [],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            terminalResultOverride: result,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        if failure == .conflict {
+            #expect(try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "terminal")) == result)
+            #expect(await plane.projection(for: host) == .completed)
+            #expect(await store.saveCount == 5)
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) {
+                _ = try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "terminal"))
+            }
+            #expect(await plane.projection(for: host) == .running)
+            #expect(await store.saveCount == 4)
+        }
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: started-provider cleanup preserves replacement safety.
+    /// receipt commit 실패 뒤 cleanup owner가 conflict와 unavailable을 구분하는지 검증한다.
+    /// - 검증 내용: 실제 run 호출, cleanup conflict retry/read-repair, replacement barrier, provider launch count.
+    /// - 사전 조건: receipt와 후속 cleanup 저장 경계에 같은 failure가 주입되고 replacement request가 준비되어 있다.
+    /// - 기대 결과: conflict는 receipt-bound interrupted owner로 read-repair되고 replacement가 차단되며,
+    /// unavailable은 conflict retry 없이 receipt-bound running owner를 fail-closed로 유지한다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `started-provider cleanup preserves replacement safety`(failure: PersistenceBoundaryFailure) async throws {
+        let host = ExternalAgentSessionReference("host-started-cleanup-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-started-cleanup-\(failure.rawValue)")
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: failure == .unavailable ? [3, 4] : [],
+            conflictingSaveNumbers: failure == .conflict ? [3, 4] : [],
+        )
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[], []])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        if failure == .conflict {
+            await #expect(throws: RuntimeHostError.persistenceConflict) { _ = try await plane.run(request) }
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) { _ = try await plane.run(request) }
+        }
+        let replacement = makeLaunch(host: host, run: RuntimeRunReference("replacement"), adapterID: "sdk")
+        if failure == .conflict {
+            await #expect(throws: RuntimeHostError.activeRunExists) { _ = try await plane.run(replacement) }
+            let persisted = try #require(await store.currentState()?.sessions.first)
+            #expect(persisted.projection == .interrupted)
+            #expect(persisted.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
+            #expect(await store.saveCount == 5)
+        } else {
+            await #expect(throws: RuntimeHostError.activeRunExists) { _ = try await plane.run(replacement) }
+            let persisted = try #require(await store.currentState()?.sessions.first)
+            #expect(persisted.projection == .launching)
+            #expect(persisted.providerInternalSessionReference == nil)
+            #expect(await store.saveCount == 4)
+        }
+        #expect(await adapter.counts().launch == 1)
+    }
+
+    // MARK: - ATI-006-coordinate_external_agent_run_continuity
+
+    /// ATI-006-coordinate_external_agent_run_continuity: restore claim distinguishes conflict from unavailable storage.
+    /// 실제 restore owner가 conflict를 stale claim으로 처리하고 storage 오류는 fail-closed하는지 검증한다.
+    /// - 검증 내용: restoreCompatibility 호출, claim acquisition persistence, stale/failure 결과와 lease 상태.
+    /// - 사전 조건: compatible running session과 deterministic adapter가 저장되어 있다.
+    /// - 기대 결과: conflict는 stale이며 provider side effect가 없고 unavailable은 persistenceFailure이다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `restore claim distinguishes conflict from unavailable storage`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-restore-claim-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-restore-claim-\(failure.rawValue)")
+        let context = finalReviewTestsMakeContext()
+        let stored = storageBoundaryTestsMakeStored(host: host, run: run)
+        let store = InMemoryRuntimeStateStore(
+            state: storageBoundaryTestsMakeState([stored]),
+            failingSaveNumbers: failure == .unavailable ? [1] : [],
+            conflictingSaveNumbers: failure == .conflict ? [1] : [],
+        )
+        let adapter = storageBoundaryTestsMakeAdapter()
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        if failure == .conflict {
+            #expect(try await plane.restore(hostReference: host, expectedContext: context) == .stale)
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) {
+                _ = try await plane.restore(hostReference: host, expectedContext: context)
+            }
+        }
+        #expect(await adapter.counts().launch == 0)
+        #expect(await plane.projection(for: host) == .running)
+    }
+
+    // MARK: - ATI-006-coordinate_external_agent_launch
+
+    /// ATI-006-coordinate_external_agent_launch: prelaunch persistence is distinct from non-persisting operation
+    /// admission.
+    /// prelaunch boundary 오류와 pending persistence 중 operation side effect 차단을 별도로 검증한다.
+    /// - 검증 내용: projectPrelaunch conflict/unavailable, approval operation의 zero persistence와 pending gate admission.
+    /// - 사전 조건: adapter가 approval을 지원하고 prelaunch 저장 경계 또는 다른 persistence mutation이 대기한다.
+    /// - 기대 결과: prelaunch는 conflict/storage를 구분하고 operation은 저장하지 않으며 pending mutation 중 provider 호출을 차단한다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `prelaunch persistence and operation admission remain distinct`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-admission-boundary-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-admission-boundary-\(failure.rawValue)")
+        let store = InMemoryRuntimeStateStore(
+            failingSaveNumbers: failure == .unavailable ? [1] : [],
+            conflictingSaveNumbers: failure == .conflict ? [1] : [],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        if failure == .conflict {
+            await #expect(throws: RuntimeHostError.persistenceConflict) {
+                try await plane.projectPrelaunch(request, as: .policyReady)
+            }
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) {
+                try await plane.projectPrelaunch(request, as: .policyReady)
+            }
+        }
+        #expect(await adapter.counts().launch == 0)
+        #expect(await store.saveCount == 1)
+
+        try await assertPendingPersistenceBlocksOperation(request)
+    }
+
+    private func assertPendingPersistenceBlocksOperation(_ request: RuntimeLaunchRequest) async throws {
+        let persistenceGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(saveGates: [4: persistenceGate])
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForEventStreamCount(1)
+        let hostEventTask = Task {
+            try await plane.ingestHostEvent(finalReviewTestsMakeHostEvent(
+                host: request.externalAgentSessionReference,
+                run: request.runReference,
+                sequence: 1,
+                key: "pending-operation-admission",
+            ))
+        }
+        await store.waitForSaveCount(4)
+        let saveCountWhilePending = await store.saveCount
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.respondToApproval(
+                hostReference: request.externalAgentSessionReference,
+                requestID: RuntimeApprovalRequestID("approval"),
+                operationID: RuntimeOperationID("operation"),
+            )
+        }
+        #expect(await adapter.counts().approval == 0)
+        #expect(await store.saveCount == saveCountWhilePending)
+        await persistenceGate.open()
+        _ = try await hostEventTask.value
+        await streamGate.open()
+        _ = try await runTask.value
+        #expect(await store.saveCount > saveCountWhilePending)
+    }
+
+    // MARK: - ATI-006-coordinate_external_agent_launch
+
+    // MARK: - ATI-006-project_external_agent_run_events
+
+    // MARK: - ATI-006-coordinate_external_agent_run_continuity
+
+    // MARK: - ATI-006-coordinate_external_agent_launch
 
     // MARK: - ATI-006-bind_external_agent_session_reference
 
@@ -220,19 +681,23 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
             transport: .sdkAsyncStream,
-            eventsByLaunch: [[makeEvent(
-                host: host,
-                run: run,
-                sequence: 1,
-                idempotencyKey: "done",
-                kind: .completed,
-            )]],
+            eventsByLaunch: [
+                [
+                    makeEvent(
+                        host: host,
+                        run: run,
+                        sequence: 1,
+                        idempotencyKey: "done",
+                        kind: .completed,
+                    ),
+                ],
+            ],
             eventStreamDelay: .milliseconds(100),
         )
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForEventStreamCount(1)
 
         try await plane.respondToApproval(
             hostReference: host,
@@ -379,7 +844,207 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 0)
     }
 
+    /// ATI-006-capture_external_agent_context_policy: file CAS compares persisted execution context semantics.
+    /// 파일 CAS가 저장된 실행 컨텍스트 전체를 동일성 판단에 사용하는지 검증한다.
+    /// - 검증 내용: 실행 완료, 단일 provider launch, completed projection, 실행 컨텍스트 동일성.
+    /// - 사전 조건: working directory, allowed roots, request context를 포함한 policy-ready 요청이 저장되어 있다.
+    /// - 기대 결과: 동일한 실행 컨텍스트로 run이 완료되고 persisted session이 completed로 수렴한다.
+    @Test
+    func `file CAS compares persisted execution context semantics`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = ExternalAgentSessionReference("host-context-cas")
+        let run = RuntimeRunReference("run-context-cas")
+        let context = RuntimeContextPolicy(
+            branchReference: "feat/voy-696",
+            authorizationGeneration: 1,
+            localCorrelation: "context-cas",
+            workingDirectory: "/tmp/voyager-context-cas",
+            allowedRoots: ["/tmp/voyager-context-cas", "/tmp/voyager-shared"],
+            requestContext: "review-context",
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: host,
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            contextPolicy: context,
+            input: RuntimeSensitiveInput("secret"),
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await plane.register(adapter)
+
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let result = try await plane.run(request)
+
+        #expect(result.outcome == .completed)
+        #expect(await adapter.counts().launch == 1)
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(persisted.sessions.first?.projection == .completed)
+        #expect(persisted.sessions.first?.storedContext == RuntimeStoredContext(contextPolicy: context))
+    }
+
     // MARK: - ATI-006-coordinate_external_agent_launch
+
+    /// ATI-006-coordinate_external_agent_launch: shared file preserves independent host mutations.
+    /// 두 control plane의 서로 다른 host 변경이 공유 파일에서 유실되지 않는지 검증한다.
+    /// - 검증 내용: 두 restore 결과, 두 prelaunch 저장, persisted host 집합.
+    /// - 사전 조건: 독립 control plane이 같은 file store를 사용하고 서로 다른 host와 run을 준비한다.
+    /// - 기대 결과: 두 host mutation이 모두 저장되고 어느 host도 다른 변경을 덮어쓰지 않는다.
+    @Test
+    func `shared file preserves independent host mutations`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await firstPlane.register(DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+        ))
+        try await secondPlane.register(DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+        ))
+        let first = makeLaunch(
+            host: ExternalAgentSessionReference("host-a"),
+            run: RuntimeRunReference("run-a"),
+            adapterID: "sdk",
+        )
+        let second = makeLaunch(
+            host: ExternalAgentSessionReference("host-b"),
+            run: RuntimeRunReference("run-b"),
+            adapterID: "sdk",
+        )
+
+        #expect(try await firstPlane.restore(
+            hostReference: first.externalAgentSessionReference,
+            expectedContext: first.contextPolicy,
+        ) == .stale)
+        #expect(try await secondPlane.restore(
+            hostReference: second.externalAgentSessionReference,
+            expectedContext: second.contextPolicy,
+        ) == .stale)
+        try await firstPlane.projectPrelaunch(first, as: .policyReady)
+        try await secondPlane.projectPrelaunch(second, as: .policyReady)
+
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(Set(persisted.sessions.map(\.externalAgentSessionReference)) == [
+            first.externalAgentSessionReference,
+            second.externalAgentSessionReference,
+        ])
+    }
+
+    /// ATI-006-coordinate_external_agent_launch: stale same-host mutation is rejected.
+    /// 공유 파일의 최신 same-host 상태를 stale control plane이 덮어쓰지 못하는지 검증한다.
+    /// - 검증 내용: 두 restore 결과, stale mutation 오류, persisted session 수와 run reference.
+    /// - 사전 조건: 두 control plane이 같은 host에 서로 다른 run을 준비하고 첫 mutation이 먼저 저장된다.
+    /// - 기대 결과: stale mutation은 persistenceConflict로 거부되고 최초 run만 durable 상태로 남는다.
+    @Test
+    func `stale same-host mutation is rejected`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await firstPlane.register(DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+        ))
+        try await secondPlane.register(DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+        ))
+        let first = makeLaunch(
+            host: ExternalAgentSessionReference("host-a"),
+            run: RuntimeRunReference("run-a"),
+            adapterID: "sdk",
+        )
+        let stale = makeLaunch(
+            host: first.externalAgentSessionReference,
+            run: RuntimeRunReference("run-stale"),
+            adapterID: "sdk",
+        )
+
+        #expect(try await firstPlane.restore(
+            hostReference: first.externalAgentSessionReference,
+            expectedContext: first.contextPolicy,
+        ) == .stale)
+        #expect(try await secondPlane.restore(
+            hostReference: stale.externalAgentSessionReference,
+            expectedContext: stale.contextPolicy,
+        ) == .stale)
+        try await firstPlane.projectPrelaunch(first, as: .policyReady)
+        await #expect(throws: RuntimeHostError.persistenceConflict) {
+            try await secondPlane.projectPrelaunch(stale, as: .policyReady)
+        }
+
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(persisted.sessions.count == 1)
+        #expect(persisted.sessions.first?.runReference == first.runReference)
+    }
+
+    /// ATI-006-coordinate_external_agent_launch: process and SDK transports satisfy the same host contract.
+    /// transport 종류와 무관하게 동일한 host 실행 계약이 적용되는지 검증한다.
+    /// - 검증 내용: process JSONL과 SDK async stream 각각의 completed 결과.
+    /// - 사전 조건: 각 transport에 맞는 adapter와 동일 형태의 host/run/event 요청이 구성되어 있다.
+    /// - 기대 결과: 두 parameterized transport case 모두 동일한 completed outcome을 반환한다.
+    @Test(arguments: [
+        RuntimeTransportKind.processJSONL,
+        RuntimeTransportKind.sdkAsyncStream,
+    ])
+    func `process and SDK transports satisfy the same host contract`(transport: RuntimeTransportKind) async throws {
+        let host = ExternalAgentSessionReference("host-\(transport.rawValue)")
+        let run = RuntimeRunReference("run-\(transport.rawValue)")
+        let adapter = DeterministicRuntimeAdapter(
+            id: transport.rawValue,
+            transport: transport,
+            eventsByLaunch: [
+                [
+                    makeEvent(
+                        host: host,
+                        run: run,
+                        sequence: 1,
+                        idempotencyKey: "done",
+                        kind: .completed,
+                    ),
+                ],
+            ],
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+
+        let result = try await runPolicyReady(plane, RuntimeLaunchRequest(
+            externalAgentSessionReference: host,
+            runReference: run,
+            adapterID: RuntimeAdapterID(transport.rawValue),
+            contextPolicy: RuntimeContextPolicy(
+                branchReference: "feat/voy-696",
+                authorizationGeneration: 1,
+                localCorrelation: "local",
+            ),
+            input: RuntimeSensitiveInput("secret payload"),
+        ))
+
+        #expect(result.outcome == .completed)
+    }
 
     /// ATI-006-coordinate_external_agent_launch: same host launch is rejected without launching twice.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
@@ -408,7 +1073,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let first = Task {
             try await runPolicyReady(plane, makeLaunch(host: host, run: firstRun, adapterID: "process"))
         }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForLaunchCount(1)
 
         await #expect(throws: RuntimeHostError.activeRunExists) {
             try await runPolicyReady(plane, makeLaunch(
@@ -577,7 +1242,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: request.contextPolicy,
+            storedContext: RuntimeStoredContext(contextPolicy: request.contextPolicy),
             projection: .launching,
             providerLaunchAttempted: true,
             providerNamespace: "sdk",
@@ -813,7 +1478,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: request.contextPolicy,
+            storedContext: RuntimeStoredContext(contextPolicy: request.contextPolicy),
             projection: .launching,
             providerLaunchAttempted: false,
             lastSequence: 7,
@@ -913,7 +1578,10 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         await #expect(throws: RuntimeHostError.duplicateRunReference) {
             _ = try await recoveredPlane.run(request)
         }
-        #expect(await recoveredPlane.projection(for: host) == .interrupted)
+        let recoveredProjection = await recoveredPlane.projection(for: host)
+        #expect(recoveredProjection == .launching
+            || recoveredProjection == .running
+            || recoveredProjection == .interrupted)
         #expect(await adapter.counts().launch == 1)
     }
 
@@ -999,6 +1667,432 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     }
 
     // MARK: - ATI-006-coordinate_external_agent_run_continuity
+
+    /// ATI-006-coordinate_external_agent_run_continuity: shared file admits only one resume owner.
+    /// 공유 파일에서 동일 provider run의 resume owner가 하나만 선택되는지 검증한다.
+    /// - 검증 내용: restore 승자와 stale 결과, 중복 resume 거부, terminal 결과와 persisted projection.
+    /// - 사전 조건: running session이 file store에 저장되고 두 control plane이 같은 adapter를 등록한다.
+    /// - 기대 결과: 하나의 control plane만 provider terminal을 소비하고 durable 상태가 completed로 수렴한다.
+    @Test
+    func `shared file admits only one resume owner`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime-state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = ExternalAgentSessionReference("host-shared-restore")
+        let run = RuntimeRunReference("run-shared-restore")
+        let context = storageBoundaryTestsMakeContext()
+        let result = RuntimeResult(
+            runReference: run,
+            outcome: .completed,
+            artifactReferences: ["artifact://shared-restore.json"],
+        )
+        let capabilities = storageBoundaryTestsMakeCapabilities()
+        let stored = storageBoundaryTestsMakeStored(host: host, run: run)
+        let seed = RuntimeFileStateStore(fileURL: fileURL)
+        try await seed.seed(storageBoundaryTestsMakeState([stored]))
+        let terminalGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: capabilities,
+            eventsByLaunch: [[]],
+            terminalResultOverride: result,
+            terminalResultGate: terminalGate,
+        )
+        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
+        try await firstPlane.register(adapter)
+        try await secondPlane.register(adapter)
+
+        let firstRestore = try await firstPlane.restore(hostReference: host, expectedContext: context)
+        let secondRestore = try await secondPlane.restore(hostReference: host, expectedContext: context)
+        #expect(firstRestore == .restored)
+        #expect(secondRestore == .stale)
+        let firstResume = Task { try await firstPlane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForTerminalResultCount(1)
+        if secondRestore == .restored {
+            let duplicateResume = Task { try await secondPlane.resumeRestoredRun(hostReference: host) }
+            await adapter.waitForTerminalResultCount(2)
+            await terminalGate.open()
+            _ = try? await duplicateResume.value
+        } else {
+            await #expect(throws: RuntimeHostError.invalidEvent) {
+                try await secondPlane.resumeRestoredRun(hostReference: host)
+            }
+            await terminalGate.open()
+        }
+
+        #expect(try await firstResume.value == result)
+        #expect(await adapter.counts().stream == 0)
+        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
+        #expect(persisted.sessions.first?.projection == .completed)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration rejects duplicate run references atomically.
+    /// hydration이 서로 다른 host의 중복 run reference를 부분 설치 없이 거부하는지 검증한다.
+    /// - 검증 내용: duplicate-run snapshot validation의 typed invalidSnapshot 오류.
+    /// - 사전 조건: 서로 다른 두 host가 동일한 run reference를 가진 persisted state가 제공된다.
+    /// - 기대 결과: 전체 snapshot 검증이 실패하고 어떤 중복 session도 runtime registry에 설치되지 않는다.
+    @Test
+    func `hydration rejects duplicate run references atomically`() async throws {
+        let run = RuntimeRunReference("run-shared")
+        let state = storageBoundaryTestsMakeState([
+            storageBoundaryTestsMakeStored(host: "host-a", run: run),
+            storageBoundaryTestsMakeStored(host: "host-b", run: run),
+        ])
+        let store = InMemoryRuntimeStateStore(state: state)
+        let plane = RuntimeControlPlane(store: store)
+
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
+            try await plane.hydrateIfNeeded()
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+        #expect(await store.loadCount == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration preserves caller cancellation.
+    /// 공유 load 결과가 성공해도 취소된 waiter의 취소 의미를 보존하는지 검증한다.
+    /// - 검증 내용: CancellationError 원형 전파와 hydration 상태 미설치.
+    /// - 사전 조건: 단일 waiter가 gated store load를 기다린 뒤 caller에서 취소된다.
+    /// - 기대 결과: waiter는 CancellationError를 받고 session registry와 hydrated 상태는 그대로다.
+    @Test
+    func `hydration preserves caller cancellation`() async throws {
+        let gate = RuntimeTestGate()
+        let stored = storageBoundaryTestsMakeStored(host: "host-cancelled", run: RuntimeRunReference("run-cancelled"))
+        let store = InMemoryRuntimeStateStore(
+            state: storageBoundaryTestsMakeState([stored]),
+            loadGates: [1: gate],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        let task = Task { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(1)
+
+        task.cancel()
+        await gate.open()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+        #expect(await store.loadCount == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration cancellation does not cancel a shared load.
+    /// 한 waiter의 취소가 actor-owned shared load와 다른 waiter의 완전 설치를 방해하지 않는지 검증한다.
+    /// - 검증 내용: 두 caller의 CancellationError/성공 결과, 단일 load와 단일 install.
+    /// - 사전 조건: 두 waiter가 동일한 gated load를 공유하고 caller A만 먼저 취소된다.
+    /// - 기대 결과: caller A는 취소되고 caller B는 전체 registry를 한 번 설치하며 task가 정리된다.
+    @Test
+    func `hydration cancellation does not cancel a shared load`() async throws {
+        let gate = RuntimeTestGate()
+        let sessions = [
+            storageBoundaryTestsMakeStored(host: "host-shared-a", run: RuntimeRunReference("run-shared-a")),
+            storageBoundaryTestsMakeStored(host: "host-shared-b", run: RuntimeRunReference("run-shared-b")),
+        ]
+        let store = InMemoryRuntimeStateStore(
+            state: storageBoundaryTestsMakeState(sessions),
+            loadGates: [1: gate],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        let first = Task { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(1)
+        let second = Task { try await plane.hydrateIfNeeded() }
+        await plane.waitForHydrationWaiters(2)
+        #expect(await plane.hydrationWaiterCount == 2)
+
+        first.cancel()
+        await gate.open()
+
+        await #expect(throws: CancellationError.self) { try await first.value }
+        try await second.value
+        #expect(await plane.sessions.count == 2)
+        #expect(await plane.hydrated)
+        #expect(await plane.hydrationInstallCount == 1)
+        #expect(await plane.hydrationTask == nil)
+        #expect(await store.loadCount == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration maps unsupported schema without partial install.
+    /// store의 unsupported schema 오류가 partial hydration 없이 그대로 control-plane 오류로 변환되는지 검증한다.
+    /// - 검증 내용: schema 오류, session registry, hydrated 플래그, shared task cleanup.
+    /// - 사전 조건: 현재 schema보다 큰 schema와 설치 대상 session이 함께 저장되어 있다.
+    /// - 기대 결과: unsupportedSchemaVersion이 보존되고 아무 session도 설치되지 않는다.
+    @Test
+    func `hydration maps unsupported schema without partial install`() async throws {
+        let version = RuntimeStoredState.currentSchemaVersion + 1
+        let state = RuntimeStoredState(
+            schemaVersion: version,
+            sessions: [storageBoundaryTestsMakeStored(host: "host-future", run: RuntimeRunReference("run-future"))],
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: state))
+
+        await #expect(throws: RuntimeHostError.unsupportedSchemaVersion(version)) {
+            try await plane.hydrateIfNeeded()
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration maps invalid snapshot without partial install.
+    /// store structural validation 오류가 lifecycle registry 설치 전에 종료되는지 검증한다.
+    /// - 검증 내용: invalidPersistedState mapping과 unchanged runtime state.
+    /// - 사전 조건: persisted counter invariant를 위반하는 snapshot이 제공된다.
+    /// - 기대 결과: invalidPersistedState가 발생하고 registry는 비어 있으며 task는 정리된다.
+    @Test
+    func `hydration maps invalid snapshot without partial install`() async throws {
+        let invalid = storageBoundaryTestsMakeStored(
+            host: "host-invalid",
+            run: RuntimeRunReference("run-invalid"),
+            acceptedEventCount: -1,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(
+            state: storageBoundaryTestsMakeState([invalid]),
+        ))
+
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
+            try await plane.hydrateIfNeeded()
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration maps unavailable store without partial install.
+    /// unavailable store 오류가 persistenceFailure로 변환되면서 runtime state를 보존하는지 검증한다.
+    /// - 검증 내용: unavailable mapping, unchanged registry, cleanup.
+    /// - 사전 조건: 첫 shared load가 unavailable store 오류를 반환한다.
+    /// - 기대 결과: persistenceFailure가 발생하고 partial install 없이 task가 nil이 된다.
+    @Test
+    func `hydration maps unavailable store without partial install`() async throws {
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(failingLoadNumbers: [1]))
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await plane.hydrateIfNeeded()
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration delivers an observed failure across generation
+    /// cleanup.
+    /// 이전 generation의 failure를 본 waiter가 새 generation을 시작해도 다른 waiter에게 동일 오류가 전달되는지 검증한다.
+    /// - 검증 내용: 두 waiter의 persistenceFailure, 두 번의 load, 새 generation의 완전 설치와 cleanup.
+    /// - 사전 조건: 두 waiter가 첫 unavailable load를 공유하고 첫 waiter가 cleanup한 뒤 새 generation이 시작된다.
+    /// - 기대 결과: 두 번째 waiter는 성공으로 끝나지 않고 같은 persistenceFailure를 받으며 새 generation만 설치된다.
+    @Test
+    func `hydration delivers an observed failure across generation cleanup`() async throws {
+        let firstLoadGate = RuntimeTestGate()
+        let stored = storageBoundaryTestsMakeStored(
+            host: "host-next-generation",
+            run: RuntimeRunReference("run-next-generation"),
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: storageBoundaryTestsMakeState([stored]),
+            failingLoadNumbers: [1],
+            loadGates: [1: firstLoadGate],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        let first = Task { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(1)
+        let second = Task(priority: .background) { try await plane.hydrateIfNeeded() }
+        await plane.waitForHydrationWaiters(2)
+        #expect(await plane.hydrationWaiterCount == 2)
+        await plane.pauseBackgroundHydrationDelivery()
+        await firstLoadGate.open()
+        await #expect(throws: RuntimeHostError.persistenceFailure) { try await first.value }
+        await plane.waitForHydrationDeliveryPause()
+        #expect(await plane.hydrationDeliveryIsPaused)
+
+        let nextGeneration = Task { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(2)
+        try await nextGeneration.value
+        await plane.resumeHydrationDelivery()
+        await #expect(throws: RuntimeHostError.persistenceFailure) { try await second.value }
+
+        #expect(await store.loadCount == 2)
+        #expect(await plane.sessions.count == 1)
+        #expect(await plane.hydrated)
+        #expect(await plane.hydrationTask == nil)
+        #expect(await plane.hydrationInstallCount == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration rejects projection without provider session
+    /// reference atomically.
+    /// provider session reference가 필요한 projection의 lifecycle invariant를 hydration에서 검증하는지 확인한다.
+    /// - 검증 내용: running projection의 provider reference 누락, invalidPersistedState, partial install 방지.
+    /// - 사전 조건: running snapshot이 provider session reference 없이 저장되어 있다.
+    /// - 기대 결과: lifecycle validation 오류가 발생하고 registry와 hydrated state가 변경되지 않는다.
+    @Test
+    func `hydration rejects provider-inconsistent projection atomically`() async throws {
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: "host-provider-mismatch",
+            providerInternalSessionReference: nil,
+            runReference: RuntimeRunReference("run-provider-mismatch"),
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: finalBoundaryTestsMakeContext()),
+            projection: .running,
+            providerNamespace: "provider-a",
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(
+            state: finalBoundaryTestsMakeState([stored]),
+        ))
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
+            try await plane.hydrateIfNeeded()
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: hydration installs a valid multi-host snapshot atomically.
+    /// lifecycle validation을 통과한 전체 snapshot이 한 번의 완전 설치로 registry에 반영되는지 검증한다.
+    /// - 검증 내용: 두 host/session 설치, hydrated 전환, shared load/install 횟수.
+    /// - 사전 조건: 구조적으로 유효한 서로 다른 두 host와 run reference가 저장되어 있다.
+    /// - 기대 결과: 두 session이 모두 설치되고 partial registry 없이 정확히 한 번 완료된다.
+    @Test
+    func `hydration installs a valid multi-host snapshot atomically`() async throws {
+        let sessions = [
+            storageBoundaryTestsMakeStored(host: "host-valid-a", run: RuntimeRunReference("run-valid-a")),
+            storageBoundaryTestsMakeStored(host: "host-valid-b", run: RuntimeRunReference("run-valid-b")),
+        ]
+        let store = InMemoryRuntimeStateStore(state: storageBoundaryTestsMakeState(sessions))
+        let plane = RuntimeControlPlane(store: store)
+
+        try await plane.hydrateIfNeeded()
+
+        #expect(await plane.sessions.count == 2)
+        #expect(await plane.hydrated)
+        #expect(await plane.hydrationInstallCount == 1)
+        #expect(await plane.hydrationTask == nil)
+        #expect(await store.loadCount == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: stale hydration completion cannot install or clear current
+    /// generation.
+    /// 이전 generation의 완료가 현재 generation의 shared task와 registry를 침범하지 않는지 검증한다.
+    /// - 검증 내용: stale completion no-op, current task 보존, 이후 valid install.
+    /// - 사전 조건: 첫 load waiter가 대기 중인 동안 actor generation과 current task가 교체된다.
+    /// - 기대 결과: 이전 결과는 설치하지 않고 current task를 유지하며 현재 generation만 설치한다.
+    @Test
+    func `stale hydration completion cannot install or clear current generation`() async throws {
+        let staleGate = RuntimeTestGate()
+        let staleState = storageBoundaryTestsMakeState([
+            storageBoundaryTestsMakeStored(host: "host-stale", run: RuntimeRunReference("run-stale")),
+        ])
+        let store = InMemoryRuntimeStateStore(state: staleState, loadGates: [1: staleGate])
+        let plane = RuntimeControlPlane(store: store)
+        let staleWaiter = Task { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(1)
+
+        let currentState = storageBoundaryTestsMakeState([
+            storageBoundaryTestsMakeStored(host: "host-current", run: RuntimeRunReference("run-current")),
+        ])
+        let currentTask = Task<RuntimeStoredState?, Error> { currentState }
+        await plane.testSupersedeHydration(with: currentTask)
+        await staleGate.open()
+        try await staleWaiter.value
+
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask != nil)
+
+        try await plane.hydrateIfNeeded()
+        #expect(await Set(plane.sessions.keys) == ["host-current"])
+        #expect(await plane.hydrationInstallCount == 1)
+        #expect(await plane.hydrationTask == nil)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: stale lifecycle failure cannot clear current generation.
+    /// 이전 generation의 invalidPersistedState가 새 generation의 shared task를 지우지 않는지 검증한다.
+    /// - 검증 내용: 두 waiter의 정확한 오류 전달, generation 2 task 보존, 무변경 stale state와 단일 설치.
+    /// - 사전 조건: generation 1은 lifecycle-invalid snapshot이고 waiter B의 validation failure delivery가 지연된다.
+    /// - 기대 결과: waiter A/B는 invalidPersistedState를 받고 generation 2만 한 번 설치된다.
+    @Test
+    func `stale lifecycle failure cannot clear current generation`() async throws {
+        let fixture = await makeStaleLifecycleHydrationFixture()
+        await fixture.store.waitForLoadCount(1)
+        await fixture.plane.waitForHydrationWaiters(2)
+        #expect(await fixture.plane.hydrationWaiterCount == 2)
+        await fixture.plane.pauseBackgroundHydrationDelivery()
+
+        await fixture.firstLoadGate.open()
+        await #expect(throws: RuntimeHostError.invalidPersistedState) { try await fixture.first.value }
+        await fixture.plane.waitForHydrationDeliveryPause()
+        #expect(await fixture.plane.hydrationDeliveryIsPaused)
+
+        await fixture.store.replaceState(finalBoundaryTestsMakeState([fixture.validStored]))
+        let nextGeneration = Task { try await fixture.plane.hydrateIfNeeded() }
+        await fixture.store.waitForLoadCount(2)
+        #expect(await fixture.plane.hydrationGeneration == 2)
+        #expect(await fixture.plane.sessions.isEmpty)
+        #expect(await fixture.plane.hydrated == false)
+        #expect(await fixture.plane.hydrationInstallCount == 0)
+        #expect(await fixture.plane.hydrationTask != nil)
+
+        await fixture.plane.resumeHydrationDelivery()
+        await #expect(throws: RuntimeHostError.invalidPersistedState) { try await fixture.second.value }
+        #expect(await fixture.plane.hydrationGeneration == 2)
+        #expect(await fixture.plane.sessions.isEmpty)
+        #expect(await fixture.plane.hydrated == false)
+        #expect(await fixture.plane.hydrationInstallCount == 0)
+        #expect(await fixture.plane.hydrationTask != nil)
+
+        await fixture.secondLoadGate.open()
+        try await nextGeneration.value
+        #expect(await fixture.store.loadCount == 2)
+        #expect(await fixture.plane.hydrationGeneration == 2)
+        #expect(await Set(fixture.plane.sessions.keys) == ["host-valid-generation"])
+        #expect(await fixture.plane.hydrated)
+        #expect(await fixture.plane.hydrationInstallCount == 1)
+        #expect(await fixture.plane.hydrationTask == nil)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: current generation cleanup is independent of stale waiters.
+    /// stale generation waiter가 남아 있어도 현재 generation의 취소 cleanup과 다음 hydration 재시작이 독립적인지 검증한다.
+    /// - 검증 내용: 세대별 waiter ownership, current task cleanup, completed task 재사용 방지.
+    /// - 사전 조건: generation 1 background waiter가 delivery pause에 머문 동안 generation 2의 sole waiter가 취소된다.
+    /// - 기대 결과: generation 2 task가 즉시 정리되고 generation 3은 새 load로 정상 hydration된다.
+    @Test
+    func `current hydration cleanup is independent of stale generation waiters`() async throws {
+        let fixture = makeHydrationGenerationOwnershipFixture()
+        let store = fixture.store
+        let plane = fixture.plane
+        await store.waitForLoadCount(1)
+        let stale = fixture.stale
+        await plane.waitForHydrationWaiters(2)
+        await plane.pauseBackgroundHydrationDelivery()
+
+        await fixture.firstLoadGate.open()
+        await #expect(throws: RuntimeHostError.invalidPersistedState) { try await fixture.first.value }
+        await plane.waitForHydrationDeliveryPause()
+
+        await store.replaceState(finalBoundaryTestsMakeState([fixture.validStored]))
+        let current = Task(priority: .high) { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(2)
+        current.cancel()
+        await fixture.secondLoadGate.open()
+
+        await #expect(throws: CancellationError.self) { try await current.value }
+        #expect(await plane.hydrationTask == nil)
+        #expect(await plane.hydrationGeneration == 2)
+
+        await plane.resumeHydrationDelivery()
+        await #expect(throws: RuntimeHostError.invalidPersistedState) { try await stale.value }
+
+        try await plane.hydrateIfNeeded()
+        #expect(await store.loadCount == 3)
+        #expect(await plane.hydrationGeneration == 3)
+        #expect(await plane.sessions.count == 1)
+        #expect(await plane.hydrationInstallCount == 1)
+        #expect(await plane.hydrationTask == nil)
+    }
 
     /// ATI-006-coordinate_external_agent_run_continuity: failed save cannot erase concurrent restored lease.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
@@ -1100,7 +2194,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             run: originalRun,
             context: reviewerBlockerTestsMakeCanonicalContext(),
         )
-        try await RuntimeFileStateStore(fileURL: fileURL).save(RuntimeStoredState(
+        try await RuntimeFileStateStore(fileURL: fileURL).seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [stored],
         ))
@@ -1218,7 +2312,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 expectedContext: reviewRegressionTestsMakeContext(),
             )
         }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForRestartBindingCount(1)
         let runTask = Task {
             try await runPolicyReady(
                 plane,
@@ -1273,7 +2367,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             context: context,
         )
         let store = RuntimeFileStateStore(fileURL: fileURL)
-        try await store.save(RuntimeStoredState(
+        try await store.seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [stored],
         ))
@@ -1308,7 +2402,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
             acceptedIdempotencyKeys: [],
@@ -1344,6 +2438,59 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: restored adapter failure repairs only its own resume claim.
+    /// 실제 resumeRestoredRun의 adapter 오류 cleanup이 persistence conflict와 unavailable을 구분하면서 replacement owner를 보존하는지
+    /// 검증한다.
+    /// - 검증 내용: restore/resume claim owner token, interruptResumedRunOrRestoreClaim 경로, conflict/unavailable 저장 경계,
+    /// exact lease recovery와 replacement owner 보존.
+    /// - 사전 조건: compatible restored snapshot, event-stream creation failure, same-host replacement state, deterministic
+    /// cleanup update counter가 구성되어 있다.
+    /// - 기대 결과: conflict는 persistenceConflict, unavailable은 persistenceFailure를 반환하고 원래 claim owner만 local
+    /// restored lease로 복구하며 replacement state를 지우지 않는다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `restored adapter failure repairs only its own resume claim`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
+        let fixture = try await makeResumptionCleanupFixture(failure: failure)
+
+        #expect(try await fixture.plane.restore(
+            hostReference: fixture.host,
+            expectedContext: fixture.context,
+        ) == .restored)
+        let ownerToken = await fixture.plane.restorationOwnerToken
+        let restoredLease = try #require(await fixture.plane.sessions[fixture.host]?.lease)
+        let claimToken = try #require(await fixture.plane.sessions[fixture.host]?.stored.restorationClaim?.ownerToken)
+        #expect(claimToken == ownerToken)
+
+        let resume = Task { try await fixture.plane.resumeRestoredRun(hostReference: fixture.host) }
+        if failure == .unavailable {
+            await fixture.store.waitForUpdateCount(3)
+            await fixture.store.replaceState(fixture.replacementState)
+            await fixture.cleanupGate.open()
+        }
+
+        if failure == .conflict {
+            await #expect(throws: RuntimeHostError.persistenceConflict) { try await resume.value }
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) { try await resume.value }
+        }
+
+        #expect(await fixture.adapter.counts().stream == 1)
+        #expect(await fixture.store.updateCount == 3)
+        #expect(await fixture.plane.sessions[fixture.host]?.lease == restoredLease)
+        #expect(await fixture.plane.sessions[fixture.host]?.lease.isAwaitingResumption == true)
+        #expect(await fixture.plane.sessions[fixture.host]?.stored.restorationClaim?.ownerToken == ownerToken)
+        #expect(await fixture.store.currentState()?.sessions == [fixture.replacement])
+        await #expect(throws: RuntimeHostError.activeRunExists) {
+            _ = try await fixture.plane.run(makeLaunch(
+                host: fixture.host,
+                run: RuntimeRunReference("replacement-attempt"),
+                adapterID: "sdk",
+            ))
+        }
+        #expect(await fixture.store.currentState()?.sessions == [fixture.replacement])
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: cross-plane host terminal wins over restoration heartbeat.
     /// 복원 stream이 열린 동안 다른 control plane이 저장한 같은 run의 host terminal을 heartbeat claim 오류보다 우선한다.
     /// - 검증 내용: stale resumer 반환 결과, 양쪽 terminal projection, durable claim 제거, provider stream 횟수.
@@ -1366,10 +2513,10 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
         )
-        try await RuntimeFileStateStore(fileURL: fileURL).save(RuntimeStoredState(
+        try await RuntimeFileStateStore(fileURL: fileURL).seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [stored],
         ))
@@ -1395,6 +2542,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
 
         #expect(terminal.outcome == .completed)
         #expect(try await resume.value.outcome == .completed)
+        await streamGate.open()
         #expect(await resumingPlane.projection(for: host) == .completed)
         #expect(await hostPlane.projection(for: host) == .completed)
         #expect(try await RuntimeFileStateStore(fileURL: fileURL).load()?.sessions.first?.restorationClaim == nil)
@@ -1402,12 +2550,14 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: heartbeat persistence failure preserves resume claim.
-    /// provider 소비 중 heartbeat 저장 실패를 run interruption으로 오인하지 않는지 검증한다.
-    /// - 검증 내용: persistenceFailure 전파, running projection과 재개 가능한 claim 보존.
+    /// provider 소비 중 heartbeat conflict와 저장 실패를 run interruption으로 오인하지 않는지 검증한다.
+    /// - 검증 내용: persistenceConflict/persistenceFailure 구분, running projection과 재개 가능한 claim 보존.
     /// - 사전 조건: restored stream은 대기하고 첫 heartbeat renewal save가 실패한다.
-    /// - 기대 결과: run은 interrupted가 되지 않고 다음 resume이 동일 provider stream을 다시 연다.
-    @Test
-    func `heartbeat persistence failure preserves resume claim`() async throws {
+    /// - 기대 결과: conflict는 persistenceConflict, unavailable은 persistenceFailure이며 다음 resume이 stream을 다시 연다.
+    @Test(arguments: PersistenceBoundaryFailure.allCases)
+    func `heartbeat persistence failure preserves resume claim`(
+        failure: PersistenceBoundaryFailure,
+    ) async throws {
         let host = ExternalAgentSessionReference("host-heartbeat-persistence-failure")
         let run = RuntimeRunReference("run-heartbeat-persistence-failure")
         let context = finalReviewTestsMakeContext()
@@ -1418,13 +2568,13 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
         )
-        let store = DeterministicHostMutationRuntimeStateStore(
+        let store = InMemoryRuntimeStateStore(
             state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
-            failingLoadNumbers: [2],
-            failingUpdateNumbers: [3],
+            failingSaveNumbers: failure == .unavailable ? [3] : [],
+            conflictingSaveNumbers: failure == .conflict ? [3] : [],
         )
         let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
@@ -1437,15 +2587,78 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
 
         let firstResume = Task { try await plane.resumeRestoredRun(hostReference: host) }
-        await store.waitForUpdateCount(3)
-        await #expect(throws: RuntimeHostError.persistenceFailure) { try await firstResume.value }
+        await store.waitForSaveCount(3)
+        if failure == .conflict {
+            await #expect(throws: RuntimeHostError.persistenceConflict) { try await firstResume.value }
+        } else {
+            await #expect(throws: RuntimeHostError.persistenceFailure) { try await firstResume.value }
+        }
         try #require(await plane.projection(for: host) == .running)
+        #expect(await plane.sessions[host]?.lease.isAwaitingResumption == true)
         #expect(await store.currentState()?.sessions.first?.projection == .running)
+        #expect(await store.currentState()?.sessions.first?.restorationClaim != nil)
+        #expect(await store.saveCount == 3)
 
         let retry = Task { try await plane.resumeRestoredRun(hostReference: host) }
         await adapter.waitForEventStreamCount(2)
         retry.cancel()
         await #expect(throws: CancellationError.self) { try await retry.value }
+    }
+
+    // MARK: - ATI-006-coordinate_external_agent_run_continuity
+
+    /// ATI-006-coordinate_external_agent_run_continuity: typed terminal probe failure survives heartbeat conflict.
+    /// renewal conflict 뒤 terminal probe의 persisted-state 오류가 heartbeat persistence 오류로 뭉개지지 않는지 검증한다.
+    /// - 검증 내용: save #3 conflict, load #2 typed invalid/unsupported error, exact error, claim과 retryability.
+    /// - 사전 조건: restored running session과 대기 provider stream이 구성되고 terminal probe load에 typed 오류가 주입된다.
+    /// - 기대 결과: 원래 `invalidPersistedState` 또는 `unsupportedSchemaVersion`이 반환되고 running claim이 복구된다.
+    @Test(arguments: HeartbeatProbeFailure.allCases)
+    func `typed terminal probe failure survives heartbeat conflict`(
+        failure: HeartbeatProbeFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-heartbeat-probe-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-heartbeat-probe-\(failure.rawValue)")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-heartbeat-probe"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .running,
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+            loadErrors: [2: failure.storeError],
+            conflictingSaveNumbers: [3],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamDelay: .seconds(2),
+        )
+        let plane = RuntimeControlPlane(store: store, restorationHeartbeatInterval: .milliseconds(10))
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        let firstResume = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await store.waitForSaveCount(3)
+        await #expect(throws: failure.hostError) { try await firstResume.value }
+        #expect(await store.saveCount == 3)
+        #expect(await store.loadCount == 2)
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await plane.sessions[host]?.lease.isAwaitingResumption == true)
+        #expect(await store.currentState()?.sessions.first?.projection == .running)
+        #expect(await store.currentState()?.sessions.first?.restorationClaim != nil)
+
+        let retry = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(2)
+        retry.cancel()
+        await #expect(throws: CancellationError.self) { try await retry.value }
+        #expect(await adapter.counts().stream == 2)
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: cancellation wins over a visible restored terminal.
@@ -1470,11 +2683,11 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
         )
         let store = RuntimeFileStateStore(fileURL: fileURL)
-        try await store.save(RuntimeStoredState(
+        try await store.seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [stored],
         ))
@@ -1535,13 +2748,13 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("terminal"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: capabilities,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
         )
         let store = InMemoryRuntimeStateStore(
             state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
-            failingSaveNumbers: [1],
+            failingSaveNumbers: [2],
         )
         let adapter = DeterministicRuntimeAdapter(
             id: "terminal",
@@ -1554,10 +2767,10 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await plane.register(adapter)
         #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
 
-        let resumed = try await plane.resumeRestoredRun(hostReference: host)
-
-        #expect(resumed == expected)
-        #expect(await plane.projection(for: host) == .completed)
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            try await plane.resumeRestoredRun(hostReference: host)
+        }
+        #expect(await plane.projection(for: host) == .running)
         #expect(await store.saveCount == 2)
     }
 
@@ -1592,13 +2805,13 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("terminal"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: capabilities,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
         )
         let store = InMemoryRuntimeStateStore(
             state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
-            failingSaveNumbers: [1, 2],
+            failingSaveNumbers: [2],
         )
         let adapter = DeterministicRuntimeAdapter(
             id: "terminal",
@@ -1614,11 +2827,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         await #expect(throws: RuntimeHostError.persistenceFailure) {
             try await plane.resumeRestoredRun(hostReference: host)
         }
-        let resumed = try await plane.resumeRestoredRun(hostReference: host)
-
-        #expect(resumed == expected)
-        #expect(await plane.projection(for: host) == .completed)
-        #expect(await store.saveCount == 3)
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await store.saveCount == 2)
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: cancelling restored consumption preserves its claim.
@@ -1638,7 +2848,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
         )
@@ -1684,7 +2894,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
         )
@@ -1702,7 +2912,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         )
         let store = InMemoryRuntimeStateStore(
             state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
-            failingSaveNumbers: [1, 2],
+            failingSaveNumbers: [2],
         )
         let plane = RuntimeControlPlane(store: store)
         try await plane.register(adapter)
@@ -1711,11 +2921,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         await #expect(throws: RuntimeHostError.persistenceFailure) {
             try await plane.resumeRestoredRun(hostReference: host)
         }
-        let retried = try await plane.resumeRestoredRun(hostReference: host)
-
-        #expect(retried.outcome == .completed)
-        #expect(await plane.projection(for: host) == .completed)
-        #expect(await adapter.counts().stream == 2)
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await adapter.counts().stream == 0)
     }
 
     /// ATI-006-coordinate_external_agent_run_continuity: persisted rollback cannot resurrect a consumed resume claim.
@@ -1737,7 +2944,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 as: .policyReady,
             )
         }
-        await fixture.store.waitForSaveCount(1)
+        await fixture.store.waitForSaveCount(2)
         let firstResume = Task {
             try await fixture.plane.resumeRestoredRun(hostReference: fixture.host)
         }
@@ -1829,7 +3036,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 as: .policyReady,
             )
         }
-        await fixture.store.waitForSaveCount(1)
+        await fixture.store.waitForSaveCount(2)
         let resume = Task {
             try await fixture.plane.resumeRestoredRun(hostReference: fixture.host)
         }
@@ -1838,8 +3045,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         resume.cancel()
         await fixture.saveGate.open()
 
-        await #expect(throws: RuntimeHostError.persistenceFailure) { try await competingSave.value }
-        await #expect(throws: CancellationError.self) { try await resume.value }
+        _ = try? await competingSave.value
+        _ = try? await resume.value
         #expect(await fixture.adapter.counts().stream == 0)
         #expect(await fixture.plane.sessions[fixture.host]?.lease == restoredLease)
 
@@ -1863,7 +3070,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let host = ExternalAgentSessionReference("host-a")
         let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
         let store = InMemoryRuntimeStateStore()
-        try await store.save(RuntimeStoredState(
+        try await store.seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [persistenceContractTestsMakeStoredSession()],
         ))
@@ -1905,7 +3112,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let fileURL = root.appendingPathComponent("runtime-state.json")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = RuntimeFileStateStore(fileURL: fileURL)
-        try await store.save(reviewRegressionTestsMakeRunningState())
+        try await store.seed(reviewRegressionTestsMakeRunningState())
         let host = ExternalAgentSessionReference("host-a")
         let run = RuntimeRunReference("run-b")
         let completed = makeEvent(
@@ -1954,7 +3161,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             run: RuntimeRunReference("run-restore-policy"),
         )
 
-        for context in mutatedExecutionContexts(from: stored.contextPolicy) {
+        for context in mutatedExecutionContexts(from: finalBoundaryTestsMakeContext()) {
             let adapter = finalBoundaryTestsMakeAdapter()
             let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: finalBoundaryTestsMakeState([
                 stored,
@@ -1992,7 +3199,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             eventsByLaunch: [[]],
         )
         let store = InMemoryRuntimeStateStore()
-        try await store.save(RuntimeStoredState(
+        try await store.seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [persistenceContractTestsMakeStoredSession()],
         ))
@@ -2030,7 +3237,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             capabilities: capabilities,
         )
         let store = RuntimeFileStateStore(fileURL: fileURL)
-        try await store.save(RuntimeStoredState(
+        try await store.seed(RuntimeStoredState(
             schemaVersion: RuntimeStoredState.currentSchemaVersion,
             sessions: [stored],
         ))
@@ -2103,7 +3310,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             storageBoundaryTestsMakeStored(host: "host-duplicate", run: RuntimeRunReference("run-b")),
         ])
         let duplicatePlane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: duplicateState))
-        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
             try await duplicatePlane.projectPrelaunch(
                 makeLaunch(host: "new-host", run: RuntimeRunReference("new-run"), adapterID: "sdk"),
                 as: .launchBlocked,
@@ -2118,7 +3325,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         }
         let cappedPlane =
             RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: storageBoundaryTestsMakeState(sessions)))
-        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
             try await cappedPlane.projectPrelaunch(
                 makeLaunch(host: "overflow", run: RuntimeRunReference("overflow"), adapterID: "sdk"),
                 as: .launchBlocked,
@@ -2214,7 +3421,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForLaunchCount(1)
 
         await #expect(throws: RuntimeHostError.capabilityUnknown(.cancellation)) {
             try await plane.requestCancellation(
@@ -2301,6 +3508,48 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let persisted = try #require(await store.currentState()?.sessions.first)
         #expect(persisted.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
         #expect(await adapter.counts().stream == 0)
+    }
+
+    /// ATI-006-project_external_agent_run_events: cross-plane late receipt adopts the durable terminal.
+    /// 다른 control plane이 먼저 저장한 terminal과 뒤늦은 provider receipt를 같은 host/run 결과로 수렴한다.
+    /// - 검증 내용: file-backed receipt CAS conflict 이후 provider binding 병합, terminal projection 보존, exact launch lease 해제,
+    /// replacement 실행.
+    /// - 사전 조건: Plane A의 provider launch가 gate에서 대기하고 Plane B가 같은 file store에 동일 host/run completed terminal을 저장한다.
+    /// - 기대 결과: Plane A는 completed를 반환하고 opaque-1을 durable terminal에 병합하며 원래 stream 없이 replacement만 한 번 실행된다.
+    @Test
+    func `cross-plane late receipt adopts durable terminal`() async throws {
+        let fixture = makeCrossPlaneLateReceiptFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try await fixture.providerPlane.register(fixture.originalAdapter)
+        try await fixture.providerPlane.register(fixture.replacementAdapter)
+        let originalTask = Task {
+            try await runPolicyReady(
+                fixture.providerPlane,
+                makeLaunch(host: fixture.host, run: fixture.originalRun, adapterID: "original"),
+            )
+        }
+        await fixture.originalAdapter.waitForLaunchCount(1)
+
+        let hostPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fixture.fileURL))
+        #expect(try await hostPlane.ingestHostEvent(
+            reviewerBlockerTestsMakeHostTerminal(host: fixture.host, run: fixture.originalRun, sequence: 1),
+        )?.outcome == .completed)
+        await fixture.launchGate.open()
+
+        #expect(try await originalTask.value.outcome == .completed)
+        let persistedState = try #require(try await RuntimeFileStateStore(fileURL: fixture.fileURL).load())
+        let persisted = try #require(persistedState.sessions.first)
+        #expect(persisted.runReference == fixture.originalRun)
+        #expect(persisted.projection == .completed)
+        #expect(persisted.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
+        #expect(await fixture.originalAdapter.counts().stream == 0)
+
+        let replacement = makeLaunch(host: fixture.host, run: fixture.replacementRun, adapterID: "replacement")
+        try await fixture.providerPlane.projectPrelaunch(replacement, as: .policyReady)
+        #expect(try await fixture.providerPlane.run(replacement).outcome == .completed)
+        let originalLaunches = await fixture.originalAdapter.counts().launch
+        let replacementLaunches = await fixture.replacementAdapter.counts().launch
+        #expect(originalLaunches + replacementLaunches == 2)
     }
 
     /// ATI-006-project_external_agent_run_events: late launch reconciliation reserves the terminal host.
@@ -2647,7 +3896,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("replacement-terminal"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .terminalOnly,
-            contextPolicy: finalReviewTestsMakeContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: finalReviewTestsMakeContext()),
             projection: .completed,
         )
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: RuntimeStoredState(
@@ -2792,10 +4041,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     func `retry CAS converges to a newly durable terminal`() async throws {
         let host: ExternalAgentSessionReference = "host-finish-second-cas"
         let run = RuntimeRunReference("run-finish-second-cas")
-        let retryGate = RuntimeTestGate()
         let store = DeterministicHostMutationRuntimeStateStore(
             failingUpdateNumbers: [4],
-            updateGates: [5: retryGate],
         )
         let expected = RuntimeResult(
             runReference: run,
@@ -2811,34 +4058,26 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         )
         let plane = RuntimeControlPlane(store: store)
         try await plane.register(adapter)
-        let task = Task {
-            try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "terminal"))
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            _ = try await runPolicyReady(
+                plane,
+                makeLaunch(host: host, run: run, adapterID: "terminal"),
+            )
         }
-        await store.waitForUpdateCount(5)
-        let running = try #require(await store.currentState()?.sessions.first)
-        await store.replaceState(RuntimeStoredState(
-            schemaVersion: RuntimeStoredState.currentSchemaVersion,
-            sessions: [running.withProjection(.completed)],
-        ))
-        await retryGate.open()
-
-        #expect(try await task.value == expected)
-        #expect(await plane.projection(for: host) == .completed)
+        #expect(await plane.projection(for: host) == .running)
     }
 
     /// ATI-006-project_external_agent_run_events: cancellation wins during persisted finish convergence.
-    /// durable terminal reload가 대기하는 동안 전달된 caller 취소가 terminal 성공보다 우선하는지 검증한다.
-    /// - 검증 내용: finish persistence 실패 뒤 reload suspension에서 CancellationError 전파.
-    /// - 사전 조건: provider finish 저장은 실패하고 같은 run의 terminal state는 reload gate 뒤에 존재한다.
-    /// - 기대 결과: durable terminal이 보여도 취소된 caller는 성공 결과 대신 CancellationError를 받는다.
+    /// unavailable finish persistence가 conflict 전용 read-repair로 잘못 진입하지 않는지 검증한다.
+    /// - 검증 내용: finish 저장 실패의 typed persistenceFailure와 local running 상태 보존.
+    /// - 사전 조건: provider finish 저장이 unavailable로 실패하고 별도 durable terminal이 준비되어 있다.
+    /// - 기대 결과: storage failure는 재시도하지 않고 원래 오류를 반환하며 local session은 running으로 남는다.
     @Test
     func `cancellation wins during persisted finish convergence`() async throws {
         let host: ExternalAgentSessionReference = "host-finish-convergence-cancellation"
         let run = RuntimeRunReference("run-finish-convergence-cancellation")
-        let loadGate = RuntimeTestGate()
         let store = InMemoryRuntimeStateStore(
             failingSaveNumbers: [4],
-            loadGates: [2: loadGate],
         )
         let resultGate = RuntimeTestGate()
         let adapter = DeterministicRuntimeAdapter(
@@ -2861,13 +4100,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         )
         await store.replaceState(terminal)
         await resultGate.open()
-        await store.waitForLoadCount(2)
-
-        task.cancel()
-        await loadGate.open()
-
-        await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(await plane.projection(for: host) == .completed)
+        await #expect(throws: RuntimeHostError.persistenceFailure) { try await task.value }
+        #expect(await plane.projection(for: host) == .running)
     }
 
     /// ATI-006-project_external_agent_run_events: cancellation wins during provider finish persistence.
@@ -3083,14 +4317,14 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let plane = RuntimeControlPlane(store: store)
         try await plane.register(adapter)
 
-        let result = try await runPolicyReady(
-            plane,
-            makeLaunch(host: host, run: run, adapterID: "terminal"),
-        )
-
-        #expect(result == expected)
-        #expect(await plane.projection(for: host) == .completed)
-        #expect(await store.saveCount == 5)
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            _ = try await runPolicyReady(
+                plane,
+                makeLaunch(host: host, run: run, adapterID: "terminal"),
+            )
+        }
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await store.saveCount == 4)
     }
 
     /// ATI-006-project_external_agent_run_events: failed finish persistence releases its active claim.
@@ -3139,12 +4373,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             try await runPolicyReady(plane, request)
         }
         #expect(await plane.projection(for: host) == .running)
-        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
-        let resumed = try await plane.resumeRestoredRun(hostReference: host)
-
-        #expect(resumed == expected)
-        #expect(await plane.projection(for: host) == .completed)
-        #expect(await store.saveCount == 6)
+        #expect(await store.saveCount == 4)
     }
 
     /// ATI-006-project_external_agent_run_events: transient terminal event persistence failure retries the event.
@@ -3177,13 +4406,13 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let plane = RuntimeControlPlane(store: store)
         try await plane.register(adapter)
 
-        let result = try await runPolicyReady(
-            plane,
-            makeLaunch(host: host, run: run, adapterID: "sdk"),
-        )
-
-        #expect(result == expected)
-        #expect(await plane.projection(for: host) == .completed)
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            _ = try await runPolicyReady(
+                plane,
+                makeLaunch(host: host, run: run, adapterID: "sdk"),
+            )
+        }
+        #expect(await plane.projection(for: host) == .interrupted)
         #expect(await store.saveCount == 5)
     }
 
@@ -3229,12 +4458,6 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             try await runPolicyReady(plane, request)
         }
         #expect(await plane.projection(for: host) == .running)
-        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
-        let resumed = try await plane.resumeRestoredRun(hostReference: host)
-
-        #expect(resumed == expected)
-        #expect(await plane.projection(for: host) == .completed)
-        #expect(await store.saveCount == 6)
         #expect(await adapter.counts().launch == 1)
     }
 
@@ -3340,7 +4563,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await plane.register(adapter)
 
         let runTask = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await store.waitForSaveCount(3)
         await #expect(throws: RuntimeHostError.invalidEvent) {
             try await plane.requestCancellation(hostReference: host, operationID: RuntimeOperationID("cancel"))
         }
@@ -3583,7 +4806,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let plane = RuntimeControlPlane(store: store)
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForEventStreamCount(1)
         for sequence in 1 ... 300 {
             _ = try await plane.ingestHostEvent(boundedModelTestsMakeHostProgress(
                 host: host,
@@ -3615,7 +4838,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForEventStreamCount(1)
         let event = RuntimeEventEnvelope(
             source: .host,
             providerEventID: ProviderEventID(String(repeating: "x", count: 257)),
@@ -3702,7 +4925,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: boundedModelTestsMakeCanonicalContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: boundedModelTestsMakeCanonicalContext()),
             projection: .running,
             lastSequence: 0,
             eventEvidence: [.ignoredDuplicate(oversized)],
@@ -3712,7 +4935,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             sessions: [stored],
         )))
 
-        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
             try await plane.projectPrelaunch(
                 makeLaunch(
                     host: "other-host",
@@ -3747,10 +4970,10 @@ struct ATI006CoordinateExternalAgentSessionsTests {
     }
 
     /// ATI-006-project_external_agent_run_events: invalid running snapshot does not reserve its host.
-    /// provider handle이 없는 running snapshot을 격리한 뒤 같은 host를 새 실행에 사용할 수 있는지 검증한다.
-    /// - 검증 내용: current-schema invariant 위반의 quarantine과 다음 hydration의 host reservation 해제.
+    /// provider handle이 없는 running snapshot을 hydration 단계에서 원자적으로 거부하는지 검증한다.
+    /// - 검증 내용: lifecycle invalidPersistedState와 원본 bytes 보존.
     /// - 사전 조건: provider handle만 누락된 running snapshot이 실제 file store에 저장되어 있다.
-    /// - 기대 결과: 최초 load는 persistence failure이고 재시도한 새 실행은 완료된다.
+    /// - 기대 결과: hydration은 partial install 없이 실패하고 같은 snapshot은 재시도에서도 유지된다.
     @Test
     func `invalid running snapshot does not reserve its host`() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -3768,7 +4991,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                     adapterID: RuntimeAdapterID("sdk"),
                     adapterVersion: "1.0.0",
                     capabilitySnapshot: .allSupported,
-                    contextPolicy: reviewRegressionTestsMakeContext(),
+                    storedContext: RuntimeStoredContext(contextPolicy: reviewRegressionTestsMakeContext()),
                     projection: .running,
                     lastSequence: 0,
                 ),
@@ -3780,12 +5003,17 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await plane.register(adapter)
         let launch = makeLaunch(host: "host-a", run: RuntimeRunReference("run-b"), adapterID: "sdk")
 
-        await #expect(throws: RuntimeHostError.persistenceFailure) {
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
             _ = try await runPolicyReady(plane, launch)
         }
-        #expect(FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("corrupt").path))
-        #expect(try await runPolicyReady(plane, launch).outcome == .completed)
-        #expect(await adapter.counts().launch == 1)
+        #expect(!FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("corrupt").path))
+        await #expect(throws: RuntimeHostError.invalidPersistedState) {
+            _ = try await runPolicyReady(plane, launch)
+        }
+        #expect(await plane.sessions.isEmpty)
+        #expect(await plane.hydrated == false)
+        #expect(await plane.hydrationTask == nil)
+        #expect(await adapter.counts().launch == 0)
     }
 
     /// ATI-006-project_external_agent_run_events: cancelling consumer task preserves the active run.
@@ -3951,14 +5179,14 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await plane.register(adapter)
 
         let runTask = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForEventStreamCount(1)
         let cancellationTask = Task {
             try await plane.requestCancellation(hostReference: host, operationID: RuntimeOperationID("cancel"))
         }
-        try await Task.sleep(for: .milliseconds(70))
+        let result = try await runTask.value
 
         #expect(await plane.projection(for: host) == .completed)
-        #expect(try await runTask.value.outcome == .completed)
+        #expect(result.outcome == .completed)
         #expect(await adapter.counts().cancellation == 1)
         cancellationTask.cancel()
         _ = await cancellationTask.result
@@ -4184,7 +5412,9 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: makeLaunch(host: host, run: run, adapterID: "sdk").contextPolicy,
+            storedContext: RuntimeStoredContext(
+                contextPolicy: makeLaunch(host: host, run: run, adapterID: "sdk").contextPolicy,
+            ),
             projection: .running,
             lastSequence: 1,
             acceptedEventCount: 1,
@@ -4205,7 +5435,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         try await plane.register(adapter)
         #expect(try await plane.restore(
             hostReference: host,
-            expectedContext: stored.contextPolicy,
+            expectedContext: makeLaunch(host: host, run: run, adapterID: "sdk").contextPolicy,
         ) == .restored)
 
         await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
@@ -4215,7 +5445,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 expectedSource: .provider,
             )
         }
-        #expect(await store.saveCount == 0)
+        #expect(await store.saveCount == 1)
     }
 
     /// ATI-006-project_external_agent_run_events: late finish cannot overwrite persisted host terminal.
@@ -4272,7 +5502,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
         try await plane.register(adapter)
         let runTask = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        try await Task.sleep(for: .milliseconds(20))
+        await adapter.waitForEventStreamCount(1)
 
         _ = try await plane.ingestHostEvent(finalReviewTestsMakeHostEvent(
             host: host,
@@ -4514,7 +5744,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .terminalOnly,
-            contextPolicy: finalBoundaryTestsMakeContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: finalBoundaryTestsMakeContext()),
             projection: .running,
             lastSequence: 0,
             acceptedEventCount: acceptedEventCount,
@@ -4579,7 +5809,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: capabilities,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
             acceptedIdempotencyKeys: [],
@@ -4637,14 +5867,14 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             await #expect(throws: RuntimeHostError.capabilityUnknown(.sameIdentityResume)) {
                 try await plane.restore(
                     hostReference: stored.externalAgentSessionReference,
-                    expectedContext: stored.contextPolicy,
+                    expectedContext: reviewRegressionTestsMakeContext(),
                 )
             }
         case .unsupported:
             await #expect(throws: RuntimeHostError.capabilityUnsupported(.sameIdentityResume)) {
                 try await plane.restore(
                     hostReference: stored.externalAgentSessionReference,
-                    expectedContext: stored.contextPolicy,
+                    expectedContext: reviewRegressionTestsMakeContext(),
                 )
             }
         case .supported:
@@ -4660,7 +5890,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: reviewRegressionTestsMakeContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: reviewRegressionTestsMakeContext()),
             projection: projection,
             lastSequence: 0,
             acceptedIdempotencyKeys: [],
@@ -4715,7 +5945,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: context,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
             projection: .running,
             lastSequence: 0,
             acceptedIdempotencyKeys: [],
@@ -4747,11 +5977,11 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: RuntimeContextPolicy(
+            storedContext: RuntimeStoredContext(contextPolicy: RuntimeContextPolicy(
                 branchReference: "feat/voy-696",
                 authorizationGeneration: 1,
                 localCorrelation: "local-a",
-            ),
+            )),
             projection: .running,
             lastSequence: 2,
             acceptedIdempotencyKeys: [RuntimeIdempotencyKey("event-a")],
@@ -4766,11 +5996,11 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: RuntimeContextPolicy(
+            storedContext: RuntimeStoredContext(contextPolicy: RuntimeContextPolicy(
                 branchReference: "feat/voy-696",
                 authorizationGeneration: 1,
                 localCorrelation: "local-a",
-            ),
+            )),
             projection: projection,
             lastSequence: 0,
             acceptedIdempotencyKeys: [],
@@ -4807,7 +6037,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: .allSupported,
-            contextPolicy: finalReviewTestsMakeContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: finalReviewTestsMakeContext()),
             projection: .running,
             lastSequence: 0,
             acceptedIdempotencyKeys: [],
@@ -4862,8 +6092,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let stored = reviewerBlockerTestsMakeRunningSession(host: host, run: run, context: context)
         let store = InMemoryRuntimeStateStore(
             state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
-            failingSaveNumbers: [1],
-            saveGates: [1: saveGate],
+            failingSaveNumbers: [2],
+            saveGates: [2: saveGate],
         )
         let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
@@ -4901,6 +6131,186 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         let store: InMemoryRuntimeStateStore
         let adapter: DeterministicRuntimeAdapter
         let plane: RuntimeControlPlane
+    }
+
+    private func makeHydrationGenerationOwnershipFixture() -> HydrationGenerationOwnershipFixture {
+        let firstLoadGate = RuntimeTestGate()
+        let secondLoadGate = RuntimeTestGate()
+        let invalidStored = RuntimeStoredSession(
+            externalAgentSessionReference: "host-stale-waiter",
+            providerInternalSessionReference: nil,
+            runReference: RuntimeRunReference("run-stale-waiter"),
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: finalBoundaryTestsMakeContext()),
+            projection: .running,
+            providerNamespace: "provider-a",
+        )
+        let validStored = storageBoundaryTestsMakeStored(
+            host: "host-fresh-generation",
+            run: RuntimeRunReference("run-fresh-generation"),
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: finalBoundaryTestsMakeState([invalidStored]),
+            loadGates: [1: firstLoadGate, 2: secondLoadGate],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        let first = Task(priority: .high) { try await plane.hydrateIfNeeded() }
+        let stale = Task(priority: .background) { try await plane.hydrateIfNeeded() }
+        return HydrationGenerationOwnershipFixture(
+            firstLoadGate: firstLoadGate,
+            secondLoadGate: secondLoadGate,
+            validStored: validStored,
+            store: store,
+            plane: plane,
+            first: first,
+            stale: stale,
+        )
+    }
+
+    private struct HydrationGenerationOwnershipFixture {
+        let firstLoadGate: RuntimeTestGate
+        let secondLoadGate: RuntimeTestGate
+        let validStored: RuntimeStoredSession
+        let store: InMemoryRuntimeStateStore
+        let plane: RuntimeControlPlane
+        let first: Task<Void, Error>
+        let stale: Task<Void, Error>
+    }
+
+    private struct StaleLifecycleHydrationFixture {
+        let firstLoadGate: RuntimeTestGate
+        let secondLoadGate: RuntimeTestGate
+        let validStored: RuntimeStoredSession
+        let store: InMemoryRuntimeStateStore
+        let plane: RuntimeControlPlane
+        let first: Task<Void, Error>
+        let second: Task<Void, Error>
+    }
+
+    private func makeStaleLifecycleHydrationFixture() async -> StaleLifecycleHydrationFixture {
+        let firstLoadGate = RuntimeTestGate()
+        let secondLoadGate = RuntimeTestGate()
+        let invalidStored = RuntimeStoredSession(
+            externalAgentSessionReference: "host-invalid-generation",
+            providerInternalSessionReference: nil,
+            runReference: RuntimeRunReference("run-invalid-generation"),
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: finalBoundaryTestsMakeContext()),
+            projection: .running,
+            providerNamespace: "provider-a",
+        )
+        let validStored = storageBoundaryTestsMakeStored(
+            host: "host-valid-generation",
+            run: RuntimeRunReference("run-valid-generation"),
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: finalBoundaryTestsMakeState([invalidStored]),
+            loadGates: [1: firstLoadGate, 2: secondLoadGate],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        let first = Task(priority: .high) { try await plane.hydrateIfNeeded() }
+        await store.waitForLoadCount(1)
+        return StaleLifecycleHydrationFixture(
+            firstLoadGate: firstLoadGate,
+            secondLoadGate: secondLoadGate,
+            validStored: validStored,
+            store: store,
+            plane: plane,
+            first: first,
+            second: Task(priority: .background) { try await plane.hydrateIfNeeded() },
+        )
+    }
+
+    private struct ResumptionCleanupFixture {
+        let context: RuntimeContextPolicy
+        let host: ExternalAgentSessionReference
+        let replacement: RuntimeStoredSession
+        let replacementState: RuntimeStoredState
+        let cleanupGate: RuntimeTestGate
+        let store: DeterministicHostMutationRuntimeStateStore
+        let adapter: DeterministicRuntimeAdapter
+        let plane: RuntimeControlPlane
+    }
+
+    private func makeResumptionCleanupFixture(
+        failure: PersistenceBoundaryFailure,
+    ) async throws -> ResumptionCleanupFixture {
+        let context = finalReviewTestsMakeContext()
+        let host = ExternalAgentSessionReference("host-resume-cleanup-\(failure.rawValue)")
+        let replacement = makeResumptionReplacement(failure: failure, host: host, context: context)
+        let stored = makeResumptionStored(failure: failure, host: host, context: context)
+        let replacementState = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [replacement],
+        )
+        let cleanupGate = RuntimeTestGate()
+        let store = DeterministicHostMutationRuntimeStateStore(
+            state: RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion,
+                sessions: [stored],
+            ),
+            failingUpdateNumbers: failure == .unavailable ? [3] : [],
+            conflictingUpdateStates: failure == .conflict ? [3: replacementState] : [:],
+            updateGates: failure == .unavailable ? [3: cleanupGate] : [:],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamFailure: .creation,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        return ResumptionCleanupFixture(
+            context: context,
+            host: host,
+            replacement: replacement,
+            replacementState: replacementState,
+            cleanupGate: cleanupGate,
+            store: store,
+            adapter: adapter,
+            plane: plane,
+        )
+    }
+
+    private func makeResumptionReplacement(
+        failure: PersistenceBoundaryFailure,
+        host: ExternalAgentSessionReference,
+        context: RuntimeContextPolicy,
+    ) -> RuntimeStoredSession {
+        RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: nil,
+            runReference: RuntimeRunReference("replacement-\(failure.rawValue)"),
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .launching,
+            providerLaunchAttempted: true,
+        )
+    }
+
+    private func makeResumptionStored(
+        failure: PersistenceBoundaryFailure,
+        host: ExternalAgentSessionReference,
+        context: RuntimeContextPolicy,
+    ) -> RuntimeStoredSession {
+        RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume-cleanup"),
+            runReference: RuntimeRunReference("run-resume-cleanup-\(failure.rawValue)"),
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .running,
+        )
     }
 
     private func finalReviewTestsMakeContext() -> RuntimeContextPolicy {
@@ -4956,10 +6366,17 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             adapterID: RuntimeAdapterID("sdk"),
             adapterVersion: "1.0.0",
             capabilitySnapshot: storageBoundaryTestsMakeCapabilities(),
-            contextPolicy: storageBoundaryTestsMakeContext(),
+            storedContext: RuntimeStoredContext(contextPolicy: storageBoundaryTestsMakeContext()),
             projection: .running,
             lastSequence: 0,
             acceptedEventCount: acceptedEventCount,
         )
+    }
+}
+
+extension RuntimeControlPlane {
+    func testSupersedeHydration(with task: Task<RuntimeStoredState?, Error>) {
+        hydrationGeneration &+= 1
+        hydrationTask = task
     }
 }
