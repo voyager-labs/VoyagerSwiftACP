@@ -158,12 +158,14 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         )
         let selectedURL = sandbox.root.appendingPathComponent("RCL Saved Collection")
         let recorder = CollectionFileSaveRecorder()
+        let metricRecorder = CollectionMetricRecorder()
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
             $0.collectionSavePanelClient.defaultSaveDirectory = { _ in sandbox.root }
             $0.collectionSavePanelClient.presentSavePanel = { _ in selectedURL }
             $0.collectionFileClient.save = recorder.save
+            $0.collectionMetricClient = metricRecorder.client
         }
 
         await store.send(.saveRequested(payload)) {
@@ -185,6 +187,47 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         XCTAssertEqual(saved.url.path, sandbox.root.appendingPathComponent("RCL Saved Collection.voycoll").path)
         XCTAssertEqual(saved.file.query, "new report")
         XCTAssertEqual(saved.file.snapshot?.items, [.string("/VoyagerFixtures/Documents/report.md")])
+        XCTAssertTrue(metricRecorder.entries.isEmpty)
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: 저장소 오류는 save failure feedback으로 전달되고
+    /// obsolete metric은 기록하지 않는다.
+    /// 파일 저장 실패 시 기존 오류 전파와 pending state 정리를 유지하면서 폐기된 save-result metric이 발생하지 않는지 검증한다.
+    /// - 검증 내용: saveCompleted failure, save feedback, 저장 결과 metric 미기록
+    /// - 사전 조건: 유효한 collection payload와 throwing file client
+    /// - 기대 결과: 저장 오류가 전달되고 save-result metric 호출은 0회임
+    func testSaveCurrentFilterAsNewCollection_whenFileSaveFails_propagatesFailureWithoutMetric() async {
+        let payload = makeSavePayload(query: "failed report", snapshotItems: nil)
+        let existingURL = URL(fileURLWithPath: "/tmp/failed_collection.voycoll")
+        let metricRecorder = CollectionMetricRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient.save = { _, _ in throw CollectionSaveTestError() }
+            $0.collectionMetricClient = metricRecorder.client
+        }
+
+        await store.send(.saveToExisting(payload, existingURL)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+            $0.pendingSaveContext = nil
+        }
+        await store.receive(
+            \.delegate.saveFeedback,
+            CollectionSaveFeedback(
+                stage: .saveFailed,
+                category: .saveFailed,
+                title: "Unable to Save Collection",
+                message: "Collection save failed.",
+                recoveryHint: "Check the file location or try again.",
+                isRetryable: true,
+            ),
+        )
+
+        XCTAssertTrue(metricRecorder.entries.isEmpty)
     }
 
     // MARK: - RCL-002-ensure_built_in_collections
@@ -715,6 +758,33 @@ private final class CollectionFileSaveRecorder: @unchecked Sendable {
                 $0.append(Saved(file: file, url: url))
             }
         }
+    }
+}
+
+private final class CollectionMetricRecorder: @unchecked Sendable {
+    struct Entry {
+        let name: String
+        let level: CollectionMetricLevel
+    }
+
+    private let recordedEntries = LockIsolated<[Entry]>([])
+
+    var entries: [Entry] {
+        recordedEntries.value
+    }
+
+    var client: CollectionMetricClient {
+        CollectionMetricClient { [weak self] name, _, _, level in
+            self?.recordedEntries.withValue {
+                $0.append(.init(name: name, level: level))
+            }
+        }
+    }
+}
+
+private struct CollectionSaveTestError: LocalizedError {
+    var errorDescription: String? {
+        "Collection save failed."
     }
 }
 
