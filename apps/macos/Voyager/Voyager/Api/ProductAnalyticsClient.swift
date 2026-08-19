@@ -1,4 +1,3 @@
-import ComposableArchitecture
 import Foundation
 
 public struct ProductAnalyticsClient: Sendable {
@@ -34,26 +33,5 @@ public protocol ProductAnalyticsClientProtocol: Sendable {
 extension ProductAnalyticsClient: ProductAnalyticsClientProtocol {
     public func capture(_ request: ProductAnalyticsCaptureRequest) {
         captureEvent(request)
-    }
-}
-
-extension ProductAnalyticsClient: DependencyKey {
-    nonisolated public static var liveValue: ProductAnalyticsClient {
-        .disabled
-    }
-
-    nonisolated public static var testValue: ProductAnalyticsClient {
-        .disabled
-    }
-
-    nonisolated public static var previewValue: ProductAnalyticsClient {
-        .disabled
-    }
-}
-
-public extension DependencyValues {
-    nonisolated var productAnalyticsClient: ProductAnalyticsClient {
-        get { self[ProductAnalyticsClient.self] }
-        set { self[ProductAnalyticsClient.self] = newValue }
     }
 }

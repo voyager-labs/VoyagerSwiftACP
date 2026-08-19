@@ -667,12 +667,6 @@ final class AppRootCompositionTests: XCTestCase {
                 deviceIdentityCalls.withValue { $0 += 1 }
                 return "test-device-id"
             })
-            $0.productAnalyticsClient = ProductAnalyticsClient(
-                capture: { _ in },
-                setDeviceIdentity: { identity in
-                    analyticsIdentities.withValue { $0.append(identity) }
-                },
-            )
             $0.notificationCenterClient.notifications = { _, _ in
                 AsyncStream { $0.finish() }
             }
@@ -698,7 +692,6 @@ final class AppRootCompositionTests: XCTestCase {
                 throw DeviceIdentityError.platformUUIDUnavailable
             })
             $0.date = .constant(Date(timeIntervalSince1970: 0))
-            $0.productAnalyticsClient = .disabled
             $0.appTechnicalSentryClient = AppTechnicalSentryClient(
                 startIfNeeded: { _, userId, _ in
                     sentryIdentities.withValue { $0.append(userId) }

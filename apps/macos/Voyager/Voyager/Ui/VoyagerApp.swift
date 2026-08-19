@@ -58,7 +58,6 @@ struct VoyagerApp: App {
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
-            $0.productAnalyticsClient = analytics.client
             $0.composerMetricClient = analytics.composer
             $0.collectionMetricClient = analytics.collection
             $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
