@@ -87,13 +87,14 @@ public struct FileManagerContentState: Equatable {
         collection.isDirty
     }
 
-    mutating func consumeExternalPendingSelectionIfAlreadyLoaded() {
-        guard pendingSelectEntryID != nil else { return }
+    @discardableResult
+    mutating func consumeExternalPendingSelectionIfAlreadyLoaded() -> Bool {
+        guard pendingSelectEntryID != nil else { return false }
         let entries = isCollectionMode
             ? Array(entryViewLayout.collectionItems)
             : Array(entryViewLayout.entryOperations.items)
-        guard !entries.isEmpty else { return }
-        _ = FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+        guard !entries.isEmpty else { return false }
+        return FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
             entries: entries,
             state: &self,
         )

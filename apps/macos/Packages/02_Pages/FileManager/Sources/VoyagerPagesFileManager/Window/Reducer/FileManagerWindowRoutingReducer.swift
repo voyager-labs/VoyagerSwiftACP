@@ -209,24 +209,47 @@ struct FileManagerWindowRoutingReducer {
         else { return .none }
 
         let isActiveTab = state.contentTabs.activeTabID == tabID
-        applyExternalPendingSelection(
+        let didApplyLoadedSelection = applyExternalPendingSelection(
             pendingSelectEntryID,
             tabID: tabID,
             anchor: anchor,
             isActiveTab: isActiveTab,
             state: &state,
         )
+        let selectionChangedEffect: Effect<Action> = isActiveTab && didApplyLoadedSelection
+            ? .send(.content(.entryViewLayout(.delegate(.selectionChanged))))
+            : .none
         let targetContentState: FileManagerContentState? = isActiveTab ? state.content : state.tabContentStates[tabID]
         let currentNavigationState = targetContentState?.navigation.navigationState
         let currentAnchor = currentNavigationState.flatMap(pinnedAnchor)
         if anchor.isCollectionFileAnchor, currentAnchor == anchor {
-            return isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
+            return isActiveTab
+                ? .concatenate(cancelPendingCollectionOpen(state: &state), selectionChangedEffect)
+                : selectionChangedEffect
         }
-        guard targetContentState?.hasUnsavedCollectionChanges != true else { return .none }
+        guard targetContentState?.hasUnsavedCollectionChanges != true else { return selectionChangedEffect }
+        return applyPinnedReturnNavigationEffects(
+            tabID: tabID,
+            navigationState: navigationState,
+            selectionChangedEffect: selectionChangedEffect,
+            state: &state,
+        )
+    }
 
+    private func applyPinnedReturnNavigationEffects(
+        tabID: ContentTabID,
+        navigationState: ContentPageNavigationRoute,
+        selectionChangedEffect: Effect<Action>,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let tab = state.contentTabs.tabs[id: tabID],
+              let anchor = pinnedAnchor(for: navigationState)
+        else { return selectionChangedEffect }
+        let isActiveTab = state.contentTabs.activeTabID == tabID
+        let targetContentState = isActiveTab ? state.content : state.tabContentStates[tabID]
+        let currentNavigationState = targetContentState?.navigation.navigationState
         let shouldResetCollectionMode = targetContentState?.isCollectionMode == true
             && !navigationState.isCollection
-
         let cancelCollectionOpenEffect = isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
         let resetCollectionModeEffect = if isActiveTab, shouldResetCollectionMode {
             resetComposerAndClearCollectionModeEffect()
@@ -234,21 +257,25 @@ struct FileManagerWindowRoutingReducer {
             Effect<Action>.none
         }
         if isActiveTab, currentNavigationState == navigationState {
-            return .concatenate(cancelCollectionOpenEffect, resetCollectionModeEffect)
+            return .concatenate(cancelCollectionOpenEffect, resetCollectionModeEffect, selectionChangedEffect)
         }
-        guard currentNavigationState != navigationState || shouldResetCollectionMode else { return .none }
-
+        guard currentNavigationState != navigationState || shouldResetCollectionMode else {
+            return selectionChangedEffect
+        }
         guard isActiveTab else {
-            return applyPinnedContentTabRuntimeNavigationToInactiveTab(
-                tabID: tabID,
-                anchor: anchor,
-                navigationState: navigationState,
-                shouldResetCollectionMode: shouldResetCollectionMode,
-                state: &state,
+            return .concatenate(
+                selectionChangedEffect,
+                applyPinnedContentTabRuntimeNavigationToInactiveTab(
+                    tabID: tabID,
+                    anchor: anchor,
+                    navigationState: navigationState,
+                    shouldResetCollectionMode: shouldResetCollectionMode,
+                    state: &state,
+                ),
             )
         }
-
         return .concatenate(
+            selectionChangedEffect,
             cancelCollectionOpenEffect,
             resetCollectionModeEffect,
             tab.anchor == anchor
@@ -266,19 +293,20 @@ struct FileManagerWindowRoutingReducer {
         )
     }
 
+    @discardableResult
     private func applyExternalPendingSelection(
         _ pendingSelectEntryID: String?,
         tabID: ContentTabID,
         anchor: ContentTabPageAnchor,
         isActiveTab: Bool,
         state: inout State,
-    ) {
-        guard let pendingSelectEntryID else { return }
+    ) -> Bool {
+        guard let pendingSelectEntryID else { return false }
         if isActiveTab {
             state.content.pendingSelectEntryID = pendingSelectEntryID
-            state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
+            let didApply = state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
             state.syncActiveTabContentState()
-            return
+            return didApply
         }
         var contentState = state.tabContentStates[tabID]
             ?? FileManagerContentFeature.State.initialContent(
@@ -286,8 +314,9 @@ struct FileManagerWindowRoutingReducer {
                 inheritingWindowContextFrom: state.content,
             )
         contentState.pendingSelectEntryID = pendingSelectEntryID
-        contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
+        let didApply = contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
         state.tabContentStates[tabID] = contentState
+        return didApply
     }
 
     private func returnInactiveContentTabToPinnedLocationWithoutActivation(

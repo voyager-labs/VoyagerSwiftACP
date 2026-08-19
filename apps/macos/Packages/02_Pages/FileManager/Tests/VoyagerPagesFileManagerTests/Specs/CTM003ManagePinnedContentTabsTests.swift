@@ -6676,6 +6676,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             pinnedID,
             pendingSelectEntryID: pendingSelectEntryID,
         ))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
+        }
         await store.skipReceivedActions(strict: false)
 
         XCTAssertEqual(store.state.content.navigation.currentPath, durablePath)
