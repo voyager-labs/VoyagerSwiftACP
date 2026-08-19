@@ -139,6 +139,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
 actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore {
     private var state: RuntimeStoredState?
     private let failingLoadNumbers: Set<Int>
+    private let loadStates: [Int: RuntimeStoredState]
     private let failingUpdateNumbers: Set<Int>
     private let conflictingUpdateStates: [Int: RuntimeStoredState]
     private let updateGates: [Int: RuntimeTestGate]
@@ -149,12 +150,14 @@ actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore {
     init(
         state: RuntimeStoredState? = nil,
         failingLoadNumbers: Set<Int> = [],
+        loadStates: [Int: RuntimeStoredState] = [:],
         failingUpdateNumbers: Set<Int> = [],
         conflictingUpdateStates: [Int: RuntimeStoredState] = [:],
         updateGates: [Int: RuntimeTestGate] = [:],
     ) {
         self.state = state
         self.failingLoadNumbers = failingLoadNumbers
+        self.loadStates = loadStates
         self.failingUpdateNumbers = failingUpdateNumbers
         self.conflictingUpdateStates = conflictingUpdateStates
         self.updateGates = updateGates
@@ -164,6 +167,9 @@ actor DeterministicHostMutationRuntimeStateStore: RuntimeStateStore {
         loadCount += 1
         if failingLoadNumbers.contains(loadCount) {
             throw RuntimeStateStoreError.unavailable
+        }
+        if let loadState = loadStates[loadCount] {
+            state = loadState
         }
         return state
     }

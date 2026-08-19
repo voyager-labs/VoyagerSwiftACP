@@ -57,10 +57,26 @@ extension RuntimeControlPlane {
             try? await reconcileStartedProviderFailure(reservation: reservation, receipt: receipt)
             throw RuntimeHostError.persistenceFailure
         } catch RuntimeHostError.persistenceConflict {
-            if try await persistedTerminalResult(
-                host: reservation.host,
-                runReference: receipt.runReference,
-            ) != nil {
+            return try await resolveReceiptConflict(receipt, request: request, reservation: reservation)
+        } catch {
+            try? await reconcileStartedProviderFailure(
+                reservation: reservation,
+                receipt: receipt,
+            )
+            throw error
+        }
+    }
+
+    private func resolveReceiptConflict(
+        _ receipt: RuntimeLaunchReceipt,
+        request: RuntimeLaunchRequest,
+        reservation: RunReservation,
+    ) async throws -> ReceiptTransition {
+        if try await persistedTerminalResult(
+            host: reservation.host,
+            runReference: receipt.runReference,
+        ) != nil {
+            do {
                 return try await commit(host: reservation.host) { plane, registry in
                     try plane.recordReceiptTransition(
                         receipt,
@@ -70,24 +86,42 @@ extension RuntimeControlPlane {
                         in: &registry,
                     )
                 }
+            } catch RuntimeHostError.persistenceConflict {
+                return try await reconcileReceiptRetryConflict(receipt, reservation: reservation)
             }
-            do {
-                try await reconcileStartedProviderFailure(reservation: reservation, receipt: receipt)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch let error as RuntimeHostError {
-                throw error
-            } catch {
-                throw RuntimeHostError.persistenceFailure
-            }
-            throw RuntimeHostError.persistenceConflict
-        } catch {
-            try? await reconcileStartedProviderFailure(
-                reservation: reservation,
-                receipt: receipt,
-            )
-            throw error
         }
+        do {
+            try await reconcileStartedProviderFailure(reservation: reservation, receipt: receipt)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as RuntimeHostError {
+            throw error
+        } catch {
+            throw RuntimeHostError.persistenceFailure
+        }
+        throw RuntimeHostError.persistenceConflict
+    }
+
+    private func reconcileReceiptRetryConflict(
+        _ receipt: RuntimeLaunchReceipt,
+        reservation: RunReservation,
+    ) async throws -> ReceiptTransition {
+        let terminal = try await withPersistedState { plane, loaded in
+            let persisted = loaded ?? RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion,
+                sessions: [],
+            )
+            plane.sessions = plane.reconciledRegistry(candidate: plane.sessions, persisted: persisted)
+            try Task.checkCancellation()
+            return plane.storedTerminalResult(
+                host: reservation.host,
+                runReference: receipt.runReference,
+            )
+        }
+        try await reconcileStartedProviderFailure(reservation: reservation, receipt: receipt)
+        try Task.checkCancellation()
+        guard let terminal else { throw RuntimeHostError.persistenceConflict }
+        return .terminal(terminal)
     }
 
     private func finishReceipt(
@@ -352,7 +386,39 @@ extension RuntimeControlPlane {
         do {
             try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
         } catch RuntimeHostError.persistenceConflict {
-            try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
+            do {
+                try await persistStartedProviderFailure(reservation: reservation, receipt: receipt)
+            } catch RuntimeHostError.persistenceConflict {
+                try await synchronizePersistedRegistry(
+                    releasingTerminalLaunchFor: reservation,
+                    receipt: receipt,
+                )
+                throw RuntimeHostError.persistenceConflict
+            }
+        }
+    }
+
+    private func synchronizePersistedRegistry(
+        releasingTerminalLaunchFor reservation: RunReservation,
+        receipt: RuntimeLaunchReceipt?,
+    ) async throws {
+        try await withPersistedState { plane, loaded in
+            let persisted = loaded ?? RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion,
+                sessions: [],
+            )
+            plane.sessions = plane.reconciledRegistry(candidate: plane.sessions, persisted: persisted)
+            if let receipt,
+               var session = plane.sessions[reservation.host],
+               session.stored.runReference == receipt.runReference,
+               session.stored.projection.isTerminal,
+               session.lease == .launching(reservation.lease)
+            {
+                session.lease = .none
+                session.revision += 1
+                plane.sessions[reservation.host] = session
+            }
+            try Task.checkCancellation()
         }
     }
 

@@ -3552,6 +3552,39 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(originalLaunches + replacementLaunches == 2)
     }
 
+    /// ATI-006-project_external_agent_run_events: second receipt conflict adopts a durable replacement.
+    /// 첫 receipt conflict에서 terminal을 채택한 뒤 retry 직전에 replacement가 저장되어도 stale receipt가 새 run을 덮지 않는지 검증한다.
+    /// - 검증 내용: receipt와 cleanup의 연속 CAS conflict, 최신 durable state 채택, exact launch lease 해제, 후속 prelaunch 허용.
+    /// - 사전 조건: update 3은 원래 terminal을, update 4부터 6은 새 run들을 저장하며 마지막 load는 replacement 또는 원래 terminal을 반환한다.
+    /// - 기대 결과: 원래 run은 persistenceConflict를 반환하고 local/durable state는 최신 terminal과 inactive lease로 수렴한다.
+    @Test(arguments: SecondReceiptConflictFinalState.allCases)
+    func `second receipt conflict adopts a durable replacement`(
+        finalState: SecondReceiptConflictFinalState,
+    ) async throws {
+        let fixture = makeSecondReceiptConflictFixture(finalState: finalState)
+        let nextRun = RuntimeRunReference("run-second-receipt-conflict-next")
+        try await fixture.plane.register(fixture.adapter)
+
+        await #expect(throws: RuntimeHostError.persistenceConflict) {
+            _ = try await runPolicyReady(
+                fixture.plane,
+                makeLaunch(host: fixture.host, run: fixture.originalRun, adapterID: "sdk"),
+            )
+        }
+
+        let local = try #require(await fixture.plane.sessions[fixture.host])
+        #expect(local.stored.runReference == fixture.expectedFinalRun)
+        #expect(local.stored.providerInternalSessionReference == fixture.expectedFinalProvider)
+        #expect(local.lease.isActive == false)
+        #expect(await fixture.store.currentState()?.sessions == [fixture.expectedFinalTerminal])
+        #expect(await fixture.store.updateCount == 6)
+        #expect(await fixture.adapter.counts().launch == 1)
+
+        let next = makeLaunch(host: fixture.host, run: nextRun, adapterID: "sdk")
+        try await fixture.plane.projectPrelaunch(next, as: .policyReady)
+        #expect(await fixture.plane.projection(for: fixture.host) == .policyReady)
+    }
+
     /// ATI-006-project_external_agent_run_events: late launch reconciliation reserves the terminal host.
     /// host terminal 뒤 남은 launch receipt 조정이 끝날 때까지 같은 host의 replacement 실행을 차단한다.
     /// - 검증 내용: pending receipt 중 replacement 차단, late provider binding, 조정 후 host 재사용.
@@ -6043,6 +6076,89 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             acceptedIdempotencyKeys: [],
             providerBranch: providerBranch,
         )
+    }
+
+    private func makeSecondReceiptConflictFixture(
+        finalState: SecondReceiptConflictFinalState,
+    ) -> SecondReceiptConflictFixture {
+        let host = ExternalAgentSessionReference("host-second-receipt-conflict")
+        let originalRun = RuntimeRunReference("run-second-receipt-conflict-original")
+        let replacementRun = RuntimeRunReference("run-second-receipt-conflict-replacement")
+        let cleanupReplacementRun = RuntimeRunReference("run-second-receipt-conflict-cleanup")
+        let finalReplacementRun = RuntimeRunReference("run-second-receipt-conflict-final")
+        let originalTerminal = makeSecondReceiptConflictTerminal(host: host, run: originalRun, provider: nil)
+        let replacementTerminal = makeSecondReceiptConflictTerminal(
+            host: host,
+            run: replacementRun,
+            provider: ProviderInternalSessionReference("replacement-opaque"),
+        )
+        let cleanupReplacementTerminal = makeSecondReceiptConflictTerminal(
+            host: host,
+            run: cleanupReplacementRun,
+            provider: ProviderInternalSessionReference("cleanup-opaque"),
+        )
+        let finalReplacementTerminal = makeSecondReceiptConflictTerminal(
+            host: host,
+            run: finalReplacementRun,
+            provider: ProviderInternalSessionReference("final-opaque"),
+        )
+        let expectedFinalTerminal = finalState == .sameRunTerminal ? originalTerminal : finalReplacementTerminal
+        let loadStates = finalState == .sameRunTerminal
+            ? [3: makeState([originalTerminal]), 4: makeState([originalTerminal])]
+            : [:]
+        let store = DeterministicHostMutationRuntimeStateStore(
+            loadStates: loadStates,
+            conflictingUpdateStates: [
+                3: makeState([originalTerminal]),
+                4: makeState([replacementTerminal]),
+                5: makeState([cleanupReplacementTerminal]),
+                6: makeState([finalReplacementTerminal]),
+            ],
+        )
+        return SecondReceiptConflictFixture(
+            host: host,
+            originalRun: originalRun,
+            expectedFinalRun: expectedFinalTerminal.runReference,
+            expectedFinalProvider: expectedFinalTerminal.providerInternalSessionReference,
+            expectedFinalTerminal: expectedFinalTerminal,
+            store: store,
+            adapter: DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]]),
+            plane: RuntimeControlPlane(store: store),
+        )
+    }
+
+    private func makeSecondReceiptConflictTerminal(
+        host: ExternalAgentSessionReference,
+        run: RuntimeRunReference,
+        provider: ProviderInternalSessionReference?,
+    ) -> RuntimeStoredSession {
+        RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: provider,
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: finalReviewTestsMakeContext()),
+            projection: .completed,
+            providerLaunchAttempted: true,
+        )
+    }
+
+    private struct SecondReceiptConflictFixture {
+        let host: ExternalAgentSessionReference
+        let originalRun: RuntimeRunReference
+        let expectedFinalRun: RuntimeRunReference
+        let expectedFinalProvider: ProviderInternalSessionReference?
+        let expectedFinalTerminal: RuntimeStoredSession
+        let store: DeterministicHostMutationRuntimeStateStore
+        let adapter: DeterministicRuntimeAdapter
+        let plane: RuntimeControlPlane
+    }
+
+    enum SecondReceiptConflictFinalState: CaseIterable {
+        case replacement
+        case sameRunTerminal
     }
 
     private func reviewerBlockerTestsWaitForResumeClaimBoundary(
