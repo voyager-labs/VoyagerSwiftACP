@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -572,6 +573,7 @@ class CheckCiReferencesTests(unittest.TestCase):
 
 class ProductionReleasePostHogTests(unittest.TestCase):
     release_script = Path("scripts/ci/release-macos-prod.sh")
+    copy_script = Path("scripts/build/copy-bundled-env-files.sh")
     def test_missing_token_fails_before_archive_without_value_leakage(self) -> None:
         result = self._run_release({"PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"})
         self.assertNotEqual(result.returncode, 0)
@@ -615,6 +617,219 @@ class ProductionReleasePostHogTests(unittest.TestCase):
                 self.assertIn("PUBLIC_POSTHOG_HOST", result.stderr)
                 self.assertNotIn(host, result.stdout + result.stderr)
                 self.assertNotIn("DOWNLOADS_BASE_URL", result.stderr)
+
+    def test_copy_replaces_posthog_values_once_and_preserves_source(self) -> None:
+        token = "phc_fixture_token_123"
+        host = "https://us.i.posthog.com"
+        source = Path(".env.prod")
+        source_before = source.read_bytes()
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp)
+            result = subprocess.run(
+                [str(self.copy_script), str(destination)],
+                env={
+                    **os.environ,
+                    "APP_ENV": "prod",
+                    "PUBLIC_POSTHOG_PROJECT_TOKEN": token,
+                    "PUBLIC_POSTHOG_HOST": host,
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            output = (destination / ".env.prod").read_text()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output.count("PUBLIC_POSTHOG_PROJECT_TOKEN="), 1)
+            self.assertEqual(output.count("PUBLIC_POSTHOG_HOST="), 1)
+            self.assertIn(f"PUBLIC_POSTHOG_PROJECT_TOKEN={token}\n", output)
+            self.assertIn(f"PUBLIC_POSTHOG_HOST={host}\n", output)
+            self.assertEqual(source.read_bytes(), source_before)
+            self.assertNotIn(token, result.stdout + result.stderr)
+            self.assertNotIn(host, result.stdout + result.stderr)
+
+    def test_copy_prod_fails_when_destination_is_missing(self) -> None:
+        token = "phc_fixture_token_123"
+        host = "https://us.i.posthog.com"
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp) / "missing"
+            result = self._run_copy(
+                destination,
+                token=token,
+                host=host,
+            )
+            self._assert_copy_failure_without_leakage(result, token, host)
+
+    def test_copy_prod_fails_when_implicit_destination_env_is_missing_or_blank(
+        self,
+    ) -> None:
+        token = "phc_fixture_token_123"
+        host = "https://us.i.posthog.com"
+        with tempfile.TemporaryDirectory() as temp:
+            build_dir = Path(temp) / "build"
+            for destination_env in (
+                {},
+                {
+                    "TARGET_BUILD_DIR": "",
+                    "UNLOCALIZED_RESOURCES_FOLDER_PATH": "resources",
+                },
+                {
+                    "TARGET_BUILD_DIR": str(build_dir),
+                    "UNLOCALIZED_RESOURCES_FOLDER_PATH": "",
+                },
+            ):
+                with self.subTest(destination_env=destination_env):
+                    result = subprocess.run(
+                        [str(self.copy_script)],
+                        env={
+                            **os.environ,
+                            "APP_ENV": "prod",
+                            "PUBLIC_POSTHOG_PROJECT_TOKEN": token,
+                            "PUBLIC_POSTHOG_HOST": host,
+                            **destination_env,
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self._assert_copy_failure_without_leakage(result, token, host)
+
+    def test_copy_prod_fails_for_whitespace_posthog_values_without_writing(
+        self,
+    ) -> None:
+        source = Path(".env.prod")
+        source_before = source.read_bytes()
+        for token, host in (
+            ("   ", "https://us.i.posthog.com"),
+            ("phc_fixture_token_123", "\t\t"),
+        ):
+            with self.subTest(token=repr(token), host=repr(host)):
+                with tempfile.TemporaryDirectory() as temp:
+                    destination = Path(temp)
+                    stale = destination / ".env.prod"
+                    stale.write_text("PUBLIC_POSTHOG_HOST=https://stale.example\n")
+                    result = self._run_copy(destination, token=token, host=host)
+                    self._assert_copy_failure_without_leakage(result, token, host)
+                    self.assertEqual(
+                        stale.read_text(), "PUBLIC_POSTHOG_HOST=https://stale.example\n"
+                    )
+                    self.assertEqual(source.read_bytes(), source_before)
+
+    def test_copy_prod_fails_when_source_is_missing_and_does_not_use_stale_output(
+        self,
+    ) -> None:
+        token = "phc_fixture_token_123"
+        host = "https://us.i.posthog.com"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            destination = root / "resources"
+            destination.mkdir()
+            stale = destination / ".env.prod"
+            stale.write_text("PUBLIC_POSTHOG_HOST=https://stale.example\n")
+            result = self._run_copy(
+                destination,
+                token=token,
+                host=host,
+                root=root,
+                source=None,
+            )
+            self._assert_copy_failure_without_leakage(result, token, host)
+            self.assertEqual(
+                stale.read_text(), "PUBLIC_POSTHOG_HOST=https://stale.example\n"
+            )
+
+    def test_copy_prod_fails_when_posthog_vars_are_blank_or_missing(self) -> None:
+        for token, host in (
+            ("", "https://us.i.posthog.com"),
+            ("phc_fixture_token_123", ""),
+            ("", ""),
+        ):
+            with self.subTest(token=bool(token), host=bool(host)):
+                with tempfile.TemporaryDirectory() as temp:
+                    destination = Path(temp)
+                    result = self._run_copy(destination, token=token, host=host)
+                    self._assert_copy_failure_without_leakage(
+                        result,
+                        token,
+                        host,
+                    )
+
+    def test_copy_prod_fails_when_source_keys_are_missing_or_duplicated(self) -> None:
+        for source in (
+            "PUBLIC_POSTHOG_HOST=https://fixture.example\n",
+            "PUBLIC_POSTHOG_HOST=https://fixture.example\n"
+            "PUBLIC_POSTHOG_HOST=https://duplicate.example\n"
+            "PUBLIC_POSTHOG_PROJECT_TOKEN=phc_fixture_source\n",
+        ):
+            with self.subTest(source=source):
+                with tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    destination = root / "resources"
+                    destination.mkdir()
+                    result = self._run_copy(
+                        destination,
+                        token="phc_fixture_token_123",
+                        host="https://us.i.posthog.com",
+                        root=root,
+                        source=source,
+                    )
+                    self._assert_copy_failure_without_leakage(
+                        result,
+                        "phc_fixture_token_123",
+                        "https://us.i.posthog.com",
+                    )
+
+    def _run_copy(
+        self,
+        destination: Path,
+        *,
+        token: str,
+        host: str,
+        root: Path | None = None,
+        source: str | None = "tracked",
+    ) -> subprocess.CompletedProcess[str]:
+        if root is None:
+            return subprocess.run(
+                [str(self.copy_script), str(destination)],
+                env={
+                    **os.environ,
+                    "APP_ENV": "prod",
+                    "PUBLIC_POSTHOG_PROJECT_TOKEN": token,
+                    "PUBLIC_POSTHOG_HOST": host,
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        script_path = root / "scripts/build/copy-bundled-env-files.sh"
+        script_path.parent.mkdir(parents=True)
+        shutil.copy2(self.copy_script, script_path)
+        if source is not None:
+            (root / ".env.prod").write_text(source)
+        return subprocess.run(
+            [str(script_path), str(destination)],
+            env={
+                **os.environ,
+                "APP_ENV": "prod",
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": token,
+                "PUBLIC_POSTHOG_HOST": host,
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def _assert_copy_failure_without_leakage(
+        self,
+        result: subprocess.CompletedProcess[str],
+        token: str,
+        host: str,
+    ) -> None:
+        self.assertNotEqual(result.returncode, 0)
+        output = result.stdout + result.stderr
+        if token:
+            self.assertNotIn(token, output)
+        if host:
+            self.assertNotIn(host, output)
 
     def _run_release(
         self, posthog_env: dict[str, str]
