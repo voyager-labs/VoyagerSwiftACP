@@ -40,6 +40,28 @@ private actor SearchCancellationGate {
     }
 }
 
+private final class RCL004MetricRecorder: @unchecked Sendable {
+    struct Call {
+        let name: String
+        let tags: [String: String]?
+    }
+
+    private let lock = NSLock()
+    private var recordedCalls: [Call] = []
+
+    func record(name: String, value _: Double, tags: [String: String]?, level _: ComposerMetricLevel) {
+        lock.lock()
+        recordedCalls.append(Call(name: name, tags: tags))
+        lock.unlock()
+    }
+
+    var calls: [Call] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCalls
+    }
+}
+
 @MainActor
 final class RCL004ComposeCollectionFilterTests: XCTestCase {
     // MARK: - RCL-004-submit_collection_filter_query
@@ -64,6 +86,58 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertNotNil(state.activeSearchRequestID)
         XCTAssertEqual(state.submittedSearchFilters?.scopes, ["/VoyagerFixtures/Documents"])
         XCTAssertTrue(state.includeDirectories)
+    }
+
+    /// RCL-004-submit_collection_filter_query: query submit metric은 최초/재제출 source를 구분함
+    /// 실제 submit reducer action이 query-result metric 대신 canonical submit metric을 한 번씩 기록하는지 검증한다.
+    /// - 검증 내용: canonical submit key 2건, source submit/resubmit 순서, query-result 및 legacy alias 미기록
+    /// - 사전 조건: 비공백 query를 최초 제출한 뒤 다른 비공백 query를 재제출함
+    /// - 기대 결과: 최초 metric은 submit, 이후 metric은 resubmit source를 가짐
+    func testSubmitCollectionFilterQuery_recordsCanonicalSubmitMetricForFirstAndResubmit() {
+        let recorder = RCL004MetricRecorder()
+        var state = ComposerState()
+        state.text = "find invoices"
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                recorder.record(name: name, value: value, tags: tags, level: level)
+            }
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .submit)
+            state.text = "find reports"
+            _ = ComposerFeature().reduce(into: &state, action: .submit)
+        }
+
+        let calls = recorder.calls
+        XCTAssertEqual(
+            calls.map(\.name),
+            [ComposerCollectionFilterMetrics.querySubmit, ComposerCollectionFilterMetrics.querySubmit],
+        )
+        XCTAssertEqual(calls.map { $0.tags?["source"] }, ["submit", "resubmit"])
+        XCTAssertFalse(calls.contains { $0.name == ComposerCollectionFilterMetrics.queryResult })
+        XCTAssertFalse(calls.contains { $0.name == ComposerCollectionFilterMetrics.legacyComposerSubmit })
+    }
+
+    /// RCL-004-submit_collection_filter_query: 공백 query는 submit metric을 기록하지 않음
+    /// 기존 비어 있는 query guard가 metric 기록보다 먼저 동작하는지 검증한다.
+    /// - 검증 내용: whitespace-only submit에서 metric capture와 search loading이 모두 없음
+    /// - 사전 조건: query field에 공백만 입력됨
+    /// - 기대 결과: reducer가 no-op으로 종료되고 metric은 기록되지 않음
+    func testSubmitCollectionFilterQuery_withWhitespace_doesNotRecordMetric() {
+        let recorder = RCL004MetricRecorder()
+        var state = ComposerState()
+        state.text = " \n\t "
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                recorder.record(name: name, value: value, tags: tags, level: level)
+            }
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .submit)
+        }
+
+        XCTAssertTrue(recorder.calls.isEmpty)
+        XCTAssertFalse(state.isLoadingSearch)
     }
 
     // MARK: - RCL-004-type_collection_filter_query
@@ -514,6 +588,102 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertEqual(state.text, "")
         XCTAssertNil(state.transientFeedback)
         XCTAssertFalse(state.isCollectionMode)
+    }
+
+    // MARK: - RCL-004-show_query_conversion_failure_feedback
+
+    /// RCL-004-show_query_conversion_failure_feedback: query outcome tags use stable privacy-safe tokens
+    /// query conversion outcome별 result_status가 registry bounded-token 계약과 일치하는지 검증한다.
+    /// - 검증 내용: 모든 query conversion outcome의 명시적 snake_case result_status 확인
+    /// - 사전 조건: 각 SearchQueryConversionOutcomePayload를 query result tags에 전달함
+    /// - 기대 결과: camelCase rawValue가 아닌 안정적인 snake_case token이 기록됨
+    func testQueryResultTags_mapEveryConversionOutcomeToSnakeCaseToken() {
+        let expected: [(SearchQueryConversionOutcomePayload, String)] = [
+            (.generatedChangeSet, "generated_change_set"),
+            (.unchangedResult, "unchanged_result"),
+            (.fallbackReuse, "fallback_reuse"),
+            (.providerNotConfigured, "provider_not_configured"),
+            (.invalidCredential, "invalid_credential"),
+            (.providerUnavailable, "provider_unavailable"),
+            (.networkFailure, "network_failure"),
+            (.conversionFailure, "conversion_failure"),
+        ]
+
+        for (outcome, expectedToken) in expected {
+            let tags = ComposerCollectionFilterMetrics.queryResultTags(
+                queryConversion: SearchQueryConversionMetadataPayload(outcome: outcome),
+                openedCollectionURL: nil,
+                filters: makeSearchFilters(),
+                itemCount: 1,
+            )
+
+            XCTAssertEqual(tags["outcome"], expectedToken, "unexpected token for \(outcome)")
+        }
+    }
+
+    /// RCL-004-show_query_conversion_failure_feedback: query duration은 canonical metric만 기록함
+    /// query duration helper가 legacy alias와 canonical event를 중복 기록하지 않는지 검증한다.
+    /// - 검증 내용: canonical query duration capture 1건, legacy capture 0건
+    /// - 사전 조건: 고정 시작 시각과 실제 Composer metric recorder
+    /// - 기대 결과: duration 호출은 canonical metric 한 건만 관찰됨
+    func testQueryDuration_recordsCanonicalMetricOnceWithoutLegacyAlias() {
+        let recorder = ComposerMetricRecorder()
+
+        logSearchDurationIfNeeded(
+            Date(timeIntervalSinceNow: -0.1),
+            composerMetricClient: ComposerMetricClient { name, value, tags, level in
+                recorder.record(name: name, value: value, tags: tags, level: level)
+            },
+        )
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryDuration])
+        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacySearchDuration))
+    }
+
+    // MARK: - RCL-004-apply_generated_filter_changes
+
+    /// RCL-004-apply_generated_filter_changes: apply duration은 canonical metric만 기록함
+    /// filter duration helper가 legacy alias와 canonical event를 중복 기록하지 않는지 검증한다.
+    /// - 검증 내용: canonical apply duration capture 1건, legacy capture 0건
+    /// - 사전 조건: 고정 시작 시각과 실제 Composer metric recorder
+    /// - 기대 결과: duration 호출은 canonical metric 한 건만 관찰됨
+    func testApplyDuration_recordsCanonicalMetricOnceWithoutLegacyAlias() {
+        let recorder = ComposerMetricRecorder()
+
+        logFiltersDurationIfNeeded(
+            Date(timeIntervalSinceNow: -0.1),
+            composerMetricClient: ComposerMetricClient { name, value, tags, level in
+                recorder.record(name: name, value: value, tags: tags, level: level)
+            },
+        )
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.applyDuration])
+        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacyApplyDuration))
+    }
+
+    // MARK: - RCL-004-apply_generated_filter_changes
+
+    /// RCL-004-apply_generated_filter_changes: filter 취소는 canonical metric만 기록함
+    /// filter 취소 action이 legacy cancel alias 없이 apply canonical event를 기록하는지 검증한다.
+    /// - 검증 내용: canonical apply capture 1건, legacy cancel capture 0건, filter 상태 초기화
+    /// - 사전 조건: filter 실행 중인 Composer 상태와 실제 metric recorder
+    /// - 기대 결과: 취소 후 canonical apply metric만 관찰되고 활성 요청이 해제됨
+    func testCancelFilters_recordsCanonicalApplyMetricOnceWithoutLegacyAlias() {
+        let recorder = ComposerMetricRecorder()
+        var state = makeFiltersLoadingState(activeRequestID: UUID())
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                recorder.record(name: name, value: value, tags: tags, level: level)
+            }
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.cancelFilters))
+        }
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.applyResult])
+        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacySearchCancel))
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isFilteringInFlight)
     }
 
     private func makeSearchLoadingState(activeRequestID: UUID) -> ComposerState {
