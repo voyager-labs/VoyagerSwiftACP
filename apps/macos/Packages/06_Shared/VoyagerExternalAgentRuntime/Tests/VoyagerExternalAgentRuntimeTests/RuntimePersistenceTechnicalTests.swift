@@ -13,229 +13,22 @@ struct RuntimePersistenceTechnicalTests {
         let fileURL = directory.appendingPathComponent("state.json")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = RuntimeFileStateStore(fileURL: fileURL)
-        let state = RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
-
-        try await store.save(state)
-        try await store.save(state)
+        let stored = makeStoredSession()
+        _ = try await store.apply(RuntimeStateMutation(
+            host: stored.externalAgentSessionReference,
+            expected: nil,
+            replacement: stored,
+        ))
+        _ = try await store.apply(RuntimeStateMutation(
+            host: stored.externalAgentSessionReference,
+            expected: stored,
+            replacement: stored,
+        ))
 
         let directoryAttributes = try FileManager.default.attributesOfItem(atPath: directory.path)
         let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         #expect((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
         #expect((fileAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
-    }
-
-    @Test
-    func `control planes sharing a file preserve independent hosts`() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let fileURL = root.appendingPathComponent("runtime-state.json")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        try await firstPlane.register(makeAdapter())
-        try await secondPlane.register(makeAdapter())
-        let first = makeLaunch(
-            host: ExternalAgentSessionReference("host-a"),
-            run: RuntimeRunReference("run-a"),
-            adapterID: "sdk",
-        )
-        let second = makeLaunch(
-            host: ExternalAgentSessionReference("host-b"),
-            run: RuntimeRunReference("run-b"),
-            adapterID: "sdk",
-        )
-
-        #expect(try await firstPlane.restore(
-            hostReference: first.externalAgentSessionReference,
-            expectedContext: first.contextPolicy,
-        ) == .stale)
-        #expect(try await secondPlane.restore(
-            hostReference: second.externalAgentSessionReference,
-            expectedContext: second.contextPolicy,
-        ) == .stale)
-        try await firstPlane.projectPrelaunch(first, as: .policyReady)
-        try await secondPlane.projectPrelaunch(second, as: .policyReady)
-
-        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
-        #expect(Set(persisted.sessions.map(\.externalAgentSessionReference)) == [
-            first.externalAgentSessionReference,
-            second.externalAgentSessionReference,
-        ])
-    }
-
-    @Test
-    func `control planes sharing a file reject stale same host mutation`() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let fileURL = root.appendingPathComponent("runtime-state.json")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        try await firstPlane.register(makeAdapter())
-        try await secondPlane.register(makeAdapter())
-        let first = makeLaunch(
-            host: ExternalAgentSessionReference("host-a"),
-            run: RuntimeRunReference("run-a"),
-            adapterID: "sdk",
-        )
-        let stale = makeLaunch(
-            host: first.externalAgentSessionReference,
-            run: RuntimeRunReference("run-stale"),
-            adapterID: "sdk",
-        )
-
-        #expect(try await firstPlane.restore(
-            hostReference: first.externalAgentSessionReference,
-            expectedContext: first.contextPolicy,
-        ) == .stale)
-        #expect(try await secondPlane.restore(
-            hostReference: stale.externalAgentSessionReference,
-            expectedContext: stale.contextPolicy,
-        ) == .stale)
-        try await firstPlane.projectPrelaunch(first, as: .policyReady)
-        await #expect(throws: RuntimeHostError.persistenceFailure) {
-            try await secondPlane.projectPrelaunch(stale, as: .policyReady)
-        }
-
-        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
-        #expect(persisted.sessions.count == 1)
-        #expect(persisted.sessions.first?.runReference == first.runReference)
-    }
-
-    @Test
-    func `file host CAS compares persisted execution context semantics`() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let fileURL = root.appendingPathComponent("runtime-state.json")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let host = ExternalAgentSessionReference("host-context-cas")
-        let run = RuntimeRunReference("run-context-cas")
-        let context = RuntimeContextPolicy(
-            branchReference: "feat/voy-696",
-            authorizationGeneration: 1,
-            localCorrelation: "context-cas",
-            workingDirectory: "/tmp/voyager-context-cas",
-            allowedRoots: ["/tmp/voyager-context-cas", "/tmp/voyager-shared"],
-            requestContext: "review-context",
-        )
-        let request = RuntimeLaunchRequest(
-            externalAgentSessionReference: host,
-            runReference: run,
-            adapterID: RuntimeAdapterID("sdk"),
-            contextPolicy: context,
-            input: RuntimeSensitiveInput("secret"),
-        )
-        let adapter = DeterministicRuntimeAdapter(
-            id: "sdk",
-            transport: .sdkAsyncStream,
-            capabilities: .allSupported,
-            eventsByLaunch: [[]],
-        )
-        let plane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        try await plane.register(adapter)
-
-        try await plane.projectPrelaunch(request, as: .policyReady)
-        let result = try await plane.run(request)
-
-        #expect(result.outcome == .completed)
-        #expect(await adapter.counts().launch == 1)
-        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
-        #expect(persisted.sessions.first?.projection == .completed)
-        #expect(persisted.sessions.first?.contextPolicy.hasSameExecutionContext(as: context) == true)
-    }
-
-    @Test
-    func `control planes sharing a file resume one provider owner`() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let fileURL = root.appendingPathComponent("runtime-state.json")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let host = ExternalAgentSessionReference("host-shared-restore")
-        let run = RuntimeRunReference("run-shared-restore")
-        let context = makeContext()
-        let result = RuntimeResult(
-            runReference: run,
-            outcome: .completed,
-            artifactReferences: ["artifact://shared-restore.json"],
-        )
-        let capabilities = RuntimeCapabilities(
-            discovery: .unsupported,
-            eventStream: .unsupported,
-            approval: .unsupported,
-            cancellation: .unsupported,
-            queuedInput: .unsupported,
-            terminalResult: .supported,
-            sameIdentityResume: .supported,
-        )
-        let stored = RuntimeStoredSession(
-            externalAgentSessionReference: host,
-            providerInternalSessionReference: ProviderInternalSessionReference("opaque-shared-restore"),
-            runReference: run,
-            adapterID: RuntimeAdapterID("sdk"),
-            adapterVersion: "1.0.0",
-            capabilitySnapshot: capabilities,
-            contextPolicy: context,
-            projection: .running,
-        )
-        let seed = RuntimeFileStateStore(fileURL: fileURL)
-        try await seed.save(makeState([stored]))
-        let terminalGate = RuntimeTestGate()
-        let adapter = DeterministicRuntimeAdapter(
-            id: "sdk",
-            transport: .sdkAsyncStream,
-            capabilities: capabilities,
-            eventsByLaunch: [[]],
-            terminalResultOverride: result,
-            terminalResultGate: terminalGate,
-        )
-        let firstPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        let secondPlane = RuntimeControlPlane(store: RuntimeFileStateStore(fileURL: fileURL))
-        try await firstPlane.register(adapter)
-        try await secondPlane.register(adapter)
-
-        let firstRestore = try await firstPlane.restore(hostReference: host, expectedContext: context)
-        let secondRestore = try await secondPlane.restore(hostReference: host, expectedContext: context)
-        #expect(firstRestore == .restored)
-        #expect(secondRestore == .stale)
-        let firstResume = Task { try await firstPlane.resumeRestoredRun(hostReference: host) }
-        await adapter.waitForTerminalResultCount(1)
-        if secondRestore == .restored {
-            let duplicateResume = Task { try await secondPlane.resumeRestoredRun(hostReference: host) }
-            await adapter.waitForTerminalResultCount(2)
-            await terminalGate.open()
-            _ = try? await duplicateResume.value
-        } else {
-            await #expect(throws: RuntimeHostError.invalidEvent) {
-                try await secondPlane.resumeRestoredRun(hostReference: host)
-            }
-            await terminalGate.open()
-        }
-
-        #expect(try await firstResume.value == result)
-        #expect(await adapter.counts().stream == 0)
-        let persisted = try #require(try await RuntimeFileStateStore(fileURL: fileURL).load())
-        #expect(persisted.sessions.first?.projection == .completed)
-    }
-
-    @Test
-    func `derived event copies preserve restoration claim`() {
-        var stored = makeStoredSession()
-        let claim = RuntimeRestorationClaim(
-            ownerToken: "owner-copy",
-            expiresAt: Date(timeIntervalSince1970: 120),
-        )
-        stored.restorationClaim = claim
-
-        let withEvidence = stored.withEvidence(.ignoredDuplicate(RuntimeIdempotencyKey("duplicate")))
-        let withProviderCount = stored.withProcessedEventCount(3)
-        let withHostCount = stored.withHostProcessedEventCount(4)
-
-        #expect(withEvidence.restorationClaim == claim)
-        #expect(withEvidence.eventEvidence == [.ignoredDuplicate(RuntimeIdempotencyKey("duplicate"))])
-        #expect(withProviderCount.restorationClaim == claim)
-        #expect(withProviderCount.processedEventCount == 3)
-        #expect(withHostCount.restorationClaim == claim)
-        #expect(withHostCount.hostProcessedEventCount == 4)
     }
 
     @Test
@@ -251,8 +44,13 @@ struct RuntimePersistenceTechnicalTests {
         defer { close(descriptor) }
         guard flock(descriptor, LOCK_EX) == 0 else { throw RuntimeHostError.persistenceFailure }
         let store = RuntimeFileStateStore(fileURL: fileURL)
-        let state = RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
-        let save = Task { try await store.save(state) }
+        let save = Task {
+            try await store.apply(RuntimeStateMutation(
+                host: "host-lock",
+                expected: nil,
+                replacement: makeStoredSession(),
+            ))
+        }
 
         try await Task.sleep(for: .milliseconds(20))
         save.cancel()
@@ -273,10 +71,12 @@ struct RuntimePersistenceTechnicalTests {
         try sentinelBytes.write(to: sentinel)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = RuntimeFileStateStore(fileURL: target)
-        let state = RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [])
-
-        await #expect(throws: RuntimeHostError.persistenceFailure) {
-            try await store.save(state)
+        await #expect(throws: RuntimeStateStoreError.unavailable) {
+            _ = try await store.apply(RuntimeStateMutation(
+                host: "host-a",
+                expected: nil,
+                replacement: makeStoredSession(),
+            ))
         }
 
         var isDirectory: ObjCBool = false
@@ -297,7 +97,7 @@ struct RuntimePersistenceTechnicalTests {
         try snapshot.write(to: file)
 
         let store = RuntimeFileStateStore(fileURL: file)
-        await #expect(throws: RuntimeHostError.persistenceFailure) { try await store.load() }
+        await #expect(throws: RuntimeStateStoreError.invalidSnapshot) { try await store.load() }
         #expect(!FileManager.default.fileExists(atPath: file.path))
         #expect(try Data(contentsOf: quarantine) == snapshot)
         #expect(try await store.load() == nil)
@@ -313,14 +113,7 @@ struct RuntimePersistenceTechnicalTests {
         let original = Data(#"{"schema_version":1,"sessions":[]}"#.utf8)
         try original.write(to: file)
         let store = RuntimeFileStateStore(fileURL: file)
-        let future = RuntimeStoredState(
-            schemaVersion: RuntimeStoredState.currentSchemaVersion + 1,
-            sessions: [],
-        )
-
-        await #expect(throws: RuntimeHostError.unsupportedSchemaVersion(future.schemaVersion)) {
-            try await store.save(future)
-        }
+        #expect(try await store.load()?.schemaVersion == RuntimeStoredState.currentSchemaVersion)
         #expect(try Data(contentsOf: file) == original)
     }
 
@@ -352,7 +145,7 @@ struct RuntimePersistenceTechnicalTests {
             makeStored(host: "host-b", run: run),
         ])
 
-        #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+        #expect(throws: RuntimeStateStoreError.invalidSnapshot) {
             try state.validatedForRuntime()
         }
     }
@@ -374,43 +167,16 @@ struct RuntimePersistenceTechnicalTests {
 
         let store = RuntimeFileStateStore(fileURL: fileURL)
 
-        await #expect(throws: RuntimeHostError.unsupportedSchemaVersion(999)) {
+        await #expect(throws: RuntimeStateStoreError.unsupportedSchemaVersion(999)) {
             _ = try await store.load()
         }
 
         #expect(try Data(contentsOf: fileURL) == original)
+        #expect(!FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("corrupt").path))
     }
 
     @Test
-    func `older schema uses explicit migration hook`() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let fileURL = root.appendingPathComponent("runtime.json")
-
-        try Data(#"{"schema_version":0}"#.utf8).write(to: fileURL)
-
-        let expected = RuntimeStoredState(
-            schemaVersion: RuntimeStoredState.currentSchemaVersion,
-
-            sessions: [makeStoredSession()],
-        )
-
-        let store = RuntimeFileStateStore(fileURL: fileURL) { _, version in
-            #expect(version == 0)
-
-            return expected
-        }
-
-        #expect(try await store.load() == expected)
-    }
-
-    @Test
-    func `failed older schema migration quarantines original bytes`() async throws {
+    func `older schema fails closed without overwriting or quarantining original bytes`() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -419,35 +185,24 @@ struct RuntimePersistenceTechnicalTests {
         let quarantineURL = fileURL.appendingPathExtension("corrupt")
         let original = Data(#"{"schema_version":0,"sentinel":"keep"}"#.utf8)
         try original.write(to: fileURL)
-        let store = RuntimeFileStateStore(fileURL: fileURL) { _, _ in
-            throw CocoaError(.coderInvalidValue)
-        }
-
-        await #expect(throws: RuntimeHostError.migrationFailed) {
-            _ = try await store.load()
-        }
-        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
-        #expect(try Data(contentsOf: quarantineURL) == original)
-        #expect(try await store.load() == nil)
-    }
-
-    @Test
-    func `missing older schema migrator preserves original bytes`() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let fileURL = root.appendingPathComponent("runtime.json")
-        let quarantineURL = fileURL.appendingPathExtension("corrupt")
-        let original = Data(#"{"schema_version":0,"sentinel":"keep"}"#.utf8)
-        try original.write(to: fileURL)
+        let originalModificationDate = try FileManager.default
+            .attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
         let store = RuntimeFileStateStore(fileURL: fileURL)
 
-        await #expect(throws: RuntimeHostError.migrationUnavailable(0)) {
+        await #expect(throws: RuntimeStateStoreError.unsupportedSchemaVersion(0)) {
             _ = try await store.load()
         }
+        #expect(FileManager.default.fileExists(atPath: fileURL.path))
+        #expect(try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int == original.count)
+        #expect(try FileManager.default
+            .attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date == originalModificationDate)
         #expect(try Data(contentsOf: fileURL) == original)
         #expect(!FileManager.default.fileExists(atPath: quarantineURL.path))
+        await #expect(throws: RuntimeStateStoreError.self) {
+            _ = try await store.load()
+        }
+        #expect(try Array(Data(contentsOf: fileURL)) == Array(original))
+        #expect(!FileManager.default.fileExists(atPath: quarantineURL.path) && quarantineURL.pathExtension == "corrupt")
     }
 
     @Test
@@ -465,7 +220,7 @@ struct RuntimePersistenceTechnicalTests {
 
         let store = RuntimeFileStateStore(fileURL: fileURL)
 
-        await #expect(throws: RuntimeHostError.persistenceFailure) {
+        await #expect(throws: RuntimeStateStoreError.invalidSnapshot) {
             _ = try await store.load()
         }
     }
@@ -487,7 +242,7 @@ struct RuntimePersistenceTechnicalTests {
             try snapshot.write(to: fileURL)
             let store = RuntimeFileStateStore(fileURL: fileURL)
 
-            await #expect(throws: RuntimeHostError.persistenceFailure) {
+            await #expect(throws: RuntimeStateStoreError.self) {
                 _ = try await store.load()
             }
             #expect(!FileManager.default.fileExists(atPath: fileURL.path))
@@ -495,149 +250,250 @@ struct RuntimePersistenceTechnicalTests {
         }
     }
 
-    @Test(arguments: [
-        RuntimeTransportKind.processJSONL,
-
-        RuntimeTransportKind.sdkAsyncStream,
-
-    ])
-    func `process and SDK transports satisfy the same host contract`(transport: RuntimeTransportKind) async throws {
-        let host = ExternalAgentSessionReference("host-\(transport.rawValue)")
-
-        let run = RuntimeRunReference("run-\(transport.rawValue)")
-
-        let adapter = DeterministicRuntimeAdapter(
-            id: transport.rawValue,
-
-            transport: transport,
-
-            eventsByLaunch: [[makeEvent(
-                host: host,
-
-                run: run,
-
-                sequence: 1,
-
-                idempotencyKey: "done",
-
-                kind: .completed,
-
-            )]],
-        )
-
-        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
-
-        try await plane.register(adapter)
-
-        let result = try await runPolicyReady(plane, RuntimeLaunchRequest(
-            externalAgentSessionReference: host,
-
-            runReference: run,
-
-            adapterID: RuntimeAdapterID(transport.rawValue),
-
-            contextPolicy: RuntimeContextPolicy(
-                branchReference: "feat/voy-696",
-
-                authorizationGeneration: 1,
-
-                localCorrelation: "local",
-
-            ),
-
-            input: RuntimeSensitiveInput("secret payload"),
-
+    @Test
+    func `state mutation apply covers create no-op replace delete and conflict`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        let session = makeStoredSession()
+        let created = try await store.apply(RuntimeStateMutation(
+            host: session.externalAgentSessionReference,
+            expected: nil,
+            replacement: session,
         ))
-
-        #expect(result.outcome == .completed)
+        #expect(created == .committed(makeState([session])))
+        let noop = try await store.apply(RuntimeStateMutation(
+            host: session.externalAgentSessionReference,
+            expected: nil,
+            replacement: nil,
+        ))
+        #expect(noop == .conflict(makeState([session])))
+        let deleted = try await store.apply(RuntimeStateMutation(
+            host: session.externalAgentSessionReference,
+            expected: session,
+            replacement: nil,
+        ))
+        #expect(deleted == .committed(makeState([])))
     }
 
-    private func makeStoredSession() -> RuntimeStoredSession {
-        RuntimeStoredSession(
-            externalAgentSessionReference: ExternalAgentSessionReference("host-a"),
+    @Test
+    func `file apply no-op commits without writing absent or existing snapshot`() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("runtime.json")
+        defer { try? FileManager.default.removeItem(at: root) }
 
-            providerInternalSessionReference: ProviderInternalSessionReference("opaque-provider-handle"),
+        let store = RuntimeFileStateStore(fileURL: fileURL)
+        let absentResult = try await store.apply(RuntimeStateMutation(
+            host: "host-absent",
+            expected: nil,
+            replacement: nil,
+        ))
+        #expect(absentResult == .committed(makeState([])))
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 
-            runReference: RuntimeRunReference("run-a"),
+        let session = makeStoredSession()
+        _ = try await store.apply(RuntimeStateMutation(
+            host: session.externalAgentSessionReference,
+            expected: nil,
+            replacement: session,
+        ))
+        let originalBytes = try Data(contentsOf: fileURL)
+        let originalModificationDate = try FileManager.default
+            .attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
 
-            adapterID: RuntimeAdapterID("sdk"),
-
-            adapterVersion: "1.0.0",
-
-            capabilitySnapshot: .allSupported,
-
-            contextPolicy: RuntimeContextPolicy(
-                branchReference: "feat/voy-696",
-
-                authorizationGeneration: 1,
-
-                localCorrelation: "local-a",
-
-            ),
-
-            projection: .running,
-
-            lastSequence: 2,
-
-            acceptedIdempotencyKeys: [RuntimeIdempotencyKey("event-a")],
-        )
+        let existingResult = try await store.apply(RuntimeStateMutation(
+            host: "host-absent",
+            expected: nil,
+            replacement: nil,
+        ))
+        #expect(existingResult == .committed(makeState([session])))
+        #expect(try Data(contentsOf: fileURL) == originalBytes)
+        #expect(try FileManager.default
+            .attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date == originalModificationDate)
     }
 
-    private func makeAdapter() -> DeterministicRuntimeAdapter {
-        DeterministicRuntimeAdapter(
+    @Test
+    func `concurrent same-host first writers produce one commit and one conflict`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        let first = makeStored(host: "same-host", run: RuntimeRunReference("run-a"))
+        let second = makeStored(host: "same-host", run: RuntimeRunReference("run-b"))
+        async let left = store.apply(RuntimeStateMutation(
+            host: first.externalAgentSessionReference,
+            expected: nil,
+            replacement: first,
+        ))
+        async let right = store.apply(RuntimeStateMutation(
+            host: second.externalAgentSessionReference,
+            expected: nil,
+            replacement: second,
+        ))
+        let outcomes = try await [left, right]
+        #expect(outcomes.count(where: { if case .committed = $0 { true } else { false } }) == 1)
+        #expect(outcomes.count(where: { if case .conflict = $0 { true } else { false } }) == 1)
+    }
+
+    @Test
+    func `concurrent distinct-host first writers both commit`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        let first = makeStored(host: "host-a", run: RuntimeRunReference("run-a"))
+        let second = makeStored(host: "host-b", run: RuntimeRunReference("run-b"))
+        async let left = store.apply(RuntimeStateMutation(
+            host: first.externalAgentSessionReference,
+            expected: nil,
+            replacement: first,
+        ))
+        async let right = store.apply(RuntimeStateMutation(
+            host: second.externalAgentSessionReference,
+            expected: nil,
+            replacement: second,
+        ))
+        let outcomes = try await [left, right]
+        #expect(outcomes.allSatisfy { if case .committed = $0 { true } else { false } })
+        #expect(try await (store.load()?.sessions.count) == 2)
+    }
+
+    @Test
+    func `state mutation conflict returns full current snapshot`() async throws {
+        let store = InMemoryRuntimeStateStore(state: makeState(
+            [makeStored(
+                host: "host-a",
+                run: RuntimeRunReference("run-a"),
+            )],
+        ))
+        let result = try await store.apply(RuntimeStateMutation(
+            host: "host-a",
+            expected: nil,
+            replacement: makeStored(host: "host-a", run: RuntimeRunReference("run-b")),
+        ))
+        if case let .conflict(current) = result {
+            #expect(current?.sessions.first?.runReference == RuntimeRunReference("run-a"))
+        } else {
+            Issue.record("expected conflict")
+        }
+    }
+
+    @Test
+    func `state mutation rejects expected or replacement host mismatch`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        await #expect(throws: RuntimeStateStoreError.invalidSnapshot) {
+            _ = try await store.apply(RuntimeStateMutation(
+                host: "host-a",
+                expected: makeStored(host: "host-b", run: RuntimeRunReference("run-b")),
+                replacement: nil,
+            ))
+        }
+    }
+
+    @Test
+    func `file apply preserves cancellation`() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RuntimeFileStateStore(fileURL: root.appendingPathComponent("state.json"))
+        let session = makeStoredSession()
+        _ = try await store.apply(RuntimeStateMutation(
+            host: session.externalAgentSessionReference,
+            expected: nil,
+            replacement: session,
+        ))
+        #expect(try await store.load()?.sessions == [session])
+    }
+
+    @Test
+    func `state store classifies invalid unavailable and unsupported`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        await #expect(throws: RuntimeStateStoreError.invalidSnapshot) {
+            _ = try await store.apply(RuntimeStateMutation(host: "", expected: nil, replacement: makeStoredSession()))
+        }
+        let fileRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: fileRoot) }
+        let file = fileRoot.appendingPathComponent("state.json")
+        try FileManager.default.createDirectory(at: fileRoot, withIntermediateDirectories: true)
+        try Data(#"{"schema_version":999}"#.utf8).write(to: file)
+        await #expect(throws: RuntimeStateStoreError.unsupportedSchemaVersion(999)) {
+            _ = try await RuntimeFileStateStore(fileURL: file).load()
+        }
+    }
+
+    @Test
+    func `file store preserves invalid snapshot after decode validation`() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("state.json")
+        let invalid = makeState([
+            makeStored(host: "host-a", run: RuntimeRunReference("same-run")),
+            makeStored(host: "host-b", run: RuntimeRunReference("same-run")),
+        ])
+        let bytes = try JSONEncoder().encode(invalid)
+        try bytes.write(to: file)
+
+        await #expect(throws: RuntimeStateStoreError.invalidSnapshot) {
+            _ = try await RuntimeFileStateStore(fileURL: file).load()
+        }
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(try Data(contentsOf: file.appendingPathExtension("corrupt")) == bytes)
+    }
+
+    @Test
+    func `host reference boundary rejects empty and oversized values`() async throws {
+        let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
-
             transport: .sdkAsyncStream,
-
             capabilities: .terminalOnly,
-
             eventsByLaunch: [[]],
         )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try await plane.projectPrelaunch(
+                makeLaunch(
+                    host: ExternalAgentSessionReference(""),
+                    run: RuntimeRunReference("run-empty-host"),
+                    adapterID: "sdk",
+                ),
+                as: .policyReady,
+            )
+        }
+        await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+            try await plane.projectPrelaunch(
+                makeLaunch(
+                    host: ExternalAgentSessionReference(String(repeating: "h", count: 257)),
+                    run: RuntimeRunReference("run-large-host"),
+                    adapterID: "sdk",
+                ),
+                as: .policyReady,
+            )
+        }
+
+        let store = InMemoryRuntimeStateStore()
+        await #expect(throws: RuntimeStateStoreError.invalidSnapshot) {
+            _ = try await store.apply(RuntimeStateMutation(
+                host: "",
+                expected: nil,
+                replacement: nil,
+            ))
+        }
+        #expect(await store.currentState() == nil)
     }
 
-    private func makeState(_ sessions: [RuntimeStoredSession]) -> RuntimeStoredState {
-        RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: sessions)
-    }
-
-    private func makeContext() -> RuntimeContextPolicy {
-        RuntimeContextPolicy(
-            branchReference: "feat/voy-696",
-
-            authorizationGeneration: 1,
-
-            localCorrelation: "local-a",
-        )
-    }
-
-    private func makeStored(
-        host: ExternalAgentSessionReference,
-
-        run: RuntimeRunReference,
-
-        acceptedEventCount: Int = 0,
-
-    ) -> RuntimeStoredSession {
-        RuntimeStoredSession(
-            externalAgentSessionReference: host,
-
-            providerInternalSessionReference: ProviderInternalSessionReference("opaque-1"),
-
-            runReference: run,
-
-            adapterID: RuntimeAdapterID("sdk"),
-
-            adapterVersion: "1.0.0",
-
-            capabilitySnapshot: .terminalOnly,
-
-            contextPolicy: makeContext(),
-
-            projection: .running,
-
-            lastSequence: 0,
-
-            acceptedEventCount: acceptedEventCount,
-        )
+    @Test
+    func `concurrent distinct-host first writers with same run produce one commit and one conflict`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        let first = makeStored(host: "host-a", run: RuntimeRunReference("same-run"))
+        let second = makeStored(host: "host-b", run: RuntimeRunReference("same-run"))
+        async let left = store.apply(RuntimeStateMutation(
+            host: first.externalAgentSessionReference,
+            expected: nil,
+            replacement: first,
+        ))
+        async let right = store.apply(RuntimeStateMutation(
+            host: second.externalAgentSessionReference,
+            expected: nil,
+            replacement: second,
+        ))
+        let outcomes = try await [left, right]
+        #expect(outcomes.count(where: { if case .committed = $0 { true } else { false } }) == 1)
+        #expect(outcomes.count(where: { if case .conflict = $0 { true } else { false } }) == 1)
     }
 
     private func makeHostProgress(

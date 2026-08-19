@@ -15,15 +15,34 @@ public protocol ExternalAgentRuntimeAdapter: Actor {
 
 public protocol RuntimeStateStore: Sendable {
     func load() async throws -> RuntimeStoredState?
-    func save(_ state: RuntimeStoredState) async throws
+    func apply(_ mutation: RuntimeStateMutation) async throws -> RuntimeStateMutationResult
 }
 
-protocol RuntimeStateStoreHostMutation: RuntimeStateStore {
-    func updateHost(
-        _ host: ExternalAgentSessionReference,
+public struct RuntimeStateMutation: Sendable {
+    public let host: ExternalAgentSessionReference
+    public let expected: RuntimeStoredSession?
+    public let replacement: RuntimeStoredSession?
+
+    public init(
+        host: ExternalAgentSessionReference,
         expected: RuntimeStoredSession?,
         replacement: RuntimeStoredSession?,
-    ) async throws -> RuntimeStoredState
+    ) {
+        self.host = host
+        self.expected = expected
+        self.replacement = replacement
+    }
+}
+
+public enum RuntimeStateMutationResult: Sendable, Equatable {
+    case committed(RuntimeStoredState)
+    case conflict(RuntimeStoredState?)
+}
+
+public enum RuntimeStateStoreError: Error, Sendable, Equatable {
+    case invalidSnapshot
+    case unavailable
+    case unsupportedSchemaVersion(Int)
 }
 
 public struct RuntimeSerializationKey: Hashable, Sendable, Codable, RawRepresentable {

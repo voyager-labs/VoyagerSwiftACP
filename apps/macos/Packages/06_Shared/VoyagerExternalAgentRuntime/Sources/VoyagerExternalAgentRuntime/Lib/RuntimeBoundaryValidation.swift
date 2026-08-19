@@ -60,7 +60,6 @@ extension RuntimeStoredSession {
                 !$0.rawValue.isEmpty
                     && $0.rawValue.unicodeScalars.count <= RuntimeBoundaryLimits.opaqueProviderHandleScalars
             } ?? true
-            && (!projection.requiresProviderSessionReference || providerInternalSessionReference != nil)
             && acceptedIdempotencyKeys.count <= RuntimeBoundaryLimits.persistedEventEntries
             && acceptedIdempotencyKeys.allSatisfy(\.rawValue.isRuntimeBounded)
             && hostAcceptedIdempotencyKeys.count <= RuntimeBoundaryLimits.persistedEventEntries
@@ -78,7 +77,7 @@ extension RuntimeStoredSession {
             && hostAcceptedEventCount <= RuntimeBoundaryLimits.acceptedEventsPerRun
             && hostProcessedEventCount >= hostAcceptedEventCount
             && hostProcessedEventCount <= RuntimeBoundaryLimits.acceptedEventsPerRun
-            && contextPolicy.isWithinRuntimeBounds
+            && storedContext.isWithinRuntimeBounds
     }
 }
 
@@ -108,10 +107,10 @@ extension RuntimeEventEvidence {
 extension RuntimeStoredState {
     func validatedForRuntime() throws -> Self {
         if schemaVersion > Self.currentSchemaVersion {
-            throw RuntimeHostError.unsupportedSchemaVersion(schemaVersion)
+            throw RuntimeStateStoreError.unsupportedSchemaVersion(schemaVersion)
         }
         if schemaVersion < Self.currentSchemaVersion {
-            throw RuntimeHostError.migrationUnavailable(schemaVersion)
+            throw RuntimeStateStoreError.unsupportedSchemaVersion(schemaVersion)
         }
         let hosts = Set(sessions.map(\.externalAgentSessionReference))
         let runs = Set(sessions.map(\.runReference))
@@ -119,7 +118,7 @@ extension RuntimeStoredState {
               hosts.count == sessions.count,
               runs.count == sessions.count,
               sessions.allSatisfy(\.isWithinRuntimeBounds)
-        else { throw RuntimeHostError.malformedAdapterResponse }
+        else { throw RuntimeStateStoreError.invalidSnapshot }
         return self
     }
 }
@@ -146,5 +145,19 @@ extension RuntimeContextPolicy {
                 $0.unicodeScalars.count <= RuntimeBoundaryLimits.contextScalars
             }
             && requestContext?.unicodeScalars.count ?? 0 <= RuntimeBoundaryLimits.requestContextScalars
+    }
+}
+
+extension RuntimeStoredContext {
+    var isWithinRuntimeBounds: Bool {
+        branchReference.unicodeScalars.count <= RuntimeBoundaryLimits.contextScalars
+            && localCorrelation.unicodeScalars.count <= RuntimeBoundaryLimits.identifierScalars
+            && executionContextFingerprint.count == 64
+            && executionContextFingerprint.allSatisfy {
+                switch $0 {
+                case "0" ... "9", "a" ... "f": true
+                default: false
+                }
+            }
     }
 }
