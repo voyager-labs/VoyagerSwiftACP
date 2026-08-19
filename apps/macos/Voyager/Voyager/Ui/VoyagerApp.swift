@@ -25,6 +25,19 @@ private final class AppRootStoreReference {
 
 @main
 struct VoyagerApp: App {
+    private struct ProductAnalyticsDependencies {
+        let client: ProductAnalyticsClient
+        let composer: ComposerMetricClient
+        let collection: CollectionMetricClient
+        let fileManager: MetricsClient
+    }
+
+    private struct ProductAnalyticsCaptureContext {
+        let client: ProductAnalyticsClient
+        let registry: ProductAnalyticsRegistry
+        let environment: EnvironmentLoader.AppEnv
+    }
+
     private let appRootStore: StoreOf<AppRootFeature>
 
     @NSApplicationDelegateAdaptor(AppDelegate.self)
@@ -39,12 +52,15 @@ struct VoyagerApp: App {
             fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
             workspaceClient: workspaceClient,
         )
+        try? EnvironmentLoader.loadEnvFiles()
+        let analytics = Self.makeProductAnalyticsDependencies(environment: EnvironmentLoader.detectAppEnv())
 
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
-            $0.composerMetricClient = Self.makeComposerMetricClient()
-            $0.collectionMetricClient = Self.makeCollectionMetricClient()
+            $0.productAnalyticsClient = analytics.client
+            $0.composerMetricClient = analytics.composer
+            $0.collectionMetricClient = analytics.collection
             $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
                 openMainWindow: { _ in
                     await appRootStoreReference.openInitialWindowIfNeeded()
@@ -68,7 +84,7 @@ struct VoyagerApp: App {
                     }
                 },
             )
-            $0.metricsClient = Self.makeFileManagerMetricsClient()
+            $0.metricsClient = analytics.fileManager
             $0.workspaceClient = workspaceClient
         }
         appRootStoreReference.store = appRootStore
@@ -87,79 +103,138 @@ struct VoyagerApp: App {
         )
     }
 
-    private static func makeComposerMetricClient() -> ComposerMetricClient {
-        ComposerMetricClient { name, value, tags, level in
-            Task { @MainActor in
-                VoyagerSentryMetricLogger.logMetric(
-                    name,
-                    value: value,
-                    tags: tags,
-                    level: metricLogLevel(for: level),
-                )
-            }
+    private static func makeProductAnalyticsDependencies(
+        environment: EnvironmentLoader.AppEnv,
+    ) -> ProductAnalyticsDependencies {
+        let client = ProductAnalyticsBootstrap.makeClient()
+        let registry = ProductAnalyticsRegistry.load()
+        let context = ProductAnalyticsCaptureContext(
+            client: client,
+            registry: registry,
+            environment: environment,
+        )
+        return ProductAnalyticsDependencies(
+            client: client,
+            composer: makeComposerMetricClient(context: context),
+            collection: makeCollectionMetricClient(context: context),
+            fileManager: makeFileManagerMetricsClient(context: context),
+        )
+    }
+
+    private static func makeComposerMetricClient(
+        context: ProductAnalyticsCaptureContext,
+    ) -> ComposerMetricClient {
+        ComposerMetricClient { name, value, tags, _ in
+            captureProductMetric(
+                name,
+                value: value,
+                tags: tags,
+                context: context,
+            )
         }
     }
 
-    private static func makeCollectionMetricClient() -> CollectionMetricClient {
-        CollectionMetricClient { name, value, tags, level in
-            Task { @MainActor in
-                VoyagerSentryMetricLogger.logMetric(
-                    name,
-                    value: value,
-                    tags: tags,
-                    level: metricLogLevel(for: level),
-                )
-            }
+    private static func makeCollectionMetricClient(
+        context: ProductAnalyticsCaptureContext,
+    ) -> CollectionMetricClient {
+        CollectionMetricClient { name, value, tags, _ in
+            captureProductMetric(
+                name,
+                value: value,
+                tags: tags,
+                context: context,
+            )
         }
     }
 
-    private static func makeFileManagerMetricsClient() -> MetricsClient {
+    private static func makeFileManagerMetricsClient(
+        context: ProductAnalyticsCaptureContext,
+    ) -> MetricsClient {
         .init(
             logMetric: { name, value, tags in
-                Task { @MainActor in
-                    VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
-                }
+                captureProductMetric(
+                    name,
+                    value: value,
+                    tags: tags,
+                    context: context,
+                )
             },
             logDAUNavigation: { kind in
-                Task { @MainActor in
-                    switch kind {
-                    case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
-                    case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
-                    }
-                }
+                captureProductMetric(
+                    "dau.navigation",
+                    value: 1,
+                    tags: ["source_surface": kind.rawValue],
+                    context: context,
+                )
             },
             logDAUEntryAction: { actionKind, entryKind in
-                let sentryActionKind = VoyagerShared.DAUEntryActionKind(rawValue: actionKind.rawValue)
-                let sentryEntryKind = VoyagerShared.DAUEntryKind(rawValue: entryKind.rawValue)
-                Task { @MainActor in
-                    guard let sentryActionKind, let sentryEntryKind else { return }
-                    VoyagerSentryMetricLogger.logDAUEntryAction(
-                        actionKind: sentryActionKind,
-                        entryKind: sentryEntryKind,
-                    )
-                }
+                captureProductMetric(
+                    "dau.entry_action",
+                    value: 1,
+                    tags: [
+                        "source_surface": actionKind.rawValue,
+                        "result_status": entryKind.rawValue,
+                    ],
+                    context: context,
+                )
             },
         )
     }
 
-    private static func metricLogLevel(for level: ComposerMetricLevel) -> MetricLogLevel {
-        switch level {
-        case .trace: .trace
-        case .debug: .debug
-        case .info: .info
-        case .warn: .warn
-        case .error: .error
+    nonisolated private static func captureProductMetric(
+        _ name: String,
+        value: Double,
+        tags: [String: String]?,
+        context: ProductAnalyticsCaptureContext,
+    ) {
+        Task {
+            let identity = await context.client.deviceIdentity()
+            let result = await context.registry.resolve(
+                metricKey: name,
+                identity: .device(identity),
+                context: makeProductAnalyticsEventContext(environment: context.environment),
+                properties: productMetricProperties(name: name, value: value, tags: tags),
+            )
+            if case let .capture(request) = result {
+                context.client.captureEvent(request)
+            }
         }
     }
 
-    private static func metricLogLevel(for level: CollectionMetricLevel) -> MetricLogLevel {
-        switch level {
-        case .trace: .trace
-        case .debug: .debug
-        case .info: .info
-        case .warn: .warn
-        case .error: .error
+    static func makeProductAnalyticsEventContext(
+        environment: EnvironmentLoader.AppEnv,
+        occurredAtUTC: Date = Date(),
+    ) -> ProductAnalyticsEventContext {
+        ProductAnalyticsEventContext(
+            occurredAtUTC: occurredAtUTC,
+            environment: environment.rawValue,
+            appVersion: AppVersionInfo.shortVersion,
+            platform: "macOS",
+            source: "app",
+        )
+    }
+
+    nonisolated private static func productMetricProperties(
+        name: String,
+        value: Double,
+        tags: [String: String]?,
+    ) -> [String: ProductAnalyticsPropertyValue] {
+        var properties: [String: ProductAnalyticsPropertyValue] = [:]
+        if name.contains("duration_ms"), value >= 0, value <= Double(Int.max) {
+            properties["duration_ms"] = .integer(Int(value.rounded()))
         }
+        for (key, value) in tags ?? [:] {
+            let mappedKey: String? = switch key {
+            case "source", "source_surface": "source_surface"
+            case "outcome", "result", "result_status": "result_status"
+            case "reason", "failure_reason": "failure_reason"
+            default: nil
+            }
+            if let mappedKey {
+                properties[mappedKey] = .string(value)
+            }
+        }
+        return properties
     }
 
     private func configureFileManagerWindowCallbacks() {
