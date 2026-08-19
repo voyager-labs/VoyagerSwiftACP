@@ -34,6 +34,26 @@ final class AppRootCompositionTests: XCTestCase {
             ).environment,
             "prod",
         )
+        XCTAssertEqual(
+            VoyagerApp.makeProductAnalyticsEventContext(
+                environment: .dev,
+                occurredAtUTC: occurredAtUTC,
+            ).sourceProject,
+            "app",
+        )
+    }
+
+    func testBuiltInSeedIdentityTagsMapToSafeSourceSurfaceValues() {
+        for identity in ["recents", "all_tags"] {
+            XCTAssertEqual(
+                VoyagerApp.productMetricProperties(
+                    name: "built_in_pinned_item_seeded",
+                    value: 1,
+                    tags: ["identity": identity],
+                )["source_surface"],
+                .string(identity),
+            )
+        }
     }
 
     func testLiveUndoManagerClientUsesCanonicalRegistryStackForSequentialUndo() async throws {

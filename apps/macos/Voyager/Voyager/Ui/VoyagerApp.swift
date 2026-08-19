@@ -211,19 +211,24 @@ struct VoyagerApp: App {
             appVersion: AppVersionInfo.shortVersion,
             platform: "macOS",
             source: "app",
+            sourceProject: "app",
         )
     }
 
-    nonisolated private static func productMetricProperties(
+    nonisolated static func productMetricProperties(
         name: String,
         value: Double,
         tags: [String: String]?,
     ) -> [String: ProductAnalyticsPropertyValue] {
         var properties: [String: ProductAnalyticsPropertyValue] = [:]
+        if let identity = tags?["identity"] {
+            properties["source_surface"] = .string(identity)
+        }
         if name.contains("duration_ms"), value >= 0, value <= Double(Int.max) {
             properties["duration_ms"] = .integer(Int(value.rounded()))
         }
         for (key, value) in tags ?? [:] {
+            guard key != "identity" else { continue }
             let mappedKey: String? = switch key {
             case "source", "source_surface": "source_surface"
             case "outcome", "result", "result_status": "result_status"
