@@ -145,7 +145,7 @@ public struct RuntimeQueuedInputRequest: Sendable {
     }
 }
 
-public struct RuntimeRestartBinding: Codable, Sendable,
+public struct RuntimeRestartBinding: Sendable,
     Hashable
 { public let externalAgentSessionReference: ExternalAgentSessionReference
     public let providerInternalSessionReference: ProviderInternalSessionReference

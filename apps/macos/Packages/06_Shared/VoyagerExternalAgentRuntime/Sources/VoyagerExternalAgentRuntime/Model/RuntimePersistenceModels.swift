@@ -9,7 +9,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
     public let adapterVersion: String
     public let providerBranch: RuntimeProviderBranch
     public let capabilitySnapshot: RuntimeCapabilities
-    public let contextPolicy: RuntimeContextPolicy
+    public let storedContext: RuntimeStoredContext
     public let projection: RuntimeProjection
     public let providerLaunchAttempted: Bool?
     public let lastSequence: UInt64
@@ -32,7 +32,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         case adapterVersion = "adapter_version"
         case providerBranch = "provider_branch"
         case capabilitySnapshot = "capability_snapshot"
-        case contextPolicy = "context_policy"
+        case storedContext = "stored_context"
         case projection
         case providerLaunchAttempted = "provider_launch_attempted"
         case lastSequence = "last_sequence"
@@ -54,7 +54,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         adapterID: RuntimeAdapterID,
         adapterVersion: String,
         capabilitySnapshot: RuntimeCapabilities,
-        contextPolicy: RuntimeContextPolicy,
+        storedContext: RuntimeStoredContext,
         projection: RuntimeProjection,
         providerLaunchAttempted: Bool? = nil,
         lastSequence: UInt64 = 0,
@@ -77,7 +77,7 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         self.adapterVersion = adapterVersion
         self.providerBranch = providerBranch
         self.capabilitySnapshot = capabilitySnapshot
-        self.contextPolicy = contextPolicy
+        self.storedContext = storedContext
         self.projection = projection
         self.providerLaunchAttempted = providerLaunchAttempted
         self.lastSequence = lastSequence
@@ -90,41 +90,6 @@ public struct RuntimeStoredSession: Codable, Sendable, Hashable {
         self.hostAcceptedIdempotencyKeys = hostAcceptedIdempotencyKeys
         self.eventEvidence = eventEvidence
         restorationClaim = nil
-    }
-
-    func hasSamePersistedState(as other: Self) -> Bool {
-        externalAgentSessionReference == other.externalAgentSessionReference
-            && providerInternalSessionReference == other.providerInternalSessionReference
-            && runReference == other.runReference
-            && adapterID == other.adapterID
-            && providerNamespace == other.providerNamespace
-            && adapterVersion == other.adapterVersion
-            && providerBranch == other.providerBranch
-            && capabilitySnapshot == other.capabilitySnapshot
-            && contextPolicy.hasSameExecutionContext(as: other.contextPolicy)
-            && projection == other.projection
-            && providerLaunchAttempted == other.providerLaunchAttempted
-            && lastSequence == other.lastSequence
-            && acceptedEventCount == other.acceptedEventCount
-            && processedEventCount == other.processedEventCount
-            && acceptedIdempotencyKeys == other.acceptedIdempotencyKeys
-            && hostLastSequence == other.hostLastSequence
-            && hostAcceptedEventCount == other.hostAcceptedEventCount
-            && hostProcessedEventCount == other.hostProcessedEventCount
-            && hostAcceptedIdempotencyKeys == other.hostAcceptedIdempotencyKeys
-            && eventEvidence == other.eventEvidence
-            && restorationClaim == other.restorationClaim
-    }
-
-    static func hasSamePersistedState(_ lhs: Self?, _ rhs: Self?) -> Bool {
-        switch (lhs, rhs) {
-        case (nil, nil):
-            true
-        case let (.some(lhs), .some(rhs)):
-            lhs.hasSamePersistedState(as: rhs)
-        default:
-            false
-        }
     }
 }
 
