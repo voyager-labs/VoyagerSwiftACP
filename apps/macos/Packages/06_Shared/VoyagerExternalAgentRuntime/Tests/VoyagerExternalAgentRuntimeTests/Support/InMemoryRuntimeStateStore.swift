@@ -12,6 +12,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
     private let saveGates: [Int: RuntimeTestGate]
     private(set) var loadCount = 0
     private(set) var saveCount = 0
+    private(set) var applyCount = 0
     private var loadCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var saveCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
@@ -64,6 +65,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
     }
 
     func apply(_ mutation: RuntimeStateMutation) async throws -> RuntimeStateMutationResult {
+        applyCount += 1
         guard mutation.host.rawValue.isRuntimeBounded,
               mutation.expected?.externalAgentSessionReference == nil || mutation.expected?
               .externalAgentSessionReference == mutation.host,

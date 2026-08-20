@@ -1,5 +1,19 @@
 import Foundation
 
+public enum RuntimeCleanupFailureKind: Sendable, Equatable {
+    case persistence
+}
+
+public struct RuntimeCleanupFailureEvidence: Sendable, Equatable {
+    public let runReference: RuntimeRunReference
+    public let kind: RuntimeCleanupFailureKind
+
+    public init(runReference: RuntimeRunReference, kind: RuntimeCleanupFailureKind) {
+        self.runReference = runReference
+        self.kind = kind
+    }
+}
+
 public actor RuntimeControlPlane {
     typealias SessionRegistry = [ExternalAgentSessionReference: Session]
 
@@ -81,6 +95,7 @@ public actor RuntimeControlPlane {
     var persistenceMutationLocked = false
     var persistenceMutationWaiters: [CheckedContinuation<Void, Never>] = []
     var pendingPersistenceMutations: [ExternalAgentSessionReference: Int] = [:]
+    var cleanupFailureEvidenceByHost: [ExternalAgentSessionReference: RuntimeCleanupFailureEvidence] = [:]
 
     var hydrationWaiterCount: Int {
         hydrationWaiterCounts.values.reduce(0, +)
@@ -122,6 +137,12 @@ public actor RuntimeControlPlane {
 
     public func acceptedEventCount(for host: ExternalAgentSessionReference) -> Int {
         sessions[host]?.acceptedCount ?? 0
+    }
+
+    public func cleanupFailureEvidence(
+        for host: ExternalAgentSessionReference,
+    ) -> RuntimeCleanupFailureEvidence? {
+        cleanupFailureEvidenceByHost[host]
     }
 
     func normalizeAdapterError(_ error: any Error) -> RuntimeHostError {
