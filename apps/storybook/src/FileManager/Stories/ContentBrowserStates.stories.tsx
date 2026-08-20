@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { FileManagerIllustration } from "../../../packages/file-manager-illustration/src/FileManagerIllustration"
+import { FileManagerIllustration } from "../../../packages/file-manager-illustration/src/Stories/FileManagerIllustration"
 import {
   contentBrowserFiles,
   contentBrowserLongNameFiles,

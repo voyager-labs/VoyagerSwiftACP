@@ -10,7 +10,7 @@ export function verifyChatInteractionContract(packageRoot) {
   const viewSource = source("src/Domains/Chat/AiChatView.tsx")
   const viewStorySource = source("../../src/FileManager/Domains/Chat/AiChatView.stories.tsx")
   const conversationSource = source("src/Domains/Chat/AiChatConversationSurface.tsx")
-  const rootSource = source("src/FileManagerIllustration.tsx")
+  const rootSource = source("src/Stories/FileManagerIllustration.tsx")
   const rootStorySource = source(
     "../../src/FileManager/Stories/FileManagerIllustration.stories.tsx",
   )

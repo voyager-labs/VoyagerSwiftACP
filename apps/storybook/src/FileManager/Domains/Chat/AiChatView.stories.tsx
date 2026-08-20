@@ -17,7 +17,7 @@ import {
 import {
   InspectorPane,
   type InspectorPaneProps,
-} from "../../../../packages/file-manager-illustration/src/Layouts/InspectorPane"
+} from "../../../../packages/file-manager-illustration/src/Pages/Inspector/InspectorPane"
 import { files } from "../../../../packages/file-manager-illustration/src/data/mock-data"
 import type {
   AiChatInputBarActions,

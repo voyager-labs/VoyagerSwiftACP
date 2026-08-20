@@ -10,7 +10,7 @@ import {
   chatSurfaceStreaming,
   chatSurfaceUnconnected,
 } from "../../../packages/file-manager-illustration/src/Domains/Chat/chat-fixtures"
-import { FileManagerIllustration } from "../../../packages/file-manager-illustration/src/FileManagerIllustration"
+import { FileManagerIllustration } from "../../../packages/file-manager-illustration/src/Stories/FileManagerIllustration"
 import { publicFiles } from "../../../packages/file-manager-illustration/src/data/mock-data"
 import type { AiChatInputBarActions } from "../../../packages/file-manager-illustration/src/model/types"
 
