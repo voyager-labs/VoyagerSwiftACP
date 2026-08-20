@@ -215,7 +215,11 @@ func assertMixedPage(t *testing.T, composition unifiedComposition, page listPage
 			t.Fatalf("entry state/type/capabilities: %#v", entry)
 		}
 		if expectation.wantProperties {
-			if len(entry.EntrySnapshot.Properties) != 1 || entry.EntrySnapshot.Properties[0].PropertyID != "title" {
+			titleID, idErr := domainentry.RegistryPropertyID("title")
+			if idErr != nil {
+				t.Fatal(idErr)
+			}
+			if len(entry.EntrySnapshot.Properties) != 1 || entry.EntrySnapshot.Properties[0].PropertyID != titleID.String() {
 				t.Fatalf("external properties=%#v", entry.EntrySnapshot.Properties)
 			}
 		} else if len(entry.EntrySnapshot.Properties) != 0 {

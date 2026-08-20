@@ -421,7 +421,7 @@ func (valueType PropertyValueType) valid() bool {
 
 type PropertyValue struct {
 	Type            PropertyValueType
-	PropertyID      string
+	PropertyID      PropertyID
 	EntryID         string
 	Payload         PropertyPayload
 	State           PropertyState
@@ -1145,7 +1145,7 @@ func (snapshot EntrySnapshot) ValidateCanonical() error {
 			return ErrInvalidEntrySnapshot
 		}
 	}
-	seen := make(map[string]struct{}, len(snapshot.CanonicalProperties))
+	seen := make(map[PropertyID]struct{}, len(snapshot.CanonicalProperties))
 	propertyBudget := 0
 	for _, property := range snapshot.CanonicalProperties {
 		valueBudget, ok := canonicalPropertyValueBudget(property)
@@ -1246,7 +1246,7 @@ func cloneCanonicalPropertyValues(values []PropertyValue) []PropertyValue {
 }
 
 func (value PropertyValue) hasCanonicalFields() bool {
-	return value.PropertyID != "" || value.EntryID != "" || value.Payload.payloadCount() != 0 || value.State != "" ||
+	return value.PropertyID != (PropertyID{}) || value.EntryID != "" || value.Payload.payloadCount() != 0 || value.State != "" ||
 		value.Provenance != "" || !value.ObservedAt.IsZero() || value.SourceRevision.Revision.Strength != "" ||
 		value.SourceRevision.Revision.Token != nil || value.Editable || value.Validation != (ValidationResult{}) || value.Cardinality != ""
 }
@@ -1293,7 +1293,7 @@ func legacyPropertyBudget(property Property) (int, bool) {
 func canonicalPropertyValueBudget(value PropertyValue) (int, bool) {
 	budget := 0
 	for _, length := range []int{
-		len(value.PropertyID), len(value.EntryID), len(value.Type), len(value.State), len(value.Provenance), len(value.Cardinality),
+		len(value.PropertyID.String()), len(value.EntryID), len(value.Type), len(value.State), len(value.Provenance), len(value.Cardinality),
 		len(value.Validation.ReasonCode), len(value.Validation.Message), len(value.Validation.RuleKind),
 	} {
 		if !addWithin(&budget, length, maximumSnapshotPropertyBudget) {

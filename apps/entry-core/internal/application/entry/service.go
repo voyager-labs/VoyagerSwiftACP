@@ -857,14 +857,27 @@ func longestMatchingMount(mounts []domainentry.MountRef, path string) *domainent
 	return best
 }
 func propertiesWithinRequest(properties []domainentry.PropertyValue, requested []string) bool {
-	for propertyIndex, property := range properties {
-		if propertyIndex > 0 && properties[propertyIndex-1].PropertyID >= property.PropertyID {
+	// 어댑터는 requested(프로퍼티 이름 key) 순서대로 PropertyValue를 반환하며,
+	// source에 없는 프로퍼티는 생략할 수 있다. 따라서 반환 목록은 requested의
+	// Registry 파생 PropertyID 시퀀스의 부분수열이어야 하고, 미요청 프로퍼티나
+	// 순서 뒤섞임은 거부한다.
+	expected := make([]domainentry.PropertyID, 0, len(requested))
+	for _, name := range requested {
+		id, err := domainentry.RegistryPropertyID(name)
+		if err != nil {
 			return false
 		}
-		index := sort.SearchStrings(requested, property.PropertyID)
-		if index >= len(requested) || requested[index] != property.PropertyID {
+		expected = append(expected, id)
+	}
+	index := 0
+	for _, property := range properties {
+		for index < len(expected) && expected[index] != property.PropertyID {
+			index++
+		}
+		if index >= len(expected) {
 			return false
 		}
+		index++
 	}
 	return true
 }

@@ -148,7 +148,8 @@ func (rule ValidationRule) Validate(valueType PropertyType, cardinality Property
 }
 
 type PropertyDefinition struct {
-	PropertyID      string
+	PropertyID      PropertyID
+	IdentityScheme  PropertyIdentityScheme
 	Namespace       string
 	Key             string
 	DisplayName     string
@@ -170,13 +171,15 @@ func NewPropertyDefinition(definition PropertyDefinition) (PropertyDefinition, e
 }
 
 func (definition PropertyDefinition) Validate() error {
-	if !validUTF8Bytes(definition.PropertyID, 1, 128) || !validUTF8Bytes(definition.Namespace, 1, 128) ||
+	if !definition.PropertyID.valid() || !definition.IdentityScheme.valid() ||
+		!definition.IdentityScheme.acceptsVersion(definition.PropertyID.version()) ||
+		!validUTF8Bytes(definition.Namespace, 1, 128) ||
 		!validUTF8Bytes(definition.Key, 1, 128) || !validUTF8Bytes(definition.DisplayName, 1, 256) ||
 		!canonicalPropertyType(definition.ValueType) || !definition.Cardinality.valid() || !definition.Provenance.valid() ||
 		len(definition.ValidationRules) > maximumValidationRules {
 		return ErrInvalidPropertyDefinition
 	}
-	budget := len(definition.PropertyID) + len(definition.Namespace) + len(definition.Key) + len(definition.DisplayName)
+	budget := len(definition.PropertyID.String()) + len(definition.Namespace) + len(definition.Key) + len(definition.DisplayName)
 	if definition.Unit != nil {
 		if !validUTF8Bytes(*definition.Unit, 1, 64) || !addWithin(&budget, len(*definition.Unit), maximumDefinitionBudget) {
 			return ErrInvalidPropertyDefinition
@@ -375,7 +378,7 @@ func (value PropertyValue) validateCanonicalShape() error {
 	if value.StringValue != nil || value.Int64Value != nil || value.BoolValue != nil || value.TimestampValue != nil || value.StringListValue != nil {
 		return ErrInvalidPropertyValue
 	}
-	if !canonicalPropertyType(value.Type) || !validUTF8Bytes(value.PropertyID, 1, 128) || !validPrefixedDigest(value.EntryID, entryIDPrefix) ||
+	if !canonicalPropertyType(value.Type) || !value.PropertyID.valid() || !validPrefixedDigest(value.EntryID, entryIDPrefix) ||
 		!value.State.valid() || !value.Provenance.valid() || !validUTCTimestamp(value.ObservedAt) || value.SourceRevision.Validate() != nil ||
 		!value.Cardinality.valid() || value.Validation.Validate() != nil || !payloadWithinHardBounds(value.Payload) {
 		return ErrInvalidPropertyValue

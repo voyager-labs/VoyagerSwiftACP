@@ -381,7 +381,14 @@ func validSelectDefinition() PropertyDefinition {
 	return value
 }
 func definitionFor(valueType PropertyType) PropertyDefinition {
-	return PropertyDefinition{PropertyID: "property.title", Namespace: "system", Key: "title", DisplayName: "Title", ValueType: valueType, Cardinality: PropertyCardinalityOne, Nullable: false, Editable: true, Provenance: PropertyProvenanceSystem, ValidationRules: []ValidationRule{}}
+	return PropertyDefinition{PropertyID: mustRegistryPropertyID("property.title"), IdentityScheme: PropertyIdentitySchemeRegistryDerived, Namespace: "system", Key: "title", DisplayName: "Title", ValueType: valueType, Cardinality: PropertyCardinalityOne, Nullable: false, Editable: true, Provenance: PropertyProvenanceSystem, ValidationRules: []ValidationRule{}}
+}
+func mustRegistryPropertyID(key string) PropertyID {
+	id, err := RegistryPropertyID(key)
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 func textDefinitionWith(rule ValidationRule) PropertyDefinition {
 	value := validTextDefinition()

@@ -72,10 +72,17 @@ func TestResolveEntryRejectsUnsortedAdapterProperties(t *testing.T) {
 
 func unsortedCanonicalProperties(t *testing.T, item source.AdapterEntry) []domainentry.PropertyValue {
 	t.Helper()
+	// 의도적으로 내림차순("property.z" 먼저, "property.a" 다음)으로 만들어
+	// propertiesWithinRequest가 위치 불일치를 감지해 거부하도록 한다.
 	properties := make([]domainentry.PropertyValue, 0, 2)
 	for _, propertyID := range []string{"property.z", "property.a"} {
+		propertyIDValue, err := domainentry.RegistryPropertyID(propertyID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		definition := domainentry.PropertyDefinition{
-			PropertyID: propertyID, Namespace: "test", Key: propertyID,
+			PropertyID: propertyIDValue, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "test", Key: propertyID,
 			DisplayName: propertyID, ValueType: domainentry.PropertyTypeText,
 			Cardinality: domainentry.PropertyCardinalityOne, Editable: true,
 			Provenance: domainentry.PropertyProvenanceSystem, ValidationRules: []domainentry.ValidationRule{},
