@@ -310,8 +310,10 @@ extension RuntimeControlPlane {
             }
             return .result(result)
         } catch RuntimeHostError.persistenceConflict {
+            try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
             throw RuntimeHostError.persistenceConflict
         } catch RuntimeProviderTerminalAdmissionError.rejected {
+            try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
             throw RuntimeHostError.invalidEvent
         } catch is CancellationError {
             try await propagateCallerCancellation(

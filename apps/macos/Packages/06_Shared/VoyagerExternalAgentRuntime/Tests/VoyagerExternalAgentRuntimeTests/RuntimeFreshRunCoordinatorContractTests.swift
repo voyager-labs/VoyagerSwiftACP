@@ -974,7 +974,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
     /// provider terminal event의 유일한 repair write도 conflict하면 오류 분류와 write 상한을 유지하는지 검증한다.
     /// - 검증 내용: public persistenceConflict, exact apply count와 provider launch count.
     /// - 사전 조건: terminal event의 최초 저장과 유일한 repair 저장이 모두 CAS conflict한다.
-    /// - 기대 결과: persistenceConflict가 전달되고 apply는 총 5회, provider launch는 1회다.
+    /// - 기대 결과: persistenceConflict가 전달되고 apply는 총 5회, provider launch는 1회이며 consumption claim은 해제된다.
     @Test
     func `terminal event second CAS conflict remains persistenceConflict`() async throws {
         let host: ExternalAgentSessionReference = "host-contract-terminal-event-second-cas"
@@ -1002,6 +1002,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(await store.applyCount == 5)
         #expect(await adapter.counts().launch == 1)
         #expect(await store.currentState()?.sessions.first?.projection == .running)
+        #expect(await plane.sessions[host]?.lease.isActive == false)
     }
 
     /// VOY-746-coordinator_contract: a second terminal-result CAS conflict preserves contention classification.
@@ -1037,7 +1038,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
     /// gapped terminal event가 provider result fallback으로 terminal projection을 만들지 않는지 검증한다.
     /// - 검증 내용: public run 오류, eventOutOfOrder projection, gap evidence와 sequence cursor.
     /// - 사전 조건: sequence 2의 completed provider event만 전달되는 stream이 있다.
-    /// - 기대 결과: run은 invalidEvent로 끝나고 durable session은 terminal이 아닌 out-of-order 상태다.
+    /// - 기대 결과: run은 invalidEvent로 끝나고 durable session은 terminal이 아닌 out-of-order 상태이며 claim은 해제된다.
     @Test
     func `sequence gap does not synthesize terminal`() async throws {
         let host: ExternalAgentSessionReference = "host-contract-gap"
@@ -1075,6 +1076,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
             }
             return false
         })
+        #expect(await plane.sessions[host]?.lease.isActive == false)
     }
 
     /// VOY-746-coordinator_contract: a duplicate provider event is ignored.
