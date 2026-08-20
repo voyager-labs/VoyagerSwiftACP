@@ -16,6 +16,8 @@ func readEmbeddedDir(t *testing.T) fstest.MapFS {
 	for _, name := range []string{
 		"migrations/0001_workspace_metadata.up.sql",
 		"migrations/0001_workspace_metadata.down.sql",
+		"migrations/0002_workspace_property_catalog.up.sql",
+		"migrations/0002_workspace_property_catalog.down.sql",
 		"migrations/atlas.sum",
 	} {
 		b, err := fs.ReadFile(migrationsFS, name)
