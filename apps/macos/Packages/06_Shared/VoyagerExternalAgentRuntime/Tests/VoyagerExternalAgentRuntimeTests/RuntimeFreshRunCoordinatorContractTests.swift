@@ -863,6 +863,47 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// VOY-746-coordinator_contract: cancellation persistence failure releases its consumption owner.
+    /// receipt 이후 취소 저장 실패가 caller cancellation 분류를 바꾸지 않고 같은 run의 lease를 회수하는지 검증한다.
+    /// - 검증 내용: CancellationError, detached consuming lease, redacted cleanup evidence, provider launch count.
+    /// - 사전 조건: receipt-bearing terminal-only run의 네 번째 store apply가 실패한다.
+    /// - 기대 결과: run은 CancellationError로 끝나고 late provider terminal을 받을 수 있는 detached lease가 남는다.
+    @Test
+    func `cancellation persistence failure releases its consumption owner`() async throws {
+        let host: ExternalAgentSessionReference = "host-contract-cancel-persist-failure"
+        let run = RuntimeRunReference("run-contract-cancel-persist-failure")
+        let resultGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            terminalResultGate: resultGate,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [4])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "terminal")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForTerminalResultCount(1)
+        runTask.cancel()
+        await resultGate.open()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await runTask.value
+        }
+        let session = try #require(await plane.sessions[host])
+        #expect(session.stored.projection == .running)
+        #expect(isDetachedConsuming(session.lease))
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// VOY-746-coordinator_contract: detached consumption accepts a later contiguous provider terminal.
     /// receipt 이후 caller 취소로 detached consuming이 된 run이 후속 provider terminal을 수용하는지 검증한다.
     /// - 검증 내용: callerCancel decision, detached lease, contiguous provider terminal, exact apply/launch count.

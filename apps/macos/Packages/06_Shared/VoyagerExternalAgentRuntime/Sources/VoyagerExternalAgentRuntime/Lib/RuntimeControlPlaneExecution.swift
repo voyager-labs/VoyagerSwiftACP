@@ -210,8 +210,32 @@ extension RuntimeControlPlane {
                 )
             }
         }
-        _ = await persistence.result
+        if case .failure = await persistence.result {
+            await recoverCallerCancellationPersistenceFailure(
+                host: host,
+                originatingRunReference: originatingRunReference,
+            )
+        }
         throw CancellationError()
+    }
+
+    private func recoverCallerCancellationPersistenceFailure(
+        host: ExternalAgentSessionReference,
+        originatingRunReference: RuntimeRunReference,
+    ) async {
+        applyCleanupFailedDecision(
+            host: host,
+            runReference: originatingRunReference,
+        )
+        try? await mutateAfterPersistedTransitions { plane in
+            guard var session = plane.sessions[host],
+                  session.stored.runReference == originatingRunReference,
+                  case let .consuming(lease) = session.lease
+            else { return }
+            session.lease = session.stored.projection.isTerminal ? .none : .detachedConsuming(lease)
+            session.revision += 1
+            plane.sessions[host] = session
+        }
     }
 
     private func resolveLaunchFailure(
