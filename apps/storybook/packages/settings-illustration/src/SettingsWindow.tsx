@@ -1,5 +1,5 @@
 import { type TabItem, TabView, TrafficLights } from "@voyager-labs/design-foundation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { FC } from "react"
 import { AiSettingsPane } from "./Layouts/AiSettingsPane"
 import { AppearanceSettingsPane } from "./Layouts/AppearanceSettingsPane"
@@ -22,6 +22,10 @@ const TABS: readonly TabItem[] = [
 export const SettingsWindow: FC<SettingsIllustrationProps> = ({ state }) => {
   // 유일한 상호작용: 가로 탭 바 전환. 초기값은 fixture의 activeTab에서 시드한다.
   const [activeTab, setActiveTab] = useState<SettingsTab>(state.activeTab)
+  // Storybook Controls에서 fixture의 activeTab이 바뀌면 로컬 탭도 동기화한다.
+  useEffect(() => {
+    setActiveTab(state.activeTab)
+  }, [state.activeTab])
 
   return (
     <div data-settings-illustration>

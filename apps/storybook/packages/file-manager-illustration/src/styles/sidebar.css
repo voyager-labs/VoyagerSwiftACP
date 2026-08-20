@@ -154,76 +154,76 @@
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  gap: var(--fm-space-4);
+  gap: 8px;
   width: 100%;
   height: 24px;
   border: 0;
-  border-radius: var(--fm-sidebar-row-radius);
+  border-radius: 6px;
   background: transparent;
-  padding: 0 calc(var(--fm-space-4) + var(--fm-sidebar-tab-action-size)) 0 var(--fm-space-4);
-  color: var(--fm-text-secondary);
+  padding: 0 26px 0 8px;
+  color: var(--macos-secondary-label-color);
   text-align: left;
-  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
-    color var(--fm-motion-fast) ease, transform var(--fm-motion-fast) ease;
+  transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms
+    ease;
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item:hover {
-  background: var(--fm-sidebar-hover);
+  background: var(--macos-sidebar-hover-fill);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item:active {
-  background: var(--fm-control-pressed);
+  background: var(--macos-tertiary-system-fill);
   transform: translateY(1px);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+  box-shadow: 0 0 0 2px var(--macos-keyboard-focus-indicator-color);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item
   strong {
   overflow: hidden;
-  font-size: var(--fm-font-size-body);
-  font-weight: var(--fm-weight-regular);
+  font-size: 13px;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item.active {
-  background: var(--fm-sidebar-selection);
-  color: var(--fm-text-primary);
+  background: var(--macos-sidebar-selection-background);
+  color: var(--macos-label-color);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-icon.active {
-  color: var(--fm-selection-label);
+  color: var(--macos-control-accent-color);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item-action {
   position: absolute;
-  right: var(--fm-space-3);
+  right: 6px;
   display: grid;
-  width: var(--fm-sidebar-tab-action-size);
-  height: var(--fm-sidebar-tab-action-size);
+  width: 18px;
+  height: 18px;
   place-items: center;
   visibility: hidden;
   border: 0;
-  border-radius: var(--fm-radius-xs);
+  border-radius: 4px;
   background: transparent;
   padding: 0;
-  color: var(--fm-text-secondary);
-  font-size: var(--fm-font-size-caption);
-  font-weight: var(--fm-weight-semibold);
+  color: var(--macos-secondary-label-color);
+  font-size: 12px;
+  font-weight: 600;
   opacity: 0;
-  transition: background-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease,
-    color var(--fm-motion-fast) ease, opacity var(--fm-motion-fast) ease;
+  transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease, opacity 120ms
+    ease;
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
@@ -241,14 +241,14 @@
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item-action:hover {
-  background: var(--fm-control-hover);
-  color: var(--fm-text-primary);
+  background: var(--macos-secondary-system-fill);
+  color: var(--macos-label-color);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .nav-item-action:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+  box-shadow: 0 0 0 2px var(--macos-keyboard-focus-indicator-color);
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
@@ -257,7 +257,14 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  color: var(--fm-text-tertiary);
+  color: var(--macos-tertiary-label-color);
+}
+
+/* Sequoia baseline: action 버튼 radius를 file-manager의 --fm-radius-xs 오버라이드(3px)와 동일하게 유지. */
+:root[data-voyager-visual-baseline="sequoia"]
+  :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-action {
+  border-radius: 3px;
 }
 
 [data-file-manager-illustration] .folder-glyph::before {
