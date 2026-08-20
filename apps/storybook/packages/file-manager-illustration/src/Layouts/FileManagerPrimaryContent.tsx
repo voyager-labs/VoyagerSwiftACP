@@ -1,8 +1,8 @@
 import type { FC } from "react"
 import { FileBrowser } from "../Domains/Entries/FileBrowser"
-import type { EntryViewMode } from "../Patterns/Content/FileToolbar"
 import type { ContentRoute } from "../model/content-route"
 import type { HomeChat, HomeFavorite, HomeLocation } from "../model/home"
+import type { EntryViewMode } from "../model/types"
 import type { Entry, EntrySelectionIntent } from "../model/types"
 import { Home } from "./Home"
 

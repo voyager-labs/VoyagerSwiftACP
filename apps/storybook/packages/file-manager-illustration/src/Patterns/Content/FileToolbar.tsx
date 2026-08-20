@@ -1,9 +1,8 @@
 import { IconButton } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
+import type { EntryViewMode } from "../../model/types"
 import { ToolbarNavigation } from "./ToolbarNavigation"
-
-export type EntryViewMode = "grid" | "list"
 
 export type FileToolbarContent = "directory" | "home"
 

@@ -1,9 +1,7 @@
 import type { FC } from "react"
 import { AiChatView } from "../Domains/Chat/AiChatView"
 import { SFSymbol } from "../Foundations/SFSymbol"
-import type { AiChatInputBarActions, ChatSurfaceState } from "../model/types"
-
-export type InspectorChatHeader = "sessions" | "chat"
+import type { AiChatInputBarActions, ChatSurfaceState, InspectorChatHeader } from "../model/types"
 
 export interface InspectorPaneProps {
   readonly chatHeader: InspectorChatHeader

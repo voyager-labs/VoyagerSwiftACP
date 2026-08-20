@@ -2,6 +2,8 @@ import type { SidebarTabItem } from "@voyager-labs/design-foundation"
 
 export type EntryKind = "pdf" | "image" | "folder" | "sheet" | "doc" | "video" | "archive"
 
+export type EntryViewMode = "grid" | "list"
+
 export type {
   SidebarTabItem,
   SidebarIconProps,
@@ -125,6 +127,8 @@ export type ChatSessionSection = {
   readonly title: string
   readonly rows: readonly ChatSessionRow[]
 }
+
+export type InspectorChatHeader = "sessions" | "chat"
 
 export type ChatConnectionError = {
   readonly title: string

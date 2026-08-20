@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { FC, KeyboardEvent, MouseEvent } from "react"
-import type { EntryViewMode } from "../../Patterns/Content/FileToolbar"
+import type { EntryViewMode } from "../../model/types"
 import type { Entry, EntrySelectionIntent } from "../../model/types"
 import { EntryGrid } from "./EntryGrid"
 import type { EntryGridEntry } from "./EntryGrid"
