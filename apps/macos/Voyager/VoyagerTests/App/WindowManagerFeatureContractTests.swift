@@ -10191,6 +10191,90 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
+    /// 같은 window의 비활성 pinned Collection 복귀는 동기 완료되어 settlement를 기다리지 않는다.
+    /// - 검증 내용: 최종 active Collection의 성공 delegate만으로 external open activation을 완료함
+    /// - 사전 조건: 비활성 tab은 동기 복귀 완료, 최종 active tab은 비동기 복귀 중임
+    /// - 기대 결과: 비활성 tab의 delegate 없이 authorized batch와 activation attempt가 해제됨
+    func testPlacementActivationWaitsOnlyForActivePinnedCollectionReturn() async {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let windowID = fixture.plan.windows[0].windowID
+        let inactiveTabID = ContentTabID(rawValue: "inactive-pinned-collection-return")
+        let inactiveAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/tmp/durable-inactive.voycoll"),
+        )
+        let inactiveItemID = UUID()
+        var state = fixture.state
+        state.windows[id: windowID]?.window.contentTabs.tabs.append(.init(
+            id: inactiveTabID,
+            page: .collection,
+            anchor: inactiveAnchor,
+            isPinned: true,
+        ))
+        state.windows[id: windowID]?.window.contentTabs.pinnedRecords[inactiveTabID] = .init(
+            id: inactiveTabID.rawValue,
+            page: .collection,
+            anchor: inactiveAnchor,
+            title: "Durable Inactive Collection",
+            iconName: "rectangle.stack",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        let activeItem = fixture.plan.windows[0].items[0]
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                .init(itemID: inactiveItemID, anchor: inactiveAnchor, pendingSelectEntryID: nil),
+                .init(itemID: activeItem.itemID, anchor: activeItem.anchor, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [
+                    .init(
+                        itemID: inactiveItemID,
+                        tabID: inactiveTabID,
+                        anchor: inactiveAnchor,
+                        requiresReservation: false,
+                        requiresPinnedAnchorReturn: true,
+                    ),
+                    activeItem,
+                ],
+            )],
+            request: request,
+        )
+        state.externalOpenActivationBecameKey = true
+        state.externalOpenActivationAttempt = .init(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: completion delegate 외 window lifecycle은 기존 activation owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: fixture.tabID,
+                navigationState: .folder("/tmp"),
+            ))),
+        )))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+    }
+
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
     func testWindowLifecycleMaintainsRuntimeMRUIndependentlyFromFocus() async {
         let firstID = UUID()
