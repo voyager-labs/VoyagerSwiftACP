@@ -19,21 +19,21 @@ The contract is intentionally unversioned while there is only one canonical repr
 
 ## Architecture
 
-| Path                                  | Responsibility                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------- |
-| `cmd/entry-core`                      | canonical wire contract CLI argument, request ID, output, exit-code adapter                  |
-| `cmd/entry-core-daemon`               | canonical wire contract foreground process, signal, server composition root                  |
-| `protocol/schema`                     | strict canonical wire contract JSON DTO, validation, response-size contract      |
-| `internal/domain/entry`               | transport-free Entry values and invariants                              |
-| `internal/mount`                      | workspace mount registry, normalization, forward/reverse resolution     |
-| `internal/source`                     | local and fake-external adapters with source-scoped cursors             |
-| `internal/application/entry`          | bounded workspace list/resolve, fair multi-source pagination, context mapping |
-| `internal/runtime`                    | lifecycle, canonical wire dispatch, injected Entry contract list/resolve |
-| `internal/transport/unixsocket`       | canonical wire contract one-shot UDS client/server and lifecycle                |
-| `internal/persistence/sqlite`         | SQLite store lifecycle, versioned migrations, workspace bootstrap/restore, `WithinTx` mutation boundary (store/migrate/checksum/workspace/tx/model/embed) |
-| `internal/domain/entry`               | transport-free Entry values and invariants, typed UUIDv7 `WorkspaceID` + `WorkspaceContext` |
-| `integration/entry_contract_test.go`  | unified local+fake-external canonical list/continuation/resolve proof         |
-| `integration/daemon_smoke_test.go`    | sole Go integration owner for real CLI and daemon process smoke (including persistence smoke)         |
+| Path                                 | Responsibility                                                                                                                                            |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cmd/entry-core`                     | canonical wire contract CLI argument, request ID, output, exit-code adapter                                                                               |
+| `cmd/entry-core-daemon`              | canonical wire contract foreground process, signal, server composition root                                                                               |
+| `protocol/schema`                    | strict canonical wire contract JSON DTO, validation, response-size contract                                                                               |
+| `internal/domain/entry`              | transport-free Entry values and invariants                                                                                                                |
+| `internal/mount`                     | workspace mount registry, normalization, forward/reverse resolution                                                                                       |
+| `internal/source`                    | local and fake-external adapters with source-scoped cursors                                                                                               |
+| `internal/application/entry`         | bounded workspace list/resolve, fair multi-source pagination, context mapping                                                                             |
+| `internal/runtime`                   | lifecycle, canonical wire dispatch, injected Entry contract list/resolve                                                                                  |
+| `internal/transport/unixsocket`      | canonical wire contract one-shot UDS client/server and lifecycle                                                                                          |
+| `internal/persistence/sqlite`        | SQLite store lifecycle, versioned migrations, workspace bootstrap/restore, `WithinTx` mutation boundary (store/migrate/checksum/workspace/tx/model/embed) |
+| `internal/domain/entry`              | transport-free Entry values and invariants, typed UUIDv7 `WorkspaceID` + `WorkspaceContext`                                                               |
+| `integration/entry_contract_test.go` | unified local+fake-external canonical list/continuation/resolve proof                                                                                     |
+| `integration/daemon_smoke_test.go`   | sole Go integration owner for real CLI and daemon process smoke (including persistence smoke)                                                             |
 
 Dev/CI-only tooling (never linked into the daemon binary): `internal/persistence/sqlite/tools/atlas-schema` loads the desired GORM schema for Atlas generation and validation.
 
@@ -46,6 +46,8 @@ mise run entry-core-build
 mise run entry-core-test
 mise run entry-core-test-race
 mise run entry-core-smoke
+mise run entry-core-property-catalog-generate
+mise run entry-core-property-catalog-validate
 mise run entry-core-check
 mise run entry-core-interop-check
 ```
@@ -60,7 +62,24 @@ make -C apps/entry-core smoke
 make -C apps/entry-core check
 ```
 
-`entry-core-build` compiles both real command packages without writing repository binaries. `entry-core-smoke` runs only `TestDaemonProcessSmoke`. `entry-core-check` composes build, full test, full race, canonical smoke, vet, gofmt, and module invariant checks.
+`entry-core-build` compiles both real command packages without writing repository binaries. `entry-core-smoke` runs only `TestDaemonProcessSmoke`. `entry-core-check` composes build, full test, full race, canonical smoke, the property-catalog validation, the migration validation, vet, gofmt, and module invariant checks.
+
+## Property catalog seed and condition catalog
+
+The System Property Registry (`shared/system_property_registry.json`) and the Property Condition Registry (`shared/property_condition_registry.json`) are projected at development time into committed immutable artifacts:
+
+- `internal/persistence/sqlite/seeds/0001_system_property_catalog_v2_4_1.sql` — full-state SQL seed (278 Workspace definitions, 294 source descriptors, 296 bindings, 441 terms = 1,309 rows). The SQL contains no transaction statements, runtime path, secret, or Registry JSON blob.
+- `internal/persistence/sqlite/seeds/catalog_gen.go` — generated seed metadata (ordinal, System Registry version, SQL SHA-256, canonical dataset digest, fresh-row counts).
+- `internal/domain/entry/property_condition_catalog_gen.go` — compiled Condition Registry catalog (version 2.2.0, 20 operators, all 42 `(operator, allowed_type)` relations) with typed lookup/validation in `property_condition.go`. Executable condition semantics live in Go; no SQLite condition table exists.
+
+The generator is dev/CI-only under `internal/tools/property-catalog` (never linked into the daemon). It accepts explicit paths and `--write` or side-effect-free `--check`:
+
+```bash
+mise run entry-core-property-catalog-generate   # regenerate + write committed artifacts
+mise run entry-core-property-catalog-validate   # verify committed artifacts are current (stale/missing rejected)
+```
+
+`entry-core-property-catalog-generate` rewrites the three generated artifacts from the canonical Registries; `entry-core-property-catalog-validate` fails if any committed artifact is missing or stale, and `entry-core-check` depends on it.
 
 ## Dependency and native event decisions
 
