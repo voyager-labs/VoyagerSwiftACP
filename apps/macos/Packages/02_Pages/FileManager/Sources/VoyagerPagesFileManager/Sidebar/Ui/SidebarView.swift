@@ -397,6 +397,7 @@ private extension SidebarView {
             pinPresentation: presentations.pin,
             closePresentation: presentations.close,
             onActivate: actions.onActivate,
+            onReturnToPinnedLocation: actions.onReturnToPinnedLocation,
             onToggleSelection: actions.onToggleSelection,
             onSelectRange: actions.onSelectRange,
             onDuplicate: actions.onDuplicate,
@@ -446,6 +447,7 @@ private extension SidebarView {
 
     private struct ContentTabSidebarRowActions {
         let onActivate: () -> Void
+        let onReturnToPinnedLocation: () -> Void
         let onToggleSelection: () -> Void
         let onSelectRange: () -> Void
         let onDuplicate: (() -> Void)?
@@ -474,6 +476,9 @@ private extension SidebarView {
         return ContentTabSidebarRowActions(
             onActivate: {
                 _ = sidebarStore.send(.delegate(.selectContentTab(item.id)))
+            },
+            onReturnToPinnedLocation: {
+                sidebarStore.send(.delegate(.returnContentTabToPinnedLocation(item.id)))
             },
             onToggleSelection: {
                 _ = sidebarStore.send(.view(.toggleContentTabSelection(item.id)))

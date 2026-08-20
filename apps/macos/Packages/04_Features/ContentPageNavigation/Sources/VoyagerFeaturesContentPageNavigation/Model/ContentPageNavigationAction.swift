@@ -24,11 +24,21 @@ public struct ContentPageCollectionOpenRequest: Equatable, Sendable {
     public let id: UUID
     public let url: URL
     public let sourceRoute: ContentPageNavigationRoute
+    public let prePrepareBackHistory: [ContentPageNavigationHistorySnapshot]
+    public let prePrepareForwardHistory: [ContentPageNavigationHistorySnapshot]
 
-    public init(id: UUID, url: URL, sourceRoute: ContentPageNavigationRoute) {
+    public init(
+        id: UUID,
+        url: URL,
+        sourceRoute: ContentPageNavigationRoute,
+        prePrepareBackHistory: [ContentPageNavigationHistorySnapshot],
+        prePrepareForwardHistory: [ContentPageNavigationHistorySnapshot],
+    ) {
         self.id = id
         self.url = url
         self.sourceRoute = sourceRoute
+        self.prePrepareBackHistory = prePrepareBackHistory
+        self.prePrepareForwardHistory = prePrepareForwardHistory
     }
 }
 
@@ -63,6 +73,10 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case performShowAiChatSessions(String)
         case prepareCollectionFileOpen(URL)
         case rollbackBackHistoryOnce
+        case restoreHistory(
+            back: [ContentPageNavigationHistorySnapshot],
+            forward: [ContentPageNavigationHistorySnapshot],
+        )
         case appendBackHistory(ContentPageNavigationHistorySnapshot)
         case clearForwardHistory
         case setNavigationState(ContentPageNavigationRoute)

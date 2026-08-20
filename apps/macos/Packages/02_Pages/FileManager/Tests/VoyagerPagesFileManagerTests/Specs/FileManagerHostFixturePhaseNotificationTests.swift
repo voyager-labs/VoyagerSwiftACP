@@ -67,7 +67,11 @@ final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
     }
 
     func testFocusedScenarioFixturesKeepSingleHomeTab() {
-        for preset in FileManagerHostPreset.allCases where preset != .default {
+        let focusedScenarioPresets = FileManagerHostPreset.allCases.filter {
+            $0 != .default && $0.switcherPresentationSource == nil
+        }
+
+        for preset in focusedScenarioPresets {
             let state = FileManagerHostFixture.makeState(preset: preset, windowID: UUID())
 
             if preset == .delayedTabSwitch {

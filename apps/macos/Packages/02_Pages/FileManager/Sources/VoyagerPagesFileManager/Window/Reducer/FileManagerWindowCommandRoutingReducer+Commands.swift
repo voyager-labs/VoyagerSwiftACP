@@ -57,8 +57,10 @@ extension FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         guard case .aiChat = state.contentTabs.tabs[id: tabID]?.anchor else { return .none }
         let sessionIDString = sessionID.rawValue.uuidString
-        let updateAnchorEffect: Effect<Action> = .send(
-            .contentTabs(.updateActivePageAnchor(tabID, .aiChat(sessionID: sessionIDString))),
+        let updateAnchorEffect = updateContentTabPageAnchorEffect(
+            tabID: tabID,
+            anchor: .aiChat(sessionID: sessionIDString),
+            state: state,
         )
         let routingEffect: Effect<Action> = if tabID == state.contentTabs.activeTabID {
             .merge(
@@ -78,6 +80,7 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleHomeChatHistorySessionSelected(
         _ sessionID: AiChatSessionID,
         activeTabID: ContentTabID,
+        state: State,
     ) -> Effect<Action> {
         let sessionString = sessionID.rawValue.uuidString
         let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionString)
@@ -102,7 +105,7 @@ extension FileManagerWindowCommandRoutingReducer {
 
         return .concatenate(
             .send(.inspector(.closeChat)),
-            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+            updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
             .send(.navigation(.view(.showAiChat(sessionString)))),
             .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
             providerLoadEffect,
@@ -112,11 +115,12 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleHomePageAnchorSelected(
         _ anchor: ContentTabPageAnchor,
         activeTabID: ContentTabID,
+        state: State,
     ) -> Effect<Action> {
         switch anchor {
         case let .directory(path):
             return .concatenate(
-                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
                 .send(.navigation(.view(.navigateToPath(path)))),
             )
 
@@ -125,7 +129,7 @@ extension FileManagerWindowCommandRoutingReducer {
 
         case .homeDefault,
              .virtualCollection:
-            return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+            return updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state)
 
         case let .aiChat(sessionID):
             guard let rawSessionID = UUID(uuidString: sessionID) else { return .none }
@@ -151,7 +155,7 @@ extension FileManagerWindowCommandRoutingReducer {
 
             return .concatenate(
                 .send(.inspector(.closeChat)),
-                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
                 .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.navigation(.view(.showAiChat(sessionID)))),
                 .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
@@ -242,6 +246,9 @@ extension FileManagerWindowCommandRoutingReducer {
 
         case .selectMostRecentlyUsedContentTab:
             handleSelectMostRecentlyUsedContentTab(state: &state)
+
+        case let .presentContentTabSwitcher(source):
+            handlePresentContentTabSwitcher(source: source, state: &state)
 
         default:
             nil
@@ -404,17 +411,7 @@ extension FileManagerWindowCommandRoutingReducer {
     }
 
     func handleSelectMostRecentlyUsedContentTab(state: inout State) -> Effect<Action> {
-        guard !state.isClosing,
-              state.pendingSelectedContentTabClose == nil,
-              state.pendingContentTabClose == nil,
-              state.pendingContentTabTeardown == nil,
-              state.pendingSelectedContentTabPinMutation == nil,
-              state.pendingContentTabMove == nil,
-              state.contentTabMoveParticipantRequestID == nil,
-              state.pendingTopNavigationIntents.isEmpty,
-              state.contentTabs.pendingPinnedRecordIDs.isEmpty
-        else { return .none }
-        if case .tearingDownTab = state.undoRedoPhase { return .none }
+        guard canRouteRecentContentTabInteraction(state) else { return .none }
 
         guard let targetID = state.contentTabs.takeMostRecentlyUsedInactiveTabID() else {
             return unavailableRecentlyUsedContentTabFeedbackEffect()

@@ -1,5 +1,5 @@
+import { MenuItem } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
-import { MenuItem } from "../../UI/Controls/MenuItem"
 import type { ContextMenuAction } from "../../model/types"
 
 export interface ContextMenuProps {

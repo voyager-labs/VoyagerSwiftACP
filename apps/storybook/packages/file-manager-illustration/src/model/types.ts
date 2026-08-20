@@ -1,4 +1,13 @@
+import type { SidebarTabItem } from "@voyager-labs/design-foundation"
+
 export type EntryKind = "pdf" | "image" | "folder" | "sheet" | "doc" | "video" | "archive"
+
+export type {
+  SidebarTabItem,
+  SidebarIconProps,
+  SidebarNavItemProps,
+  TrafficLightsProps,
+} from "@voyager-labs/design-foundation"
 
 /** Public file projection — the only file shape consumers pass. */
 export type FileEntry = {
@@ -14,23 +23,10 @@ export type FileEntry = {
 
 export type EntrySelectionIntent = "replace" | "toggle" | "range"
 
-export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
-
 /** Internal breadcrumb segment with SF Symbol name for icon rendering. */
 export type BreadcrumbSegment = {
   readonly label: string
   readonly symbolName: string
-}
-
-export type SidebarTabItem = {
-  readonly id: string
-  readonly label: string
-  readonly icon: SidebarIconKind
-  readonly active?: boolean
-  readonly isPinned?: boolean
-  readonly secondary?: string
-  readonly pageAnchor?: string
-  readonly breadcrumb?: readonly BreadcrumbSegment[]
 }
 
 export type SidebarTabAction = (item: SidebarTabItem) => void
@@ -73,21 +69,6 @@ export type SidebarSectionProps = {
   readonly title?: string
   readonly compact?: boolean
 }
-
-export type SidebarIconProps = {
-  readonly icon: SidebarIconKind
-  readonly isActive?: boolean
-}
-
-export type SidebarNavItemProps = {
-  readonly item: SidebarTabItem
-  readonly actionRevealed?: boolean
-  readonly onSelect?: SidebarTabAction
-  readonly onUnpin?: SidebarTabAction
-  readonly onClose?: SidebarTabAction
-}
-
-export type TrafficLightsProps = Record<string, never>
 
 export type ContextMenuAction = {
   readonly id: string

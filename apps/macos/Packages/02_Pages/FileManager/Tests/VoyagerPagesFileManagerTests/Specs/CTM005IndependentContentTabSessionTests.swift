@@ -2594,6 +2594,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             id: UUID(608),
             url: URL(fileURLWithPath: "/tmp/target.voycoll"),
             sourceRoute: content.navigation.navigationState,
+            prePrepareBackHistory: content.navigation.backHistory,
+            prePrepareForwardHistory: content.navigation.forwardHistory,
         )
         state.syncContentTabSidebarItems()
 

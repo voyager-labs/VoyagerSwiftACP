@@ -12,6 +12,29 @@ public extension ContentTabProjection {
         public let pageType: ContentTabPage
         public let isActive: Bool
         public let isPinned: Bool
+        let canReturnToPinnedLocation: Bool
+
+        init(
+            id: ContentTabID,
+            title: String?,
+            iconName: String?,
+            targetURL: URL?,
+            tagColorCode: Int?,
+            pageType: ContentTabPage,
+            isActive: Bool,
+            isPinned: Bool,
+            canReturnToPinnedLocation: Bool = false,
+        ) {
+            self.id = id
+            self.title = title
+            self.iconName = iconName
+            self.targetURL = targetURL
+            self.tagColorCode = tagColorCode
+            self.pageType = pageType
+            self.isActive = isActive
+            self.isPinned = isPinned
+            self.canReturnToPinnedLocation = canReturnToPinnedLocation
+        }
     }
 }
 
@@ -28,7 +51,8 @@ extension ContentTabProjection {
 public extension ContentTabProjection {
     static func sidebarItems(from state: ContentTabState) -> [ContentTabSidebarItem] {
         state.tabs.map { tab in
-            ContentTabSidebarItem(
+            let pinnedRecord = state.pinnedRecords[tab.id]
+            return ContentTabSidebarItem(
                 id: tab.id,
                 title: tab.title,
                 iconName: tab.iconName,
@@ -37,6 +61,9 @@ public extension ContentTabProjection {
                 pageType: tab.page,
                 isActive: state.activeTabID == tab.id,
                 isPinned: tab.isPinned,
+                canReturnToPinnedLocation: tab.isPinned
+                    && pinnedRecord?.isSupportedPinnedContentTab == true
+                    && pinnedRecord?.anchor != tab.anchor,
             )
         }
     }

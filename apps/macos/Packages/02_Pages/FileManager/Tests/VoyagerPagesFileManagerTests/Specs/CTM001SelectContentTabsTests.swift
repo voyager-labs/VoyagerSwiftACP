@@ -242,14 +242,108 @@ final class CTM001SelectContentTabsTests: XCTestCase {
                 isPinned: true,
             )
             let pinnedMenu = try XCTUnwrap(fixture.button.menu)
-            XCTAssertEqual(pinnedMenu.items.map(\.title), ["Duplicate", "Unpin"])
+            XCTAssertEqual(
+                pinnedMenu.items.map(\.title),
+                ["Duplicate", "Return to Pinned Location", "Unpin"],
+            )
             XCTAssertTrue(fixture.recorder.menuActions.isEmpty)
 
             for item in pinnedMenu.items {
                 let action = try XCTUnwrap(item.action)
                 XCTAssertTrue(NSApp.sendAction(action, to: item.target, from: item))
             }
-            XCTAssertEqual(fixture.recorder.menuActions, [.duplicate, .unpin])
+            XCTAssertEqual(fixture.recorder.menuActions, [.duplicate, .returnToPinnedLocation, .unpin])
+        }
+    }
+
+    /// CTM-001-select_content_tabs: pinned location icon 영역은 row와 독립된 native hit target을 소유함
+    /// 기존 아이콘을 유지한 full-height leading hover/click이 whole-row activation 없이 pinned location callback만 전달하는지 검증한다.
+    /// - 검증 내용: row 높이와 왼쪽 여백을 포함한 leading child hit identity, background-only hover, callback 격리
+    /// - 사전 조건: 실제 frame을 가진 pinned ContentTabSidebarButton
+    /// - 기대 결과: hover 시 기존 아이콘 위에 배경만 표시되고 click은 return callback만 한 번 실행함
+    func testPinnedLocationButtonOwnsIconHitTargetAndDispatchesReturnAction() throws {
+        try withContentTabButtonFixture(isPinned: true) { fixture in
+            fixture.button.layoutSubtreeIfNeeded()
+            let pinnedLocationButton = try XCTUnwrap(
+                fixture.button.subviews.compactMap { $0 as? ContentTabSidebarPinnedLocationButton }.first,
+            )
+            let leadingHitPoint = pinnedLocationButton.convert(
+                NSPoint(x: 1, y: pinnedLocationButton.bounds.midY),
+                to: fixture.button.superview,
+            )
+            let trailingHitPoint = pinnedLocationButton.convert(
+                NSPoint(x: pinnedLocationButton.bounds.maxX - 1, y: pinnedLocationButton.bounds.midY),
+                to: fixture.button.superview,
+            )
+
+            XCTAssertEqual(pinnedLocationButton.frame.minX, fixture.button.bounds.minX, accuracy: 0.001)
+            XCTAssertEqual(pinnedLocationButton.frame.maxX, 36, accuracy: 0.001)
+            XCTAssertEqual(pinnedLocationButton.frame.height, fixture.button.bounds.height, accuracy: 0.001)
+            XCTAssertIdentical(fixture.button.hitTest(leadingHitPoint), pinnedLocationButton)
+            XCTAssertIdentical(fixture.button.hitTest(trailingHitPoint), pinnedLocationButton)
+            XCTAssertEqual(pinnedLocationButton.title, "")
+            XCTAssertNil(pinnedLocationButton.image)
+
+            let event = try mouseEvent(
+                .mouseMoved,
+                on: fixture.button,
+                modifiers: [],
+                locationInButton: leadingHitPoint,
+                eventNumber: 1,
+            )
+            pinnedLocationButton.appearance = NSAppearance(named: .aqua)
+            pinnedLocationButton.mouseEntered(with: event)
+            XCTAssertNil(pinnedLocationButton.image)
+            XCTAssertEqual(pinnedLocationButton.layer?.backgroundColor?.alpha ?? -1, 0.06, accuracy: 0.001)
+
+            pinnedLocationButton.performClick(nil)
+            XCTAssertEqual(fixture.recorder.menuActions, [.returnToPinnedLocation])
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+
+            pinnedLocationButton.mouseExited(with: event)
+            XCTAssertNil(pinnedLocationButton.image)
+            XCTAssertEqual(pinnedLocationButton.layer?.backgroundColor?.alpha ?? -1, 0, accuracy: 0.001)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: durable anchor와 같은 pinned tab은 return affordance를 비활성화함
+    /// 복귀할 위치 차이가 없을 때 leading hover target과 context-menu command가 동작하지 않는지 검증한다.
+    /// - 검증 내용: hidden/disabled leading child, parent row hit ownership, disabled Return menu item
+    /// - 사전 조건: pinned이지만 return eligibility가 false인 ContentTabSidebarButton
+    /// - 기대 결과: hover 배경과 callback이 없고 Return to Pinned Location 메뉴가 disabled임
+    func testPinnedLocationReturnIsDisabledAtDurableAnchor() throws {
+        try withContentTabButtonFixture(
+            isPinned: true,
+            isReturnToPinnedLocationEnabled: false,
+        ) { fixture in
+            fixture.button.layoutSubtreeIfNeeded()
+            let pinnedLocationButton = try XCTUnwrap(
+                fixture.button.subviews.compactMap { $0 as? ContentTabSidebarPinnedLocationButton }.first,
+            )
+            let leadingHitPoint = fixture.button.convert(
+                NSPoint(x: 1, y: fixture.button.bounds.midY),
+                to: fixture.button.superview,
+            )
+
+            XCTAssertTrue(pinnedLocationButton.isHidden)
+            XCTAssertFalse(pinnedLocationButton.isEnabled)
+            XCTAssertIdentical(fixture.button.hitTest(leadingHitPoint), fixture.button)
+
+            let event = try mouseEvent(
+                .mouseMoved,
+                on: fixture.button,
+                modifiers: [],
+                locationInButton: leadingHitPoint,
+                eventNumber: 1,
+            )
+            pinnedLocationButton.mouseEntered(with: event)
+            XCTAssertNil(pinnedLocationButton.image)
+            XCTAssertEqual(pinnedLocationButton.layer?.backgroundColor?.alpha ?? -1, 0, accuracy: 0.001)
+
+            let menu = try XCTUnwrap(fixture.button.menu)
+            let returnItem = try XCTUnwrap(menu.items.first { $0.title == "Return to Pinned Location" })
+            XCTAssertFalse(returnItem.isEnabled)
+            XCTAssertTrue(fixture.recorder.menuActions.isEmpty)
         }
     }
 
@@ -511,6 +605,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
         await store.send(.sidebar(.delegate(.selectContentTab(tabB))))
         await store.receive { action in
+            guard case let .selectContentTab(id) = action else { return false }
+            return id == tabB
+        }
+        await store.receive { action in
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == tabB
         } assert: {
@@ -553,6 +651,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             }
         }
         await store.send(.sidebar(.delegate(.selectContentTab(tabA))))
+        await store.receive { action in
+            guard case let .selectContentTab(id) = action else { return false }
+            return id == tabA
+        }
         await store.receive { action in
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == tabA
@@ -1175,6 +1277,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
     private enum ContentTabMenuAction: Equatable {
         case duplicate
+        case returnToPinnedLocation
         case pin
         case unpin
         case close
@@ -1201,6 +1304,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     private func withContentTabButtonFixture(
         recorder: ContentTabButtonRecorder = ContentTabButtonRecorder(),
         isPinned: Bool = false,
+        isReturnToPinnedLocationEnabled: Bool = true,
         _ body: (ContentTabButtonFixture) throws -> Void,
     ) rethrows {
         _ = NSApplication.shared
@@ -1218,6 +1322,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             recorder: recorder,
             sessionStore: sessionStore,
             isPinned: isPinned,
+            isReturnToPinnedLocationEnabled: isReturnToPinnedLocationEnabled,
         )
         button.dragSessionStartOverride = { items, event in
             recorder.draggingItems.append(items)
@@ -1255,6 +1360,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         rootView: AnyView = AnyView(Color.clear.frame(height: 24)),
         accessibilityValue: String = "Active, Not Selected",
         isPinned: Bool = false,
+        isReturnToPinnedLocationEnabled: Bool = true,
         isEnabled: Bool = true,
     ) {
         button.update(configuration: .init(
@@ -1263,6 +1369,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             accessibilityValue: accessibilityValue,
             duplicateAccessibilityIdentifier: "duplicate-content-tab-test",
             isPinned: isPinned,
+            isReturnToPinnedLocationEnabled: isReturnToPinnedLocationEnabled,
             isEnabled: isEnabled,
             reorderDragSource: isPinned ? nil : FileManagerTopNavigationReorderDragSourceConfiguration(
                 payload: .init(
@@ -1275,6 +1382,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             onToggleSelection: { recorder.routes.append(.toggleSelection) },
             onSelectRange: { recorder.routes.append(.selectRange) },
             onDuplicate: { recorder.menuActions.append(.duplicate) },
+            onReturnToPinnedLocation: { recorder.menuActions.append(.returnToPinnedLocation) },
             onPin: { recorder.menuActions.append(.pin) },
             onUnpin: { recorder.menuActions.append(.unpin) },
             onClose: { recorder.menuActions.append(.close) },

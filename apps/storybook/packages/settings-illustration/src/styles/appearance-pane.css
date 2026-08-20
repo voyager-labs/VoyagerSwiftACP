@@ -1,0 +1,144 @@
+/* Appearance pane 전용 스타일.
+ * 색상은 --set-* / --macos-* 토큰만 사용한다.
+ * 유일한 원시 색상 예외: 테마 미리보기 3색(아래 네이티브 소스 인용 주석 참조).
+ */
+
+[data-settings-illustration] .appearance-pane {
+  gap: 16px;
+}
+
+/* fieldset 기본 브라우저 스타일(테두리/패딩/마진) 리셋. */
+[data-settings-illustration] .appearance-pane fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/* ---- 공유 행 라벨 ---- */
+[data-settings-illustration] .appearance-pane .settings-row-label {
+  font-size: 13px;
+  color: var(--set-text-primary);
+  white-space: nowrap;
+}
+
+/* ---- Theme 섹션 ---- */
+
+/* 네이티브는 HStack(alignment:.top, spacing:20) + .padding(.vertical, 4) (AppearanceSettingsView.swift:232-262). */
+[data-settings-illustration] .appearance-pane .theme-row {
+  align-items: flex-start;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* 라벨 100px 고정 폭. 네이티브 .frame(width:100) (AppearanceSettingsView.swift:235). */
+[data-settings-illustration] .appearance-pane .theme-row .settings-row-label {
+  width: 100px;
+  flex: none;
+}
+
+/* 테마 카드 목록: 카드 간 8px gap (AppearanceSettingsView.swift:239). */
+[data-settings-illustration] .appearance-pane .theme-card-list {
+  display: flex;
+  gap: 8px;
+}
+
+/* 카드: 80px 폭, 미리보기-라벨 세로 배치, 8px 간격 (AppearanceSettingsView.swift:33,43). */
+[data-settings-illustration] .appearance-pane .theme-card {
+  width: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 미리보기 표면: 70x42, radius 8 (AppearanceSettingsView.swift:13-15). */
+[data-settings-illustration] .appearance-pane .theme-preview {
+  position: relative;
+  width: 70px;
+  height: 42px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 3px solid transparent;
+}
+
+/* 선택된 카드 = 3px accent border. 네이티브 .stroke(accent, lineWidth:3) (AppearanceSettingsView.swift:86). */
+[data-settings-illustration] .appearance-pane .theme-card.is-selected .theme-preview {
+  border-color: var(--set-accent);
+}
+
+/* 유일한 원시 색상 예외 — 테마 미리보기 3색.
+ * 네이티브 소스: apps/macos/Packages/02_Pages/Settings/Sources/VoyagerPagesSettings/Ui/AppearanceSettingsView.swift:24-28,55-59
+ *   light = Color(red:0.4, green:0.6, blue:0.9) → rgb(102,153,230)  (Swift:24)
+ *   dark  = Color(red:0.2, green:0.3, blue:0.5) → rgb(51,77,128)    (Swift:26)
+ *   auto  = 좌/우 절반 분할, 좌 라이트 / 우 다크 (Swift:55-59)
+ */
+[data-settings-illustration] .appearance-pane .theme-preview.is-light {
+  background: rgb(102, 153, 230); /* AppearanceSettingsView.swift:24 */
+}
+
+[data-settings-illustration] .appearance-pane .theme-preview.is-dark {
+  background: rgb(51, 77, 128); /* AppearanceSettingsView.swift:26 */
+}
+
+[data-settings-illustration] .appearance-pane .theme-preview.is-auto {
+  background: linear-gradient(
+    to right,
+    rgb(102, 153, 230) 0%,
+    rgb(102, 153, 230) 50%,
+    rgb(51, 77, 128) 50%,
+    rgb(51, 77, 128) 100%
+  );
+}
+
+/* Auto 미리보기의 팝업 윈도우 오버레이. 좌(라이트) 절반 위에 배치.
+ * 네이티브 buildPopupWindow: startX=10, startY=cardHeight/3=14, popup 31x28, radius 4 (Swift:91-108). */
+[data-settings-illustration] .appearance-pane .theme-preview.is-auto .theme-popup {
+  position: absolute;
+  left: 10px;
+  top: 14px;
+  width: 31px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--set-form-bg);
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 2px 0 0 4px;
+  box-sizing: border-box;
+}
+
+/* 교통 신호등 점: 크기 5 (AppearanceSettingsView.swift:18). */
+[data-settings-illustration] .appearance-pane .traffic-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+[data-settings-illustration] .appearance-pane .traffic-dot.is-red {
+  background: var(--macos-system-red);
+}
+[data-settings-illustration] .appearance-pane .traffic-dot.is-yellow {
+  background: var(--macos-system-yellow);
+}
+[data-settings-illustration] .appearance-pane .traffic-dot.is-green {
+  background: var(--macos-system-green);
+}
+
+/* 카드 라벨: 중앙 정렬. 선택 시 bold (AppearanceSettingsView.swift:38-41). */
+[data-settings-illustration] .appearance-pane .theme-caption {
+  font-size: 12px;
+  color: var(--set-text-primary);
+  text-align: center;
+}
+
+[data-settings-illustration] .appearance-pane .theme-caption.is-selected {
+  font-weight: 700;
+}
+
+/* ---- View size 섹션 ---- */
+
+/* Customize per view disclosure 본문: 헤더 행 아래 1px 구분선. */
+[data-settings-illustration] .appearance-pane .disclosure-body {
+  border-top: 1px solid var(--set-separator);
+}

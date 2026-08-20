@@ -135,6 +135,10 @@ extension FileManagerWindowState {
     }
 
     mutating func saveCurrentContentStateForPreviousActiveTab() {
+        if let request = pendingCollectionOpenRequest {
+            content.navigation.backHistory = request.prePrepareBackHistory
+            content.navigation.forwardHistory = request.prePrepareForwardHistory
+        }
         guard let previousActiveTabID = contentTabs.previousActiveTabID else { return }
         tabContentStates[previousActiveTabID] = content
     }
