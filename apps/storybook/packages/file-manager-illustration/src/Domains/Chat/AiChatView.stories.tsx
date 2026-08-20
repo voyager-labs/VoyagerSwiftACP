@@ -38,8 +38,6 @@ const meta = {
   args: {
     chatHeader: "chat",
     requestText: "",
-    selectedEntries: files.slice(0, 3),
-    primaryEntry: files[0],
     chatTitle: "Review collection PDFs",
     onRequestTextChange: fn(),
     onOpenChatHistory: fn(),

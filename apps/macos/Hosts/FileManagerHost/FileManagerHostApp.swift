@@ -41,6 +41,27 @@ private enum FileManagerHostSmokeMode {
     }
 }
 
+@MainActor
+private enum FileManagerHostAppearanceApplication {
+    static func apply() -> Bool {
+        let application = NSApplication.shared
+        switch FileManagerHostAppearance.resolveFromEnvironment() {
+        case .system:
+            application.appearance = nil
+            return true
+        case .light:
+            application.appearance = NSAppearance(named: .aqua)
+            return true
+        case .dark:
+            application.appearance = NSAppearance(named: .darkAqua)
+            return true
+        case let .invalid(rawValue):
+            NSLog("Invalid FILE_MANAGER_HOST_APPEARANCE: \(rawValue)")
+            return false
+        }
+    }
+}
+
 @main
 struct FileManagerHostApp: App {
     @NSApplicationDelegateAdaptor(FileManagerHostAppDelegate.self)
@@ -53,6 +74,7 @@ struct FileManagerHostApp: App {
         try? EnvironmentLoader.loadEnvFiles()
         EnvironmentLoader.requireAppEnv()
 
+        guard FileManagerHostAppearanceApplication.apply() else { exit(2) }
         FileManagerHostSmokeMode.runIfNeeded()
     }
 
@@ -124,6 +146,7 @@ private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate,
             materialConfiguration: materialTuning.configuration,
         )
         windowControllers.append(controller)
+        FileManagerHostFixture.presentSwitcherIfNeeded(for: preset, in: controller.store)
         if let menuController {
             menuController.updateStore(controller.store)
         } else {
@@ -255,6 +278,11 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
             keyEquivalent: "",
         ).target = self
 
+        installViewMenu(in: hostMenu)
+        installPaneMenu(in: hostMenu)
+    }
+
+    private func installViewMenu(in hostMenu: NSMenu) {
         let viewMenu = NSMenu(title: "View")
         viewMenu.addItem(
             withTitle: "Icon View",
@@ -267,7 +295,9 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
             keyEquivalent: "",
         ).target = self
         hostMenu.setSubmenu(viewMenu, for: hostMenu.addItem(withTitle: "View", action: nil, keyEquivalent: ""))
+    }
 
+    private func installPaneMenu(in hostMenu: NSMenu) {
         let paneMenu = NSMenu(title: "Panes")
         paneMenu.addItem(
             withTitle: "Show Chat History",
@@ -513,23 +543,8 @@ private enum FileManagerHostMaterialOption: String, CaseIterable, Identifiable {
     }
 
     init?(material: NSVisualEffectView.Material) {
-        switch material {
-        case .sidebar: self = .sidebar
-        case .windowBackground: self = .windowBackground
-        case .underWindowBackground: self = .underWindowBackground
-        case .contentBackground: self = .contentBackground
-        case .headerView: self = .headerView
-        case .hudWindow: self = .hudWindow
-        case .fullScreenUI: self = .fullScreenUI
-        case .titlebar: self = .titlebar
-        case .selection: self = .selection
-        case .menu: self = .menu
-        case .popover: self = .popover
-        case .sheet: self = .sheet
-        case .toolTip: self = .toolTip
-        case .underPageBackground: self = .underPageBackground
-        default: return nil
-        }
+        guard let matched = Self.allCases.first(where: { $0.material == material }) else { return nil }
+        self = matched
     }
 }
 

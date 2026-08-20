@@ -81,7 +81,7 @@ extension FileManagerWindowRoutingReducer {
 func routeContentAction(
     _ action: FileManagerContentAction,
     tabID: ContentTabID,
-    makeFallbackRequestID: () -> UUID,
+    makeFallbackRequestID: @escaping () -> UUID,
     undoManagerClient: UndoManagerClient,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
@@ -107,8 +107,10 @@ func routeContentAction(
             direction: direction,
             terminal: terminal,
             ownerID: ownerID,
-            makeFallbackRequestID: makeFallbackRequestID,
-            undoManagerClient: undoManagerClient,
+            context: EntryActionReplayContext(
+                makeFallbackRequestID: makeFallbackRequestID,
+                undoManagerClient: undoManagerClient,
+            ),
             state: &state,
         )
     default:
@@ -194,12 +196,16 @@ func handleEntriesMutated(
     )
 }
 
+struct EntryActionReplayContext {
+    let makeFallbackRequestID: () -> UUID
+    let undoManagerClient: UndoManagerClient
+}
+
 func handleEntryActionReplayTerminal(
     direction: EntryActionDirection,
     terminal: EntryActionReplayTerminal,
     ownerID: UUID,
-    makeFallbackRequestID: () -> UUID,
-    undoManagerClient: UndoManagerClient,
+    context: EntryActionReplayContext,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     let requestID: UUID?
@@ -220,12 +226,12 @@ func handleEntryActionReplayTerminal(
 
     switch terminal {
     case .success:
-        let refreshRequestID = requestID ?? makeFallbackRequestID()
+        let refreshRequestID = requestID ?? context.makeFallbackRequestID()
         state.undoRedoPhase = .refreshing(requestID: refreshRequestID)
         return handleReplaySuccessEffect(
             requestID: refreshRequestID,
             windowID: state.windowID,
-            undoManagerClient: undoManagerClient,
+            undoManagerClient: context.undoManagerClient,
         )
 
     case .failure(reason: .operationFailed, appliedTargets: _):
@@ -244,7 +250,7 @@ func handleEntryActionReplayTerminal(
             requestID: requestID,
             ownerID: ownerID,
             windowID: windowID,
-            undoManagerClient: undoManagerClient,
+            undoManagerClient: context.undoManagerClient,
         )
 
     case .failure(reason: .ownerRecordMismatch, appliedTargets: _),

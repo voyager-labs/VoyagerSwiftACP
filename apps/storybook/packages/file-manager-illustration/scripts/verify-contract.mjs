@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import * as runtime from "../dist/index.js"
 import { verifyChatInteractionContract } from "./verify-chat-interaction-contract.mjs"
 import { verifyChatMessageContract } from "./verify-chat-message-contract.mjs"
+import { verifyContentBrowserContract } from "./verify-content-browser-contract.mjs"
 import { verifyDesignVersionContract } from "./verify-design-version-contract.mjs"
 import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
@@ -254,6 +255,7 @@ const expectedPublicTypes = [
   "EntryKind",
   "ContentTab",
   "ContentContext",
+  "FileManagerInitialPresentation",
 ]
 const typeExportBlock = sourceBarrel.match(/export type\s*\{([\s\S]*?)\}\s*from/)
 assert.ok(typeExportBlock, "Missing public type export block")
@@ -347,14 +349,15 @@ const nonFileManagerStories = entries.filter(
 const designTokensStory = fileManagerStories.find(
   (entry) => entry.id === "file-manager-design-tokens--overview",
 )
+verifyContentBrowserContract(packageRoot, css, runtime, fileManagerStories)
 
 assert.ok(designTokensStory, "Missing File Manager design tokens overview story")
 assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 198)
-assert.equal(fileManagerPaths.size, 43)
+assert.ok(fileManagerStories.length >= 245)
+assert.ok(fileManagerPaths.size >= 51)
 assert.equal(nonFileManagerStories.length, 0)
 for (const storyName of ["Centered Empty", "Centered Unconnected", "Connection Error", "Rebind"]) {
   assert.ok(

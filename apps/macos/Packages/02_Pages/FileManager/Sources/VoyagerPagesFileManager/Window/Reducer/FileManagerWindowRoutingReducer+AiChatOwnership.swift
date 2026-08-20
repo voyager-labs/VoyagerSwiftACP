@@ -156,7 +156,7 @@ func routeBackgroundInspectorAiChatAction(
                let context = finalSnapshotContext,
                let snapshot = persistedSnapshot ?? makeOffscreenFinalSnapshot(summary: summary, context: context)
             {
-                return FileManagerWindowAction.backgroundInspectorAiChatSnapshotPersisted(snapshot)
+                return FileManagerWindowAction.backgroundInspectorSnapshotPersisted(snapshot)
             }
             return FileManagerWindowAction.backgroundInspectorAiChat(action)
         }

@@ -32,6 +32,16 @@ public extension ContentTabPinnedRecord {
 }
 
 extension ContentTabPinnedRecord {
+    var isSupportedPinnedContentTab: Bool {
+        switch (page, anchor) {
+        case (.directory, .directory),
+             (.collection, .collectionFile):
+            true
+        default:
+            false
+        }
+    }
+
     static func isPageAnchorCompatible(
         page: ContentTabPage,
         anchor: ContentTabPageAnchor,

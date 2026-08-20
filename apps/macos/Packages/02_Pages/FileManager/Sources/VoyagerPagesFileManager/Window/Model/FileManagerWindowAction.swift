@@ -142,7 +142,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case backgroundAiChat(AiChatAction)
     case backgroundAiChatSnapshotPersisted(AiChatSessionSnapshot)
     case backgroundInspectorAiChat(AiChatAction)
-    case backgroundInspectorAiChatSnapshotPersisted(AiChatSessionSnapshot)
+    case backgroundInspectorSnapshotPersisted(AiChatSessionSnapshot)
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
@@ -170,6 +170,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
     )
+    case selectContentTab(ContentTabID)
+    case returnContentTabToPinnedLocation(ContentTabID)
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
@@ -233,6 +235,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     @CasePathable
     public enum View: Sendable {
         case dismissContentTabMoveFailure(requestID: UUID)
+        case dismissContentTabSwitcher
     }
 
     @CasePathable
@@ -344,6 +347,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openNewContentTab
         case selectContentTab(position: Int)
         case selectMostRecentlyUsedContentTab
+        case presentContentTabSwitcher(source: FileManagerContentTabSwitcherPresentation.Source)
         case closeActiveContentTab
         case closeSelectedContentTabs
         case toggleActiveContentTabPin

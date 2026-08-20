@@ -63,11 +63,11 @@ private struct ConditionSemanticSignature: Comparable {
     let isActive: Bool
 
     init(_ condition: Condition) {
-        propertyKey = condition.propertyKey
-        operatorCode = condition.operatorCode
+        propertyKey = condition.property.key
+        operatorCode = condition.operation?.code
         values = condition.values?.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty } ?? []
-        isActive = condition.isActive
+        isActive = condition.availability == .available
     }
 
     static func < (lhs: ConditionSemanticSignature, rhs: ConditionSemanticSignature) -> Bool {

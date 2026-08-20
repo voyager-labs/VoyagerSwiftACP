@@ -22,18 +22,16 @@ public enum SidebarItems {
     }
 
     public struct LocationItem: Equatable, Sendable {
-        public typealias Kind = SidebarItems.Kind
-
         public let name: String
         public let url: URL
         public let iconName: String
-        public let kind: Kind
+        public let kind: SidebarItems.Kind
 
         nonisolated public init(
             name: String,
             url: URL,
             iconName: String,
-            kind: Kind = .directory,
+            kind: SidebarItems.Kind = .directory,
         ) {
             self.name = name
             self.url = url

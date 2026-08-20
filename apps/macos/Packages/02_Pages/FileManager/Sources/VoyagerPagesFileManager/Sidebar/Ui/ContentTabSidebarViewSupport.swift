@@ -331,6 +331,7 @@ struct ContentTabSidebarRow: View {
     let pinPresentation: ContentTabPinPresentation
     let closePresentation: ContentTabClosePresentation
     let onActivate: () -> Void
+    let onReturnToPinnedLocation: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
@@ -375,6 +376,7 @@ struct ContentTabSidebarRow: View {
             trailingActionSystemName: trailingAction.systemName,
             isTrailingActionEnabled: closePresentation.isEnabled,
             onActivate: handlePrimaryAction,
+            onReturnToPinnedLocation: onReturnToPinnedLocation,
             onToggleSelection: handleToggleSelection,
             onSelectRange: handleSelectRange,
             onDuplicate: onDuplicate,
@@ -463,6 +465,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let trailingActionSystemName: String
     let isTrailingActionEnabled: Bool
     let onActivate: () -> Void
+    let onReturnToPinnedLocation: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
@@ -497,6 +500,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             tabID: item.id,
             duplicateAccessibilityIdentifier: duplicateAccessibilityIdentifier,
             isPinned: item.isPinned,
+            isReturnToPinnedLocationEnabled: item.canReturnToPinnedLocation,
             isEnabled: true,
             reorderDragSource: reorderDragSource,
             moveTargets: moveTargets,
@@ -506,6 +510,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onToggleSelection: onToggleSelection,
             onSelectRange: onSelectRange,
             onDuplicate: onDuplicate,
+            onReturnToPinnedLocation: onReturnToPinnedLocation,
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onClose,

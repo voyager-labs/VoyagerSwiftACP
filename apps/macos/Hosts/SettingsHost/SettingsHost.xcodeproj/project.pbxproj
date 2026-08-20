@@ -35,8 +35,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				"Tests/SettingsHostFeatureTests.swift",
-				"Tests/SettingsHostPresetTests.swift",
+				"Tests/Flows/SET/SettingsHostFeatureFlowTests.swift",
+				"Tests/Flows/SET/SettingsHostPresetFlowTests.swift",
 				"Tests/SettingsHostSandboxTests.swift",
 			);
 			target = B20000000000000000000006 /* SettingsHost */;

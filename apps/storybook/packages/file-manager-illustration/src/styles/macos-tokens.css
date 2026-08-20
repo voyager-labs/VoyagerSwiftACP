@@ -34,10 +34,28 @@
   --macos-tertiary-system-fill: #ffffff26;
   --macos-quaternary-system-fill: #ffffff17;
   --macos-quinary-system-fill: #ffffff0f;
+  --macos-entry-list-alternate-row-background-color: rgb(0 0 0 / 5.5%);
 
   --macos-control-color: #fff;
   --macos-control-background-color: #fff;
   --macos-chat-input-background-color: var(--macos-control-background-color);
+  --macos-composer-background-color: #f0f0f0;
+  --macos-composer-border-color: #0000001f;
+  --macos-composer-input-background-color: #0000000d;
+  --macos-composer-input-border-color: #0000001f;
+  --macos-composer-chip-container-background-color: #00000014;
+  --macos-composer-chip-item-background-color: #00000014;
+  --macos-composer-chip-item-border-color: #0000000d;
+  --macos-composer-popover-background-color: var(--macos-window-background-color);
+  --macos-composer-popover-search-background-color: #00000008;
+  --macos-composer-control-background-color: #00000014;
+  --macos-composer-control-hover-color: #00000014;
+  --macos-composer-hover-color: #0000000f;
+  --macos-composer-accent-color: #d7b652;
+  --macos-composer-accent-label-color: #000;
+  --macos-composer-warning-color: #f79a30;
+  --macos-composer-error-color: #d92121;
+  --macos-composer-success-color: #2ea352;
   --macos-control-accent-color: #0a84ff;
   --macos-control-text-color: var(--macos-label-color);
   --macos-disabled-control-text-color: var(--macos-tertiary-label-color);
@@ -209,6 +227,21 @@
     --macos-quinary-label-color: #ebebf51a;
     --macos-placeholder-text-color: #ebebf54d;
     --macos-text-background-color: #1e1e1e;
+    --macos-composer-background-color: #1f1f1f;
+    --macos-composer-border-color: #ffffff14;
+    --macos-composer-input-background-color: #ffffff14;
+    --macos-composer-input-border-color: #ffffff26;
+    --macos-composer-chip-container-background-color: #ffffff1a;
+    --macos-composer-chip-item-background-color: #ffffff1a;
+    --macos-composer-chip-item-border-color: #ffffff12;
+    --macos-composer-popover-background-color: var(--macos-under-page-background-color);
+    --macos-composer-popover-search-background-color: #ffffff0d;
+    --macos-composer-control-background-color: #ffffff14;
+    --macos-composer-control-hover-color: #ffffff1a;
+    --macos-composer-hover-color: #ffffff14;
+    --macos-composer-warning-color: #ff9f0a;
+    --macos-composer-error-color: #ff453a;
+    --macos-composer-success-color: #30d158;
     --macos-unemphasized-selected-text-background-color: #0a84ff3d;
     --macos-link-color: #2997ff;
     --macos-separator-color: #ffffff2e;
@@ -220,6 +253,7 @@
     --macos-tertiary-system-fill: #ffffff1a;
     --macos-quaternary-system-fill: #ffffff12;
     --macos-quinary-system-fill: #ffffff0a;
+    --macos-entry-list-alternate-row-background-color: rgb(255 255 255 / 3.5%);
     --macos-control-color: #2f3033cc;
     --macos-control-background-color: #202125d6;
     --macos-chat-input-background-color: #2c2b28;
@@ -266,6 +300,7 @@
 }
 
 :root[data-voyager-color-scheme="dark"] [data-file-manager-illustration] {
+  --macos-entry-list-alternate-row-background-color: rgb(255 255 255 / 3.5%);
   color-scheme: dark;
   --macos-label-color: #fff;
   --macos-secondary-label-color: #ebebf599;
@@ -274,6 +309,21 @@
   --macos-quinary-label-color: #ebebf51a;
   --macos-placeholder-text-color: #ebebf54d;
   --macos-text-background-color: #1e1e1e;
+  --macos-composer-background-color: #1f1f1f;
+  --macos-composer-border-color: #ffffff14;
+  --macos-composer-input-background-color: #ffffff14;
+  --macos-composer-input-border-color: #ffffff26;
+  --macos-composer-chip-container-background-color: #ffffff1a;
+  --macos-composer-chip-item-background-color: #ffffff1a;
+  --macos-composer-chip-item-border-color: #ffffff12;
+  --macos-composer-popover-background-color: var(--macos-under-page-background-color);
+  --macos-composer-popover-search-background-color: #ffffff0d;
+  --macos-composer-control-background-color: #ffffff14;
+  --macos-composer-control-hover-color: #ffffff1a;
+  --macos-composer-hover-color: #ffffff14;
+  --macos-composer-warning-color: #ff9f0a;
+  --macos-composer-error-color: #ff453a;
+  --macos-composer-success-color: #30d158;
   --macos-unemphasized-selected-text-background-color: #0a84ff3d;
   --macos-link-color: #2997ff;
   --macos-separator-color: #ffffff2e;

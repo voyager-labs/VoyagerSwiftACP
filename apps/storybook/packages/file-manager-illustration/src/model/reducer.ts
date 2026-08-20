@@ -1,13 +1,19 @@
 import { contentTabs } from "../lib/navigation-data"
 import type { ContentRoute } from "./content-route"
 import { deriveContentRoute } from "./content-route"
-import type { Entry, SidebarTabItem } from "./types"
+import type {
+  Entry,
+  EntrySelectionIntent,
+  FileManagerInitialPresentation,
+  SidebarTabItem,
+} from "./types"
 
 export interface State {
   readonly tabs: readonly SidebarTabItem[]
   readonly activeTabId: string | null
   readonly files: readonly Entry[]
   readonly selectedEntryIds: readonly string[]
+  readonly selectionAnchorId: string | null
   readonly viewMode: "grid" | "list"
   readonly sidebarOpen: boolean
   readonly inspectorOpen: boolean
@@ -20,7 +26,11 @@ export interface State {
 
 export type Action =
   | { readonly type: "SELECT_ENTRIES"; readonly ids: readonly string[] }
-  | { readonly type: "TOGGLE_ENTRY"; readonly entryId: string; readonly append: boolean }
+  | {
+      readonly type: "TOGGLE_ENTRY"
+      readonly entryId: string
+      readonly intent: EntrySelectionIntent
+    }
   | { readonly type: "SET_VIEW_MODE"; readonly mode: "grid" | "list" }
   | { readonly type: "TOGGLE_SIDEBAR" }
   | { readonly type: "SET_REQUEST_TEXT"; readonly text: string }
@@ -39,6 +49,7 @@ export type Action =
       readonly files: readonly Entry[]
       readonly tabs: readonly SidebarTabItem[]
       readonly activeTabId: string | null
+      readonly initialPresentation: FileManagerInitialPresentation
     }
   /* Inspector chat header actions */
   | { readonly type: "OPEN_CHAT_HISTORY" }
@@ -49,6 +60,7 @@ export interface InitialStateParams {
   readonly files: readonly Entry[]
   readonly tabs: readonly SidebarTabItem[]
   readonly activeTabId: string | null
+  readonly initialPresentation: FileManagerInitialPresentation
 }
 
 export function createInitialState(params: InitialStateParams): State {
@@ -56,10 +68,11 @@ export function createInitialState(params: InitialStateParams): State {
     tabs: params.tabs.map((t) => ({ ...t })),
     activeTabId: params.activeTabId,
     files: params.files,
-    selectedEntryIds: [],
-    viewMode: "grid",
-    sidebarOpen: true,
-    inspectorOpen: false,
+    selectedEntryIds: params.initialPresentation.selectedEntryIds,
+    selectionAnchorId: params.initialPresentation.selectedEntryIds.at(-1) ?? null,
+    viewMode: params.initialPresentation.viewMode,
+    sidebarOpen: params.initialPresentation.sidebarOpen,
+    inspectorOpen: params.initialPresentation.inspectorOpen,
     inspectorChatHeader: "sessions",
     requestText: "",
     previousActiveTabId: null,
@@ -101,18 +114,42 @@ function activateTab(
 export function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "SELECT_ENTRIES":
-      return { ...state, selectedEntryIds: action.ids }
-    case "TOGGLE_ENTRY": {
-      const { entryId, append } = action
-      if (append) {
-        return {
-          ...state,
-          selectedEntryIds: state.selectedEntryIds.includes(entryId)
-            ? state.selectedEntryIds.filter((id) => id !== entryId)
-            : [...state.selectedEntryIds, entryId],
-        }
+      return {
+        ...state,
+        selectedEntryIds: action.ids,
+        selectionAnchorId: action.ids.at(-1) ?? null,
       }
-      return { ...state, selectedEntryIds: [entryId] }
+    case "TOGGLE_ENTRY": {
+      const { entryId, intent } = action
+      switch (intent) {
+        case "replace":
+          return { ...state, selectedEntryIds: [entryId], selectionAnchorId: entryId }
+        case "toggle":
+          return {
+            ...state,
+            selectedEntryIds: state.selectedEntryIds.includes(entryId)
+              ? state.selectedEntryIds.filter((id) => id !== entryId)
+              : [...state.selectedEntryIds, entryId],
+            selectionAnchorId: entryId,
+          }
+        case "range": {
+          const anchorIndex = state.files.findIndex(
+            (entry) => entry.id === (state.selectionAnchorId ?? entryId),
+          )
+          const entryIndex = state.files.findIndex((entry) => entry.id === entryId)
+          if (anchorIndex === -1 || entryIndex === -1) {
+            return { ...state, selectedEntryIds: [entryId], selectionAnchorId: entryId }
+          }
+          const start = Math.min(anchorIndex, entryIndex)
+          const end = Math.max(anchorIndex, entryIndex)
+          return {
+            ...state,
+            selectedEntryIds: state.files.slice(start, end + 1).map((entry) => entry.id),
+          }
+        }
+        default:
+          return intent satisfies never
+      }
     }
     case "SET_VIEW_MODE":
       return { ...state, viewMode: action.mode }
@@ -202,7 +239,11 @@ export function reducer(state: State, action: Action): State {
         files: action.files,
         tabs: action.tabs.map((t) => ({ ...t })),
         activeTabId: action.activeTabId,
-        inspectorOpen: false,
+        selectedEntryIds: action.initialPresentation.selectedEntryIds,
+        selectionAnchorId: action.initialPresentation.selectedEntryIds.at(-1) ?? null,
+        viewMode: action.initialPresentation.viewMode,
+        sidebarOpen: action.initialPresentation.sidebarOpen,
+        inspectorOpen: action.initialPresentation.inspectorOpen,
         inspectorChatHeader: "sessions",
       }
     case "OPEN_CHAT_HISTORY":

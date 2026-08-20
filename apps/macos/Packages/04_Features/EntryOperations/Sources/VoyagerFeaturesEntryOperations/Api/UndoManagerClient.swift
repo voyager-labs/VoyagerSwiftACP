@@ -581,25 +581,6 @@ public final class FileOperationUndoManagerRegistry {
         generation += 1
         return generation
     }
-
-    private func makeCompatibilityAvailability(_ entry: Entry) -> UndoManagerAvailability {
-        let undoTarget = entry.undoRecordIDs.last.flatMap { recordID in
-            entry.compatibilityRecords[recordID].map {
-                UndoManagerRecordIdentity(ownerID: $0.ownerID, recordID: recordID)
-            }
-        }
-        let redoTarget = entry.redoRecordIDs.last.flatMap { recordID in
-            entry.compatibilityRecords[recordID].map {
-                UndoManagerRecordIdentity(ownerID: $0.ownerID, recordID: recordID)
-            }
-        }
-        return UndoManagerAvailability(
-            canUndo: entry.manager.canUndo && undoTarget != nil,
-            canRedo: entry.manager.canRedo && redoTarget != nil,
-            undoTarget: undoTarget,
-            redoTarget: redoTarget,
-        )
-    }
 }
 
 public extension FileOperationUndoManagerRegistry {
@@ -764,5 +745,26 @@ public extension FileOperationUndoManagerRegistry {
                 entry.compatibilityRecords[recordID] = nil
             }
         }
+    }
+}
+
+private extension FileOperationUndoManagerRegistry {
+    private func makeCompatibilityAvailability(_ entry: Entry) -> UndoManagerAvailability {
+        let undoTarget = entry.undoRecordIDs.last.flatMap { recordID in
+            entry.compatibilityRecords[recordID].map {
+                UndoManagerRecordIdentity(ownerID: $0.ownerID, recordID: recordID)
+            }
+        }
+        let redoTarget = entry.redoRecordIDs.last.flatMap { recordID in
+            entry.compatibilityRecords[recordID].map {
+                UndoManagerRecordIdentity(ownerID: $0.ownerID, recordID: recordID)
+            }
+        }
+        return UndoManagerAvailability(
+            canUndo: entry.manager.canUndo && undoTarget != nil,
+            canRedo: entry.manager.canRedo && redoTarget != nil,
+            undoTarget: undoTarget,
+            redoTarget: redoTarget,
+        )
     }
 }

@@ -92,7 +92,25 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
         let serviceNames = entryOpenClient.serviceNames()
-        let menuSpec = EntryContextMenuSpecFactory.make(
+        let menuSpec = makeMenuSpec(target: target, rowEntry: rowEntry, serviceNames: serviceNames)
+        let coordinator = EntryContextMenuCoordinator(
+            store: store,
+            target: target,
+            anchorView: tableView,
+            anchorScreenPoint: contextMenuAnchor,
+        )
+        contextMenuCoordinator = coordinator
+        return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(
+            configuration: makeMenuConfiguration(target: target, menuSpec: menuSpec, coordinator: coordinator),
+        ))
+    }
+
+    private func makeMenuSpec(
+        target: EntryContextMenuTarget,
+        rowEntry: EntryModel?,
+        serviceNames: [String],
+    ) -> EntryContextMenuSpec {
+        EntryContextMenuSpecFactory.make(
             selectedIds: target.selectedIds,
             selectedEntries: target.entries,
             rowEntry: rowEntry,
@@ -109,14 +127,14 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             },
             serviceNames: serviceNames,
         )
-        let coordinator = EntryContextMenuCoordinator(
-            store: store,
-            target: target,
-            anchorView: tableView,
-            anchorScreenPoint: contextMenuAnchor,
-        )
-        contextMenuCoordinator = coordinator
-        return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(configuration: .init(
+    }
+
+    private func makeMenuConfiguration(
+        target: EntryContextMenuTarget,
+        menuSpec: EntryContextMenuSpec,
+        coordinator: EntryContextMenuCoordinator,
+    ) -> EntryContextMenuBuilder.Configuration {
+        .init(
             target: coordinator,
             selectedCount: menuSpec.selectedCount,
             rowEntryPathForOpenInNewWindow: menuSpec.rowEntryPathForOpenInNewWindow,
@@ -136,7 +154,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
                     busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
                 ),
             isOpenWithApplicationsLoading: menuSpec.isOpenWithApplicationsLoading,
-        )))
+        )
     }
 
     private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {

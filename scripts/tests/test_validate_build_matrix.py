@@ -393,6 +393,27 @@ class CheckHostProjectTests(unittest.TestCase):
                 f"Expected legacy/missing error, got: {errors}",
             )
 
+    def test_host_test_target_does_not_require_app_env(self) -> None:
+        _reset_cfg_counter()
+        configs = [_make_cfg(DEV_DEBUG), _make_cfg(DEV_RELEASE)]
+        config_list = _make_cl(
+            [config.get_id() for config in configs],
+            [DEV_DEBUG, DEV_RELEASE],
+        )
+        with mock.patch("scripts.validate_build_matrix._load_pbxproj") as mock_load:
+            mock_proj = mock.MagicMock()
+            mock_proj.objects.get_objects_in_section.side_effect = lambda section: {
+                "XCBuildConfiguration": configs,
+                "XCConfigurationList": [config_list],
+                "PBXNativeTarget": [_make_target("ComposerHostTests")],
+            }.get(section, [])
+            mock_load.return_value = mock_proj
+            errors: list[str] = []
+
+            check_host_project(Path("dummy.pbxproj"), "ComposerHost", errors)
+
+        self.assertEqual(errors, [])
+
 
 class CheckSchemeFilesTests(unittest.TestCase):
     """Tests for check_scheme_files."""
@@ -402,6 +423,21 @@ class CheckSchemeFilesTests(unittest.TestCase):
         check_scheme_files(Path("/nonexistent/directory"), errors)
         self.assertGreater(len(errors), 0)
         self.assertIn("missing", errors[0].lower())
+
+    def test_validate_schemes_scans_all_host_projects(self) -> None:
+        from scripts.validate_build_matrix import HOST_PROJECTS, validate_schemes
+
+        with mock.patch(
+            "scripts.validate_build_matrix.check_scheme_files"
+        ) as check_scheme_files_mock:
+            validate_schemes([])
+
+        scanned = {call.args[0] for call in check_scheme_files_mock.call_args_list}
+        expected = {
+            Path(f"apps/macos/Hosts/{host}/{host}.xcodeproj/xcshareddata/xcschemes")
+            for host in HOST_PROJECTS
+        }
+        self.assertTrue(expected.issubset(scanned))
 
     def test_reports_error_on_legacy_schemes(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -102,7 +102,7 @@ Example: `AccountTokenFileStore` atomic write and quarantine behavior is product
 - Product behavior belongs in the spec-owner suite.
 - Cross-feature flows may assert this spec's routed consequence, but must not re-own another spec's domain behavior.
 - Existing `PolicyTests`, `ContractTests`, `LifecycleTests`, or `AdapterTests` files should not receive new product AC coverage once a spec owner exists.
-- Keep pure technical contracts outside spec suites only when no product AC owns them, such as parser conformance, serialization compatibility, or platform adapter invariants. When a product AC does own the behavior, absorb the test into the spec-owner suite per the component behavior coverage workflow above.
+- Do not keep pure technical contracts in standalone test suites. Assign parser conformance, serialization compatibility, or platform adapter invariants to the owning product spec or canonical flow before authoring coverage.
 
 ## Split-target spec ownership
 

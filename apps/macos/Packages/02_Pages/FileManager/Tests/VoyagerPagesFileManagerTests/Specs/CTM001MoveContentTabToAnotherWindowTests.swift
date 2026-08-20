@@ -954,7 +954,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             source: source,
             target: target,
             tabID: movedID,
-        ).successToken()
+        )
+        .successToken()
 
         XCTAssertEqual(source, sourceBefore)
         XCTAssertEqual(target, targetBefore)
@@ -1005,7 +1006,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             source: source,
             target: target,
             tabID: movedID,
-        ).successToken()
+        )
+        .successToken()
 
         XCTAssertFalse(token.sourceOutgoingOwner.canCancelLoadingExclusively)
         XCTAssertFalse(token.sourceOutgoingOwner.canCancelComposerExclusively)
@@ -1485,7 +1487,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
             target: scenario.target,
             orderedTabIDs: scenario.orderedIDs,
             primaryTabID: scenario.unpinnedID,
-        ).successToken()
+        )
+        .successToken()
         let semanticToken = try semanticPreflight(
             source: scenario.source,
             target: scenario.target,
@@ -1580,7 +1583,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
                 Fixture.tab(secondID, path: "/same-domain/pinned-second", pinned: true),
             ],
             active: firstID,
-        ).withPinnedRecords(for: [firstID, secondID])
+        )
+        .withPinnedRecords(for: [firstID, secondID])
         let emptyPinnedToken = try semanticPreflight(
             source: pinnedSource,
             target: emptyPinnedTarget,

@@ -68,6 +68,19 @@ BARE_REFERENCE_LITERAL = re.compile(
 )
 LEGACY_CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
 LOCAL_ARTIFACT_PREFIXES = (".omo/", ".omx/", ".sisyphus/", ".codegraph/")
+SPEC_TEST_FILENAME = re.compile(r"[A-Z]{2,4}\d{3}[A-Za-z0-9]*Tests\.swift")
+FLOW_TEST_FILENAME = re.compile(r"[A-Za-z0-9]*FlowTests\.swift")
+# develop(voy-586)에서 기존 관행으로 작성된 테스트 파일. spec-owner suite로
+# 마이그레이션되기 전까지 토폴로지 검사에서 명시적으로 예외한다.
+LEGACY_MACOS_TEST_TOPOLOGY_PATHS = frozenset(
+    {
+        "apps/macos/Packages/02_Pages/FileManager/Tests/"
+        "VoyagerPagesFileManagerTests/Specs/"
+        "FileManagerHostFixturePhaseNotificationTests.swift",
+        "apps/macos/Packages/06_Shared/VoyagerShared/Tests/"
+        "VoyagerSharedTests/FileChangeScopePolicyTests.swift",
+    }
+)
 
 
 def diagnostic(
@@ -240,6 +253,29 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
             )
             continue
         if path_string.startswith(LOCAL_ARTIFACT_PREFIXES):
+            continue
+        if (
+            mode != "all"
+            and path_string.startswith("apps/macos/")
+            and path_string not in LEGACY_MACOS_TEST_TOPOLOGY_PATHS
+            and "/Tests/" in path_string
+            and path.suffix == ".swift"
+            and re.search(r"\bXCTestCase\b|@Test\b", path.read_text(encoding="utf-8"))
+            and not (
+                "/Specs/" in path_string and SPEC_TEST_FILENAME.fullmatch(path.name)
+            )
+            and not (
+                "/Flows/" in path_string and FLOW_TEST_FILENAME.fullmatch(path.name)
+            )
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    path_string,
+                    1,
+                    "HARNESS_MACOS_TEST_TOPOLOGY",
+                    "macOS test classes must be spec-owner suites in Specs/ or flow suites in Flows/",
+                )
+            )
             continue
         if (
             path_string.startswith(".agents/rules/")

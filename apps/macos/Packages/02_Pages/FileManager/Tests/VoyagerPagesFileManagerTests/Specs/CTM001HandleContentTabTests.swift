@@ -172,10 +172,10 @@ private func makeBatchAiRequestLock(sessionID: AiChatSessionID) -> AiChatRequest
             context: context,
             messages: [AiChatMessage(role: .user, content: "shared request")],
         ),
-        persistenceTranscriptHistory: nil,
         selectedModelHandle: modelHandle,
         selectedModelRow: modelRow,
         assistantReplacementIndex: nil,
+        persistenceTranscriptHistory: nil,
     )
 }
 
@@ -7135,6 +7135,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000450")),
             url: URL(fileURLWithPath: "/tmp/open.voycoll"),
             sourceRoute: .home,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
         )
         XCTAssertEqual(
             opening.transferEligibility(tabID: tabID),

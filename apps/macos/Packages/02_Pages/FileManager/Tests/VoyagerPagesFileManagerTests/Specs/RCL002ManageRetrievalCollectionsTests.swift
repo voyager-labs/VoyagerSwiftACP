@@ -1,6 +1,8 @@
 @_spi(Internals) import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
@@ -216,16 +218,14 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(context.includeSubfolders)
         XCTAssertTrue(context.includeDirectories)
         let condition = try XCTUnwrap(context.conditions.first)
-        XCTAssertEqual(condition.propertyKey, "tag_names")
-        XCTAssertEqual(condition.propertyLabel, "Registry Tag Label")
-        XCTAssertEqual(condition.propertyType, "categorical")
-        XCTAssertEqual(condition.operatorCode, "any")
-        XCTAssertEqual(condition.operatorLabel, "Registry Any Label")
-        XCTAssertEqual(condition.operatorValueArity, 1)
-        XCTAssertEqual(condition.operatorValueUIKind, "listText")
-        XCTAssertEqual(condition.valueType, "string_list")
+        XCTAssertEqual(condition.property.key, "tag_names")
+        XCTAssertEqual(condition.property.label, "Registry Tag Label")
+        XCTAssertEqual(condition.property.type.rawValue, "categorical")
+        XCTAssertEqual(condition.operation?.code, "any")
+        XCTAssertEqual(condition.operation?.label, "Registry Any Label")
+        XCTAssertEqual(condition.operation?.valueContract, .init(shape: .list, count: .multiple, input: .listText))
         XCTAssertEqual(condition.values, ["Work"])
-        XCTAssertTrue(condition.isActive)
+        XCTAssertTrue(condition.isExecutionReady)
     }
 
     /// RCL-002-save_current_filter_as_new_collection: Recents route의 현재 filter context seed 생성
@@ -247,30 +247,32 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(context.includeSubfolders)
         XCTAssertFalse(context.includeDirectories)
         XCTAssertEqual(context.conditions.count, 2)
-        let recentCondition = try XCTUnwrap(context.conditions.first { $0.propertyKey == "last_used_date" })
-        XCTAssertEqual(recentCondition.propertyLabel, "Registry Last Used Label")
-        XCTAssertEqual(recentCondition.propertyType, "date")
-        XCTAssertEqual(recentCondition.operatorCode, "gt")
-        XCTAssertEqual(recentCondition.operatorLabel, "Registry Greater Than Label")
-        XCTAssertEqual(recentCondition.operatorValueArity, 1)
-        XCTAssertEqual(recentCondition.operatorValueUIKind, "singleDate")
-        XCTAssertEqual(recentCondition.valueType, "date")
+        let recentCondition = try XCTUnwrap(context.conditions.first { $0.property.key == "last_used_date" })
+        XCTAssertEqual(recentCondition.property.label, "Registry Last Used Label")
+        XCTAssertEqual(recentCondition.property.type.rawValue, "date")
+        XCTAssertEqual(recentCondition.operation?.code, "gt")
+        XCTAssertEqual(recentCondition.operation?.label, "Registry Greater Than Label")
+        XCTAssertEqual(
+            recentCondition.operation?.valueContract,
+            .init(shape: .single, count: .fixed(1), input: .singleDate),
+        )
         XCTAssertEqual(
             recentCondition.values,
             [FileManagerVirtualCollectionContextFactory.recentsSinceAnyOpenedLiteral],
         )
-        XCTAssertTrue(recentCondition.isActive)
+        XCTAssertTrue(recentCondition.isExecutionReady)
 
-        let directoryExclusion = try XCTUnwrap(context.conditions.first { $0.propertyKey == "content_type_tree" })
-        XCTAssertEqual(directoryExclusion.propertyLabel, "Registry Content Type Tree Label")
-        XCTAssertEqual(directoryExclusion.propertyType, "string")
-        XCTAssertEqual(directoryExclusion.operatorCode, "neq")
-        XCTAssertEqual(directoryExclusion.operatorLabel, "Registry Not Equal Label")
-        XCTAssertEqual(directoryExclusion.operatorValueArity, 1)
-        XCTAssertEqual(directoryExclusion.operatorValueUIKind, "singleText")
-        XCTAssertEqual(directoryExclusion.valueType, "string")
+        let directoryExclusion = try XCTUnwrap(context.conditions.first { $0.property.key == "content_type_tree" })
+        XCTAssertEqual(directoryExclusion.property.label, "Registry Content Type Tree Label")
+        XCTAssertEqual(directoryExclusion.property.type.rawValue, "string")
+        XCTAssertEqual(directoryExclusion.operation?.code, "neq")
+        XCTAssertEqual(directoryExclusion.operation?.label, "Registry Not Equal Label")
+        XCTAssertEqual(
+            directoryExclusion.operation?.valueContract,
+            .init(shape: .single, count: .fixed(1), input: .singleText),
+        )
         XCTAssertEqual(directoryExclusion.values, ["public.folder"])
-        XCTAssertTrue(directoryExclusion.isActive)
+        XCTAssertTrue(directoryExclusion.isExecutionReady)
     }
 
     /// RCL-002-save_current_filter_as_new_collection: built-in Recents가 virtual Recents 정의를 재사용
@@ -298,7 +300,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertFalse(builtInContext.includeDirectories)
         XCTAssertEqual(builtInContext.conditions.count, 2)
         XCTAssertEqual(
-            builtInContext.conditions.first { $0.propertyKey == "last_used_date" }?.values,
+            builtInContext.conditions.first { $0.property.key == "last_used_date" }?.values,
             ["$time.today(-1000000)"],
         )
     }
@@ -322,9 +324,9 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertEqual(context.conditions.count, 1)
 
         let condition = try XCTUnwrap(context.conditions.first)
-        XCTAssertEqual(condition.propertyKey, "tag_names")
-        XCTAssertEqual(condition.operatorCode, "any")
-        XCTAssertNotEqual(condition.operatorCode, "contains")
+        XCTAssertEqual(condition.property.key, "tag_names")
+        XCTAssertEqual(condition.operation?.code, "any")
+        XCTAssertNotEqual(condition.operation?.code, "contains")
         XCTAssertEqual(condition.values, ["Personal", "Work", "work"])
     }
 
@@ -386,8 +388,19 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
                 registryClient: makeRegistryClient(),
             ),
         )
-        var conditions = context.conditions
-        conditions[0].operatorCode = "eq"
+        let conditions = context.conditions.map { condition in
+            Condition(
+                property: condition.property,
+                operation: .init(
+                    code: "eq",
+                    label: "Equals",
+                    valueContract: .init(shape: .single, count: .fixed(1), input: .singleDate),
+                ),
+                values: condition.values,
+                availability: condition.availability,
+                opaqueSource: condition.opaqueSource,
+            )
+        }
 
         XCTAssertFalse(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(conditions))
     }
@@ -468,8 +481,34 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             propertyUnitSpec: { _ in nil },
             operatorCodes: { _ in ["any", "gt", "neq"] },
             operatorDefinition: Self.registryOperatorDefinition(for:),
-            operatorValueUIKind: Self.registryOperatorUIKind(for:typeKey:),
             resolvePropertyKey: { .canonical($0) },
+            resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+                let type = SystemPropertyTypeKey(rawType: Self.registryType(for: propertyKey))
+                let input: Condition.ValueInputKind = switch (propertyKey, operatorCode) {
+                case ("tag_names", "any"): .listText
+                case ("last_used_date", "gt"): .singleDate
+                default: .singleText
+                }
+                let contract = Condition.ValueContract(
+                    shape: input == .listText ? .list : .single,
+                    count: input == .listText ? .multiple : .fixed(1),
+                    input: input,
+                )
+                let label = Self.registryOperatorDefinition(for: operatorCode ?? "").uiLabel ?? (operatorCode ?? "")
+                return Condition(
+                    property: .init(
+                        key: propertyKey,
+                        label: Self.registryLabel(for: propertyKey),
+                        type: type,
+                        unitContract: nil,
+                        operatorOptions: operatorCode.map { [.init(code: $0, label: label)] } ?? [],
+                    ),
+                    operation: operatorCode.map { .init(code: $0, label: label, valueContract: contract) },
+                    values: values,
+                    availability: .available,
+                    opaqueSource: sourcePayload,
+                )
+            },
         )
     }
 
@@ -510,19 +549,6 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             )
         default:
             OperatorDefinition(uiLabel: code, uiValueKind: ["unknown": "singleText"])
-        }
-    }
-
-    nonisolated private static func registryOperatorUIKind(for code: String, typeKey: String) -> String {
-        switch (code, typeKey) {
-        case ("any", "categorical"):
-            "listText"
-        case ("gt", "date"):
-            "singleDate"
-        case ("neq", "string"):
-            "singleText"
-        default:
-            "singleText"
         }
     }
 
@@ -687,6 +713,54 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         )
     }
 
+    /// RCL-002-open_saved_collection: pending Collection checkpoint 복원 후 새 경로로 이동
+    /// 동일 user navigation action의 restore와 perform effect가 병합되어 history가 역전되지 않는지 검증한다.
+    /// - 검증 내용: pending/loading 정리와 checkpoint 복원 뒤 새 source snapshot 기록
+    /// - 사전 조건: folder source에서 Collection open prepare가 back/forward history를 변경한 상태
+    /// - 기대 결과: 새 경로와 back/forward history가 하나의 직렬화된 navigation transaction으로 일치함
+    func testNavigateToPathWhileCollectionOpenPendingRestoresCheckpointBeforeNavigation() async {
+        let sourceRoute = ContentPageNavigationRoute.folder("/source")
+        let targetRoute = ContentPageNavigationRoute.folder("/new")
+        let originalBackHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/old")),
+        ]
+        let originalForwardHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/future")),
+        ]
+        let sourceSnapshot = ContentPageNavigationHistorySnapshot(navigationState: sourceRoute)
+        var initialState = FileManagerFeature.State()
+        initialState.content.navigation.navigationState = sourceRoute
+        initialState.content.navigation.backHistory = originalBackHistory + [sourceSnapshot]
+        initialState.content.navigation.forwardHistory = []
+        initialState.content.entryViewLayout.isCollectionContentLoading = true
+        initialState.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(734),
+            url: URL(fileURLWithPath: "/target.voycollection"),
+            sourceRoute: sourceRoute,
+            prePrepareBackHistory: originalBackHistory,
+            prePrepareForwardHistory: originalForwardHistory,
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 734))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileManagerClient.displayName = { $0 }
+        }
+        // 비포괄적: downstream content load보다 restore와 새 navigation의 최종 순서를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.navigateToPath("/new"))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+        XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+        XCTAssertEqual(store.state.content.navigation.navigationState, targetRoute)
+        XCTAssertEqual(store.state.content.navigation.backHistory, originalBackHistory + [sourceSnapshot])
+        XCTAssertEqual(store.state.content.navigation.forwardHistory, [])
+    }
+
     // MARK: - RCL-002-show_restored_collection_snapshot
 
     /// RCL-002-show_restored_collection_snapshot: snapshot-bearing collection open은 저장 snapshot path를 content list에 적용함
@@ -707,6 +781,8 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             id: UUID(608),
             url: collectionURL,
             sourceRoute: initialState.content.navigation.navigationState,
+            prePrepareBackHistory: initialState.content.navigation.backHistory,
+            prePrepareForwardHistory: initialState.content.navigation.forwardHistory,
         )
         initialState.pendingCollectionOpenRequest = request
         initialState.content.collection.collectionSession.document = .init(

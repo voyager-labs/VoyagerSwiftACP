@@ -20,6 +20,10 @@ LOCAL_ARTIFACT_PATHS = (
     ".sisyphus/evidence/task.json",
     ".codegraph/index.json",
 )
+MACOS_COMPONENT_TEST = (
+    "apps/macos/Packages/04_Features/Composer/Tests/"
+    + "VoyagerFeaturesComposerTests/ComposerNativeMenuButtonTests.swift"
+)
 RULE = """---
 description: "fixture"
 alwaysApply: true
@@ -181,6 +185,45 @@ class AgentValidationTests(unittest.TestCase):
                 self.write(root, relative, content)
                 result, payload = self.run_cli(VALIDATE, root, "--all")
                 self.assert_exact_diagnostic(result, payload, code)
+
+    def test_macos_test_classes_must_follow_spec_or_flow_topology(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(
+                root,
+                MACOS_COMPONENT_TEST,
+                "final class ComposerNativeMenuButtonTests: XCTestCase {}\n",
+            )
+            result, payload = self.run_cli(VALIDATE, root, MACOS_COMPONENT_TEST)
+            self.assert_exact_diagnostic(result, payload, "HARNESS_MACOS_TEST_TOPOLOGY")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            spec_test = (
+                "apps/macos/Packages/04_Features/Composer/Tests/"
+                + "VoyagerFeaturesComposerTests/Specs/"
+                + "RCL005ComposeCollectionConditionsTests.swift"
+            )
+            self.write(
+                root,
+                spec_test,
+                "final class RCL005ComposeCollectionConditionsTests: XCTestCase {}\n",
+            )
+            result, payload = self.run_cli(VALIDATE, root, spec_test)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            flow_test = "apps/macos/Voyager/VoyagerTests/Flows/RCL/CollectionScopeEditingFlowTests.swift"
+            self.write(
+                root,
+                flow_test,
+                "final class CollectionScopeEditingFlowTests: XCTestCase {}\n",
+            )
+            result, payload = self.run_cli(VALIDATE, root, flow_test)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
 
     def test_staged_artifact_fixture_fails(self) -> None:
         temp = self.make_repo()
@@ -576,13 +619,20 @@ class AgentValidationTests(unittest.TestCase):
                 ".agents/skills/fixture/evals/evals.json",
                 "{bad",
             ),
+            "HARNESS_MACOS_TEST_TOPOLOGY": (
+                MACOS_COMPONENT_TEST,
+                "final class ComposerNativeMenuButtonTests: XCTestCase {}\n",
+            ),
         }
         seen_codes: set[str] = set()
         for code, (relative, content) in harness_cases.items():
             with self.subTest(code=code), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 self.write(root, relative, content)
-                result, payload = self.run_cli(VALIDATE, root, "--all")
+                arguments = (
+                    (relative,) if code == "HARNESS_MACOS_TEST_TOPOLOGY" else ("--all",)
+                )
+                result, payload = self.run_cli(VALIDATE, root, *arguments)
                 self.assert_exact_diagnostic(result, payload, code)
                 seen_codes.add(code)
 

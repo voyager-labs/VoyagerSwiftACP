@@ -40,6 +40,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let hostingView = NSHostingView(rootView: WithPerceptionTracking {
             AiChatView(
                 store: store,
+                allowsAttachmentPicker: false,
                 centeredEmptyContent: AnyView(Text("Centered content")),
             )
         })

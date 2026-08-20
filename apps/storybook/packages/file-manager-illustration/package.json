@@ -1,6 +1,7 @@
 {
   "name": "@voyager-labs/file-manager-illustration",
   "version": "0.0.1",
+  "repository": { "type": "git", "url": "git+https://github.com/voyager-labs/voyager-app.git" },
   "type": "module",
   "files": ["dist"],
   "exports": {

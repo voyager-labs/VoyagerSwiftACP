@@ -93,6 +93,8 @@ struct MenuCommandsFeature {
         case .duplicateTab: .send(.delegate(.windowManager(.file(.duplicateTab))))
         case let .selectContentTab(position):
             .send(.delegate(.windowManager(.file(.selectContentTab(position: position)))))
+        case .presentContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.presentContentTabSwitcher))))
         case .selectMostRecentlyUsedContentTab:
             .send(.delegate(.windowManager(.file(.selectMostRecentlyUsedContentTab))))
         default: nil

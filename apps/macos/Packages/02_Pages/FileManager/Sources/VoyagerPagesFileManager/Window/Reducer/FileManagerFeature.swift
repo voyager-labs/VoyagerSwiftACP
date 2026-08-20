@@ -28,7 +28,9 @@ public struct FileManagerFeature {
             return coreBody.reduce(into: &state, action: action)
         }
     }
+}
 
+private extension FileManagerFeature {
     @ReducerBuilder<State, Action> private var coreBody: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -508,7 +510,7 @@ public struct FileManagerFeature {
              .backgroundAiChat,
              .backgroundAiChatSnapshotPersisted,
              .backgroundInspectorAiChat,
-             .backgroundInspectorAiChatSnapshotPersisted,
+             .backgroundInspectorSnapshotPersisted,
              .contentTabMoveSucceeded,
              .contentTabMoveRejected,
              .onDisappear:

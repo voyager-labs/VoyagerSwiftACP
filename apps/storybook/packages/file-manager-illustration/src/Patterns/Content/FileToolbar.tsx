@@ -1,6 +1,7 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import { IconButton } from "../../UI/Controls/IconButton"
+import { ToolbarNavigation } from "./ToolbarNavigation"
 
 export type EntryViewMode = "grid" | "list"
 
@@ -30,17 +31,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
 }) => {
   return (
     <header className="toolbar">
-      <div className="toolbar-left">
-        <IconButton className="subtle" aria-label="Back">
-          <SFSymbol name="chevron.left" size={13} weight={500} />
-        </IconButton>
-        <IconButton className="subtle" aria-label="Forward">
-          <SFSymbol name="chevron.right" size={13} weight={500} />
-        </IconButton>
-        <IconButton className="subtle" aria-label="Parent">
-          <SFSymbol name="chevron.up" size={13} weight={500} />
-        </IconButton>
-      </div>
+      <ToolbarNavigation />
 
       <div className="toolbar-title-area">
         <span className="toolbar-title-content">
@@ -50,7 +41,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
         {content === "directory" && (
           <span className="toolbar-title-controls">
             <IconButton
-              aria-label={viewMode === "grid" ? "Grid view" : "List view"}
+              aria-label={`Switch to ${viewMode === "grid" ? "list" : "grid"} view`}
               className="subtle"
               onClick={() => onViewModeChange(viewMode === "grid" ? "list" : "grid")}
             >
@@ -60,7 +51,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
                 weight={500}
               />
             </IconButton>
-            <IconButton className="subtle" aria-label="Sort and group">
+            <IconButton className="subtle" aria-label="Sort and group" disabled>
               <SFSymbol name="arrow.up.arrow.down" size={13} weight={500} />
             </IconButton>
           </span>
@@ -69,7 +60,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
 
       <div className="toolbar-right">
         {onNewChat && (
-          <IconButton className="subtle" aria-label="New Chat" onClick={onNewChat}>
+          <IconButton className="subtle toolbar-new-chat" aria-label="New Chat" onClick={onNewChat}>
             <SFSymbol name="sidebar.trailing" size={13} weight={500} />
           </IconButton>
         )}

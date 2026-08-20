@@ -80,6 +80,26 @@
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }
 
+/* New Chat pill — 네이티브 ToolbarHoverPillButtonLabel 계약 (ToolbarButton.swift).
+   text 12px medium primary, padding h10, frame h24, radius 6, fill primary@0.06,
+   stroke primary@0.10 lineWidth 1. hover: controlHoverFill + stroke primary@0.14.
+   color-mix(--fm-text-primary)로 dark/light 양쪽 적응. literal 수치는 네이티브 일치 목적. */
+[data-file-manager-illustration] .inspector-new-chat-pill {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--fm-text-primary) 10%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fm-text-primary) 6%, transparent);
+  color: var(--fm-text-primary);
+  font-size: 12px;
+  font-weight: var(--fm-weight-medium);
+}
+
+[data-file-manager-illustration] .inspector-new-chat-pill:hover {
+  background: var(--fm-control-hover);
+  border-color: color-mix(in srgb, var(--fm-text-primary) 14%, transparent);
+}
+
 /* Native back/close 버튼은 28×28 고정 프레임. 아이콘 전용 버튼에만 적용. */
 [data-file-manager-illustration] .inspector-header-icon-btn {
   width: 28px;

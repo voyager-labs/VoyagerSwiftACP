@@ -679,6 +679,34 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(listItems.flatMap { $0.flattenEntries().map(\.0) }, [folder.id, file.id])
     }
 
+    /// EVM-002-switch_entries_view: 빈 groupName 섹션(groupKey .none)은 group header 없이 flat으로 렌더링된다.
+    /// - 검증 내용: EntryArrangementsApplyReducer가 groupKey .none일 때 만드는 빈 이름 그룹이
+    ///   presentation에서 title nil로 정규화되어 list/grid 모두 group row 없이 entry만 만든다.
+    /// - 사전 조건: groupKey가 .none이고 groupedItems가 빈 이름 그룹 하나로 투영됐다 (컬렉션 검색 결과와 동일 구조).
+    /// - 기대 결과: grid section title은 nil이고 list outline items는 group row 없이 entry row만 포함한다.
+    func testEmptyGroupNameSectionRendersFlatWithoutGroupHeader() {
+        let file = makePresentationFile(id: "/root/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entryArrangements.groupKey = .none
+        state.entries = [file]
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "", items: [file]),
+        ]
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+
+        XCTAssertNil(state.presentation.sections.first?.title)
+
+        let gridSections = EntryGridCoordinator(store: store).makeSections(state: state)
+        let listItems = EntryListCoordinator(store: store).makeOutlineItems(state: state)
+
+        XCTAssertNil(gridSections.first?.title)
+        XCTAssertTrue(listItems.allSatisfy { item in
+            if case .entry = item.kind { return true }
+            return false
+        })
+        XCTAssertEqual(listItems.flatMap { $0.flattenEntries().map(\.0) }, [file.id])
+    }
+
     /// EVM-002-switch_entries_view: 접힌 group은 grid와 list에서 동일하게 숨겨진다.
     /// - 검증 내용: 공통 section의 collapse 상태가 두 coordinator의 child 가시성에 적용된다.
     /// - 사전 조건: Text section이 collapsed 상태다.

@@ -201,7 +201,7 @@ public extension CollectionState {
 
     mutating func makeOpenRestorationPayload(
         file: VoyagerCollectionFile,
-        resolved: AppliedFiltersUtils.ResolutionResult,
+        resolved: AppliedFilterResolver.ResolutionResult,
         isStale: Bool,
         compatibility: CollectionFileCompatibilityMetadata,
     ) -> CollectionOpenRestorationPayload {
@@ -231,21 +231,19 @@ public extension CollectionState {
             shouldRestoreStaleNavigation: isStale,
             queryTrigger: makeOpenQueryTrigger(
                 trimmedQuery: trimmedQuery,
-                hasConditions: resolved.conditions.contains(where: \.isSearchReady),
+                hasConditions: resolved.conditions.contains(where: \.isExecutionReady),
                 kind: kind,
                 isStale: isStale,
             ),
             hydratedOpenPayload: hydratedOpenPayload,
-            isEmptyDefinition: trimmedQuery.isEmpty
-                && resolved.scopes.isEmpty
-                && resolved.conditions.isEmpty,
+            isEmptyDefinition: file.isEmptyDefinition(resolvedFilters: resolved),
             unsupportedFilterKeys: resolved.unknownKeys,
         )
     }
 
     private func restoredOpenContext(
         trimmedQuery: String,
-        resolved: AppliedFiltersUtils.ResolutionResult,
+        resolved: AppliedFilterResolver.ResolutionResult,
         isStale: Bool,
         includeSubfolders: Bool,
         includeDirectories: Bool,

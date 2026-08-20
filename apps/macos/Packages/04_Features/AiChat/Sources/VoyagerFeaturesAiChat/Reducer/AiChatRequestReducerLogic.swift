@@ -293,9 +293,9 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: trimmed,
             messages: truncatedHistory.messages,
-            persistenceTranscriptHistory: fullMessages,
             assistantReplacementIndex: nil,
             historyTruncation: truncatedHistory.metadata,
+            persistenceTranscriptHistory: fullMessages,
         )
     }
 
@@ -324,9 +324,9 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: truncatedHistory.messages,
-            persistenceTranscriptHistory: messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
+            persistenceTranscriptHistory: messages,
             requestContextOverride: requestContextOverride,
             requestContextSource: requestContextOverride == nil ? lastSubmittedContext?.context : nil,
         )
@@ -374,10 +374,10 @@ extension AiChatFeature {
             runID: runID,
             context: context,
             request: request,
-            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedHandle,
             selectedModelRow: input.selectedRow,
             assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             customTitle: input.customTitle,
             historyTruncation: input.preparedRequest.historyTruncation,
             observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: submittedAtMs),

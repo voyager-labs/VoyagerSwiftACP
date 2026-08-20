@@ -235,7 +235,7 @@ export const FileManagerWindowLayout: FC<FileManagerWindowLayoutProps> = ({
           marginTop: CONTENT_INSET,
           marginBottom: CONTENT_INSET,
           marginRight: CONTENT_INSET,
-          marginLeft: CONTENT_INSET,
+          marginLeft: sidebarOpen ? 0 : CONTENT_INSET,
           minWidth: CONTENT_MIN,
         }}
       >
