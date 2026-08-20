@@ -141,14 +141,16 @@
   align-content: start;
 }
 
-[data-file-manager-illustration] .nav-item-container {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-container {
   position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
 }
 
-[data-file-manager-illustration] .nav-item {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
@@ -165,21 +167,26 @@
     color var(--fm-motion-fast) ease, transform var(--fm-motion-fast) ease;
 }
 
-[data-file-manager-illustration] .nav-item:hover {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item:hover {
   background: var(--fm-sidebar-hover);
 }
 
-[data-file-manager-illustration] .nav-item:active {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item:active {
   background: var(--fm-control-pressed);
   transform: translateY(1px);
 }
 
-[data-file-manager-illustration] .nav-item:focus-visible {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }
 
-[data-file-manager-illustration] .nav-item strong {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item
+  strong {
   overflow: hidden;
   font-size: var(--fm-font-size-body);
   font-weight: var(--fm-weight-regular);
@@ -187,16 +194,19 @@
   white-space: nowrap;
 }
 
-[data-file-manager-illustration] .nav-item.active {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item.active {
   background: var(--fm-sidebar-selection);
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .nav-icon.active {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-icon.active {
   color: var(--fm-selection-label);
 }
 
-[data-file-manager-illustration] .nav-item-action {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-action {
   position: absolute;
   right: var(--fm-space-3);
   display: grid;
@@ -216,24 +226,33 @@
     color var(--fm-motion-fast) ease, opacity var(--fm-motion-fast) ease;
 }
 
-[data-file-manager-illustration] .nav-item-container:hover .nav-item-action,
-[data-file-manager-illustration] .nav-item-container:focus-within .nav-item-action,
-[data-file-manager-illustration] .nav-item-container.action-revealed .nav-item-action {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-container:hover
+  .nav-item-action,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-container:focus-within
+  .nav-item-action,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-container.action-revealed
+  .nav-item-action {
   visibility: visible;
   opacity: 1;
 }
 
-[data-file-manager-illustration] .nav-item-action:hover {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-action:hover {
   background: var(--fm-control-hover);
   color: var(--fm-text-primary);
 }
 
-[data-file-manager-illustration] .nav-item-action:focus-visible {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-item-action:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }
 
-[data-file-manager-illustration] .nav-icon {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-icon {
   display: inline-grid;
   place-items: center;
   width: 16px;
@@ -252,8 +271,12 @@
   background: inherit;
 }
 
-[data-file-manager-illustration] .nav-icon svg,
-[data-file-manager-illustration] .nav-icon .sf-symbol {
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-icon
+  svg,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .nav-icon
+  .sf-symbol {
   display: block;
   width: 16px;
   height: 16px;
