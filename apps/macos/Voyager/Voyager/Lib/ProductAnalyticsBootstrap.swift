@@ -3,19 +3,73 @@ import VoyagerShared
 
 private actor ProductAnalyticsRuntime {
     private let provider: PostHogProductAnalyticsProvider
+    private let registry: ProductAnalyticsRegistry
     private var cachedDeviceIdentity: String?
+    private let continuation: AsyncStream<Work>.Continuation
 
-    init(provider: PostHogProductAnalyticsProvider, deviceIdentity: String) {
+    fileprivate enum Work {
+        case metric(ProductAnalyticsMetricRequest)
+        case capture(ProductAnalyticsCaptureRequest)
+        case setDeviceIdentity(String?, CheckedContinuation<Void, Never>)
+    }
+
+    init(
+        provider: PostHogProductAnalyticsProvider,
+        registry: ProductAnalyticsRegistry,
+        deviceIdentity: String,
+    ) {
         self.provider = provider
+        self.registry = registry
         cachedDeviceIdentity = deviceIdentity
+        var continuation: AsyncStream<Work>.Continuation!
+        let stream = AsyncStream<Work> {
+            continuation = $0
+        }
+        self.continuation = continuation
+        Task { await self.consume(stream) }
     }
 
-    func capture(_ request: ProductAnalyticsCaptureRequest) async {
-        await provider.capture(request)
+    @discardableResult
+    nonisolated fileprivate func enqueue(_ work: Work) -> AsyncStream<Work>.Continuation.YieldResult {
+        continuation.yield(work)
     }
 
-    func setDeviceIdentity(_ deviceID: String?) {
-        cachedDeviceIdentity = deviceID
+    private func consume(_ stream: AsyncStream<Work>) async {
+        for await work in stream {
+            switch work {
+            case let .metric(request):
+                let result = registry.resolve(
+                    metricKey: request.metricKey,
+                    identity: .device(cachedDeviceIdentity),
+                    context: request.context,
+                    properties: request.properties,
+                )
+                if case let .capture(captureRequest) = result {
+                    await provider.capture(captureRequest)
+                }
+            case let .capture(request):
+                await provider.capture(request)
+            case let .setDeviceIdentity(deviceID, acknowledgement):
+                cachedDeviceIdentity = deviceID
+                acknowledgement.resume()
+            }
+        }
+    }
+
+    func setDeviceIdentity(_ deviceID: String?) async {
+        await withCheckedContinuation { acknowledgement in
+            let result = enqueue(.setDeviceIdentity(deviceID, acknowledgement))
+            switch result {
+            case .enqueued:
+                break
+            case .dropped:
+                acknowledgement.resume()
+            case .terminated:
+                acknowledgement.resume()
+            @unknown default:
+                acknowledgement.resume()
+            }
+        }
     }
 
     func deviceIdentity() -> String? {
@@ -36,6 +90,7 @@ public enum ProductAnalyticsBootstrap {
         environment: [String: String]? = nil,
         urlSessionConfiguration: URLSessionConfiguration? = nil,
         flushAt: Int = 20,
+        registry: ProductAnalyticsRegistry = .load(),
         userDefaults: UserDefaults = .standard,
         makeInstallationID: @escaping @Sendable () -> UUID = UUID.init,
     ) -> ProductAnalyticsClient {
@@ -51,9 +106,25 @@ public enum ProductAnalyticsBootstrap {
         ) else {
             return .disabled
         }
-        let runtime = ProductAnalyticsRuntime(provider: provider, deviceIdentity: installationID)
+        let runtime = ProductAnalyticsRuntime(
+            provider: provider,
+            registry: registry,
+            deviceIdentity: installationID,
+        )
         return ProductAnalyticsClient(capture: { request in
-            Task { await runtime.capture(request) }
+            switch runtime.enqueue(.capture(request)) {
+            case .enqueued, .dropped, .terminated:
+                break
+            @unknown default:
+                break
+            }
+        }, captureMetric: { request in
+            switch runtime.enqueue(.metric(request)) {
+            case .enqueued, .dropped, .terminated:
+                break
+            @unknown default:
+                break
+            }
         }, setDeviceIdentity: { deviceID in
             await runtime.setDeviceIdentity(deviceID)
         }, deviceIdentity: {

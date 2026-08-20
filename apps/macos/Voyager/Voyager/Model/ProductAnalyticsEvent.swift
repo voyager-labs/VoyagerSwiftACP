@@ -3,7 +3,7 @@ import Foundation
 public struct ProductAnalyticsEventName: Codable, Equatable, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
+    nonisolated public init(rawValue: String) {
         self.rawValue = rawValue
     }
 }
@@ -11,7 +11,7 @@ public struct ProductAnalyticsEventName: Codable, Equatable, Hashable, Sendable 
 public struct ProductAnalyticsEventVersion: Codable, Equatable, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
+    nonisolated public init(rawValue: String) {
         self.rawValue = rawValue
     }
 }
@@ -59,7 +59,7 @@ public struct ProductAnalyticsEvent: Codable, Equatable, Sendable {
     public let identifiers: ProductAnalyticsIdentifiers?
     public let properties: [String: ProductAnalyticsPropertyValue]
 
-    public init(
+    nonisolated public init(
         eventName: ProductAnalyticsEventName,
         occurredAtUTC: Date,
         environment: String,
@@ -90,7 +90,7 @@ public struct ProductAnalyticsIdentifiers: Codable, Equatable, Sendable {
     public let interactionID: String
     public let featureID: String
 
-    public init(interactionID: String, featureID: String) {
+    nonisolated public init(interactionID: String, featureID: String) {
         self.interactionID = interactionID
         self.featureID = featureID
     }
@@ -110,7 +110,7 @@ public enum ProductAnalyticsIdentity: Equatable, Sendable {
 public struct ProductAnalyticsCaptureRequest: Equatable, Sendable {
     public let event: ProductAnalyticsEvent
 
-    public init(event: ProductAnalyticsEvent) {
+    nonisolated public init(event: ProductAnalyticsEvent) {
         self.event = event
     }
 }
@@ -123,7 +123,7 @@ public struct ProductAnalyticsEventContext: Equatable, Sendable {
     public let source: String
     public let sourceProject: String
 
-    public init(
+    nonisolated public init(
         occurredAtUTC: Date,
         environment: String,
         appVersion: String,

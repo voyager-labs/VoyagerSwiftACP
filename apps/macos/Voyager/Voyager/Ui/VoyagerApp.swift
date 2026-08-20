@@ -34,7 +34,6 @@ struct VoyagerApp: App {
 
     private struct ProductAnalyticsCaptureContext {
         let client: ProductAnalyticsClient
-        let registry: ProductAnalyticsRegistry
         let environment: EnvironmentLoader.AppEnv
     }
 
@@ -105,11 +104,10 @@ struct VoyagerApp: App {
     private static func makeProductAnalyticsDependencies(
         environment: EnvironmentLoader.AppEnv,
     ) -> ProductAnalyticsDependencies {
-        let client = ProductAnalyticsBootstrap.makeClient()
         let registry = ProductAnalyticsRegistry.load()
+        let client = ProductAnalyticsBootstrap.makeClient(registry: registry)
         let context = ProductAnalyticsCaptureContext(
             client: client,
-            registry: registry,
             environment: environment,
         )
         return ProductAnalyticsDependencies(
@@ -186,21 +184,15 @@ struct VoyagerApp: App {
         tags: [String: String]?,
         context: ProductAnalyticsCaptureContext,
     ) {
-        Task {
-            let identity = await context.client.deviceIdentity()
-            let result = await context.registry.resolve(
-                metricKey: name,
-                identity: .device(identity),
-                context: makeProductAnalyticsEventContext(environment: context.environment),
-                properties: productMetricProperties(name: name, value: value, tags: tags),
-            )
-            if case let .capture(request) = result {
-                context.client.captureEvent(request)
-            }
-        }
+        let eventContext = makeProductAnalyticsEventContext(environment: context.environment)
+        context.client.captureMetric(.init(
+            metricKey: name,
+            properties: productMetricProperties(name: name, value: value, tags: tags),
+            context: eventContext,
+        ))
     }
 
-    static func makeProductAnalyticsEventContext(
+    nonisolated static func makeProductAnalyticsEventContext(
         environment: EnvironmentLoader.AppEnv,
         occurredAtUTC: Date = Date(),
     ) -> ProductAnalyticsEventContext {

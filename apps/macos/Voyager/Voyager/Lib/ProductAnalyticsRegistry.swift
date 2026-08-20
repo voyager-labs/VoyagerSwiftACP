@@ -416,7 +416,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         }
     }
 
-    public func resolve(
+    nonisolated public func resolve(
         metricKey: String,
         identity: ProductAnalyticsIdentity,
         context: ProductAnalyticsEventContext = .init(
@@ -444,7 +444,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         )
     }
 
-    private func resolveCanonicalMetric(
+    nonisolated private func resolveCanonicalMetric(
         metricKey: String,
         identity: ProductAnalyticsIdentity,
         context: ProductAnalyticsEventContext,
@@ -484,7 +484,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         return .capture(.init(event: event))
     }
 
-    private func resolveMetadataOnlyMetric(
+    nonisolated private func resolveMetadataOnlyMetric(
         _ metric: MetadataOnlyMetric,
         identity: ProductAnalyticsIdentity,
         context: ProductAnalyticsEventContext,
@@ -521,7 +521,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         )
     }
 
-    private func explicitDistinctID(
+    nonisolated private func explicitDistinctID(
         for policy: ProductAnalyticsRegistryIdentityPolicy,
         identity: ProductAnalyticsIdentity,
     ) -> String? {
@@ -536,7 +536,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         }
     }
 
-    private func identityIsAvailable(
+    nonisolated private func identityIsAvailable(
         for policy: ProductAnalyticsRegistryIdentityPolicy,
         identity: ProductAnalyticsIdentity,
     ) -> Bool {
@@ -545,13 +545,14 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             guard case let .device(value) = identity else { return false }
             return value?.isEmpty == false
         case .anonymous:
-            return identity == .anonymous
+            guard case .anonymous = identity else { return false }
+            return true
         case .none:
             return false
         }
     }
 
-    private func isPrivacySafe(
+    nonisolated private func isPrivacySafe(
         _ properties: [String: ProductAnalyticsPropertyValue],
         allowed: [String],
     ) -> Bool {
@@ -562,7 +563,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         }
     }
 
-    private func isAllowedTelemetryValue(
+    nonisolated private func isAllowedTelemetryValue(
         key: String,
         value: ProductAnalyticsPropertyValue,
     ) -> Bool {
@@ -579,7 +580,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         }
     }
 
-    private func isIdentifierValue(
+    nonisolated private func isIdentifierValue(
         key: String,
         value: ProductAnalyticsPropertyValue,
     ) -> Bool {
@@ -587,7 +588,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         return key == "interaction_id" ? isInteractionID(value) : isFeatureID(value)
     }
 
-    private func isBoundedInteger(
+    nonisolated private func isBoundedInteger(
         key: String,
         value: ProductAnalyticsPropertyValue,
     ) -> Bool {
@@ -596,7 +597,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         return (0 ... upperBound).contains(value)
     }
 
-    private func isInteractionID(_ value: String) -> Bool {
+    nonisolated private func isInteractionID(_ value: String) -> Bool {
         let components = value.split(separator: "-", omittingEmptySubsequences: false)
         guard components.count == 3,
               isFeatureID("\(components[0])-\(components[1])"),
@@ -607,7 +608,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         return components[2].isEmpty == false
     }
 
-    private func isFeatureID(_ value: String) -> Bool {
+    nonisolated private func isFeatureID(_ value: String) -> Bool {
         let components = value.split(separator: "-", omittingEmptySubsequences: false)
         guard components.count == 2,
               (2 ... 4).contains(components[0].count),
@@ -620,7 +621,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         return true
     }
 
-    private func isBoundedTelemetryToken(key: String, value: String) -> Bool {
+    nonisolated private func isBoundedTelemetryToken(key: String, value: String) -> Bool {
         guard (1 ... 64).contains(value.count),
               value.first?.isLetter == true,
               value.allSatisfy({ $0.isLowercase || $0.isNumber || $0 == "_" || $0 == "-" || $0 == "." })
@@ -633,12 +634,12 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         return !Self.sensitiveValueFragments.contains { value.localizedCaseInsensitiveContains($0) }
     }
 
-    private static let commonPropertyAllowlist: Set<String> = [
+    nonisolated private static let commonPropertyAllowlist: Set<String> = [
         "interaction_id", "feature_id", "source_surface", "result_status", "failure_reason",
         "recovery_action", "target_count", "duration_ms",
     ]
 
-    private static let sensitiveValueFragments = [
+    nonisolated private static let sensitiveValueFragments = [
         "/", "\\", "~/", "sk-", "pk-", "ghp_", "xoxb-", "bearer", "api_key", "token", "secret",
         "password", "credential", "response", "question", "prompt", "answer", "user_input", "model_output",
         "ignore previous instructions", "<script",

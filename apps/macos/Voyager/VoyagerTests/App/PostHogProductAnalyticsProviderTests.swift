@@ -6,6 +6,11 @@ import XCTest
 
 @MainActor
 final class PostHogProductAnalyticsProviderTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        RequestInterceptor.reset()
+    }
+
     func testMissingEmptyAndWhitespaceConfigurationIsDisabled() {
         XCTAssertNil(ProductAnalyticsBootstrap.configuration(environment: [:]))
         XCTAssertNil(ProductAnalyticsBootstrap.configuration(environment: [
@@ -229,6 +234,179 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         _ = await interceptor.nextRequest()
     }
 
+    func testMetricCaptureUsesProducerTimestampAndRegistryIdentity() async throws {
+        let interceptor = RequestInterceptor()
+        let suiteName = "ProductAnalyticsMetricTimestampTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer { URLProtocol.unregisterClass(RequestInterceptor.self) }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let producerDate = Date(timeIntervalSince1970: 1_700_000_123)
+        let client = ProductAnalyticsBootstrap.makeClient(
+            environment: [
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": "metric-timestamp-\(UUID().uuidString)",
+                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
+            ],
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+            registry: makeMetricRegistry(),
+            userDefaults: defaults,
+            makeInstallationID: {
+                UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE") ?? UUID()
+            },
+        )
+
+        client.captureMetric(.init(
+            metricKey: "metric_probe",
+            properties: ["target_count": .integer(1)],
+            context: .init(
+                occurredAtUTC: producerDate,
+                environment: "test",
+                appVersion: "0.8.2",
+                platform: "macOS",
+                source: "app",
+            ),
+        ))
+
+        let captured = await interceptor.nextRequest()
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: gunzipped(captured.body),
+        ) as? [String: Any])
+        let event = try XCTUnwrap((json["batch"] as? [[String: Any]])?.first)
+        XCTAssertEqual(event["distinct_id"] as? String, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+        XCTAssertEqual(event["timestamp"] as? String, "2023-11-14T22:15:23.000Z")
+    }
+
+    func testAdjacentMetricCapturesPreserveProducerOrder() async throws {
+        let interceptor = RequestInterceptor()
+        let gate = BlockingGate()
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer {
+            gate.release()
+            URLProtocol.unregisterClass(RequestInterceptor.self)
+            RequestInterceptor.setMode(.normal, gate: nil)
+        }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let client = ProductAnalyticsBootstrap.makeClient(
+            environment: [
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": "metric-order-\(UUID().uuidString)",
+                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
+            ],
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+            registry: makeMetricRegistry(),
+        )
+
+        RequestInterceptor.setMode(.blocking, gate: gate)
+        for value in 1 ... 3 {
+            client.captureMetric(metricRequest(value: value))
+            if value == 1 {
+                XCTAssertTrue(gate.waitForStart())
+            }
+        }
+        gate.release()
+
+        var values: [Int] = []
+        while values.count < 3 {
+            let captured = await interceptor.nextRequest()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: gunzipped(captured.body),
+            ) as? [String: Any])
+            let batch = try XCTUnwrap(json["batch"] as? [[String: Any]])
+            for event in batch {
+                let properties = try XCTUnwrap(event["properties"] as? [String: Any])
+                try values.append(XCTUnwrap(properties["target_count"] as? Int))
+            }
+        }
+        XCTAssertEqual(values, [1, 2, 3])
+    }
+
+    func testAwaitedIdentityUpdatePreservesMetricIdentityOrder() async throws {
+        let interceptor = RequestInterceptor()
+        let suiteName = "ProductAnalyticsMetricIdentityOrderTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer { URLProtocol.unregisterClass(RequestInterceptor.self) }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let client = ProductAnalyticsBootstrap.makeClient(
+            environment: [
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": "metric-identity-order-\(UUID().uuidString)",
+                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
+            ],
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+            registry: makeMetricRegistry(),
+            userDefaults: defaults,
+            makeInstallationID: {
+                UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE") ?? UUID()
+            },
+        )
+
+        client.captureMetric(metricRequest(value: 1))
+        await client.setDeviceIdentity("updated-device-id")
+        client.captureMetric(metricRequest(value: 2))
+
+        var identities: [String?] = []
+        while identities.count < 2 {
+            let captured = await interceptor.nextRequest()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: gunzipped(captured.body),
+            ) as? [String: Any])
+            let batch = try XCTUnwrap(json["batch"] as? [[String: Any]])
+            identities.append(contentsOf: batch.map { $0["distinct_id"] as? String })
+        }
+        XCTAssertEqual(identities, [
+            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+            "updated-device-id",
+        ])
+    }
+
+    func testMetricCaptureReturnsBeforeBlockingTransport() {
+        let gate = BlockingGate()
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer {
+            gate.release()
+            URLProtocol.unregisterClass(RequestInterceptor.self)
+            RequestInterceptor.setMode(.normal, gate: nil)
+        }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let client = ProductAnalyticsBootstrap.makeClient(
+            environment: [
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": "metric-nonblocking-\(UUID().uuidString)",
+                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
+            ],
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+            registry: makeMetricRegistry(),
+        )
+        RequestInterceptor.setMode(.blocking, gate: gate)
+
+        client.captureMetric(.init(
+            metricKey: "metric_probe",
+            properties: ["target_count": .integer(1)],
+            context: .init(
+                occurredAtUTC: Date(timeIntervalSince1970: 1_700_000_000),
+                environment: "test",
+                appVersion: "0.8.2",
+                platform: "macOS",
+                source: "app",
+            ),
+        ))
+        gate.markReturned()
+        XCTAssertTrue(gate.waitForStart())
+        XCTAssertTrue(gate.waitForReturn())
+    }
+
     func testInstallationIdentityIsPersistedAndReused() throws {
         let suiteName = "ProductAnalyticsBootstrapTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -292,6 +470,36 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
             ),
         )
     }
+
+    private func makeMetricRegistry() -> ProductAnalyticsRegistry {
+        ProductAnalyticsRegistry(records: [
+            .init(
+                interactionID: "metric-probe",
+                featureID: "metric-probe",
+                implementationStatus: .implemented,
+                sentryMetricKeys: ["metric_probe"],
+                posthogEventName: "metric_probe_event",
+                legacyAliases: [],
+                identityPolicy: .device,
+                propertyAllowlist: ["target_count"],
+                relatedIssues: [],
+            ),
+        ])
+    }
+
+    private func metricRequest(value: Int) -> ProductAnalyticsMetricRequest {
+        .init(
+            metricKey: "metric_probe",
+            properties: ["target_count": .integer(value)],
+            context: .init(
+                occurredAtUTC: Date(timeIntervalSince1970: Double(value)),
+                environment: "test",
+                appVersion: "0.8.2",
+                platform: "macOS",
+                source: "app",
+            ),
+        )
+    }
 }
 
 private class RequestInterceptor: URLProtocol {
@@ -319,6 +527,15 @@ private class RequestInterceptor: URLProtocol {
         storage.withLock { state in
             state.mode = mode
             state.gate = gate
+        }
+    }
+
+    static func reset() {
+        storage.withLock { state in
+            precondition(state.waiters.isEmpty)
+            state.requests.removeAll()
+            state.mode = .normal
+            state.gate = nil
         }
     }
 
