@@ -1,6 +1,11 @@
 import Foundation
 
 extension RuntimeControlPlane {
+    enum ReservationTransition {
+        case reserved(RunReservation)
+        case rejectedDuplicate
+    }
+
     struct RunReservation {
         let adapter: any ExternalAgentRuntimeAdapter
         let descriptor: RuntimeAdapterDescriptor
@@ -13,34 +18,10 @@ extension RuntimeControlPlane {
         case terminal(RuntimeResult)
     }
 
-    func retireOrphanedDirectRunIfNeeded(_ request: RuntimeLaunchRequest) async throws -> Bool {
-        let host = request.externalAgentSessionReference
-        guard let current = sessions[host],
-              !current.lease.isActive,
-              current.stored.projection == .launching,
-              current.stored.providerInternalSessionReference == nil,
-              current.stored.providerLaunchAttempted == false,
-              current.stored.runReference == request.runReference
-        else { return false }
-        return try await commit(host: host) { _, registry in
-            guard var candidate = registry[host],
-                  !candidate.lease.isActive,
-                  candidate.stored.projection == .launching,
-                  candidate.stored.providerInternalSessionReference == nil,
-                  candidate.stored.providerLaunchAttempted == false,
-                  candidate.stored.runReference == request.runReference
-            else { return false }
-            candidate.stored = candidate.stored.withProjection(.interrupted)
-            candidate.revision += 1
-            registry[host] = candidate
-            return true
-        }
-    }
-
     func reserveTransition(
         _ request: RuntimeLaunchRequest,
         in registry: inout SessionRegistry,
-    ) throws -> RunReservation {
+    ) throws -> ReservationTransition {
         try validateBoundary(request)
         guard let adapter = adapters[request.adapterID] else {
             throw RuntimeHostError.adapterNotFound(request.adapterID)
@@ -51,12 +32,14 @@ extension RuntimeControlPlane {
         let host = request.externalAgentSessionReference
         try requireAvailableRunReference(request.runReference, excluding: host, in: registry)
         guard var current = registry[host] else { throw RuntimeHostError.invalidEvent }
-        let sameRun = current.stored.runReference == request.runReference
-        let mayLaunch = sameRun && [.policyReady, .launchFailed].contains(current.stored.projection)
-        guard !current.lease.isActive, mayLaunch else {
-            if sameRun { throw RuntimeHostError.duplicateRunReference }
+        guard current.stored.runReference == request.runReference else {
             throw RuntimeHostError.activeRunExists
         }
+        let snapshot = current.freshRunSnapshot()
+        if try applyOrphanReservationIfNeeded(snapshot, to: &current, in: &registry, host: host) {
+            return .rejectedDuplicate
+        }
+        try requireReservationAllowed(snapshot)
         guard current.stored.matchesLaunchSnapshot(request, descriptor: descriptor) else {
             throw RuntimeHostError.invalidEvent
         }
@@ -84,7 +67,46 @@ extension RuntimeControlPlane {
         )
         let lease = current.issueLease(RuntimeLease.launching)
         registry[host] = current
-        return RunReservation(adapter: adapter, descriptor: descriptor, host: host, lease: lease)
+        return .reserved(RunReservation(adapter: adapter, descriptor: descriptor, host: host, lease: lease))
+    }
+
+    private func applyOrphanReservationIfNeeded(
+        _ snapshot: RuntimeFreshRunSnapshot,
+        to session: inout Session,
+        in registry: inout SessionRegistry,
+        host: ExternalAgentSessionReference,
+    ) throws -> Bool {
+        switch RuntimeFreshRunDecisionTable.decide(.orphanLaunching, on: snapshot) {
+        case let .persist(projection, attachReceipt, lease):
+            try applyFreshRunDecision(
+                .persist(projection: projection, attachReceipt: attachReceipt, lease: lease),
+                to: &session,
+            )
+            registry[host] = session
+            return true
+        case .ignore, .throwHost(.activeRunExists):
+            return false
+        case let .throwHost(error):
+            throw error
+        case .throwCancellation:
+            throw CancellationError()
+        case .adoptPersisted:
+            throw RuntimeHostError.persistenceConflict
+        }
+    }
+
+    private func requireReservationAllowed(_ snapshot: RuntimeFreshRunSnapshot) throws {
+        guard !RuntimeFreshRunDecisionTable.allowsRelaunch(snapshot) else { return }
+        switch RuntimeFreshRunDecisionTable.decide(.reserve, on: snapshot) {
+        case let .throwHost(error):
+            throw error
+        case .throwCancellation:
+            throw CancellationError()
+        case .ignore:
+            throw RuntimeHostError.duplicateRunReference
+        case .persist, .adoptPersisted:
+            throw RuntimeHostError.invalidEvent
+        }
     }
 
     func recordReceiptTransition(
@@ -100,27 +122,22 @@ extension RuntimeControlPlane {
             throw RuntimeHostError.invalidEvent
         }
         guard session.lease == .launching(lease) else { throw RuntimeHostError.invalidEvent }
-        if let existing = session.stored.providerInternalSessionReference,
-           existing != receipt.providerInternalSessionReference
-        {
-            throw RuntimeHostError.malformedAdapterResponse
-        }
-        session.stored = session.stored.withProviderReference(
-            receipt.providerInternalSessionReference,
-            projection: session.stored.projection.isTerminal ? session.stored.projection : .running,
+        let decision = RuntimeFreshRunDecisionTable.decide(
+            .receipt(token: receipt.providerInternalSessionReference.rawValue),
+            on: session.freshRunSnapshot(),
         )
-        session.revision += 1
+        try applyFreshRunDecision(decision, to: &session)
         if let terminal = terminalResult(for: session.stored) {
-            session.lease = .none
             registry[host] = session
             return .terminal(terminal)
         }
-        guard session.stored.projection == .running else {
+        guard session.stored.projection == .running,
+              case let .consuming(consumingLease) = session.lease
+        else {
             throw RuntimeHostError.invalidEvent
         }
-        session.lease = .consuming(lease)
         registry[host] = session
-        return .consuming(lease)
+        return .consuming(consumingLease)
     }
 
     func finishTransition(
@@ -141,27 +158,115 @@ extension RuntimeControlPlane {
             registry[host] = session
             return terminal.outcome == result.outcome ? result : terminal
         }
-        session.stored = session.stored.withProjection(projection(for: result.outcome))
-        session.lease = .none
-        session.revision += 1
+        switch session.lease {
+        case .consuming:
+            let decision = RuntimeFreshRunDecisionTable.decide(
+                .providerResult(result.outcome),
+                on: session.freshRunSnapshot(),
+            )
+            guard case .persist = decision else { throw RuntimeHostError.invalidEvent }
+            try applyFreshRunDecision(decision, to: &session)
+        case .resuming:
+            session.stored = session.stored.withProjection(projection(for: result.outcome))
+            session.lease = .none
+            session.revision += 1
+        case .none, .launching, .detachedLaunching, .detachedConsuming, .restored:
+            throw RuntimeHostError.invalidEvent
+        }
         registry[host] = session
         return result
     }
 
-    func failLaunchTransition(
+    func persistLaunchFailureTransition(
         host: ExternalAgentSessionReference,
         lease: UInt64,
         in registry: inout SessionRegistry,
-    ) -> RuntimeResult? {
+    ) throws -> RuntimeResult? {
         guard var session = registry[host], session.lease == .launching(lease) else { return nil }
-        let terminal = terminalResult(for: session.stored)
-        if !session.stored.projection.isTerminal {
-            session.stored = session.stored.withProjection(.interrupted)
+        let decision = RuntimeFreshRunDecisionTable.decide(
+            .adapterLaunchFailed,
+            on: session.freshRunSnapshot(),
+        )
+        try applyFreshRunDecision(decision, to: &session)
+        if session.stored.projection.isTerminal, session.lease == .launching(lease) {
+            session.lease = .none
+            session.revision += 1
         }
-        session.lease = .none
-        session.revision += 1
         registry[host] = session
-        return terminal
+        return terminalResult(for: session.stored)
+    }
+
+    func persistReceiptFailureTransition(
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+        receipt: RuntimeLaunchReceipt,
+        in registry: inout SessionRegistry,
+    ) throws -> RuntimeResult? {
+        guard var session = registry[host],
+              session.stored.runReference == receipt.runReference,
+              session.lease == .launching(lease)
+        else { return nil }
+        let decision = RuntimeFreshRunDecisionTable.decide(
+            .receiptPersistFailed,
+            on: session.freshRunSnapshot(
+                receiptToken: receipt.providerInternalSessionReference.rawValue,
+            ),
+        )
+        try applyFreshRunDecision(decision, to: &session)
+        registry[host] = session
+        return terminalResult(for: session.stored)
+    }
+
+    func persistCallerCancellationTransition(
+        host: ExternalAgentSessionReference,
+        originatingRunReference: RuntimeRunReference,
+        in registry: inout SessionRegistry,
+        receipt: RuntimeLaunchReceipt? = nil,
+    ) throws {
+        guard var session = registry[host],
+              session.stored.runReference == originatingRunReference
+        else { return }
+        let decision = RuntimeFreshRunDecisionTable.decide(
+            .callerCancel,
+            on: session.freshRunSnapshot(
+                receiptToken: receipt?.providerInternalSessionReference.rawValue,
+            ),
+        )
+        try applyFreshRunDecision(decision, to: &session)
+        registry[host] = session
+    }
+
+    func applyFreshRunDecision(
+        _ decision: RuntimeFreshRunDecision,
+        to session: inout Session,
+    ) throws {
+        switch decision {
+        case let .persist(projection, attachReceipt, lease):
+            if let attachReceipt {
+                let providerReference = ProviderInternalSessionReference(attachReceipt)
+                if let existing = session.stored.providerInternalSessionReference,
+                   existing != providerReference
+                {
+                    throw RuntimeHostError.malformedAdapterResponse
+                }
+                session.stored = session.stored.withProviderReference(
+                    providerReference,
+                    projection: projection,
+                )
+            } else {
+                session.stored = session.stored.withProjection(projection)
+            }
+            session.lease = lease
+            session.revision += 1
+        case .adoptPersisted:
+            throw RuntimeHostError.persistenceConflict
+        case .ignore:
+            return
+        case .throwCancellation:
+            throw CancellationError()
+        case let .throwHost(error):
+            throw error
+        }
     }
 
     func detachLaunchOwnerTransition(
