@@ -356,8 +356,7 @@ extension EntryListCoordinator {
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
-        EntryViewLayoutDropValidationAdapter.handleExternalDropSessionTerminal(
-            activeSessionID: &activeExternalDropSessionID,
+        externalDropSessionController.handleSessionTerminal(
             previousActive: previous.activeExternalDrop,
             currentActive: snapshot.activeExternalDrop,
         )
@@ -612,7 +611,7 @@ extension EntryListCoordinator {
         if previous.currentPath != snapshot.currentPath {
             // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
             MainActor.assumeIsolated {
-                cancelActiveExternalDropSession()
+                externalDropSessionController.cancel()
             }
             resetThumbnailSession()
             restoredScrollForCurrentPath = false

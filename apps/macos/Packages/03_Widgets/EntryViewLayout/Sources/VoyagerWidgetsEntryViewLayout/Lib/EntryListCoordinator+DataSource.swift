@@ -1,6 +1,7 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator: NSOutlineViewDataSource {
     public func outlineView(_: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -52,44 +53,22 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         }
 
         let origin = resolveDropOrigin(info, ownView: outlineView)
-        // 외부 promise 드래그는 source path 유무와 무관하게 획득 경로가 우선한다.
-        // Photos는 file URL과 promise를 함께 제공해 sourcePaths가 비지 않으므로
-        // path 검증보다 먼저 판정해야 acceptDrop이 획득 세션을 시작할 수 있다.
-        if EntryViewLayoutDropValidationAdapter.prefersPromiseAcquisition(
+        let verdict = EntryViewLayoutDropValidationAdapter.resolveExternalDropOperation(
             draggingInfo: info,
             isInternalDrag: origin.isInternal,
-        ) {
-            store.send(.view(.setDropTargeted(true)))
-            return .copy
-        }
-        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
-        // 단, 외부 promise/mixed drag는 source path가 없어도 pasteboard가 지원 표현을
-        // 노출하면 `.copy`를 제안해 acceptDrop이 획득 세션을 시작할 수 있게 한다.
-        guard !origin.sourcePaths.isEmpty else {
-            let hasRepresentation = !origin.isInternal
-                && EntryViewLayoutDropValidationAdapter.hasSupportedExternalRepresentation(
-                    in: info.draggingPasteboard,
-                )
-            let operationRawValue = hasRepresentation ? NSDragOperation.copy.rawValue : NSDragOperation().rawValue
-            EntryViewLayoutDropValidationAdapter.validationLogger.info(
-                "list empty rep=\(hasRepresentation, privacy: .public) op=\(operationRawValue, privacy: .public)",
-            )
-            if hasRepresentation {
-                store.send(.view(.setDropTargeted(true)))
-                return .copy
-            }
-            outlineView.setDropItem(nil, dropChildIndex: -1)
-            store.send(.view(.setDropTargeted(false)))
-            return []
-        }
-        let validation = EntryViewLayoutDropValidationAdapter.resolve(
             sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             allowedOperations: info.draggingSourceOperationMask,
             prefersCopy: origin.wantsCopy,
         )
-        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
-        store.send(.view(.setDropTargeted(!operation.isEmpty)))
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: verdict)
+        if origin.sourcePaths.isEmpty, verdict == .none {
+            // 빈 source 거절 시 folder drop-item highlight를 정리한다 (기존 동작 유지).
+            outlineView.setDropItem(nil, dropChildIndex: -1)
+        }
+        if state.isDropTargeted != !operation.isEmpty {
+            store.send(.view(.setDropTargeted(!operation.isEmpty)))
+        }
         return operation
     }
 
@@ -112,12 +91,12 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         // promise/mixed 외부 drop은 path 기반 이동이 아니라 ExternalDropAcquisitionClient로
         // 획득 세션을 시작하고, 그 결과를 EntryOperations에 accepted action으로 전달한다.
         // promise-only는 source path가 없어 아래 empty-source guard보다 먼저 처리해야 한다.
-        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+        let negotiation = VoyagerFeaturesEntryOperations.ExternalDropNegotiation.negotiateExternalDrop(
             from: info.draggingPasteboard,
             wantsCopy: origin.wantsCopy,
         )
         if !negotiation.promisedOrdinals.isEmpty || !negotiation.dataFlavors.isEmpty {
-            return beginExternalDropAcquisition(
+            return externalDropSessionController.beginAcquisition(
                 draggingInfo: info,
                 negotiation: negotiation,
                 destinationPath: destinationPath,
@@ -163,43 +142,6 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
     @MainActor
     func clearExternalDropDropState() {
         clearListDropTargetState()
-    }
-
-    /// promise/mixed 외부 drop의 획득 세션을 시작한다. 공유 adapter 구현에 위임한다.
-    @MainActor
-    private func beginExternalDropAcquisition(
-        draggingInfo: any NSDraggingInfo,
-        negotiation: EntryViewLayoutDropValidationAdapter.ExternalDropNegotiation,
-        destinationPath: String,
-    ) -> Bool {
-        EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
-            activeSessionID: &activeExternalDropSessionID,
-            context: .init(
-                client: externalDropAcquisitionClient,
-                sendAccepted: { [weak self] request in
-                    self?.store.send(.view(.externalDropAccepted(request: request)))
-                },
-                clearDropState: { [weak self] in
-                    self?.clearExternalDropDropState()
-                },
-            ),
-            draggingInfo: draggingInfo,
-            negotiation: negotiation,
-            destinationPath: destinationPath,
-        )
-    }
-
-    /// 현재 활성 외부 drop 획득 세션이 있으면 해당 세션만 취소하고 정리한다.
-    /// representable teardown / current-path change에서 호출되며, 취소된 세션이 다음 Grid/List 세션을 오염시키지 않는다.
-    @MainActor
-    func cancelActiveExternalDropSession() {
-        EntryViewLayoutDropValidationAdapter.cancelActiveExternalDropSession(
-            activeSessionID: &activeExternalDropSessionID,
-            client: externalDropAcquisitionClient,
-            sendCancelSession: { [weak self] sessionID in
-                self?.store.send(.view(.externalDropCancelSession(sessionID)))
-            },
-        )
     }
 
     /// 내부/외부 drop origin과 active source path를 결정한다.

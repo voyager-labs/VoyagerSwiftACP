@@ -98,6 +98,16 @@ extension ExternalDropAcquisitionClient: DependencyKey {
     /// coordinator(begin)와 reducer(events)가 같은 session registry를 공유하도록
     /// 단일 인스턴스로 고정한다. computed var면 접근마다 새 store가 만들어져
     /// reducer가 다른 registry에서 빈 stream을 받아 import가 영구 pending이 된다.
+    ///
+    /// 단일 registry가 필연적인 이유:
+    /// 1. coordinator의 `begin`이 세션을 등록하고, reducer의 `events`/`cancel`/`finish`가
+    ///    같은 session ID로 이를 조회·소비한다. registry가 갈라지면 begin에서 만든 세션을
+    ///    reducer가 찾지 못해 이벤트 유실·취소/종료 불일치가 발생한다.
+    /// 2. 완전한 reducer-effect 이전은 불가능하다. `acceptDrop`은 AppKit의
+    ///    `NSDraggingInfo`(비-Sendable)를 동기 경로에서 처리해야 하고, Sendable reducer
+    ///    effect로는 non-Sendable 수신기와 staging을 경계를 넘어 전달할 수 없기 때문이다.
+    /// S5 결론: `isDropTargeted`는 shared state로 유지하고, todo 1의
+    /// `.setDropTargeted`는 상태 변화가 있을 때만 change-only로 send한다.
     public static let liveValue: ExternalDropAcquisitionClient = live(fileManager: .liveValue)
 
     public static func live(

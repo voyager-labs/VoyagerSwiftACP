@@ -39,8 +39,13 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var hasRestoredScrollPosition = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
-    /// Grid가 아직 완료되지 않은 외부 drop 획득 세션. AppKit/coordinator 소유로 TCA state에 두지 않는다.
-    var activeExternalDropSessionID: ExternalDropSessionID?
+    /// 외부 drop 획득 세션의 local 수명을 소유하는 controller. Grid마다 정확히 하나 보유한다.
+    /// cross-Grid/List 직렬화는 controller가 읽는 shared TCA `activeExternalDrop`이 담당한다.
+    lazy var externalDropSessionController: ExternalDropSessionController = .init(
+        store: store,
+        clientProvider: { [weak self] in self?.externalDropAcquisitionClient ?? .testValue },
+        clearDropState: { [weak self] in self?.clearExternalDropDropState() },
+    )
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?

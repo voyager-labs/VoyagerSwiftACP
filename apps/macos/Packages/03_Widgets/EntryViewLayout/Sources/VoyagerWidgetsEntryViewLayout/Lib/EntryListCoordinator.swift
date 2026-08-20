@@ -185,8 +185,13 @@ public final class EntryListCoordinator: NSObject {
     var lastRenamingItemId: EntryModel.ID?
     var contextMenuAnchor: CGPoint?
     var contextMenuCoordinator: EntryContextMenuCoordinator?
-    /// List가 아직 완료되지 않은 외부 drop 획득 세션. AppKit/coordinator 소유로 TCA state에 두지 않는다.
-    var activeExternalDropSessionID: ExternalDropSessionID?
+    /// 외부 drop 획득 세션의 local 수명을 소유하는 controller. List마다 정확히 하나 보유한다.
+    /// cross-Grid/List 직렬화는 controller가 읽는 shared TCA `activeExternalDrop`이 담당한다.
+    lazy var externalDropSessionController: ExternalDropSessionController = .init(
+        store: store,
+        clientProvider: { [weak self] in self?.externalDropAcquisitionClient ?? .testValue },
+        clearDropState: { [weak self] in self?.clearExternalDropDropState() },
+    )
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
     var restoredScrollForCurrentPath = false

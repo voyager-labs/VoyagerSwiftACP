@@ -17,38 +17,11 @@ enum EntryViewLayoutDropValidationAdapter {
         var isInternal: Bool
     }
 
-    /// 하나의 logical drag item이 노출하는 표현 후보.
-    /// item마다 정확히 하나의 표현을 우선순위(promise > file URL > legacy filename > data flavor)대로 선택한다.
-    /// data flavor는 형식 하드코딩 없이 UTI만 기록한다.
-    enum ExternalDropItemRepresentation: Equatable {
-        case promisedFile
-        case immediateFileURL(path: String)
-        case legacyFilename(String)
-        case dataFlavor(uti: String)
-    }
-
-    /// 즉시 file URL descriptor. `sourcePaths(from:)`의 순서/dedup 계약을 유지한다.
-    struct ExternalDropImmediateURLDescriptor: Equatable {
-        var path: String
-    }
-
-    /// data-flavor descriptor. `ordinal`은 pasteboard item 순번, `uti`는 물리화할 형식.
-    struct ExternalDropDataFlavorDescriptor: Equatable {
-        var ordinal: Int
-        var uti: String
-    }
-
-    /// Grid/List가 공유하는 negotiated output.
-    /// 외부 drag의 logical item별 표현을 promise-first로 확정한 결과다.
-    struct ExternalDropNegotiation: Equatable {
-        var wantsCopy: Bool
-        var immediateURLDescriptors: [ExternalDropImmediateURLDescriptor]
-        var promisedOrdinals: [Int]
-        var dataFlavors: [ExternalDropDataFlavorDescriptor]
-
-        var acceptableLogicalItemCount: Int {
-            immediateURLDescriptors.count + promisedOrdinals.count + dataFlavors.count
-        }
+    /// 외부 drop validate의 단일 판정 결과. Grid/List가 공유한다.
+    enum DropVerdict: Equatable {
+        case none
+        case copy
+        case move
     }
 
     /// Grid/List가 등록해야 하는 dragged types.
@@ -64,7 +37,7 @@ enum EntryViewLayoutDropValidationAdapter {
         types.append(contentsOf: NSFilePromiseReceiver.readableDraggedTypes.map {
             NSPasteboard.PasteboardType($0)
         })
-        types.append(contentsOf: legacyPromiseTypes.sorted { $0.rawValue < $1.rawValue })
+        types.append(contentsOf: ExternalDropNegotiation.legacyPromiseTypes.sorted { $0.rawValue < $1.rawValue })
         types.append(NSPasteboard.PasteboardType("NSFilenamesPboardType"))
         // 데이터 전용 외부 드래그(예: Numbers 셀)가 view에 도달하도록 등록 표면을 추가한다.
         // 적합성(conformance) 매칭을 타는 범용 후보 + 적합성 매칭이 실패하는 경우의 안전망.
@@ -83,115 +56,6 @@ enum EntryViewLayoutDropValidationAdapter {
             result.append(type)
         }
         return result
-    }
-
-    /// active pasteboard의 logical item별 표현을 원자적으로 검사한다.
-    /// ordinals(입력 순서)를 보존하고, 지원하지 않는 item이 하나라도 있으면 nil(전체 거절)을 반환한다.
-    /// item이 promise/file URL/legacy filename 중 어느 것도 아니지만 다른 로드 가능한
-    /// data flavor를 노출하면 `.dataFlavor(uti:)`로 수용한다 (형식 하드코딩 없음).
-    @MainActor
-    static func inspectExternalDropItems(from pasteboard: NSPasteboard) -> [ExternalDropItemRepresentation]? {
-        guard let items = pasteboard.pasteboardItems, !items.isEmpty else { return [] }
-        let promiseTypes = NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
-        var result: [ExternalDropItemRepresentation] = []
-        result.reserveCapacity(items.count)
-        for item in items {
-            if item.availableType(from: promiseTypes) != nil
-                || item.types.contains(where: legacyPromiseTypes.contains)
-            {
-                result.append(.promisedFile)
-                continue
-            }
-            if let url = fileURL(from: item) {
-                result.append(.immediateFileURL(path: url.standardizedFileURL.path))
-                continue
-            }
-            if let filename = item.string(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) {
-                result.append(.legacyFilename(filename))
-                continue
-            }
-            if let uti = dataFlavorUTI(from: item, promiseTypes: promiseTypes) {
-                result.append(.dataFlavor(uti: uti))
-                continue
-            }
-            return nil
-        }
-        return result
-    }
-
-    /// 외부 drag pasteboard가 지원 가능한 표현(promise/file URL/legacy filename)을
-    /// 최소 1개 노출하는지 검사한다. `sourcePaths(from:)`이 빈 경우(예: promise drag)에
-    /// validateDrop이 `.copy`를 제안할 수 있는지 판정한다.
-    /// 빈 pasteboard 또는 지원하지 않는 item만 있는 경우 false를 반환한다.
-    @MainActor
-    static func hasSupportedExternalRepresentation(in pasteboard: NSPasteboard) -> Bool {
-        guard let representations = inspectExternalDropItems(from: pasteboard), !representations.isEmpty else {
-            return false
-        }
-        return true
-    }
-
-    /// external drag를 promise-first로 negotiation한 결과를 반환한다.
-    /// Grid/List validateDrop/acceptDrop이 공유해 copy/move resolution 전에 소비한다.
-    /// 빈 pasteboard 또는 지원하지 않는 item이 하나라도 있으면 acceptable logical item 0개로 거절한다.
-    @MainActor
-    static func negotiateExternalDrop(
-        from pasteboard: NSPasteboard,
-        wantsCopy: Bool,
-    ) -> ExternalDropNegotiation {
-        guard let representations = inspectExternalDropItems(from: pasteboard) else {
-            return .init(
-                wantsCopy: wantsCopy,
-                immediateURLDescriptors: [],
-                promisedOrdinals: [],
-                dataFlavors: [],
-            )
-        }
-        var descriptors: [ExternalDropImmediateURLDescriptor] = []
-        var seen = Set<String>()
-        var promisedOrdinals: [Int] = []
-        var dataFlavors: [ExternalDropDataFlavorDescriptor] = []
-        descriptors.reserveCapacity(representations.count)
-        for (ordinal, representation) in representations.enumerated() {
-            switch representation {
-            case .promisedFile:
-                promisedOrdinals.append(ordinal)
-            case let .immediateFileURL(path):
-                if seen.insert(path).inserted {
-                    descriptors.append(.init(path: path))
-                }
-            case let .legacyFilename(filename):
-                if seen.insert(filename).inserted {
-                    descriptors.append(.init(path: filename))
-                }
-            case let .dataFlavor(uti):
-                dataFlavors.append(.init(ordinal: ordinal, uti: uti))
-            }
-        }
-        return .init(
-            wantsCopy: wantsCopy,
-            immediateURLDescriptors: descriptors,
-            promisedOrdinals: promisedOrdinals,
-            dataFlavors: dataFlavors,
-        )
-    }
-
-    /// 외부 드래그가 promise/data 표현을 노출하는지 판정한다 (Grid/List validateDrop 공용).
-    /// Photos 등 modern promise 앱은 file URL을 함께 제공하므로 sourcePaths가 비지 않아도
-    /// promise 획득 경로가 우선해야 한다(VOY-736 Photos 회귀: path 검증만 거치면 조용히
-    /// 거부돼 acquisition 계층에 도달하지 못한다). 순수 file URL 드래그(Finder)와 내부
-    /// 드래그는 promise 표현이 없어 기존 path 검증을 그대로 탄다.
-    @MainActor
-    static func prefersPromiseAcquisition(
-        draggingInfo: any NSDraggingInfo,
-        isInternalDrag: Bool,
-    ) -> Bool {
-        guard !isInternalDrag else { return false }
-        let negotiation = negotiateExternalDrop(
-            from: draggingInfo.draggingPasteboard,
-            wantsCopy: false,
-        )
-        return !negotiation.promisedOrdinals.isEmpty || !negotiation.dataFlavors.isEmpty
     }
 
     /// drag origin을 `draggingSource` identity로 분류한다.
@@ -229,7 +93,7 @@ enum EntryViewLayoutDropValidationAdapter {
         var seen: Set<String> = []
         paths.reserveCapacity(items.count)
         for item in items {
-            guard let url = fileURL(from: item) else { return [] }
+            guard let url = ExternalDropNegotiation.fileURL(from: item) else { return [] }
             let path = url.standardizedFileURL.path
             if seen.insert(path).inserted {
                 paths.append(path)
@@ -254,6 +118,53 @@ enum EntryViewLayoutDropValidationAdapter {
         ))
     }
 
+    /// 외부 drop validate 판정의 단일 진입점. Grid/List `validateDrop`이 공유한다.
+    /// promise 우선 → 빈 source 표현 검증 → path/operation 검증 순서를 한 곳에서 소유한다.
+    /// `state.isDropTargeted` 값은 호출자가 변경 시에만 전송하도록 verdict로만 판정한다.
+    @MainActor
+    static func resolveExternalDropOperation(
+        draggingInfo: any NSDraggingInfo,
+        isInternalDrag: Bool,
+        sourcePaths: [String],
+        destinationPath: String,
+        allowedOperations: NSDragOperation,
+        prefersCopy: Bool,
+    ) -> DropVerdict {
+        // promise/data 표현이 있으면 source path 유무와 무관하게 획득 경로가 우선한다 (VOY-736 Photos 회귀).
+        if ExternalDropNegotiation.prefersPromiseAcquisition(
+            draggingInfo: draggingInfo,
+            isInternalDrag: isInternalDrag,
+        ) {
+            return .copy
+        }
+        // 빈 source는 항상 no-op으로 처리한다. 단, 외부 drag가 pasteboard에 지원 표현을 노출하면
+        // `.copy`를 제안해 acceptDrop이 획득 세션을 시작할 수 있게 한다.
+        if sourcePaths.isEmpty {
+            let hasRepresentation = !isInternalDrag
+                && ExternalDropNegotiation.hasSupportedExternalRepresentation(in: draggingInfo.draggingPasteboard)
+            let operationRawValue = hasRepresentation ? NSDragOperation.copy.rawValue : NSDragOperation().rawValue
+            validationLogger.info(
+                "validate empty rep=\(hasRepresentation, privacy: .public) op=\(operationRawValue, privacy: .public)",
+            )
+            return hasRepresentation ? .copy : .none
+        }
+        // source path가 있는 일반 내부/외부 drag는 path/operation 검증을 탄다.
+        let validation = resolve(
+            sourcePaths: sourcePaths,
+            destinationPath: destinationPath,
+            allowedOperations: allowedOperations,
+            prefersCopy: prefersCopy,
+        )
+        switch validation.resolvedOperation {
+        case .none:
+            return .none
+        case .copy:
+            return .copy
+        case .move:
+            return .move
+        }
+    }
+
     static func dragOperation(from operation: EntryDropResolvedOperation) -> NSDragOperation {
         switch operation {
         case .none:
@@ -265,36 +176,15 @@ enum EntryViewLayoutDropValidationAdapter {
         }
     }
 
-    /// data-flavor 후보 UTI를 결정한다. promise/file URL/legacy filename 같은 구조적 타입을
-    /// 제외한 나머지 노출 타입 중 text 계열을 우선해 첫 번째 로드 가능한 타입의 UTI를 반환한다.
-    /// 형식 목록 없이 item이 노출하는 타입만으로 판정하므로 임의의 UTI를 수용한다.
-    private static func dataFlavorUTI(
-        from item: NSPasteboardItem,
-        promiseTypes: [NSPasteboard.PasteboardType],
-    ) -> String? {
-        let fileURLType = NSPasteboard.PasteboardType(UTType.fileURL.identifier)
-        let legacyType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
-        let structural = Set(promiseTypes + [fileURLType, legacyType])
-        let candidates = item.types.map(\.rawValue).filter { !structural.contains(NSPasteboard.PasteboardType($0)) }
-        guard !candidates.isEmpty else { return nil }
-        if let text = candidates.first(where: isTextFlavor) {
-            return text
+    static func dragOperation(from verdict: DropVerdict) -> NSDragOperation {
+        switch verdict {
+        case .none:
+            []
+        case .copy:
+            .copy
+        case .move:
+            .move
         }
-        return candidates.first
-    }
-
-    private static func isTextFlavor(_ uti: String) -> Bool {
-        guard let type = UTType(uti) else { return false }
-        return type.conforms(to: .text) || type.conforms(to: .plainText)
-    }
-
-    private static func fileURL(from item: NSPasteboardItem) -> URL? {
-        let fileURLType = NSPasteboard.PasteboardType(UTType.fileURL.identifier)
-        guard item.availableType(from: [fileURLType]) != nil else { return nil }
-        let string = item.string(forType: fileURLType)
-            ?? item.data(forType: fileURLType).flatMap { String(data: $0, encoding: .utf8) }
-        guard let string, let url = URL(string: string), url.isFileURL else { return nil }
-        return url
     }
 }
 
@@ -544,22 +434,12 @@ extension EntryViewLayoutDropValidationAdapter {
         ]
     }
 
-    /// 레거시 promise 유형 상수들. type 존재 여부로만 판정한다(포맷 switch 없음).
-    ///
-    /// `com.apple.pasteboard.promised-file-url`만 레거시 promised-file 방식의 고유 마커다.
-    /// `promised-file-content-type`은 `NSFilePromiseProvider`(현대 promise)도 함께 쓰므로
-    /// 레거시 구분자로 쓰면 일반 promise 드래그까지 폴백으로 오인된다. Mail 실측 pasteboard는
-    /// `promised-file-url`을 선언하므로 이 유형 존재만으로 정확히 판정한다.
-    private static let legacyPromiseTypes: Set<NSPasteboard.PasteboardType> = [
-        NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
-    ]
-
     /// pasteboard가 레거시 promised-file 유형을 선언하는지 판정한다.
     @MainActor
     private static func declaresLegacyFilePromise(in pasteboard: NSPasteboard) -> Bool {
         guard let items = pasteboard.pasteboardItems else { return false }
         return items.contains { item in
-            item.types.contains { legacyPromiseTypes.contains($0) }
+            item.types.contains { ExternalDropNegotiation.legacyPromiseTypes.contains($0) }
         }
     }
 
@@ -709,10 +589,10 @@ extension EntryViewLayoutDropValidationAdapter {
         sendCancelSession(sessionID)
     }
 
-    /// 세션 종단(성공/실패/취소)을 관찰해 coordinator의 `activeExternalDropSessionID`를 정리한다.
+    /// 세션 종단(성공/실패/취소)을 관찰해 `ExternalDropSessionController`의 local 세션 ID를 정리한다.
     ///
     /// EntryOperations reducer는 종단 이벤트(`.succeeded`/`.failed`/`.cancelled`)에서
-    /// `state.activeExternalDrop`을 nil로 만든다. coordinator는 render loop에서 그 전이
+    /// `state.activeExternalDrop`을 nil로 만든다. controller는 render loop에서 그 전이
     /// (non-nil → nil)를 관찰해 자신이 소유한 세션 ID를 해제한다. 이로써 한 폴더에서 성공한
     /// 외부 drop 이후에도 같은 폴더에서 다음 promise drop이 다시 수락된다.
     static func handleExternalDropSessionTerminal(
