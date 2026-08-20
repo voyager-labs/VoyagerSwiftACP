@@ -458,6 +458,18 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             proposedDropOperation.pointee = .before
         }
         let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        // 외부 promise 드래그는 source path 유무와 무관하게 획득 경로가 우선한다.
+        // Photos는 file URL과 promise를 함께 제공해 sourcePaths가 비지 않으므로
+        // path 검증보다 먼저 판정해야 acceptDrop이 획득 세션을 시작할 수 있다.
+        if EntryViewLayoutDropValidationAdapter.prefersPromiseAcquisition(
+            draggingInfo: draggingInfo,
+            isInternalDrag: origin.isInternal,
+        ) {
+            setDropTargetEntryId(targetEntryId)
+            validatedDropDestinationPath = destinationPath
+            store.send(.view(.setDropTargeted(true)))
+            return .copy
+        }
         // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
         // 단, 외부 promise/mixed drag는 source path가 없어도 pasteboard가 지원 표현을
         // 노출하면 `.copy`를 제안해 acceptDrop이 획득 세션을 시작할 수 있게 한다.

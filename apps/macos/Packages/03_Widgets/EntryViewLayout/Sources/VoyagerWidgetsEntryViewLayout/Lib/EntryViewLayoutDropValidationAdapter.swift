@@ -176,6 +176,24 @@ enum EntryViewLayoutDropValidationAdapter {
         )
     }
 
+    /// 외부 드래그가 promise/data 표현을 노출하는지 판정한다 (Grid/List validateDrop 공용).
+    /// Photos 등 modern promise 앱은 file URL을 함께 제공하므로 sourcePaths가 비지 않아도
+    /// promise 획득 경로가 우선해야 한다(VOY-736 Photos 회귀: path 검증만 거치면 조용히
+    /// 거부돼 acquisition 계층에 도달하지 못한다). 순수 file URL 드래그(Finder)와 내부
+    /// 드래그는 promise 표현이 없어 기존 path 검증을 그대로 탄다.
+    @MainActor
+    static func prefersPromiseAcquisition(
+        draggingInfo: any NSDraggingInfo,
+        isInternalDrag: Bool,
+    ) -> Bool {
+        guard !isInternalDrag else { return false }
+        let negotiation = negotiateExternalDrop(
+            from: draggingInfo.draggingPasteboard,
+            wantsCopy: false,
+        )
+        return !negotiation.promisedOrdinals.isEmpty || !negotiation.dataFlavors.isEmpty
+    }
+
     /// drag origin을 `draggingSource` identity로 분류한다.
     /// 내부 drag는 오직 `draggingSource`가 layout 자체 view(`ownView`)와 동일한 경우에만 인정한다.
     /// `draggingSource`가 nil이거나 다른 객체면 외부 drag로 보고 active pasteboard를 사용한다.

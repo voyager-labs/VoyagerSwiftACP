@@ -776,6 +776,60 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(operation, .copy)
     }
 
+    /// 검증 내용 (VOY-736 Photos 회귀): 단일 item에 file URL과 promise 표현이 공존하는
+    /// 외부 drag(Photos)는 sourcePaths가 비지 않아도 Grid/List `validateDrop`이 획득 경로로
+    /// `.copy`를 제안한다.
+    /// 사전 조건: 하나의 pasteboard item이 실존 file URL과 promised-file-content-type을 함께 노출한다.
+    /// 기대 결과: Grid/List 모두 `.copy`를 반환한다 (path 검증만 거치면 조용히 거부된다).
+    @MainActor
+    func testFileURLAndPromiseSameItemValidateProposesCopyOnGridAndList() {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerPhotosSameItem-\(UUID().uuidString).jpeg")
+        XCTAssertTrue(FileManager.default.createFile(atPath: fileURL.path, contents: Data("j".utf8)))
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-photos-same-item-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            fileURL.absoluteString,
+            forType: NSPasteboard.PasteboardType("public.file-url"),
+        )
+        item.setString(
+            UTType.jpeg.identifier,
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([item])
+        // 사전 조건 검증: sourcePaths가 비지 않아야 한다 (Photos 공존 형태).
+        XCTAssertFalse(EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard).isEmpty)
+
+        let info = DragInfoFixture(source: nil, operationMask: [.copy], pasteboard: pasteboard)
+
+        let gridOperation = driveGridValidate(
+            grid: EntryGridCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: info,
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+        let listOperation = driveListValidate(
+            list: EntryListCoordinator(store: makeStore(
+                transport: DragTransport(),
+                recorder: DropRecorder(),
+                currentPath: "/current",
+            )),
+            info: info,
+            transport: DragTransport(),
+            currentPath: "/current",
+        )
+
+        XCTAssertEqual(gridOperation, .copy)
+        XCTAssertEqual(listOperation, .copy)
+    }
+
     /// 검증 내용: promise + file URL이 섞인 동일 외부 drag가 Grid/List `validateDrop`을 통과해 `.copy`를 제안한다.
     /// 사전 조건: 외부 drag가 [fileURL, promise] 순서로 제공한다 (promise item 때문에 source path는 비어 있다).
     /// 기대 결과: Grid/List 모두 `.copy`를 반환한다.
