@@ -21,6 +21,7 @@ enum RuntimeFreshRunSignal: Equatable {
 enum RuntimeFreshRunDecision: Equatable {
     case persist(projection: RuntimeProjection, attachReceipt: String?, lease: RuntimeControlPlane.RuntimeLease)
     case adoptPersisted(RuntimeFreshRunSnapshot)
+    case recordCleanupFailure
     case ignore
     case throwCancellation
     case throwHost(RuntimeHostError)
@@ -74,8 +75,10 @@ enum RuntimeFreshRunDecisionTable {
             )
         case let .providerResult(outcome):
             providerResultDecision(outcome, on: snapshot)
-        case .persistConflict, .cleanupFailed:
+        case .persistConflict:
             .ignore
+        case .cleanupFailed:
+            .recordCleanupFailure
         }
     }
 
@@ -156,6 +159,8 @@ enum RuntimeFreshRunDecisionTable {
             return existing == receipt ? .ignore : .throwHost(.malformedAdapterResponse)
         case .persistConflict:
             return .ignore
+        case .cleanupFailed:
+            return .recordCleanupFailure
         default:
             return .ignore
         }

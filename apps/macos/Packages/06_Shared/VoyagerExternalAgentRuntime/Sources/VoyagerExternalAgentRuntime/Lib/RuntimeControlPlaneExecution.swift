@@ -21,6 +21,7 @@ extension RuntimeControlPlane {
         switch reservationTransition {
         case let .reserved(value):
             reservation = value
+            cleanupFailureEvidenceByHost.removeValue(forKey: reservation.host)
         case .rejectedDuplicate:
             throw RuntimeHostError.duplicateRunReference
         }
@@ -331,6 +332,7 @@ extension RuntimeControlPlane {
                 ) { return .terminal(terminal) }
             } catch {
                 applyCleanupFailedDecision(host: reservation.host, runReference: receipt.runReference)
+                try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
             }
             throw primary
         }
@@ -387,9 +389,13 @@ extension RuntimeControlPlane {
         runReference: RuntimeRunReference,
     ) {
         guard let session = sessions[host], session.stored.runReference == runReference else { return }
-        _ = RuntimeFreshRunDecisionTable.decide(
+        guard case .recordCleanupFailure = RuntimeFreshRunDecisionTable.decide(
             .cleanupFailed,
             on: session.freshRunSnapshot(),
+        ) else { return }
+        cleanupFailureEvidenceByHost[host] = RuntimeCleanupFailureEvidence(
+            runReference: runReference,
+            kind: .persistence,
         )
     }
 

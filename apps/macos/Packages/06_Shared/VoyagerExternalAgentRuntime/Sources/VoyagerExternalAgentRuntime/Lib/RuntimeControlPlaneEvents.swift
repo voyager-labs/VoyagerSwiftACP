@@ -173,7 +173,7 @@ extension RuntimeControlPlane {
         case let .persist(projection, _, _):
             acceptedTerminal = terminal
             acceptedProjection = projection
-        case .ignore, .throwCancellation, .throwHost, .adoptPersisted:
+        case .ignore, .recordCleanupFailure, .throwCancellation, .throwHost, .adoptPersisted:
             acceptedTerminal = nil
             acceptedProjection = hasGap
                 ? .eventOutOfOrder

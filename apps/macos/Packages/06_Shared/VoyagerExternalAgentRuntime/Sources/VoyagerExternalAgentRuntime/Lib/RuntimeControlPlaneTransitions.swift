@@ -84,7 +84,7 @@ extension RuntimeControlPlane {
             )
             registry[host] = session
             return true
-        case .ignore, .throwHost(.activeRunExists):
+        case .ignore, .recordCleanupFailure, .throwHost(.activeRunExists):
             return false
         case let .throwHost(error):
             throw error
@@ -102,7 +102,7 @@ extension RuntimeControlPlane {
             throw error
         case .throwCancellation:
             throw CancellationError()
-        case .ignore:
+        case .ignore, .recordCleanupFailure:
             throw RuntimeHostError.duplicateRunReference
         case .persist, .adoptPersisted:
             throw RuntimeHostError.invalidEvent
@@ -260,6 +260,8 @@ extension RuntimeControlPlane {
             session.revision += 1
         case .adoptPersisted:
             throw RuntimeHostError.persistenceConflict
+        case .recordCleanupFailure:
+            return
         case .ignore:
             return
         case .throwCancellation:

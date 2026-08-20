@@ -202,9 +202,9 @@ struct RuntimeFreshRunCoordinatorContractTests {
     /// VOY-746-characterization_survivors: cleanup persistence failure preserves the primary provider error and
     /// terminal.
     /// host terminal 이후 provider stream 오류의 cleanup 저장 실패가 원래 오류를 가리거나 terminal을 바꾸지 않는지 고정한다.
-    /// - 검증 내용: provider 오류, cleanup 저장 실패와 최종 durable projection.
+    /// - 검증 내용: provider 오류, cleanup 저장 실패의 redacted evidence와 최종 durable projection.
     /// - 사전 조건: host completed event 저장 후 terminal read와 cleanup write가 순서대로 실패한다.
-    /// - 기대 결과: public run은 adapterUnavailable을 표면화하고 durable terminal은 completed로 유지된다.
+    /// - 기대 결과: public run은 adapterUnavailable을 표면화하고 durable terminal은 completed로 유지되며 bounded evidence가 남는다.
     @Test
     func `cleanup failure keeps persisted terminal`() async throws {
         let host: ExternalAgentSessionReference = "host-cleanup-terminal"
@@ -243,6 +243,70 @@ struct RuntimeFreshRunCoordinatorContractTests {
         #expect(await store.currentState()?.sessions.first?.projection == .completed)
         #expect(await store.saveCount == 5)
         #expect(await store.applyCount == 5)
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+    }
+
+    /// VOY-746-coordinator_contract: cleanup failure evidence is bounded to the current run.
+    /// 같은 host에서 replacement run을 예약하면 이전 cleanup failure evidence가 노출되지 않는지 검증한다.
+    /// - 검증 내용: cleanup evidence의 run reference, replacement prelaunch 이후 evidence 초기화.
+    /// - 사전 조건: 이전 run의 cleanup persistence failure가 redacted evidence를 남긴다.
+    /// - 기대 결과: evidence는 host별 최신 1건이고 새 run 예약 시 제거된다.
+    @Test
+    func `cleanup failure evidence clears for a replacement run`() async throws {
+        let host: ExternalAgentSessionReference = "host-cleanup-evidence-replacement"
+        let run = RuntimeRunReference("run-cleanup-evidence-old")
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+            eventStreamFailure: .creation,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [4])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForEventStreamCount(1)
+        await streamGate.open()
+        await #expect(throws: RuntimeHostError.adapterUnavailable) {
+            _ = try await runTask.value
+        }
+        #expect(await plane.cleanupFailureEvidence(for: host)?.runReference == run)
+
+        #expect(try await plane.ingestHostEvent(makeHostTerminalEvent(
+            host: host,
+            run: run,
+            kind: .interrupted,
+        ))?.outcome == .interrupted)
+        let replacement = RuntimeRunReference("run-cleanup-evidence-replacement")
+        let replacementGate = RuntimeTestGate()
+        let replacementAdapter = DeterministicRuntimeAdapter(
+            id: "replacement",
+            transport: .processJSONL,
+            capabilities: .terminalOnly,
+            eventsByLaunch: [[]],
+            launchGate: replacementGate,
+        )
+        try await plane.register(replacementAdapter)
+        let replacementRequest = makeLaunch(host: host, run: replacement, adapterID: "replacement")
+        try await plane.projectPrelaunch(replacementRequest, as: .policyReady)
+        let replacementTask = Task { try await plane.run(replacementRequest) }
+        await replacementAdapter.waitForLaunchCount(1)
+        #expect(await plane.cleanupFailureEvidence(for: host) == nil)
+
+        replacementTask.cancel()
+        await replacementGate.open()
+        await #expect(throws: CancellationError.self) {
+            _ = try await replacementTask.value
+        }
     }
 }
 
@@ -397,7 +461,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
     ) {
         #expect(RuntimeFreshRunDecisionTable.decide(.reserve, on: terminal) == .ignore)
         #expect(RuntimeFreshRunDecisionTable.decide(.callerCancel, on: terminal) == .ignore)
-        #expect(RuntimeFreshRunDecisionTable.decide(.cleanupFailed, on: terminal) == .ignore)
+        #expect(RuntimeFreshRunDecisionTable.decide(.cleanupFailed, on: terminal) == .recordCleanupFailure)
         #expect(RuntimeFreshRunDecisionTable.decide(.adapterLaunchFailed, on: terminal) == .ignore)
         #expect(RuntimeFreshRunDecisionTable.decide(.orphanLaunching, on: terminal) == .ignore)
         #expect(RuntimeFreshRunDecisionTable.decide(.receiptPersistFailed, on: terminal) == .ignore)
