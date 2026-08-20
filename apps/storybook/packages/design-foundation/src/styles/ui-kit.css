@@ -55,7 +55,7 @@
   --fm-text-on-accent: var(--macos-alternate-selected-control-text-color);
   --fm-separator: var(--macos-separator-color);
   --fm-separator-strong: var(--macos-separator-strong-color);
-  --fm-window-border: var(--macos-window-border-color);
+  --fm-window-border: var(--macos-window-hairline);
   --fm-elevated: var(--macos-material-popover);
   --fm-blue: var(--macos-system-blue);
   --fm-blue-pressed: color-mix(in srgb, var(--macos-system-blue) 82%, black);
@@ -77,5 +77,5 @@
   --fm-backdrop-blur: saturate(210%) blur(34px);
   --fm-shadow-card: 0 1px 2px #0000000f, 0 18px 42px #00000012;
   --fm-shadow-paper: 0 1px 2px #00000024;
-  --fm-shadow-window: 0 28px 72px #0000003d, 0 8px 24px #0000001f;
+  --fm-shadow-window: var(--macos-window-shadow);
 }

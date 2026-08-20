@@ -54,6 +54,15 @@
   transition: transform 120ms ease;
 }
 
+/* 네이티브 NSPopUpButton은 눌러도 위치가 변하지 않는다. base `vc-button:active`의
+ * translateY(1px) 눌림 이동을 trigger에서는 제거해 레이아웃 쉬프트를 막는다. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-popup-trigger:active,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-pulldown-trigger:active {
+  transform: none;
+}
+
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .vc-popup-trigger[aria-expanded="true"]::after,
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
