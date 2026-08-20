@@ -28,7 +28,7 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 
 ## Workflow
 
-1. **Establish authority.** Read `../../../apps/storybook/package.json`, `../../../apps/storybook/.storybook/main.ts`, and the affected package's `DESIGN.md`. Read canonical product docs for product intent; use Linear only for scope and ownership.
+1. **Establish authority.** Read `../../../apps/storybook/DESIGN.md` (workspace workflow owner), `../../../apps/storybook/surface-registry.ts` (registry lifecycle), `../../../apps/storybook/.storybook/main.ts`, and the affected package's `DESIGN.md`. For add/move/retire work, read the registry and the workspace root DESIGN document. Read canonical product docs for product intent; use Linear only for scope and ownership.
 2. **Classify the state.** It is either root File Manager composition, a reusable specimen, or an independent experiment. Apply the state contract before adding a workflow.
 3. **Route alternatives.** When more than one design is active, load the design-version workflow and derive each candidate from the closest current variation instead of cloning the state matrix.
 4. **Gate parity claims.** Classify native evidence, require a deterministic fixture for runtime-dependent rendering, and map roles through `--macos-*` then `--fm-*`.
@@ -51,4 +51,4 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 - Leaving an isolated workflow after its review question has been decided.
 - Encoding appearance, OS baseline, geometry, or UI state into candidate IDs and duplicating their stories.
 - Treating a successful build as visual-regression, accessibility, or native-parity proof.
-- Implementing a reusable component without a sibling `.stories.tsx` — Storybook discovers `**/*.stories.tsx`, so a story-less component never appears in Navigation. Every component ships its own story file.
+- Adding a surface to the catalog without a registry entry and an app-owned story root — appearance in Storybook follows the app catalog (`src/<Surface>/` per `surface-registry.ts`), not a colocated `*.stories.tsx` beside package source.

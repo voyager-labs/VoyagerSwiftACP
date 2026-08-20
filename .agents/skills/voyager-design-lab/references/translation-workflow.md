@@ -25,18 +25,21 @@ Read this reference when moving structure, state, geometry, or style between nat
 3. When native implementation begins, native source becomes authority. Update the Storybook surface to reflect the shipped native structure, or retire it per the review contract.
 4. Never let the prototype override native source after native implementation exists. A stale prototype that contradicts native is catalog debt.
 
-## Region-based story grouping
+## Story grouping (single axis)
 
-The illustration is one window; every component belongs to a window region or feature domain. Organize top-level source folders by region, mirroring native `Pages`/`Features` structure, not by a vague "patterns" catch-all:
+The illustration is one window; organize story source under `src/<Surface>/` on a single axis with four categories, mirroring the File Manager topology:
 
-- `Layouts/` (window skeleton and primary panes), `Domains/Entries/` (file entry domain), `Domains/Chat/` (AI chat feature domain), `Patterns/Sidebar/`, `Patterns/Content/`, `Patterns/Inspector/`, `Patterns/Overlays/`, plus `Foundations/`, `UI/` (atoms), `Stories/` (root composition).
+- **`Foundations/`** — product-agnostic visual primitives and controls (shared via `design-foundation` when cross-surface).
+- **`Domains/`** — feature domains that own product language, fixtures, and stateful review flows (e.g. `Domains/Entries`, `Domains/Chat`, `Domains/Composer`).
+- **`Pages/`** — window/page compositions and panes that place domains within the shell and own geometry and scroll boundaries.
+- **`Stories/`** — root composition(s) that integrate the surface (e.g. `FileManagerIllustration`).
+
+There is no `Layouts` or `Patterns` category: chrome/interaction structures that combine primitives without owning a product workflow, and window-shell geometry, are placed under `Pages/`; reusable domain compositions stay inside their owning `Domains/` folder. A feature domain with its own native package (e.g. Chat ↔ `VoyagerFeaturesAiChat`) gets its own folder under `Domains/`.
 
 Rules:
 
-- The root composition (`FileManagerIllustration`) is the only canonical integration point. Region folders hold specimens of one surface, not parallel roots.
-- A feature domain with its own native package (e.g. Chat ↔ `VoyagerFeaturesAiChat`) gets its own folder under `Domains/`, parallel to `Domains/Entries/`.
-- Composite UI that belongs to one window region lives in that region's folder, not in a shared dumping ground.
-- Apply `authority-and-state-contract.md` to each region story: root consumer, reusable specimen, or experiment.
+- The root composition (`Stories/`) is the only canonical integration point. Category folders hold specimens of one surface, not parallel roots.
+- Apply `authority-and-state-contract.md` to each story: root consumer, reusable specimen, or experiment.
 
 ## What translation does not change
 
