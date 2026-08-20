@@ -87,9 +87,6 @@ git diff --check            # Check for whitespace errors before commit
 - Treat `opencode.json` as a user-managed local file.
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
-- `docs/canonical/` 내부 파일(콘텐츠)은 사용자가 요청하면 자유롭게 읽고 편집할 수 있다.
-- 단, **submodule pointer**(부모 레포에서 `docs/canonical`이 가리키는 커밋 참조)는 사용자가 명시적으로 inspect/update/reset/restore를 요청하지 않는 한 절대 변경하지 않는다.
-- 관련 없는 작업 중 `git status`에 submodule pointer dirty가 보여도 추적하거나 정리하지 않는다.
 
 ## Plan quality conventions
 
