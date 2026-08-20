@@ -128,6 +128,8 @@
 
 /* 탭 콘텐츠 pane. pane 내부 스크롤은 공유 .settings-form이 담당한다. */
 [data-settings-illustration] .settings-pane {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -136,9 +138,11 @@
 
 /* ---- 공유 폼 프리미티브 (General/Appearance/AI pane 공용) ---- */
 
-/* 스크롤 가능한 pane 래퍼. */
+/* 스크롤 가능한 pane 래퍼. pane 높이에 제약돼 콘텐츠가 넘치면 스크롤된다. */
 [data-settings-illustration] .settings-form {
   display: flex;
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
   gap: 20px;
   overflow-y: auto;
