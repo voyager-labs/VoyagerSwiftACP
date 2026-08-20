@@ -21,6 +21,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let IDs: DeterministicRuntimeIDs
     private let launchDelay: Duration
     private let launchGate: RuntimeTestGate?
+    private let launchReceiptRunReference: RuntimeRunReference?
     private let eventStreamDelay: Duration
     private let eventStreamGate: RuntimeTestGate?
     private let eventStreamFailure: EventStreamFailure?
@@ -57,6 +58,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         IDs: DeterministicRuntimeIDs = .sequential,
         launchDelay: Duration = .zero,
         launchGate: RuntimeTestGate? = nil,
+        launchReceiptRunReference: RuntimeRunReference? = nil,
         eventStreamDelay: Duration = .zero,
         eventStreamGate: RuntimeTestGate? = nil,
         eventStreamFailure: EventStreamFailure? = nil,
@@ -86,6 +88,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.IDs = IDs
         self.launchDelay = launchDelay
         self.launchGate = launchGate
+        self.launchReceiptRunReference = launchReceiptRunReference
         self.eventStreamDelay = eventStreamDelay
         self.eventStreamGate = eventStreamGate
         self.eventStreamFailure = eventStreamFailure
@@ -124,7 +127,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
             throw InjectedFailure.launch
         }
         return RuntimeLaunchReceipt(
-            runReference: request.runReference,
+            runReference: launchReceiptRunReference ?? request.runReference,
             providerInternalSessionReference: IDs.providerSession(launchCount),
         )
     }
