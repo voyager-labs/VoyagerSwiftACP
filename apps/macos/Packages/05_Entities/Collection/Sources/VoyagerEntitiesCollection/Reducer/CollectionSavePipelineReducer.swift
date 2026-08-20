@@ -19,9 +19,6 @@ public struct CollectionSavePipelineReducer {
     @Dependency(\.collectionStalenessClient)
     var collectionStalenessClient
 
-    @Dependency(\.collectionMetricClient)
-    var collectionMetricClient
-
     @Dependency(\.fileManagerClient)
     var fileManagerClient
 
@@ -33,7 +30,6 @@ public struct CollectionSavePipelineReducer {
                     state: &state,
                     payload: payload,
                     collectionSavePanelClient: collectionSavePanelClient,
-                    collectionMetricClient: collectionMetricClient,
                 )
 
             case let .saveToExisting(payload, url):
@@ -45,7 +41,6 @@ public struct CollectionSavePipelineReducer {
                         file: collectionFileClient,
                         fileManager: fileManagerClient,
                         staleness: collectionStalenessClient,
-                        metric: collectionMetricClient,
                     ),
                 )
 
@@ -57,7 +52,6 @@ public struct CollectionSavePipelineReducer {
                         file: collectionFileClient,
                         fileManager: fileManagerClient,
                         staleness: collectionStalenessClient,
-                        metric: collectionMetricClient,
                     ),
                 )
 
@@ -101,7 +95,6 @@ enum CollectionSaveValidationError: LocalizedError {
 
 private struct CollectionSaveFailure: Equatable, Error {
     let feedback: CollectionSaveFeedback
-    let reason: String
 
     var title: String {
         feedback.title
@@ -125,7 +118,6 @@ private func validateSavePayload(
                 recoveryHint: "Add a query, scope, or filter before saving.",
                 isRetryable: false,
             ),
-            reason: "empty_content",
         ))
     }
 
@@ -140,7 +132,6 @@ private func validateSavePayload(
     case let .failure(error):
         return .failure(.init(
             feedback: makeValidationFeedback(for: error),
-            reason: CollectionFilterSaveMetrics.reason(for: error),
         ))
     case let .success(snapshot):
         return .success((snapshot: snapshot, context: context))
@@ -278,32 +269,13 @@ private func handleSaveRequested(
     state: inout CollectionState,
     payload: SaveRequestPayload,
     collectionSavePanelClient: CollectionSavePanelClient,
-    collectionMetricClient: CollectionMetricClient,
 ) -> Effect<CollectionAction> {
-    let source = "save_new"
     guard canStartSave(state: state, payload: payload) else {
-        logCollectionSaveResult(
-            outcome: "save_blocked",
-            reason: CollectionFilterSaveMetrics.reasonForInFlightBlock(state: state, payload: payload),
-            source: source,
-            payload: payload,
-            collectionMetricClient: collectionMetricClient,
-            level: .warn,
-        )
         return .none
     }
 
     switch validateSavePayload(payload) {
-    case let .failure(failure):
-        logCollectionSaveResult(
-            outcome: "save_blocked",
-            reason: failure.reason,
-            source: source,
-            payload: payload,
-            collectionMetricClient: collectionMetricClient,
-            level: .warn,
-        )
-        return showSaveError(failure)
+    case let .failure(failure): return showSaveError(failure)
     case let .success(result):
         state.pendingSave = result.snapshot
         state.pendingSaveContext = result.context
@@ -325,14 +297,12 @@ private struct SavePipelineClients {
     var file: CollectionFileClient
     var fileManager: FileManagerClient
     var staleness: CollectionStalenessClient
-    var metric: CollectionMetricClient
 }
 
 private struct SavePipelineOperation {
     var snapshot: CollectionSaveSnapshot
     var savedContext: CollectionContext
     var url: URL
-    var source: String
 }
 
 private func handleSaveToExisting(
@@ -341,30 +311,12 @@ private func handleSaveToExisting(
     url: URL,
     clients: SavePipelineClients,
 ) -> Effect<CollectionAction> {
-    let source = state.collectionSession.phase.isInflightWriteBack ? "write_back" : "save_existing"
     guard canStartSave(state: state, payload: payload) else {
-        logCollectionSaveResult(
-            outcome: "save_blocked",
-            reason: CollectionFilterSaveMetrics.reasonForInFlightBlock(state: state, payload: payload),
-            source: source,
-            payload: payload,
-            collectionMetricClient: clients.metric,
-            level: .warn,
-        )
         return .none
     }
 
     switch validateSavePayload(payload) {
-    case let .failure(failure):
-        logCollectionSaveResult(
-            outcome: "save_blocked",
-            reason: failure.reason,
-            source: source,
-            payload: payload,
-            collectionMetricClient: clients.metric,
-            level: .warn,
-        )
-        return showSaveError(failure)
+    case let .failure(failure): return showSaveError(failure)
     case let .success(result):
         state.isSaving = true
         return performSave(
@@ -373,7 +325,6 @@ private func handleSaveToExisting(
                 snapshot: result.snapshot,
                 savedContext: result.context,
                 url: url,
-                source: source,
             ),
             clients: clients,
         )
@@ -389,15 +340,6 @@ private func handleSavePanelResponse(
           let snapshot = state.pendingSave,
           let savedContext = state.pendingSaveContext
     else {
-        if let pendingSave = state.pendingSave {
-            logCollectionSaveResult(
-                outcome: "cancelled",
-                reason: "none",
-                source: "save_new",
-                snapshot: pendingSave,
-                collectionMetricClient: clients.metric,
-            )
-        }
         resetPendingSave(&state)
         return .none
     }
@@ -408,7 +350,6 @@ private func handleSavePanelResponse(
             snapshot: snapshot,
             savedContext: savedContext,
             url: selectedURL,
-            source: "save_new",
         ),
         clients: clients,
     )
@@ -476,14 +417,6 @@ private func performSave(
         if state.collectionSession.phase.isInflightWriteBack {
             state.collectionSession.failRefreshOrWriteBack()
         }
-        logCollectionSaveResult(
-            outcome: "save_blocked",
-            reason: "built_in_read_only",
-            source: operation.source,
-            snapshot: operation.snapshot,
-            collectionMetricClient: clients.metric,
-            level: .warn,
-        )
         return .send(.delegate(.saveFeedback(.init(
             stage: .saveBlocked,
             category: .futureMinorReadOnly,
@@ -501,9 +434,7 @@ private func performSave(
 
     return executeSave(
         request: request,
-        source: operation.source,
-        snapshot: operation.snapshot,
         savedContext: operation.savedContext,
-        clients: (file: clients.file, metric: clients.metric),
+        fileClient: clients.file,
     )
 }
