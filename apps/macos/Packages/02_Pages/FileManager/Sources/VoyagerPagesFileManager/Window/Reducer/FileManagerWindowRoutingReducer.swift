@@ -304,9 +304,14 @@ struct FileManagerWindowRoutingReducer {
         guard let pendingSelectEntryID else { return false }
         if isActiveTab {
             state.content.pendingSelectEntryID = pendingSelectEntryID
-            let didApply = state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
+            let alreadyOnRoute = pinnedAnchor(for: state.content.navigation.navigationState) == anchor
+            if alreadyOnRoute {
+                let didApply = state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
+                state.syncActiveTabContentState()
+                return didApply
+            }
             state.syncActiveTabContentState()
-            return didApply
+            return false
         }
         var contentState = state.tabContentStates[tabID]
             ?? FileManagerContentFeature.State.initialContent(
@@ -314,9 +319,14 @@ struct FileManagerWindowRoutingReducer {
                 inheritingWindowContextFrom: state.content,
             )
         contentState.pendingSelectEntryID = pendingSelectEntryID
-        let didApply = contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
+        let alreadyOnRoute = pinnedAnchor(for: contentState.navigation.navigationState) == anchor
+        if alreadyOnRoute {
+            let didApply = contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
+            state.tabContentStates[tabID] = contentState
+            return didApply
+        }
         state.tabContentStates[tabID] = contentState
-        return didApply
+        return false
     }
 
     private func returnInactiveContentTabToPinnedLocationWithoutActivation(

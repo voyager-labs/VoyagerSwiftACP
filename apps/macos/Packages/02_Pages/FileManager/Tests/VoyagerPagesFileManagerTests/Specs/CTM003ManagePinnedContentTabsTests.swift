@@ -6689,6 +6689,99 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: route 복귀 전에는 pending selection을 소비하지 않는다
+    /// runtime이 다른 Collection이고 durable이 Directory면 현재 Collection 결과가 파일을 포함해도 pending을 유지한다.
+    /// - 검증 내용: route 불일치 시 pending 보존, snapshot selectedIds 미변경, record 불변
+    /// - 사전 조건: 비활성 pinned tab runtime Collection에 대상 파일이 로드되고 durable anchor는 Directory
+    /// - 기대 결과: pendingSelectEntryID가 nil이 되지 않고 runtime anchor만 durable로 갱신됨
+    func testReturnInactivePinnedCollectionToDirectoryPreservesPendingSelection() async {
+        let activeID = ContentTabID(rawValue: "active-other")
+        let pinnedID = ContentTabID(rawValue: "pinned-collection-to-dir")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/runtime-collection.voycoll")
+        let durablePath = "/Users/test/Pinned"
+        let durableAnchor: ContentTabPageAnchor = .directory(path: durablePath)
+        let pendingSelectEntryID = "\(durablePath)/report.txt"
+        let record = Self.pinnedRecord(
+            id: pinnedID,
+            anchor: durableAnchor,
+            title: "Pinned",
+            iconName: "folder",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Active"),
+                    isPinned: false,
+                    title: "Active",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .collection,
+                    anchor: .collectionFile(url: runtimeURL),
+                    isPinned: true,
+                    title: "Pinned",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeID,
+            pinnedRecords: [pinnedID: record],
+        )
+        state.content = .initialContent(for: .directory(path: "/Users/test/Active"))
+        var snapshot = FileManagerContentState.initialContent(for: .collectionFile(url: runtimeURL))
+        let loadedEntry = EntryModel(
+            name: "report.txt",
+            fullPath: pendingSelectEntryID,
+            isFolder: false,
+            isHidden: false,
+            size: 1,
+            modifiedDate: Date(timeIntervalSince1970: 0),
+            fileExtension: "txt",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 0),
+                addedDate: Date(timeIntervalSince1970: 0),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
+        snapshot.entryViewLayout.entryOperations.items = IdentifiedArrayOf(uniqueElements: [loadedEntry])
+        state.tabContentStates[pinnedID] = snapshot
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+        }
+        // store.exhaustivity = .off: destination snapshot navigation child action은 Content Page Navigation owner가 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.returnContentTabToPinnedLocation(
+            pinnedID,
+            pendingSelectEntryID: pendingSelectEntryID,
+            activateIfNeeded: false,
+        ))
+        await store.skipReceivedActions(strict: false)
+
+        // route 불일치(Collection → Directory)이므로 pending을 소비하지 않고 보존한다.
+        XCTAssertEqual(store.state.tabContentStates[pinnedID]?.pendingSelectEntryID, pendingSelectEntryID)
+        XCTAssertTrue(store.state.tabContentStates[pinnedID]?.entryViewLayout.selectedIds.isEmpty ?? false)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: pinnedID]?.anchor,
+            durableAnchor,
+        )
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 비활성 Collection 복귀는 activateIfNeeded=false면 현재 tab을 유지
     /// 최종 tab이 아닌 Collection return이 openCollectionFile을 시작하지 않는지 검증한다.
     /// - 검증 내용: active identity 유지, collection load 미호출, inactive runtime anchor만 durable로 갱신
