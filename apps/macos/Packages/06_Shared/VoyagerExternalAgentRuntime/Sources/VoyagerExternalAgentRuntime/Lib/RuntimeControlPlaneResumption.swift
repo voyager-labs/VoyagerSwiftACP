@@ -11,34 +11,9 @@ public extension RuntimeControlPlane {
         try await hydrateIfNeeded()
         let claim = try await claimRestoredRun(hostReference)
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
-        let result: RuntimeResult
-        do {
-            if claim.isPersisted {
-                result = try await consumeWithRestorationHeartbeat(
-                    claim.receipt,
-                    from: adapter,
-                    host: hostReference,
-                    lease: claim.lease,
-                )
-            } else {
-                result = try await consume(claim.receipt, from: adapter, host: hostReference)
-            }
-        } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
-            try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
-            throw RuntimeHostError.persistenceFailure
-        } catch RuntimeRestorationHeartbeatPersistenceError.persistenceFailure {
-            try await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
-            throw RuntimeHostError.persistenceFailure
-        } catch is CancellationError {
-            try? await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
-            throw CancellationError()
-        } catch let error as RuntimeHostError {
-            try await propagateResumedRunFailure(error, host: hostReference, lease: claim.lease)
-        } catch {
-            let normalized = normalizeAdapterError(error)
-            try await interruptResumedRunOrRestoreClaim(hostReference, lease: claim.lease)
-            throw normalized
-        }
+        let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
+        if case let .persistedTerminal(terminal) = consumption { return terminal }
+        guard case let .provider(result) = consumption else { throw RuntimeHostError.invalidEvent }
         if let terminal = try await reconcileConsumedResult(
             result,
             host: hostReference,
@@ -50,6 +25,92 @@ public extension RuntimeControlPlane {
             return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
         } catch {
             try? await recoverTerminalPersistenceClaim(host: hostReference, lease: claim.lease)
+            throw error
+        }
+    }
+
+    private func consumeRestoredClaim(
+        _ claim: RestoredRunClaim,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+    ) async throws -> RestoredConsumptionResult {
+        do {
+            if claim.isPersisted {
+                return try await .provider(consumeWithRestorationHeartbeat(
+                    claim.receipt,
+                    from: adapter,
+                    host: host,
+                    lease: claim.lease,
+                ))
+            }
+            return try await .provider(consume(claim.receipt, from: adapter, host: host))
+        } catch RuntimeTerminalEventPersistenceError.persistenceFailure {
+            try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            throw RuntimeHostError.persistenceFailure
+        } catch RuntimeRestorationHeartbeatPersistenceError.persistenceFailure {
+            try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            throw RuntimeHostError.persistenceFailure
+        } catch is CancellationError {
+            try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            throw CancellationError()
+        } catch let error as RuntimeHostError {
+            return try await resolveResumedHostError(error, claim: claim, host: host)
+        } catch {
+            return try await resolveResumedAdapterError(error, claim: claim, host: host)
+        }
+    }
+
+    private func resolveResumedHostError(
+        _ error: RuntimeHostError,
+        claim: RestoredRunClaim,
+        host: ExternalAgentSessionReference,
+    ) async throws -> RestoredConsumptionResult {
+        switch error {
+        case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
+            break
+        default:
+            if let terminal = try await resumedPersistedTerminal(
+                host,
+                runReference: claim.receipt.runReference,
+                lease: claim.lease,
+            ) {
+                return .persistedTerminal(terminal)
+            }
+        }
+        try await propagateResumedRunFailure(error, host: host, lease: claim.lease)
+    }
+
+    private func resolveResumedAdapterError(
+        _ error: any Error,
+        claim: RestoredRunClaim,
+        host: ExternalAgentSessionReference,
+    ) async throws -> RestoredConsumptionResult {
+        if let terminal = try await resumedPersistedTerminal(
+            host,
+            runReference: claim.receipt.runReference,
+            lease: claim.lease,
+        ) {
+            return .persistedTerminal(terminal)
+        }
+        let normalized = normalizeAdapterError(error)
+        try await interruptResumedRunOrRestoreClaim(host, lease: claim.lease)
+        throw normalized
+    }
+
+    private func resumedPersistedTerminal(
+        _ hostReference: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) async throws -> RuntimeResult? {
+        do {
+            guard let terminal = try await persistedTerminalResult(
+                host: hostReference,
+                runReference: runReference,
+            ) else { return nil }
+            try await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
+            return terminal
+        } catch {
+            try? await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
             throw error
         }
     }
@@ -221,4 +282,9 @@ private struct RestoredRunClaim {
     let adapterID: RuntimeAdapterID
     let lease: UInt64
     let isPersisted: Bool
+}
+
+private enum RestoredConsumptionResult {
+    case provider(RuntimeResult)
+    case persistedTerminal(RuntimeResult)
 }

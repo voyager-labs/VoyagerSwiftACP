@@ -1959,6 +1959,114 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().stream == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: restored terminal event wins over terminal-result failure.
+    /// 복원된 run이 terminal event를 저장한 뒤 provider terminal-result 조회가 실패해도 durable terminal로 수렴하는지 검증한다.
+    /// - 검증 내용: resume 반환 outcome, completed projection, provider stream과 terminal-result 호출 횟수.
+    /// - 사전 조건: running snapshot을 복원하고 completed event 저장 뒤 terminal-result adapter 오류가 발생한다.
+    /// - 기대 결과: fresh-run 오류 규칙과 분리된 resume 경계가 같은 run의 committed completed 결과를 반환한다.
+    @Test
+    func `restored terminal event wins over terminal-result failure`() async throws {
+        let host = ExternalAgentSessionReference("host-resume-terminal-precedence")
+        let run = RuntimeRunReference("run-resume-terminal-precedence")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume-terminal"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .running,
+            lastSequence: 0,
+            acceptedIdempotencyKeys: [],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "restored-terminal-precedence",
+                kind: .completed,
+            )]],
+            failsTerminalResult: true,
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore(state: RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [stored],
+        )))
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resumed = try await plane.resumeRestoredRun(hostReference: host)
+
+        #expect(resumed.runReference == run)
+        #expect(resumed.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+        #expect(await adapter.counts().stream == 1)
+    }
+
+    /// ATI-006-coordinate_external_agent_run_continuity: restored terminal probe failure releases its claim.
+    /// terminal-result 실패 뒤 durable terminal probe 자체가 실패해도 resumption lease를 남기지 않는지 검증한다.
+    /// - 검증 내용: typed persistence error, completed projection, inactive lease, durable terminal snapshot.
+    /// - 사전 조건: completed event 저장 뒤 terminal-result 오류와 두 번째 load typed 오류가 연속 발생한다.
+    /// - 기대 결과: typed 오류는 보존되고 같은 run의 resumption claim은 inactive 상태로 회수된다.
+    @Test(arguments: HeartbeatProbeFailure.allCases)
+    func `restored terminal probe failure releases its claim`(
+        failure: HeartbeatProbeFailure,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-resume-terminal-probe-\(failure.rawValue)")
+        let run = RuntimeRunReference("run-resume-terminal-probe-\(failure.rawValue)")
+        let context = finalReviewTestsMakeContext()
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-resume-terminal-probe"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .running,
+            lastSequence: 0,
+            acceptedIdempotencyKeys: [],
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: RuntimeStoredState(
+                schemaVersion: RuntimeStoredState.currentSchemaVersion,
+                sessions: [stored],
+            ),
+            loadErrors: [2: failure.storeError],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "restored-terminal-probe",
+                kind: .completed,
+            )]],
+            failsTerminalResult: true,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        await #expect(throws: failure.hostError) {
+            _ = try await plane.resumeRestoredRun(hostReference: host)
+        }
+
+        #expect(await store.loadCount == 2)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await plane.sessions[host]?.lease.isActive == false)
+        #expect(await store.currentState()?.sessions.first?.projection == .completed)
+        #expect(await adapter.counts().stream == 1)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: restored adapter failure repairs only its own resume claim.
     /// 실제 resumeRestoredRun의 adapter 오류 cleanup이 persistence conflict와 unavailable을 구분하면서 replacement owner를 보존하는지
     /// 검증한다.
