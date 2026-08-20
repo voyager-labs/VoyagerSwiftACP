@@ -392,6 +392,7 @@ private func handleCollectionFileLoaded(
         if file.isEmptyDefinition(resolvedFilters: resolved) {
             return handleEmptyCollectionFile(
                 request: request,
+                tabID: state.contentTabs.activeTabID,
                 state: &state,
                 collectionAlertClient: environment.collectionAlertClient,
             )
@@ -414,7 +415,7 @@ private func handleCollectionFileLoaded(
         return handleCollectionFileLoadedFailure(
             error,
             request: request,
-            state: &state,
+            tabID: state.contentTabs.activeTabID,
             collectionAlertClient: environment.collectionAlertClient,
         )
     }
@@ -588,11 +589,15 @@ nonisolated private func collectionScopeRootModified(
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
     request: ContentPageCollectionOpenRequest,
-    state _: inout FileManagerWindowState,
+    tabID: ContentTabID?,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
+    let failureDelegateEffect: Effect<FileManagerWindowAction> = tabID.map {
+        .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: $0)))
+    } ?? .none
     if case .collection = request.sourceRoute {
         return .concatenate(
+            failureDelegateEffect,
             .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
             restoreCollectionOpenHistoryEffect(request),
             .run { _ in
@@ -619,11 +624,12 @@ private func handleCollectionFileLoadedFailure(
     effects.append(.run { _ in
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
     })
-    return .concatenate(effects)
+    return .concatenate([failureDelegateEffect] + effects)
 }
 
 private func handleEmptyCollectionFile(
     request: ContentPageCollectionOpenRequest,
+    tabID: ContentTabID?,
     state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
@@ -647,6 +653,9 @@ private func handleEmptyCollectionFile(
             "This collection file has no query, scope, or filters.",
         )
     })
+    if let tabID {
+        effects.append(.send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: tabID))))
+    }
     return .concatenate(effects)
 }
 

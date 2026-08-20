@@ -399,5 +399,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             tabID: ContentTabID,
             navigationState: ContentPageNavigationRoute,
         )
+        /// pinned tab의 durable route 복귀가 실제 navigation commit 없이 실패했음을 window manager에 알린다.
+        case pinnedContentTabRuntimeNavigationFailed(tabID: ContentTabID)
     }
 }

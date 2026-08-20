@@ -18,6 +18,43 @@ struct SelectedContentTabPinMutationOperationCancelID: Hashable {
     let operationID: UUID
 }
 
+@discardableResult
+private func applyExternalPendingSelection(
+    _ pendingSelectEntryID: String?,
+    tabID: ContentTabID,
+    anchor: ContentTabPageAnchor,
+    pinnedAnchor: (ContentPageNavigationRoute) -> ContentTabPageAnchor?,
+    state: inout FileManagerWindowState,
+) -> Bool {
+    guard let pendingSelectEntryID else { return false }
+    let isActiveTab = state.contentTabs.activeTabID == tabID
+    if isActiveTab {
+        state.content.pendingSelectEntryID = pendingSelectEntryID
+        let alreadyOnRoute = pinnedAnchor(state.content.navigation.navigationState) == anchor
+        if alreadyOnRoute {
+            let didApply = state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
+            state.syncActiveTabContentState()
+            return didApply
+        }
+        state.syncActiveTabContentState()
+        return false
+    }
+    var contentState = state.tabContentStates[tabID]
+        ?? FileManagerContentFeature.State.initialContent(
+            for: anchor,
+            inheritingWindowContextFrom: state.content,
+        )
+    contentState.pendingSelectEntryID = pendingSelectEntryID
+    let alreadyOnRoute = pinnedAnchor(contentState.navigation.navigationState) == anchor
+    if alreadyOnRoute {
+        let didApply = contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
+        state.tabContentStates[tabID] = contentState
+        return didApply
+    }
+    state.tabContentStates[tabID] = contentState
+    return false
+}
+
 @Reducer
 struct FileManagerWindowRoutingReducer {
     typealias State = FileManagerWindowState
@@ -138,10 +175,11 @@ struct FileManagerWindowRoutingReducer {
             guard request.isValidExternalReservation else { return .none }
         }
         guard !isBrokenPinnedAnchor(record.anchor) else {
-            return .concatenate(
-                leadingEffect,
-                cancelPendingCollectionOpen(state: &state),
-                brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
+            return abortPinnedReturn(
+                leadingEffect: leadingEffect,
+                tabID: tabID,
+                feedback: true,
+                state: &state,
             )
         }
         if case let .collectionFile(url) = record.anchor,
@@ -151,9 +189,11 @@ struct FileManagerWindowRoutingReducer {
            ) != record.anchor
         {
             guard !state.content.hasUnsavedCollectionChanges else {
-                return .concatenate(
-                    leadingEffect,
-                    cancelPendingCollectionOpen(state: &state),
+                return abortPinnedReturn(
+                    leadingEffect: leadingEffect,
+                    tabID: tabID,
+                    feedback: false,
+                    state: &state,
                 )
             }
             return .concatenate(
@@ -213,7 +253,7 @@ struct FileManagerWindowRoutingReducer {
             pendingSelectEntryID,
             tabID: tabID,
             anchor: anchor,
-            isActiveTab: isActiveTab,
+            pinnedAnchor: { pinnedAnchor(for: $0) },
             state: &state,
         )
         let selectionChangedEffect: Effect<Action> = isActiveTab && didApplyLoadedSelection
@@ -293,40 +333,18 @@ struct FileManagerWindowRoutingReducer {
         )
     }
 
-    @discardableResult
-    private func applyExternalPendingSelection(
-        _ pendingSelectEntryID: String?,
+    private func abortPinnedReturn(
+        leadingEffect: Effect<Action>,
         tabID: ContentTabID,
-        anchor: ContentTabPageAnchor,
-        isActiveTab: Bool,
+        feedback: Bool,
         state: inout State,
-    ) -> Bool {
-        guard let pendingSelectEntryID else { return false }
-        if isActiveTab {
-            state.content.pendingSelectEntryID = pendingSelectEntryID
-            let alreadyOnRoute = pinnedAnchor(for: state.content.navigation.navigationState) == anchor
-            if alreadyOnRoute {
-                let didApply = state.content.consumeExternalPendingSelectionIfAlreadyLoaded()
-                state.syncActiveTabContentState()
-                return didApply
-            }
-            state.syncActiveTabContentState()
-            return false
-        }
-        var contentState = state.tabContentStates[tabID]
-            ?? FileManagerContentFeature.State.initialContent(
-                for: anchor,
-                inheritingWindowContextFrom: state.content,
-            )
-        contentState.pendingSelectEntryID = pendingSelectEntryID
-        let alreadyOnRoute = pinnedAnchor(for: contentState.navigation.navigationState) == anchor
-        if alreadyOnRoute {
-            let didApply = contentState.consumeExternalPendingSelectionIfAlreadyLoaded()
-            state.tabContentStates[tabID] = contentState
-            return didApply
-        }
-        state.tabContentStates[tabID] = contentState
-        return false
+    ) -> Effect<Action> {
+        .concatenate(
+            leadingEffect,
+            cancelPendingCollectionOpen(state: &state),
+            feedback ? brokenPinnedTabFeedbackEffect(tabID: tabID, state: state) : .none,
+            .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: tabID))),
+        )
     }
 
     private func returnInactiveContentTabToPinnedLocationWithoutActivation(
@@ -344,7 +362,12 @@ struct FileManagerWindowRoutingReducer {
             guard request.isValidExternalReservation else { return .none }
         }
         guard !isBrokenPinnedAnchor(record.anchor) else {
-            return brokenPinnedTabFeedbackEffect(tabID: tabID, state: state)
+            return abortPinnedReturn(
+                leadingEffect: .none,
+                tabID: tabID,
+                feedback: true,
+                state: &state,
+            )
         }
         let navigationState = contentState(
             for: record.anchor,
