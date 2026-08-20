@@ -163,8 +163,11 @@ extension RuntimeControlPlane {
             guard let loaded else { return nil }
             guard let stored = loaded.sessions.first(where: {
                 $0.externalAgentSessionReference == host
-                    && $0.runReference == receipt.runReference
             }) else { return nil }
+            guard stored.runReference == receipt.runReference else {
+                plane.sessions = plane.reconciledRegistry(candidate: plane.sessions, persisted: loaded)
+                return nil
+            }
             let expectedSession = plane.sessions[host]
             let adopted = Session(
                 stored: stored,

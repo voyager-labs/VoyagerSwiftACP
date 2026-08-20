@@ -957,6 +957,53 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// VOY-746-coordinator_contract: a replacement snapshot wins an old receipt CAS conflict.
+    /// 다른 run의 replacement snapshot이 저장된 뒤 old receipt conflict가 stale launch owner를 제거하는지 검증한다.
+    /// - 검증 내용: persistenceConflict, replacement snapshot, inactive lease와 exact launch count.
+    /// - 사전 조건: old run receipt apply conflict가 같은 host의 completed replacement snapshot을 설치한다.
+    /// - 기대 결과: old receipt는 replacement에 결합되지 않고 local registry가 replacement를 채택한다.
+    @Test
+    func `replacement snapshot wins old receipt conflict without binding old receipt`() async throws {
+        let host: ExternalAgentSessionReference = "host-contract-replacement-receipt-cas"
+        let request = makeLaunch(
+            host: host,
+            run: RuntimeRunReference("run-contract-old-receipt-cas"),
+            adapterID: "sdk",
+        )
+        let replacement = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("replacement-receipt"),
+            runReference: RuntimeRunReference("run-contract-replacement-receipt-cas"),
+            adapterID: RuntimeAdapterID("sdk"),
+            adapterVersion: "1.0.0",
+            capabilitySnapshot: .allSupported,
+            storedContext: RuntimeStoredContext(contextPolicy: request.contextPolicy),
+            projection: .completed,
+            providerLaunchAttempted: true,
+        )
+        let replacementState = RuntimeStoredState(
+            schemaVersion: RuntimeStoredState.currentSchemaVersion,
+            sessions: [replacement],
+        )
+        let store = DeterministicHostMutationRuntimeStateStore(
+            conflictingUpdateStates: [3: replacementState],
+        )
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        await #expect(throws: RuntimeHostError.persistenceConflict) {
+            _ = try await plane.run(request)
+        }
+
+        let local = try #require(await plane.sessions[host])
+        #expect(local.stored == replacement)
+        #expect(local.lease == .none)
+        #expect(await store.currentState()?.sessions == [replacement])
+        #expect(await store.updateCount == 3)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// VOY-746-coordinator_contract: cancellation after receipt remains detached consumption.
     /// receipt commit 이후 consume 중 취소가 CancellationError로 끝나고 실패 terminal을 만들지 않는 미래 계약을 고정한다.
     /// - 검증 내용: public run CancellationError, running projection, detached consuming lease.
