@@ -122,6 +122,44 @@ struct RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// VOY-746-coordinator_contract: caller cancellation wins during provider failure cleanup.
+    /// provider stream 오류를 정리하는 interrupt commit 전에 취소된 caller가 adapter 오류로 재분류되지 않는지 검증한다.
+    /// - 검증 내용: public CancellationError, detached consumption lease, redacted cleanup evidence와 launch count.
+    /// - 사전 조건: receipt-bearing stream이 gate 뒤 creation 오류를 내고 caller cancellation이 cleanup commit 전에 관찰된다.
+    /// - 기대 결과: caller는 CancellationError를 받고 같은 run은 late terminal 수렴 가능한 detached consuming 상태가 된다.
+    @Test
+    func `caller cancellation wins during provider failure cleanup`() async throws {
+        let host: ExternalAgentSessionReference = "host-cleanup-caller-cancel"
+        let run = RuntimeRunReference("run-cleanup-caller-cancel")
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+            eventStreamFailure: .creation,
+        )
+        let store = InMemoryRuntimeStateStore()
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForEventStreamCount(1)
+        runTask.cancel()
+        await streamGate.open()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await runTask.value
+        }
+        let session = try #require(await plane.sessions[host])
+        #expect(session.stored.projection == .running)
+        #expect(isDetachedConsuming(session.lease))
+        #expect(await plane.cleanupFailureEvidence(for: host) == nil)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// VOY-746-characterization_survivors: provider finish failure remains the public error.
     /// 이미 저장된 host terminal을 보존하되 terminal-result 오류를 성공 결과로 변환하지 않는 계약을 고정한다.
     /// - 검증 내용: terminal-result gate, host interrupted event 저장과 원래 provider 오류.
@@ -746,6 +784,57 @@ extension RuntimeFreshRunCoordinatorContractTests {
             kind: .persistence,
         ))
         #expect(await store.currentState()?.sessions.first?.projection == .launching)
+        #expect(await adapter.counts().launch == 1)
+    }
+
+    /// VOY-746-coordinator_contract: cancellation ownership uses the trusted request before receipt validation.
+    /// 검증되지 않은 mismatched receipt가 반환된 뒤 취소되어도 실제 request run의 launching owner가 남지 않는지 검증한다.
+    /// - 검증 내용: public CancellationError, launchCancelled projection, nil receipt binding과 inactive lease.
+    /// - 사전 조건: 다른 host 저장이 persistence lock을 점유한 동안 adapter가 다른 runReference receipt를 반환한다.
+    /// - 기대 결과: cancellation은 request run에 적용되고 malformed receipt는 저장되지 않는다.
+    @Test
+    func `pre-validation receipt cancellation uses request ownership`() async throws {
+        let host: ExternalAgentSessionReference = "host-contract-untrusted-receipt-cancel"
+        let run = RuntimeRunReference("run-contract-untrusted-receipt-cancel")
+        let mismatchedRun = RuntimeRunReference("run-contract-untrusted-receipt-other")
+        let blockerHost: ExternalAgentSessionReference = "host-contract-untrusted-receipt-blocker"
+        let blockerRun = RuntimeRunReference("run-contract-untrusted-receipt-blocker")
+        let launchGate = RuntimeTestGate()
+        let persistenceGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+            launchReceiptRunReference: mismatchedRun,
+        )
+        let store = InMemoryRuntimeStateStore(saveGates: [3: persistenceGate])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        let blockerRequest = makeLaunch(host: blockerHost, run: blockerRun, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForLaunchCount(1)
+        let blockerTask = Task { try await plane.projectPrelaunch(blockerRequest, as: .policyReady) }
+        await store.waitForSaveCount(3)
+        await launchGate.open()
+        while await plane.pendingPersistenceMutations[host, default: 0] == 0 {
+            await Task.yield()
+        }
+        runTask.cancel()
+        await persistenceGate.open()
+        try await blockerTask.value
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await runTask.value
+        }
+        let session = try #require(await plane.sessions[host])
+        #expect(session.stored.runReference == run)
+        #expect(session.stored.projection == .launchCancelled)
+        #expect(session.stored.providerInternalSessionReference == nil)
+        #expect(session.lease == .none)
         #expect(await adapter.counts().launch == 1)
     }
 

@@ -85,8 +85,7 @@ extension RuntimeControlPlane {
         } catch is CancellationError {
             try await propagateCallerCancellation(
                 host: reservation.host,
-                originatingRunReference: receipt.runReference,
-                receipt: receipt,
+                originatingRunReference: request.runReference,
             )
         } catch RuntimeHostError.persistenceFailure {
             try? await reconcileStartedProviderFailure(reservation: reservation, receipt: receipt)
@@ -360,6 +359,12 @@ extension RuntimeControlPlane {
                     host: reservation.host,
                     lease: lease,
                 ) { return .terminal(terminal) }
+            } catch is CancellationError {
+                try await propagateCallerCancellation(
+                    host: reservation.host,
+                    originatingRunReference: receipt.runReference,
+                    receipt: receipt,
+                )
             } catch {
                 applyCleanupFailedDecision(host: reservation.host, runReference: receipt.runReference)
                 try? await recoverTerminalPersistenceClaim(host: reservation.host, lease: lease)
