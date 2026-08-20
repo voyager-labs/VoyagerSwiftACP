@@ -15,14 +15,12 @@ extension WindowManagerFeature {
             state: state,
             excluding: excludedWindowIDs,
         ) else {
-            if let request = plan.request?.retryExcluding(
-                failedPinnedCollectionTabIDs(for: plan, state: state, excluding: excludedWindowIDs),
-            ),
-                case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
-                    request,
-                    state: state,
-                    generateUUID: uuid(),
-                )
+            if let request = plan.request?.retryRequest,
+               case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+                   request,
+                   state: state,
+                   generateUUID: uuid(),
+               )
             {
                 state.externalOpenActivationAttempt = nil
                 state.externalOpenActivationBecameKey = false
@@ -43,6 +41,7 @@ extension WindowManagerFeature {
             plan: plan,
             windowID: windowID,
             excludedWindowIDs: excludedWindowIDs,
+            settledPinnedReturnTabIDs: [],
         )
         state.externalOpenActivationAttempt = attempt
         return .run { [fileManagerWindowClient] send in
@@ -151,32 +150,12 @@ extension WindowManagerFeature {
         guard let attempt = state.externalOpenActivationAttempt,
               state.authorizedExternalOpenBatchID == attempt.batchID
         else { return .none }
-        if hasPendingPinnedCollectionReturn(for: attempt.plan, state: state, excluding: attempt.excludedWindowIDs) {
-            return .none
-        }
-        if hasFailedPinnedCollectionReturn(for: attempt.plan, state: state, excluding: attempt.excludedWindowIDs) {
-            state.externalOpenActivationAttempt = nil
-            state.externalOpenActivationBecameKey = false
-            if let request = attempt.plan.request?.retryExcluding(
-                failedPinnedCollectionTabIDs(
-                    for: attempt.plan,
-                    state: state,
-                    excluding: attempt.excludedWindowIDs,
-                ),
-            ),
-                case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
-                    request,
-                    state: state,
-                    generateUUID: uuid(),
-                )
-            {
-                return .send(.placement(.apply(
-                    plan: replacementPlan,
-                    reservationsByItemID: replacementPlan.reservationsByItemID,
-                )))
-            }
-            return retryExternalOpenActivation(after: attempt, state: &state)
-        }
+        // pinned collection 복귀는 navigation/anchor commit 후의 성공 delegate가 올 때까지 대기한다.
+        let awaitedPinnedCollectionTabIDs = Set<ContentTabID>(attempt.plan.orderedItems.compactMap { item in
+            guard item.requiresPinnedAnchorReturn, case .collectionFile = item.anchor else { return nil }
+            return item.tabID
+        })
+        guard awaitedPinnedCollectionTabIDs.isSubset(of: attempt.settledPinnedReturnTabIDs) else { return .none }
         guard state.externalOpenActivationBecameKey else { return .none }
         let survivingWindowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
             for: attempt.plan,
@@ -192,48 +171,31 @@ extension WindowManagerFeature {
         return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
     }
 
-    private func hasPendingPinnedCollectionReturn(
-        for plan: ExternalOpenPlacementPlan,
-        state: State,
-        excluding excludedWindowIDs: Set<State.WindowID>,
-    ) -> Bool {
-        plan.orderedItems.contains { item in
-            guard item.requiresPinnedAnchorReturn,
-                  case .collectionFile = item.anchor,
-                  let windowID = plan.windows.first(where: { $0.items.contains(where: { $0.itemID == item.itemID }) })?
-                  .windowID,
-                  !excludedWindowIDs.contains(windowID),
-                  let window = state.windows[id: windowID]?.window
-            else { return false }
-            return window.pendingCollectionOpenRequest != nil
+    /// pinned route 복귀 실패 delegate를 받으면 해당 tab을 제외하고 배치를 한 번 재계획한다.
+    func replanExternalOpenActivationExcluding(
+        tabID: ContentTabID,
+        windowID: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let attempt = state.externalOpenActivationAttempt,
+              state.authorizedExternalOpenBatchID == attempt.batchID,
+              !attempt.excludedWindowIDs.contains(windowID),
+              attempt.plan.orderedItems.contains(where: { $0.tabID == tabID && $0.requiresPinnedAnchorReturn })
+        else { return .none }
+        state.externalOpenActivationAttempt = nil
+        state.externalOpenActivationBecameKey = false
+        guard let request = attempt.plan.request?.retryExcluding(Set([tabID])),
+              case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+                  request,
+                  state: state,
+                  generateUUID: uuid(),
+              )
+        else {
+            return retryExternalOpenActivation(after: attempt, state: &state)
         }
-    }
-
-    private func hasFailedPinnedCollectionReturn(
-        for plan: ExternalOpenPlacementPlan,
-        state: State,
-        excluding excludedWindowIDs: Set<State.WindowID>,
-    ) -> Bool {
-        !failedPinnedCollectionTabIDs(for: plan, state: state, excluding: excludedWindowIDs).isEmpty
-    }
-
-    private func failedPinnedCollectionTabIDs(
-        for plan: ExternalOpenPlacementPlan,
-        state: State,
-        excluding excludedWindowIDs: Set<State.WindowID>,
-    ) -> Set<ContentTabID> {
-        Set(plan.orderedItems.compactMap { item in
-            guard item.requiresPinnedAnchorReturn,
-                  case .collectionFile = item.anchor,
-                  let windowID = plan.windows.first(where: { $0.items.contains(where: { $0.itemID == item.itemID }) })?
-                  .windowID,
-                  !excludedWindowIDs.contains(windowID),
-                  let window = state.windows[id: windowID]?.window,
-                  window.pendingCollectionOpenRequest == nil,
-                  window.contentTabs.tabs[id: item.tabID] != nil,
-                  window.contentTabs.tabs[id: item.tabID]?.anchor != item.anchor
-            else { return nil }
-            return item.tabID
-        })
+        return .send(.placement(.apply(
+            plan: replacementPlan,
+            reservationsByItemID: replacementPlan.reservationsByItemID,
+        )))
     }
 }

@@ -445,9 +445,28 @@ struct WindowManagerFeature {
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
 
-            case .windows(.element(id: _, action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged)))),
-                 .windows(.element(id: _, action: .window(.navigation(.internal(.collectionFileLoaded))))):
+            case let .windows(.element(
+                id: _,
+                action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(tabID, _))),
+            )):
+                if var attempt = state.externalOpenActivationAttempt,
+                   state.authorizedExternalOpenBatchID == attempt.batchID,
+                   attempt.plan.orderedItems.contains(where: { $0.tabID == tabID && $0.requiresPinnedAnchorReturn })
+                {
+                    attempt.settledPinnedReturnTabIDs.insert(tabID)
+                    state.externalOpenActivationAttempt = attempt
+                }
                 return completeExternalOpenActivationIfSettled(state: &state)
+
+            case let .windows(.element(
+                id: windowID,
+                action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID))),
+            )):
+                return replanExternalOpenActivationExcluding(
+                    tabID: tabID,
+                    windowID: windowID,
+                    state: &state,
+                )
 
             case let .windows(.element(id: _, action: action)):
                 switch action {

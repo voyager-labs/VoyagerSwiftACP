@@ -141,6 +141,8 @@ struct ExternalOpenActivationAttempt: Equatable {
     let plan: ExternalOpenPlacementPlan
     let windowID: WindowManagerState.WindowID
     let excludedWindowIDs: Set<WindowManagerState.WindowID>
+    /// pinned collection 복귀 성공 delegate를 수신한 tab set (commit 완료 확인)
+    var settledPinnedReturnTabIDs: Set<ContentTabID> = []
 }
 
 enum ExternalOpenPlacementFailure: Error, Equatable {

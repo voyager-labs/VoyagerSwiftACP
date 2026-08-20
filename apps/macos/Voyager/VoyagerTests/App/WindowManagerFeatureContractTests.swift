@@ -10098,10 +10098,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertTrue(store.state.externalOpenActivationBecameKey)
     }
 
-    /// pinned Collection 복귀가 실패해 runtime이 그대로면 배치를 한 번 재계획한다.
-    /// - 검증 내용: pending이 없고 runtime != durable collection이면 retry apply가 신규 reservation을 만듦
-    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection, pending 없음
-    /// - 기대 결과: retryCount 1 신규 tab reservation
+    /// pinned Collection 복귀가 실패하면 typed failure delegate로 배치를 한 번 재계획한다.
+    /// - 검증 내용: pinnedContentTabRuntimeNavigationFailed 수신 시 retry apply가 신규 reservation을 만듦
+    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection
+    /// - 기대 결과: retryCount 1 신규 tab reservation, 기존 tab 보존
     func testPlacementActivationReplansWhenPinnedCollectionReturnFailed() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let store = TestStore(initialState: fixture.state) {
@@ -10115,15 +10115,80 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
 
+        let windowID = fixture.plan.windows[0].windowID
         await store.send(.placement(.activate(fixture.plan)))
+        await store.receive { action in
+            guard case .externalOpenActivationResult = action else { return false }
+            return true
+        }
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: fixture.tabID))),
+        )))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.retryCount == 1
+                && plan.orderedItems.count == 1
+                && plan.orderedItems[0].tabID != fixture.tabID
+                && plan.orderedItems[0].requiresReservation
+                && reservationsByItemID.count == 1
+        }
         await store.skipReceivedActions()
         await store.finish()
 
-        let windowID = fixture.plan.windows[0].windowID
         let tabs = store.state.windows[id: windowID]?.window.contentTabs.tabs
         XCTAssertGreaterThan(tabs?.count ?? 0, 1)
         XCTAssertEqual(tabs?.ids.contains(fixture.tabID), true)
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
+    }
+
+    /// pinned Collection 복귀가 성공적으로 commit되면 같은 tab을 유지하고 batch를 완료한다.
+    /// - 검증 내용: 성공 delegate 수신 전에는 완료하지 않고, 수신 후 activationCompleted를 보냄
+    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection
+    /// - 기대 결과: 신규 tab 없이 원래 tab 유지, authorized batch 해제
+    func testPlacementActivationCompletesAfterPinnedCollectionReturnCommitted() async {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let store = TestStore(initialState: fixture.state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 성공 delegate 이후 window lifecycle은 기존 activation owner가 검증함.
+        store.exhaustivity = .off
+
+        let windowID = fixture.plan.windows[0].windowID
+        await store.send(.placement(.activate(fixture.plan)))
+        await store.receive { action in
+            guard case .externalOpenActivationResult = action else { return false }
+            return true
+        }
+        // commit 전에는 완료하지 않는다.
+        XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: fixture.tabID,
+                navigationState: .folder("/tmp"),
+            ))),
+        )))
+        await store.receive { action in
+            guard case .delegate(.externalOpenActivationCompleted(batchID: fixture.plan.batchID)) = action else {
+                return false
+            }
+            return true
+        }
+        await store.finish()
+
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+        XCTAssertEqual(store.state.windows[id: windowID]?.window.contentTabs.tabs.count, 1)
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs.ids.contains(fixture.tabID),
+            true,
+        )
     }
 
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
