@@ -239,11 +239,15 @@ struct WindowManagerFeature {
 
             case let .externalOpenActivationResult(attempt, result):
                 guard state.authorizedExternalOpenBatchID == attempt.batchID,
-                      state.externalOpenActivationAttempt == attempt
+                      let currentAttempt = state.externalOpenActivationAttempt,
+                      currentAttempt.batchID == attempt.batchID,
+                      currentAttempt.plan == attempt.plan,
+                      currentAttempt.windowID == attempt.windowID,
+                      currentAttempt.excludedWindowIDs == attempt.excludedWindowIDs
                 else { return .none }
                 switch result {
                 case .discarded:
-                    return retryExternalOpenActivation(after: attempt, state: &state)
+                    return retryExternalOpenActivation(after: currentAttempt, state: &state)
 
                 case .becameKey:
                     state.externalOpenActivationBecameKey = true

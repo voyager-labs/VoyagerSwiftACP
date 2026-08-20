@@ -35,20 +35,28 @@ extension WindowManagerFeature {
             return .send(.delegate(.externalOpenActivationCompleted(batchID: plan.batchID)))
         }
 
+        let previousAttempt = state.externalOpenActivationAttempt.flatMap { attempt in
+            attempt.batchID == plan.batchID && attempt.plan == plan ? attempt : nil
+        }
+        let shouldStartPinnedReturns = previousAttempt == nil
         state.externalOpenActivationBecameKey = false
         let attempt = ExternalOpenActivationAttempt(
             batchID: plan.batchID,
             plan: plan,
             windowID: windowID,
             excludedWindowIDs: excludedWindowIDs,
-            settledPinnedReturnTabIDs: [],
+            settledPinnedReturnTabIDs: previousAttempt?.settledPinnedReturnTabIDs ?? [],
         )
         state.externalOpenActivationAttempt = attempt
-        return .run { [fileManagerWindowClient] send in
+        let activationEffect: Effect<Action> = .run { [fileManagerWindowClient] send in
             let result = await fileManagerWindowClient.activate(windowID)
             await send(.externalOpenActivationResult(attempt: attempt, result: result))
         }
-        .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: false)
+        let pinnedReturnEffects = shouldStartPinnedReturns
+            ? externalOpenPinnedAnchorReturnEffects(plan)
+            : []
+        return .merge([activationEffect] + pinnedReturnEffects)
+            .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: false)
     }
 
     func retryExternalOpenActivation(
@@ -117,16 +125,7 @@ extension WindowManagerFeature {
                     id: activation.windowID,
                     action: .window(.activateExternalContentTabUndoScopes(activation.tabIDs)),
                 ))),
-            ] + activation.pinnedAnchorReturns.map { pinnedReturn in
-                .send(.windows(.element(
-                    id: activation.windowID,
-                    action: .window(.returnContentTabToPinnedLocation(
-                        pinnedReturn.tabID,
-                        pendingSelectEntryID: pinnedReturn.pendingSelectEntryID,
-                        activateIfNeeded: pinnedReturn.tabID == activation.activeTabID,
-                    )),
-                )))
-            } + [
+            ] + [
                 .send(.windows(.element(
                     id: activation.windowID,
                     action: .window(.contentTabs(.setCurrent(activation.activeTabID))),
@@ -144,6 +143,34 @@ extension WindowManagerFeature {
                 ]
                 : [])
         }
+    }
+
+    func externalOpenPinnedAnchorReturnEffects(
+        _ plan: ExternalOpenPlacementPlan,
+    ) -> [Effect<Action>] {
+        var effects: [Effect<Action>] = []
+        for window in plan.windows where !window.isNewWindow {
+            guard let activeTabID = window.items.last?.tabID else { continue }
+            var lastItemsByTabID: [ContentTabID: ExternalOpenPlacementPlan.Item] = [:]
+            for item in window.items where item.requiresPinnedAnchorReturn {
+                lastItemsByTabID[item.tabID] = item
+            }
+            var emittedTabIDs: Set<ContentTabID> = []
+            for item in window.items where item.requiresPinnedAnchorReturn {
+                guard emittedTabIDs.insert(item.tabID).inserted,
+                      let lastItem = lastItemsByTabID[item.tabID]
+                else { continue }
+                effects.append(.send(.windows(.element(
+                    id: window.windowID,
+                    action: .window(.returnContentTabToPinnedLocation(
+                        item.tabID,
+                        pendingSelectEntryID: lastItem.pendingSelectEntryID,
+                        activateIfNeeded: item.tabID == activeTabID,
+                    )),
+                ))))
+            }
+        }
+        return effects
     }
 
     func completeExternalOpenActivationIfSettled(state: inout State) -> Effect<Action> {

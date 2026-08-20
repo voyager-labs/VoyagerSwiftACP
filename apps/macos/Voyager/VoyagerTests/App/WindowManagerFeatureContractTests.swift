@@ -10079,7 +10079,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// - 기대 결과: becameKey 이후에도 activationCompleted가 없고 attempt가 남음
     func testPlacementActivationWaitsForPendingPinnedCollectionReturn() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: true)
-        let store = TestStore(initialState: fixture.state) {
+        let windowID = fixture.plan.windows[0].windowID
+        var state = fixture.state
+        state.externalOpenActivationAttempt = .init(
+            batchID: fixture.plan.batchID,
+            plan: fixture.plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
             WindowManagerFeature()
         } withDependencies: {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
@@ -10104,7 +10112,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// - 기대 결과: retryCount 1 신규 tab reservation, 기존 tab 보존
     func testPlacementActivationReplansWhenPinnedCollectionReturnFailed() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
-        let store = TestStore(initialState: fixture.state) {
+        let windowID = fixture.plan.windows[0].windowID
+        var state = fixture.state
+        state.externalOpenActivationAttempt = .init(
+            batchID: fixture.plan.batchID,
+            plan: fixture.plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
             WindowManagerFeature()
         } withDependencies: {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
@@ -10115,7 +10131,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
 
-        let windowID = fixture.plan.windows[0].windowID
         await store.send(.placement(.activate(fixture.plan)))
         await store.receive { action in
             guard case .externalOpenActivationResult = action else { return false }
@@ -10148,7 +10163,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// - 기대 결과: 신규 tab 없이 원래 tab 유지, authorized batch 해제
     func testPlacementActivationCompletesAfterPinnedCollectionReturnCommitted() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
-        let store = TestStore(initialState: fixture.state) {
+        let windowID = fixture.plan.windows[0].windowID
+        var state = fixture.state
+        state.externalOpenActivationAttempt = .init(
+            batchID: fixture.plan.batchID,
+            plan: fixture.plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
             WindowManagerFeature()
         } withDependencies: {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
@@ -10159,7 +10182,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         // store.exhaustivity = .off: 성공 delegate 이후 window lifecycle은 기존 activation owner가 검증함.
         store.exhaustivity = .off
 
-        let windowID = fixture.plan.windows[0].windowID
         await store.send(.placement(.activate(fixture.plan)))
         await store.receive { action in
             guard case .externalOpenActivationResult = action else { return false }
@@ -10273,6 +10295,69 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertNil(store.state.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.externalOpenActivationAttempt)
+    }
+
+    /// pinned Collection 복귀 effect는 activation attempt 설치 후에 시작한다.
+    /// - 검증 내용: apply terminal이 먼저 완료되고 activation 시작 뒤에만 Collection load가 시작됨
+    /// - 사전 조건: 기존 pinned Collection tab의 durable anchor를 재사용하는 placement
+    /// - 기대 결과: 빠른 복귀 terminal이 유실되지 않도록 apply 단계에서는 load를 시작하지 않음
+    func testPlacementApplyDefersPinnedCollectionReturnUntilActivationAttemptInstalled() async {
+        enum TestError: Error {
+            case loadFailed
+        }
+
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        guard case let .collectionFile(durableURL) = fixture.plan.orderedItems.first?.anchor else {
+            XCTFail("durable Collection anchor가 필요합니다")
+            return
+        }
+        let loadGate = WindowBootstrapSuspensionGate()
+        let loadStarted = expectation(description: "pinned collection load started")
+        let applyCompleted = expectation(description: "external open apply completed")
+        let openedURLs = LockIsolated<[URL]>([])
+        let store = TestStore(initialState: fixture.state) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenApplyCompleted(.init(
+                        batchID: fixture.plan.batchID,
+                        result: .success(fixture.plan),
+                    ))) = action {
+                        applyCompleted.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.collectionFileClient.load = { url in
+                openedURLs.withValue { $0.append(url) }
+                if url == durableURL {
+                    loadStarted.fulfill()
+                    await loadGate.wait()
+                }
+                throw TestError.loadFailed
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: Collection load 실패 후 bounded replan lifecycle은 기존 failure owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(plan: fixture.plan, reservationsByItemID: [:])))
+        await fulfillment(of: [applyCompleted], timeout: 1)
+        XCTAssertFalse(openedURLs.value.contains(durableURL))
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+
+        await store.send(.placement(.activate(fixture.plan)))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        XCTAssertNotNil(store.state.externalOpenActivationAttempt)
+
+        await loadGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
     }
 
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
