@@ -50,6 +50,9 @@ public extension RuntimeControlPlane {
         } catch RuntimeRestorationHeartbeatPersistenceError.persistenceFailure {
             try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw RuntimeHostError.persistenceFailure
+        } catch RuntimeProviderTerminalAdmissionError.rejected {
+            try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            throw RuntimeHostError.invalidEvent
         } catch is CancellationError {
             try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw CancellationError()
