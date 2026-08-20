@@ -9530,9 +9530,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(plan.windows.first?.items.first?.requiresReservation, false)
     }
 
-    /// close, teardown, disappear, 또는 content-tab move 참여 중인 exact-route tab은 apply와 retry planning 모두에서 재사용하지 않는다.
-    /// - 검증 내용: stale apply 거부와 lifecycle/move-busy window 제외 후 신규 identity 재계획
-    /// - 사전 조건: exact-route tab이 planning 뒤 pending close, teardown, closing, 또는 move participant 상태로 전환됨
+    /// close, teardown, disappear, Collection open, 또는 content-tab move 참여 중인 exact-route tab은 재사용하지 않는다.
+    /// - 검증 내용: stale apply 거부와 lifecycle/Collection/move-busy window 제외 후 신규 identity 재계획
+    /// - 사전 조건: exact-route tab이 planning 뒤 pending close, teardown, closing, Collection open, 또는 move 상태로 전환됨
     /// - 기대 결과: 기존 plan application은 실패하고 retry plan은 새 window/tab을 예약함
     func testPlacementRejectsTabsPendingCloseOrTeardownAndReplansNewIdentity() throws {
         let windowID = UUID()
@@ -9561,10 +9561,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         var closingState = state
         closingState.windows[id: windowID]?.window.isClosing = true
+        var pendingCollectionState = state
+        pendingCollectionState.windows[id: windowID]?.window.pendingCollectionOpenRequest = .init(
+            id: UUID(),
+            url: URL(fileURLWithPath: "/tmp/pending-open.voycoll"),
+            sourceRoute: .folder("/tmp/pending-close"),
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
         var moveState = state
         moveState.windows[id: windowID]?.window.contentTabMoveParticipantRequestID = UUID()
 
-        for busyState in [closeState, teardownState, closingState, moveState] {
+        for busyState in [closeState, teardownState, closingState, pendingCollectionState, moveState] {
             XCTAssertNil(ExternalOpenPlacementApplication.apply(
                 initialPlan,
                 reservationsByItemID: [:],
@@ -10157,11 +10165,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
     }
 
-    /// pinned Collection 복귀가 성공적으로 commit되면 같은 tab을 유지하고 batch를 완료한다.
-    /// - 검증 내용: 성공 delegate 수신 전에는 완료하지 않고, 수신 후 activationCompleted를 보냄
-    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection
-    /// - 기대 결과: 신규 tab 없이 원래 tab 유지, authorized batch 해제
-    func testPlacementActivationCompletesAfterPinnedCollectionReturnCommitted() async {
+    /// pinned Collection 복귀는 plan의 기대 anchor가 runtime에 commit된 뒤에만 batch를 완료한다.
+    /// - 검증 내용: 다른 사용자 navigation delegate는 무시하고 기대 anchor commit 뒤 activationCompleted를 보냄
+    /// - 사전 조건: durable collection 재사용 plan 중 같은 pinned tab에 다른 directory navigation이 먼저 commit됨
+    /// - 기대 결과: 다른 route에서는 settlement를 유지하지 않고 기대 route에서만 authorized batch 해제
+    func testPlacementActivationCompletesAfterPinnedCollectionReturnCommitted() async throws {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let windowID = fixture.plan.windows[0].windowID
         var state = fixture.state
@@ -10189,6 +10197,26 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         // commit 전에는 완료하지 않는다.
         XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
+        let unrelatedAnchor = ContentTabPageAnchor.directory(path: "/tmp/user-navigation")
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.updateRuntimePageAnchor(fixture.tabID, unrelatedAnchor))),
+        )))
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: fixture.tabID,
+                navigationState: .folder("/tmp/user-navigation"),
+            ))),
+        )))
+        XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
+        XCTAssertEqual(store.state.externalOpenActivationAttempt?.settledPinnedReturnTabIDs, [])
+
+        let expectedAnchor = try XCTUnwrap(fixture.plan.orderedItems.first?.anchor)
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.updateRuntimePageAnchor(fixture.tabID, expectedAnchor))),
+        )))
         await store.send(.windows(.element(
             id: windowID,
             action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
@@ -10283,6 +10311,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         // store.exhaustivity = .off: completion delegate 외 window lifecycle은 기존 activation owner가 검증함.
         store.exhaustivity = .off
 
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.updateRuntimePageAnchor(fixture.tabID, activeItem.anchor))),
+        )))
         await store.send(.windows(.element(
             id: windowID,
             action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(

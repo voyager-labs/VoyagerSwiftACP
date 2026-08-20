@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -567,7 +568,7 @@ enum ExternalOpenPlacementApplication {
                   !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
                   let window = state.windows[id: placementWindow.windowID]?.window,
-                  window.isExternalOpenRouteEligible
+                  window.isExternalOpenActivationEligible(for: item)
             else { continue }
             if placementWindow.isNewWindow,
                state.externalWindowBatchIDs[placementWindow.windowID] != plan.batchID
@@ -665,12 +666,26 @@ enum ExternalOpenPlacementApplication {
 }
 
 private extension FileManagerWindowState {
-    var isExternalOpenRouteEligible: Bool {
+    var isExternalOpenLifecycleEligible: Bool {
         !isClosing
             && pendingSelectedContentTabClose == nil
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
             && contentTabMoveParticipantRequestID == nil
+    }
+
+    var isExternalOpenRouteEligible: Bool {
+        isExternalOpenLifecycleEligible && pendingCollectionOpenRequest == nil
+    }
+
+    func isExternalOpenActivationEligible(for item: ExternalOpenPlacementPlan.Item) -> Bool {
+        guard isExternalOpenLifecycleEligible,
+              let pendingCollectionOpenRequest
+        else { return isExternalOpenLifecycleEligible }
+        guard item.requiresPinnedAnchorReturn,
+              case let .collectionFile(expectedURL) = item.anchor
+        else { return false }
+        return pendingCollectionOpenRequest.url.standardizedFileURL == expectedURL.standardizedFileURL
     }
 
     func stillMatchesExternalOpenItem(_ item: ExternalOpenPlacementPlan.Item) -> Bool {

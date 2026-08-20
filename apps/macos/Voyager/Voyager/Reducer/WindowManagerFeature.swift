@@ -450,12 +450,15 @@ struct WindowManagerFeature {
                 return .send(.delegate(.openAISettings))
 
             case let .windows(.element(
-                id: _,
+                id: windowID,
                 action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(tabID, _))),
             )):
                 if var attempt = state.externalOpenActivationAttempt,
                    state.authorizedExternalOpenBatchID == attempt.batchID,
-                   attempt.plan.orderedItems.contains(where: { $0.tabID == tabID && $0.requiresPinnedAnchorReturn })
+                   let item = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.first(where: {
+                       $0.tabID == tabID && $0.requiresPinnedAnchorReturn
+                   }),
+                   state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor
                 {
                     attempt.settledPinnedReturnTabIDs.insert(tabID)
                     state.externalOpenActivationAttempt = attempt
