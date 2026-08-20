@@ -511,6 +511,23 @@
   --swiftui-red: #ff3b30ff;
   --swiftui-teal: #59adc4ff;
   --swiftui-yellow: #ffcc00ff;
+  --macos-label-color: var(--swiftui-primary);
+  --macos-secondary-label-color: var(--swiftui-secondary);
+  --macos-control-accent-color: var(--swiftui-accent-color);
+  --macos-selected-content-background-color: var(--swiftui-accent-color);
+  --macos-system-blue: var(--swiftui-blue);
+  --macos-system-brown: var(--swiftui-brown);
+  --macos-system-cyan: var(--swiftui-cyan);
+  --macos-system-gray: var(--swiftui-gray);
+  --macos-system-green: var(--swiftui-green);
+  --macos-system-indigo: var(--swiftui-indigo);
+  --macos-system-mint: var(--swiftui-mint);
+  --macos-system-orange: var(--swiftui-orange);
+  --macos-system-pink: var(--swiftui-pink);
+  --macos-system-purple: var(--swiftui-purple);
+  --macos-system-red: var(--swiftui-red);
+  --macos-system-teal: var(--swiftui-teal);
+  --macos-system-yellow: var(--swiftui-yellow);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -658,6 +675,23 @@
   --swiftui-red: #ff383cff;
   --swiftui-teal: #00c3d0ff;
   --swiftui-yellow: #ffcc00ff;
+  --macos-label-color: var(--swiftui-primary);
+  --macos-secondary-label-color: var(--swiftui-secondary);
+  --macos-control-accent-color: var(--swiftui-accent-color);
+  --macos-selected-content-background-color: var(--swiftui-accent-color);
+  --macos-system-blue: var(--swiftui-blue);
+  --macos-system-brown: var(--swiftui-brown);
+  --macos-system-cyan: var(--swiftui-cyan);
+  --macos-system-gray: var(--swiftui-gray);
+  --macos-system-green: var(--swiftui-green);
+  --macos-system-indigo: var(--swiftui-indigo);
+  --macos-system-mint: var(--swiftui-mint);
+  --macos-system-orange: var(--swiftui-orange);
+  --macos-system-pink: var(--swiftui-pink);
+  --macos-system-purple: var(--swiftui-purple);
+  --macos-system-red: var(--swiftui-red);
+  --macos-system-teal: var(--swiftui-teal);
+  --macos-system-yellow: var(--swiftui-yellow);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -669,8 +703,8 @@
     ) {
     --swiftui-primary: #ffffffd8;
     --swiftui-secondary: #ffffff8c;
-    --swiftui-accent-color: #0091ffff;
-    --swiftui-blue: #0091ffff;
+    --swiftui-accent-color: #0a84ffff;
+    --swiftui-blue: #0a84ffff;
     --swiftui-brown: #b78a66ff;
     --swiftui-cyan: #3cd3feff;
     --swiftui-gray: #98989dff;
@@ -690,8 +724,8 @@
   :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration]) {
   --swiftui-primary: #ffffffd8;
   --swiftui-secondary: #ffffff8c;
-  --swiftui-accent-color: #0091ffff;
-  --swiftui-blue: #0091ffff;
+  --swiftui-accent-color: #0a84ffff;
+  --swiftui-blue: #0a84ffff;
   --swiftui-brown: #b78a66ff;
   --swiftui-cyan: #3cd3feff;
   --swiftui-gray: #98989dff;
@@ -704,6 +738,23 @@
   --swiftui-red: #ff4245ff;
   --swiftui-teal: #00d2e0ff;
   --swiftui-yellow: #ffd600ff;
+  --macos-label-color: var(--swiftui-primary);
+  --macos-secondary-label-color: var(--swiftui-secondary);
+  --macos-control-accent-color: var(--swiftui-accent-color);
+  --macos-selected-content-background-color: var(--swiftui-accent-color);
+  --macos-system-blue: var(--swiftui-blue);
+  --macos-system-brown: var(--swiftui-brown);
+  --macos-system-cyan: var(--swiftui-cyan);
+  --macos-system-gray: var(--swiftui-gray);
+  --macos-system-green: var(--swiftui-green);
+  --macos-system-indigo: var(--swiftui-indigo);
+  --macos-system-mint: var(--swiftui-mint);
+  --macos-system-orange: var(--swiftui-orange);
+  --macos-system-pink: var(--swiftui-pink);
+  --macos-system-purple: var(--swiftui-purple);
+  --macos-system-red: var(--swiftui-red);
+  --macos-system-teal: var(--swiftui-teal);
+  --macos-system-yellow: var(--swiftui-yellow);
 }
 
 :root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme-contrast="increased"]
