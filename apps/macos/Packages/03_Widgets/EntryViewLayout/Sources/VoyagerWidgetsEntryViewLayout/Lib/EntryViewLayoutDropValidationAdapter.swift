@@ -283,6 +283,16 @@ enum EntryViewLayoutDropValidationAdapter {
 // MARK: - Shared external-drop acquisition coordinator logic (Grid/List)
 
 extension EntryViewLayoutDropValidationAdapter {
+    /// Mail 메시지 드래그 한 건의 조회 키와 표시 제목.
+    /// 보안 노트: pasteboard 발신 앱은 인증할 수 없다(PR #489 리뷰, confused deputy).
+    /// 임의 앱이 Mail 타입을 위조해 Mail automation 조회를 유도할 수 있는 잔여 리스크를
+    /// 인지하며, TCC automation 동의 프롬프트가 1차 게이트다. 기능 폐지(d20236a4a) 대신
+    /// 복원을 선택한 근거를 이 문서화로 대신한다.
+    private struct MailMessageDropDescriptor {
+        var lookup: MailMessageSourceLookup
+        var subject: String?
+    }
+
     /// 외부 drop 획득 세션을 시작할 때 coordinator가 공급하는 획득/알림 클로저 모음.
     /// `function_parameter_count` 린트 제약을 위해 하나의 컨텍스트로 묶는다.
     struct ExternalDropAcquisitionContext {
@@ -323,8 +333,26 @@ extension EntryViewLayoutDropValidationAdapter {
             context.clearDropState()
             return false
         }
+        // Mail automator/message-url 드래그는 legacy promise 타입을 함께 선언하므로
+        // legacy 폴백보다 먼저 판정해야 Mail 원문 경로로 들어간다.
+        if let accepted = beginMailMessageDrop(
+            activeSessionID: &activeSessionID,
+            context: context,
+            pasteboard: draggingInfo.draggingPasteboard,
+            destinationPath: destinationPath,
+        ) {
+            return accepted
+        }
         if !negotiation.promisedOrdinals.isEmpty,
-           declaresLegacyFilePromise(in: draggingInfo.draggingPasteboard)
+           declaresLegacyFilePromise(in: draggingInfo.draggingPasteboard),
+           // Photos 등 modern promise 앱도 legacy HFS marker(`promised-file-url`)를 호환용으로
+           // 함께 선언한다. marker 존재만으로 legacy 폴백을 선택하면 modern 드래그가 HFS 경로로
+           // 오류우팅돼 전체가 실패한다(VOY-736 Photos 회귀). 드래그 세션에 receiver가 있으면
+           // (source가 NSFilePromiseProvider로 시작) modern 경로로 보내고, legacy 폴백은
+           // receiver가 없는 레거시 드래그에만 적용한다. 판별에 pasteboard reading 폴백을
+           // 쓰지 않는 이유: readObjects는 promised-file-content-type만 선언한 legacy
+           // pasteboard에서도 receiver를 조립하므로 legacy 드래그를 modern로 오역한다.
+           draggingItemPromiseReceivers(from: draggingInfo).isEmpty
         {
             validationLogger.info("acquisition path legacy-promise")
             return beginLegacyPromisedFiles(
@@ -401,6 +429,101 @@ extension EntryViewLayoutDropValidationAdapter {
             emptyReceiverFileNames=\(emptyReceiverFileNames, privacy: .public)
             """,
         )
+    }
+
+    @MainActor
+    private static func beginMailMessageDrop(
+        activeSessionID: inout ExternalDropSessionID?,
+        context: ExternalDropAcquisitionContext,
+        pasteboard: NSPasteboard,
+        destinationPath: String,
+    ) -> Bool? {
+        guard let deferredFlavors = mailDeferredFlavors(
+            from: pasteboard,
+            loadSource: context.client.loadMailSource,
+        ) else {
+            return nil
+        }
+        guard !deferredFlavors.isEmpty else {
+            validationLogger.info("acquisition rejected mail-identity-unusable")
+            context.clearDropState()
+            return false
+        }
+        // Mail 원문 export는 다중 MB `source` 전송에 수 초가 걸리므로 acceptDrop 동기
+        // 경로에서 분리한다. load는 세션 OperationQueue에서 실행되고 결과는 기존
+        // `.received`/종단 이벤트 스트림으로 흐른다.
+        let request = context.client.beginDeferred(deferredFlavors, destinationPath, true)
+        activeSessionID = request.sessionID
+        context.sendAccepted(request)
+        context.clearDropState()
+        validationLogger.info("acquisition path message-url files=\(deferredFlavors.count, privacy: .public)")
+        return true
+    }
+
+    @MainActor
+    private static func mailDeferredFlavors(
+        from pasteboard: NSPasteboard,
+        loadSource: @escaping @Sendable (MailMessageSourceLookup) -> Data?,
+    ) -> [ExternalDropDeferredFlavor]? {
+        guard let items = pasteboard.pasteboardItems, !items.isEmpty else { return nil }
+        var descriptors: [MailMessageDropDescriptor] = []
+        for item in items {
+            guard let itemDescriptors = mailMessageDescriptors(from: item) else { return nil }
+            descriptors.append(contentsOf: itemDescriptors)
+        }
+        guard !descriptors.isEmpty else { return nil }
+
+        var result: [ExternalDropDeferredFlavor] = []
+        var usedFilenames = Set<String>()
+        result.reserveCapacity(descriptors.count)
+        let emailUTI = UTType(filenameExtension: "eml")?.identifier ?? "com.apple.mail.email"
+        for (ordinal, descriptor) in descriptors.enumerated() {
+            let filename = ExternalDropDataFlavorNaming.mailMessageFilename(
+                subject: descriptor.subject,
+                ordinal: ordinal + 1,
+                usedFilenames: &usedFilenames,
+            )
+            let lookup = descriptor.lookup
+            result.append(ExternalDropDeferredFlavor(uti: emailUTI, filename: filename) {
+                loadSource(lookup)
+            })
+        }
+        return result
+    }
+
+    /// 신뢰할 수 없는 pasteboard item에서 Mail 조회 키를 추출한다. automator
+    /// property-list 레코드의 id가 일부라도 무효(id<=0)하면 빈 배열(거부)을 반환하고,
+    /// automator payload가 없으면 `message:` URL 폴백을 시도한다. 둘 다 없으면 nil
+    /// (Mail 드래그가 아님)을 반환해 이후 표준 경로가 처리하게 한다.
+    private static func mailMessageDescriptors(from item: NSPasteboardItem) -> [MailMessageDropDescriptor]? {
+        let automatorType = NSPasteboard.PasteboardType("com.apple.mail.PasteboardTypeAutomator")
+        if let data = item.data(forType: automatorType),
+           let records = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+           as? [[String: Any]],
+           !records.isEmpty
+        {
+            let descriptors = records.compactMap { record -> MailMessageDropDescriptor? in
+                guard let number = record["id"] as? NSNumber, number.intValue > 0 else { return nil }
+                return MailMessageDropDescriptor(
+                    lookup: MailMessageSourceLookup(numericID: number.intValue, messageID: nil),
+                    subject: record["subject"] as? String,
+                )
+            }
+            return descriptors.count == records.count ? descriptors : []
+        }
+
+        let urlType = NSPasteboard.PasteboardType("public.url")
+        guard let rawURL = item.string(forType: urlType),
+              let lookup = MailMessageSourceLookup(pasteboardURL: rawURL)
+        else {
+            return nil
+        }
+        return [
+            MailMessageDropDescriptor(
+                lookup: lookup,
+                subject: item.string(forType: NSPasteboard.PasteboardType("public.url-name")),
+            ),
+        ]
     }
 
     /// 레거시 promise 유형 상수들. type 존재 여부로만 판정한다(포맷 switch 없음).
@@ -491,6 +614,29 @@ extension EntryViewLayoutDropValidationAdapter {
         promisedOrdinals: [Int],
     ) -> [NSFilePromiseReceiver]? {
         guard !promisedOrdinals.isEmpty else { return [] }
+        let receivers = enumeratePromiseReceivers(from: draggingInfo)
+        guard receivers.count == promisedOrdinals.count else {
+            return nil
+        }
+        return receivers
+    }
+
+    /// 드래그에서 modern `NSFilePromiseReceiver`를 열거한다. dragging item 열거가 비면
+    /// pasteboard reading으로 보완한다. modern 획득 경로의 receiver 소스다.
+    @MainActor
+    static func enumeratePromiseReceivers(from draggingInfo: any NSDraggingInfo) -> [NSFilePromiseReceiver] {
+        let receivers = draggingItemPromiseReceivers(from: draggingInfo)
+        guard receivers.isEmpty else { return receivers }
+        return draggingInfo.draggingPasteboard.readObjects(
+            forClasses: [NSFilePromiseReceiver.self],
+            options: [:],
+        ) as? [NSFilePromiseReceiver] ?? []
+    }
+
+    /// dragging item 열거로만 receiver를 수집한다. pasteboard reading은 legacy marker만
+    /// 선언한 드래그에서도 receiver를 합성해낼 수 있어 legacy/modern 판별에는 부적합하다.
+    @MainActor
+    static func draggingItemPromiseReceivers(from draggingInfo: any NSDraggingInfo) -> [NSFilePromiseReceiver] {
         var receivers: [NSFilePromiseReceiver] = []
         draggingInfo.enumerateDraggingItems(
             options: [],
@@ -500,15 +646,6 @@ extension EntryViewLayoutDropValidationAdapter {
         ) { draggingItem, _, _ in
             guard let receiver = draggingItem.item as? NSFilePromiseReceiver else { return }
             receivers.append(receiver)
-        }
-        if receivers.isEmpty {
-            receivers = draggingInfo.draggingPasteboard.readObjects(
-                forClasses: [NSFilePromiseReceiver.self],
-                options: [:],
-            ) as? [NSFilePromiseReceiver] ?? []
-        }
-        guard receivers.count == promisedOrdinals.count else {
-            return nil
         }
         return receivers
     }

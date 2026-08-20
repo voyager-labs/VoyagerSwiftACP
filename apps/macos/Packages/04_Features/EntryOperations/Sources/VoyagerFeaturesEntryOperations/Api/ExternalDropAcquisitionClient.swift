@@ -45,6 +45,18 @@ public struct ExternalDropAcquisitionClient: Sendable {
     /// 파일시스템 경계와 실패 정리를 client가 단일 소유한다.
     public var finalizeLegacyStaging: @MainActor @Sendable ([String], Int, String) -> [String]?
 
+    /// 지연 data-flavor 획득 세션을 시작한다. request는 load 실행 전에 즉시 반환되고,
+    /// 각 flavor의 `load` 클로저는 세션이 소유한 OperationQueue에서 실행된 뒤 결과가
+    /// 기존 `.received`/종단 이벤트 스트림으로 흐른다. acceptDrop 동기 경로에서
+    /// 다중 MB 원문 로딩(Mail `source` export 등)을 분리할 때 사용한다.
+    public var beginDeferred: @MainActor @Sendable (
+        [ExternalDropDeferredFlavor], String, Bool,
+    ) -> ExternalDropAcceptedRequest
+
+    /// Mail 메시지 드래그의 원문(`source`)을 조회 키로 로드한다. 라이브 구현은
+    /// Mail automation(AppleScript)으로 export하고, 테스트는 클로저를 교체해 대체한다.
+    public var loadMailSource: @Sendable (MailMessageSourceLookup) -> Data?
+
     nonisolated public init(
         begin: @escaping @MainActor @Sendable (
             [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String],
@@ -55,6 +67,20 @@ public struct ExternalDropAcquisitionClient: Sendable {
         beginLegacy: @escaping @MainActor @Sendable ([String], String, String, Bool) -> ExternalDropAcceptedRequest,
         prepareLegacyStaging: @escaping @MainActor @Sendable (String) -> String?,
         finalizeLegacyStaging: @escaping @MainActor @Sendable ([String], Int, String) -> [String]?,
+        beginDeferred: @escaping @MainActor @Sendable (
+            [ExternalDropDeferredFlavor], String, Bool,
+        ) -> ExternalDropAcceptedRequest = { _, destination, forcedCopy in
+            ExternalDropAcceptedRequest(
+                sessionID: ExternalDropSessionID(),
+                destination: destination,
+                orderedPromisedNames: [],
+                promisedOrdinals: [],
+                forcedCopy: forcedCopy,
+                stagingDirectory: "",
+                immediateURLPaths: [],
+            )
+        },
+        loadMailSource: @escaping @Sendable (MailMessageSourceLookup) -> Data? = { _ in nil },
     ) {
         self.begin = begin
         self.events = events
@@ -63,6 +89,8 @@ public struct ExternalDropAcquisitionClient: Sendable {
         self.beginLegacy = beginLegacy
         self.prepareLegacyStaging = prepareLegacyStaging
         self.finalizeLegacyStaging = finalizeLegacyStaging
+        self.beginDeferred = beginDeferred
+        self.loadMailSource = loadMailSource
     }
 }
 
@@ -181,6 +209,14 @@ enum ExternalDropAcquisitionLive {
             finalizeLegacyStaging: { names, expectedCount, stagingDirectory in
                 store.finalizeLegacyStaging(names, expectedCount: expectedCount, stagingDirectory: stagingDirectory)
             },
+            beginDeferred: { items, destination, forcedCopy in
+                store.beginDeferred(
+                    items: items,
+                    destination: destination,
+                    forcedCopy: forcedCopy,
+                )
+            },
+            loadMailSource: { MailMessageSourceExport.load($0) },
         )
     }
 }
@@ -362,6 +398,43 @@ private final class ExternalDropAcquisitionStore {
             promisedOrdinals: [],
             forcedCopy: forcedCopy,
             stagingDirectory: stagingDirectory,
+        )
+    }
+
+    /// 지연 data-flavor 획득 세션을 시작한다. request는 로드 완료 전에 반환되고,
+    /// 각 flavor의 load 클로저는 세션 OperationQueue에서 실행된 뒤 materialize된다.
+    @MainActor
+    func beginDeferred(
+        items: [ExternalDropDeferredFlavor],
+        destination: String,
+        forcedCopy: Bool,
+    ) -> ExternalDropAcceptedRequest {
+        let sessionID = ExternalDropSessionID()
+        let stagingURL = fileManager
+            .temporaryDirectory()
+            .appendingPathComponent("ExternalDrop-\(sessionID.rawValue)")
+        try? fileManager.createDirectory(stagingURL, true, nil)
+
+        let session = ExternalDropAcquisitionSession(
+            sessionID: sessionID,
+            stagingDirectory: stagingURL.path,
+            fileManager: fileManager,
+            queue: makeSessionQueue(),
+        )
+        sessions[sessionID] = session
+        session.finalizeCardinality(fileNamesByReceiver: [], dataCount: items.count)
+
+        for item in items {
+            session.enqueueDeferredLoad(item)
+        }
+
+        return ExternalDropAcceptedRequest(
+            sessionID: sessionID,
+            destination: destination,
+            orderedPromisedNames: [],
+            promisedOrdinals: [],
+            forcedCopy: forcedCopy,
+            stagingDirectory: stagingURL.path,
         )
     }
 

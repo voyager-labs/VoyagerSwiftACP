@@ -100,6 +100,11 @@ final class DragInfoFixture: NSObject, NSDraggingInfo {
     var springLoadingHighlight: NSSpringLoadingHighlight = .none
     private(set) var enumerateDraggingItemsCallCount = 0
 
+    /// enumerateDraggingItems가 방문시킬 modern receiver 목록. 실제 AppKit 드래그와 달리
+    /// fixture는 pasteboard reading으로 receiver를 복원할 수 없어 주입으로 대체한다
+    /// (Photos처럼 receiver를 소유한 드래그 재현용).
+    var enumeratedReceivers: [NSFilePromiseReceiver] = []
+
     /// 레거시 promised-file 드래그 시뮬레이션용 hook. `atDestination`에 파일을 쓰고 이름을 반환한다.
     /// 기본은 nil(파일 약속 없음)로, 기존 테스트 동작을 유지한다.
     var namesOfPromisedFilesHandler: (@Sendable (URL) -> [String]?)?
@@ -133,10 +138,30 @@ final class DragInfoFixture: NSObject, NSDraggingInfo {
         for _: NSView?,
         classes _: [AnyClass],
         searchOptions _: [NSPasteboard.ReadingOptionKey: Any],
-        using _: @escaping (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void,
+        using visitor: @escaping (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void,
     ) {
         enumerateDraggingItemsCallCount += 1
+        for (index, receiver) in enumeratedReceivers.enumerated() {
+            let item = ReceiverDraggingItem(receiver: receiver)
+            var stop: ObjCBool = false
+            visitor(item, index, &stop)
+        }
     }
 
     func resetSpringLoading() {}
+}
+
+/// `NSDraggingItem.item`은 get-only라 receiver 노출용으로 getter만 교체한다.
+/// 실제 AppKit 드래그와 동일하게 visitor가 `item as? NSFilePromiseReceiver`로 복원한다.
+private final class ReceiverDraggingItem: NSDraggingItem {
+    private let promisedReceiver: NSFilePromiseReceiver
+
+    init(receiver: NSFilePromiseReceiver) {
+        promisedReceiver = receiver
+        super.init(pasteboardWriter: NSPasteboardItem())
+    }
+
+    override var item: Any {
+        promisedReceiver
+    }
 }

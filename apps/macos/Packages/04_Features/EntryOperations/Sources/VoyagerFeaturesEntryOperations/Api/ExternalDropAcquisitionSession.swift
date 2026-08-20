@@ -223,6 +223,22 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             .precomposedStringWithCanonicalMapping
     }
 
+    /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
+    func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
+        queue.addOperation { [weak self] in
+            guard let self else { return }
+            guard let bytes = flavor.load() else {
+                fail(reason: .dataMaterializationFailed)
+                return
+            }
+            materialize(dataFlavor: ExternalDropDataFlavor(
+                uti: flavor.uti,
+                bytes: bytes,
+                filename: flavor.filename,
+            ))
+        }
+    }
+
     /// promise receiver를 세션 전용 큐에서 수신을 시작한다. AppKit는 completion handler를
     /// non-main OperationQueue에서 호출하므로, lock-guarded `handleCallback`이 off-main에서
     /// 안전하게 실행된다.

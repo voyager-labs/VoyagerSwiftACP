@@ -61,12 +61,19 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
 
     var beginCalls: [BeginCall] = []
     var legacyCalls: [LegacyCall] = []
+    var deferredCalls: [DeferredCall] = []
     var cancelledSessionIDs: [ExternalDropSessionID] = []
     let sessionID = ExternalDropSessionID(rawValue: "deterministic-grid-session")
 
     struct LegacyCall {
         var stagedPathCount: Int
         var stagingDirectory: String
+        var destination: String
+        var forcedCopy: Bool
+    }
+
+    struct DeferredCall {
+        var items: [ExternalDropDeferredFlavor]
         var destination: String
         var forcedCopy: Bool
     }
@@ -138,6 +145,21 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
                 return nil
             }
             return staged
+        }
+        client.beginDeferred = { [self] items, destination, forcedCopy in
+            deferredCalls.append(DeferredCall(
+                items: items,
+                destination: destination,
+                forcedCopy: forcedCopy,
+            ))
+            return ExternalDropAcceptedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                orderedPromisedNames: [],
+                promisedOrdinals: [],
+                forcedCopy: forcedCopy,
+                stagingDirectory: "/tmp/grid-staging",
+            )
         }
         return client
     }
@@ -988,11 +1010,141 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(grid.activeExternalDropSessionID, acquisition.sessionID)
     }
 
-    /// 검증 내용 (VOY-736 회귀): legacy promise marker가 있으면 modern receiver를 읽기 전에
-    /// source가 선언한 `namesOfPromisedFilesDropped` 계약으로 직접 물질화한다.
-    /// 사전 조건: legacy marker와 modern receiver를 함께 노출하고 legacy 호출이 파일을 쓴다.
-    /// 기대 결과: receiver 열거 없이 beginLegacy만 호출되고 source-owned 파일이 전달된다.
-    func testLegacyPromiseMaterializesBeforeReceiverExtraction() {
+    /// Mail load 클로저 호출을 기록하는 테스트 이중 (Swift 6 Sendable 제약용 클래스).
+    private final class MailLoadRecorder: @unchecked Sendable {
+        var numericIDs: [Int?] = []
+        var messageIDs: [String] = []
+    }
+
+    /// Mail message drop의 arrange/act 공통부: recorder client를 주입해
+    /// beginExternalDropAcquisition까지 구동하고 관찰 결과를 모은다.
+    private struct MailDeferredDrive {
+        var info: DragInfoFixture
+        var acquisition: ExternalDropAcquisitionRecorder
+        var loads: MailLoadRecorder
+        var acceptedRequests: [ExternalDropAcceptedRequest]
+        var activeSessionID: ExternalDropSessionID?
+        var clearCount: Int
+        var accepted: Bool
+    }
+
+    private func driveMailMessageDeferredAcquisition(
+        pasteboard: NSPasteboard,
+        source: Data,
+        loads: MailLoadRecorder,
+        acquisition: ExternalDropAcquisitionRecorder,
+    ) -> MailDeferredDrive {
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+        let negotiation = EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        var activeSessionID: ExternalDropSessionID?
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var clearCount = 0
+        var client = acquisition.client
+        client.loadMailSource = { lookup in
+            loads.numericIDs.append(lookup.numericID)
+            loads.messageIDs.append(lookup.messageID ?? "")
+            return source
+        }
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: { clearCount += 1 },
+            ),
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: "/destination",
+        )
+        return MailDeferredDrive(
+            info: info,
+            acquisition: acquisition,
+            loads: loads,
+            acceptedRequests: acceptedRequests,
+            activeSessionID: activeSessionID,
+            clearCount: clearCount,
+            accepted: accepted,
+        )
+    }
+
+    /// VOY-736: Mail `message:` drop은 acceptDrop 동기 경로에서 원문을 로드하지 않고
+    /// 지연 획득(beginDeferred)으로 넘겨 main thread를 차단하지 않는다.
+    func testMailMessageURLMaterializesSourceBeforeBrokenPromise() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let loads = MailLoadRecorder()
+        let source = Data("Message-ID: <message-id@example.com>\r\n\r\nBody".utf8)
+
+        let drive = driveMailMessageDeferredAcquisition(
+            pasteboard: DragInfoFixture.makeMailMessageURLPromisePasteboard(),
+            source: source,
+            loads: loads,
+            acquisition: acquisition,
+        )
+
+        XCTAssertTrue(drive.accepted)
+        XCTAssertTrue(loads.numericIDs.isEmpty, "accept 시점에는 원문을 로드하지 않는다")
+        XCTAssertEqual(drive.info.enumerateDraggingItemsCallCount, 0)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.deferredCalls.count, 1)
+        XCTAssertEqual(acquisition.deferredCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.deferredCalls.first?.forcedCopy, true)
+        let items = acquisition.deferredCalls.first?.items ?? []
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.uti, "com.apple.mail.email")
+        XCTAssertEqual(items.first?.filename, "Fwd- hello.eml")
+        XCTAssertEqual(URL(fileURLWithPath: items.first?.filename ?? "").pathExtension, "eml")
+        XCTAssertEqual(drive.acceptedRequests.count, 1)
+        XCTAssertEqual(drive.activeSessionID, acquisition.sessionID)
+        XCTAssertEqual(drive.clearCount, 1)
+
+        // 세션 큐에서 실행될 load 클로저가 Mail identity로 원문을 로드한다.
+        XCTAssertEqual(items.first?.load(), source)
+        XCTAssertEqual(loads.numericIDs, [42])
+        XCTAssertEqual(loads.messageIDs, [""])
+    }
+
+    /// VOY-736: Automator payload 없는 Mail 메시지 드래그는 `message:` URL의
+    /// RFC Message-ID 조회로 폴백되고 파일명은 `public.url-name` 제목으로 파생된다.
+    /// - 검증 내용: URL-only pasteboard가 deferred 세션으로 흐르고 조회 키가 messageID-only다.
+    /// - 사전 조건: Automator type 없이 `public.url`(message:) + `public.url-name` + promise marker.
+    /// - 기대 결과: beginLegacy/begin 없이 beginDeferred 1회, load가 messageID로 원문을 반환하며
+    ///   파일명이 url-name 제목 기반 `Fwd- hello.eml`이다.
+    func testMailMessageURLOnlyFallsBackToMessageIDLookupAndURLNameSubject() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let loads = MailLoadRecorder()
+        let source = Data("Message-ID: <message-id@example.com>\r\n\r\nBody".utf8)
+
+        let drive = driveMailMessageDeferredAcquisition(
+            pasteboard: DragInfoFixture.makeMailMessageURLOnlyPasteboard(),
+            source: source,
+            loads: loads,
+            acquisition: acquisition,
+        )
+
+        XCTAssertTrue(drive.accepted)
+        XCTAssertTrue(loads.numericIDs.isEmpty, "accept 시점에는 원문을 로드하지 않는다")
+        XCTAssertEqual(acquisition.legacyCalls.count, 0)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.deferredCalls.count, 1)
+        let items = acquisition.deferredCalls.first?.items ?? []
+        XCTAssertEqual(items.first?.filename, "Fwd- hello.eml")
+
+        XCTAssertEqual(items.first?.load(), source)
+        XCTAssertEqual(loads.numericIDs, [nil])
+        XCTAssertEqual(loads.messageIDs, ["message-id@example.com"])
+        XCTAssertEqual(drive.acceptedRequests.count, 1)
+        XCTAssertEqual(drive.activeSessionID, acquisition.sessionID)
+    }
+
+    /// 검증 내용 (VOY-736 회귀): legacy promise marker가 있고 modern receiver가 열거되지
+    /// 않으면 source가 선언한 `namesOfPromisedFilesDropped` 계약으로 직접 물질화한다.
+    /// 사전 조건: legacy marker를 노출하지만 receiver 열거 결과가 비고 legacy 호출이 파일을 쓴다.
+    /// 기대 결과: 폴백 판정을 위한 receiver 열거 1회 후 beginLegacy만 호출되고 source-owned 파일이 전달된다.
+    func testLegacyPromiseWithoutModernReceiversMaterializesViaLegacyContract() {
         let transport = DragTransport()
         let recorder = DropRecorder()
         let acquisition = ExternalDropAcquisitionRecorder()
@@ -1024,7 +1176,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
 
         XCTAssertTrue(accepted)
-        XCTAssertEqual(info.enumerateDraggingItemsCallCount, 0, "legacy promise를 modern receiver로 먼저 읽으면 안 된다")
+        XCTAssertEqual(info.enumerateDraggingItemsCallCount, 1, "legacy 폴백 판정을 위해 receiver 열거는 정확히 1회만 한다")
         XCTAssertEqual(acquisition.beginCalls.count, 0)
         XCTAssertEqual(acquisition.legacyCalls.count, 1)
         XCTAssertEqual(acquisition.legacyCalls.first?.stagedPathCount, 1)
@@ -1254,8 +1406,49 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(leftovers.isEmpty, "거절 시 staging 디렉터리가 남으면 안 된다")
     }
 
+    /// 검증 내용 (VOY-736 Photos 회귀): legacy HFS marker를 함께 선언한 modern promise
+    /// 드래그(Photos 등)는 receiver가 열거되면 modern 획득 경로로 라우팅된다.
+    /// 사전 조건: legacy marker + modern promise type을 노출하고 receiver 열거가 1건 반환한다.
+    /// 기대 결과: beginLegacy 없이 begin(modern)만 호출된다.
+    func testLegacyMarkerWithEnumeratedReceiverRoutesToModernPromise() {
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let pasteboard = DragInfoFixture.makeLegacyPromiseMailPasteboard()
+        let info = DragInfoFixture(
+            source: nil,
+            operationMask: [.copy, .move],
+            pasteboard: pasteboard,
+        )
+        info.enumeratedReceivers = [NSFilePromiseReceiver()]
+
+        var activeSessionID: ExternalDropSessionID?
+        var acceptedRequests: [ExternalDropAcceptedRequest] = []
+        var clearCount = 0
+        let accepted = EntryViewLayoutDropValidationAdapter.beginExternalDropAcquisition(
+            activeSessionID: &activeSessionID,
+            context: .init(
+                client: acquisition.client,
+                sendAccepted: { acceptedRequests.append($0) },
+                clearDropState: { clearCount += 1 },
+            ),
+            draggingInfo: info,
+            negotiation: EntryViewLayoutDropValidationAdapter.negotiateExternalDrop(
+                from: pasteboard,
+                wantsCopy: false,
+            ),
+            destinationPath: "/destination",
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.legacyCalls.count, 0, "receiver가 열거되면 legacy 폴백으로 가면 안 된다")
+        XCTAssertEqual(acquisition.beginCalls.count, 1)
+        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 1)
+        XCTAssertEqual(acceptedRequests.count, 1)
+        XCTAssertEqual(activeSessionID, acquisition.sessionID)
+        XCTAssertEqual(clearCount, 1)
+    }
+
     /// VOY-736: legacy promise 이행 실패를 잔여 data representation 성공으로 강등하지 않는다.
-    /// 사전 조건: legacy marker + modern receiver + `.string`이 있지만 source가 파일을 쓰지 않는다.
+    /// 사전 조건: legacy marker + `.string`이 있고 receiver는 열거되지 않으며 source가 파일을 쓰지 않는다.
     /// 기대 결과: 드롭이 거절되고 modern/data acquisition 세션은 시작되지 않는다.
     func testLegacyPromiseFailureDoesNotDegradeToResidualData() {
         let transport = DragTransport()
@@ -1274,7 +1467,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
 
         XCTAssertFalse(accepted)
-        XCTAssertEqual(info.enumerateDraggingItemsCallCount, 0)
+        XCTAssertEqual(info.enumerateDraggingItemsCallCount, 1, "legacy 폴백 판정을 위한 receiver 열거는 정확히 1회만 한다")
         XCTAssertEqual(acquisition.beginCalls.count, 0)
         XCTAssertEqual(acquisition.legacyCalls.count, 0)
         XCTAssertNil(grid.activeExternalDropSessionID)
@@ -2042,6 +2235,58 @@ private extension DragInfoFixture {
             delegate: FilePromiseProviderFixtureDelegate(filename: "promise-0.txt"),
         )
         pasteboard.writeObjects([provider, fileURL as NSURL])
+        return pasteboard
+    }
+
+    static func makeMailMessageURLPromisePasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-message-url-mail-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            "message://%3Cmessage-id@example.com%3E",
+            forType: NSPasteboard.PasteboardType("public.url"),
+        )
+        item.setString("Fwd: hello", forType: NSPasteboard.PasteboardType("public.url-name"))
+        if let automatorData = try? PropertyListSerialization.data(
+            fromPropertyList: [["id": 42, "subject": "Fwd: hello"]],
+            format: .binary,
+            options: 0,
+        ) {
+            item.setData(automatorData, forType: NSPasteboard.PasteboardType("com.apple.mail.PasteboardTypeAutomator"))
+        }
+        item.setString(
+            "message.eml",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        item.setString(
+            "public.email-message",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// Automator payload 없는 Mail 메시지 드래그를 재현한다. `message:` URL identity만
+    /// 노출하므로 조회 키가 RFC Message-ID로 폴백되고 파일명은 `public.url-name`에서
+    /// 파생된다 (구형 Mail/타 source 대응, VOY-736).
+    static func makeMailMessageURLOnlyPasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-message-url-only-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(
+            "message://%3Cmessage-id@example.com%3E",
+            forType: NSPasteboard.PasteboardType("public.url"),
+        )
+        item.setString("Fwd: hello", forType: NSPasteboard.PasteboardType("public.url-name"))
+        item.setString(
+            "message.eml",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        )
+        item.setString(
+            "public.email-message",
+            forType: NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-content-type"),
+        )
+        pasteboard.writeObjects([item])
         return pasteboard
     }
 
