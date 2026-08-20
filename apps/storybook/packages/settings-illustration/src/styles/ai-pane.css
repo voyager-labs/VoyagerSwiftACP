@@ -73,34 +73,10 @@
   color: var(--set-text-secondary);
 }
 
-/* 패스워드 입력 (빈 정적 입력, 상호작용 없음). */
+/* 패스워드 입력 (빈 정적 입력, 상호작용 없음). 폭만 지정하고 나머지는 foundation vc-form-field가 제공. */
 [data-settings-illustration] .ai-password-input {
   width: 180px;
-  padding: 4px 8px;
-  border: 1px solid var(--set-separator-strong);
-  border-radius: var(--set-radius-control);
-  background: var(--set-control-bg);
-  color: var(--set-text-tertiary);
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 비활성 버튼. */
-[data-settings-illustration] .ai-button {
   flex: none;
-  padding: 4px 12px;
-  border: 1px solid var(--set-separator-strong);
-  border-radius: var(--set-radius-control);
-  background: var(--set-control-bg);
-  font-size: 13px;
-  color: var(--set-text-primary);
-  white-space: nowrap;
-}
-
-[data-settings-illustration] .ai-button.is-disabled {
-  color: var(--set-disabled-text);
 }
 
 /* 연결 섹션 각주 여백. */
@@ -159,21 +135,10 @@
   padding: 8px 0;
 }
 
-/* picker 라벨 (상호작용 없음). */
+/* picker (PopUpButton) 컨테이너. 폭만 지정하고 나머지는 foundation vc-popup/vc-popup-trigger가 제공. */
 [data-settings-illustration] .ai-picker-label {
   flex: none;
   min-width: 180px;
-  padding: 4px 8px;
-  border: 1px solid var(--set-separator-strong);
-  border-radius: var(--set-radius-control);
-  background: var(--set-control-bg);
-  font-size: 13px;
-  color: var(--set-text-primary);
-  text-align: left;
-}
-
-[data-settings-illustration] .ai-picker-label.is-disabled {
-  color: var(--set-disabled-text);
 }
 
 /* 편집기 하단: 리셋 버튼 + 각주. */

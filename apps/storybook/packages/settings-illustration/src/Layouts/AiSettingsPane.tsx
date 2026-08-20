@@ -1,3 +1,4 @@
+import { Button, PopUpButton, TextField } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import type { AiProviderRow, AiSettingsModel } from "../model/types"
 import "../styles/ai-pane.css"
@@ -41,16 +42,13 @@ function ConnectionStatus({ status }: { status: AiProviderRow["status"] }) {
 function ConnectionAction({ provider }: { provider: AiProviderRow }) {
   if (provider.status === "notConnected") {
     if (provider.authKind === "oauth") {
-      return <span className="ai-button">Sign in</span>
+      return <Button>Sign in</Button>
     }
     return (
       <span className="ai-action">
-        <span className="ai-password-input" aria-hidden="true">
-          Enter API key
-        </span>
-        <span className="ai-button is-disabled" aria-hidden="true">
-          Submit
-        </span>
+        {/* 결정적 표현을 위한 정적 입력 — 일러스트레이션은 상호작용하지 않는다 */}
+        <TextField placeholder="Enter API key" readOnly className="ai-password-input" />
+        <Button disabled>Submit</Button>
       </span>
     )
   }
@@ -61,12 +59,12 @@ function ConnectionAction({ provider }: { provider: AiProviderRow }) {
         {provider.account ? <span>Account: {provider.account}</span> : null}
         {provider.expires ? <span>Expires: {provider.expires}</span> : null}
       </span>
-      <span className="ai-button">Disconnect</span>
+      <Button>Disconnect</Button>
     </span>
   )
 }
 
-/** AI Model Settings 섹션의 단일 설정 행 (라벨 좌 / picker 라벨 우). */
+/** AI Model Settings 섹션의 단일 설정 행 (라벨 좌 / picker 우). */
 function ModelSettingRow({
   label,
   value,
@@ -75,7 +73,14 @@ function ModelSettingRow({
   return (
     <div className="settings-row ai-model-row">
       <span className="settings-row-label">{label}</span>
-      <span className={disabled ? "ai-picker-label is-disabled" : "ai-picker-label"}>{value}</span>
+      {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+      <PopUpButton
+        className="ai-picker-label"
+        options={[{ value, label: value }]}
+        value={value}
+        disabled={disabled}
+        onChange={() => {}}
+      />
     </div>
   )
 }
@@ -100,7 +105,7 @@ function ModelSettingsEditor({
       <ModelSettingRow label="Model" value={model} disabled />
       <ModelSettingRow label="Thinking" value={thinking} />
       <div className="ai-editor-footer">
-        <span className="ai-button ai-button-reset">{resetLabel}</span>
+        <Button className="ai-button-reset">{resetLabel}</Button>
       </div>
       <div className="ai-editor-footnotes">
         {footnotes.map((note) => (

@@ -16,31 +16,6 @@
   background: var(--set-separator);
 }
 
-/* 비활성(고정) 텍스트 버튼. */
-[data-settings-illustration] .settings-button {
-  flex: none;
-  padding: 4px 12px;
-  border: 1px solid var(--set-separator-strong);
-  border-radius: var(--set-radius-control);
-  background: var(--set-control-bg);
-  font-size: 13px;
-  color: var(--set-text-primary);
-}
-
-/* 닫힌 메뉴 버튼 (트리거). */
-[data-settings-illustration] .settings-menu-button {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid var(--set-separator-strong);
-  border-radius: var(--set-radius-control);
-  background: var(--set-control-bg);
-  font-size: 13px;
-  color: var(--set-text-primary);
-}
-
 /* Default File Viewer 섹션의 각주 여백. */
 [data-settings-illustration] .settings-footnote {
   padding: 4px 12px 12px;

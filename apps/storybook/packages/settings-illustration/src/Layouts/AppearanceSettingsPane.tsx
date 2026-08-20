@@ -1,4 +1,4 @@
-import { Toggle } from "@voyager-labs/design-foundation"
+import { SegmentedControl, Toggle } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import "../styles/appearance-pane.css"
 
@@ -18,6 +18,9 @@ const THEMES: readonly { id: AppearanceTheme; label: string }[] = [
 
 /** View size 세그먼트 옵션. 네이티브 SizePreset(small/medium/large)에 대응한다. */
 const SIZES = ["Small", "Medium", "Large"] as const
+
+/** foundation SegmentedControl용 옵션 (value === label). */
+const SIZE_OPTIONS = SIZES.map((size) => ({ value: size, label: size }))
 
 /** Appearance 탭 pane: macOS 네이티브 AppearanceSettingsView의 결정적(비상호작용) 일러스트레이션. */
 export const AppearanceSettingsPane: FC<AppearanceSettingsPaneProps> = ({
@@ -53,7 +56,8 @@ export const AppearanceSettingsPane: FC<AppearanceSettingsPaneProps> = ({
 
         <div className="settings-row">
           <span className="settings-row-label">Overall</span>
-          <Segmented active="Medium" label="Overall" />
+          {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+          <SegmentedControl options={SIZE_OPTIONS} value="Medium" onChange={() => {}} />
         </div>
 
         <div className={`disclosure-row${customizeOpen ? " is-open" : ""}`}>
@@ -67,11 +71,11 @@ export const AppearanceSettingsPane: FC<AppearanceSettingsPaneProps> = ({
           <div className="disclosure-body">
             <div className="settings-row">
               <span className="settings-row-label">List</span>
-              <Segmented active="Medium" label="List" />
+              <SegmentedControl options={SIZE_OPTIONS} value="Medium" onChange={() => {}} />
             </div>
             <div className="settings-row">
               <span className="settings-row-label">Icon</span>
-              <Segmented active="Medium" label="Icon" />
+              <SegmentedControl options={SIZE_OPTIONS} value="Medium" onChange={() => {}} />
             </div>
           </div>
         )}
@@ -103,18 +107,5 @@ function ThemeCard({
       </div>
       <span className={`theme-caption${isSelected ? " is-selected" : ""}`}>{theme.label}</span>
     </div>
-  )
-}
-
-/** 분할 세그먼트 컨트롤. 공유 .segmented 프리미티브를 사용, Medium이 활성이다. */
-function Segmented({ active, label }: { active: string; label: string }) {
-  return (
-    <fieldset className="segmented" aria-label={label}>
-      {SIZES.map((size) => (
-        <button key={size} type="button" className={size === active ? "is-active" : undefined}>
-          {size}
-        </button>
-      ))}
-    </fieldset>
   )
 }

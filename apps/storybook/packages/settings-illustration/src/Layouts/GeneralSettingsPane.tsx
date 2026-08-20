@@ -1,4 +1,4 @@
-import { Toggle } from "@voyager-labs/design-foundation"
+import { Button, PopUpButton, Toggle } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import "../styles/general-pane.css"
 
@@ -35,7 +35,7 @@ export const GeneralSettingsPane: FC = () => {
         <div className="settings-divider" aria-hidden="true" />
         <div className="settings-row">
           <span className="settings-row-label">Version: 1.0.0</span>
-          <span className="settings-button">Check for updates...</span>
+          <Button className="settings-button">Check for updates...</Button>
         </div>
       </section>
 
@@ -43,7 +43,13 @@ export const GeneralSettingsPane: FC = () => {
         <h2 className="settings-section-header">Workspace</h2>
         <div className="settings-row">
           <span className="settings-row-label">Starting directory</span>
-          <span className="settings-menu-button">Home (default)</span>
+          {/* 결정적 표현을 위한 no-op — 일러스트레이션은 상호작용하지 않는다 */}
+          <PopUpButton
+            className="settings-menu-button"
+            options={[{ value: "home", label: "Home (default)" }]}
+            value="home"
+            onChange={() => {}}
+          />
         </div>
       </section>
 
@@ -53,7 +59,7 @@ export const GeneralSettingsPane: FC = () => {
           <span className="settings-row-label">
             Could not determine the default file viewer status.
           </span>
-          <span className="settings-button">Check Again</span>
+          <Button className="settings-button">Check Again</Button>
         </div>
         <p className="footnote settings-footnote">
           A system restart may be required for changes to take effect.

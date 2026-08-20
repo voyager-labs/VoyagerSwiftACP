@@ -6,9 +6,10 @@
 [data-settings-illustration] {
   /* --macos-* 토큰에 대한 Settings 전용 별칭. 컴포넌트는 이 별칭만 참조한다. */
   --set-canvas: var(--macos-under-page-background-color);
-  --set-window-bg: var(--macos-window-background-color);
-  --set-window-border: var(--macos-window-border-color);
-  --set-titlebar-bg: var(--macos-material-titlebar);
+  /* 윈도우 셸은 File Manager와 동일한 foundation material 처리: material 배경 + 미세 hairline + 2단 그림자. */
+  --set-window-bg: var(--macos-material-window-background);
+  /* 타이틀바는 탭바(투명 → 창 material)와 같은 색이 되도록 창 material을 사용. */
+  --set-titlebar-bg: var(--macos-material-window-background);
   --set-content-bg: var(--macos-control-background-color);
   --set-row-alt-bg: var(--macos-entry-list-alternate-row-background-color);
   --set-selection-bg: var(--macos-sidebar-selection-background);
@@ -45,6 +46,9 @@
   --set-radius-row: 6px;
 }
 
+/* File Manager와 동일한 창 셸 처리: foundation --macos-window-hairline/--macos-window-shadow 토큰을
+ * color-scheme별 값으로 제공하므로 Settings는 별도 값을 정의하지 않는다. */
+
 [data-settings-illustration] {
   margin: 0;
   min-width: 0;
@@ -56,9 +60,10 @@
   font-synthesis-weight: none;
 }
 
+/* foundation 컴포넌트(vc-button 등)의 font-size/weight를 덮지 않도록 font-family만 상속한다. */
 [data-settings-illustration] button,
 [data-settings-illustration] select {
-  font: inherit;
+  font-family: inherit;
 }
 
 [data-settings-illustration] button {
@@ -86,29 +91,40 @@
   height: 400px;
   overflow: hidden;
   border-radius: 10px;
-  border: 1px solid var(--set-window-border);
+  border: 1px solid var(--macos-window-hairline);
   background: var(--set-window-bg);
-  box-shadow: 0 22px 48px var(--macos-shadow-color);
+  box-shadow: var(--macos-window-shadow);
 }
 
+/* 얇은 타이틀바: 트래픽 라이트 + 창 제목. 높이가 크지 않고, 아래 구분선 없이 탭바로 이어진다. */
 [data-settings-illustration] .mac-titlebar {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: var(--set-titlebar-height);
+  justify-content: center;
   flex: none;
-  padding: 0 14px;
+  padding: 10px 14px 4px;
   background: var(--set-titlebar-bg);
-  border-bottom: 1px solid var(--set-separator);
 }
 
-[data-settings-illustration] .titlebar-label {
+/* 트래픽 라이트는 좌측 고정, 제목은 창 가운데 정렬 (네이티브 macOS idiom). */
+[data-settings-illustration] .mac-titlebar .traffic-lights {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* 타이틀바 창 제목. 네이티브 NSFont.titleBarFont (13pt, regular, SF Pro Text) 사양을 따른다. */
+[data-settings-illustration] .mac-titlebar-label {
+  font-family: var(--set-font-text);
   font-size: 13px;
-  font-weight: 600;
-  color: var(--set-text-secondary);
+  font-weight: 400;
+  color: var(--set-text-primary);
 }
 
-/* 상단 탭 바 스타일은 재사용 컴포넌트인 TabBar가 제공한다. */
+/* 상단 탭 바 스타일은 재사용 컴포넌트인 TabView가 제공한다. 타이틀바 아래에서
+ * 가로 탭 바가 렌더링되고, 나머지 높이는 콘텐츠 pane이 채운다. */
 
 /* 탭 콘텐츠 pane. pane 내부 스크롤은 공유 .settings-form이 담당한다. */
 [data-settings-illustration] .settings-pane {
@@ -156,29 +172,6 @@
 
 [data-settings-illustration] .settings-row + .settings-row {
   border-top: 1px solid var(--set-separator);
-}
-
-/* 분할 세그먼트 컨트롤. */
-[data-settings-illustration] .segmented {
-  display: inline-flex;
-  height: 24px;
-  padding: 2px;
-  border-radius: 6px;
-  background: var(--set-secondary-fill);
-}
-
-[data-settings-illustration] .segmented button {
-  padding: 0 10px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  font-size: 12px;
-  color: var(--set-text-primary);
-}
-
-[data-settings-illustration] .segmented button.is-active {
-  background: var(--set-accent);
-  color: var(--set-selected-text);
 }
 
 /* disclosure 행: title + chevron. */

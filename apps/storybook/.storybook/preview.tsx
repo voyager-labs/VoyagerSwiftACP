@@ -95,11 +95,18 @@ const preview: Preview = {
         }
       }
 
+      // file-manager 스코프는 File Manager 스토리에만 적용해 셸 CSS 새는 것을 막는다.
+      const isFileManagerStory = context.title?.startsWith("File Manager") ?? false
+
       return (
         <DesignVersionProvider value={designVersion}>
-          <div data-file-manager-illustration data-design-version={designVersion}>
+          {isFileManagerStory ? (
+            <div data-file-manager-illustration data-design-version={designVersion}>
+              <Story />
+            </div>
+          ) : (
             <Story />
-          </div>
+          )}
         </DesignVersionProvider>
       )
     },

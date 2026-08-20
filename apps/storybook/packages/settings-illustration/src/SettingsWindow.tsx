@@ -1,4 +1,4 @@
-import { TabBar, type TabBarItem, TrafficLights } from "@voyager-labs/design-foundation"
+import { type TabItem, TabView, TrafficLights } from "@voyager-labs/design-foundation"
 import { useState } from "react"
 import type { FC } from "react"
 import { AiSettingsPane } from "./Layouts/AiSettingsPane"
@@ -11,27 +11,28 @@ import "./styles/general-pane.css"
 import "./styles/appearance-pane.css"
 import "./styles/ai-pane.css"
 
-/** 상단 탭 항목 정의: 아이콘 + 라벨. 네이티브 SettingsSection.visibleCases와 일치한다. */
-const TABS: readonly TabBarItem[] = [
+/** 가로 탭 바 항목 정의: 아이콘 + 라벨. 네이티브 SettingsSection.visibleCases와 일치한다. */
+const TABS: readonly TabItem[] = [
   { id: "general", label: "General", icon: "gear" },
   { id: "appearance", label: "Appearance", icon: "paintbrush" },
   { id: "ai", label: "AI", icon: "sparkle" },
 ]
 
-/** macOS System Settings TabView idiom을 따르는 Settings 일러스트레이션 루트 컴포넌트. */
+/** macOS System Settings 가로 탭 바 idiom을 따르는 Settings 일러스트레이션 루트 컴포넌트. */
 export const SettingsWindow: FC<SettingsIllustrationProps> = ({ state }) => {
-  // 유일한 상호작용: 상단 탭 전환. 초기값은 fixture의 activeTab에서 시드한다.
+  // 유일한 상호작용: 가로 탭 바 전환. 초기값은 fixture의 activeTab에서 시드한다.
   const [activeTab, setActiveTab] = useState<SettingsTab>(state.activeTab)
 
   return (
     <div data-settings-illustration>
       <main className="stage">
         <section className="mac-window" aria-label="Voyager Settings">
+          {/* 얇은 타이틀바: 트래픽 라이트 + 창 제목. 구분선 없이 탭바로 이어진다. */}
           <div className="mac-titlebar">
             <TrafficLights />
-            <span className="titlebar-label">Settings</span>
+            <span className="mac-titlebar-label">Settings</span>
           </div>
-          <TabBar
+          <TabView
             items={TABS}
             activeId={activeTab}
             onSelect={(id) => setActiveTab(id as SettingsTab)}
