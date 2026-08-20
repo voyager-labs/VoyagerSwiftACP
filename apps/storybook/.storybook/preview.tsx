@@ -97,11 +97,19 @@ const preview: Preview = {
 
       // file-manager 스코프는 File Manager 스토리에만 적용해 셸 CSS 새는 것을 막는다.
       const isFileManagerStory = context.title?.startsWith("File Manager") ?? false
+      // Design Foundation 카탈로그도 data-design-foundation 스코프가 필요해 vc-* 컴포넌트 스타일이 적용된다.
+      const isDesignFoundationStory = context.title?.startsWith("Design Foundation") ?? false
+
+      const scopedDataAttr = isFileManagerStory
+        ? "data-file-manager-illustration"
+        : isDesignFoundationStory
+          ? "data-design-foundation"
+          : null
 
       return (
         <DesignVersionProvider value={designVersion}>
-          {isFileManagerStory ? (
-            <div data-file-manager-illustration data-design-version={designVersion}>
+          {scopedDataAttr ? (
+            <div {...{ [scopedDataAttr]: true }} data-design-version={designVersion}>
               <Story />
             </div>
           ) : (
