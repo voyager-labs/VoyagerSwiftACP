@@ -19,12 +19,19 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         // 발생하는 swift-perception 진단으로, 프로덕션(RELEASE/13.5) 동작에는 영향이 없다. 테스트는
         // PerceptionCore 의 macOS-14 전용 심볼을 직접 참조하지 않으므로 13.5 deployment target 으로
         // 링크되며, 이 뷰의 AX 계약(Content 는 attachment picker 를 노출하지 않는다)을 그대로 검증한다.
+        // `issueMatcher` 로 Perception 진단 메시지일 때만 예상 실패로 처리하므로, Inspector 버튼
+        // 노출·picker delegate 전달·Content 미노출 같은 AX assertion 이 실패하면 정상 실패로 남아
+        // 회귀를 탐지한다.
         XCTExpectFailure(
             "Production AiChat TCA view emits Perception 'not being tracked' debug diagnostics only",
             options: {
                 var options = XCTExpectedFailure.Options()
                 options.isEnabled = true
                 options.isStrict = false
+                options.issueMatcher = { issue in
+                    issue.compactDescription.contains("not being tracked")
+                        || issue.compactDescription.contains("Perceptible state was accessed")
+                }
                 return options
             }(),
         )
