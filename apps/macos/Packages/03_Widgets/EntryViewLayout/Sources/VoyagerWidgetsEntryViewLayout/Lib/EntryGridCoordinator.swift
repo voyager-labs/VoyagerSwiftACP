@@ -2,7 +2,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @MainActor
@@ -12,10 +11,6 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState {
         store.state
-    }
-
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
     }
 
     weak var view: EntryGridView?
@@ -43,8 +38,6 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var hasRestoredScrollPosition = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
-    /// Grid가 아직 완료되지 않은 외부 drop 획득 세션. AppKit/coordinator 소유로 TCA state에 두지 않는다.
-    var activeExternalDropSessionID: ExternalDropSessionID?
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
@@ -58,14 +51,10 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
-    @Dependency(\.externalDropAcquisitionClient)
-    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12

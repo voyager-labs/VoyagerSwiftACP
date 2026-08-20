@@ -1,6 +1,5 @@
 import CoreGraphics
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {
@@ -22,7 +21,6 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let isDropTargeted: Bool
     let outlineProjection: EntryListOutlineProjection
     let isHierarchyOutlineEnabled: Bool
-    let activeExternalDrop: ExternalDropActiveSession?
 
     init(state: EntryViewLayoutState) {
         presentation = state.presentation
@@ -59,7 +57,6 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
             sortKey: state.entryArrangements.sortKey,
             sortOrder: state.entryArrangements.sortOrder,
         )
-        activeExternalDrop = state.entryOperations.activeExternalDrop
     }
 }
 

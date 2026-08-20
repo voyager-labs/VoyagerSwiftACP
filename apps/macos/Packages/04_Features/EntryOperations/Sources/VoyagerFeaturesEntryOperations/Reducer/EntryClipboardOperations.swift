@@ -80,8 +80,6 @@ struct EntryClipboardOperationsReducer {
     var pasteboardClient
     @Dependency(\.uuid)
     var uuid
-    @Dependency(\.externalDropAcquisitionClient)
-    var acquisitionClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -242,27 +240,13 @@ struct EntryClipboardOperationsReducer {
                 )
 
             case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)):
-                // 외부 drop placement(.externalObjectImportItem) 복사는 세션별 CancelID로 등록해
-                // resetForDuplicate가 진행 중 복사를 취소할 수 있게 한다. 또 effect가 취소되면
-                // (창 닫힘 등 child store 제거) acquisition 세션을 finish해 staging/session
-                // registry가 영구 잔류하지 않도록 정리한다.
-                let placementSessionID: ExternalDropSessionID? = operationKind == .externalObjectImportItem
-                    ? state.externalDropImportPlacement?.sessionID
-                    : nil
-                var effect = pasteItemsEffect(
+                return pasteItemsEffect(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
                     mutationImpactDestinationPath: nil,
-                    onCancelCleanup: placementSessionID.map { sessionID in
-                        { @MainActor in acquisitionClient.finish(sessionID) }
-                    },
                 )
-                if let placementSessionID {
-                    effect = effect.cancellable(id: CancelID.externalDrop(placementSessionID))
-                }
-                return effect
 
             case let .clipboard(.performDrop(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
@@ -287,7 +271,6 @@ struct EntryClipboardOperationsReducer {
         operation: ClipboardOperation,
         operationKind: OperationKind,
         mutationImpactDestinationPath: String?,
-        onCancelCleanup: (@MainActor @Sendable () -> Void)? = nil,
     ) -> Effect<Action> {
         let destinations = EntryClipboardOperationsSupport.avoidNameCollisions(
             sourcePaths: sourcePaths,
@@ -306,13 +289,9 @@ struct EntryClipboardOperationsReducer {
             alertClient: alertClient,
             mutationImpactDestinationPath: mutationImpactDestinationPath,
         )
-        let copyLoop: @Sendable (Send<Action>) async throws -> Void = { send in
+        return .run { send in
             var targets: [EntryActionRecord.Target] = []
             for (sourceURL, destinationURL) in destinations {
-                // resetForDuplicate가 effect task를 취소한 뒤에도 live pasteFile(동기 copyItem)은
-                // CancellationError를 던지지 않아 루프가 남은 항목까지 계속 진행할 수 있다.
-                // 각 항목 복사 전에 명시적으로 취소를 확인해 즉시 중단한다.
-                try Task.checkCancellation()
                 await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
                 if let target = await executor.execute(
                     sourceURL: sourceURL,
@@ -325,22 +304,6 @@ struct EntryClipboardOperationsReducer {
                 }
             }
             await executor.finishBatch(targets, operationKind: operationKind, send: send)
-        }
-        guard let onCancelCleanup else {
-            return .run { send in
-                try await copyLoop(send)
-            }
-        }
-        // placement 복사 effect가 취소(창 닫힘 등 child store 제거)되면 획득 세션을
-        // finish해 staging과 session registry가 영구 잔류하지 않게 정리한다.
-        return .run { send in
-            try await withTaskCancellationHandler {
-                try await copyLoop(send)
-            } onCancel: {
-                Task { @MainActor in
-                    onCancelCleanup()
-                }
-            }
         }
     }
 }

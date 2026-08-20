@@ -233,7 +233,7 @@ public final class EntryListView: NSView {
         tableView.allowsEmptySelection = true
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.intercellSpacing = NSSize(width: 4, height: 0)
-        tableView.registerForDraggedTypes(EntryViewLayoutDropValidationAdapter.registeredDraggedTypes)
+        tableView.registerForDraggedTypes([.fileURL])
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
         tableView.autoresizesOutlineColumn = false

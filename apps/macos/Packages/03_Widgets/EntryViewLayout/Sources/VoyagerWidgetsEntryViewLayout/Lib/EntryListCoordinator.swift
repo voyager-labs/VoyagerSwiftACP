@@ -2,7 +2,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
@@ -140,10 +139,6 @@ public final class EntryListCoordinator: NSObject {
         store.state
     }
 
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
     weak var view: EntryListView?
     var didBind = false
     var scrollView: NSScrollView {
@@ -189,8 +184,6 @@ public final class EntryListCoordinator: NSObject {
     var lastRenamingItemId: EntryModel.ID?
     var contextMenuAnchor: CGPoint?
     var contextMenuCoordinator: EntryContextMenuCoordinator?
-    /// List가 아직 완료되지 않은 외부 drop 획득 세션. AppKit/coordinator 소유로 TCA state에 두지 않는다.
-    var activeExternalDropSessionID: ExternalDropSessionID?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
     var restoredScrollForCurrentPath = false
@@ -203,14 +196,10 @@ public final class EntryListCoordinator: NSObject {
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
-    @Dependency(\.externalDropAcquisitionClient)
-    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     init(store: StoreOf<EntryViewLayoutFeature>) {
