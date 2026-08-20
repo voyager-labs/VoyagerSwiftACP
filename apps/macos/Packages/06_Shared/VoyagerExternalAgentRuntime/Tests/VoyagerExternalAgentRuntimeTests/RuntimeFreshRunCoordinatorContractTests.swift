@@ -705,6 +705,50 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// VOY-746-coordinator_contract: pre-receipt cancellation persistence failure detaches its launch owner.
+    /// provider 접수 전 취소 저장 실패가 같은 run의 launching owner를 활성 상태로 남기지 않는지 검증한다.
+    /// - 검증 내용: CancellationError, detached launching lease, redacted cleanup evidence, provider launch count.
+    /// - 사전 조건: launch gate에서 취소된 run의 세 번째 store apply가 실패한다.
+    /// - 기대 결과: run은 CancellationError로 끝나고 late terminal cleanup이 가능한 detached launch lease가 남는다.
+    @Test
+    func `pre-receipt cancellation persistence failure releases its launch owner`() async throws {
+        let host: ExternalAgentSessionReference = "host-contract-launch-cancel-persist-failure"
+        let run = RuntimeRunReference("run-contract-launch-cancel-persist-failure")
+        let launchGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [3])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForLaunchCount(1)
+        runTask.cancel()
+        await launchGate.open()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await runTask.value
+        }
+        let session = try #require(await plane.sessions[host])
+        #expect(session.stored.projection == .launching)
+        guard case .detachedLaunching = session.lease else {
+            Issue.record("취소 저장 실패 뒤 launch owner가 detachedLaunching이어야 한다: \(session.lease)")
+            return
+        }
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await store.currentState()?.sessions.first?.projection == .launching)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// VOY-746-coordinator_contract: an orphaned launch is interrupted without provider start.
     /// receipt 없이 hydrate된 launching 상태를 compatibility flag와 무관하게 orphan으로 정리하는 미래 계약을 고정한다.
     /// - 검증 내용: public run duplicate error, durable interrupted projection, zero launch count.

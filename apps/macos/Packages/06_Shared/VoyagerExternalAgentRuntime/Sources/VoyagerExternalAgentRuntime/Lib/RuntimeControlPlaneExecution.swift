@@ -229,10 +229,16 @@ extension RuntimeControlPlane {
         )
         try? await mutateAfterPersistedTransitions { plane in
             guard var session = plane.sessions[host],
-                  session.stored.runReference == originatingRunReference,
-                  case let .consuming(lease) = session.lease
+                  session.stored.runReference == originatingRunReference
             else { return }
-            session.lease = session.stored.projection.isTerminal ? .none : .detachedConsuming(lease)
+            switch session.lease {
+            case let .launching(lease):
+                session.lease = session.stored.projection.isTerminal ? .none : .detachedLaunching(lease)
+            case let .consuming(lease):
+                session.lease = session.stored.projection.isTerminal ? .none : .detachedConsuming(lease)
+            case .none, .detachedLaunching, .detachedConsuming, .restored, .resuming:
+                return
+            }
             session.revision += 1
             plane.sessions[host] = session
         }
