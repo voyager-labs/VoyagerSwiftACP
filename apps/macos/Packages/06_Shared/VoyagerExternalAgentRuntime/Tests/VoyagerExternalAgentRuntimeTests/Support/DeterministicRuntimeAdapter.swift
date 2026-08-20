@@ -119,6 +119,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
             try await clock.sleep(launchDelay)
         }
         await launchGate?.wait()
+        try Task.checkCancellation()
         if failsLaunchAfterGate {
             throw InjectedFailure.launch
         }
