@@ -40,12 +40,12 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         }
     }
 
-    func testDisabledClientIgnoresCapture() {
+    func testDisabledClientIgnoresMetricCapture() {
         let client = ProductAnalyticsBootstrap.makeClient(environment: [
             "PUBLIC_POSTHOG_PROJECT_TOKEN": "",
             "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
         ])
-        client.capture(.init(event: makeEvent()))
+        client.captureMetric(metricRequest(value: 1))
     }
 
     func testConfiguredClientCachesIdentityWithoutGlobalState() async throws {
@@ -200,38 +200,6 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         )))
         await provider.flush()
         _ = await RequestInterceptor().nextRequest()
-    }
-
-    func testCaptureReturnsBeforeBlockingTransport() async {
-        let interceptor = RequestInterceptor()
-        let gate = BlockingGate()
-        URLProtocol.registerClass(RequestInterceptor.self)
-        defer {
-            gate.release()
-            URLProtocol.unregisterClass(RequestInterceptor.self)
-            RequestInterceptor.setMode(.normal, gate: nil)
-        }
-
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
-        let client = ProductAnalyticsBootstrap.makeClient(
-            environment: [
-                "PUBLIC_POSTHOG_PROJECT_TOKEN": "nonblocking-\(UUID().uuidString)",
-                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
-            ],
-            urlSessionConfiguration: sessionConfiguration,
-            flushAt: 1,
-        )
-        RequestInterceptor.setMode(.blocking, gate: gate)
-        let event = makeEvent(eventName: "nonblocking_probe")
-        let request = ProductAnalyticsCaptureRequest(event: event)
-
-        client.capture(request)
-        gate.markReturned()
-        XCTAssertTrue(gate.waitForStart())
-        XCTAssertTrue(gate.waitForReturn())
-        gate.release()
-        _ = await interceptor.nextRequest()
     }
 
     func testMetricCaptureUsesProducerTimestampAndRegistryIdentity() async throws {

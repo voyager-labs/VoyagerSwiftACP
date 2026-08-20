@@ -9,7 +9,6 @@ private actor ProductAnalyticsRuntime {
 
     fileprivate enum Work {
         case metric(ProductAnalyticsMetricRequest)
-        case capture(ProductAnalyticsCaptureRequest)
         case setDeviceIdentity(String?, CheckedContinuation<Void, Never>)
     }
 
@@ -47,8 +46,6 @@ private actor ProductAnalyticsRuntime {
                 if case let .capture(captureRequest) = result {
                     await provider.capture(captureRequest)
                 }
-            case let .capture(request):
-                await provider.capture(request)
             case let .setDeviceIdentity(deviceID, acknowledgement):
                 cachedDeviceIdentity = deviceID
                 acknowledgement.resume()
@@ -111,14 +108,7 @@ public enum ProductAnalyticsBootstrap {
             registry: registry,
             deviceIdentity: installationID,
         )
-        return ProductAnalyticsClient(capture: { request in
-            switch runtime.enqueue(.capture(request)) {
-            case .enqueued, .dropped, .terminated:
-                break
-            @unknown default:
-                break
-            }
-        }, captureMetric: { request in
+        return ProductAnalyticsClient(captureMetric: { request in
             switch runtime.enqueue(.metric(request)) {
             case .enqueued, .dropped, .terminated:
                 break

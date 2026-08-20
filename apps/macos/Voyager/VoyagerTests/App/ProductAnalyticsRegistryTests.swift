@@ -141,23 +141,15 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         )
     }
 
-    func testComposerOpenIsUnregisteredDropWithoutClientCapture() {
+    func testComposerOpenIsUnregisteredDrop() {
         let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
-        let recorder = ProductAnalyticsCaptureRecorder()
-        let client = ProductAnalyticsClient(capture: { request in
-            recorder.record(request)
-        })
 
         let result = registry.resolve(
             metricKey: "voyager_composer_open",
             identity: .device("test-device-id"),
         )
-        if case let .capture(request) = result {
-            client.capture(request)
-        }
 
         XCTAssertEqual(result, .drop(.unregistered))
-        XCTAssertEqual(recorder.count, 0)
     }
 
     func testRetiredCollectionSaveResultsRemainUnregisteredDrops() {
@@ -562,13 +554,5 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
                 "unknown key at \(boundary) must fail closed",
             )
         }
-    }
-}
-
-private final class ProductAnalyticsCaptureRecorder: @unchecked Sendable {
-    private(set) var count = 0
-
-    func record(_: ProductAnalyticsCaptureRequest) {
-        count += 1
     }
 }
