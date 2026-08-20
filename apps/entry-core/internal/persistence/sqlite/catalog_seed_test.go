@@ -1,0 +1,737 @@
+package sqlite
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"gorm.io/gorm"
+
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/persistence/sqlite/seeds"
+)
+
+// TestCatalogSeed is the plan-documented entry point; it runs the full
+// transactional seed state-machine and tombstone-reconciliation coverage.
+func TestCatalogSeed(t *testing.T) {
+	t.Run("Fresh", TestCatalogSeedFresh)
+	t.Run("OlderUpgrade", TestCatalogSeedOlderUpgrade)
+	t.Run("SameVersionNoOp", TestCatalogSeedSameVersionNoOp)
+	t.Run("SameVersionDriftFailsClosed", TestCatalogSeedSameVersionDriftFailsClosed)
+	t.Run("MixedFailsClosed", TestCatalogSeedMixedFailsClosed)
+	t.Run("NewerFailsClosed", TestCatalogSeedNewerFailsClosed)
+	t.Run("PartialFailsClosed", TestCatalogSeedPartialFailsClosed)
+	t.Run("RemovalsTombstone", TestCatalogSeedRemovalsTombstone)
+	t.Run("PreservesNonSeed", TestCatalogSeedPreservesNonSeed)
+	t.Run("TamperedHashFailsBeforeWrite", TestCatalogSeedTamperedHashFailsBeforeWrite)
+	t.Run("PartialSQLRollback", TestCatalogSeedPartialSQLRollback)
+	t.Run("SecondOpenRejected", TestCatalogSeedSecondOpenRejected)
+	t.Run("ConcurrentSerialized", TestCatalogSeedConcurrentSerialized)
+}
+
+// seedCatalogCounts are the committed fresh seed row counts.
+type seedCatalogCounts struct {
+	definitions int
+	descriptors int
+	bindings    int
+	terms       int
+}
+
+func freshSeedCounts() seedCatalogCounts {
+	meta := seeds.Current()
+	return seedCatalogCounts{
+		definitions: meta.DefinitionCount,
+		descriptors: meta.DescriptorCount,
+		bindings:    meta.BindingCount,
+		terms:       meta.TermCount,
+	}
+}
+
+// assertLoadedCatalogCounts loads the workspace catalog and asserts the exact
+// per-family counts and that the digest equals the committed dataset digest.
+func assertLoadedCatalogCounts(t *testing.T, store *Store, wsctx domainentry.WorkspaceContext, want seedCatalogCounts) {
+	t.Helper()
+	repo := NewPropertyCatalogRepository(store)
+	loaded, err := repo.Load(context.Background(), wsctx)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := len(loaded.Snapshot.Definitions); got != want.definitions {
+		t.Fatalf("definitions = %d, want %d", got, want.definitions)
+	}
+	if got := len(loaded.Snapshot.Descriptors); got != want.descriptors {
+		t.Fatalf("descriptors = %d, want %d", got, want.descriptors)
+	}
+	if got := len(loaded.Snapshot.Bindings); got != want.bindings {
+		t.Fatalf("bindings = %d, want %d", got, want.bindings)
+	}
+	if got := len(loaded.Snapshot.Terms); got != want.terms {
+		t.Fatalf("terms = %d, want %d", got, want.terms)
+	}
+	if !loaded.SeedState.HasSeed {
+		t.Fatal("SeedState.HasSeed = false after apply")
+	}
+	if loaded.SeedState.Version != 1 || loaded.SeedState.SourceVersion != "2.4.1" {
+		t.Fatalf("seed state = (%d,%q), want (1,\"2.4.1\")",
+			loaded.SeedState.Version, loaded.SeedState.SourceVersion)
+	}
+	// The full-catalog digest equals the committed dataset digest ONLY when the
+	// catalog is exactly the fresh seed (no preserved user rows); otherwise user
+	// rows are legitimately part of the full digest and the seed digest is
+	// asserted separately via assertSeedDigestMatches.
+	if want == freshSeedCounts() {
+		meta := seeds.Current()
+		if hexEncode(loaded.Digest[:]) != meta.DatasetSHA256 {
+			t.Fatalf("read-back digest %s != committed dataset digest %s",
+				hexEncode(loaded.Digest[:]), meta.DatasetSHA256)
+		}
+	}
+}
+
+// assertSeedDigestMatches verifies the seed-owned active subset's digest equals
+// the committed dataset digest, independent of preserved user rows.
+func assertSeedDigestMatches(t *testing.T, store *Store, wsctx domainentry.WorkspaceContext) {
+	t.Helper()
+	ctx := context.Background()
+	defs, descs, binds, terms, err := loadSeedRows(store.db.WithContext(ctx), wsctx)
+	if err != nil {
+		t.Fatalf("loadSeedRows: %v", err)
+	}
+	snapshot, err := assembleSnapshot(defs, descs, binds, terms)
+	if err != nil {
+		t.Fatalf("assemble seed snapshot: %v", err)
+	}
+	digest, err := catalogDigest(snapshot)
+	if err != nil {
+		t.Fatalf("seed digest: %v", err)
+	}
+	meta := seeds.Current()
+	if hexEncode(digest[:]) != meta.DatasetSHA256 {
+		t.Fatalf("seed-only digest %s != committed dataset digest %s",
+			hexEncode(digest[:]), meta.DatasetSHA256)
+	}
+}
+
+// assertRawActiveCounts counts active rows per family directly from the store,
+// without mapping or seed-state validation, for fail-closed tests where Load
+// would itself reject the injected corruption state.
+func assertRawActiveCounts(t *testing.T, store *Store, wsctx domainentry.WorkspaceContext, want seedCatalogCounts) {
+	t.Helper()
+	ctx := context.Background()
+	wsBytes := wsctx.ID.Bytes()
+	var defs, descs, binds, terms int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND lifecycle_state = ?", wsBytes, "active").Count(&defs).Error; err != nil {
+		t.Fatalf("count active defs: %v", err)
+	}
+	if err := store.db.WithContext(ctx).Model(&SourcePropertyDescriptorRow{}).
+		Where("workspace_id = ? AND lifecycle_state = ?", wsBytes, "active").Count(&descs).Error; err != nil {
+		t.Fatalf("count active descs: %v", err)
+	}
+	if err := store.db.WithContext(ctx).Model(&PropertyBindingRow{}).
+		Where("workspace_id = ? AND lifecycle_state = ?", wsBytes, "active").Count(&binds).Error; err != nil {
+		t.Fatalf("count active bindings: %v", err)
+	}
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND lifecycle_state = ?)", wsBytes, wsBytes, "active").
+		Count(&terms).Error; err != nil {
+		t.Fatalf("count active terms: %v", err)
+	}
+	if int(defs) != want.definitions {
+		t.Fatalf("active definitions = %d, want %d", defs, want.definitions)
+	}
+	if int(descs) != want.descriptors {
+		t.Fatalf("active descriptors = %d, want %d", descs, want.descriptors)
+	}
+	if int(binds) != want.bindings {
+		t.Fatalf("active bindings = %d, want %d", binds, want.bindings)
+	}
+	if int(terms) != want.terms {
+		t.Fatalf("active terms = %d, want %d", terms, want.terms)
+	}
+}
+
+// insertUserRows inserts one NULL-seed (user/provider-owned) definition,
+// descriptor, binding, and term into the given workspace so tests can prove the
+// apply leaves non-seed rows untouched.
+func insertUserRows(t *testing.T, store *Store, wsctx domainentry.WorkspaceContext) {
+	t.Helper()
+	ctx := context.Background()
+	wsBytes := wsctx.ID.Bytes()
+	now := time.Now()
+
+	// UUIDv7 (version nibble 7) for a voyager_issued user-defined property.
+	id := domainentry.MustPropertyID("018f8d40-ff1b-7b80-8b2a-1c2e3d4f5a6b")
+	def := WorkspacePropertyDefinitionRow{
+		WorkspaceID:       wsBytes,
+		PropertyID:        id.Bytes(),
+		Origin:            "user_defined",
+		IdentityScheme:    "voyager_issued",
+		Namespace:         "user",
+		CanonicalKey:      "user.custom_prop",
+		DisplayName:       "User Property",
+		Description:       "user row",
+		ValueType:         "text",
+		Cardinality:       "one",
+		Nullable:          true,
+		Editable:          true,
+		DefaultHidden:     false,
+		DefaultPinned:     false,
+		DBIndexedHint:     false,
+		Provenance:        "user_defined",
+		Unit:              "",
+		DefinitionRev:     1,
+		LifecycleState:    "active",
+		SeedOwner:         nil,
+		SeedVersion:       nil,
+		SeedSourceVersion: nil,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := store.db.WithContext(ctx).Create(&def).Error; err != nil {
+		t.Fatalf("insert user definition: %v", err)
+	}
+
+	desc := SourcePropertyDescriptorRow{
+		WorkspaceID:        wsBytes,
+		ProviderID:         "user.provider",
+		SourceInstanceID:   testSourceInstanceID,
+		ScopeKind:          "system",
+		ScopeExternalID:    "user",
+		ExternalPropertyID: "userNative",
+		AuthorityKind:      "provider",
+		NativeType:         "string",
+		NativeCardinality:  "one",
+		SourceReadable:     true,
+		SourceQueryable:    true,
+		SourceWritable:     false,
+		LifecycleState:     "active",
+		AvailabilityNote:   "",
+		SeedOwner:          nil,
+		SeedVersion:        nil,
+		SeedSourceVersion:  nil,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := store.db.WithContext(ctx).Create(&desc).Error; err != nil {
+		t.Fatalf("insert user descriptor: %v", err)
+	}
+
+	binding := PropertyBindingRow{
+		WorkspaceID:        wsBytes,
+		PropertyID:         id.Bytes(),
+		ProviderID:         "user.provider",
+		SourceInstanceID:   testSourceInstanceID,
+		ScopeKind:          "system",
+		ScopeExternalID:    "user",
+		ExternalPropertyID: "userNative",
+		BindingOrdinal:     0,
+		ReadTransform:      "identity",
+		Direction:          "read",
+		EffectiveReadable:  true,
+		EffectiveQueryable: true,
+		EffectiveWritable:  false,
+		QueryProfile:       "identity",
+		MappingVersion:     1,
+		ValueContractRev:   1,
+		MappingProvenance:  "user",
+		ApprovalState:      "approved",
+		Lossiness:          "none",
+		LifecycleState:     "active",
+		SeedOwner:          nil,
+		SeedVersion:        nil,
+		SeedSourceVersion:  nil,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := store.db.WithContext(ctx).Create(&binding).Error; err != nil {
+		t.Fatalf("insert user binding: %v", err)
+	}
+
+	term := WorkspacePropertyTermRow{
+		WorkspaceID:       wsBytes,
+		PropertyID:        id.Bytes(),
+		TermKind:          "search_alias",
+		Ordinal:           0,
+		TermValue:         "user-alias",
+		SeedOwner:         nil,
+		SeedVersion:       nil,
+		SeedSourceVersion: nil,
+	}
+	if err := store.db.WithContext(ctx).Create(&term).Error; err != nil {
+		t.Fatalf("insert user term: %v", err)
+	}
+}
+
+// TestCatalogSeedFresh proves a catalog with no seed-owned rows applies the
+// full embedded seed and ends with exact fresh counts, digest, and seed state.
+func TestCatalogSeedFresh(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio()) // bootstrap only
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed: %v", err)
+	}
+	assertLoadedCatalogCounts(t, store, wsctx, freshSeedCounts())
+}
+
+// TestCatalogSeedOlderUpgrade proves a catalog carrying one older consistent
+// seed tuple applies the current seed and upgrades every seed-owned row to the
+// current tuple, leaving the fresh dataset.
+func TestCatalogSeedOlderUpgrade(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	// Older consistent seed-owned catalog (seed_version 0, registry 2.3.0).
+	wsctx := buildCatalogFixture(t, store, 3, 3, 4, 2, systemSeedTrio(0, "2.3.0"))
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed: %v", err)
+	}
+	assertLoadedCatalogCounts(t, store, wsctx, freshSeedCounts())
+
+	// Every remaining ACTIVE seed-owned row now carries the current tuple.
+	var defs []WorkspacePropertyDefinitionRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsctx.ID.Bytes(), "system_property_registry", "active").
+		Find(&defs).Error; err != nil {
+		t.Fatalf("read seed defs: %v", err)
+	}
+	for _, d := range defs {
+		if d.SeedVersion == nil || *d.SeedVersion != 1 || d.SeedSourceVersion == nil || *d.SeedSourceVersion != "2.4.1" {
+			t.Fatalf("seed definition not upgraded: version=%v source=%q",
+				d.SeedVersion, derefStr(d.SeedSourceVersion))
+		}
+	}
+}
+
+// TestCatalogSeedSameVersionNoOp proves a second apply of the same seed version
+// with a matching digest performs NO write: seed-owned timestamps and the
+// connection change counter are unchanged.
+func TestCatalogSeedSameVersionNoOp(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	// Snapshot one seed-owned row's updated_at.
+	var updatedAt time.Time
+	if err := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND seed_owner = ?", wsctx.ID.Bytes(), "system_property_registry").
+		Order("property_id").Limit(1).
+		Pluck("updated_at", &updatedAt).Error; err != nil {
+		t.Fatalf("read updated_at: %v", err)
+	}
+
+	// Connection change counter before the no-op.
+	var changesBefore int
+	if err := store.SQLDB().QueryRowContext(ctx, "SELECT total_changes()").Scan(&changesBefore); err != nil {
+		t.Fatalf("total_changes before: %v", err)
+	}
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("second ApplyCatalogSeed: %v", err)
+	}
+
+	var changesAfter int
+	if err := store.SQLDB().QueryRowContext(ctx, "SELECT total_changes()").Scan(&changesAfter); err != nil {
+		t.Fatalf("total_changes after: %v", err)
+	}
+	if changesAfter != changesBefore {
+		t.Fatalf("no-op performed %d writes (total_changes %d -> %d)",
+			changesAfter-changesBefore, changesBefore, changesAfter)
+	}
+
+	var updatedAtAfter time.Time
+	if err := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND seed_owner = ?", wsctx.ID.Bytes(), "system_property_registry").
+		Order("property_id").Limit(1).
+		Pluck("updated_at", &updatedAtAfter).Error; err != nil {
+		t.Fatalf("read updated_at after: %v", err)
+	}
+	if !updatedAtAfter.Equal(updatedAt) {
+		t.Fatalf("seed-owned updated_at changed on no-op: %v -> %v", updatedAt, updatedAtAfter)
+	}
+}
+
+// TestCatalogSeedSameVersionDriftFailsClosed proves that at the same seed
+// version a digest mismatch (drift) fails closed WITHOUT auto-repair: the
+// drifted row is left untouched.
+func TestCatalogSeedSameVersionDriftFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	// Introduce same-version drift: rename one seed-owned alias at the current
+	// tuple -> active catalog digest no longer matches the committed dataset.
+	drifted := "Drifted Alias"
+	mutateDefinitionDisplayName(t, store, wsctx, "audio.apple_loop_descriptors", drifted)
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedDigest) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedDigest", err)
+	}
+
+	// Fail closed: no auto-repair — the drifted row is unchanged.
+	var name string
+	if err := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "audio.apple_loop_descriptors").
+		Pluck("display_name", &name).Error; err != nil {
+		t.Fatalf("read drifted name: %v", err)
+	}
+	if name != drifted {
+		t.Fatalf("drift was auto-repaired: display_name = %q, want untouched %q", name, drifted)
+	}
+}
+
+// TestCatalogSeedMixedFailsClosed proves mixed seed tuples fail closed before
+// any mutation.
+func TestCatalogSeedMixedFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 3, 3, 4, 2, systemSeedTrio(1, "2.4.1"))
+
+	// Re-point one seed-owned definition to a different tuple -> mixed.
+	res := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "cat.0").
+		Updates(map[string]any{"seed_version": 2, "seed_source_version": "3.0.0"})
+	if res.Error != nil || res.RowsAffected != 1 {
+		t.Fatalf("repoint seed tuple: err=%v rows=%d", res.Error, res.RowsAffected)
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedStateCorrupt) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedStateCorrupt", err)
+	}
+
+	// No mutation: catalog still the small fixture, not the 1309-row seed.
+	assertRawActiveCounts(t, store, wsctx, seedCatalogCounts{3, 3, 4, 2})
+}
+
+// TestCatalogSeedNewerFailsClosed proves a catalog carrying a NEWER seed tuple
+// than this binary's embedded seed fails closed WITHOUT executing the SQL.
+func TestCatalogSeedNewerFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	// Newer consistent tuple (version 2 > embedded 1).
+	wsctx := buildCatalogFixture(t, store, 3, 3, 4, 2, systemSeedTrio(2, "3.0.0"))
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedState) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedState", err)
+	}
+
+	// No SQL executed: the catalog is still the small fixture.
+	assertRawActiveCounts(t, store, wsctx, seedCatalogCounts{3, 3, 4, 2})
+}
+
+// TestCatalogSeedPartialFailsClosed proves a partially-populated seed
+// provenance trio (partial seed-owned state) fails closed before mutation.
+func TestCatalogSeedPartialFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 3, 3, 4, 2, systemSeedTrio(1, "2.4.1"))
+
+	// Null out only seed_version on one row -> partial trio.
+	res := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "cat.0").
+		Update("seed_version", gorm.Expr("NULL"))
+	if res.Error != nil || res.RowsAffected != 1 {
+		t.Fatalf("null seed_version: err=%v rows=%d", res.Error, res.RowsAffected)
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrInvalidCatalogSeedMetadata) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrInvalidCatalogSeedMetadata", err)
+	}
+
+	assertRawActiveCounts(t, store, wsctx, seedCatalogCounts{3, 3, 4, 2})
+}
+
+// TestCatalogSeedRemovalsTombstone proves removed seed-owned identities are
+// tombstoned (identity preserved, never hard-deleted) and removed native keys
+// tombstone only their binding/descriptor while removed Registry descriptors
+// tombstone their definition and all bindings.
+func TestCatalogSeedRemovalsTombstone(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	// Older seed-owned catalog whose rows are NOT in the current seed, plus a
+	// NULL-seed user row.
+	wsctx := buildCatalogFixture(t, store, 2, 2, 2, 1, systemSeedTrio(0, "2.3.0"))
+	insertUserRows(t, store, wsctx)
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed: %v", err)
+	}
+
+	wsBytes := wsctx.ID.Bytes()
+
+	// Removed seed-owned definitions are tombstoned (identity preserved).
+	var removedDefs []WorkspacePropertyDefinitionRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND seed_owner = ? AND canonical_key LIKE 'cat.%'", wsBytes, "system_property_registry").
+		Find(&removedDefs).Error; err != nil {
+		t.Fatalf("read removed defs: %v", err)
+	}
+	if len(removedDefs) != 2 {
+		t.Fatalf("removed defs = %d, want 2", len(removedDefs))
+	}
+	for _, d := range removedDefs {
+		if d.LifecycleState != "tombstoned" {
+			t.Fatalf("removed definition %q not tombstoned (state=%q)", d.CanonicalKey, d.LifecycleState)
+		}
+	}
+
+	// Removed seed-owned descriptors are tombstoned. Filter by the tombstoned
+	// lifecycle so the real (active) seed descriptors are not matched.
+	var removedDescs []SourcePropertyDescriptorRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ? AND external_property_id LIKE 'kMDItem%'", wsBytes, "system_property_registry", "tombstoned").
+		Find(&removedDescs).Error; err != nil {
+		t.Fatalf("read removed descs: %v", err)
+	}
+	if len(removedDescs) != 2 {
+		t.Fatalf("removed descs = %d, want 2", len(removedDescs))
+	}
+	for _, d := range removedDescs {
+		if d.LifecycleState != "tombstoned" {
+			t.Fatalf("removed descriptor %q not tombstoned (state=%q)", d.ExternalPropertyID, d.LifecycleState)
+		}
+	}
+
+	// Removed seed-owned bindings are tombstoned.
+	var removedBindings []PropertyBindingRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ? AND external_property_id LIKE 'kMDItem%'", wsBytes, "system_property_registry", "tombstoned").
+		Find(&removedBindings).Error; err != nil {
+		t.Fatalf("read removed bindings: %v", err)
+	}
+	if len(removedBindings) != 2 {
+		t.Fatalf("removed bindings = %d, want 2", len(removedBindings))
+	}
+	for _, b := range removedBindings {
+		if b.LifecycleState != "tombstoned" {
+			t.Fatalf("removed binding not tombstoned (state=%q)", b.LifecycleState)
+		}
+	}
+
+	// Historical terms preserved (rows remain, but excluded from active view).
+	var historicalTerms int64
+	if err := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND term_value LIKE 'alias-%'", wsBytes, "system_property_registry").
+		Count(&historicalTerms).Error; err != nil {
+		t.Fatalf("count historical terms: %v", err)
+	}
+	if historicalTerms != 1 {
+		t.Fatalf("historical terms = %d, want 1 preserved (not deleted)", historicalTerms)
+	}
+
+	// Active catalog = fresh seed dataset + the one preserved user row each.
+	meta := seeds.Current()
+	assertLoadedCatalogCounts(t, store, wsctx, seedCatalogCounts{
+		definitions: meta.DefinitionCount + 1,
+		descriptors: meta.DescriptorCount + 1,
+		bindings:    meta.BindingCount + 1,
+		terms:       meta.TermCount + 1,
+	})
+	assertSeedDigestMatches(t, store, wsctx)
+}
+
+// TestCatalogSeedPreservesNonSeed proves NULL-seed user/provider rows are left
+// untouched by apply.
+func TestCatalogSeedPreservesNonSeed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	insertUserRows(t, store, wsctx)
+
+	// Snapshot the user definition before apply.
+	var userBefore WorkspacePropertyDefinitionRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "user.custom_prop").
+		First(&userBefore).Error; err != nil {
+		t.Fatalf("read user def before: %v", err)
+	}
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed: %v", err)
+	}
+
+	// User rows survive and are untouched (still active, seed trio NULL).
+	var userAfter WorkspacePropertyDefinitionRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "user.custom_prop").
+		First(&userAfter).Error; err != nil {
+		t.Fatalf("read user def after: %v", err)
+	}
+	if userAfter.LifecycleState != "active" {
+		t.Fatalf("user definition no longer active (state=%q)", userAfter.LifecycleState)
+	}
+	if userAfter.SeedOwner != nil || userAfter.SeedVersion != nil || userAfter.SeedSourceVersion != nil {
+		t.Fatal("user definition seed trio was mutated by apply")
+	}
+	if userAfter.UpdatedAt != userBefore.UpdatedAt || userAfter.DisplayName != userBefore.DisplayName {
+		t.Fatal("user definition content was mutated by apply")
+	}
+
+	// Active catalog = fresh seed + the one preserved user definition.
+	meta := seeds.Current()
+	assertLoadedCatalogCounts(t, store, wsctx, seedCatalogCounts{
+		definitions: meta.DefinitionCount + 1,
+		descriptors: meta.DescriptorCount + 1,
+		bindings:    meta.BindingCount + 1,
+		terms:       meta.TermCount + 1,
+	})
+	assertSeedDigestMatches(t, store, wsctx)
+}
+
+// TestCatalogSeedTamperedHashFailsBeforeWrite proves an embedded SQL SHA-256
+// mismatch fails closed BEFORE any write and leaves the catalog unchanged.
+func TestCatalogSeedTamperedHashFailsBeforeWrite(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+
+	// Metadata whose SQLSHA256 does not match its body -> tampered hash.
+	meta := seeds.Current()
+	meta.SQLSHA256 = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+	err := store.applyCatalogSeedMeta(ctx, wsctx, meta)
+	if !errors.Is(err, ErrCatalogSeedChecksum) {
+		t.Fatalf("apply error = %v, want ErrCatalogSeedChecksum", err)
+	}
+
+	// No write happened: the catalog is still empty.
+	var defCount int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ?", wsctx.ID.Bytes()).Count(&defCount).Error; err != nil {
+		t.Fatalf("count defs: %v", err)
+	}
+	if defCount != 0 {
+		t.Fatalf("definitions written despite checksum failure: %d", defCount)
+	}
+}
+
+// TestCatalogSeedPartialSQLRollback proves a seed whose SQL executes but whose
+// read-back digest does not match rolls back the entire transaction, leaving
+// the pre-call (empty) state.
+func TestCatalogSeedPartialSQLRollback(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+
+	// A tampered-but-self-consistent seed body: valid SQL that inserts a
+	// different dataset (so its read-back digest differs from DatasetSHA256).
+	meta := seeds.Current()
+	meta.SQLBody = "INSERT INTO workspace_property_definitions " +
+		"(workspace_id, property_id, origin, identity_scheme, namespace, canonical_key, " +
+		"display_name, description, value_type, cardinality, nullable, editable, " +
+		"default_hidden, default_pinned, db_indexed_hint, provenance, unit, " +
+		"definition_revision, lifecycle_state, seed_owner, seed_version, " +
+		"seed_source_version, created_at, updated_at) " +
+		"SELECT workspace_id, X'ba1b77a400675c4cb67eedadcae0853b', 'built_in', 'registry_derived', " +
+		"'system', 'partial.only', 'Partial', 'p', 'text', 'one', 0, 1, 0, 0, 0, 'system_property_registry@2.4.1', " +
+		"'', 1, 'active', 'system_property_registry', 1, '2.4.1', '2026-08-20T00:00:00Z', '2026-08-20T00:00:00Z' " +
+		"FROM workspace_metadata WHERE singleton = 1 " +
+		"ON CONFLICT (workspace_id, property_id) DO UPDATE SET display_name = excluded.display_name"
+	// Keep SQLSHA256 self-consistent with the tampered body so the checksum gate
+	// passes and the failure surfaces at read-back/digest verification instead.
+	meta.SQLSHA256 = sha256Hex(meta.SQLBody)
+
+	err := store.applyCatalogSeedMeta(ctx, wsctx, meta)
+	if !errors.Is(err, ErrCatalogSeedDigest) {
+		t.Fatalf("apply error = %v, want ErrCatalogSeedDigest", err)
+	}
+
+	// The whole transaction rolled back: no partial row remains.
+	var defCount int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ?", wsctx.ID.Bytes()).Count(&defCount).Error; err != nil {
+		t.Fatalf("count defs: %v", err)
+	}
+	if defCount != 0 {
+		t.Fatalf("partial SQL leaked %d rows after rollback", defCount)
+	}
+}
+
+// TestCatalogSeedSecondOpenRejected proves the existing lifetime database lock
+// rejects a second Open against the same file before seed execution and leaves
+// the first Store's catalog unchanged.
+func TestCatalogSeedSecondOpenRejected(t *testing.T) {
+	ctx := context.Background()
+	dbPath := tempDBPath(t)
+
+	storeA, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Open A: %v", err)
+	}
+	defer storeA.Close()
+	if err := MigrateUp(ctx, storeA.SQLDB()); err != nil {
+		t.Fatalf("MigrateUp A: %v", err)
+	}
+	wsctx, err := storeA.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap A: %v", err)
+	}
+	if err := storeA.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed A: %v", err)
+	}
+	assertLoadedCatalogCounts(t, storeA, wsctx, freshSeedCounts())
+
+	// A second Open must fail before seed execution (lifetime lock held).
+	if _, err := Open(ctx, dbPath); !errors.Is(err, ErrDatabaseLocked) {
+		t.Fatalf("second Open error = %v, want ErrDatabaseLocked", err)
+	}
+
+	// The first Store's catalog is unchanged.
+	assertLoadedCatalogCounts(t, storeA, wsctx, freshSeedCounts())
+}
+
+// TestCatalogSeedConcurrentSerialized proves two concurrent ApplyCatalogSeed
+// calls through the same Store serialize (apply then no-op) without mixed or
+// partial state.
+func TestCatalogSeedConcurrentSerialized(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = store.ApplyCatalogSeed(ctx, wsctx)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent ApplyCatalogSeed[%d]: %v", i, err)
+		}
+	}
+
+	// No mixed/partial state: the catalog is exactly the fresh seed dataset.
+	assertLoadedCatalogCounts(t, store, wsctx, freshSeedCounts())
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return "<nil>"
+	}
+	return *p
+}
