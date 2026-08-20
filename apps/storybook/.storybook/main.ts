@@ -3,8 +3,6 @@ import { activeMaterializedSurfaces } from "../surface-registry.js"
 
 const config: StorybookConfig = {
   stories: [
-    "../src/**/*.mdx",
-    "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
     ...activeMaterializedSurfaces.map(({ story }) => ({
       directory: story.directory,
       titlePrefix: story.titlePrefix,

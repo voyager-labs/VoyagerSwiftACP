@@ -6,12 +6,14 @@ export function verifyChatInteractionContract(packageRoot) {
   const source = (relativePath) => readFileSync(resolve(packageRoot, relativePath), "utf8")
 
   const inputSource = source("src/Domains/Chat/AiChatInputBar.tsx")
-  const inputStorySource = source("src/Domains/Chat/AiChatInputBar.stories.tsx")
+  const inputStorySource = source("../../src/FileManager/Domains/Chat/AiChatInputBar.stories.tsx")
   const viewSource = source("src/Domains/Chat/AiChatView.tsx")
-  const viewStorySource = source("src/Domains/Chat/AiChatView.stories.tsx")
+  const viewStorySource = source("../../src/FileManager/Domains/Chat/AiChatView.stories.tsx")
   const conversationSource = source("src/Domains/Chat/AiChatConversationSurface.tsx")
   const rootSource = source("src/FileManagerIllustration.tsx")
-  const rootStorySource = source("src/Stories/FileManagerIllustration.stories.tsx")
+  const rootStorySource = source(
+    "../../src/FileManager/Stories/FileManagerIllustration.stories.tsx",
+  )
   const typesSource = source("src/model/types.ts")
 
   assert.match(inputSource, /presentation\.action\.kind === "submit"/)

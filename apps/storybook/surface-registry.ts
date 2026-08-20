@@ -21,7 +21,7 @@ export type SurfaceKind = "component" | "foundation" | "embedded-domain"
  * entries keep every field here null.
  */
 export interface SurfaceStorySpec {
-  /** Storybook directory (relative to `apps/storybook`), e.g. `../packages/...`. */
+  /** Storybook directory (relative to `apps/storybook`), e.g. `../src/FileManager`. */
   directory: string
   /** Storybook title prefix applied to every story under `directory`. */
   titlePrefix: string
@@ -86,7 +86,7 @@ export const surfaceRegistry: readonly Surface[] = [
     packageRoot: "packages/file-manager-illustration",
     rootConsumer: "FileManagerHost",
     story: {
-      directory: "../packages/file-manager-illustration/src",
+      directory: "../src/FileManager",
       titlePrefix: "File Manager",
       files: "**/*.stories.tsx",
     },
@@ -101,7 +101,7 @@ export const surfaceRegistry: readonly Surface[] = [
     packageRoot: "packages/settings-illustration",
     rootConsumer: "SettingsHost",
     story: {
-      directory: "../packages/settings-illustration/src",
+      directory: "../src/Settings",
       titlePrefix: "Settings",
       files: "**/*.stories.tsx",
     },
@@ -116,7 +116,7 @@ export const surfaceRegistry: readonly Surface[] = [
     packageRoot: "packages/design-foundation",
     rootConsumer: null,
     story: {
-      directory: "../packages/design-foundation/src",
+      directory: "../src/DesignFoundation",
       titlePrefix: "Design Foundation",
       files: "**/*.stories.tsx",
     },
