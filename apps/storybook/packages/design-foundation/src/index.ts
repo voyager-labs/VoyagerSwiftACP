@@ -14,8 +14,10 @@ import "./styles/overlays.css"
 export { SFSymbol } from "./Foundations/SFSymbol"
 export type { SFSymbolProps } from "./Foundations/SFSymbol"
 
-export { TabBar } from "./UI/Navigation/TabBar"
-export type { TabBarItem, TabBarProps } from "./UI/Navigation/TabBar"
+export { TabView } from "./UI/Navigation/TabView"
+export type { TabItem, TabViewProps } from "./UI/Navigation/TabView"
+export { TabViewItem } from "./UI/Navigation/TabViewItem"
+export type { TabViewItemProps } from "./UI/Navigation/TabViewItem"
 
 /* ── UI kit: Controls ── */
 export { Button } from "./UI/Controls/Button"

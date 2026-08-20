@@ -1,6 +1,6 @@
 # Design Foundation
 
-설정(Settings) 표면의 공용 디자인 파운데이션 패키지입니다. `file-manager-illustration`이 소유하던 macOS 토큰/폰트를 공용으로 끌어올려, file-manager와 settings 표면이 동일한 시각 언어를 공유합니다.
+제품 비종속(product-agnostic) 공용 디자인 파운데이션 패키지입니다. `file-manager-illustration`이 소유하던 macOS 토큰/폰트를 공용으로 끌어올려, file-manager와 settings 등 여러 표면이 동일한 시각 언어를 공유합니다. 공용 UI 키트의 컴포넌트(예: 가로 `TabView`)는 특정 제품(Settings 등)에 묶이지 않습니다.
 
 ## 1. Authority
 
@@ -26,15 +26,16 @@
 
 ## 3. Contents
 
-| 파일                          | 역할                                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------------- |
-| `src/styles/macos-tokens.css` | `--macos-*` 시맨틱 토큰 (색상, spacing, radius, shadow, motion 등)                      |
-| `src/styles/fonts.css`        | SF Pro Text 400/500/600/700, Display 400/500/600/700, Symbols `1 1000` 9개 `@font-face` |
-| `symbolist`                   | SF Symbol / 폰트 렌더링 의존성                                                          |
+| 파일                          | 역할                                                                                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/styles/macos-tokens.css` | `--macos-*` 시맨틱 토큰 (색상, spacing, radius, shadow, motion 등)                                                                            |
+| `src/styles/fonts.css`        | SF Pro Text 400/500/600/700, Display 400/500/600/700, Symbols `1 1000` 9개 `@font-face`                                                       |
+| `symbolist`                   | SF Symbol / 폰트 렌더링 의존성                                                                                                                |
+| `src/UI/Navigation/TabView`   | 제품 비종속 가로 탭 바 (`TabView`/`TabViewItem`/`TabItem`/`TabViewProps`) — 항목은 좌→우 가로 배치, 각 항목은 아이콘(위)+라벨(아래) 세로 구조 |
 
 ## 4. Rules
 
 - **모든 색상은 `--macos-*` 토큰만 사용** — 컴포넌트 레벨 원시 색상 금지.
 - **모든 컴포넌트는 형제 `.stories.tsx`** — Storybook 카탈로그에서 리뷰 가능해야 함.
 - 토큰 값/주석/순서는 `file-manager-illustration` 소스와 바이트 동일하게 유지(셀렉터 스코프만 변경).
-- `src/index.ts`는 아직 생성하지 않음(추후 Wave에서 공용 진입점으로 추가).
+- `src/index.ts`는 공용 진입점으로, UI 키트(Controls/Display/Feedback/Navigation/Overlays)와 토큰 스타일을 배럴로 내보낸다.
