@@ -122,7 +122,7 @@ try:
     parsed = urlsplit(host)
     port = parsed.port
     valid_host = (
-        parsed.scheme.lower() in {"http", "https"}
+        parsed.scheme.lower() == "https"
         and bool(parsed.hostname)
         and parsed.username is None
         and parsed.password is None

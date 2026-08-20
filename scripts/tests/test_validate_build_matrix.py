@@ -638,6 +638,23 @@ class ProductionReleasePostHogTests(unittest.TestCase):
                 self.assertNotIn(host, result.stdout + result.stderr)
                 self.assertNotIn("DOWNLOADS_BASE_URL", result.stderr)
 
+    def test_non_https_release_host_fails_before_release_prerequisites(self) -> None:
+        for host in (
+            "http://us.i.posthog.com",
+            "ftp://us.i.posthog.com",
+        ):
+            with self.subTest(host=host):
+                result = self._run_release(
+                    {
+                        "PUBLIC_POSTHOG_PROJECT_TOKEN": "phc_fixture_token_123",
+                        "PUBLIC_POSTHOG_HOST": host,
+                    }
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("PUBLIC_POSTHOG_HOST", result.stderr)
+                self.assertNotIn(host, result.stdout + result.stderr)
+                self.assertNotIn("DOWNLOADS_BASE_URL", result.stderr)
+
     def test_copy_replaces_posthog_values_once_and_preserves_source(self) -> None:
         token = "phc_fixture_token_123"
         host = "https://us.i.posthog.com"
@@ -678,6 +695,64 @@ class ProductionReleasePostHogTests(unittest.TestCase):
                 host=host,
             )
             self._assert_copy_failure_without_leakage(result, token, host)
+
+    def test_copy_prod_rejects_non_https_host_for_explicit_and_implicit_destinations(
+        self,
+    ) -> None:
+        token = "phc_fixture_token_123"
+        for host in (
+            "http://us.i.posthog.com",
+            "ftp://us.i.posthog.com",
+        ):
+            with self.subTest(host=host):
+                with tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    explicit_destination = root / "explicit"
+                    explicit_destination.mkdir()
+                    explicit_stale = explicit_destination / ".env.prod"
+                    explicit_stale.write_text(
+                        "PUBLIC_POSTHOG_HOST=https://stale.example\n"
+                    )
+                    explicit_result = self._run_copy(
+                        explicit_destination,
+                        token=token,
+                        host=host,
+                    )
+                    self._assert_copy_failure_without_leakage(
+                        explicit_result, token, host
+                    )
+                    self.assertEqual(
+                        explicit_stale.read_text(),
+                        "PUBLIC_POSTHOG_HOST=https://stale.example\n",
+                    )
+
+                    implicit_destination = root / "implicit" / "resources"
+                    implicit_destination.mkdir(parents=True)
+                    implicit_stale = implicit_destination / ".env.prod"
+                    implicit_stale.write_text(
+                        "PUBLIC_POSTHOG_HOST=https://stale.example\n"
+                    )
+                    implicit_result = subprocess.run(
+                        [str(self.copy_script)],
+                        env={
+                            **os.environ,
+                            "APP_ENV": "prod",
+                            "PUBLIC_POSTHOG_PROJECT_TOKEN": token,
+                            "PUBLIC_POSTHOG_HOST": host,
+                            "TARGET_BUILD_DIR": str(root / "implicit"),
+                            "UNLOCALIZED_RESOURCES_FOLDER_PATH": "resources",
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self._assert_copy_failure_without_leakage(
+                        implicit_result, token, host
+                    )
+                    self.assertEqual(
+                        implicit_stale.read_text(),
+                        "PUBLIC_POSTHOG_HOST=https://stale.example\n",
+                    )
 
     def test_copy_prod_fails_when_implicit_destination_env_is_missing_or_blank(
         self,

@@ -39,6 +39,45 @@ if [[ -z "${PUBLIC_POSTHOG_HOST//[[:space:]]/}" ]]; then
   exit 1
 fi
 
+PUBLIC_POSTHOG_PROJECT_TOKEN="${PUBLIC_POSTHOG_PROJECT_TOKEN:-}" \
+  PUBLIC_POSTHOG_HOST="${PUBLIC_POSTHOG_HOST:-}" \
+  python3 - <<'PY'
+import os
+import re
+import sys
+from urllib.parse import urlsplit
+
+token_key = "PUBLIC_POSTHOG_PROJECT_TOKEN"
+host_key = "PUBLIC_POSTHOG_HOST"
+token = os.environ.get(token_key, "")
+host = os.environ.get(host_key, "")
+
+if not token.strip() or "\n" in token or "\r" in token:
+    print(f"Invalid env value: {token_key}", file=sys.stderr)
+    raise SystemExit(1)
+if not re.fullmatch(r"phc_[A-Za-z0-9._~-]+", token):
+    print(f"Invalid env value: {token_key}", file=sys.stderr)
+    raise SystemExit(1)
+if not host.strip() or "\n" in host or "\r" in host:
+    print(f"Invalid env value: {host_key}", file=sys.stderr)
+    raise SystemExit(1)
+try:
+    parsed = urlsplit(host)
+    port = parsed.port
+    valid_host = (
+        parsed.scheme.lower() == "https"
+        and bool(parsed.hostname)
+        and parsed.username is None
+        and parsed.password is None
+        and (port is None or 1 <= port <= 65535)
+    )
+except ValueError:
+    valid_host = False
+if not valid_host:
+    print(f"Invalid env value: {host_key}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
 output_path="${DEST_DIR}/.env.prod"
 temp_path="$(mktemp "${DEST_DIR}/.env.prod.tmp.XXXXXX")"
 trap 'rm -f "${temp_path}"' EXIT
