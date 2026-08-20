@@ -10165,10 +10165,68 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
     }
 
+    /// pinned Collection 복귀 중 예상하지 않은 route가 commit되면 해당 tab을 제외하고 재계획한다.
+    /// - 검증 내용: 다른 사용자 navigation delegate가 retryCount 1 신규 reservation apply를 생성함
+    /// - 사전 조건: durable Collection 재사용 plan 중 같은 pinned tab에 다른 directory navigation이 commit됨
+    /// - 기대 결과: 중단된 복귀를 기다리지 않고 기존 tab을 보존한 채 새 identity로 외부 열기를 재시도
+    func testPlacementActivationReplansWhenPinnedCollectionReturnCommitsUnexpectedRoute() async {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let windowID = fixture.plan.windows[0].windowID
+        var state = fixture.state
+        state.externalOpenActivationAttempt = .init(
+            batchID: fixture.plan.batchID,
+            plan: fixture.plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(fixture.plan)))
+        await store.receive { action in
+            guard case .externalOpenActivationResult = action else { return false }
+            return true
+        }
+        let unrelatedAnchor = ContentTabPageAnchor.directory(path: "/tmp/user-navigation")
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.updateRuntimePageAnchor(fixture.tabID, unrelatedAnchor))),
+        )))
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: fixture.tabID,
+                navigationState: .folder("/tmp/user-navigation"),
+            ))),
+        )))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.retryCount == 1
+                && plan.orderedItems.count == 1
+                && plan.orderedItems[0].tabID != fixture.tabID
+                && plan.orderedItems[0].requiresReservation
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let tabs = store.state.windows[id: windowID]?.window.contentTabs.tabs
+        XCTAssertGreaterThan(tabs?.count ?? 0, 1)
+        XCTAssertEqual(tabs?.ids.contains(fixture.tabID), true)
+    }
+
     /// pinned Collection 복귀는 plan의 기대 anchor가 runtime에 commit된 뒤에만 batch를 완료한다.
-    /// - 검증 내용: 다른 사용자 navigation delegate는 무시하고 기대 anchor commit 뒤 activationCompleted를 보냄
-    /// - 사전 조건: durable collection 재사용 plan 중 같은 pinned tab에 다른 directory navigation이 먼저 commit됨
-    /// - 기대 결과: 다른 route에서는 settlement를 유지하지 않고 기대 route에서만 authorized batch 해제
+    /// - 검증 내용: 기대 anchor navigation delegate 뒤 activationCompleted를 보냄
+    /// - 사전 조건: durable Collection 재사용 plan의 기대 route가 runtime에 commit됨
+    /// - 기대 결과: expected route에서만 authorized batch와 activation attempt 해제
     func testPlacementActivationCompletesAfterPinnedCollectionReturnCommitted() async throws {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let windowID = fixture.plan.windows[0].windowID
@@ -10197,21 +10255,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         // commit 전에는 완료하지 않는다.
         XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
-        let unrelatedAnchor = ContentTabPageAnchor.directory(path: "/tmp/user-navigation")
-        await store.send(.windows(.element(
-            id: windowID,
-            action: .window(.contentTabs(.updateRuntimePageAnchor(fixture.tabID, unrelatedAnchor))),
-        )))
-        await store.send(.windows(.element(
-            id: windowID,
-            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
-                tabID: fixture.tabID,
-                navigationState: .folder("/tmp/user-navigation"),
-            ))),
-        )))
-        XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
-        XCTAssertEqual(store.state.externalOpenActivationAttempt?.settledPinnedReturnTabIDs, [])
-
         let expectedAnchor = try XCTUnwrap(fixture.plan.orderedItems.first?.anchor)
         await store.send(.windows(.element(
             id: windowID,

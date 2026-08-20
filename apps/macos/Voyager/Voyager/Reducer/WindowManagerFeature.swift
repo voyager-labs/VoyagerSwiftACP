@@ -453,16 +453,17 @@ struct WindowManagerFeature {
                 id: windowID,
                 action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(tabID, _))),
             )):
-                if var attempt = state.externalOpenActivationAttempt,
-                   state.authorizedExternalOpenBatchID == attempt.batchID,
-                   let item = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.first(where: {
-                       $0.tabID == tabID && $0.requiresPinnedAnchorReturn
-                   }),
-                   state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor
-                {
-                    attempt.settledPinnedReturnTabIDs.insert(tabID)
-                    state.externalOpenActivationAttempt = attempt
+                guard var attempt = state.externalOpenActivationAttempt,
+                      state.authorizedExternalOpenBatchID == attempt.batchID,
+                      let item = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.first(where: {
+                          $0.tabID == tabID && $0.requiresPinnedAnchorReturn
+                      })
+                else { return completeExternalOpenActivationIfSettled(state: &state) }
+                guard state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor else {
+                    return replanExternalOpenActivationExcluding(tabID: tabID, windowID: windowID, state: &state)
                 }
+                attempt.settledPinnedReturnTabIDs.insert(tabID)
+                state.externalOpenActivationAttempt = attempt
                 return completeExternalOpenActivationIfSettled(state: &state)
 
             case let .windows(.element(
