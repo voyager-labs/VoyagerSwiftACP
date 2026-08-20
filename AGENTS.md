@@ -9,16 +9,6 @@ This repository separates agent-facing instructions from human-facing documentat
 - **For Humans:** Product and architecture documentation is located in `docs/index.md`.
 - **Product docs:** `docs/canonical/` — canonical Voyager product documentation (git submodule, `voyager-labs/voyager-documentation`).
 
-## Submodule: docs/canonical
-
-Use the shared `.agents/skills/common/internal/voyager-docs-submodule` skill for canonical documentation changes and consumer pointer updates.
-
-- Make canonical content changes in a dedicated `voyager-documentation` worktree, not in this consumer checkout.
-- Treat the upstream documentation PR and the `voyager-app` pointer commit/PR as separate artifacts.
-- Update the pointer only after the upstream PR merges, and verify it equals the upstream merge commit.
-- Include the pointer in the current app PR or a separate pointer-only app PR. If blocked, keep the handoff incomplete and record the upstream PR URL, owner, reason, and follow-up PR or Linear tracking URL.
-- Preserve unrelated dirty submodule state; do not stage, reset, restore, or clean it.
-
 ## Operating principles
 
 You are a super-capable agent. Act like it.
@@ -97,9 +87,9 @@ git diff --check            # Check for whitespace errors before commit
 - Treat `opencode.json` as a user-managed local file.
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
-- `docs/canonical/` 콘텐츠는 읽을 수 있지만 canonical 편집은 별도 `voyager-documentation` worktree와 shared `voyager-docs-submodule` workflow를 사용한다.
-- **Submodule pointer**는 사용자가 요청하고 upstream documentation PR이 merge된 뒤에만 갱신한다.
-- 관련 없는 작업 중 `git status`에 submodule pointer dirty가 보여도 stage/reset/restore/clean하지 않는다.
+- `docs/canonical/` 내부 파일(콘텐츠)은 사용자가 요청하면 자유롭게 읽고 편집할 수 있다.
+- 단, **submodule pointer**(부모 레포에서 `docs/canonical`이 가리키는 커밋 참조)는 사용자가 명시적으로 inspect/update/reset/restore를 요청하지 않는 한 절대 변경하지 않는다.
+- 관련 없는 작업 중 `git status`에 submodule pointer dirty가 보여도 추적하거나 정리하지 않는다.
 
 ## Plan quality conventions
 
