@@ -100,6 +100,13 @@ extension RuntimeControlPlane {
                     receipt: receipt,
                 )
             }
+        } catch RuntimeHostError.malformedAdapterResponse {
+            detachTrustedLaunchOwner(
+                host: reservation.host,
+                runReference: request.runReference,
+                lease: reservation.lease,
+            )
+            throw RuntimeHostError.malformedAdapterResponse
         } catch {
             try? await reconcileStartedProviderFailure(
                 reservation: reservation,
@@ -107,6 +114,20 @@ extension RuntimeControlPlane {
             )
             throw error
         }
+    }
+
+    private func detachTrustedLaunchOwner(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) {
+        guard var session = sessions[host],
+              session.stored.runReference == runReference,
+              session.lease == .launching(lease)
+        else { return }
+        session.lease = session.stored.projection.isTerminal ? .none : .detachedLaunching(lease)
+        session.revision += 1
+        sessions[host] = session
     }
 
     private func resolveReceiptConflict(
