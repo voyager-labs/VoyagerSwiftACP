@@ -220,7 +220,7 @@ public final class EntryGridView: NSView {
         )
         collectionView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         collectionView.setDraggingSourceOperationMask([.copy], forLocal: false)
-        collectionView.registerForDraggedTypes(EntryViewLayoutDropValidationAdapter.registeredDraggedTypes)
+        collectionView.registerForDraggedTypes([.fileURL])
 
         scrollView.documentView = collectionView
         addSubview(scrollView)

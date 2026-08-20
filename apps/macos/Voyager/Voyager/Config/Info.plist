@@ -78,7 +78,7 @@
 		</dict>
 	</array>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Voyager uses Finder automation to reveal selected items and Mail automation to import dragged messages.</string>
+	<string>Voyager uses Finder automation to reveal selected items in Finder.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
