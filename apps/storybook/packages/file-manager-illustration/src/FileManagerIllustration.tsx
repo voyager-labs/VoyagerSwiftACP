@@ -1,3 +1,4 @@
+import { TrafficLights } from "@voyager-labs/design-foundation"
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { FC } from "react"
 import {
@@ -13,7 +14,6 @@ import { Sidebar } from "./Layouts/Sidebar"
 import type { FileToolbarContent } from "./Patterns/Content/FileToolbar"
 import { FileToolbar } from "./Patterns/Content/FileToolbar"
 import { StatusBar } from "./Patterns/Content/StatusBar"
-import { TrafficLights } from "./UI/Display/TrafficLights"
 import {
   deriveBreadcrumbSegments,
   deriveSelectionLabel,
@@ -27,13 +27,9 @@ import type {
   FileManagerIllustrationProps,
   SidebarTabItem,
 } from "./model/types"
-import "./styles/macos-tokens.css"
+import "@voyager-labs/design-foundation/tokens.css"
+import "@voyager-labs/design-foundation/fonts.css"
 import "./styles/file-manager.css"
-import "./styles/atoms.css"
-import "./styles/form-controls.css"
-import "./styles/menu-controls.css"
-import "./styles/feedback.css"
-import "./styles/overlays.css"
 import "./styles/composer.css"
 import "./styles/composer-overlays.css"
 import "./styles/inspector.css"

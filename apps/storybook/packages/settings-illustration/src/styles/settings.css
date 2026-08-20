@@ -1,0 +1,221 @@
+/* Settings 일러스트레이션 전용 스타일.
+ * 모든 색상은 --macos-* 토큰 또는 그 --set-* 별칭에서만 가져온다.
+ * 컴포넌트 레벨 원시 색상은 허용하지 않는다.
+ */
+
+[data-settings-illustration] {
+  /* --macos-* 토큰에 대한 Settings 전용 별칭. 컴포넌트는 이 별칭만 참조한다. */
+  --set-canvas: var(--macos-under-page-background-color);
+  /* 윈도우 셸은 File Manager와 동일한 foundation material 처리: material 배경 + 미세 hairline + 2단 그림자. */
+  --set-window-bg: var(--macos-material-window-background);
+  /* 타이틀바는 탭바(투명 → 창 material)와 같은 색이 되도록 창 material을 사용. */
+  --set-titlebar-bg: var(--macos-material-window-background);
+  --set-content-bg: var(--macos-control-background-color);
+  --set-row-alt-bg: var(--macos-entry-list-alternate-row-background-color);
+  --set-selection-bg: var(--macos-sidebar-selection-background);
+  --set-selection-hover-bg: var(--macos-sidebar-hover-fill);
+  --set-accent: var(--macos-control-accent-color);
+  --set-selected-text: var(--macos-selected-text-color);
+  --set-selected-content-bg: var(--macos-selected-content-background-color);
+  --set-text-primary: var(--macos-label-color);
+  --set-text-secondary: var(--macos-secondary-label-color);
+  --set-text-tertiary: var(--macos-tertiary-label-color);
+  --set-separator: var(--macos-separator-color);
+  --set-separator-strong: var(--macos-separator-strong-color);
+  --set-control-bg: var(--macos-control-color);
+  --set-disabled-text: var(--macos-disabled-control-text-color);
+  --set-system-fill: var(--macos-system-fill);
+  --set-secondary-fill: var(--macos-secondary-system-fill);
+
+  /* grouped form(카드형 섹션)의 제어 배경. controlBackgroundColor에 대응한다. */
+  --set-form-bg: var(--macos-control-background-color);
+  --set-status-connected: var(--macos-system-green);
+  --set-status-not-connected: var(--macos-tertiary-label-color);
+
+  /* 폰트 스택 별칭. */
+  --set-font-text: "Voyager SF Pro Text", "Voyager SF Pro Display", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --set-font-display: "Voyager SF Pro Display", "Voyager SF Pro Text", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+
+  /* Settings 특화 기하 치수. */
+  --set-titlebar-height: 52px;
+  --set-pane-padding: 20px;
+  --set-row-gap: 8px;
+  --set-radius-control: 6px;
+  --set-radius-row: 6px;
+}
+
+/* File Manager와 동일한 창 셸 처리: foundation --macos-window-hairline/--macos-window-shadow 토큰을
+ * color-scheme별 값으로 제공하므로 Settings는 별도 값을 정의하지 않는다. */
+
+[data-settings-illustration] {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+  background: var(--set-canvas);
+  color: var(--set-text-primary);
+  font-family: var(--set-font-text);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis-weight: none;
+}
+
+/* foundation 컴포넌트(vc-button 등)의 font-size/weight를 덮지 않도록 font-family만 상속한다. */
+[data-settings-illustration] button,
+[data-settings-illustration] select {
+  font-family: inherit;
+}
+
+[data-settings-illustration] button {
+  cursor: default;
+}
+
+[data-settings-illustration] .stage {
+  display: grid;
+  width: 100%;
+  min-height: 100dvh;
+  overflow: auto;
+  place-items: center;
+  padding: 32px;
+  box-sizing: border-box;
+  background: radial-gradient(circle at 50% 18%, var(--set-secondary-fill), transparent 34rem),
+    var(--set-canvas);
+}
+
+/* macOS System Settings 창 셸: 네이티브 TabView .frame(width:600, height:400)에 대응. */
+[data-settings-illustration] .mac-window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 600px;
+  height: 400px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--macos-window-hairline);
+  background: var(--set-window-bg);
+  box-shadow: var(--macos-window-shadow);
+}
+
+/* 얇은 타이틀바: 트래픽 라이트 + 창 제목. 높이가 크지 않고, 아래 구분선 없이 탭바로 이어진다. */
+[data-settings-illustration] .mac-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 10px 14px 4px;
+  background: var(--set-titlebar-bg);
+}
+
+/* 트래픽 라이트는 좌측 고정, 제목은 창 가운데 정렬 (네이티브 macOS idiom). */
+[data-settings-illustration] .mac-titlebar .traffic-lights {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* 타이틀바 창 제목. 네이티브 NSFont.titleBarFont (13pt, regular, SF Pro Text) 사양을 따른다. */
+[data-settings-illustration] .mac-titlebar-label {
+  font-family: var(--set-font-text);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--set-text-primary);
+}
+
+/* 상단 탭 바 스타일은 재사용 컴포넌트인 TabView가 제공한다. 타이틀바 아래에서
+ * 가로 탭 바가 렌더링되고, 나머지 높이는 콘텐츠 pane이 채운다. */
+
+/* 탭 콘텐츠 pane. pane 내부 스크롤은 공유 .settings-form이 담당한다. */
+[data-settings-illustration] .settings-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--set-content-bg);
+}
+
+/* ---- 공유 폼 프리미티브 (General/Appearance/AI pane 공용) ---- */
+
+/* 스크롤 가능한 pane 래퍼. pane 높이에 제약돼 콘텐츠가 넘치면 스크롤된다. */
+[data-settings-illustration] .settings-form {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* 카드형 섹션 그룹. */
+[data-settings-illustration] .settings-section {
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--set-form-bg);
+}
+
+[data-settings-illustration] .settings-section-header {
+  margin: 0;
+  padding: 8px 12px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--set-text-secondary);
+}
+
+/* label 좌 / control 우 레이아웃 행. */
+[data-settings-illustration] .settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 10px 12px;
+}
+
+[data-settings-illustration] .settings-row + .settings-row {
+  border-top: 1px solid var(--set-separator);
+}
+
+/* disclosure 행: title + chevron. */
+[data-settings-illustration] .disclosure-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 10px 12px;
+  cursor: default;
+}
+
+[data-settings-illustration] .disclosure-row .disclosure-chevron {
+  transition: transform 160ms ease;
+}
+
+[data-settings-illustration] .disclosure-row.is-open .disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+/* 하단 각주 텍스트. */
+[data-settings-illustration] .footnote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--set-text-secondary);
+}
+
+/* 연결 상태 점. */
+[data-settings-illustration] .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--set-status-not-connected);
+}
+
+[data-settings-illustration] .status-dot.is-connected {
+  background: var(--set-status-connected);
+}
+
+[data-settings-illustration] .status-dot.is-not-connected {
+  background: var(--set-status-not-connected);
+}

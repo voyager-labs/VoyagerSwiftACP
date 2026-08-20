@@ -51,3 +51,4 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 - Leaving an isolated workflow after its review question has been decided.
 - Encoding appearance, OS baseline, geometry, or UI state into candidate IDs and duplicating their stories.
 - Treating a successful build as visual-regression, accessibility, or native-parity proof.
+- Implementing a reusable component without a sibling `.stories.tsx` — Storybook discovers `**/*.stories.tsx`, so a story-less component never appears in Navigation. Every component ships its own story file.

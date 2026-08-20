@@ -1,6 +1,6 @@
 import type { FC } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
-import type { SidebarIconProps } from "../../model/types"
+import type { SidebarIconProps } from "../../model/ui-types"
 
 /** SidebarIconKind → SF Symbol name 매핑 */
 const SF_SYMBOL_MAP: Record<string, string> = {

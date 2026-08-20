@@ -1,7 +1,7 @@
+import { SidebarNavItem } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import { SFSymbol } from "../Foundations/SFSymbol"
 import { LocationShortcuts } from "../Patterns/Sidebar/LocationShortcuts"
-import { SidebarNavItem } from "../UI/Navigation/SidebarNavItem"
 import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../model/types"
 
 export interface SidebarProps {
