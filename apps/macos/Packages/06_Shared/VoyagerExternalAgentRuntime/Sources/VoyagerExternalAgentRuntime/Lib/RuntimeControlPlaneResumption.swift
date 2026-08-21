@@ -14,6 +14,17 @@ public extension RuntimeControlPlane {
         let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
         if case let .persistedTerminal(terminal) = consumption { return terminal }
         guard case let .provider(result) = consumption else { throw RuntimeHostError.invalidEvent }
+        if let terminal = storedTerminalResult(
+            host: hostReference,
+            runReference: result.runReference,
+        ) {
+            return terminal.outcome == result.outcome ? result : terminal
+        }
+        try await validateRestorationResultAdmission(
+            claim,
+            host: hostReference,
+            runReference: result.runReference,
+        )
         if let terminal = try await reconcileConsumedResult(
             result,
             host: hostReference,
@@ -24,7 +35,7 @@ public extension RuntimeControlPlane {
         do {
             return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
         } catch {
-            try? await recoverTerminalPersistenceClaim(host: hostReference, lease: claim.lease)
+            try? await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
             throw error
         }
     }
@@ -48,7 +59,7 @@ public extension RuntimeControlPlane {
             try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw RuntimeHostError.persistenceFailure
         } catch RuntimeRestorationHeartbeatPersistenceError.persistenceFailure {
-            try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw RuntimeHostError.persistenceFailure
         } catch RuntimeProviderTerminalAdmissionError.rejected {
             try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
@@ -63,24 +74,44 @@ public extension RuntimeControlPlane {
         }
     }
 
+    private func validateRestorationResultAdmission(
+        _ claim: RestoredRunClaim,
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+    ) async throws {
+        guard claim.isPersisted else { return }
+        switch restorationHeartbeatDecision(
+            host: host,
+            runReference: runReference,
+            lease: claim.lease,
+            now: restorationClock.now(),
+        ) {
+        case .renewClaim:
+            return
+        case .restoreClaim:
+            try await recoverRestorationClaimAfterExpiry(
+                host: host,
+                runReference: runReference,
+                lease: claim.lease,
+                now: restorationClock.now(),
+            )
+            throw RuntimeHostError.persistenceConflict
+        case .stale:
+            try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            throw RuntimeHostError.persistenceConflict
+        case let .throwHost(error):
+            throw error
+        case .acquireClaim, .beginResume, .adoptPersisted:
+            throw RuntimeHostError.invalidEvent
+        }
+    }
+
     private func resolveResumedHostError(
         _ error: RuntimeHostError,
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
     ) async throws -> RestoredConsumptionResult {
-        switch error {
-        case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
-            break
-        default:
-            if let terminal = try await resumedPersistedTerminal(
-                host,
-                runReference: claim.receipt.runReference,
-                lease: claim.lease,
-            ) {
-                return .persistedTerminal(terminal)
-            }
-        }
-        try await propagateResumedRunFailure(error, host: host, lease: claim.lease)
+        try await resolveResumedFailure(error, claim: claim, host: host)
     }
 
     private func resolveResumedAdapterError(
@@ -88,33 +119,56 @@ public extension RuntimeControlPlane {
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
     ) async throws -> RestoredConsumptionResult {
-        if let terminal = try await resumedPersistedTerminal(
-            host,
-            runReference: claim.receipt.runReference,
-            lease: claim.lease,
-        ) {
-            return .persistedTerminal(terminal)
-        }
-        let normalized = normalizeAdapterError(error)
-        try await interruptResumedRunOrRestoreClaim(host, lease: claim.lease)
-        throw normalized
+        try await resolveResumedFailure(
+            normalizeAdapterError(error),
+            claim: claim,
+            host: host,
+        )
     }
 
-    private func resumedPersistedTerminal(
-        _ hostReference: ExternalAgentSessionReference,
-        runReference: RuntimeRunReference,
-        lease: UInt64,
-    ) async throws -> RuntimeResult? {
-        do {
-            guard let terminal = try await persistedTerminalResult(
-                host: hostReference,
-                runReference: runReference,
-            ) else { return nil }
-            try await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
-            return terminal
-        } catch {
-            try? await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
-            throw error
+    private func resolveResumedFailure(
+        _ error: RuntimeHostError,
+        claim: RestoredRunClaim,
+        host: ExternalAgentSessionReference,
+    ) async throws -> RestoredConsumptionResult {
+        switch error {
+        case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion,
+             .adapterFailure(.processExit, _), .adapterFailure(.transportLoss, _):
+            try await propagateResumedRunFailure(
+                error,
+                host: host,
+                runReference: claim.receipt.runReference,
+                lease: claim.lease,
+            )
+        default:
+            do {
+                if let terminal = try await persistedTerminalResult(
+                    host: host,
+                    runReference: claim.receipt.runReference,
+                ) {
+                    try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+                    return .persistedTerminal(terminal)
+                }
+            } catch is CancellationError {
+                try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+                throw CancellationError()
+            } catch let probeError as RuntimeHostError {
+                switch probeError {
+                case .invalidPersistedState, .unsupportedSchemaVersion:
+                    try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+                    throw probeError
+                case .persistenceConflict, .persistenceFailure:
+                    break
+                default:
+                    throw probeError
+                }
+            }
+            return try await interruptResumedRunOrRestoreClaim(
+                error,
+                receipt: claim.receipt,
+                host: host,
+                lease: claim.lease,
+            )
         }
     }
 
@@ -124,10 +178,30 @@ public extension RuntimeControlPlane {
         try await commit(host: hostReference) { plane, registry in
             guard var session = registry[hostReference],
                   case let .restored(lease) = session.lease,
-                  session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken,
                   let providerReference = session.stored.providerInternalSessionReference,
                   plane.adapters[session.stored.adapterID] != nil
             else { throw RuntimeHostError.invalidEvent }
+            let decision = RuntimeRestoreResumeDecisionTable.decide(
+                .beginResume,
+                on: RuntimeRestoreResumeDecisionTable.Snapshot(
+                    projection: session.stored.projection,
+                    lease: session.lease,
+                    claimState: plane.restorationClaimState(
+                        session.stored.restorationClaim,
+                        now: plane.restorationClock.now(),
+                    ),
+                ),
+            )
+            switch decision {
+            case .beginResume:
+                break
+            case .stale, .restoreClaim:
+                throw RuntimeHostError.persistenceConflict
+            case let .throwHost(error):
+                throw error
+            case .acquireClaim, .renewClaim, .adoptPersisted:
+                throw RuntimeHostError.invalidEvent
+            }
             session.stored = session.stored.withRestorationClaim(plane.makeRestorationClaim())
             session.lease = .resuming(lease)
             registry[hostReference] = session
@@ -171,9 +245,27 @@ public extension RuntimeControlPlane {
         lease: UInt64,
     ) async throws -> RuntimeResult {
         while true {
-            try await Task.sleep(for: restorationHeartbeatInterval)
+            try await restorationClock.sleep(restorationHeartbeatInterval)
             do {
-                try await renewRestorationClaim(host, lease: lease)
+                try await renewRestorationClaim(
+                    host,
+                    runReference: receipt.runReference,
+                    lease: lease,
+                )
+            } catch let error as RuntimeHostError {
+                switch error {
+                case .invalidPersistedState, .unsupportedSchemaVersion:
+                    throw error
+                default:
+                    if let terminal = try await resolveHeartbeatFailure(
+                        error,
+                        host: host,
+                        runReference: receipt.runReference,
+                    ) {
+                        return terminal
+                    }
+                    throw error
+                }
             } catch {
                 if let terminal = try await resolveHeartbeatFailure(
                     error,
@@ -194,6 +286,9 @@ public extension RuntimeControlPlane {
     ) async throws -> RuntimeResult? {
         if error is CancellationError { throw CancellationError() }
         do {
+            if let terminal = storedTerminalResult(host: host, runReference: runReference) {
+                return terminal
+            }
             if let terminal = try await persistedTerminalResult(host: host, runReference: runReference) {
                 return terminal
             }
@@ -218,65 +313,354 @@ public extension RuntimeControlPlane {
     private func propagateResumedRunFailure(
         _ error: RuntimeHostError,
         host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
         lease: UInt64,
     ) async throws -> Never {
         switch error {
         case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
             try await restoreResumptionClaimIfNeeded(host, lease: lease)
             throw error
+        case .adapterFailure(.processExit, _), .adapterFailure(.transportLoss, _):
+            do {
+                let hasPersistedProof = try await fencePersistedOwner(
+                    host,
+                    lease: lease,
+                )
+                if !hasPersistedProof {
+                    deactivateLocalResumptionLeaseIfOwned(
+                        host: host,
+                        runReference: runReference,
+                        lease: lease,
+                    )
+                }
+            } catch {
+                applyCleanupFailedDecision(host: host, runReference: runReference)
+                deactivateLocalResumptionLeaseIfOwned(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
+            }
+            throw error
         default:
-            try await interruptResumedRunOrRestoreClaim(host, lease: lease)
+            try await restoreResumptionClaimIfNeeded(host, lease: lease)
             throw error
         }
     }
 
     private func renewRestorationClaim(
         _ host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
         lease: UInt64,
+    ) async throws {
+        let now = restorationClock.now()
+        switch restorationHeartbeatDecision(
+            host: host,
+            runReference: runReference,
+            lease: lease,
+            now: now,
+        ) {
+        case .renewClaim:
+            do {
+                try await applyRestorationClaimRenewal(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                    expiresAt: now.addingTimeInterval(60),
+                )
+            } catch RuntimeHostError.persistenceConflict {
+                try await repairRestorationClaimAfterConflict(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
+            }
+        case .restoreClaim:
+            try await recoverRestorationClaimAfterExpiry(
+                host: host,
+                runReference: runReference,
+                lease: lease,
+                now: now,
+            )
+            throw RuntimeHostError.persistenceConflict
+        case .stale:
+            try await restoreResumptionClaimIfNeeded(host, lease: lease)
+            throw RuntimeHostError.persistenceConflict
+        case let .throwHost(error):
+            throw error
+        case .acquireClaim, .beginResume, .adoptPersisted:
+            throw RuntimeHostError.invalidEvent
+        }
+    }
+
+    private func recoverRestorationClaimAfterExpiry(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        now: Date,
+    ) async throws {
+        guard let claimState = sessions[host].map({
+            restorationClaimState($0.stored.restorationClaim, now: now)
+        }) else { throw RuntimeHostError.invalidEvent }
+        switch claimState {
+        case .expired:
+            do {
+                try await clearExpiredRestorationClaim(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                    now: now,
+                )
+            } catch RuntimeHostError.persistenceConflict {
+                try? await restoreResumptionClaimIfNeeded(
+                    host,
+                    lease: lease,
+                    fencePersistedOwner: true,
+                )
+            }
+        case .absent:
+            try await restoreResumptionClaimIfNeeded(host, lease: lease)
+        case .ownedLive, .foreignLive:
+            throw RuntimeHostError.invalidEvent
+        }
+    }
+
+    private func applyRestorationClaimRenewal(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        expiresAt: Date,
     ) async throws {
         _ = try await commit(host: host) { plane, registry in
             guard var session = registry[host],
+                  session.stored.runReference == runReference,
                   session.lease == .resuming(lease),
-                  session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken
+                  session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken,
+                  session.stored.restorationClaim?.expiresAt ?? .distantPast > expiresAt.addingTimeInterval(-60)
             else { throw RuntimeHostError.invalidEvent }
-            session.stored = session.stored.withRestorationClaim(plane.makeRestorationClaim())
+            session.stored = session.stored.withRestorationClaim(RuntimeRestorationClaim(
+                ownerToken: plane.restorationOwnerToken,
+                expiresAt: expiresAt,
+            ))
             registry[host] = session
         }
     }
 
-    private func interruptResumedRunOrRestoreClaim(
-        _ hostReference: ExternalAgentSessionReference,
+    private func repairRestorationClaimAfterConflict(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
         lease: UInt64,
     ) async throws {
+        let decision = try await reconcileRestorationClaimAfterConflict(
+            host: host,
+            runReference: runReference,
+            lease: lease,
+        )
+        guard decision == .renewClaim else {
+            try await restoreResumptionClaimIfNeeded(host, lease: lease)
+            throw RuntimeHostError.persistenceConflict
+        }
+
         do {
-            _ = try await commit(host: hostReference) { plane, registry in
-                try plane.interruptTransition(
-                    host: hostReference,
-                    lease: lease,
-                    in: &registry,
+            let now = restorationClock.now()
+            try await applyRestorationClaimRenewal(
+                host: host,
+                runReference: runReference,
+                lease: lease,
+                expiresAt: now.addingTimeInterval(60),
+            )
+        } catch RuntimeHostError.persistenceConflict {
+            _ = try await reconcileRestorationClaimAfterConflict(
+                host: host,
+                runReference: runReference,
+                lease: lease,
+            )
+            throw RuntimeHostError.persistenceConflict
+        }
+    }
+
+    private func reconcileRestorationClaimAfterConflict(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) async throws -> RuntimeRestoreResumeDecisionTable.Decision {
+        try await withPersistedState { plane, loaded in
+            guard let loaded else { throw RuntimeHostError.persistenceConflict }
+            let expectedStored = plane.sessions[host]?.stored
+            plane.sessions = plane.reconciledRegistry(
+                candidate: plane.sessions,
+                persisted: loaded,
+            )
+            guard var session = plane.sessions[host],
+                  session.stored.runReference == runReference
+            else { return .stale }
+
+            if session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken {
+                session.lease = .resuming(lease)
+                plane.sessions[host] = session
+            }
+            let decision = plane.restorationHeartbeatDecision(
+                host: host,
+                runReference: runReference,
+                lease: lease,
+                now: plane.restorationClock.now(),
+            )
+            guard expectedStored != session.stored else {
+                return RuntimeRestoreResumeDecisionTable.decide(
+                    .persistConflict,
+                    on: RuntimeRestoreResumeDecisionTable.Snapshot(
+                        projection: session.stored.projection,
+                        lease: session.lease,
+                        claimState: session.stored.restorationClaim?.ownerToken
+                            == plane.restorationOwnerToken
+                            ? .ownedLive
+                            : .foreignLive,
+                    ),
                 )
             }
+            return decision
+        }
+    }
+
+    private func restorationHeartbeatDecision(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        now: Date,
+    ) -> RuntimeRestoreResumeDecisionTable.Decision {
+        guard let session = sessions[host], session.stored.runReference == runReference else {
+            return .stale
+        }
+        return RuntimeRestoreResumeDecisionTable.decide(
+            .heartbeat,
+            on: RuntimeRestoreResumeDecisionTable.Snapshot(
+                projection: session.stored.projection,
+                lease: session.lease == .resuming(lease) ? .resuming(lease) : session.lease,
+                claimState: restorationClaimState(session.stored.restorationClaim, now: now),
+            ),
+        )
+    }
+
+    private func interruptResumedRunOrRestoreClaim(
+        _ error: RuntimeHostError,
+        receipt: RuntimeLaunchReceipt,
+        host hostReference: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> RestoredConsumptionResult {
+        do {
+            if let terminal = try await interruptAfterConsumptionFailure(
+                receipt: receipt,
+                host: hostReference,
+                lease: lease,
+            ) {
+                return .persistedTerminal(terminal)
+            }
         } catch is CancellationError {
-            try await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
+            try? await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
             throw CancellationError()
         } catch {
-            try await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
-            if let hostError = error as? RuntimeHostError { throw hostError }
-            throw RuntimeHostError.persistenceFailure
+            applyCleanupFailedDecision(
+                host: hostReference,
+                runReference: receipt.runReference,
+            )
+            try? await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
+            if storedTerminalResult(host: hostReference, runReference: receipt.runReference) == nil {
+                if let hostError = error as? RuntimeHostError { throw hostError }
+                throw RuntimeHostError.persistenceFailure
+            }
         }
+        throw error
     }
 
     private func restoreResumptionClaimIfNeeded(
         _ hostReference: ExternalAgentSessionReference,
         lease: UInt64,
+        fencePersistedOwner shouldFencePersistedOwner: Bool = false,
     ) async throws {
-        try await mutateAfterPersistedTransitions { plane in
-            guard var session = plane.sessions[hostReference],
-                  session.lease == .resuming(lease)
-            else { return }
-            session.lease = session.stored.projection.isTerminal ? .none : .restored(lease)
-            plane.sessions[hostReference] = session
+        if shouldFencePersistedOwner {
+            _ = try await fencePersistedOwner(hostReference, lease: lease)
+            return
         }
+        try await mutateAfterPersistedTransitions { plane in
+            plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
+        }
+    }
+
+    private func fencePersistedOwner(
+        _ hostReference: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) async throws -> Bool {
+        try await withPersistedState { plane, loaded in
+            guard let loaded else { return false }
+            plane.sessions = plane.reconciledRegistry(
+                candidate: plane.sessions,
+                persisted: loaded,
+            )
+            plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
+            return true
+        }
+    }
+
+    private func deactivateLocalResumptionLeaseIfOwned(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) {
+        guard var session = sessions[host],
+              session.stored.runReference == runReference,
+              session.lease == .resuming(lease)
+        else { return }
+        session.lease = .none
+        session.revision += 1
+        sessions[host] = session
+    }
+
+    private func clearExpiredRestorationClaim(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        now: Date,
+    ) async throws {
+        try await commit(host: host) { plane, registry in
+            guard var session = registry[host],
+                  session.stored.runReference == runReference,
+                  session.lease == .resuming(lease),
+                  session.stored.restorationClaim?.ownerToken == plane.restorationOwnerToken,
+                  plane.restorationClaimState(session.stored.restorationClaim, now: now) == .expired
+            else { throw RuntimeHostError.persistenceConflict }
+            session.stored = session.stored.withRestorationClaim(nil)
+            session.lease = .none
+            session.revision += 1
+            registry[host] = session
+        }
+    }
+
+    private func restoreLocalResumptionClaimIfNeeded(
+        _ hostReference: ExternalAgentSessionReference,
+        lease: UInt64,
+    ) {
+        guard var session = sessions[hostReference],
+              session.lease == .resuming(lease)
+        else { return }
+        let decision = RuntimeRestoreResumeDecisionTable.decide(
+            .restoreAfterFailure,
+            on: RuntimeRestoreResumeDecisionTable.Snapshot(
+                projection: session.stored.projection,
+                lease: session.lease,
+                claimState: restorationClaimState(
+                    session.stored.restorationClaim,
+                    now: restorationClock.now(),
+                ),
+            ),
+        )
+        if decision == .stale, session.stored.projection.isTerminal {
+            session.lease = .none
+            sessions[hostReference] = session
+            return
+        }
+        guard decision == .restoreClaim else { return }
+        session.lease = .restored(lease)
+        sessions[hostReference] = session
     }
 }
 
