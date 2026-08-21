@@ -180,6 +180,10 @@ public enum ExternalDropDataFlavorNaming {
     /// `UTType`이 확장자를 산출하지 못할 때(dynamic/미지 UTI) 쓰는 단일 기본 확장자.
     public static let defaultExtension = "data"
 
+    /// base name의 UTF-8 바이트 상한. APFS component 한도(255 bytes)에서 확장자와
+    /// 중복 접미사(` <n>`) 공간을 남긴 값이다(코멘트 #3830824367).
+    private static let maxBaseNameUTF8Bytes = 200
+
     /// UTI 기반 확장자. `preferredFilenameExtension`이 없는 pasteboard 전용 UTI
     /// (`public.utf8-plain-text` 등)는 supertypes를 너비우선으로 순회해 확장자를 가진
     /// 가장 가까운 조상의 확장자를 사용한다. 그래도 없으면(dynamic/미지 UTI) fallback 상수.
@@ -230,8 +234,9 @@ public enum ExternalDropDataFlavorNaming {
         return ext.isEmpty ? base : "\(base).\(ext)"
     }
 
-    /// Mail 메시지 제목 기반 `.eml` 파일명. 공백 축약·경로 구분자 치환·180자 제한을
-    /// 적용하고 빈 제목이면 `Mail Message <n>`을 쓰며, 세션 내 중복은 ` <n>` 접미로 회피한다.
+    /// Mail 메시지 제목 기반 `.eml` 파일명. 공백 축약·경로 구분자 치환·파일시스템
+    /// 바이트 제한을 적용하고 빈 제목이면 `Mail Message <n>`을 쓰며, 세션 내 중복은
+    /// ` <n>` 접미로 회피한다.
     public static func mailMessageFilename(
         subject: String?,
         ordinal: Int,
@@ -244,7 +249,9 @@ public enum ExternalDropDataFlavorNaming {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseName = sanitized.isEmpty ? "Mail Message \(ordinal)" : String(sanitized.prefix(180))
+        let baseName = sanitized.isEmpty
+            ? "Mail Message \(ordinal)"
+            : truncatedBaseName(sanitized, maxUTF8Bytes: maxBaseNameUTF8Bytes)
         let filename = "\(baseName).eml"
         guard !usedFilenames.contains(filename.lowercased()) else {
             let duplicate = "\(baseName) \(ordinal).eml"
@@ -255,12 +262,27 @@ public enum ExternalDropDataFlavorNaming {
         return filename
     }
 
+    /// base name을 grapheme 경계에서 UTF-8 바이트 예산 안으로 자른다. 결합 이모지처럼
+    /// 한 Character가 여러 바이트를 차지해도 component 한도를 초과하지 않게 한다.
+    static func truncatedBaseName(_ name: String, maxUTF8Bytes: Int) -> String {
+        guard name.utf8.count > maxUTF8Bytes else { return name }
+        var result = ""
+        var bytes = 0
+        for character in name {
+            let length = String(character).utf8.count
+            if bytes + length > maxUTF8Bytes { break }
+            result.append(character)
+            bytes += length
+        }
+        return result
+    }
+
     private static func isTextFlavor(_ uti: String) -> Bool {
         guard let type = UTType(uti) else { return false }
         return type.conforms(to: .text) || type.conforms(to: .plainText)
     }
 
-    /// 첫 줄을 정리한 base name: trim·공백 축약·경로 구분자 제거·~50자 제한.
+    /// 첫 줄을 정리한 base name: trim·공백 축약·경로 구분자 제거·파일시스템 바이트 제한.
     private static func sanitizedFirstLine(from bytes: Data) -> String? {
         guard let text = String(data: bytes, encoding: .utf8) else { return nil }
         let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
@@ -271,8 +293,8 @@ public enum ExternalDropDataFlavorNaming {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if sanitized.isEmpty { return nil }
-        return String(sanitized.prefix(50))
+        guard !sanitized.isEmpty else { return nil }
+        return truncatedBaseName(sanitized, maxUTF8Bytes: maxBaseNameUTF8Bytes)
     }
 }
 

@@ -2175,6 +2175,29 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
     }
 
+    /// 검증 내용 (VOY-736 리뷰 #3830824367): 결합 이모지처럼 바이트가 큰 문자열도
+    /// 파일시스템 component 한도(APFS 255 UTF-8 bytes) 안으로 잘린다.
+    /// 사전 조건: ZWJ 이모지 200개 제목의 Mail 메시지와 텍스트 첫 줄.
+    /// 기대 결과: 두 생성 파일명 모두 255 bytes 이하다.
+    func testExternalDropNamingTruncatesByFilesystemBytes() {
+        let emojiText = String(repeating: "👨‍👩‍👧‍👦", count: 200)
+
+        var usedFilenames = Set<String>()
+        let mailName = ExternalDropDataFlavorNaming.mailMessageFilename(
+            subject: emojiText,
+            ordinal: 1,
+            usedFilenames: &usedFilenames,
+        )
+        XCTAssertLessThanOrEqual(mailName.utf8.count, 255)
+
+        let textName = ExternalDropDataFlavorNaming.filename(
+            uti: "public.utf8-plain-text",
+            bytes: Data(emojiText.utf8),
+            ordinal: 1,
+        )
+        XCTAssertLessThanOrEqual(textName.utf8.count, 255)
+    }
+
     /// 검증 내용: promise receiver와 data flavor가 섞인 drag가 둘 다 물리화되고 all-promises 배리어가 성립한다.
     /// 사전 조건: [data flavor, promise receiver]를 하나의 세션으로 begin한다.
     /// 기대 결과: data 파일과 promise 파일이 모두 staged되고 `.succeeded` 종단이 온다.
