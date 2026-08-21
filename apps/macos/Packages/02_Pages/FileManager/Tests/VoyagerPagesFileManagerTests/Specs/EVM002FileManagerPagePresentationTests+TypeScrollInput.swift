@@ -90,6 +90,107 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.view(.handleTextInput("z")))
     }
 
+    /// EVM-002-type_scroll_input: collection replacement loading 중 기존 pending target이 있어도
+    /// 이후 유효한 unmatched 입력이 최신 의도가 되므로 stale target을 reset한다.
+    /// - 사전 조건: collection replacement loading으로 List/Grid가 unmount됐고 Alpha target이 pending이다.
+    /// - 기대 결과: 입력 "z"가 resetTypeScrollTarget을 발행해 pending target을 nil로 만든다.
+    func testHandleTextInputUnmatchedResetsPendingTargetDuringCollectionReplacementLoading() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha]
+        state.entryViewLayout.selectedIds = [alpha.id]
+        state.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+        state.entryViewLayout.isCollectionMode = true
+        state.entryViewLayout.isCollectionContentLoading = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        XCTAssertEqual(
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: true,
+                isEntryLoading: false,
+                isCollectionMode: true,
+            ),
+            .collectionReplacementLoading,
+        )
+        XCTAssertTrue(ContentPagePresentationPolicy.collectionReplacementLoading.allowsKeyboardCommandDispatch)
+
+        await store.send(.view(.handleTextInput("z")))
+        await store.receive {
+            guard case .entryViewLayout(.view(.resetTypeScrollTarget)) = $0 else { return false }
+            return true
+        }
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [alpha.id])
+    }
+
+    /// EVM-002-type_scroll_input: 기존 pending target 뒤의 matched 입력은 최신 matching target으로 교체한다.
+    /// - 사전 조건: Alpha target이 pending이고 visible entries에 Beta가 있다.
+    /// - 기대 결과: 입력 "b"가 setTypeScrollTarget(Beta)를 발행하고 selection은 유지된다.
+    func testHandleTextInputMatchedReplacesExistingPendingTarget() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let beta = EntryModel.temporaryFolder(id: "/root/beta", name: "Beta")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha, beta]
+        state.entryViewLayout.selectedIds = [alpha.id]
+        state.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleTextInput("b")))
+        await store.receive {
+            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            return id == beta.id
+        }
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [alpha.id])
+    }
+
+    /// EVM-002-type_scroll_input: invalid/non-printable 입력은 기존 pending target을 보존한다.
+    func testHandleTextInputInvalidPreservesExistingPendingTarget() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha]
+        state.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleTextInput(" ")))
+
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, alpha.id)
+    }
+
+    /// EVM-002-type_scroll_input: app shortcut은 type-scroll pending target을 변경하지 않는다.
+    func testHandleAppShortcutPreservesExistingPendingTypeScrollTarget() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha]
+        state.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleKeyCommand(.init(
+            keyCode: 8,
+            modifiers: [.command],
+            characters: "c",
+            charactersIgnoringModifiers: "c",
+        ))))
+        await store.receive {
+            guard case .entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))) = $0 else {
+                return false
+            }
+            return true
+        }
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, alpha.id)
+    }
+
     /// EVM-002-type_scroll_input: 엔트리가 없으면 type-scroll을 발행하지 않는다.
     /// - 검증 내용: 빈 엔트리 목록에서 유효한 입력도 no-op이다.
     /// - 사전 조건: /root 폴더 페이지, 엔트리 없음

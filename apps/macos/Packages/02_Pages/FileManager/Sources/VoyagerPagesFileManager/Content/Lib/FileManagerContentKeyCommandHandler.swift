@@ -14,8 +14,8 @@ enum FileManagerContentKeyCommandHandler {
     private static let redoSelector = Selector(("redo:"))
 
     /// 커밋된 타자 입력을 type-scroll 타깃으로 라우팅한다.
-    /// 입력이 유효한 단일 문자이고, rename이 진행 중이 아니며, 표시 순서상 첫 매칭 엔트리가
-    /// 있을 때만 setTypeScrollTarget을 발행한다.
+    /// 입력이 유효한 단일 문자이고 rename이 진행 중이 아니면, 표시 순서상 첫 매칭 엔트리로
+    /// target을 교체한다. 매칭이 없으면 이전 pending target을 reset한다.
     static func typeScrollEffect(
         for text: String,
         state: FileManagerContentState,
@@ -27,7 +27,10 @@ enum FileManagerContentKeyCommandHandler {
 
         let entries = typeScrollCandidateEntries(state: state)
         guard let firstMatch = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: entries, inputText: text)
-        else { return .none }
+        else {
+            guard state.entryViewLayout.pendingTypeScrollTargetId != nil else { return .none }
+            return .send(.entryViewLayout(.view(.resetTypeScrollTarget)))
+        }
 
         return .send(.entryViewLayout(.view(.setTypeScrollTarget(firstMatch))))
     }
