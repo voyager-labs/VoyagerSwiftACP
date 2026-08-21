@@ -147,6 +147,14 @@ struct EntryOpenOperationsReducer {
                     try await entryOpenClient.revealInFinder(urls)
                 }
 
+            case let .open(.syncQuickLookSelection(paths, selectedIndex)):
+                guard !paths.isEmpty else { return .none }
+                let urls = paths.map { URL(fileURLWithPath: $0) }
+                let entryQuickLookClient = entryQuickLookClient
+                return .run { _ in
+                    await entryQuickLookClient.syncQuickLookSelection(urls, selectedIndex)
+                }
+
             default:
                 return .none
             }

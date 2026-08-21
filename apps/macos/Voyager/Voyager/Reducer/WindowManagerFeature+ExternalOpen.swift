@@ -77,6 +77,7 @@ extension WindowManagerFeature {
         let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
         for windowID in ownedWindowIDs {
             state.closingWindowIDs.insert(windowID)
+            clearWindowFocus(windowID, state: &state)
             effects.append(.run { [fileManagerWindowClient] _ in
                 await fileManagerWindowClient.close(windowID)
                 await fileManagerWindowClient.finalizeClose(windowID)
