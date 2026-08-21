@@ -127,13 +127,16 @@ public struct EntryViewLayoutState: Equatable {
     }
 
     mutating func synchronizeEntries(_ entries: [EntryModel]) {
+        var prospectiveState = self
+        prospectiveState.entries = entries
+        let pendingTypeScrollTargetSurvives = pendingTypeScrollTargetId.map { targetID in
+            prospectiveState.hierarchyProjectionIsActive
+                ? prospectiveState.visibleSelectableEntryIDs(isNormalDirectoryPage: true).contains(targetID)
+                : entries.contains(where: { $0.id == targetID })
+        } ?? true
         self.entries = entries
-        // 진행 중인 collection follow-up batch/metadata 동기화가 throttle cooldown 동안
-        // 유효한 type-scroll target을 drop하지 않도록, 대상 id가 여전히 entries에 있으면 보존한다.
-        // 대상 id가 사라지면(stale) established owner(coordinator reset)가 아닌 여기서 안전하게 nil로 정리한다.
-        if let targetID = pendingTypeScrollTargetId,
-           !entries.contains(where: { $0.id == targetID })
-        {
+        // Incoming roots를 반영한 hierarchy projection만 render throttle을 통과할 target으로 인정한다.
+        if !pendingTypeScrollTargetSurvives {
             pendingTypeScrollTargetId = nil
         }
         reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
