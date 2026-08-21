@@ -19102,7 +19102,7 @@ SELECT
     'macos',
     'kMDItemFSName',
     'system',
-    'categorical',
+    'string',
     'one',
 1,
 1,

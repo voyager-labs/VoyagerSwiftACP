@@ -8,8 +8,8 @@ package seeds
 var generatedSeedMetadata = SeedMetadata{
 	SeedOrdinal:           1,
 	SystemRegistryVersion: "2.4.1",
-	SQLSHA256:             "18772d4ba212b796224ff8497faeeb8a30f2ee1750b1f0b623fba63d554646d0",
-	DatasetSHA256:         "f11f29392a27c9ca99b9b2567e76fc8dd4e3d0825766124d0735fb1562d93a4b",
+	SQLSHA256:             "bafb313b7880078ab33e3211f5653b28c0747a84f0e589b23931d4a48502536c",
+	DatasetSHA256:         "5776e929fe075c5aec482bb78efa0acac3f84bba21ac18b49f5a49b1b6c96dee",
 	DefinitionCount:       278,
 	DescriptorCount:       294,
 	BindingCount:          296,
