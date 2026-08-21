@@ -26,14 +26,37 @@
   font-family: inherit;
 }
 
+[data-onboarding-illustration] .vc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-weight: var(--fm-weight-medium);
+  line-height: 1.1;
+}
+
+/* 네이티브 .buttonStyle(.plain) 번역: 기본 라벨 색상 유지 */
+[data-onboarding-illustration] .vc-button.subtle:not(:disabled) {
+  color: var(--fm-text-primary);
+}
+
 [data-onboarding-illustration] .vc-button.primary {
-  border-color: var(--onb-accent);
+  border-color: color-mix(in srgb, var(--onb-accent) 82%, var(--swiftui-black));
   background: var(--onb-accent);
+  color: var(--swiftui-black);
 }
 
 [data-onboarding-illustration] .vc-button.primary:active {
   border-color: var(--onb-accent-pressed);
   background: var(--onb-accent-pressed);
+}
+
+[data-onboarding-illustration] .vc-button.primary:disabled {
+  border-color: color-mix(in srgb, var(--fm-separator) 50%, transparent);
+  background: var(--fm-control);
+  box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
+  color: var(--fm-text-quaternary);
+  opacity: 1;
 }
 
 .onb-stage {
@@ -43,8 +66,7 @@
   place-items: center;
   overflow: auto;
   padding: 32px;
-  background: radial-gradient(circle at 22% 18%, var(--onb-accent-muted), transparent 34rem),
-    var(--macos-under-page-background-color);
+  background: var(--macos-under-page-background-color);
 }
 
 .onb-window {
@@ -55,7 +77,8 @@
   overflow: hidden;
   border: 1px solid var(--macos-window-hairline);
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--onb-accent-muted), transparent 42%), var(--onb-window);
+  background: radial-gradient(circle at 22% 18%, var(--onb-accent-muted), transparent 34rem),
+    linear-gradient(135deg, var(--onb-accent-muted), transparent 42%), var(--onb-window);
   box-shadow: var(--macos-window-shadow);
 }
 
@@ -73,7 +96,7 @@
   box-sizing: border-box;
   flex-direction: column;
   gap: 12px;
-  padding: 26px 24px 16px;
+  padding: 38px 24px 16px;
 }
 
 .onb-topbar {
@@ -184,12 +207,17 @@
   }
 
   .onb-topbar {
-    grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto max-content;
+  }
+
+  .onb-topbar .vc-button {
+    white-space: nowrap;
+    font-size: var(--fm-font-size-caption);
   }
 
   .onb-content {
-    width: min(70%, 720px);
-    min-width: 560px;
+    width: min(720px, 100%, max(70%, 560px));
+    min-width: 0;
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
     align-content: stretch;
