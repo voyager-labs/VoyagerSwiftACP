@@ -376,6 +376,38 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard).isEmpty)
     }
 
+    /// EOP-002 (코멘트 #3826760211): `NSFilenamesPboardType`만 제공하는 드롭이 validate 단계에서
+    /// `.copy`를 제안한 뒤 accept가 빈 source로 거절되는 불일치를 회귀 검증한다.
+    /// - 검증 내용: legacy filename pasteboard에서 sourcePaths(from:)이 경로를 추출하고,
+    ///   Grid acceptDrop이 `.copy`로 수락해 `.dropItems`를 emit한다.
+    /// - 사전 조건: `NSFilenamesPboardType`만 노출하는 외부 drop.
+    /// - 기대 결과: sourcePaths가 [legacy path], accept true, dropItems에 legacy path가 담긴다.
+    func testLegacyFilenameOnlyDropExtractsPathAndAccepts() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let legacyPaths = ["/source/legacy.txt"]
+
+        let pasteboard = DragInfoFixture.makeLegacyFilenamePasteboard(paths: legacyPaths)
+        XCTAssertEqual(
+            EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard),
+            legacyPaths,
+            "legacy filename을 경로로 추출해야 한다",
+        )
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let grid = EntryGridCoordinator(store: store)
+        grid.validatedDropDestinationPath = "/destination"
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+
+        let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(recorder.emitted.first?.sourcePaths, legacyPaths)
+        XCTAssertEqual(acquisition.beginCalls.count, 0, "legacy filename-only는 acquisition이 아니라 path 복사여야 한다")
+    }
+
     /// EOP-002: accept-reject terminal path는 stale transport를 정리한다.
     func testAcceptRejectClearsStaleTransport() {
         let transport = DragTransport(paths: ["/stale/internal"])
@@ -2637,6 +2669,16 @@ private extension DragInfoFixture {
         item.setString("https://example.com/not-a-file", forType: .fileURL)
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
+        return pasteboard
+    }
+
+    /// `NSFilenamesPboardType`만 노출하는 legacy filename 드롭 pasteboard를 만든다.
+    /// file URL/promise/data flavor는 노출하지 않아 sourcePaths(from:)이 legacy filename
+    /// 문자열을 경로로 추출하는지 검증하는 데 쓴다 (코멘트 #3826760211).
+    static func makeLegacyFilenamePasteboard(paths: [String]) -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("EOP002-legacy-filename-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.setPropertyList(paths, forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
         return pasteboard
     }
 }

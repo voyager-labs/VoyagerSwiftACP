@@ -82,8 +82,8 @@ enum EntryViewLayoutDropValidationAdapter {
     }
 
     /// 외부 drag의 active pasteboard에서 source path를 원자적으로 추출한다.
-    /// `pasteboardItems`를 전체 검사해 모든 item이 실제 file URL일 때만 반환하고,
-    /// 하나라도 지원하지 않는 item이 있으면 전체 session을 거부(빈 배열)한다.
+    /// `pasteboardItems`를 전체 검사해 모든 item이 실제 file URL이거나 legacy filename일 때만
+    /// 반환하고, 하나라도 지원하지 않는 item이 있으면 전체 session을 거부(빈 배열)한다.
     /// `readObjects`처럼 지원 항목만 조용히 걸러내는 동작은 하지 않는다.
     /// 입력 순서를 보존하면서 중복 경로를 제거한다.
     @MainActor
@@ -93,10 +93,21 @@ enum EntryViewLayoutDropValidationAdapter {
         var seen: Set<String> = []
         paths.reserveCapacity(items.count)
         for item in items {
-            guard let url = ExternalDropNegotiation.fileURL(from: item) else { return [] }
-            let path = url.standardizedFileURL.path
-            if seen.insert(path).inserted {
-                paths.append(path)
+            if let url = ExternalDropNegotiation.fileURL(from: item) {
+                let path = url.standardizedFileURL.path
+                if seen.insert(path).inserted {
+                    paths.append(path)
+                }
+            } else if let filename = item.string(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) {
+                // legacy filename-only 드롭(코멘트 #3826760211): file URL이 없는 item도
+                // legacy filename 문자열을 경로로 추출해 validate/accept를 일관되게 만든다.
+                // 그래야 validate에서 `.copy`를 제안한 뒤 accept가 빈 source로 거절되는
+                // 불일치가 사라진다.
+                if seen.insert(filename).inserted {
+                    paths.append(filename)
+                }
+            } else {
+                return []
             }
         }
         return paths
