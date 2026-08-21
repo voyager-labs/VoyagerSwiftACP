@@ -24,6 +24,7 @@ var (
 type UnifiedService struct {
 	mountRegistry MountRegistry
 	adapters      map[string]ResourceAdapterBinding
+	catalog       domainentry.PropertyCatalogSnapshot
 	cursor        *compositeCursorCodec
 	clock         func() time.Time
 	observed      atomic.Uint64
@@ -66,6 +67,48 @@ func NewUnifiedService(registry MountRegistry, bindings []ResourceAdapterBinding
 		adapters[binding.SourceRef.SourceInstanceID] = binding
 	}
 	return &UnifiedService{mountRegistry: registry, adapters: adapters, cursor: codec, clock: clock}, nil
+}
+
+func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAdapterBinding, catalog domainentry.PropertyCatalogSnapshot, cursorKey []byte, clock func() time.Time) (*UnifiedService, error) {
+	if err := catalog.Validate(); err != nil {
+		return nil, ErrInvalidService
+	}
+	service, err := NewUnifiedService(registry, bindings, cursorKey, clock)
+	if err != nil {
+		return nil, err
+	}
+	service.catalog = catalog
+	return service, nil
+}
+
+func (service *UnifiedService) propertyDefinitions(requestedProperties []string) map[string]domainentry.PropertyDefinition {
+	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(service.catalog.Definitions))
+	for _, definition := range service.catalog.Definitions {
+		definitions[definition.PropertyID] = definition
+	}
+	resolved := make(map[string]domainentry.PropertyDefinition, len(requestedProperties))
+	for _, requested := range requestedProperties {
+		for _, term := range service.catalog.Terms {
+			if term.TermValue != requested {
+				continue
+			}
+			definition, ok := definitions[term.PropertyID]
+			if !ok {
+				continue
+			}
+			propertyDefinition, err := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
+				PropertyID: definition.PropertyID, IdentityScheme: definition.IdentityScheme, Namespace: definition.Namespace,
+				Key: definition.CanonicalKey, DisplayName: definition.DisplayName, ValueType: definition.ValueType,
+				Cardinality: definition.Cardinality, Editable: definition.Editable, Provenance: definition.Provenance,
+				ValidationRules: []domainentry.ValidationRule{}, Unit: definition.Unit,
+			})
+			if err == nil {
+				resolved[requested] = propertyDefinition
+			}
+			break
+		}
+	}
+	return resolved
 }
 
 func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedListRequest) (UnifiedListResult, error) {
@@ -143,6 +186,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		if requestErr != nil {
 			return UnifiedListResult{}, newApplicationError("internal_error", "internal_error", ErrApplicationAdapterFailure)
 		}
+		adapterRequest.PropertyDefinitions = service.propertyDefinitions(request.RequestedProperties)
 		adapterResult, adapterErr := scope.adapter.List(ctx, adapterRequest)
 		if adapterErr != nil {
 			if errors.Is(adapterErr, source.ErrInvalidCursor) {
@@ -245,6 +289,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if err != nil {
 		return ResolveResult{}, newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 	}
+	adapterRequest.PropertyDefinitions = service.propertyDefinitions(request.RequestedProperties)
 	adapterResult, adapterErr := binding.Adapter.Resolve(ctx, adapterRequest)
 	if adapterErr != nil {
 		return ResolveResult{}, mapCanonicalAdapterError(adapterErr)

@@ -256,6 +256,24 @@ func mustUnifiedService(t *testing.T, registry *mount.Registry, bindings []Resou
 	return service
 }
 
+func TestPropertyDefinitionsResolveCatalogTerms(t *testing.T) {
+	titleID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: titleID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	definitions := service.propertyDefinitions([]string{"title"})
+	definition, ok := definitions["title"]
+	if !ok || definition.PropertyID != titleID || definition.Key != "common.title" || definition.Namespace != "system" {
+		t.Fatalf("title definition = %#v", definition)
+	}
+}
+
 func adapterListResultFixture(t *testing.T, sourceRef domainentry.SourceRef, key, relative string, cursor *string) source.AdapterListResult {
 	t.Helper()
 	item := adapterEntryFixture(t, sourceRef, key, relative)

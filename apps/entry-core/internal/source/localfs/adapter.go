@@ -451,7 +451,7 @@ func (adapter *ResourceAdapter) List(ctx context.Context, request source.Adapter
 		if locatorErr != nil {
 			return source.AdapterListResult{}, locatorErr
 		}
-		items[index], err = source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
+		items[index], err = source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, request.PropertyDefinitions, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
 		if err != nil {
 			return source.AdapterListResult{}, source.ErrAdapterFailure
 		}
@@ -500,7 +500,7 @@ func (adapter *ResourceAdapter) Resolve(ctx context.Context, request source.Adap
 	if err != nil {
 		return source.AdapterResolveResult{}, source.ErrAdapterFailure
 	}
-	canonical, err := source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
+	canonical, err := source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, request.PropertyDefinitions, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
 	if err != nil {
 		return source.AdapterResolveResult{}, source.ErrAdapterFailure
 	}

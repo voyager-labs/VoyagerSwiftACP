@@ -496,6 +496,7 @@ type AdapterListRequest struct {
 	PageQuota           int
 	ChildCursor         *string
 	RequestedProperties []string
+	PropertyDefinitions map[string]entry.PropertyDefinition
 }
 
 func NewAdapterListRequest(sourceRef entry.SourceRef, mountRef entry.MountRef, relativePath string, pageQuota int, childCursor *string, requestedProperties []string) (AdapterListRequest, error) {
@@ -613,6 +614,7 @@ type AdapterResolveRequest struct {
 	EntryRef            *entry.EntryRef
 	RelativePath        *string
 	RequestedProperties []string
+	PropertyDefinitions map[string]entry.PropertyDefinition
 }
 
 func NewAdapterResolveRequest(sourceRef entry.SourceRef, mountRef entry.MountRef, entryRef *entry.EntryRef, relativePath *string, requestedProperties []string) (AdapterResolveRequest, error) {
@@ -758,10 +760,10 @@ func CanonicalizeSourceItem(item SourceItem, requestedProperties []string, obser
 	if err != nil {
 		return AdapterEntry{}, err
 	}
-	return CanonicalizeSourceItemWithLocator(item, locatorRef, requestedProperties, observedAt, sourceRevision, availability, freshness, provenance)
+	return CanonicalizeSourceItemWithLocator(item, locatorRef, requestedProperties, nil, observedAt, sourceRevision, availability, freshness, provenance)
 }
 
-func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.LocatorRef, requestedProperties []string, observedAt time.Time, sourceRevision entry.Revision, availability entry.Availability, freshness entry.Freshness, provenance entry.PropertyProvenance) (AdapterEntry, error) {
+func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.LocatorRef, requestedProperties []string, propertyDefinitions map[string]entry.PropertyDefinition, observedAt time.Time, sourceRevision entry.Revision, availability entry.Availability, freshness entry.Freshness, provenance entry.PropertyProvenance) (AdapterEntry, error) {
 	if item.Validate() != nil || locatorRef.Validate() != nil || !validRequestedProperties(requestedProperties) || sourceRevision.Validate() != nil || availability.ValidateCanonical() != nil || freshness.ValidateCanonical() != nil {
 		return AdapterEntry{}, ErrAdapterFailure
 	}
@@ -784,7 +786,7 @@ func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.Locator
 			if property.Key != requested {
 				continue
 			}
-			value, valueErr := canonicalPropertyValue(property, ref.EntryID, observedAt, sourceRevisionValue, provenance)
+			value, valueErr := canonicalPropertyValue(property, propertyDefinitions[requested], ref.EntryID, observedAt, sourceRevisionValue, provenance)
 			if valueErr != nil {
 				return AdapterEntry{}, valueErr
 			}
@@ -805,12 +807,14 @@ func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.Locator
 	return result, nil
 }
 
-func canonicalPropertyValue(property entry.Property, entryID string, observedAt time.Time, sourceRevision entry.SourceRevision, provenance entry.PropertyProvenance) (entry.PropertyValue, error) {
-	propertyID, err := entry.RegistryPropertyID(property.Key)
-	if err != nil {
-		return entry.PropertyValue{}, ErrAdapterFailure
+func canonicalPropertyValue(property entry.Property, definition entry.PropertyDefinition, entryID string, observedAt time.Time, sourceRevision entry.SourceRevision, provenance entry.PropertyProvenance) (entry.PropertyValue, error) {
+	if definition.PropertyID == (entry.PropertyID{}) {
+		propertyID, err := entry.RegistryPropertyID(property.Key)
+		if err != nil {
+			return entry.PropertyValue{}, ErrAdapterFailure
+		}
+		definition = entry.PropertyDefinition{PropertyID: propertyID, IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived, Namespace: "adapter", Key: property.Key, DisplayName: property.Key, Cardinality: entry.PropertyCardinalityOne, Provenance: provenance, ValidationRules: []entry.ValidationRule{}}
 	}
-	definition := entry.PropertyDefinition{PropertyID: propertyID, IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived, Namespace: "adapter", Key: property.Key, DisplayName: property.Key, Cardinality: entry.PropertyCardinalityOne, Provenance: provenance, ValidationRules: []entry.ValidationRule{}}
 	var payload entry.PropertyPayload
 	switch property.Value.Type {
 	case entry.PropertyValueTypeString:
