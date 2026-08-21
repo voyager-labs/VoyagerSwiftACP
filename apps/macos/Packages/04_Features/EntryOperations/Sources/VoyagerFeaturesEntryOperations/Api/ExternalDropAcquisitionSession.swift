@@ -45,11 +45,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var receivedCount: Int = 0
     /// 결정적(파일명 있는 수신기 + data flavor) 기여 중 실제 수신된 수. 종단 판정에 쓴다.
     private var receivedDeterminateCount: Int = 0
-    /// fileNames가 빈(기대 콜백 수 미정) 수신기의 index 집합. 미정 수신기는 카운트 기반
-    /// 성공이 아니라 취소-재조정(provider가 userCancelled로 완료를 알림) 경로로만 종단한다.
+    /// fileNames가 빈(기대 콜백 수 미정) 수신기의 index 집합. 미정 수신기는 부분 수신을
+    /// 성공으로 확정하지 않고 callback 단계에서 fail-closed한다.
     private var indeterminateReceivers: Set<Int> = []
-    /// 명시적 취소-재조정(userCancelled + staged file)으로 완료된 미정 수신기의 index 집합.
-    private var completedIndeterminateReceivers: Set<Int> = []
     private var receivedStagedPaths: Set<String> = []
     /// data flavor 파일명 충돌을 회피하기 위한 세션 내 사용 파일명 집합(canonical key).
     private var usedStagedFilenames: Set<String> = []
@@ -99,8 +97,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 
     /// receive 시작 후 receiver.fileNames를 기준으로 예상 cardinality를 확정한다.
     /// data flavor는 begin에서 이미 물리화되므로 `dataCount`를 결정적 cardinality에 더한다.
-    /// fileNames가 빈 수신기는 기대 콜백 수가 미정이므로 결정적 수에 넣지 않고 취소-재조정
-    /// 경로로만 종단한다. 그 외 결정적/미정 기여가 모두 비면 즉시 타입화 실패로 처리한다.
+    /// fileNames가 빈 수신기는 기대 콜백 수가 미정이므로 결정적 수에 넣지 않는다. 파일별
+    /// callback만으로 완료를 추측하지 않고, staging 파일을 받더라도 fail-closed한다.
     func finalizeCardinality(fileNamesByReceiver: [[String]], dataCount: Int) {
         lock.lock()
         guard phase == .acquiring else {
@@ -339,17 +337,20 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             lock.unlock()
             return
         }
-        guard validateAndReserveCallbackURL(resolvedURL) else { return }
+        guard let claimedURL = validateAndReserveCallbackURL(resolvedURL) else {
+            lock.unlock()
+            return
+        }
         if error != nil { Self.logger.info("callback error reconciled by staged file") }
 
         // 결정적 수신기에서 마지막 콜백이 URL과 error를 함께 전달하면, registerReceivedFile이
         // cardinality 충족으로 먼저 `.succeeded`를 내고(phase가 .acquiring을 벗어남) 뒤의 error
         // 검사가 항상 거짓이 되어 오류가 무시될 수 있다. hasError를 넘겨 결정적 성공을 억제해
-        // `.callbackError` 종단을 보장한다(코멘트 #3826514658). 미정 수신기 것은 기존 계약
-        // (취소 error + staged file = 성공)대로 재조정 종단 판정에 맡긴다.
+        // `.callbackError` 종단을 보장한다(코멘트 #3826514658). 미정 수신기는 파일별 취소
+        // callback을 receiver-level 완료로 추측하지 않고 `.indeterminateCardinality`로 실패한다.
         registerReceivedFile(
             receiverIndex: receiverIndex,
-            url: resolvedURL,
+            url: claimedURL,
             callbackOrdinal: callbackOrdinal,
             hasError: error != nil,
             cancelReconciled: error != nil && isUserCancelled(error),
@@ -360,23 +361,30 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func validateAndReserveCallbackURL(_ url: URL) -> Bool {
+    private func validateAndReserveCallbackURL(_ url: URL) -> URL? {
         guard fileManager.fileExists(url.path) else {
             emitTerminalLocked(.failed(sessionID, .fileAbsent))
-            lock.unlock()
-            return false
+            return nil
         }
         guard isInsideStaging(url) else {
             emitTerminalLocked(.failed(sessionID, .outsideStaging))
-            lock.unlock()
-            return false
+            return nil
         }
         guard receivedStagedPaths.insert(url.standardizedFileURL.path).inserted else {
             emitTerminalLocked(.failed(sessionID, .callbackError))
-            lock.unlock()
-            return false
+            return nil
         }
-        return true
+        guard let claimedURL = staging.claim(url) else {
+            emitTerminalLocked(.failed(sessionID, .callbackError))
+            return nil
+        }
+        guard isInsideStaging(claimedURL) else {
+            try? fileManager.removeItem(claimedURL)
+            emitTerminalLocked(.failed(sessionID, .outsideStaging))
+            return nil
+        }
+        receivedStagedPaths.insert(claimedURL.standardizedFileURL.path)
+        return claimedURL
     }
 
     private func recordCallback(receiverIndex: Int) -> Int? {
@@ -473,10 +481,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         for ((receiverIndex, callbackOrdinal), url) in zip(pending, candidates) {
             pendingCancelledCallbacks.removeValue(forKey: receiverIndex)
             callbackErrorTimeouts.removeValue(forKey: receiverIndex)?.cancel()
-            guard receivedStagedPaths.insert(url.standardizedFileURL.path).inserted else { continue }
+            guard let claimedURL = validateAndReserveCallbackURL(url) else { return }
             registerReceivedFile(
                 receiverIndex: receiverIndex,
-                url: url,
+                url: claimedURL,
                 callbackOrdinal: callbackOrdinal,
                 cancelReconciled: true,
             )
@@ -503,6 +511,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             .filter {
                 fileManager.fileExists($0.path)
                     && isInsideStaging($0)
+                    && !staging.isOwnedContainer($0)
                     && !receivedStagedPaths.contains($0.standardizedFileURL.path)
             }
             .sorted { $0.path < $1.path }
@@ -537,10 +546,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             // 정상 성공 콜백은 예상 cardinality를 알 수 없으므로 `.emptyCardinality`로 실패한다.
             // 그 외 오류 콜백은 호출자(`handleCallback`)가 `.callbackError`로 종단한다.
             if cancelReconciled {
-                completedIndeterminateReceivers.insert(receiverIndex)
-                if sessionIsCompleteLocked() {
-                    emitTerminalLocked(.succeeded(sessionID))
-                }
+                emitTerminalLocked(.failed(sessionID, .indeterminateCardinality))
             } else if !hasError {
                 emitTerminalLocked(.failed(sessionID, .emptyCardinality))
             }
@@ -704,12 +710,11 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 가 모두 수신됐으며, 모든 미정 수신기가 명시적 취소-재조정으로 완료됐을 때 성공이다.
     /// caller는 lock을 보유해야 한다.
     private func sessionIsCompleteLocked() -> Bool {
-        guard cardinalityFinalized else { return false }
+        guard cardinalityFinalized, indeterminateReceivers.isEmpty else { return false }
         return receivedDeterminateCount >= expectedCardinality
             && expectedCardinalityByReceiver.allSatisfy { receiverIndex, expected in
                 callbackCounts[receiverIndex, default: 0] == expected
             }
-            && completedIndeterminateReceivers.isSuperset(of: indeterminateReceivers)
     }
 }
 
@@ -730,6 +735,7 @@ extension ExternalDropAcquisitionSession {
 private final class StagingDirectory {
     let path: String
     private let fileManager: FileManagerClient
+    private let ownedPath: URL
     private(set) var isRemoved = false
     /// 파일시스템 관찰 소스. 외부에서 attach/teardown을 관리한다.
     var observer: DispatchSourceFileSystemObject?
@@ -737,6 +743,31 @@ private final class StagingDirectory {
     init(path: String, fileManager: FileManagerClient) {
         self.path = path
         self.fileManager = fileManager
+        ownedPath = URL(fileURLWithPath: path, isDirectory: true)
+            .appendingPathComponent(".received", isDirectory: true)
+        try? fileManager.createDirectory(ownedPath, true, nil)
+    }
+
+    func isOwnedContainer(_ url: URL) -> Bool {
+        url.standardizedFileURL == ownedPath.standardizedFileURL
+    }
+
+    func claim(_ sourceURL: URL) -> URL? {
+        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
+        var suffix = 2
+        while fileManager.fileExists(candidate.path) {
+            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
+            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
+            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
+            candidate = ownedPath.appendingPathComponent(suffixedName)
+            suffix += 1
+        }
+        do {
+            try fileManager.moveItem(sourceURL, candidate)
+            return candidate
+        } catch {
+            return nil
+        }
     }
 
     func attachObserver(_ observer: DispatchSourceFileSystemObject) {

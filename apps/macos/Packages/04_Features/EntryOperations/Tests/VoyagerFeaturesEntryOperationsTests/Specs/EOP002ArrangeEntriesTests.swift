@@ -2194,6 +2194,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let stagedData = staging.appendingPathComponent("Clipping 1.json")
         let stagedPromise = staging.appendingPathComponent("promise.txt")
+        let claimedPromise = staging.appendingPathComponent(".received/promise.txt")
         try Data("promise".utf8).write(to: stagedPromise)
         receiver.invokeReader(url: stagedPromise, error: nil)
 
@@ -2203,7 +2204,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.map(\.stagedPath), [stagedData.path, stagedPromise.path])
+        XCTAssertEqual(received.map(\.stagedPath), [stagedData.path, claimedPromise.path])
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
@@ -2411,7 +2412,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             return file
         }
         XCTAssertEqual(received.count, 2)
-        XCTAssertEqual(received.map(\.stagedPath), [first.path, second.path])
+        XCTAssertEqual(
+            received.map(\.stagedPath),
+            [
+                staging.appendingPathComponent(".received/first.eml").path,
+                staging.appendingPathComponent(".received/second.eml").path,
+            ],
+        )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
@@ -2450,7 +2457,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             return file
         }
         XCTAssertEqual(received.count, 2)
-        XCTAssertEqual(received.map(\.stagedPath), [first.path, second.path])
+        XCTAssertEqual(
+            received.map(\.stagedPath),
+            [
+                staging.appendingPathComponent(".received/first.eml").path,
+                staging.appendingPathComponent(".received/second.eml").path,
+            ],
+        )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
@@ -2553,7 +2566,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(received.count, 2)
         XCTAssertEqual(received.map(\.itemOrdinal), [1, 2])
         XCTAssertEqual(received.map(\.callbackOrdinal), [1, 2])
-        XCTAssertEqual(received.map(\.stagedPath), [a.path, b.path])
+        XCTAssertEqual(
+            received.map(\.stagedPath),
+            [
+                staging.appendingPathComponent(".received/a.txt").path,
+                staging.appendingPathComponent(".received/b.txt").path,
+            ],
+        )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
@@ -2587,16 +2606,19 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         }
         XCTAssertEqual(received.map(\.itemOrdinal), [1, 2, 3])
         XCTAssertEqual(received.map(\.callbackOrdinal), [1, 2, 3])
-        XCTAssertEqual(received.map(\.stagedPath), urls.map(\.path))
+        XCTAssertEqual(
+            received.map(\.stagedPath),
+            urls.map { staging.appendingPathComponent(".received/\($0.lastPathComponent)").path },
+        )
         XCTAssertTrue(received.allSatisfy { $0.stagedPath.hasPrefix(request.stagingDirectory) })
     }
 
-    /// EOP-002-import_external_objects: 오류 콜백 URL이 틀려도 유일한 실제 promise 파일을 수용한다.
-    /// provider가 staging에 파일을 쓴 뒤 외부의 존재하지 않는 URL과 취소를 보고할 수 있다.
-    /// - 검증 내용: callback URL 대신 staging의 유일한 미등록 파일로 수신·성공 이벤트가 난다.
-    /// - 사전 조건: receiver가 파일을 staging에 쓴 뒤 잘못된 URL과 취소 오류를 보고한다.
-    /// - 기대 결과: 원본 파일 `.received` 후 `.succeeded(sessionID)`가 emit된다.
-    func testExternalDropAcquisition_callbackErrorWithStagedFileSucceeds() async throws {
+    /// EOP-002-import_external_objects: cardinality를 알 수 없는 receiver의 취소 재조정은
+    /// 파일을 받았더라도 부분 수신을 성공으로 확정하지 않는다.
+    /// - 검증 내용: callback URL 대신 staging의 유일한 미등록 파일을 찾더라도 실패한다.
+    /// - 사전 조건: receiver가 파일을 staging에 쓴 뒤 외부의 존재하지 않는 URL과 취소 오류를 보고한다.
+    /// - 기대 결과: `.received` 후 `.failed(.indeterminateCardinality)`가 emit된다.
+    func testExternalDropAcquisition_callbackErrorWithStagedFileFailsClosed() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("CallbackError")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2617,19 +2639,48 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(
-            received.map { URL(fileURLWithPath: $0.stagedPath).resolvingSymlinksInPath().path },
-            [message.resolvingSymlinksInPath().path],
-        )
-        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(received.map { URL(fileURLWithPath: $0.stagedPath).lastPathComponent }, ["message.eml"])
+        XCTAssertEqual(events.last, .failed(request.sessionID, .indeterminateCardinality))
     }
 
-    /// EOP-002-import_external_objects (VOY-736 후속): 빈 fileNames 수신기가 명시적 취소-재조정으로
-    /// 완료돼도 결정적(이름 있는) 수신기 기여가 남아 있으면 `.succeeded`를 내지 않는다.
-    /// - 검증 내용: 미정 수신기 재조정만으로는 성공하지 않고, 결정적 수신기 콜백 후에야 성공한다.
-    /// - 사전 조건: 빈 fileNames receiver와 "a.txt" receiver를 함께 begin하고 staging 파일을 쓴다.
-    /// - 기대 결과: 미정 재조정 후 종단이 없고, 결정적 콜백 후 `.succeeded`가 온다.
-    func testExternalDropAcquisition_mixedReceiverBarrierHoldsUntilNamedCallback() async throws {
+    /// EOP-002-import_external_objects: callback 시점에 확보한 staging identity는 이후 provider가
+    /// 원래 경로를 symlink로 바꿔도 placement에서 외부 파일을 읽지 않는다.
+    func testExternalDropAcquisition_claimsCallbackFileBeforePlacement() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("ClaimedCallbackFile")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["message.eml"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let source = staging.appendingPathComponent("message.eml")
+        let outside = temporaryRoot.appendingPathComponent("outside.eml")
+        try Data("safe".utf8).write(to: source)
+        try Data("outside".utf8).write(to: outside)
+
+        receiver.invokeReader(url: source)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(received.count, 1)
+        XCTAssertNotEqual(received[0].stagedPath, source.path)
+
+        try FileManager.default.createSymbolicLink(at: source, withDestinationURL: outside)
+
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: received[0].stagedPath)), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects: mixed drop의 indeterminate receiver는 이름 있는 receiver가
+    /// 남아 있어도 파일별 취소 callback을 receiver 완료로 확정하지 않는다.
+    /// - 검증 내용: 미정 수신기 재조정은 부분 수신 성공이 아닌 indeterminate cardinality 실패가 된다.
+    /// - 사전 조건: 빈 fileNames receiver와 "a.txt" receiver를 함께 begin한다.
+    /// - 기대 결과: 첫 미정 재조정 callback 후 `.failed(.indeterminateCardinality)`가 온다.
+    func testExternalDropAcquisition_mixedReceiverIndeterminateCallbackFailsClosed() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("MixedBarrier")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2642,26 +2693,14 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let message = staging.appendingPathComponent("message.eml")
         try Data("message".utf8).write(to: message)
 
-        // 미정 receiver가 userCancelled + staged file로 명시적 완료를 보고한다.
+        // 미정 receiver가 userCancelled + staged file을 보고하지만 receiver-level 완료는 알 수 없다.
         emptyReceiver.invokeReader(
             url: URL(fileURLWithPath: "/message.eml"),
             error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
         )
 
-        // 미정 재조정만으로는 아직 성공하면 안 된다(결정적 "a.txt" 미도착).
-        var events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertNil(events.last, "미정 수신기 재조정만으로 성공하면 안 된다")
-        XCTAssertFalse(events.contains { event in
-            if case .succeeded = event { return true }
-            return false
-        })
-
-        // 결정적 receiver 콜백: 이제 모든 기여가 완료돼 성공해야 한다.
-        let a = staging.appendingPathComponent("a.txt")
-        try Data("a".utf8).write(to: a)
-        namedReceiver.invokeReader(url: a, error: nil)
-        events = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .indeterminateCardinality))
     }
 
     /// EOP-002-import_external_objects: 미정 receiver가 실제 오류와 staged URL을 함께 보고하면 성공으로 승격하지 않는다.
@@ -2689,16 +2728,17 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.map(\.stagedPath), [message.path])
+        XCTAssertEqual(received.map(\.stagedPath), [staging.appendingPathComponent(".received/message.eml").path])
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
         XCTAssertFalse(FileManager.default.fileExists(atPath: message.path))
     }
 
     /// EOP-002-import_external_objects (VOY-736 회귀): source가 취소 콜백을 먼저 보낸 뒤
-    /// promise 파일을 staging에 쓰더라도 callback 오류로 세션을 조기 종료하지 않는다.
+    /// promise 파일을 staging에 써도 receiver cardinality를 알 수 없으면 성공하지 않는다.
     /// - 사전 조건: fileNames가 빈 receiver가 취소 오류를 보고한 다음 staging에 파일을 쓴다.
-    /// - 기대 결과: 뒤늦게 생성된 source-owned 파일을 `.received`로 받고 세션이 성공한다.
-    func testExternalDropAcquisition_callbackErrorBeforeStagedFileRecovers() async throws {
+    /// - 기대 결과: 뒤늦게 생성된 source-owned 파일을 `.received`로 받고
+    ///   `.failed(.indeterminateCardinality)`로 종단한다.
+    func testExternalDropAcquisition_callbackErrorBeforeStagedFileFailsClosed() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("DelayedCallbackError")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2720,11 +2760,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(
-            received.map { URL(fileURLWithPath: $0.stagedPath).resolvingSymlinksInPath().path },
-            [message.resolvingSymlinksInPath().path],
-        )
-        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(events.last, .failed(request.sessionID, .indeterminateCardinality))
     }
 
     /// EOP-002-import_external_objects: 수신기 취소를 잔여 데이터 성공으로 강등하지 않는다.
@@ -2777,7 +2814,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt", "b.txt"])
         let request = client.begin([receiver], [], "/dest", false, [])
-        let a = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("a.txt")
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let a = staging.appendingPathComponent("a.txt")
         try Data("a".utf8).write(to: a)
 
         receiver.invokeReader(
@@ -2789,7 +2827,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.compactMap { event -> ExternalDropReceivedFile? in
             guard case let .received(file) = event else { return nil }
             return file
-        }.map(\.stagedPath), [a.path])
+        }.map(\.stagedPath), [staging.appendingPathComponent(".received/a.txt").path])
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 
@@ -2807,7 +2845,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
         let request = client.begin([receiver], [], "/dest", false, [])
-        let a = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("a.txt")
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let a = staging.appendingPathComponent("a.txt")
         try Data("a".utf8).write(to: a)
 
         receiver.invokeReader(
@@ -2820,7 +2859,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.map(\.stagedPath), [a.path])
+        XCTAssertEqual(received.map(\.stagedPath), [URL(fileURLWithPath: request.stagingDirectory)
+                .appendingPathComponent(".received/a.txt").path])
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 

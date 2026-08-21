@@ -408,6 +408,27 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(acquisition.beginCalls.count, 0, "legacy filename-only는 acquisition이 아니라 path 복사여야 한다")
     }
 
+    /// EOP-002: legacy filename pasteboard는 한 item의 property-list 배열 전체를 보존한다.
+    /// validate/source extraction과 negotiation이 같은 다중 경로 decoder를 사용해야 한다.
+    func testLegacyFilenameArrayDropExtractsAllPaths() {
+        let legacyPaths = ["/source/first.txt", "/source/second.txt"]
+        let pasteboard = DragInfoFixture.makeLegacyFilenamePasteboard(paths: legacyPaths)
+
+        XCTAssertEqual(
+            EntryViewLayoutDropValidationAdapter.sourcePaths(from: pasteboard),
+            legacyPaths,
+        )
+
+        let negotiation = ExternalDropNegotiation.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        XCTAssertEqual(
+            negotiation.immediateURLDescriptors.map(\.path),
+            legacyPaths,
+        )
+    }
+
     /// EOP-002: accept-reject terminal path는 stale transport를 정리한다.
     func testAcceptRejectClearsStaleTransport() {
         let transport = DragTransport(paths: ["/stale/internal"])

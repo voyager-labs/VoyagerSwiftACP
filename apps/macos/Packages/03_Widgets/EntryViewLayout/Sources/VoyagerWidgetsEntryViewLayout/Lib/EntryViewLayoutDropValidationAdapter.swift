@@ -98,12 +98,12 @@ enum EntryViewLayoutDropValidationAdapter {
                 if seen.insert(path).inserted {
                     paths.append(path)
                 }
-            } else if let filename = item.string(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) {
+            } else if let filenames = ExternalDropNegotiation.legacyFilenames(from: item) {
                 // legacy filename-only 드롭(코멘트 #3826760211): file URL이 없는 item도
                 // legacy filename 문자열을 경로로 추출해 validate/accept를 일관되게 만든다.
                 // 그래야 validate에서 `.copy`를 제안한 뒤 accept가 빈 source로 거절되는
                 // 불일치가 사라진다.
-                if seen.insert(filename).inserted {
+                for filename in filenames where seen.insert(filename).inserted {
                     paths.append(filename)
                 }
             } else {

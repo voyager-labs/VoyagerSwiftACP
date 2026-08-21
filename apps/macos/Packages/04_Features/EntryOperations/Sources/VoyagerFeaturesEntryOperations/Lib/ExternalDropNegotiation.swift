@@ -9,6 +9,7 @@ public enum ExternalDropItemRepresentation: Equatable {
     case promisedFile
     case immediateFileURL(path: String)
     case legacyFilename(String)
+    case legacyFilenames([String])
     case dataFlavor(uti: String)
 }
 
@@ -62,6 +63,27 @@ public struct ExternalDropNegotiation: Equatable {
         self.dataFlavors = dataFlavors
     }
 
+    public static func legacyFilenames(from item: NSPasteboardItem) -> [String]? {
+        let type = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+        guard let propertyList = item.propertyList(forType: type) else {
+            guard let filename = item.string(forType: type), !filename.isEmpty else { return nil }
+            return [filename]
+        }
+
+        if let filenames = propertyList as? [String], !filenames.isEmpty {
+            return filenames
+        }
+        if let values = propertyList as? [Any] {
+            let filenames = values.compactMap { $0 as? String }
+            guard filenames.count == values.count, !filenames.isEmpty else { return nil }
+            return filenames
+        }
+        if let filename = propertyList as? String, !filename.isEmpty {
+            return [filename]
+        }
+        return nil
+    }
+
     /// active pasteboard의 logical item별 표현을 원자적으로 검사한다.
     /// ordinals(입력 순서)를 보존하고, 지원하지 않는 item이 하나라도 있으면 nil(전체 거절)을 반환한다.
     /// item이 promise/file URL/legacy filename 중 어느 것도 아니지만 다른 로드 가능한
@@ -85,8 +107,8 @@ public struct ExternalDropNegotiation: Equatable {
                 result.append(.immediateFileURL(path: url.standardizedFileURL.path))
                 continue
             }
-            if let filename = item.string(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) {
-                result.append(.legacyFilename(filename))
+            if let filenames = legacyFilenames(from: item) {
+                result.append(.legacyFilenames(filenames))
                 continue
             }
             if let uti = dataFlavorUTI(from: item, promiseTypes: promiseTypes) {
@@ -141,6 +163,10 @@ public struct ExternalDropNegotiation: Equatable {
                 }
             case let .legacyFilename(filename):
                 if seen.insert(filename).inserted {
+                    descriptors.append(.init(path: filename))
+                }
+            case let .legacyFilenames(filenames):
+                for filename in filenames where seen.insert(filename).inserted {
                     descriptors.append(.init(path: filename))
                 }
             case let .dataFlavor(uti):
