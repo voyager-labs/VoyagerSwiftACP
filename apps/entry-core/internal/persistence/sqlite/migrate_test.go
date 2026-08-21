@@ -31,15 +31,15 @@ func TestMigrateCleanReplay(t *testing.T) {
 	// schema_migrations is the single version/dirty ledger (golang-migrate
 	// default); a clean replay reaches the current head version and is not
 	// dirty. The embedded directory now holds 0001 (workspace_metadata), 0002
-	// (workspace property catalog), and 0003 (term lifecycle), so head is version 3.
+	// (workspace property catalog), 0003 (term lifecycle), and 0004 (active term uniqueness), so head is version 4.
 	var version int
 	var dirty bool
 	if err := store.SQLDB().QueryRowContext(ctx,
 		"SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty); err != nil {
 		t.Fatalf("query schema_migrations: %v", err)
 	}
-	if version != 3 || dirty {
-		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=3 dirty=false", version, dirty)
+	if version != 4 || dirty {
+		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=4 dirty=false", version, dirty)
 	}
 
 	// The singleton CHECK (singleton = 1) is satisfied by the row insert, so a
@@ -206,11 +206,11 @@ func TestMigratePopulatedUpgrade(t *testing.T) {
 	defer store.Close()
 
 	// MigrateUp runs the embedded directory through the term lifecycle migration,
-	// reaching head version 3.
+	// reaching head version 4.
 	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
 		t.Fatalf("MigrateUp: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 3, false)
+	assertLedger(t, store.SQLDB(), 4, false)
 
 	// Insert a populated workspace_metadata singleton row (16-byte UUIDv7 blob
 	// satisfies the length CHECK).
@@ -428,16 +428,18 @@ var catalogTableNames = []string{
 
 // catalogFixtureFS returns a MapFS directory containing the committed migration
 // pairs (read from the embedded directory), with a computed atlas.sum, so a test
-// can replay a fresh or populated 0001→0003 upgrade.
+// can replay a fresh or populated 0001→0004 upgrade.
 func catalogFixtureFS(t *testing.T) fstest.MapFS {
 	t.Helper()
 	up1, down1 := embeddedMigration(t, "0001_workspace_metadata")
 	up2, down2 := embeddedMigration(t, "0002_workspace_property_catalog")
 	up3, down3 := embeddedMigration(t, "0003_workspace_property_term_lifecycle")
+	up4, down4 := embeddedMigration(t, "0004_workspace_property_term_active_unique")
 	return buildFixtureFS(t,
 		fixtureMigration{base: "0001_workspace_metadata", up: up1, down: down1},
 		fixtureMigration{base: "0002_workspace_property_catalog", up: up2, down: down2},
 		fixtureMigration{base: "0003_workspace_property_term_lifecycle", up: up3, down: down3},
+		fixtureMigration{base: "0004_workspace_property_term_active_unique", up: up4, down: down4},
 	)
 }
 
@@ -541,8 +543,8 @@ func assertSingleColumnCheck(t *testing.T, db *sql.DB, table, column string) {
 	}
 }
 
-// TestMigrateWorkspacePropertyCatalogFreshReplay replays a fresh 0001→0003
-// upgrade on a new database and proves the ledger reaches version 3, all four
+// TestMigrateWorkspacePropertyCatalogFreshReplay replays a fresh 0001→0004
+// upgrade on a new database and proves the ledger reaches version 4, all four
 // catalog tables exist, and the workspace_id unique index 0002 adds is present.
 func TestMigrateWorkspacePropertyCatalogFreshReplay(t *testing.T) {
 	ctx := context.Background()
@@ -556,16 +558,16 @@ func TestMigrateWorkspacePropertyCatalogFreshReplay(t *testing.T) {
 
 	// Fresh replay applies the workspace metadata, catalog, and term lifecycle migrations.
 	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
-		t.Fatalf("MigrateUpFS fresh 0001→0003: %v", err)
+		t.Fatalf("MigrateUpFS fresh 0001→0004: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 3, false)
+	assertLedger(t, store.SQLDB(), 4, false)
 	assertTablesPresent(t, store.SQLDB())
 	assertWorkspaceIDUniqueIndex(t, store.SQLDB())
 }
 
 // TestMigrateWorkspacePropertyCatalogPopulatedReplay replays a populated
-// 0001→0003 upgrade: a database created at version 1 with a populated
-// workspace_metadata singleton row is upgraded to version 3, proving the
+// 0001→0004 upgrade: a database created at version 1 with a populated
+// workspace_metadata singleton row is upgraded to version 4, proving the
 // existing identity row survives byte-for-byte and the catalog tables appear.
 func TestMigrateWorkspacePropertyCatalogPopulatedReplay(t *testing.T) {
 	ctx := context.Background()
@@ -590,11 +592,11 @@ func TestMigrateWorkspacePropertyCatalogPopulatedReplay(t *testing.T) {
 	}
 	before := readWorkspaceRow(t, ctx, store.SQLDB())
 
-	// Upgrade the populated database to version 3.
+	// Upgrade the populated database to version 4.
 	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
-		t.Fatalf("MigrateUpFS populated 0001→0003: %v", err)
+		t.Fatalf("MigrateUpFS populated 0001→0004: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 3, false)
+	assertLedger(t, store.SQLDB(), 4, false)
 	assertTablesPresent(t, store.SQLDB())
 	assertWorkspaceIDUniqueIndex(t, store.SQLDB())
 
