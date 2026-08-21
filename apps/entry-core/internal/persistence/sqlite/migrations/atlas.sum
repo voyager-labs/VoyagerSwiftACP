@@ -1,4 +1,5 @@
-h1:MUUr6Dhzjg1DQFKRXnV3DA+Xsq9Vr6h1Uwzj4jY6ntk=
+h1:zA5X+STuuvF/03z+cs0fJuGwVdcg/nwHyFst+UMDIJQ=
 0001_workspace_metadata.up.sql h1:S22MOyQg71BnpQcAEbmFiUTsAiNBgc7dee6hMUTXKvw=
 0002_workspace_property_catalog.up.sql h1:jBr4pzI/fwPpsCnsPCvPzPHi7euJEPmAx7LA5MAmT5g=
 0003_workspace_property_term_lifecycle.up.sql h1:GW3lIEob+jh3Kp6Qmog8zASnLyYz2lHluy5TKl32wvY=
+0004_workspace_property_term_active_unique.up.sql h1:GNr87JXErlDyFTOZCKecWE2zFdn/sWxCQDLjoInoERs=
