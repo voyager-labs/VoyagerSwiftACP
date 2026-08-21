@@ -34,9 +34,19 @@ const ConditionCatalogVersion = "` + registry.Version + `"
 		builder.WriteString("\t\tInverseOf: " + goString(operator.Spec.InverseOf) + ",\n")
 		builder.WriteString("\t\tMDQueryHint: " + goString(operator.Spec.MDQueryHint) + ",\n")
 		builder.WriteString("\t\tUISourceByType: map[ConditionNativeType]ConditionUISourceKind{\n")
+		// UISourceByType는 allowed_types에 존재하는 native type만 포함한다.
+		// Registry ui_value_kind는 allowed_types 밖의 키(예: neq|boolean)를
+		// 포함할 수 있는데, 이를 그대로 복사하면 relation에 없는 spurious
+		// (operator, native_type) UI 관계가 생성되므로 allowed_types로 제한한다.
+		allowed := make(map[string]struct{}, len(operator.Spec.AllowedTypes))
+		for _, allowedType := range operator.Spec.AllowedTypes {
+			allowed[allowedType] = struct{}{}
+		}
 		typeKeys := make([]string, 0, len(operator.Spec.UISourceByType))
 		for nativeType := range operator.Spec.UISourceByType {
-			typeKeys = append(typeKeys, nativeType)
+			if _, ok := allowed[nativeType]; ok {
+				typeKeys = append(typeKeys, nativeType)
+			}
 		}
 		sort.Strings(typeKeys)
 		for _, nativeType := range typeKeys {

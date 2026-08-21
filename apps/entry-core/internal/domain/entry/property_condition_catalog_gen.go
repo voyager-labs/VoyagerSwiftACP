@@ -184,10 +184,9 @@ var conditionOperators = []ConditionOperator{
 		InverseOf:   "eq",
 		MDQueryHint: "!=",
 		UISourceByType: map[ConditionNativeType]ConditionUISourceKind{
-			ConditionNativeTypeBoolean: "toggle",
-			ConditionNativeTypeDate:    "singleDate",
-			ConditionNativeTypeNumber:  "singleNumber",
-			ConditionNativeTypeString:  "singleText",
+			ConditionNativeTypeDate:   "singleDate",
+			ConditionNativeTypeNumber: "singleNumber",
+			ConditionNativeTypeString: "singleText",
 		},
 	},
 	{ID: "none",

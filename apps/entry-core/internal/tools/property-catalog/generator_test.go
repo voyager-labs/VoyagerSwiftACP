@@ -1,6 +1,7 @@
 package propertycatalog
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -195,6 +196,58 @@ func TestConditionCatalogExact(t *testing.T) {
 			t.Errorf("relation %s not in Registry allowed_types union", key)
 		}
 	}
+}
+
+// TestConditionUISourceByTypeConstrainedToAllowedTypes asserts every rendered
+// UISourceByType key is a native type in the operator's allowed_types. A
+// ui_value_kind key outside allowed_types (e.g. neq|boolean) must not be emitted
+// as a spurious UI relation — the regression guard for the defect class where
+// the generator copied every ui_value_kind entry verbatim.
+func TestConditionUISourceByTypeConstrainedToAllowedTypes(t *testing.T) {
+	registry := loadConditionRegistry(t)
+	body, err := renderConditionCatalog(registry)
+	if err != nil {
+		t.Fatalf("render condition catalog: %v", err)
+	}
+	// 렌더된 operator 블록을 {ID: "name", 로 분리해 각각의 UISourceByType
+	// native type literal이 해당 operator의 allowed_types에 속하는지 검증한다.
+	for _, operator := range registry.OperatorsSorted() {
+		marker := `{ID: "` + operator.Name + `",`
+		start := strings.Index(body, marker)
+		if start < 0 {
+			t.Fatalf("rendered output missing operator %q", operator.Name)
+		}
+		next := strings.Index(body[start+len(marker):], "{ID:")
+		relationsStart := strings.Index(body, "var conditionRelations")
+		end := relationsStart
+		if next >= 0 {
+			end = start + len(marker) + next
+		}
+		if end > relationsStart {
+			end = relationsStart
+		}
+		block := body[start:end]
+		allowed := map[string]bool{}
+		for _, at := range operator.Spec.AllowedTypes {
+			allowed[at] = true
+		}
+		// block 안의 모든 ConditionNativeType* literal을 검사한다.
+		// (ConditionNativeTypeStringList가 ConditionNativeTypeString을
+		// 포함하므로 부분 문자열이 아닌 단어 경계로 매칭한다.)
+		for _, nativeType := range conditionNativeTypes() {
+			literal := conditionNativeTypeLiteral(nativeType)
+			matched, _ := regexp.MatchString(`\b`+regexp.QuoteMeta(literal)+`\b`, block)
+			if matched && !allowed[nativeType] {
+				t.Errorf("operator %q renders UISourceByType for %q, which is not in its allowed_types %v",
+					operator.Name, nativeType, operator.Spec.AllowedTypes)
+			}
+		}
+	}
+}
+
+// conditionNativeTypes returns every known Condition native type.
+func conditionNativeTypes() []string {
+	return []string{"string", "number", "date", "boolean", "string_list", "categorical"}
 }
 
 // TestConditionCatalogValid asserts the compiled catalog passes structural
