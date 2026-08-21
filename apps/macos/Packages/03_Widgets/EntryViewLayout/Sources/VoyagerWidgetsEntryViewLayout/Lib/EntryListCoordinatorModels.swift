@@ -19,6 +19,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let showHiddenFiles: Bool
     let shouldScrollToSelection: Bool
     let isDropTargeted: Bool
+    let pendingTypeScrollTargetId: EntryModel.ID?
     let outlineProjection: EntryListOutlineProjection
     let isHierarchyOutlineEnabled: Bool
 
@@ -41,6 +42,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         showHiddenFiles = state.showHiddenFiles
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
+        pendingTypeScrollTargetId = state.pendingTypeScrollTargetId
         isHierarchyOutlineEnabled = state.mode == .list
             && !state.isCollectionMode
             && state.entryArrangements.groupKey == .none

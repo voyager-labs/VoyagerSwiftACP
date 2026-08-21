@@ -23,6 +23,7 @@ struct EntryGridRenderSnapshot: Equatable {
     let showHiddenFiles: Bool
     let shouldScrollToSelection: Bool
     let isDropTargeted: Bool
+    let pendingTypeScrollTargetId: EntryModel.ID?
     let currentPath: String
     let outlineProjectionRevision: Int
 
@@ -42,6 +43,7 @@ struct EntryGridRenderSnapshot: Equatable {
         showHiddenFiles = state.showHiddenFiles
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
+        pendingTypeScrollTargetId = state.pendingTypeScrollTargetId
         currentPath = state.currentPath
         outlineProjectionRevision = state.outlineProjectionRevision
     }

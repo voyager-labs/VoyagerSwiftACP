@@ -36,6 +36,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var isLassoSelecting = false
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
+    var hasCompletedFirstPhysicalLayout = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
     var contextMenuAnchor: CGPoint?
@@ -80,6 +81,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
         guard !didBind else {
@@ -95,6 +97,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     func updateView(_ view: EntryGridView) {
         guard self.view !== view else { return }
         self.view = view
+        hasCompletedFirstPhysicalLayout = false
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.contextMenuProvider = self
@@ -108,6 +111,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
     }
@@ -261,6 +265,14 @@ extension EntryGridCoordinator {
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
         store.send(.view(.resetScrollFlag))
+    }
+
+    /// 타자 검색으로 설정된 pending target을 centered 스크롤하고 reset한다.
+    /// 성공 여부와 관계없이 resetTypeScrollTarget을 발행해 일회성 소비를 보장한다.
+    func scrollToTypeScrollTarget(_ targetId: EntryModel.ID) {
+        defer { store.send(.view(.resetTypeScrollTarget)) }
+        guard let indexPath = indexPathByEntryId[targetId] else { return }
+        collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
     }
 
     func reloadVisibleItems() {
