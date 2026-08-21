@@ -21,6 +21,8 @@ jobs:
         working-directory: apps/storybook
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # annotated tag 검증을 위해 전체 히스토리 fetch
       - uses: pnpm/action-setup@v4
         with:
           version: 11.16.0
