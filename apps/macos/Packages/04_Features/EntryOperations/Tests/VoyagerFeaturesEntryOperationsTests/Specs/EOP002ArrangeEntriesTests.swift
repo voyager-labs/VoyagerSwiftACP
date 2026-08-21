@@ -2635,6 +2635,37 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 
+    /// EOP-002-import_external_objects: 결정적 receiver의 마지막 콜백이 URL과 error를 함께
+    /// 전달하면 성공으로 승격하지 않고 `.callbackError`로 종단한다. cardinality 충족 시
+    /// registerReceivedFile이 먼저 `.succeeded`를 내고 뒤의 error 검사가 무시되던 순서 버그
+    /// (코멘트 #3826514658)를 재현한다.
+    /// - 사전 조건: 단일 파일 결정적 receiver가 staging 파일과 취소 오류를 함께 보고한다.
+    /// - 기대 결과: `.received` 후 `.failed(sessionID, .callbackError)`가 emit된다.
+    func testExternalDropAcquisition_callbackErrorWithCompletingDeterminateOutputFails() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CompletingCallbackError")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let a = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+
+        receiver.invokeReader(
+            url: a,
+            error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
+        )
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.map(\.stagedPath), [a.path])
+        XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
+    }
+
     /// EOP-002-import_external_objects: staging에 파일이 없으면 `.fileAbsent`로 거절된다.
     /// 콜백이 보고한 URL의 파일이 실제로 존재하지 않으면 성공으로 승격하지 않는다.
     /// - 검증 내용: 존재하지 않는 경로를 콜백하면 `.failed(.fileAbsent)`가 온다.

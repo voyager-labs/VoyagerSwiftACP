@@ -324,9 +324,17 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
         if error != nil { Self.logger.info("callback error reconciled by staged file") }
 
-        registerReceivedFile(receiverIndex: receiverIndex, url: resolvedURL, callbackOrdinal: callbackOrdinal)
-        // reconcile로 복구된 error 콜백 중 미정 수신기 것은 quiescence 종단 판정에 맡긴다.
-        // 기존 계약(취소 error + staged file = 성공)을 유지한다.
+        // 결정적 수신기에서 마지막 콜백이 URL과 error를 함께 전달하면, registerReceivedFile이
+        // cardinality 충족으로 먼저 `.succeeded`를 내고(phase가 .acquiring을 벗어남) 뒤의 error
+        // 검사가 항상 거짓이 되어 오류가 무시될 수 있다. hasError를 넘겨 결정적 성공을 억제해
+        // `.callbackError` 종단을 보장한다(코멘트 #3826514658). 미정 수신기 것은 기존 계약
+        // (취소 error + staged file = 성공)대로 quiescence 종단 판정에 맡긴다.
+        registerReceivedFile(
+            receiverIndex: receiverIndex,
+            url: resolvedURL,
+            callbackOrdinal: callbackOrdinal,
+            hasError: error != nil,
+        )
         if error != nil, phase == .acquiring, !indeterminateReceivers.contains(receiverIndex) {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
@@ -425,7 +433,12 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             .sorted { $0.path < $1.path }
     }
 
-    private func registerReceivedFile(receiverIndex: Int, url: URL, callbackOrdinal: Int) {
+    private func registerReceivedFile(
+        receiverIndex: Int,
+        url: URL,
+        callbackOrdinal: Int,
+        hasError: Bool = false,
+    ) {
         nextItemOrdinal += 1
         let itemOrdinal = nextItemOrdinal
         receivedCount += 1
@@ -447,8 +460,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         emitLocked(.received(receivedFile))
 
         if indeterminateReceivers.isEmpty {
-            // 미정 수신기가 없으면 즉시 종단 판정한다(기존 동작).
-            if sessionIsCompleteLocked() {
+            // 미정 수신기가 없으면 즉시 종단 판정한다(기존 동작). error가 함께 온 결정적
+            // 콜백은 성공으로 종단하지 않는다(호출자가 `.callbackError`로 실패 처리).
+            if !hasError, sessionIsCompleteLocked() {
                 emitTerminalLocked(.succeeded(sessionID))
             }
         } else {
