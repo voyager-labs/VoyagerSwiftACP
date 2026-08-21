@@ -157,3 +157,60 @@ func TestResourceAdapterResolveEnvelopeConsistency(t *testing.T) {
 	}
 	_ = request
 }
+
+func catalogTestEntryID() string {
+	return "ent:" + strings.Repeat("A", 43)
+}
+
+func catalogTitleDefinition(t *testing.T) entry.PropertyDefinition {
+	t.Helper()
+	definition, err := entry.NewPropertyDefinition(entry.PropertyDefinition{
+		PropertyID:     entry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d"),
+		IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived,
+		Namespace:      "system",
+		Key:            "common.title",
+		DisplayName:    "Title",
+		ValueType:      entry.PropertyTypeText,
+		Cardinality:    entry.PropertyCardinalityOne,
+		Provenance:     entry.PropertyProvenanceSystem,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definition
+}
+
+func TestCanonicalPropertyValuePreservesCatalogContract(t *testing.T) {
+	intValue := int64(7)
+	token := "rev-1"
+	revision, err := entry.NewRevision(entry.RevisionStrengthProvider, &token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRevision, err := entry.NewSourceRevision(revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	property := entry.Property{Key: "title", Value: entry.PropertyValue{Type: entry.PropertyValueTypeInt64, Int64Value: &intValue}}
+	if _, err := canonicalPropertyValue(property, catalogTitleDefinition(t), catalogTestEntryID(), time.Unix(10, 0).UTC(), sourceRevision, entry.PropertyProvenanceFilesystem); !errors.Is(err, ErrAdapterFailure) {
+		t.Fatalf("int64 payload against text catalog error = %v", err)
+	}
+
+	textValue := "Roadmap"
+	textProperty := entry.Property{Key: "title", Value: entry.PropertyValue{Type: entry.PropertyValueTypeString, StringValue: &textValue}}
+	value, err := canonicalPropertyValue(textProperty, catalogTitleDefinition(t), catalogTestEntryID(), time.Unix(10, 0).UTC(), sourceRevision, entry.PropertyProvenanceFilesystem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.PropertyID != catalogTitleDefinition(t).PropertyID || value.Type != entry.PropertyTypeText {
+		t.Fatalf("catalog-bound value = %#v", value)
+	}
+
+	fallback, err := canonicalPropertyValue(property, entry.PropertyDefinition{}, catalogTestEntryID(), time.Unix(10, 0).UTC(), sourceRevision, entry.PropertyProvenanceFilesystem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallback.Type != entry.PropertyTypeNumber {
+		t.Fatalf("fallback value = %#v", fallback)
+	}
+}

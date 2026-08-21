@@ -808,33 +808,46 @@ func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.Locator
 }
 
 func canonicalPropertyValue(property entry.Property, definition entry.PropertyDefinition, entryID string, observedAt time.Time, sourceRevision entry.SourceRevision, provenance entry.PropertyProvenance) (entry.PropertyValue, error) {
-	if definition.PropertyID == (entry.PropertyID{}) {
+	catalogBound := definition.PropertyID != (entry.PropertyID{})
+	if !catalogBound {
 		propertyID, err := entry.RegistryPropertyID(property.Key)
 		if err != nil {
 			return entry.PropertyValue{}, ErrAdapterFailure
 		}
 		definition = entry.PropertyDefinition{PropertyID: propertyID, IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived, Namespace: "adapter", Key: property.Key, DisplayName: property.Key, Cardinality: entry.PropertyCardinalityOne, Provenance: provenance, ValidationRules: []entry.ValidationRule{}}
 	}
+	var valueType entry.PropertyType
+	cardinality := entry.PropertyCardinalityOne
 	var payload entry.PropertyPayload
 	switch property.Value.Type {
 	case entry.PropertyValueTypeString:
-		definition.ValueType = entry.PropertyTypeText
+		valueType = entry.PropertyTypeText
 		payload = entry.TextPayload(*property.Value.StringValue)
 	case entry.PropertyValueTypeInt64:
-		definition.ValueType = entry.PropertyTypeNumber
+		valueType = entry.PropertyTypeNumber
 		payload = entry.NumberPayload(strconv.FormatInt(*property.Value.Int64Value, 10))
 	case entry.PropertyValueTypeBool:
-		definition.ValueType = entry.PropertyTypeBoolean
+		valueType = entry.PropertyTypeBoolean
 		payload = entry.BooleanPayload(*property.Value.BoolValue)
 	case entry.PropertyValueTypeTimestamp:
-		definition.ValueType = entry.PropertyTypeDateTime
+		valueType = entry.PropertyTypeDateTime
 		payload = entry.DateTimePayload(property.Value.TimestampValue.Round(0).Format(time.RFC3339Nano))
 	case entry.PropertyValueTypeStringList:
-		definition.ValueType = entry.PropertyTypeText
-		definition.Cardinality = entry.PropertyCardinalityMany
+		valueType = entry.PropertyTypeText
+		cardinality = entry.PropertyCardinalityMany
 		payload = entry.TextManyPayload(*property.Value.StringListValue)
 	default:
 		return entry.PropertyValue{}, ErrAdapterFailure
+	}
+	if catalogBound {
+		// 카탈로그에 바인딩된 정의는 타입·cardinality 계약을 보존한다. adapter
+		// payload가 계약과 다르면 값을 재타이핑하지 않고 실패 처리한다.
+		if definition.ValueType != valueType || definition.Cardinality != cardinality {
+			return entry.PropertyValue{}, ErrAdapterFailure
+		}
+	} else {
+		definition.ValueType = valueType
+		definition.Cardinality = cardinality
 	}
 	validated, err := entry.NewPropertyDefinition(definition)
 	if err != nil {
