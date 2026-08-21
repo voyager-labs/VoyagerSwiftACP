@@ -397,7 +397,7 @@ extension RuntimeControlPlane {
         }
     }
 
-    private func interruptAfterConsumptionFailure(
+    func interruptAfterConsumptionFailure(
         receipt: RuntimeLaunchReceipt,
         host: ExternalAgentSessionReference,
         lease: UInt64,
@@ -443,7 +443,7 @@ extension RuntimeControlPlane {
         }
     }
 
-    private func applyCleanupFailedDecision(
+    func applyCleanupFailedDecision(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
     ) {
