@@ -13,8 +13,9 @@ public class KeyCommandHostingView: NSView {
     private var markedSelectedRange: NSRange = .init(location: 0, length: 0)
 
     override public func keyDown(with event: NSEvent) {
-        // Modifier 조합은 항상 앱 단축키 경로로 보낸다 (Cmd+C 등). 조합 중에도 단축키 유지 (AC2/AC4).
-        if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) == false {
+        // Command/Control 조합은 항상 앱 단축키 경로로 보낸다 (Cmd+C, Cmd+Option+Delete 등). 조합 중에도 유지 (AC2/AC4).
+        // Option 단독은 데드 키/printable 텍스트 입력일 수 있으므로 아래 문자 분류를 거치게 한다.
+        if event.modifierFlags.isDisjoint(with: [.command, .control]) == false {
             onKeyDown?(event)
             return
         }
@@ -34,7 +35,9 @@ public class KeyCommandHostingView: NSView {
 
     /// `keyDown`을 `onKeyDown`으로 보낼지 판정한다.
     private func shouldRouteToKeyDown(_ event: NSEvent) -> Bool {
-        if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) == false {
+        // Command/Control 조합은 항상 앱 단축키 경로로 보낸다 (Cmd+C 등).
+        // Option 단독은 아래 문자 분류(빈/제어/함수/공백/printable)로 판정한다.
+        if event.modifierFlags.isDisjoint(with: [.command, .control]) == false {
             return true
         }
         guard let characters = event.characters else { return true }

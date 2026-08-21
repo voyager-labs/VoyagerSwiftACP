@@ -380,6 +380,38 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
         XCTAssertTrue(spy.hasMarkedText(), "dead key must start IME composition via interpretKeyEvents")
     }
 
+    // MARK: - Option 데드 키 / Option 생성 printable 라우팅 (VOY-661)
+
+    /// Option+E 등 Option 데드 키의 초기 keyDown은 marked text가 생기기 전이라 `characters == ""`다.
+    /// FileManagerContentKeyCommandHandler는 Option 단독 텍스트를 소비하지 않으므로 앱 명령이 아니라
+    /// 텍스트 입력 이벤트로 분류해 `interpretKeyEvents`로 보내야 한다.
+    func testOptionDeadKeyEmptyCharacterRoutesThroughInterpretKeyEventsNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+
+        spy.keyDown(with: makeKeyDown(characters: "", modifierFlags: [.option]))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+    }
+
+    /// Option으로 생성된 printable 문자(예: US 레이아웃 Option+E → U+00B4 acute accent)도
+    /// 앱 명령이 아니라 텍스트 입력이므로 `interpretKeyEvents`로 보내 커밋돼야 한다.
+    func testOptionPrintableCharacterRoutesThroughInterpretKeyEventsNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        var committed: [String] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.onTextInput = { committed.append($0) }
+
+        spy.keyDown(with: makeKeyDown(characters: "\u{00B4}", modifierFlags: [.option]))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+        XCTAssertEqual(committed, ["\u{00B4}"])
+    }
+
     /// 스파이 뷰: `interpretKeyEvents`를 override해 입력 시스템을 시뮬레이션한다.
     private final class InputSystemSpyHostingView: KeyCommandHostingView {
         var interpretedEvents: [NSEvent] = []
