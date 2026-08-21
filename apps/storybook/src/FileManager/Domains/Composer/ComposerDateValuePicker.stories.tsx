@@ -11,11 +11,15 @@ const meta = {
       </div>
     ),
   ],
-  args: { kind: "date" },
+  args: { kind: "date", initialValue: "2026-08-21" },
 } satisfies Meta<typeof ComposerDateValuePicker>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const SingleDate: Story = {}
-export const DateRange: Story = { args: { kind: "dateRange" } }
+export const SingleDate: Story = {
+  args: { initialDateMode: "absolute" },
+}
+export const DateRange: Story = {
+  args: { kind: "dateRange", initialValue: "2024-01-01 - 2024-12-31", editingIndex: 1 },
+}

@@ -1,164 +1,48 @@
 import { type FC, useState } from "react"
+import { ComposerCalendar } from "./ComposerCalendar"
+import { encodeRelativeLiteral, relativeDisplay, todayLiteral } from "./composer-date-literal"
 import {
-  type ParsedRelativeLiteral,
-  encodeRelativeLiteral,
-  parseRelativeLiteral,
-  relativeDisplay,
-  todayLiteral,
-} from "./composer-date-literal"
-
-const relativePresets = [
-  "Custom",
-  "Today",
-  "Yesterday",
-  "7 days ago",
-  "30 days ago",
-  "3 months ago",
-  "1 year ago",
-] as const
+  type RelativePreset,
+  type RelativeUnit,
+  parseDatePickerInitialValue,
+  relativePresets,
+  relativeUnits,
+  resolveRelativeValue,
+  unitToNative,
+} from "./composer-date-picker-state"
 
 export type ComposerDateValuePickerProps = {
   readonly kind: "date" | "dateRange"
   readonly initialValue?: string
+  readonly initialDateMode?: "absolute" | "relative"
+  readonly editingIndex?: 0 | 1
   readonly error?: string
   readonly onCommit?: (value: string) => void
-}
-
-const relativeUnits = ["Day", "Week", "Month", "Year"] as const
-
-type RelativeUnit = (typeof relativeUnits)[number]
-
-const presetAmounts: Record<
-  Exclude<(typeof relativePresets)[number], "Custom" | "Today">,
-  number
-> = {
-  Yesterday: 1,
-  "7 days ago": 7,
-  "30 days ago": 30,
-  "3 months ago": 3,
-  "1 year ago": 1,
-}
-
-const presetUnits: Record<
-  Exclude<(typeof relativePresets)[number], "Custom" | "Today">,
-  RelativeUnit
-> = {
-  Yesterday: "Day",
-  "7 days ago": "Day",
-  "30 days ago": "Day",
-  "3 months ago": "Month",
-  "1 year ago": "Year",
-}
-
-const unitToNative: Record<RelativeUnit, ParsedRelativeLiteral["unit"]> = {
-  Day: "day",
-  Week: "week",
-  Month: "month",
-  Year: "year",
-}
-
-const nativeToUnit: Record<ParsedRelativeLiteral["unit"], RelativeUnit> = {
-  day: "Day",
-  week: "Week",
-  month: "Month",
-  year: "Year",
-}
-
-type InitialState = {
-  dateMode: "absolute" | "relative"
-  preset: (typeof relativePresets)[number]
-  amount: string
-  unit: RelativeUnit
-  direction: "past" | "future"
-  values: readonly string[]
-}
-
-const parseInitialValue = (value: string | undefined): InitialState => {
-  const trimmed = value?.trim() ?? ""
-  // 네이티브 정규 리터럴 우선 파싱
-  const literal = parseRelativeLiteral(trimmed)
-  if (literal != null) {
-    const matchedPreset = (
-      Object.keys(presetAmounts) as readonly (keyof typeof presetAmounts)[]
-    ).find(
-      (preset) =>
-        presetAmounts[preset] === literal.amount &&
-        presetUnits[preset] === nativeToUnit[literal.unit],
-    )
-    return {
-      dateMode: "relative",
-      preset: matchedPreset ?? "Custom",
-      amount: String(literal.amount),
-      unit: nativeToUnit[literal.unit],
-      direction: literal.direction,
-      values: [],
-    }
-  }
-  if (trimmed === todayLiteral()) {
-    return {
-      dateMode: "relative",
-      preset: "Today",
-      amount: "1",
-      unit: "Day",
-      direction: "past",
-      values: [],
-    }
-  }
-  const legacyPreset = relativePresets.find(
-    (candidate) => candidate !== "Custom" && candidate === trimmed,
-  )
-  if (legacyPreset != null) {
-    return {
-      dateMode: "relative",
-      preset: legacyPreset,
-      amount: "1",
-      unit: "Day",
-      direction: "past",
-      values: [],
-    }
-  }
-  const custom = /^(\d+) (day|week|month|year)s? ago$/.exec(trimmed)
-  if (custom != null) {
-    const native = custom[2] as ParsedRelativeLiteral["unit"]
-    return {
-      dateMode: "relative",
-      preset: "Custom",
-      amount: custom[1] ?? "1",
-      unit: nativeToUnit[native],
-      direction: "past",
-      values: [],
-    }
-  }
-  return {
-    dateMode: "absolute",
-    preset: "7 days ago",
-    amount: "1",
-    unit: "Day",
-    direction: "past",
-    values: trimmed.length > 0 ? trimmed.split(" - ") : [],
-  }
 }
 
 export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
   kind,
   initialValue,
+  initialDateMode,
+  editingIndex = 0,
   error: initialError,
   onCommit,
 }) => {
   const isRange = kind === "dateRange"
-  const initial = parseInitialValue(initialValue)
+  const initial = parseDatePickerInitialValue(initialValue, initialDateMode)
   const [values, setValues] = useState<readonly string[]>(() =>
     Array.from({ length: isRange ? 2 : 1 }, (_, index) => initial.values[index] ?? ""),
   )
   const [dateMode, setDateMode] = useState<"absolute" | "relative">(initial.dateMode)
-  const [relativePreset, setRelativePreset] = useState<(typeof relativePresets)[number]>(
-    initial.preset,
-  )
+  const [relativePreset, setRelativePreset] = useState<RelativePreset>(initial.preset)
   const [relativeAmount, setRelativeAmount] = useState(initial.amount)
   const [relativeUnit, setRelativeUnit] = useState<RelativeUnit>(initial.unit)
   // 네이티브는 future 방향 상태를 유지한다(프리셋 UI는 past 전용)
   const [relativeDirection] = useState<"past" | "future">(initial.direction)
   const [error, setError] = useState<string | undefined>(initialError)
+
+  const setSelectedDate = (value: string) =>
+    setValues((current) => current.map((item, index) => (index === editingIndex ? value : item)))
 
   const commitAbsolute = (nextValues: readonly string[]) => {
     if (nextValues.some((value) => value.trim().length === 0)) {
@@ -182,19 +66,21 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       Number.isInteger(Number(relativeAmount)) &&
       Number(relativeAmount) > 0)
 
-  const customAmount = relativePreset === "Custom" ? Number(relativeAmount) : undefined
-  const resolvedAmount =
-    customAmount ?? presetAmounts[relativePreset as keyof typeof presetAmounts] ?? 1
-  const resolvedUnit =
-    relativePreset === "Custom"
-      ? relativeUnit
-      : (presetUnits[relativePreset as keyof typeof presetUnits] ?? "Day")
+  const resolvedRelative = resolveRelativeValue(
+    relativePreset,
+    Number(relativeAmount),
+    relativeUnit,
+  )
 
   // 네이티브 displayText: Today는 별도 mode로 표시하고, 나머지는 "N unit(s) ago" 형식
   const relativePreview =
     relativePreset === "Today"
       ? "Today"
-      : relativeDisplay(relativeDirection, resolvedAmount, unitToNative[resolvedUnit])
+      : relativeDisplay(
+          relativeDirection,
+          resolvedRelative.amount,
+          unitToNative[resolvedRelative.unit],
+        )
 
   const submit = () => {
     if (kind === "date" && dateMode === "relative") {
@@ -210,8 +96,8 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       }
       const literal = encodeRelativeLiteral(
         relativeDirection,
-        resolvedAmount,
-        unitToNative[resolvedUnit],
+        resolvedRelative.amount,
+        unitToNative[resolvedRelative.unit],
       )
       if (literal == null) {
         setError("Enter a positive whole number of units.")
@@ -231,44 +117,49 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       aria-label="Condition value picker"
     >
       <form
-        className="collection-composer-value-form"
+        className="collection-composer-value-form collection-composer-date-form"
         onSubmit={(event) => {
           event.preventDefault()
           submit()
         }}
       >
         {kind === "date" && (
-          <label>
-            <span>Date Type</span>
-            <select
-              value={dateMode}
-              onChange={(event) =>
-                setDateMode(event.currentTarget.value === "relative" ? "relative" : "absolute")
-              }
-            >
-              <option value="absolute">On date</option>
-              <option value="relative">Relative</option>
-            </select>
-          </label>
+          <fieldset className="collection-composer-date-type">
+            <legend>Date Type</legend>
+            <div>
+              <button
+                type="button"
+                aria-pressed={dateMode === "absolute"}
+                onClick={() => setDateMode("absolute")}
+              >
+                On date
+              </button>
+              <button
+                type="button"
+                aria-pressed={dateMode === "relative"}
+                onClick={() => setDateMode("relative")}
+              >
+                Relative
+              </button>
+            </div>
+          </fieldset>
         )}
         {kind === "date" && dateMode === "relative" ? (
-          <>
-            <label>
-              <span>Preset</span>
-              <select
-                value={relativePreset}
-                onChange={(event) =>
-                  setRelativePreset(
-                    relativePresets.find((preset) => preset === event.currentTarget.value) ??
-                      "7 days ago",
-                  )
-                }
-              >
-                {relativePresets.map((preset) => (
-                  <option key={preset}>{preset}</option>
-                ))}
-              </select>
-            </label>
+          <div className="collection-composer-relative-date-fields">
+            <select
+              aria-label="Preset"
+              value={relativePreset}
+              onChange={(event) =>
+                setRelativePreset(
+                  relativePresets.find((preset) => preset === event.currentTarget.value) ??
+                    "7 days ago",
+                )
+              }
+            >
+              {relativePresets.map((preset) => (
+                <option key={preset}>{preset}</option>
+              ))}
+            </select>
             {relativePreset === "Custom" && (
               <div className="collection-composer-relative-custom">
                 <input
@@ -295,33 +186,28 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
                 </select>
               </div>
             )}
-            <small>Preview: {relativePreview}</small>
-          </>
-        ) : (
-          <div className="collection-composer-value-fields">
-            {values.map((value, index) => {
-              const label = isRange ? (index === 0 ? "From" : "To") : "Date"
-              return (
-                <label key={label}>
-                  <span>{label}</span>
-                  <input
-                    type="date"
-                    aria-label={isRange ? label : "Value"}
-                    value={value}
-                    onChange={(event) => {
-                      const nextValue = event.currentTarget.value
-                      setValues((current) =>
-                        current.map((item, itemIndex) => (itemIndex === index ? nextValue : item)),
-                      )
-                    }}
-                  />
-                </label>
-              )
-            })}
+            <small>{relativePreview}</small>
+            <ComposerCalendar
+              value={
+                relativePreset === "Today"
+                  ? todayLiteral()
+                  : (values[editingIndex] ?? todayLiteral())
+              }
+              previewOnly
+              onChange={setSelectedDate}
+            />
+            <small>Preview based on today</small>
           </div>
+        ) : (
+          <ComposerCalendar
+            value={values[editingIndex] ?? todayLiteral()}
+            onChange={setSelectedDate}
+          />
         )}
         {error != null && <output className="collection-composer-value-error">{error}</output>}
-        <button type="submit">Apply</button>
+        <div className="collection-composer-date-actions">
+          <button type="submit">Apply</button>
+        </div>
       </form>
     </dialog>
   )
