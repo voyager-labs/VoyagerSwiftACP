@@ -15,6 +15,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
     private(set) var applyCount = 0
     private var loadCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var saveCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var applyCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     init(
         state: RuntimeStoredState? = nil,
@@ -66,6 +67,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
 
     func apply(_ mutation: RuntimeStateMutation) async throws -> RuntimeStateMutationResult {
         applyCount += 1
+        resumeApplyCountWaiters()
         guard mutation.host.rawValue.isRuntimeBounded,
               mutation.expected?.externalAgentSessionReference == nil || mutation.expected?
               .externalAgentSessionReference == mutation.host,
@@ -120,6 +122,13 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         }
     }
 
+    func waitForApplyCount(_ minimumCount: Int) async {
+        guard applyCount < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            applyCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
     func waitForLoadCount(_ minimumCount: Int) async {
         guard loadCount < minimumCount else { return }
         await withCheckedContinuation { continuation in
@@ -138,6 +147,14 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
     private func resumeSaveCountWaiters() {
         let ready = saveCountWaiters.filter { $0.0 <= saveCount }
         saveCountWaiters.removeAll { $0.0 <= saveCount }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
+
+    private func resumeApplyCountWaiters() {
+        let ready = applyCountWaiters.filter { $0.0 <= applyCount }
+        applyCountWaiters.removeAll { $0.0 <= applyCount }
         for (_, continuation) in ready {
             continuation.resume()
         }

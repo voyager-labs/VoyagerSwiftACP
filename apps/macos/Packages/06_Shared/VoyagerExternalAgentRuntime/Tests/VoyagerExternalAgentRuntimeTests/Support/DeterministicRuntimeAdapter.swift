@@ -25,6 +25,9 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let eventStreamDelay: Duration
     private let eventStreamGate: RuntimeTestGate?
     private let eventStreamFailure: EventStreamFailure?
+    private let eventStreamRuntimeFailure: RuntimeAdapterFailure?
+    private let eventStreamRuntimeFailuresByLaunch: [Int: RuntimeAdapterFailure]
+    private let eventStreamRuntimeFailureGate: RuntimeTestGate?
     private let operationDelay: Duration
     private let operationGate: RuntimeTestGate?
     private let restartDelay: Duration
@@ -62,6 +65,9 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         eventStreamDelay: Duration = .zero,
         eventStreamGate: RuntimeTestGate? = nil,
         eventStreamFailure: EventStreamFailure? = nil,
+        eventStreamRuntimeFailure: RuntimeAdapterFailure? = nil,
+        eventStreamRuntimeFailuresByLaunch: [Int: RuntimeAdapterFailure] = [:],
+        eventStreamRuntimeFailureGate: RuntimeTestGate? = nil,
         operationDelay: Duration = .zero,
         operationGate: RuntimeTestGate? = nil,
         failsLaunch: Bool = false,
@@ -92,6 +98,9 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.eventStreamDelay = eventStreamDelay
         self.eventStreamGate = eventStreamGate
         self.eventStreamFailure = eventStreamFailure
+        self.eventStreamRuntimeFailure = eventStreamRuntimeFailure
+        self.eventStreamRuntimeFailuresByLaunch = eventStreamRuntimeFailuresByLaunch
+        self.eventStreamRuntimeFailureGate = eventStreamRuntimeFailureGate
         self.operationDelay = operationDelay
         self.operationGate = operationGate
         self.restartDelay = restartDelay
@@ -139,6 +148,12 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         resumeEventStreamCountWaiters()
         if eventStreamDelay != .zero {
             try await clock.sleep(eventStreamDelay)
+        }
+        if let eventStreamRuntimeFailure = eventStreamRuntimeFailuresByLaunch[eventStreamCount]
+            ?? eventStreamRuntimeFailure
+        {
+            await eventStreamRuntimeFailureGate?.wait()
+            throw eventStreamRuntimeFailure
         }
         if eventStreamFailure == .creation {
             await eventStreamGate?.wait()
@@ -213,6 +228,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         RuntimeAdapterInvocationCounts(
             launch: launchCount,
             stream: eventStreamCount,
+            terminalResult: terminalResultCount,
             cancellation: cancellationCount,
             approval: approvalCount,
             input: queuedInputCount,
@@ -291,6 +307,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
 struct RuntimeAdapterInvocationCounts {
     let launch: Int
     let stream: Int
+    let terminalResult: Int
     let cancellation: Int
     let approval: Int
     let input: Int
