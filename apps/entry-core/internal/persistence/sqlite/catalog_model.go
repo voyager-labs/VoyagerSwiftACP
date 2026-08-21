@@ -135,11 +135,11 @@ func (PropertyBindingRow) TableName() string {
 // ordinal); a term_kind's term_value is unique per property. Native source
 // keys are not terms (they live in source_property_descriptors).
 type WorkspacePropertyTermRow struct {
-	WorkspaceID    []byte `gorm:"column:workspace_id;type:blob;not null;check:length(workspace_id) = 16;primaryKey;uniqueIndex:idx_term_value"`
-	PropertyID     []byte `gorm:"column:property_id;type:blob;not null;check:length(property_id) = 16;primaryKey;uniqueIndex:idx_term_value"`
-	TermKind       string `gorm:"column:term_kind;type:text;not null;check:term_kind in ('search_alias','legacy_alias');primaryKey;uniqueIndex:idx_term_value"`
+	WorkspaceID    []byte `gorm:"column:workspace_id;type:blob;not null;check:length(workspace_id) = 16;primaryKey;uniqueIndex:idx_term_value,where:lifecycle_state = 'active'"`
+	PropertyID     []byte `gorm:"column:property_id;type:blob;not null;check:length(property_id) = 16;primaryKey;uniqueIndex:idx_term_value,where:lifecycle_state = 'active'"`
+	TermKind       string `gorm:"column:term_kind;type:text;not null;check:term_kind in ('search_alias','legacy_alias');primaryKey"`
 	Ordinal        int    `gorm:"column:ordinal;type:integer;not null;check:ordinal >= 0;primaryKey"`
-	TermValue      string `gorm:"column:term_value;type:text;not null;uniqueIndex:idx_term_value"`
+	TermValue      string `gorm:"column:term_value;type:text;not null;uniqueIndex:idx_term_value,where:lifecycle_state = 'active'"`
 	LifecycleState string `gorm:"column:lifecycle_state;type:text;not null;check:lifecycle_state in ('active','tombstoned')"`
 
 	SeedOwner         *string `gorm:"column:seed_owner;type:text"`
