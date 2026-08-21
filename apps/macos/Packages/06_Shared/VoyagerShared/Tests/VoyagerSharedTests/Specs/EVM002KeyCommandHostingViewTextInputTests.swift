@@ -6,7 +6,7 @@ import XCTest
 /// - client 계약: `setMarkedText`는 marked state만 갱신, `insertText`만 커밋 후 `onTextInput`을 호출.
 /// - 라우팅: printable 무수정 문자만 `interpretKeyEvents`로, 그 외(space/함수키/단축키)는 `onKeyDown`으로.
 @MainActor
-final class KeyCommandHostingViewTextInputTests: XCTestCase {
+final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
     /// (i) 실제 클래스 client 계약 — marked text 조합 → 커밋 흐름.
     func testMarkedTextCompositionThenCommitInvokesOnTextInputOnce() {
         let view = KeyCommandHostingView()

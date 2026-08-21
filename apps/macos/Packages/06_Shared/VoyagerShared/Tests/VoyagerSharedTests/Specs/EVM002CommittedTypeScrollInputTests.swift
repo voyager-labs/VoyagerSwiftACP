@@ -2,7 +2,7 @@ import Foundation
 @testable import VoyagerShared
 import XCTest
 
-final class CommittedTypeScrollInputTests: XCTestCase {
+final class EVM002CommittedTypeScrollInputTests: XCTestCase {
     /// 단일 그래핌(한 글자) 입력은 그대로 반환된다.
     func testSingleGraphemeReturnsOriginalString() {
         XCTAssertEqual(CommittedTypeScrollInput.character(from: "a"), "a")
