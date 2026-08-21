@@ -141,12 +141,21 @@ struct WindowManagerFeature {
                 state.focusedWindowID = id
                 state.moveWindowToMRUFront(id)
                 state.refreshContentTabMoveTargets()
+                // 포커스 소유권을 각 윈도우 reducer의 isFocused에 반영한다.
+                // 프로세스 전역 Quick Look 동기화는 포커스된 윈도우의 활성 탭만 수행하도록 백그라운드 윈도우는 unfocus 처리한다.
+                let windowIDs = Array(state.windows.ids)
+                let closingWindowIDs = state.closingWindowIDs
+                for windowID in windowIDs {
+                    let isFocused = windowID == id && !closingWindowIDs.contains(windowID)
+                    state.windows[id: windowID]?.window.isFocused = isFocused
+                }
                 return .none
 
             case let .event(.windowResignedKey(id)):
                 if state.focusedWindowID == id {
                     state.focusedWindowID = nil
                 }
+                state.windows[id: id]?.window.isFocused = false
                 return .none
 
             case let .windowOpenCompleted(id, shouldBootstrapDefaultWindow, isRegistered):

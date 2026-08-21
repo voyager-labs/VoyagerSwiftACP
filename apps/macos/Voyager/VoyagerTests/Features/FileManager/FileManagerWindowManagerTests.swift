@@ -588,11 +588,30 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowBecameKey(otherID))) {
             $0.focusedWindowID = otherID
             $0.lastUsedWindowIDs = [otherID, closingID]
+            $0.windows[id: otherID]?.window.isFocused = true
+            $0.windows[id: closingID]?.window.isFocused = false
         }
 
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
         await store.finish()
+    }
+
+    /// VOY-618: windowBecameKey가 포커스 소유권을 각 윈도우 reducer의 isFocused에 반영한다.
+    /// - 검증 내용: becameKey 이벤트 후 focused 윈도우만 isFocused == true, 나머지는 false
+    func testWindowBecameKeySetsFocusOwnershipOnWindowState() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let store = makeStore(initialState: makeState(
+            focusedID: firstID,
+            windows: [(firstID, Spec.focusedPath), (secondID, Spec.backgroundPath)],
+        ))
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowBecameKey(secondID)))
+
+        XCTAssertEqual(store.state.windows[id: secondID]?.window.isFocused, true)
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.isFocused, false)
     }
 
     // MARK: - CTM-001-open_new_content_tab
