@@ -9,6 +9,18 @@ public extension RuntimeControlPlane {
         hostReference: ExternalAgentSessionReference,
     ) async throws -> RuntimeResult {
         try await hydrateIfNeeded()
+        if let runReference = sessions[hostReference]?.stored.runReference,
+           let terminal = storedTerminalResult(host: hostReference, runReference: runReference)
+        {
+            if case let .restored(lease) = sessions[hostReference]?.lease {
+                finalizeVisibleResumptionTerminal(
+                    host: hostReference,
+                    runReference: runReference,
+                    lease: lease,
+                )
+            }
+            return terminal
+        }
         let claim = try await claimRestoredRun(hostReference)
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
@@ -145,12 +157,7 @@ public extension RuntimeControlPlane {
     ) async throws -> RestoredConsumptionResult {
         switch error {
         case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
-            try await propagateResumedRunFailure(
-                error,
-                host: host,
-                runReference: claim.receipt.runReference,
-                lease: claim.lease,
-            )
+            return try await propagateResumedRunFailure(error, claim: claim, host: host)
         case .adapterFailure(.processExit, _), .adapterFailure(.transportLoss, _):
             if let terminal = try await terminalBeforeResumedInterruption(
                 claim: claim,
@@ -158,12 +165,7 @@ public extension RuntimeControlPlane {
             ) {
                 return .persistedTerminal(terminal)
             }
-            try await propagateResumedRunFailure(
-                error,
-                host: host,
-                runReference: claim.receipt.runReference,
-                lease: claim.lease,
-            )
+            return try await propagateResumedRunFailure(error, claim: claim, host: host)
         default:
             do {
                 if let terminal = try await persistedTerminalResult(
@@ -227,8 +229,11 @@ public extension RuntimeControlPlane {
             throw CancellationError()
         } catch let error as RuntimeHostError {
             switch error {
-            case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
+            case .persistenceConflict, .persistenceFailure:
                 return nil
+            case .invalidPersistedState, .unsupportedSchemaVersion:
+                try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+                throw error
             default:
                 throw error
             }
@@ -243,7 +248,7 @@ public extension RuntimeControlPlane {
         guard var session = sessions[host],
               session.stored.runReference == runReference,
               session.stored.projection.isTerminal,
-              session.lease == .resuming(lease)
+              session.lease == .resuming(lease) || session.lease == .restored(lease)
         else { return }
         session.lease = .none
         session.revision += 1
@@ -390,10 +395,11 @@ public extension RuntimeControlPlane {
 
     private func propagateResumedRunFailure(
         _ error: RuntimeHostError,
+        claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
-        runReference: RuntimeRunReference,
-        lease: UInt64,
-    ) async throws -> Never {
+    ) async throws -> RestoredConsumptionResult {
+        let runReference = claim.receipt.runReference
+        let lease = claim.lease
         switch error {
         case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
             try await restoreResumptionClaimIfNeeded(host, lease: lease)
@@ -403,13 +409,43 @@ public extension RuntimeControlPlane {
                 let hasPersistedProof = try await fencePersistedOwner(
                     host,
                     lease: lease,
+                    runReference: runReference,
                 )
+                if let terminal = storedTerminalResult(host: host, runReference: runReference) {
+                    return .persistedTerminal(terminal)
+                }
+                if hasPersistedProof,
+                   let session = sessions[host],
+                   session.stored.runReference == runReference,
+                   session.lease == .resuming(lease),
+                   restorationClaimState(session.stored.restorationClaim, now: restorationClock.now()) == .expired
+                {
+                    try await recoverRestorationClaimAfterExpiry(
+                        host: host,
+                        runReference: runReference,
+                        lease: lease,
+                        now: restorationClock.now(),
+                    )
+                }
                 if !hasPersistedProof {
                     deactivateLocalResumptionLeaseIfOwned(
                         host: host,
                         runReference: runReference,
                         lease: lease,
                     )
+                }
+            } catch let fencingError as RuntimeHostError {
+                applyCleanupFailedDecision(host: host, runReference: runReference)
+                deactivateLocalResumptionLeaseIfOwned(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
+                switch fencingError {
+                case .invalidPersistedState, .unsupportedSchemaVersion:
+                    throw fencingError
+                default:
+                    break
                 }
             } catch {
                 applyCleanupFailedDecision(host: host, runReference: runReference)
@@ -659,6 +695,23 @@ public extension RuntimeControlPlane {
             _ = try await fencePersistedOwner(hostReference, lease: lease)
             return
         }
+        let now = restorationClock.now()
+        if let session = sessions[hostReference],
+           case .resuming(lease) = session.lease,
+           restorationClaimState(session.stored.restorationClaim, now: now) == .expired
+        {
+            let runReference = session.stored.runReference
+            let recovery = Task.detached { [self] in
+                try await recoverRestorationClaimAfterExpiry(
+                    host: hostReference,
+                    runReference: runReference,
+                    lease: lease,
+                    now: now,
+                )
+            }
+            try await recovery.value
+            return
+        }
         try await mutateAfterPersistedTransitions { plane in
             plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
         }
@@ -667,13 +720,31 @@ public extension RuntimeControlPlane {
     private func fencePersistedOwner(
         _ hostReference: ExternalAgentSessionReference,
         lease: UInt64,
+        runReference: RuntimeRunReference? = nil,
     ) async throws -> Bool {
         try await withPersistedState { plane, loaded in
             guard let loaded else { return false }
+            let expectedSession = plane.sessions[hostReference]
             plane.sessions = plane.reconciledRegistry(
                 candidate: plane.sessions,
                 persisted: loaded,
             )
+            if let runReference,
+               let adopted = plane.adoptingPersistedTerminal(
+                   host: hostReference,
+                   runReference: runReference,
+                   expectedSession: expectedSession,
+                   loaded: loaded,
+               )
+            {
+                plane.sessions[hostReference] = adopted
+                plane.finalizeVisibleResumptionTerminal(
+                    host: hostReference,
+                    runReference: runReference,
+                    lease: lease,
+                )
+                return true
+            }
             plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
             return true
         }
@@ -736,6 +807,8 @@ public extension RuntimeControlPlane {
             sessions[hostReference] = session
             return
         }
+        guard restorationClaimState(session.stored.restorationClaim, now: restorationClock.now()) != .expired
+        else { return }
         guard decision == .restoreClaim else { return }
         session.lease = .restored(lease)
         sessions[hostReference] = session
