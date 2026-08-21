@@ -195,6 +195,68 @@ extension EVM002FileManagerPagePresentationTests {
         await store.finish()
     }
 
+    /// EVM-002-open_entry_double_click: `.app` package 디렉터리 더블클릭은 openFiles(Launch Services)로 라우팅된다.
+    /// package 디렉터리(`.app`)는 navigation target이 아니므로 폴더처럼 navigateToPath로 가지 않고,
+    /// planner가 일반 파일과 동일하게 openFiles delegate로 라우팅해 Launch Services 실행에 맡긴다.
+    /// - 검증 내용: bridge가 .openEntry(appPackage)를 navigation.openSelectedItem command로 변환하고
+    ///   planner가 package 디렉터리를 openFiles로 라우팅하는지 확인
+    /// - 사전 조건: isFolder:true, isPackage:true, fileExtension:"app" fixture
+    /// - 기대 결과: .entryViewLayout(.entryOperations(.open(.openFiles(paths:[appPath])))) 순서로 전송
+    func testOpenEntryAppPackageRoutesThroughCommandPlannerToOpenFiles() async {
+        guard let plainDir = try? FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/texts/plain")
+        else {
+            XCTFail("Fixture directory not found: fixtures/fixtures/texts/plain")
+            return
+        }
+        let appPath = plainDir.appendingPathComponent("Sample.app").path
+        let appPackage = EntryModel(
+            name: "Sample.app",
+            fullPath: appPath,
+            isFolder: true,
+            isHidden: false,
+            size: 0,
+            modifiedDate: Date(timeIntervalSince1970: 0),
+            fileExtension: "app",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 0),
+                addedDate: Date(timeIntervalSince1970: 0),
+                lastOpenedDate: nil,
+                kind: "Application",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+            isPackage: true,
+        )
+
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(plainDir.path)
+        state.entryViewLayout.entries = [appPackage]
+
+        let store = makeOpenEntryStore(initialState: state)
+
+        await store.send(.entryViewLayout(.delegate(.openEntry(appPackage))))
+        // Bridge가 command planner를 통해 라우팅 — clicked entry만 context에 포함
+        await store.receive {
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = $0 else {
+                return false
+            }
+            guard case .navigation(.openSelectedItem) = command else { return false }
+            return context.selectedIds == Set([appPackage.id])
+                && context.displayItems.count == 1
+                && context.displayItems.first?.id == appPackage.id
+                && context.currentPath == state.navigation.currentPath
+        }
+        // Planner가 package 디렉터리를 openFiles(Launch Services)로 변환
+        await store.receive {
+            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = $0 else {
+                return false
+            }
+            return paths == [appPath]
+        }
+        await store.finish()
+    }
+
     /// EVM-002-open_entry_double_click: 일반 파일 더블클릭은 EntryOperationsCommandPlanner를 통해
     /// openFiles 라우팅으로 전달된다.
     /// - 검증 내용: bridge가 .openEntry(file)를 navigation.openSelectedItem command로 변환하고

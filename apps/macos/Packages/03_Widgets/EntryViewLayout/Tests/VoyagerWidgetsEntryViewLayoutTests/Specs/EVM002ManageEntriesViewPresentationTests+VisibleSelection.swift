@@ -312,6 +312,29 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-001-open_entry_double_click: package 디렉터리(`.app`) 단일 선택의 context menu는 새 창/새 탭 항목을 제외한다.
+    /// `EntryContextMenuSpecFactory`가 `isDirectoryNavigationTarget`(= `isFolder && !isPackage`)을 소비하므로
+    /// package는 navigation target이 아니어서 new-window/new-tab 대상 경로가 nil이어야 한다.
+    /// - 검증 내용: package directory 단일 선택에서 rowEntryPathForOpenInNewWindow와 openInNewTabPaths가 nil
+    /// - 사전 조건: isFolder:true, isPackage:true, fileExtension:"app" package가 단일 선택돼 있다.
+    /// - 기대 결과: rowEntryPathForOpenInNewWindow == nil이고 openInNewTabPaths == nil이다.
+    func testPackageSingleSelectionExcludesOpenInNewWindowAndNewTabPaths() {
+        let package = visibleSelectionPackage(id: "/root/Sample.app")
+        let spec = EntryContextMenuSpecFactory.make(
+            selectedIds: [package.id],
+            selectedEntries: [package],
+            rowEntry: package,
+            isTrashFolder: false,
+            restorableTrashPaths: [],
+            canPaste: false,
+            favoriteTags: [],
+            openWithApplications: [],
+        )
+
+        XCTAssertNil(spec.rowEntryPathForOpenInNewWindow)
+        XCTAssertNil(spec.openInNewTabPaths)
+    }
+
     private func visibleSelectionState(
         roots: [EntryModel],
         expandedFolderIDs: Set<EntryModel.ID>,
@@ -350,6 +373,28 @@ extension EVM002ManageEntriesViewPresentationTests {
                 tags: nil,
                 supplementaryMetadata: nil,
             ),
+        )
+    }
+
+    private func visibleSelectionPackage(id: String) -> EntryModel {
+        EntryModel(
+            name: URL(fileURLWithPath: id).lastPathComponent,
+            fullPath: id,
+            isFolder: true,
+            isHidden: false,
+            size: 0,
+            modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            fileExtension: "app",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 1_700_000_000),
+                addedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                lastOpenedDate: nil,
+                kind: "Application",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+            isPackage: true,
         )
     }
 }
