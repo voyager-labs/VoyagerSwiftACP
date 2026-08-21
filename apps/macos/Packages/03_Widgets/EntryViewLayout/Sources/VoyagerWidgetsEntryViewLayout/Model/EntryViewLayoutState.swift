@@ -44,6 +44,8 @@ public struct EntryViewLayoutState: Equatable {
     public var lastSelectedId: EntryModel.ID?
     public var rangeAnchorId: EntryModel.ID?
     public var shouldScrollToSelection: Bool = false
+    /// 타자 검색 등에서 일회성으로 스크롤할 대상 entry id. entries 동기화나 collection 정리 시 소모된다.
+    public var pendingTypeScrollTargetId: EntryModel.ID?
     public var gridColumnCount: Int = 1
     public var listVisibleColumns: [EntryListColumn] = EntryListColumn.defaultVisibleColumns
 
@@ -126,6 +128,7 @@ public struct EntryViewLayoutState: Equatable {
 
     mutating func synchronizeEntries(_ entries: [EntryModel]) {
         self.entries = entries
+        pendingTypeScrollTargetId = nil
         reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
     }
 
@@ -252,6 +255,7 @@ public struct EntryViewLayoutState: Equatable {
         collectionIncompleteFailure = nil
         removedCollectionPaths = []
         entries = displayOrderItems
+        pendingTypeScrollTargetId = nil
 
         let remainingIDs = Set(entries.map(\.id))
         selectedIds = selectedIds.intersection(remainingIDs)

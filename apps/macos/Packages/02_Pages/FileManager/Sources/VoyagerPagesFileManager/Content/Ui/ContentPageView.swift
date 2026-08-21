@@ -110,6 +110,10 @@ struct ContentPageView: View {
             onKeyDown: { event in
                 handleKeyboardEvent(event)
             },
+            onTextInput: { text in
+                guard presentationPolicy.allowsKeyboardCommandDispatch else { return }
+                store.send(.view(.handleTextInput(text)))
+            },
         )
         .focusable()
         .allowsHitTesting(false)

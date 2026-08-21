@@ -263,6 +263,14 @@ extension EntryGridCoordinator {
         store.send(.view(.resetScrollFlag))
     }
 
+    /// 타자 검색으로 설정된 pending target을 centered 스크롤하고 reset한다.
+    /// 성공 여부와 관계없이 resetTypeScrollTarget을 발행해 일회성 소비를 보장한다.
+    func scrollToTypeScrollTarget(_ targetId: EntryModel.ID) {
+        defer { store.send(.view(.resetTypeScrollTarget)) }
+        guard let indexPath = indexPathByEntryId[targetId] else { return }
+        collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
+    }
+
     func reloadVisibleItems() {
         let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
             collectionView.indexPathsForVisibleItems()

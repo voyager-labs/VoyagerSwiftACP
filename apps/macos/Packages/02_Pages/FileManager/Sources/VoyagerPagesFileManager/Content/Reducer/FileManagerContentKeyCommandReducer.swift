@@ -12,6 +12,9 @@ struct FileManagerContentKeyCommandReducer {
             case let .view(.handleKeyCommand(command)):
                 FileManagerContentKeyCommandHandler.effect(for: command, state: state)
 
+            case let .view(.handleTextInput(text)):
+                FileManagerContentKeyCommandHandler.typeScrollEffect(for: text, state: state)
+
             default:
                 .none
             }

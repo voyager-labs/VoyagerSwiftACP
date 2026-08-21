@@ -7,10 +7,30 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
+
+    /// 커밋된 타자 입력을 type-scroll 타깃으로 라우팅한다.
+    /// 입력이 유효한 단일 문자이고, rename이 진행 중이 아니며, 표시 순서상 첫 매칭 엔트리가
+    /// 있을 때만 setTypeScrollTarget을 발행한다.
+    static func typeScrollEffect(
+        for text: String,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        // 방어 계층: 매처가 다시 검증하지만 여기서도 단일 문자 커밋을 보장한다.
+        guard CommittedTypeScrollInput.character(from: text) != nil else { return .none }
+        // rename이 우선권을 가지므로 rename 중에는 type-scroll을 비활성화한다.
+        guard state.entryViewLayout.entryOperations.renamingItemId == nil else { return .none }
+
+        let entries = commandEntries(state: state)
+        guard let firstMatch = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: entries, inputText: text)
+        else { return .none }
+
+        return .send(.entryViewLayout(.view(.setTypeScrollTarget(firstMatch))))
+    }
 
     static func effect(
         for command: KeyCommand,
