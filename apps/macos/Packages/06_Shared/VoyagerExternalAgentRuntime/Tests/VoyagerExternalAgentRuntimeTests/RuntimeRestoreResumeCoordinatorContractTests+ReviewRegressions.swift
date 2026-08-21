@@ -126,6 +126,40 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await adapter.counts().terminalResult == 0)
     }
 
+    /// VOY-747-review_p1_2: missing persisted state releases the expired local resumption owner.
+    /// 만료 claim 정리 CAS 충돌 뒤 fencing 재조회가 nil이어도 정확한 local run/lease만 비활성화하는지 검증한다.
+    /// - 검증 내용: typed process interruption, missing durable snapshot, local lease 비활성화, restore retry 비차단.
+    /// - 사전 조건: processExit 뒤 claim이 만료되고 clear CAS가 충돌하는 동안 persisted snapshot이 제거된다.
+    /// - 기대 결과: 원래 processExit은 유지되고 local lease는 none이며 다음 restore는 activeRunExists 없이 stale로 수렴한다.
+    @Test
+    func `missing persisted state releases expired resumption owner`() async throws {
+        let fixture = makeMissingPersistedStateFixture()
+        try await fixture.plane.register(fixture.adapter)
+
+        #expect(try await fixture.plane.restore(
+            hostReference: fixture.host,
+            expectedContext: fixture.context,
+        ) == .restored)
+        let resume = Task { try await fixture.plane.resumeRestoredRun(hostReference: fixture.host) }
+        await fixture.adapter.waitForEventStreamCount(1)
+        fixture.clock.advance(by: 60)
+        await fixture.failureGate.open()
+        await fixture.store.waitForSaveCount(3)
+        await fixture.store.replaceState(nil)
+        await fixture.clearGate.open()
+
+        await #expect(throws: fixture.failure) { try await resume.value }
+        #expect(await fixture.store.currentState() == nil)
+        #expect(await fixture.plane.sessions[fixture.host]?.stored.runReference == fixture.run)
+        #expect(await fixture.plane.sessions[fixture.host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(try await fixture.plane.restore(
+            hostReference: fixture.host,
+            expectedContext: fixture.context,
+        ) == .stale)
+        #expect(await fixture.adapter.counts().stream == 1)
+        #expect(await fixture.adapter.counts().terminalResult == 0)
+    }
+
     /// VOY-747-review_p1_2: caller cancellation clears an owned claim that expires during resumed consumption.
     /// 복원 소비가 대기하는 동안 claim이 만료되고 caller가 취소해도 만료 claim이 재활성화되지 않는지 검증한다.
     /// - 검증 내용: exact CancellationError, durable claim clear, local lease 비활성화, immediate restore 재획득.
@@ -521,6 +555,69 @@ private struct ReviewP1FourFixture {
     let store: InMemoryRuntimeStateStore
     let adapter: DeterministicRuntimeAdapter
     let plane: RuntimeControlPlane
+}
+
+private struct MissingPersistedStateFixture {
+    let clock: DeterministicRuntimeRestorationClock
+    let failureGate: RuntimeTestGate
+    let clearGate: RuntimeTestGate
+    let host: ExternalAgentSessionReference
+    let run: RuntimeRunReference
+    let context: RuntimeContextPolicy
+    let failure: RuntimeHostError
+    let store: InMemoryRuntimeStateStore
+    let adapter: DeterministicRuntimeAdapter
+    let plane: RuntimeControlPlane
+}
+
+private func makeMissingPersistedStateFixture() -> MissingPersistedStateFixture {
+    let now = Date(timeIntervalSince1970: 4_102_444_800)
+    let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+    let failureGate = RuntimeTestGate()
+    let clearGate = RuntimeTestGate()
+    let host: ExternalAgentSessionReference = "review-p1-2-missing-host"
+    let run = RuntimeRunReference("review-p1-2-missing-run")
+    let context = makeContext()
+    let capabilities = reviewStreamOnlyCapabilities()
+    let failure = RuntimeAdapterFailure(
+        kind: .processExit,
+        diagnosticCode: RuntimeDiagnosticCode("missing_snapshot_process_exit"),
+    )
+    let stored = makeEqualitySession(
+        storedContext: RuntimeStoredContext(contextPolicy: context),
+        externalAgentSessionReference: host,
+        providerInternalSessionReference: ProviderInternalSessionReference("review-p1-2-missing-receipt"),
+        runReference: run,
+        capabilitySnapshot: capabilities,
+        projection: .running,
+    )
+    let store = InMemoryRuntimeStateStore(
+        state: makeState([stored]),
+        saveGates: [3: clearGate],
+    )
+    let adapter = DeterministicRuntimeAdapter(
+        id: "sdk",
+        transport: .sdkAsyncStream,
+        capabilities: capabilities,
+        eventStreamRuntimeFailure: failure,
+        eventStreamRuntimeFailureGate: failureGate,
+    )
+    return MissingPersistedStateFixture(
+        clock: clock,
+        failureGate: failureGate,
+        clearGate: clearGate,
+        host: host,
+        run: run,
+        context: context,
+        failure: .adapterFailure(failure.kind, failure.diagnosticCode),
+        store: store,
+        adapter: adapter,
+        plane: RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        ),
+    )
 }
 
 private func makeReviewP1FourFixture() -> ReviewP1FourFixture {

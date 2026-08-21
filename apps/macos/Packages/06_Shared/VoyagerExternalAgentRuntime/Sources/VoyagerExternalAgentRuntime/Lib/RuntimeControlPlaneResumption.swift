@@ -761,7 +761,15 @@ public extension RuntimeControlPlane {
         fencePersistedOwner shouldFencePersistedOwner: Bool = false,
     ) async throws {
         if shouldFencePersistedOwner {
-            _ = try await fencePersistedOwner(hostReference, lease: lease)
+            let expectedRunReference = sessions[hostReference]?.stored.runReference
+            let hasPersistedOwner = try await fencePersistedOwner(hostReference, lease: lease)
+            if !hasPersistedOwner, let expectedRunReference {
+                deactivateLocalResumptionLeaseIfOwned(
+                    host: hostReference,
+                    runReference: expectedRunReference,
+                    lease: lease,
+                )
+            }
             return
         }
         let now = restorationClock.now()
