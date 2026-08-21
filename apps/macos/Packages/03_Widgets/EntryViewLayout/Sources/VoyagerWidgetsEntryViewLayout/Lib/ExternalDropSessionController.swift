@@ -54,6 +54,14 @@ final class ExternalDropSessionController {
             EntryViewLayoutDropValidationAdapter.validationLogger.info("acquisition rejected shared-active")
             return false
         }
+        // placement(획득 후 destination 복사)가 진행 중이면 두 번째 드롭을 받지 않는다.
+        // 복사 중인 세션은 activeExternalDrop이 이미 nil이라 위 가드로 막히지 않으므로,
+        // 이 가드가 없으면 두 번째 획득이 성공한 뒤 plan이 버려지고 staging만 정리돼
+        // 수락된 파일이 조용히 유실된다(코멘트 #3826514660).
+        guard store.state.entryOperations.externalDropImportPlacement == nil else {
+            EntryViewLayoutDropValidationAdapter.validationLogger.info("acquisition rejected placement-active")
+            return false
+        }
         guard activeExternalDropSessionID == nil else {
             EntryViewLayoutDropValidationAdapter.validationLogger.info("acquisition rejected owned-session")
             return false

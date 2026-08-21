@@ -2186,6 +2186,62 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(acquisition.beginCalls.count, 1, "두 번째 begin은 shared state 차단으로 client 호출 없이 false여야 한다")
         XCTAssertNil(controllerB.activeSessionID)
     }
+
+    /// 검증 내용: placement(획득 후 destination 복사)가 진행 중이면 두 번째 외부 드롭을
+    /// accept 단계에서 거절한다. 복사 중인 세션은 activeExternalDrop이 이미 nil이라
+    /// shared-active 가드로 막히지 않으므로(코멘트 #3826514660) 별도 가드가 필요하다.
+    /// 사전 조건: activeExternalDrop은 nil이고 externalDropImportPlacement는 non-nil이다.
+    /// 기대 결과: beginAcquisition이 false를 반환하고 client 호출이 없어야 한다.
+    func testExternalDropSessionControllerRejectsSecondBeginDuringPlacement() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        // reducer를 통해 placement(복사) 진행 중 상태를 만든다. `.succeeded`가 activeExternalDrop을
+        // nil로 만들고, `.applyImport`가 externalDropImportPlacement를 세팅한다.
+        let sessionID = ExternalDropSessionID(rawValue: "placement-in-flight")
+        store.send(.entryOperations(.externalDrop(.event(.succeeded(sessionID)))))
+        store.send(.entryOperations(.externalDrop(.applyImport(ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: "/destination",
+            forcedCopy: false,
+            orderedPromisedNames: ["a.txt"],
+            promisedOrdinals: [0],
+            receivedFiles: [
+                ExternalDropReceivedFile(
+                    sessionID: sessionID,
+                    itemOrdinal: 1,
+                    callbackOrdinal: 1,
+                    stagedPath: "/staging/a.txt",
+                ),
+            ],
+            immediateURLPaths: [],
+        )))))
+
+        let controller = ExternalDropSessionController(
+            store: store,
+            clientProvider: { acquisition.client },
+            clearDropState: {},
+        )
+
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+        let negotiation = VoyagerFeaturesEntryOperations.ExternalDropNegotiation.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertFalse(controller.beginAcquisition(
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: "/destination",
+        ))
+        XCTAssertEqual(acquisition.beginCalls.count, 0, "placement 진행 중이면 client 호출 없이 거절해야 한다")
+        XCTAssertNil(controller.activeSessionID)
+    }
 }
 
 // MARK: - Support
