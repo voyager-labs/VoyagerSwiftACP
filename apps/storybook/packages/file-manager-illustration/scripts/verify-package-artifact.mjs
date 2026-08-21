@@ -65,6 +65,15 @@ for (const path of fontUrls) {
   assert.ok(existsSync(resolve(distRoot, path)), `Missing published font ${path}`)
 }
 
+// Verify controls.css selectors are present for self-contained deployment
+const controlSelectors = [".vc-icon-button", ".vc-disclosure", ".traffic-lights"]
+for (const selector of controlSelectors) {
+  assert.ok(
+    stylesheet.includes(selector),
+    `Published stylesheet must include ${selector} from controls.css`,
+  )
+}
+
 console.log(
   `package artifact: pass (${declarations.length} declarations, ${inlineImages.length} images, ${fontUrls.length} fonts)`,
 )
