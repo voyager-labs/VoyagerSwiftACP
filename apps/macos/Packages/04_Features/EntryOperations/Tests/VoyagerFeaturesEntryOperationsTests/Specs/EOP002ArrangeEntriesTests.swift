@@ -1966,6 +1966,25 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    /// EOP-002-import_external_objects (VOY-736 후속): provider가 receivePromisedFiles 도중
+    /// reader를 동기적으로 호출해 콜백이 cardinality 확정보다 먼저 도착해도 세션이 성공한다.
+    /// - 검증 내용: 동기 콜백이 받은 수를 채운 뒤 cardinality 확정 후 성공이 재평가된다.
+    /// - 사전 조건: 이름이 확정된 receiver가 receive 중 동기적으로 첫 파일을 보고한다.
+    /// - 기대 결과: `.succeeded` 종단 이벤트가 온다(스트림이 열린 채 남지 않는다).
+    func testExternalDropAcquisition_synchronousCallbackBeforeFinalizeStillSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("SyncBeforeFinalize")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["sync.eml"])
+        receiver.deliverSynchronously = true
+        let request = client.begin([receiver], [], "/dest", false, [])
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
     // MARK: - EOP-002-import_external_objects (universal data-flavor materialization)
 
     /// 검증 내용: data-flavor item의 바이트가 staging에 그대로(변환 없이) 쓰이고 UTI 기반 이름을 갖는다.
@@ -2247,13 +2266,14 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
     }
 
-    /// EOP-002-import_external_objects (VOY-736 후속): fileNames가 빈 receiver는 기대 콜백 수가
-    /// 미정이므로 첫 성공 콜백으로 완료 판정한다. Mail receiver는 fileNames가 비어도
-    /// receiver 이행으로 `.eml`을 받는다(레거시 폴백·텍스트 플레이버로 떨어지지 않는다).
-    /// - 사전 조건: fileNames가 빈 receiver 하나로 세션을 시작하고 staging에 파일을 쓴 뒤
-    ///   non-main 큐에서 성공 콜백 1회를 호출한다.
-    /// - 기대 결과: `.received` 1건 후 `.succeeded(sessionID)`가 오고 파일이 1개 물리화된다.
-    func testExternalDropAcquisition_emptyFileNamesReceiverCompletesOnFirstCallback() async throws {
+    /// EOP-002-import_external_objects (VOY-736 후속): provider cardinality 계약에 따라
+    /// receive 이후에도 fileNames가 빈 receiver는 예상 cardinality를 알 수 없어
+    /// 성공하지 않고 타입화 실패 `.emptyCardinality`로 종료한다.
+    /// - 검증 내용: 빈 fileNames receiver 하나로 세션을 시작하고 staging에 파일을 쓴 뒤
+    ///   성공 콜백을 호출해도 `.succeeded`가 오지 않고 `.failed(sessionID, .emptyCardinality)`가 온다.
+    /// - 사전 조건: fileNames가 빈 receiver 하나로 세션을 시작한다.
+    /// - 기대 결과: `.failed(sessionID, .emptyCardinality)`이 마지막 이벤트로 오고 `.succeeded`는 없다.
+    func testExternalDropAcquisition_emptyFileNamesReceiverFailsWithEmptyCardinality() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("EmptyNames")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2270,48 +2290,46 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         receiver.invokeReaderOnQueue(url: staged, error: nil)
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        let received = events.compactMap { event -> ExternalDropReceivedFile? in
-            guard case let .received(file) = event else { return nil }
-            return file
-        }
-        XCTAssertEqual(received.count, 1)
-        XCTAssertEqual(received.map(\.stagedPath), [staged.path])
-        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .emptyCardinality))
+        XCTAssertFalse(events.contains { event in
+            if case .succeeded = event { return true }
+            return false
+        })
         XCTAssertFalse(receiver.readerExecutedOnMainThread ?? true)
     }
 
-    /// EOP-002-import_external_objects (VOY-736 후속): 빈 fileNames 수신기(미정) + 파일명 있는
-    /// 수신기(결정적) 혼합 세션에서 결정적 수신기 완료만으로 성공하지 않고, 미정 수신기의 첫
-    /// 성공 콜백까지 도착해야 `.succeeded`가 온다. 결정적 콜백이 먼저 와도 완료되지 않음을 보장한다.
-    /// - 사전 조건: 빈 fileNames receiver와 "a.txt" receiver를 함께 begin하고 staging 파일을 쓴다.
-    /// - 기대 결과: 결정적 콜백 1회 후에는 종단이 없고, 미정 콜백 1회 후 `.succeeded`가 온다.
-    func testExternalDropAcquisition_indeterminateBarrierWaitsForEmptyNamesReceiver() async throws {
-        let temporaryRoot = try makeAcquisitionTempRoot("IndeterminateBarrier")
+    /// EOP-002-import_external_objects (VOY-736 후속): provider cardinality 계약에 따라
+    /// receive 이후 fileNames가 채워진 receiver들(결정적)은 예상 cardinality가 확정되고,
+    /// 결정적 배리어는 모든 이름 지어진 콜백이 도착해야 완료한다.
+    /// - 사전 조건: "a.txt" receiver와 "b.txt" receiver를 함께 begin하고 staging 파일을 쓴다.
+    /// - 기대 결과: 한 receiver의 콜백만으로는 종단이 없고, 나머지 receiver 콜백 후 `.succeeded`가 온다.
+    func testExternalDropAcquisition_determinateBarrierWaitsForAllNamedCallbacks() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DeterminateBarrier")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let emptyReceiver = FilePromiseReceiverSpy(names: [])
-        let namedReceiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([emptyReceiver, namedReceiver], [], "/dest", false, [])
+        let receiverA = FilePromiseReceiverSpy(names: ["a.txt"])
+        let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiverA, receiverB], [], "/dest", false, [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let a = staging.appendingPathComponent("a.txt")
-        let mail = staging.appendingPathComponent("message.eml")
+        let b = staging.appendingPathComponent("b.txt")
         try Data("a".utf8).write(to: a)
-        try Data("eml".utf8).write(to: mail)
+        try Data("b".utf8).write(to: b)
 
-        // 결정적 receiver("a.txt")만 콜백: 아직 성공하면 안 된다(미정 receiver 미완료).
-        namedReceiver.invokeReader(url: a, error: nil)
+        // receiverA만 콜백: 아직 성공하면 안 된다(receiverB 미완료).
+        receiverA.invokeReader(url: a, error: nil)
         var events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertNil(events.last, "결정적 기여만으로 성공하면 안 된다")
+        XCTAssertNil(events.last, "한 receiver 기여만으로 성공하면 안 된다")
         XCTAssertFalse(events.contains { event in
             if case .succeeded = event { return true }
             return false
         })
 
-        // 미정 receiver 첫 콜백: 이제 모든 기여가 완료돼 성공해야 한다.
-        emptyReceiver.invokeReaderOnQueue(url: mail, error: nil)
+        // receiverB 콜백: 이제 모든 이름 지어진 기여가 완료돼 성공해야 한다.
+        receiverB.invokeReader(url: b, error: nil)
         events = await collectEvents(from: client.events(request.sessionID))
         let received = events.compactMap { event -> ExternalDropReceivedFile? in
             guard case let .received(file) = event else { return nil }
@@ -2321,17 +2339,17 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
-    /// 검증 내용: fileNames 빈(미정) receiver가 파일을 여러 개 전달하면 첫 callback에서
-    /// 종단을 내지 않고 모든 콜백을 수용한 뒤 quiescence 시점에 `.succeeded`를 낸다.
-    /// 사전 조건: 빈 fileNames receiver가 staging에 파일 2개를 쓰고 콜백 2회 호출.
+    /// EOP-002-import_external_objects (VOY-736 후속): receive 이후 fileNames로 예상 cardinality가
+    /// 확정된 receiver는 콜백 수가 cardinality에 도달하면 성공한다.
+    /// 사전 조건: fileNames 2개 receiver가 staging에 파일 2개를 쓰고 콜백 2회 호출.
     /// 기대 결과: `.received` 2건이 모두 관측되고 `.succeeded`로 끝난다.
-    func testExternalDropAcquisition_indeterminateReceiverMultipleFilesSucceeds() async throws {
-        let temporaryRoot = try makeAcquisitionTempRoot("IndeterminateMulti")
+    func testExternalDropAcquisition_namedCardinalityMultipleFilesSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("NamedMulti")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let receiver = FilePromiseReceiverSpy(names: [])
+        let receiver = FilePromiseReceiverSpy(names: ["first.eml", "second.eml"])
         let request = client.begin([receiver], [], "/dest", false, [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -2353,18 +2371,19 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
-    /// 검증 내용: 미정 receiver의 콜백 간격이 quiescence 임계값(250ms)을 넘어도
-    /// 세션이 일부 파일만 수용한 채 `.succeeded`로 종료되지 않는다.
-    /// 사전 조건: 빈 fileNames receiver가 staging에 파일 2개를 쓰고 콜백 2회를
+    /// EOP-002-import_external_objects (VOY-736 후속): provider cardinality가 확정되면
+    /// 콜백 간격은 종료 판정에 무관하다. quiescence 임계값(250ms)을 넘는 간격이어도
+    /// 콜백 수가 cardinality에 도달하면 `.succeeded`로 끝난다.
+    /// 사전 조건: fileNames 2개 receiver가 staging에 파일 2개를 쓰고 콜백 2회를
     /// 600ms 간격으로 호출(250ms 초과, 1s 이내).
     /// 기대 결과: `.received` 2건이 모두 관측되고 `.succeeded`로 끝난다.
-    func testExternalDropAcquisition_indeterminateCallbackGapExceeding250msStillSucceeds() async throws {
-        let temporaryRoot = try makeAcquisitionTempRoot("IndeterminateGap")
+    func testExternalDropAcquisition_callbackTimingIrrelevantOnceCardinalityKnown() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("NamedGap")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let receiver = FilePromiseReceiverSpy(names: [])
+        let receiver = FilePromiseReceiverSpy(names: ["first.eml", "second.eml"])
         let request = client.begin([receiver], [], "/dest", false, [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -2374,7 +2393,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         try Data("two".utf8).write(to: second)
 
         receiver.invokeReader(url: first, error: nil)
-        // 250ms quiescence가 종단을 내기에 충분한 간격을 둔 뒤 다음 콜백을 보낸다.
+        // cardinality(2)가 이미 확정됐으므로 quiescence를 넘는 간격도 종료 판정에 무관하다.
         try await Task.sleep(nanoseconds: 600_000_000)
         receiver.invokeReader(url: second, error: nil)
 
@@ -2558,6 +2577,46 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             received.map { URL(fileURLWithPath: $0.stagedPath).resolvingSymlinksInPath().path },
             [message.resolvingSymlinksInPath().path],
         )
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 후속): 빈 fileNames 수신기가 명시적 취소-재조정으로
+    /// 완료돼도 결정적(이름 있는) 수신기 기여가 남아 있으면 `.succeeded`를 내지 않는다.
+    /// - 검증 내용: 미정 수신기 재조정만으로는 성공하지 않고, 결정적 수신기 콜백 후에야 성공한다.
+    /// - 사전 조건: 빈 fileNames receiver와 "a.txt" receiver를 함께 begin하고 staging 파일을 쓴다.
+    /// - 기대 결과: 미정 재조정 후 종단이 없고, 결정적 콜백 후 `.succeeded`가 온다.
+    func testExternalDropAcquisition_mixedReceiverBarrierHoldsUntilNamedCallback() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("MixedBarrier")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let emptyReceiver = FilePromiseReceiverSpy(names: [])
+        let namedReceiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([emptyReceiver, namedReceiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let message = staging.appendingPathComponent("message.eml")
+        try Data("message".utf8).write(to: message)
+
+        // 미정 receiver가 userCancelled + staged file로 명시적 완료를 보고한다.
+        emptyReceiver.invokeReader(
+            url: URL(fileURLWithPath: "/message.eml"),
+            error: NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue),
+        )
+
+        // 미정 재조정만으로는 아직 성공하면 안 된다(결정적 "a.txt" 미도착).
+        var events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertNil(events.last, "미정 수신기 재조정만으로 성공하면 안 된다")
+        XCTAssertFalse(events.contains { event in
+            if case .succeeded = event { return true }
+            return false
+        })
+
+        // 결정적 receiver 콜백: 이제 모든 기여가 완료돼 성공해야 한다.
+        let a = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+        namedReceiver.invokeReader(url: a, error: nil)
+        events = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
@@ -2865,14 +2924,14 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// 검증 내용: `.succeeded` emit 후(reducer가 placement 복사를 시작하기 전) 도착한 늦은
     /// 콜백은 staging을 제거하지 않는다. placement가 staging 파일을 읽는 중 삭제되면 복사가
     /// 실패하므로, staging 정리는 finish/cancel의 책임으로 남긴다.
-    /// 사전 조건: 미정 receiver가 성공 종단 후 늦은 콜백으로 staging에 새 파일을 쓴다.
+    /// 사전 조건: 이름이 확정된(결정적) receiver가 성공 종단 후 늦은 콜백으로 staging에 새 파일을 쓴다.
     /// 기대 결과: staging 디렉터리가 보존되고 추가 이벤트는 없다.
     func testExternalDropAcquisition_lateCallbackAfterSuccessPreservesStaging() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("LateAfterSuccess")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
-        let receiver = FilePromiseReceiverSpy(names: [])
+        let receiver = FilePromiseReceiverSpy(names: ["first.eml"])
         let request = client.begin([receiver], [], "/dest", false, [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)

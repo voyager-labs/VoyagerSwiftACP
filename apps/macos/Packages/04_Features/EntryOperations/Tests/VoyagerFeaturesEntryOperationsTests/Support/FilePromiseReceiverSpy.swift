@@ -60,6 +60,9 @@ final class FilePromiseReceiverSpy: NSFilePromiseReceiver {
     /// `invokeReaderOnQueue`로 큐에서 reader 콜백이 실행될 때 그 스레드가 main이었는지.
     /// 실제 AppKit 콜백 경로가 main이 아님을 검증하는 크래시 재현 테스트에서 사용한다.
     private(set) var readerExecutedOnMainThread: Bool?
+    /// 설정되면 receivePromisedFiles가 destination에 첫 이름 파일을 쓰고 reader를
+    /// 동기적으로 호출한다. cardinality 확정보다 먼저 콜백이 도착하는 경로를 재현한다.
+    var deliverSynchronously = false
 
     init(names: [String]) {
         self.names = names
@@ -72,7 +75,8 @@ final class FilePromiseReceiverSpy: NSFilePromiseReceiver {
     }
 
     override var fileNames: [String] {
-        names
+        // provider cardinality는 receive 후에만 알려진다(계약: receive 먼저 → fileNames 사용).
+        receiveCalled ? names : []
     }
 
     override func receivePromisedFiles(
@@ -86,6 +90,11 @@ final class FilePromiseReceiverSpy: NSFilePromiseReceiver {
         receivedOperationQueue = operationQueue
         storedReader = { url, error in
             reader(url ?? URL(fileURLWithPath: "NSFilePromiseMissing"), error)
+        }
+        if deliverSynchronously, let name = names.first {
+            let delivered = destinationDir.appendingPathComponent(name)
+            try? Data("sync".utf8).write(to: delivered)
+            storedReader?(delivered, nil)
         }
     }
 

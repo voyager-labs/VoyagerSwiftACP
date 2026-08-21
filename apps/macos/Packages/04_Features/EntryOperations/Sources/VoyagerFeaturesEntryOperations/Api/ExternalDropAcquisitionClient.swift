@@ -283,8 +283,15 @@ private final class ExternalDropAcquisitionStore {
             session.startStagingObservation()
         }
 
+        // receive를 먼저 시작한다. provider cardinality(fileNames)는 receive 후에만
+        // 채워지므로, 수신 시작 후의 값을 기준으로 cardinality를 확정·예약해야 한다.
+        for (index, receiver) in receivers.enumerated() {
+            receiverRegistry[sessionID, default: []].append(receiver)
+            session.startReceiving(receiver: receiver, atDestination: stagingURL, index: index)
+        }
+
         // cardinality 검증: empty/indeterminate는 추측 성공이 아닌 타입화 실패다.
-        // data flavor는 begin에서 동기적으로 물리화되므로 promise fileNames 수에 더한다.
+        // data flavor는 아래에서 동기적으로 물리화되므로 promise fileNames 수에 더한다.
         session.finalizeCardinality(fileNamesByReceiver: receivers.map(\.fileNames), dataCount: dataFlavors.count)
 
         // 확정된 promise 파일명을 먼저 예약해 data flavor가 같은 이름으로 staging에 쓰는
@@ -294,12 +301,6 @@ private final class ExternalDropAcquisitionStore {
         // data flavor 즉시 물리화: 바이트를 verbatim으로 staging에 쓰고 `.received`를 emit한다.
         for flavor in dataFlavors {
             session.materialize(dataFlavor: flavor)
-        }
-
-        // receive 시작 후 receiver.fileNames를 예상 cardinality로 사용한다.
-        for (index, receiver) in receivers.enumerated() {
-            receiverRegistry[sessionID, default: []].append(receiver)
-            session.startReceiving(receiver: receiver, atDestination: stagingURL, index: index)
         }
 
         let orderedPromisedNames = receivers.flatMap(\.fileNames)

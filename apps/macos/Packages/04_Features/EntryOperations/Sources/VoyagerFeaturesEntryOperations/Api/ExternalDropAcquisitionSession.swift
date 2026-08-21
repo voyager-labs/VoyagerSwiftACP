@@ -32,12 +32,16 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 발행된 terminal 이벤트. 정확히 한 번 발행을 보장하기 위해 저장한다.
     private var terminalEvent: ExternalDropAcquisitionEvent?
     private var expectedCardinality: Int = 0
+    /// cardinality가 확정됐는지 여부. 확정 전에 도착한 콜백이 성공을 내지 못하게 하는
+    /// 최소 수명주기 가드다(receive 시작 후 콜백이 확정보다 먼저 도착할 수 있다).
+    private var cardinalityFinalized = false
     private var receivedCount: Int = 0
     /// 결정적(파일명 있는 수신기 + data flavor) 기여 중 실제 수신된 수. 종단 판정에 쓴다.
     private var receivedDeterminateCount: Int = 0
-    /// fileNames가 빈(기대 콜백 수 미정) 수신기의 index 집합.
+    /// fileNames가 빈(기대 콜백 수 미정) 수신기의 index 집합. 미정 수신기는 카운트 기반
+    /// 성공이 아니라 취소-재조정(provider가 userCancelled로 완료를 알림) 경로로만 종단한다.
     private var indeterminateReceivers: Set<Int> = []
-    /// 미정 수신기 중 첫 성공 콜백이 도착해 완료된 index 집합.
+    /// 명시적 취소-재조정(userCancelled + staged file)으로 완료된 미정 수신기의 index 집합.
     private var completedIndeterminateReceivers: Set<Int> = []
     private var receivedStagedPaths: Set<String> = []
     /// data flavor 파일명 충돌을 회피하기 위한 세션 내 사용 파일명 집합(canonical key).
@@ -47,8 +51,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var pendingCancelledCallbacks: [Int: Int] = [:]
     private var callbackErrorTimeouts: [Int: DispatchWorkItem] = [:]
     private var stagingScanWorkItem: DispatchWorkItem?
-    /// 미정(fileNames 빈) 수신기의 다중 파일 콜백을 수용하기 위한 quiescence 타이머.
-    private var indeterminateQuiescenceWorkItem: DispatchWorkItem?
     private var bufferedEvents: [ExternalDropAcquisitionEvent] = []
     private var continuation: AsyncStream<ExternalDropAcquisitionEvent>.Continuation?
 
@@ -89,9 +91,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 
     /// receive 시작 후 receiver.fileNames를 기준으로 예상 cardinality를 확정한다.
     /// data flavor는 begin에서 이미 물리화되므로 `dataCount`를 결정적 cardinality에 더한다.
-    /// fileNames가 빈 수신기는 기대 콜백 수가 미정이므로 결정적 수에 넣지 않고, 첫 성공
-    /// 콜백으로 완료 판정한다(VOY-736: Mail receiver의 fileNames 공백). 그 외 결정적/미정
-    /// 기여가 모두 비면 즉시 타입화 실패로 처리한다.
+    /// fileNames가 빈 수신기는 기대 콜백 수가 미정이므로 결정적 수에 넣지 않고 취소-재조정
+    /// 경로로만 종단한다. 그 외 결정적/미정 기여가 모두 비면 즉시 타입화 실패로 처리한다.
     func finalizeCardinality(fileNamesByReceiver: [[String]], dataCount: Int) {
         lock.lock()
         defer { lock.unlock() }
@@ -112,8 +113,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             }
         }
         expectedCardinality = determinate
+        cardinalityFinalized = true
         if determinate == 0, indeterminateReceivers.isEmpty {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
+        } else if phase == .acquiring, sessionIsCompleteLocked() {
+            // receive 중 동기적으로 도착한 콜백이 이미 받은 수를 채웠을 수 있다. cardinality
+            // 확정 후에야 성공 판정이 가능하므로 lock을 보유한 채 재평가한다.
+            emitTerminalLocked(.succeeded(sessionID))
         }
     }
 
@@ -124,8 +130,11 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         defer { lock.unlock() }
         guard phase == .acquiring else { return }
         expectedCardinality = count
+        cardinalityFinalized = true
         if count == 0 {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
+        } else if phase == .acquiring, sessionIsCompleteLocked() {
+            emitTerminalLocked(.succeeded(sessionID))
         }
     }
 
@@ -328,17 +337,24 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         // cardinality 충족으로 먼저 `.succeeded`를 내고(phase가 .acquiring을 벗어남) 뒤의 error
         // 검사가 항상 거짓이 되어 오류가 무시될 수 있다. hasError를 넘겨 결정적 성공을 억제해
         // `.callbackError` 종단을 보장한다(코멘트 #3826514658). 미정 수신기 것은 기존 계약
-        // (취소 error + staged file = 성공)대로 quiescence 종단 판정에 맡긴다.
+        // (취소 error + staged file = 성공)대로 재조정 종단 판정에 맡긴다.
         registerReceivedFile(
             receiverIndex: receiverIndex,
             url: resolvedURL,
             callbackOrdinal: callbackOrdinal,
             hasError: error != nil,
+            cancelReconciled: error != nil && isUserCancelled(error),
         )
         if let error, phase == .acquiring, !shouldAwaitStagedFile(error: error, receiverIndex: receiverIndex) {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
         lock.unlock()
+    }
+
+    private func isUserCancelled(_ error: Error?) -> Bool {
+        guard let nsError = error as NSError? else { return false }
+        return nsError.domain == NSCocoaErrorDomain
+            && nsError.code == CocoaError.Code.userCancelled.rawValue
     }
 
     private func logCallbackError(_ error: Error) {
@@ -404,7 +420,12 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             pendingCancelledCallbacks.removeValue(forKey: receiverIndex)
             callbackErrorTimeouts.removeValue(forKey: receiverIndex)?.cancel()
             guard receivedStagedPaths.insert(url.standardizedFileURL.path).inserted else { continue }
-            registerReceivedFile(receiverIndex: receiverIndex, url: url, callbackOrdinal: callbackOrdinal)
+            registerReceivedFile(
+                receiverIndex: receiverIndex,
+                url: url,
+                callbackOrdinal: callbackOrdinal,
+                cancelReconciled: true,
+            )
             if phase != .acquiring { return }
         }
     }
@@ -438,16 +459,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         url: URL,
         callbackOrdinal: Int,
         hasError: Bool = false,
+        cancelReconciled: Bool = false,
     ) {
         nextItemOrdinal += 1
         let itemOrdinal = nextItemOrdinal
         receivedCount += 1
         let isIndeterminate = indeterminateReceivers.contains(receiverIndex)
-        if isIndeterminate {
-            // 미정 수신기: 첫 성공 콜백으로 "기여 시작"을 표시한다. 다중 파일 전달 대비해
-            // 아래에서 quiescence 후 최종 종단을 판정한다.
-            completedIndeterminateReceivers.insert(receiverIndex)
-        } else {
+        if !isIndeterminate {
             receivedDeterminateCount += 1
         }
 
@@ -459,42 +477,20 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         )
         emitLocked(.received(receivedFile))
 
-        if indeterminateReceivers.isEmpty {
-            // 미정 수신기가 없으면 즉시 종단 판정한다(기존 동작). error가 함께 온 결정적
-            // 콜백은 성공으로 종단하지 않는다(호출자가 `.callbackError`로 실패 처리).
-            if !hasError, sessionIsCompleteLocked() {
-                emitTerminalLocked(.succeeded(sessionID))
+        if isIndeterminate {
+            // 미정(빈 fileNames) 수신기는 카운트 기반 성공이 불가능하다. provider가
+            // userCancelled로 완료를 알려 파일을 재조정한 경우에만 "명시적 완료"로 기록하고,
+            // 정상 성공 콜백은 예상 cardinality를 알 수 없으므로 `.emptyCardinality`로 실패한다.
+            // 그 외 오류 콜백은 호출자(`handleCallback`)가 `.callbackError`로 종단한다.
+            if cancelReconciled {
+                completedIndeterminateReceivers.insert(receiverIndex)
+                if sessionIsCompleteLocked() {
+                    emitTerminalLocked(.succeeded(sessionID))
+                }
+            } else if !hasError {
+                emitTerminalLocked(.failed(sessionID, .emptyCardinality))
             }
-        } else {
-            // 미정 수신기가 있으면 첫 콜백에서 곧바로 성공을 내지 않고, 같은 receiver의
-            // 추가 콜백(다중 파일)을 수용하기 위해 quiescence 타이머로 최종 종단을 지연한다.
-            scheduleIndeterminateQuiescenceLocked()
-        }
-    }
-
-    /// 미정 수신기의 종단 판정을 quiescence(추가 콜백 대기) 후로 지연한다. 같은 receiver에서
-    /// 여러 파일이 콜백으로 전달될 때 첫 callback만으로 완료 처리하지 않도록 한다.
-    /// caller는 lock을 보유해야 한다.
-    ///
-    /// quiescence는 1초로 잡는다. provider가 대용량 파일을 쓰는 동안 콜백 간격이 벌어져도
-    /// 세션이 일부 파일만 수용한 채 `.succeeded`로 종료되지 않도록, 마지막 콜백 후 추가
-    /// 콜백이 도착할 여지를 250ms보다 넉넉하게 둔다. (모든 콜백은 이 타이머를 매번 재예약한다)
-    private func scheduleIndeterminateQuiescenceLocked() {
-        guard phase == .acquiring else { return }
-        indeterminateQuiescenceWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.evaluateIndeterminateCompletion()
-        }
-        indeterminateQuiescenceWorkItem = workItem
-        observationQueue.asyncAfter(deadline: .now() + 1, execute: workItem)
-    }
-
-    private func evaluateIndeterminateCompletion() {
-        lock.lock()
-        defer { lock.unlock() }
-        indeterminateQuiescenceWorkItem = nil
-        guard phase == .acquiring else { return }
-        if sessionIsCompleteLocked() {
+        } else if !hasError, sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
         }
     }
@@ -619,8 +615,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         staging.detachObserver()
         stagingScanWorkItem?.cancel()
         stagingScanWorkItem = nil
-        indeterminateQuiescenceWorkItem?.cancel()
-        indeterminateQuiescenceWorkItem = nil
         callbackErrorTimeouts.values.forEach { $0.cancel() }
         callbackErrorTimeouts.removeAll()
         pendingCancelledCallbacks.removeAll()
@@ -652,11 +646,12 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         return .count(fileNames.count)
     }
 
-    /// 종단(성공) 판정. 결정적 기여(파일명 있는 수신기 + data flavor)가 모두 수신됐고
-    /// 모든 미정 수신기가 source-owned 파일을 실제로 기여했을 때 성공이다.
+    /// 종단(성공) 판정. cardinality가 확정됐고, 결정적 기여(파일명 있는 수신기 + data flavor)
+    /// 가 모두 수신됐으며, 모든 미정 수신기가 명시적 취소-재조정으로 완료됐을 때 성공이다.
     /// caller는 lock을 보유해야 한다.
     private func sessionIsCompleteLocked() -> Bool {
-        receivedDeterminateCount >= expectedCardinality
+        guard cardinalityFinalized else { return false }
+        return receivedDeterminateCount >= expectedCardinality
             && completedIndeterminateReceivers.isSuperset(of: indeterminateReceivers)
     }
 }
