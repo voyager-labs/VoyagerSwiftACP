@@ -9530,9 +9530,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(plan.windows.first?.items.first?.requiresReservation, false)
     }
 
-    /// close, teardown, disappear, Collection open, 또는 content-tab move 참여 중인 exact-route tab은 재사용하지 않는다.
-    /// - 검증 내용: stale apply 거부와 lifecycle/Collection/move-busy window 제외 후 신규 identity 재계획
-    /// - 사전 조건: exact-route tab이 planning 뒤 pending close, teardown, closing, Collection open, 또는 move 상태로 전환됨
+    /// close, teardown, Collection open, move, 또는 Pin 영속화 중인 exact-route tab은 재사용하지 않는다.
+    /// - 검증 내용: stale apply 거부와 lifecycle/Collection/move/Pin-busy window 제외 후 신규 identity 재계획
+    /// - 사전 조건: exact-route tab이 planning 뒤 close, teardown, Collection open, move, 또는 Pin 영속화 상태로 전환됨
     /// - 기대 결과: 기존 plan application은 실패하고 retry plan은 새 window/tab을 예약함
     func testPlacementRejectsTabsPendingCloseOrTeardownAndReplansNewIdentity() throws {
         let windowID = UUID()
@@ -9571,8 +9571,33 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         var moveState = state
         moveState.windows[id: windowID]?.window.contentTabMoveParticipantRequestID = UUID()
+        var pinMutationState = state
+        pinMutationState.windows[id: windowID]?.window.pendingSelectedContentTabPinMutation = .init(
+            operationID: UUID(),
+            target: .pinned,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+        )
+        var topNavigationState = state
+        topNavigationState.windows[id: windowID]?.window.pendingTopNavigationIntents = [
+            .init(
+                token: FileManagerTopNavigationOperationToken(value: UUID()),
+                intent: .pin(tabID),
+            ),
+        ]
+        var pinnedRecordState = state
+        pinnedRecordState.windows[id: windowID]?.window.contentTabs.pendingPinnedRecordIDs = [tabID]
 
-        for busyState in [closeState, teardownState, closingState, pendingCollectionState, moveState] {
+        for busyState in [
+            closeState,
+            teardownState,
+            closingState,
+            pendingCollectionState,
+            moveState,
+            pinMutationState,
+            topNavigationState,
+            pinnedRecordState,
+        ] {
             XCTAssertNil(ExternalOpenPlacementApplication.apply(
                 initialPlan,
                 reservationsByItemID: [:],

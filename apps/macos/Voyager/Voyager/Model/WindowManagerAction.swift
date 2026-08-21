@@ -674,8 +674,11 @@ private extension FileManagerWindowState {
     var isExternalOpenLifecycleEligible: Bool {
         !isClosing
             && pendingSelectedContentTabClose == nil
+            && pendingSelectedContentTabPinMutation == nil
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
+            && pendingTopNavigationIntents.isEmpty
+            && contentTabs.pendingPinnedRecordIDs.isEmpty
             && contentTabMoveParticipantRequestID == nil
     }
 
