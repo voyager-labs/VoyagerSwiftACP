@@ -655,6 +655,14 @@ extension EntryListCoordinator {
         scrollToTypeScrollTarget(targetId)
     }
 
+    /// 첫 bind 시점에 이미 설정돼 있던 pending type-scroll target을 소비한다.
+    /// unmount 중 생성된 target은 nil→id 엣지가 처음 baseline(lastRenderSnapshot)에 흡수돼
+    /// consumeTypeScrollTargetIfNeeded가 못 잡으므로, row가 존재한 뒤 여기서 일회성 소비한다.
+    func consumeInitialTypeScrollTargetIfNeeded() {
+        guard let targetId = state.pendingTypeScrollTargetId else { return }
+        scrollToTypeScrollTarget(targetId)
+    }
+
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.isDropTargeted != snapshot
             .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }

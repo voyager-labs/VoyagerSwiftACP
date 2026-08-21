@@ -89,6 +89,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         didBind = true
         observeStore()
         rebuildSectionsAndReload()
+        consumeInitialTypeScrollTargetIfNeeded()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
 

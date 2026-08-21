@@ -393,6 +393,114 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(store.state.pendingTypeScrollTargetId)
     }
 
+    // MARK: - EVM-002-manage_entries_view_type_scroll_list_initial_bind_consume
+
+    /// EVM-002-manage_entries_view_type_scroll: list는 첫 bind 전에 이미 설정된 유효 pending target을
+    /// 첫 렌더 기준으로 소비해 offscreen 항목을 visible로 스크롤하고 reset한다.
+    ///
+    /// - 검증 내용: view가 unmount된 동안 생성된 target(id→ nil 엣지가 처음 baseline에 흡수돼 기존
+    ///   consume 로직이 못 잡는 경우)도 첫 bind의 row 존재 이후 소비되어 target row가 visible이 되고
+    ///   pendingTypeScrollTargetId가 nil로 reset된다. selection은 불변이다.
+    /// - 사전 조건: 좁은 list view에 많은 entry가 있어 target row가 화면 밖에 있고, pending target이
+    ///   bind 이전부터 그 row의 id로 설정돼 있다.
+    /// - 기대 결과: consume 후 target row가 visible rect에 포함되고 pendingTypeScrollTargetId == nil, selection 불변.
+    func testListConsumesPendingTypeScrollTargetPresentBeforeFirstBind() throws {
+        let entries = (0 ..< 60).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        let target = entries[40]
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.selectedIds = [entries[0].id]
+        // bind 이전부터 pending target이 설정돼 있다 (unmount 중 생성 시나리오).
+        state.pendingTypeScrollTargetId = target.id
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let targetItem = try XCTUnwrap(coordinator.entryItemById[target.id])
+        let targetRow = coordinator.tableView.row(forItem: targetItem)
+        let visible = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
+        XCTAssertTrue(
+            NSLocationInRange(targetRow, visible),
+            "target row must become visible after initial-bind consume",
+        )
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after initial-bind consume")
+        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged")
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: list는 첫 bind 전에 설정된 stale/unknown pending target이면
+    /// 스크롤하지 않고 reset만 한다.
+    ///
+    /// - 검증 내용: pending target id가 첫 렌더 row에 없어도 resetTypeScrollTarget이 발행돼 일회성 소비가 보장된다.
+    /// - 사전 조건: pending target id가 bind 이전부터 table에 없는 id다.
+    /// - 기대 결과: consume 후 visible rect가 불변이고 pendingTypeScrollTargetId == nil.
+    func testListConsumesStalePendingTypeScrollTargetBeforeFirstBind() {
+        let entries = (0 ..< 20).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.pendingTypeScrollTargetId = "/root/does-not-exist"
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let beforeVisible = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
+        coordinator.handleSnapshotChanges(
+            previous: EntryListCoordinatorRenderSnapshot(state: state),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: state),
+        )
+        let afterVisible = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
+        XCTAssertEqual(afterVisible, beforeVisible, "stale target must not change scroll")
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "stale target must still reset after initial-bind consume")
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: list는 첫 bind 소비 직후 관찰되는 동일 snapshot 엣지에서
+    /// 이중 소비하지 않는다.
+    ///
+    /// - 검증 내용: bind에서 수동 소비(reset) 후 비동기 관찰이 previous(pending=set)/snapshot(nil) 엣지를
+    ///   처리할 때 targetId가 nil이라 consume이 발생하지 않아 visible rect가 그대로다.
+    /// - 사전 조건: 첫 bind 전에 pending target이 설정돼 있고, bind에서 이미 소비·reset됐다.
+    /// - 기대 결과: post-consume 관찰 엣지에서 visible rect 불변, pendingTypeScrollTargetId == nil.
+    func testListInitialBindConsumeDoesNotDoubleConsumeOnFollowingObservation() {
+        let entries = (0 ..< 60).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        let target = entries[40]
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.pendingTypeScrollTargetId = target.id
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+        // bind에서 수동 소비로 pending은 이미 nil이 됐다.
+        XCTAssertNil(store.state.pendingTypeScrollTargetId)
+
+        let afterBindVisible = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
+        // 첫 관찰: previous(bind 시점, pending=set) vs snapshot(현재, pending=nil) 엣지.
+        var previousState = state
+        previousState.pendingTypeScrollTargetId = target.id
+        var currentState = state
+        currentState.pendingTypeScrollTargetId = nil
+        coordinator.handleSnapshotChanges(
+            previous: EntryListCoordinatorRenderSnapshot(state: previousState),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: currentState),
+        )
+        let afterObservation = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
+        XCTAssertEqual(afterObservation, afterBindVisible, "post-consume observation must not double-scroll")
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending must stay nil after post-consume observation")
+    }
+
     // MARK: - EVM-002-manage_entries_view_type_scroll_grid_consume
 
     /// grid 스크롤 검증 헬퍼: clip view의 scroll offset이 바뀌면 scrollToItems가 clip bounds를 이동했음을 뜻한다.
@@ -527,5 +635,62 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         XCTAssertEqual(gridClipOrigin(view), beforeOrigin, "nil→nil must not scroll")
         XCTAssertNil(store.state.pendingTypeScrollTargetId)
+    }
+
+    // MARK: - EVM-002-manage_entries_view_type_scroll_grid_initial_bind_consume
+
+    /// EVM-002-manage_entries_view_type_scroll: grid는 첫 bind 전에 이미 설정된 유효 pending target을
+    /// 첫 렌더 기준으로 소비해 reset하고 selection은 유지한다.
+    ///
+    /// - 검증 내용: view가 unmount된 동안 생성된 target도 첫 bind의 section/item 존재 이후 소비되어
+    ///   pendingTypeScrollTargetId가 nil로 reset된다. (unmounted NSCollectionView에서는 scrollToItems가
+    ///   clip offset을 이동시키지 않아 기존 grid consume 테스트와 동일하게 consume 계약만 단언한다.)
+    /// - 사전 조건: pending target id가 bind 이전부터 실제 entry의 id로 설정돼 있다.
+    /// - 기대 결과: target이 index 경로로 매핑 가능하고 pendingTypeScrollTargetId == nil, selectedIds 불변.
+    func testGridConsumesPendingTypeScrollTargetPresentBeforeFirstBind() {
+        let entries = (0 ..< 80).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        let target = entries[70]
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.selectedIds = [entries[0].id]
+        // bind 이전부터 pending target이 설정돼 있다 (unmount 중 생성 시나리오).
+        state.pendingTypeScrollTargetId = target.id
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryGridCoordinator(store: store)
+        coordinator.bind(to: EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240)))
+
+        XCTAssertNotNil(coordinator.indexPathByEntryId[target.id], "target must be mappable to an indexPath")
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after initial-bind consume")
+        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged")
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: grid는 첫 bind 전에 설정된 stale/unknown pending target이면
+    /// 스크롤하지 않고 reset만 한다.
+    ///
+    /// - 검증 내용: pending target id가 grid에 없어도 reset이 발행돼 일회성 소비가 보장된다.
+    /// - 사전 조건: pending target id가 bind 이전부터 grid에 없는 id다.
+    /// - 기대 결과: consume 후 clip offset이 불변이고 pendingTypeScrollTargetId == nil.
+    func testGridConsumesStalePendingTypeScrollTargetBeforeFirstBind() {
+        let entries = (0 ..< 20).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.pendingTypeScrollTargetId = "/root/does-not-exist"
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryGridCoordinator(store: store)
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let beforeOrigin = gridClipOrigin(view)
+        coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: state),
+            snapshot: EntryGridRenderSnapshot(state: state),
+        )
+        XCTAssertEqual(gridClipOrigin(view), beforeOrigin, "stale target must not change scroll")
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "stale target must still reset after initial-bind consume")
     }
 }
