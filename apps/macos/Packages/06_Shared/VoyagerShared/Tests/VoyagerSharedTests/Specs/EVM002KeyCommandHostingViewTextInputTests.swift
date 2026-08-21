@@ -411,6 +411,152 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
         XCTAssertEqual(keyDowns.count, 0)
         XCTAssertEqual(committed, ["\u{00B4}"])
     }
+}
+
+extension EVM002KeyCommandHostingViewTextInputTests {
+    // MARK: - EVM-002-type_scroll_text_input
+
+    /// EVM-002-type_scroll_text_input: Escape command가 진행 중인 IME 조합을 취소한다.
+    /// 입력 시스템이 Escape를 `cancelOperation:`으로 전달하는 경로를 검증한다.
+    /// - 검증 내용: marked text와 selected/marked range가 함께 초기화된다.
+    /// - 사전 조건: 선택 범위가 있는 marked text가 설정되어 있다.
+    /// - 기대 결과: 조합 상태만 해제되고 app/text callback은 호출되지 않는다.
+    func testCancelOperationClearsMarkedStateAndRangesWithoutCallbacks() {
+        let view = KeyCommandHostingView()
+        var keyDowns: [NSEvent] = []
+        var committed: [String] = []
+        view.onKeyDown = { keyDowns.append($0) }
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가나",
+            selectedRange: NSRange(location: 1, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.doCommandBy(#selector(NSResponder.cancelOperation(_:)))
+
+        XCTAssertFalse(view.hasMarkedText())
+        XCTAssertEqual(view.markedRange(), NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
+        XCTAssertTrue(keyDowns.isEmpty)
+        XCTAssertTrue(committed.isEmpty)
+    }
+
+    /// EVM-002-type_scroll_text_input: IME 취소 뒤 특수 키는 기존 앱 command 경로로 복귀한다.
+    /// Escape로 조합을 닫은 다음 Quick Look, 실행, 탐색 키를 연속 입력하는 경로를 검증한다.
+    /// - 검증 내용: Space/Return/네 방향키의 `keyDown` 라우팅 횟수와 입력 시스템 호출 횟수.
+    /// - 사전 조건: marked text를 설정한 뒤 `cancelOperation:`을 호출했다.
+    /// - 기대 결과: 모든 특수 키가 `onKeyDown`으로 한 번씩 전달되고 text callback은 없다.
+    func testApplicationCommandsResumeAfterCancelOperation() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        var committed: [String] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.onTextInput = { committed.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+        spy.doCommandBy(#selector(NSResponder.cancelOperation(_:)))
+
+        for item in [" ", "\r", "\u{F700}", "\u{F701}", "\u{F702}", "\u{F703}"] {
+            spy.keyDown(with: makeKeyDown(characters: item))
+        }
+
+        XCTAssertEqual(keyDowns.count, 6)
+        XCTAssertTrue(spy.interpretedEvents.isEmpty)
+        XCTAssertTrue(committed.isEmpty)
+    }
+
+    /// EVM-002-type_scroll_text_input: 표준 편집 selector는 앱 command로 중복 전달되지 않는다.
+    /// 입력 시스템이 조합 중 newline/tab/movement/delete selector를 전달하는 경로를 검증한다.
+    /// - 검증 내용: selector 처리 뒤 marked state와 callback 횟수.
+    /// - 사전 조건: marked text가 활성화되어 있다.
+    /// - 기대 결과: selector가 안전하게 소비되고 조합 상태와 callback이 변하지 않는다.
+    func testTextInputCommandSelectorsPreserveCompositionWithoutCallbacks() {
+        let view = KeyCommandHostingView()
+        var keyDowns: [NSEvent] = []
+        var committed: [String] = []
+        view.onKeyDown = { keyDowns.append($0) }
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        [
+            #selector(NSResponder.insertNewline(_:)),
+            #selector(NSResponder.insertTab(_:)),
+            #selector(NSResponder.moveUp(_:)),
+            #selector(NSResponder.moveDown(_:)),
+            #selector(NSResponder.moveLeft(_:)),
+            #selector(NSResponder.moveRight(_:)),
+            #selector(NSResponder.deleteBackward(_:)),
+            #selector(NSResponder.deleteForward(_:)),
+        ].forEach(view.doCommandBy)
+
+        XCTAssertTrue(view.hasMarkedText())
+        XCTAssertEqual(view.markedRange(), NSRange(location: 0, length: 1))
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 1))
+        XCTAssertTrue(keyDowns.isEmpty)
+        XCTAssertTrue(committed.isEmpty)
+    }
+
+    /// EVM-002-type_scroll_text_input: 알 수 없는 selector는 조합 상태를 손상하지 않고 소비한다.
+    /// AppKit 또는 입력기가 미지원 selector를 전달하는 안전 경계를 검증한다.
+    /// - 검증 내용: marked state와 app/text callback 횟수.
+    /// - 사전 조건: marked text가 활성화되어 있다.
+    /// - 기대 결과: selector 전달 전후 상태가 동일하고 callback은 없다.
+    func testUnknownCommandSelectorPreservesCompositionWithoutCallbacks() {
+        let view = KeyCommandHostingView()
+        var keyDowns: [NSEvent] = []
+        var committed: [String] = []
+        view.onKeyDown = { keyDowns.append($0) }
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.doCommandBy(NSSelectorFromString("unrelatedTextCommand:"))
+
+        XCTAssertTrue(view.hasMarkedText())
+        XCTAssertEqual(view.markedRange(), NSRange(location: 0, length: 1))
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 1))
+        XCTAssertTrue(keyDowns.isEmpty)
+        XCTAssertTrue(committed.isEmpty)
+    }
+
+    /// EVM-002-type_scroll_text_input: Command/Control 조합은 marked text 중에도 앱 command 경로를 유지한다.
+    /// Command+Option 조합을 포함한 기존 단축키 우선순위의 비회귀를 검증한다.
+    /// - 검증 내용: modifier 조합별 `onKeyDown`과 입력 시스템 호출 횟수.
+    /// - 사전 조건: marked text가 활성화되어 있다.
+    /// - 기대 결과: Command, Control, Command+Option이 각각 앱 경로로 한 번 전달된다.
+    func testCommandControlAndCommandOptionDuringMarkedRouteToOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        [
+            NSEvent.ModifierFlags.command,
+            NSEvent.ModifierFlags.control,
+            [.command, .option],
+        ].forEach {
+            spy.keyDown(with: makeKeyDown(characters: "c", modifierFlags: $0))
+        }
+
+        XCTAssertEqual(keyDowns.count, 3)
+        XCTAssertTrue(spy.interpretedEvents.isEmpty)
+        XCTAssertTrue(spy.hasMarkedText())
+    }
 
     /// 스파이 뷰: `interpretKeyEvents`를 override해 입력 시스템을 시뮬레이션한다.
     private final class InputSystemSpyHostingView: KeyCommandHostingView {

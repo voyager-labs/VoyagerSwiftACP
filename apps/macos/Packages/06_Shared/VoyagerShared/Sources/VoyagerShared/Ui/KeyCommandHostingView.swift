@@ -142,8 +142,10 @@ extension KeyCommandHostingView: @MainActor NSTextInputClient {
         NSNotFound
     }
 
-    public func doCommandBy(_: Selector) {
-        // 미바인딩 명령 흡수.
+    public func doCommandBy(_ selector: Selector) {
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            clearMarkedState()
+        }
     }
 
     // MARK: - 내부 헬퍼
