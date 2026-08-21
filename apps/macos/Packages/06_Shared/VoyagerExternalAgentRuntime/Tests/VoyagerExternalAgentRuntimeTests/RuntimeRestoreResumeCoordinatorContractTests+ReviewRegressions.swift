@@ -388,6 +388,126 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(counts.terminalResult == 0)
         #expect(await store.updateCount == 2)
     }
+
+    /// VOY-747-review_claim_state_conflict: non-terminal resume claim conflict releases stale restored ownership.
+    /// persisted claim이 제거·만료·foreign owner 상태로 바뀐 CAS loser가 persisted truth에 맞게 local owner를 수렴하는지 검증한다.
+    /// - 검증 내용: persistenceConflict 유지, exact restored lease 해제, persisted claim 보존, 후속 restore 판정.
+    /// - 사전 조건: restore claim 획득 뒤 resume claim apply가 같은 run의 non-terminal claim-state snapshot과 충돌한다.
+    /// - 기대 결과: local lease는 none이 되고 absent/expired는 재획득되며 foreign live는 stale로 남는다.
+    @Test(arguments: ReviewClaimConflictScenario.allCases)
+    private func `claim conflict reconciles nonterminal persisted ownership`(
+        scenario: ReviewClaimConflictScenario,
+    ) async throws {
+        let now = Date(timeIntervalSince1970: 4_102_444_800)
+        let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+        let host = ExternalAgentSessionReference("review-claim-state-host-\(scenario.rawValue)")
+        let run = RuntimeRunReference("review-claim-state-run-\(scenario.rawValue)")
+        let receipt = ProviderInternalSessionReference("review-claim-state-receipt")
+        let context = makeContext()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: receipt,
+            runReference: run,
+            projection: .running,
+        )
+        var conflicting = stored
+        conflicting.restorationClaim = scenario.persistedClaim(now: now)
+        let store = DeterministicHostMutationRuntimeStateStore(
+            state: makeState([stored]),
+            conflictingUpdateStates: [2: makeState([conflicting])],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        )
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        await #expect(throws: RuntimeHostError.persistenceConflict) {
+            _ = try await plane.resumeRestoredRun(hostReference: host)
+        }
+
+        let persistedAfterConflict = try #require(await store.currentState()?.sessions.first)
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(persistedAfterConflict.runReference == run)
+        #expect(persistedAfterConflict.restorationClaim == scenario.persistedClaim(now: now))
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == scenario.retryResult)
+        #expect(await adapter.counts().stream == 0)
+        #expect(await adapter.counts().terminalResult == 0)
+        #expect(await adapter.receivedRestartBindings().count == scenario.restartCompatibilityCount)
+    }
+
+    /// VOY-747-review_claim_state_conflict: owned live claim conflict preserves the exact restored owner.
+    /// 같은 coordinator 소유 claim의 만료 시각만 갱신된 CAS conflict가 local resume 권한을 잃지 않는지 검증한다.
+    /// - 검증 내용: persistenceConflict 유지, exact restored lease 보존, persisted owned claim 채택, retry resume 완료.
+    /// - 사전 조건: restore claim 획득 뒤 resume claim apply가 같은 owner token의 live claim snapshot과 충돌한다.
+    /// - 기대 결과: 첫 호출은 conflict를 유지하고 다음 resume은 같은 run/receipt로 완료된다.
+    @Test
+    func `claim conflict preserves owned live restored ownership`() async throws {
+        let now = Date(timeIntervalSince1970: 4_102_444_800)
+        let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+        let host: ExternalAgentSessionReference = "review-owned-claim-conflict-host"
+        let run = RuntimeRunReference("review-owned-claim-conflict-run")
+        let receipt = ProviderInternalSessionReference("review-owned-claim-conflict-receipt")
+        let context = makeContext()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: receipt,
+            runReference: run,
+            projection: .running,
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: makeState([stored]),
+            conflictingSaveNumbers: [2],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        )
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let originalLease = try #require(await plane.sessions[host]?.lease)
+        let ownerToken = await plane.restorationOwnerToken
+        var conflicting = try #require(await store.currentState()?.sessions.first)
+        conflicting.restorationClaim = RuntimeRestorationClaim(
+            ownerToken: ownerToken,
+            expiresAt: now.addingTimeInterval(120),
+        )
+        await store.replaceState(makeState([conflicting]))
+
+        await #expect(throws: RuntimeHostError.persistenceConflict) {
+            _ = try await plane.resumeRestoredRun(hostReference: host)
+        }
+
+        #expect(await plane.sessions[host]?.lease == originalLease)
+        #expect(await plane.sessions[host]?.stored.restorationClaim == conflicting.restorationClaim)
+        #expect(await adapter.counts().stream == 0)
+        #expect(await adapter.counts().terminalResult == 0)
+
+        let result = try await plane.resumeRestoredRun(hostReference: host)
+        #expect(result == RuntimeResult(runReference: run, outcome: .completed, artifactReferences: []))
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await plane.sessions[host]?.stored.runReference == run)
+        #expect(await plane.sessions[host]?.stored.providerInternalSessionReference == receipt)
+        #expect(await adapter.counts().stream == 1)
+        #expect(await adapter.counts().terminalResult == 1)
+    }
 }
 
 private struct ReviewP1FourFixture {
@@ -499,6 +619,44 @@ private enum ReviewTerminalProbeScenario: String, CaseIterable {
             .invalidPersistedState
         case .processExitUnsupportedSchemaVersion, .transportLossUnsupportedSchemaVersion:
             .unsupportedSchemaVersion(999)
+        }
+    }
+}
+
+private enum ReviewClaimConflictScenario: String, CaseIterable {
+    case absent
+    case expired
+    case foreignLive
+
+    var retryResult: RuntimeRestoreResult {
+        switch self {
+        case .absent, .expired:
+            .restored
+        case .foreignLive:
+            .stale
+        }
+    }
+
+    var restartCompatibilityCount: Int {
+        switch self {
+        case .absent, .expired:
+            2
+        case .foreignLive:
+            1
+        }
+    }
+
+    func persistedClaim(now: Date) -> RuntimeRestorationClaim? {
+        switch self {
+        case .absent:
+            nil
+        case .expired:
+            RuntimeRestorationClaim(ownerToken: "expired-owner", expiresAt: now)
+        case .foreignLive:
+            RuntimeRestorationClaim(
+                ownerToken: "foreign-owner",
+                expiresAt: now.addingTimeInterval(60),
+            )
         }
     }
 }

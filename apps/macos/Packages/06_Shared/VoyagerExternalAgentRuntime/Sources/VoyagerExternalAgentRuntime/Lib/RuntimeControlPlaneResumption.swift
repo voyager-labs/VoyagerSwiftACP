@@ -26,18 +26,16 @@ public extension RuntimeControlPlane {
             claim = try await claimRestoredRun(hostReference)
         } catch RuntimeHostError.persistenceConflict {
             guard let session = sessions[hostReference],
-                  case let .restored(lease) = session.lease,
-                  let terminal = try await persistedTerminalResult(
-                      host: hostReference,
-                      runReference: session.stored.runReference,
-                  )
+                  case let .restored(lease) = session.lease
             else { throw RuntimeHostError.persistenceConflict }
-            finalizeVisibleResumptionTerminal(
+            if let terminal = try await reconcileResumeClaimConflict(
                 host: hostReference,
-                runReference: terminal.runReference,
+                runReference: session.stored.runReference,
                 lease: lease,
-            )
-            return terminal
+            ) {
+                return terminal
+            }
+            throw RuntimeHostError.persistenceConflict
         }
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
@@ -314,6 +312,60 @@ public extension RuntimeControlPlane {
                 lease: lease,
                 isPersisted: true,
             )
+        }
+    }
+
+    private func reconcileResumeClaimConflict(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) async throws -> RuntimeResult? {
+        try await withPersistedState { plane, loaded in
+            guard let expected = plane.sessions[host],
+                  expected.stored.runReference == runReference,
+                  expected.lease == .restored(lease)
+            else { return nil }
+            if let adopted = plane.adoptingPersistedTerminal(
+                host: host,
+                runReference: runReference,
+                expectedSession: expected,
+                loaded: loaded,
+            ) {
+                plane.sessions[host] = adopted
+                plane.finalizeVisibleResumptionTerminal(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
+                return plane.terminalResult(for: adopted.stored)
+            }
+
+            guard let loaded else {
+                plane.sessions.removeValue(forKey: host)
+                return nil
+            }
+            plane.sessions = plane.reconciledRegistry(
+                candidate: plane.sessions,
+                persisted: loaded,
+            )
+            guard var persisted = plane.sessions[host],
+                  persisted.stored.runReference == runReference,
+                  !persisted.stored.projection.isTerminal
+            else { return nil }
+            switch plane.restorationClaimState(
+                persisted.stored.restorationClaim,
+                now: plane.restorationClock.now(),
+            ) {
+            case .absent, .expired, .foreignLive:
+                persisted.lease = .none
+                persisted.revision = max(persisted.revision, expected.revision) + 1
+                plane.sessions[host] = persisted
+            case .ownedLive:
+                persisted.lease = .restored(lease)
+                persisted.revision = max(persisted.revision, expected.revision) + 1
+                plane.sessions[host] = persisted
+            }
+            return nil
         }
     }
 
