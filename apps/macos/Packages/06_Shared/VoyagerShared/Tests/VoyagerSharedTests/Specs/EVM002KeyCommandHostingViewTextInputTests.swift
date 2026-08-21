@@ -351,6 +351,35 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
         XCTAssertEqual(committed, ["a"])
     }
 
+    // MARK: - 데드 키 (문자 없음, 무수정) 라우팅 (VOY-661)
+
+    /// 데드 키의 초기 keyDown은 marked text가 생기기 전이라 `characters == ""`다. 이는 앱 명령이 아니라
+    /// 텍스트 입력 이벤트이므로 `interpretKeyEvents`로 보내 IME 조합을 시작해야 한다.
+    func testDeadKeyEmptyCharacterRoutesThroughInterpretKeyEventsNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+
+        spy.keyDown(with: makeKeyDown(characters: ""))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+    }
+
+    /// 데드 키의 빈 문자 이벤트가 `interpretKeyEvents`에 도달하면 IME가 조합(marked text)을 시작할 수 있다.
+    /// 조합 시작을 시뮬레이션하는 스파이로 marked state 진입을 검증한다.
+    func testDeadKeyEmptyCharacterStartsMarkedComposition() {
+        let spy = DeadKeyInputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+
+        spy.keyDown(with: makeKeyDown(characters: ""))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+        XCTAssertTrue(spy.hasMarkedText(), "dead key must start IME composition via interpretKeyEvents")
+    }
+
     /// 스파이 뷰: `interpretKeyEvents`를 override해 입력 시스템을 시뮬레이션한다.
     private final class InputSystemSpyHostingView: KeyCommandHostingView {
         var interpretedEvents: [NSEvent] = []
@@ -359,6 +388,22 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
             interpretedEvents.append(contentsOf: eventArray)
             for event in eventArray {
                 insertText(event.characters ?? "", replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+        }
+    }
+
+    /// 데드 키 입력 시스템 스파이: 빈 문자 이벤트를 결합 악센트 조합(marked text) 시작으로 처리한다.
+    private final class DeadKeyInputSystemSpyHostingView: KeyCommandHostingView {
+        var interpretedEvents: [NSEvent] = []
+
+        override func interpretKeyEvents(_ eventArray: [NSEvent]) {
+            interpretedEvents.append(contentsOf: eventArray)
+            for _ in eventArray {
+                setMarkedText(
+                    "\u{0301}",
+                    selectedRange: NSRange(location: 0, length: 1),
+                    replacementRange: NSRange(location: NSNotFound, length: 0),
+                )
             }
         }
     }

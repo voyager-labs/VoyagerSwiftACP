@@ -37,8 +37,14 @@ public class KeyCommandHostingView: NSView {
         if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) == false {
             return true
         }
-        guard let characters = event.characters, !characters.isEmpty else { return true }
-        guard let firstScalar = characters.unicodeScalars.first else { return true }
+        guard let characters = event.characters else { return true }
+        // 데드 키 초기 keyDown은 marked text가 생기기 전이라 characters가 빈 문자열이다.
+        // 무수정 빈 문자는 텍스트 입력(IME 조합 시작)이므로 onKeyDown이 아닌 interpretKeyEvents로 보낸다.
+        // arrows/Return/Escape/Space는 모두 비어 있지 않은 문자를 가지므로 아래 스칼라 검사에서 여전히 onKeyDown으로 유지된다.
+        if characters.isEmpty {
+            return false
+        }
+        guard let firstScalar = characters.unicodeScalars.first else { return false }
 
         // C0/C1 제어, 0x7F, 함수 키 영역(0xF700...0xF8FF), 공백은 입력 후보가 아니다.
         if firstScalar.value < 0x20
