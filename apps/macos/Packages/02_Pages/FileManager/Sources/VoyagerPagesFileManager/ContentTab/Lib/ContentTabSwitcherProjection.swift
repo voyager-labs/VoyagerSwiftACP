@@ -41,7 +41,7 @@ enum ContentTabSwitcherProjection {
 
     private static func candidate(from tab: ContentTabItem, activeTabID: ContentTabID) -> Candidate {
         let title = normalized(tab.title, fallback: "Untitled")
-        let iconName = normalized(tab.iconName, fallback: "doc")
+        let iconName = iconName(for: tab)
         let pageLabel = pageLabel(for: tab.page)
         let anchorSummary = anchorSummary(for: tab.anchor)
         let isCurrent = tab.id == activeTabID
@@ -62,6 +62,17 @@ enum ContentTabSwitcherProjection {
     private static func normalized(_ value: String?, fallback: String) -> String {
         let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? fallback : normalized
+    }
+
+    private static func iconName(for tab: ContentTabItem) -> String {
+        switch tab.anchor {
+        case .collectionFile:
+            "rectangle.stack"
+        case let .virtualCollection(id):
+            id == "Recents" ? "clock" : "folder"
+        default:
+            normalized(tab.iconName, fallback: "doc")
+        }
     }
 
     private static func pageLabel(for page: ContentTabPage) -> String {
