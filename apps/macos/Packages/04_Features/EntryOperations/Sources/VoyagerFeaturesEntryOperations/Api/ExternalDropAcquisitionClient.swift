@@ -40,10 +40,10 @@ public struct ExternalDropAcquisitionClient: Sendable {
     public var prepareLegacyStaging: @MainActor @Sendable (String) -> String?
 
     /// 준비된 레거시 staging 안에서 source가 써 둔 이름/경로를 정규화·검증한다. `names`가
-    /// 비어 있지 않고 `expectedCount`와 정확히 일치하며, 각 이름이 staging 안의 실제 존재
-    /// 파일이어야 한다. 하나라도 불일치하면 staging을 제거하고 nil(전체 거절)을 반환한다.
-    /// 파일시스템 경계와 실패 정리를 client가 단일 소유한다.
-    public var finalizeLegacyStaging: @MainActor @Sendable ([String], Int, String) -> [String]?
+    /// 비어 있지 않고 각 이름이 staging 안의 실제 존재 파일이어야 한다. 하나라도 불일치하면
+    /// staging을 제거하고 nil(전체 거절)을 반환한다. 한 legacy item이 여러 이름을 반환할 수
+    /// 있으므로 item 수 제약은 두지 않는다. 파일시스템 경계와 실패 정리를 client가 단일 소유한다.
+    public var finalizeLegacyStaging: @MainActor @Sendable ([String], String) -> [String]?
 
     /// 지연 data-flavor 획득 세션을 시작한다. request는 load 실행 전에 즉시 반환되고,
     /// 각 flavor의 `load` 클로저는 세션이 소유한 OperationQueue에서 실행된 뒤 결과가
@@ -66,7 +66,7 @@ public struct ExternalDropAcquisitionClient: Sendable {
         finish: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
         beginLegacy: @escaping @MainActor @Sendable ([String], String, String, Bool) -> ExternalDropAcceptedRequest,
         prepareLegacyStaging: @escaping @MainActor @Sendable (String) -> String?,
-        finalizeLegacyStaging: @escaping @MainActor @Sendable ([String], Int, String) -> [String]?,
+        finalizeLegacyStaging: @escaping @MainActor @Sendable ([String], String) -> [String]?,
         beginDeferred: @escaping @MainActor @Sendable (
             [ExternalDropDeferredFlavor], String, Bool,
         ) -> ExternalDropAcceptedRequest = { _, destination, forcedCopy in
@@ -173,7 +173,7 @@ enum ExternalDropAcquisitionLive {
                 )
             },
             prepareLegacyStaging: { _ in nil },
-            finalizeLegacyStaging: { _, _, _ in nil },
+            finalizeLegacyStaging: { _, _ in nil },
         )
     }
 
@@ -216,8 +216,8 @@ enum ExternalDropAcquisitionLive {
             prepareLegacyStaging: { destinationPath in
                 store.prepareLegacyStaging(destinationPath: destinationPath)
             },
-            finalizeLegacyStaging: { names, expectedCount, stagingDirectory in
-                store.finalizeLegacyStaging(names, expectedCount: expectedCount, stagingDirectory: stagingDirectory)
+            finalizeLegacyStaging: { names, stagingDirectory in
+                store.finalizeLegacyStaging(names, stagingDirectory: stagingDirectory)
             },
             beginDeferred: { items, destination, forcedCopy in
                 store.beginDeferred(
@@ -336,18 +336,18 @@ private final class ExternalDropAcquisitionStore {
     }
 
     /// 레거시 staging 안에서 source가 써 둔 이름/경로를 정규화·검증한다. `names`가 비어
-    /// 있지 않고 `expectedCount`와 정확히 일치하며, 각 이름이 staging 안의 실제 존재 파일이어야
-    /// 한다. 하나라도 불일치하면 staging을 제거하고 nil(전체 거절)을 반환한다. 파일시스템
-    /// 경계와 실패 정리를 client가 단일 소유한다. `names`는 `namesOfPromisedFilesDropped`가
-    /// 반환한 원본(절대 경로 또는 이름)이다.
+    /// 있지 않고 각 이름이 staging 안의 실제 존재 파일이어야 한다. 하나라도 불일치하면
+    /// staging을 제거하고 nil(전체 거절)을 반환한다. 한 legacy item이 여러 이름을
+    /// 반환할 수 있으므로 pasteboard item 수와의 일대일 제약은 두지 않는다
+    /// (코멘트 #3830663095). 파일시스템 경계와 실패 정리를 client가 단일 소유한다.
+    /// `names`는 `namesOfPromisedFilesDropped`가 반환한 원본(절대 경로 또는 이름)이다.
     @MainActor
     func finalizeLegacyStaging(
         _ names: [String],
-        expectedCount: Int,
         stagingDirectory: String,
     ) -> [String]? {
         let stagingURL = URL(fileURLWithPath: stagingDirectory, isDirectory: true)
-        guard !names.isEmpty, names.count == expectedCount else {
+        guard !names.isEmpty else {
             try? fileManager.removeItem(stagingURL)
             return nil
         }

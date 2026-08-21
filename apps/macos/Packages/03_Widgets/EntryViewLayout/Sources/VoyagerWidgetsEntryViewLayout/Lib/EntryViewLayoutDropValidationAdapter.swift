@@ -146,7 +146,9 @@ enum EntryViewLayoutDropValidationAdapter {
             draggingInfo: draggingInfo,
             isInternalDrag: isInternalDrag,
         ) {
-            return .copy
+            // 획득은 copy semantics이므로 source가 .copy를 허용할 때만 제안한다.
+            // move-only/빈 mask source의 계약을 존중해 .none으로 거절한다(코멘트 #3830663082).
+            return allowedOperations.contains(.copy) ? .copy : .none
         }
         // 빈 source는 항상 no-op으로 처리한다. 단, 외부 drag가 pasteboard에 지원 표현을 노출하면
         // `.copy`를 제안해 acceptDrop이 획득 세션을 시작할 수 있게 한다.
@@ -475,12 +477,11 @@ extension EntryViewLayoutDropValidationAdapter {
         let stagingURL = URL(fileURLWithPath: stagingPath, isDirectory: true)
         // source가 staging에 파일을 동기적으로 쓴다(acceptDrop 콜백 내부).
         let names = draggingInfo.namesOfPromisedFilesDropped(atDestination: stagingURL) ?? []
-        // negotiation이 확정한 promised cardinality와 staging 안 실제 물리화·존재·containment를
-        // client의 finalizeLegacyStaging이 단일 검증하고, 불일치 시 staging을 정리한 뒤 전체를
-        // 거절한다(조용한 부분 누락/잔류 차단).
+        // 반환된 전체 이름 목록의 물리화·존재·containment를 client의 finalizeLegacyStaging이
+        // 단일 검증하고, 불일치 시 staging을 정리한 뒤 전체를 거절한다. 한 legacy item이
+        // 여러 이름을 반환할 수 있으므로 item 수와의 일대일 제약은 두지 않는다(코멘트 #3830663095).
         guard let stagedPaths = context.client.finalizeLegacyStaging(
             names,
-            negotiation.promisedOrdinals.count,
             stagingPath,
         ) else {
             logger.info("legacy promise incomplete")

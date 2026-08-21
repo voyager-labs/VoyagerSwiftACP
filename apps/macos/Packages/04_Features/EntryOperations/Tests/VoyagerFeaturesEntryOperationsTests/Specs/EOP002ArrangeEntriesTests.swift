@@ -3508,7 +3508,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { recorder.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         let request = makeMixedAcceptedRequest()
@@ -3561,7 +3561,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -3621,7 +3621,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -3680,7 +3680,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -3772,7 +3772,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -3852,7 +3852,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -3934,7 +3934,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -4011,7 +4011,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 finish: { cleanup.recordFinish($0) },
                 beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
         }
         store.exhaustivity = .off
@@ -4240,7 +4240,7 @@ private func makeExternalDropBarrierHarness() -> (
             finish: { recorder.recordFinish($0) },
             beginLegacy: { _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
             prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-            finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+            finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
         )
     }
     return (store, recorder)

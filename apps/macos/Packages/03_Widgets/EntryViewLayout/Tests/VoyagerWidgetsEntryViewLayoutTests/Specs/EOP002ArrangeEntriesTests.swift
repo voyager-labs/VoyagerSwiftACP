@@ -127,9 +127,9 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
                 return nil
             }
         }
-        client.finalizeLegacyStaging = { names, expectedCount, stagingDirectory in
+        client.finalizeLegacyStaging = { names, stagingDirectory in
             let stagingURL = URL(fileURLWithPath: stagingDirectory, isDirectory: true)
-            guard !names.isEmpty, names.count == expectedCount else {
+            guard !names.isEmpty else {
                 try? FileManager.default.removeItem(at: stagingURL)
                 return nil
             }
@@ -1439,15 +1439,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(acceptedRequests.first?.immediateURLPaths, [immediateURL.path])
     }
 
-    /// 검증 내용 (VOY-736 리뷰): legacy promised-file 폴백에서 source가 negotiated promised
-    /// item 수보다 많은 이름을 반환해도 거절한다. negotiation이 확정한 cardinality와
-    /// 반환 수가 일치해야 하며, 초과 반환은 일부 항목 누락 징후로 간주해 staging을
-    /// 정리하고 drop 전체를 거절한다.
+    /// 검증 내용 (VOY-736 리뷰 #3830663095): legacy promise 한 item이 여러 파일을
+    /// materialize하면 item 수와 무관하게 반환된 전체 이름 목록을 검증해 수용한다.
     /// 사전 조건: legacy pasteboard(promised item 1개)에서 namesOfPromisedFiles가 파일
     /// 2개를 staging에 쓰고 이름 2개를 반환한다.
-    /// 기대 결과: accepted == false, legacy begin 호출 없음, staging 제거됨.
+    /// 기대 결과: accepted == true, legacy begin 1회, accepted request 1건.
     @MainActor
-    func testLegacyPromiseOverReportedNamesRejectsEntireDrop() {
+    func testLegacyPromiseSingleItemMultipleFilesAccepted() {
         let acquisition = ExternalDropAcquisitionRecorder()
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("VoyagerLegacyOverReport-\(UUID().uuidString)")
@@ -1492,10 +1490,45 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             destinationPath: destination.path,
         )
 
-        XCTAssertFalse(accepted)
-        XCTAssertEqual(acquisition.legacyCalls.count, 0)
-        XCTAssertTrue(acceptedRequests.isEmpty)
-        XCTAssertNil(activeSessionID)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acquisition.legacyCalls.count, 1)
+        XCTAssertEqual(acceptedRequests.count, 1)
+        XCTAssertNotNil(activeSessionID)
+    }
+
+    /// 검증 내용 (VOY-736 리뷰 #3830663082): promise/data drag도 source operation mask를
+    /// 존중해 .copy 허용 여부를 교차 판정한다.
+    /// 사전 조건: promise-only pasteboard에 copy 허용 / move-only / 빈 mask 세 가지.
+    /// 기대 결과: copy 허용일 때만 .copy, 그 외에는 .none.
+    @MainActor
+    func testPromiseOnlyValidateRespectsSourceCopyMask() {
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+
+        func verdict(mask: NSDragOperation) -> EntryViewLayoutDropValidationAdapter.DropVerdict {
+            let info = DragInfoFixture(source: nil, operationMask: [mask], pasteboard: pasteboard)
+            return EntryViewLayoutDropValidationAdapter.resolveExternalDropOperation(
+                draggingInfo: info,
+                isInternalDrag: false,
+                sourcePaths: [],
+                destinationPath: "/dest",
+                allowedOperations: [mask],
+                prefersCopy: false,
+            )
+        }
+
+        XCTAssertEqual(verdict(mask: .copy), .copy)
+        XCTAssertEqual(verdict(mask: .move), .none)
+        XCTAssertEqual(
+            EntryViewLayoutDropValidationAdapter.resolveExternalDropOperation(
+                draggingInfo: DragInfoFixture(source: nil, operationMask: [], pasteboard: pasteboard),
+                isInternalDrag: false,
+                sourcePaths: [],
+                destinationPath: "/dest",
+                allowedOperations: [],
+                prefersCopy: false,
+            ),
+            .none,
+        )
     }
 
     /// 검증 내용 (VOY-736 회귀): 혼합 drop의 즉시 file URL이 canonical 검증을 통과하지
