@@ -8,7 +8,7 @@ package seeds
 var generatedSeedMetadata = SeedMetadata{
 	SeedOrdinal:           1,
 	SystemRegistryVersion: "2.4.1",
-	SQLSHA256:             "4dfbbfb382038b1cd749ee9d7befbebead4b773617920cd586436c26f2444bff",
+	SQLSHA256:             "18772d4ba212b796224ff8497faeeb8a30f2ee1750b1f0b623fba63d554646d0",
 	DatasetSHA256:         "f11f29392a27c9ca99b9b2567e76fc8dd4e3d0825766124d0735fb1562d93a4b",
 	DefinitionCount:       278,
 	DescriptorCount:       294,

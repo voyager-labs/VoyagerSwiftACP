@@ -43667,8 +43667,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     updated_at = excluded.updated_at;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43676,6 +43676,7 @@ SELECT
     'search_alias',
 0,
     'apple loop descriptor',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43683,13 +43684,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43697,6 +43699,7 @@ SELECT
     'search_alias',
 0,
     'apple loops key filter types',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43704,13 +43707,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43718,6 +43722,7 @@ SELECT
     'search_alias',
 0,
     'apple loops loop modes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43725,13 +43730,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43739,6 +43745,7 @@ SELECT
     'search_alias',
 0,
     'apple loops root keys',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43746,13 +43753,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43760,6 +43768,7 @@ SELECT
     'search_alias',
 0,
     'sound channel count',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43767,13 +43776,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43781,6 +43791,7 @@ SELECT
     'search_alias',
 1,
     'audio channel number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43788,13 +43799,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43802,6 +43814,7 @@ SELECT
     'search_alias',
 2,
     'audio channel counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43809,13 +43822,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43823,6 +43837,7 @@ SELECT
     'search_alias',
 3,
     'sound channel counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43830,13 +43845,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43844,6 +43860,7 @@ SELECT
     'search_alias',
 4,
     'audio channel numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43851,13 +43868,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43865,6 +43883,7 @@ SELECT
     'legacy_alias',
 0,
     'audioChannelCount',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43872,13 +43891,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43886,6 +43906,7 @@ SELECT
     'search_alias',
 0,
     'sound encoding application',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43893,13 +43914,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43907,6 +43929,7 @@ SELECT
     'search_alias',
 1,
     'audio encoding app',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43914,13 +43937,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43928,6 +43952,7 @@ SELECT
     'search_alias',
 2,
     'audio encoding applications',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43935,13 +43960,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43949,6 +43975,7 @@ SELECT
     'search_alias',
 3,
     'sound encoding applications',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43956,13 +43983,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43970,6 +43998,7 @@ SELECT
     'search_alias',
 4,
     'audio encoding apps',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43977,13 +44006,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -43991,6 +44021,7 @@ SELECT
     'search_alias',
 0,
     'sound sample rate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -43998,13 +44029,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44012,6 +44044,7 @@ SELECT
     'search_alias',
 1,
     'audio sample bitrate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44019,13 +44052,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44033,6 +44067,7 @@ SELECT
     'search_alias',
 2,
     'audio sample rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44040,13 +44075,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44054,6 +44090,7 @@ SELECT
     'search_alias',
 3,
     'sound sample rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44061,13 +44098,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44075,6 +44113,7 @@ SELECT
     'search_alias',
 4,
     'audio sample bitrates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44082,13 +44121,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44096,6 +44136,7 @@ SELECT
     'legacy_alias',
 0,
     'audioSampleRate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44103,13 +44144,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44117,6 +44159,7 @@ SELECT
     'search_alias',
 0,
     'sound track number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44124,13 +44167,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44138,6 +44182,7 @@ SELECT
     'search_alias',
 1,
     'audio track num',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44145,13 +44190,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44159,6 +44205,7 @@ SELECT
     'search_alias',
 2,
     'audio track numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44166,13 +44213,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44180,6 +44228,7 @@ SELECT
     'search_alias',
 3,
     'sound track numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44187,13 +44236,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44201,6 +44251,7 @@ SELECT
     'search_alias',
 0,
     'is general midi sequences',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44208,13 +44259,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44222,6 +44274,7 @@ SELECT
     'search_alias',
 0,
     'key signatures',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44229,13 +44282,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44243,6 +44297,7 @@ SELECT
     'search_alias',
 0,
     'musical genres',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44250,13 +44305,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44264,6 +44320,7 @@ SELECT
     'search_alias',
 0,
     'musical instrument categories',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44271,13 +44328,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44285,6 +44343,7 @@ SELECT
     'search_alias',
 0,
     'musical instrument names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44292,13 +44351,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44306,6 +44366,7 @@ SELECT
     'search_alias',
 0,
     'recorded date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44313,13 +44374,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44327,6 +44389,7 @@ SELECT
     'search_alias',
 1,
     'recording time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44334,13 +44397,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44348,6 +44412,7 @@ SELECT
     'search_alias',
 2,
     'recording dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44355,13 +44420,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44369,6 +44435,7 @@ SELECT
     'search_alias',
 3,
     'recorded dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44376,13 +44443,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44390,6 +44458,7 @@ SELECT
     'search_alias',
 4,
     'recording times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44397,13 +44466,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44411,6 +44481,7 @@ SELECT
     'search_alias',
 0,
     'recorded year',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44418,13 +44489,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44432,6 +44504,7 @@ SELECT
     'search_alias',
 1,
     'recording yr',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44439,13 +44512,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44453,6 +44527,7 @@ SELECT
     'search_alias',
 0,
     'time signatures',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44460,13 +44535,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44474,6 +44550,7 @@ SELECT
     'search_alias',
 0,
     'creator addresses',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44481,13 +44558,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44495,6 +44573,7 @@ SELECT
     'search_alias',
 1,
     'author address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44502,13 +44581,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44516,6 +44596,7 @@ SELECT
     'search_alias',
 2,
     'creator address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44523,13 +44604,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44537,6 +44619,7 @@ SELECT
     'search_alias',
 0,
     'creator email addresses',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44544,13 +44627,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44558,6 +44642,7 @@ SELECT
     'search_alias',
 1,
     'author email address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44565,13 +44650,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44579,6 +44665,7 @@ SELECT
     'search_alias',
 2,
     'creator email address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44586,13 +44673,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44600,6 +44688,7 @@ SELECT
     'search_alias',
 3,
     'author e-mail address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44607,13 +44696,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44621,6 +44711,7 @@ SELECT
     'search_alias',
 0,
     'cf package identifier',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44628,13 +44719,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44642,6 +44734,7 @@ SELECT
     'search_alias',
 1,
     'cf bundle id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44649,13 +44742,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44663,6 +44757,7 @@ SELECT
     'search_alias',
 2,
     'cf bundle identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44670,13 +44765,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44684,6 +44780,7 @@ SELECT
     'search_alias',
 3,
     'cf package identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44691,13 +44788,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44705,6 +44803,7 @@ SELECT
     'search_alias',
 0,
     'comments',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44712,13 +44811,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44726,6 +44826,7 @@ SELECT
     'search_alias',
 1,
     'note',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44733,13 +44834,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44747,6 +44849,7 @@ SELECT
     'search_alias',
 0,
     'contact tags',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44754,13 +44857,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44768,6 +44872,7 @@ SELECT
     'search_alias',
 1,
     'contact keyword',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44775,13 +44880,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44789,6 +44895,7 @@ SELECT
     'search_alias',
 2,
     'contact tag',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44796,13 +44903,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44810,6 +44918,7 @@ SELECT
     'search_alias',
 0,
     'due time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44817,13 +44926,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44831,6 +44941,7 @@ SELECT
     'search_alias',
 1,
     'due dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44838,13 +44949,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44852,6 +44964,7 @@ SELECT
     'search_alias',
 2,
     'due times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44859,13 +44972,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44873,6 +44987,7 @@ SELECT
     'search_alias',
 0,
     'length seconds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44880,13 +44995,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44894,6 +45010,7 @@ SELECT
     'search_alias',
 1,
     'duration sec',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44901,13 +45018,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44915,6 +45033,7 @@ SELECT
     'legacy_alias',
 0,
     'duration',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44922,13 +45041,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44936,6 +45056,7 @@ SELECT
     'search_alias',
 0,
     'email address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44943,13 +45064,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44957,6 +45079,7 @@ SELECT
     'search_alias',
 1,
     'e-mail address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44964,13 +45087,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44978,6 +45102,7 @@ SELECT
     'search_alias',
 0,
     'encoding application',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -44985,13 +45110,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -44999,6 +45125,7 @@ SELECT
     'legacy_alias',
 0,
     'kind',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45006,13 +45133,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45020,6 +45148,7 @@ SELECT
     'search_alias',
 0,
     'finder note',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45027,13 +45156,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45041,6 +45171,7 @@ SELECT
     'search_alias',
 1,
     'finder comments',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45048,13 +45179,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45062,6 +45194,7 @@ SELECT
     'search_alias',
 2,
     'finder notes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45069,13 +45202,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45083,6 +45217,7 @@ SELECT
     'search_alias',
 0,
     'filesystem has custom icon',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45090,13 +45225,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45104,6 +45240,7 @@ SELECT
     'search_alias',
 1,
     'fs has custom icons',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45111,13 +45248,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45125,6 +45263,7 @@ SELECT
     'search_alias',
 2,
     'filesystem has custom icons',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45132,13 +45271,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45146,6 +45286,7 @@ SELECT
     'search_alias',
 0,
     'filesystem is stationery',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45153,13 +45294,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45167,6 +45309,7 @@ SELECT
     'search_alias',
 1,
     'fs is stationeries',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45174,13 +45317,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45188,6 +45332,7 @@ SELECT
     'search_alias',
 2,
     'filesystem is stationeries',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45195,13 +45340,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45209,6 +45355,7 @@ SELECT
     'search_alias',
 0,
     'id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45216,13 +45363,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45230,6 +45378,7 @@ SELECT
     'search_alias',
 0,
     'instant message address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45237,13 +45386,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45251,6 +45401,7 @@ SELECT
     'search_alias',
 0,
     'num of pages',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45258,13 +45409,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45272,6 +45424,7 @@ SELECT
     'search_alias',
 1,
     'number of page',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45279,13 +45432,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45293,6 +45447,7 @@ SELECT
     'search_alias',
 2,
     'num of page',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45300,13 +45455,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45314,6 +45470,7 @@ SELECT
     'legacy_alias',
 0,
     'numberOfPages',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45321,13 +45478,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45335,6 +45493,7 @@ SELECT
     'search_alias',
 0,
     'page heights',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45342,13 +45501,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45356,6 +45516,7 @@ SELECT
     'search_alias',
 0,
     'page widths',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45363,13 +45524,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45377,6 +45539,7 @@ SELECT
     'search_alias',
 0,
     'telephone numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45384,13 +45547,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45398,6 +45562,7 @@ SELECT
     'search_alias',
 1,
     'phone number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45405,13 +45570,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45419,6 +45585,7 @@ SELECT
     'search_alias',
 2,
     'telephone number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45426,13 +45593,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45440,6 +45608,7 @@ SELECT
     'search_alias',
 0,
     'receiver addresses',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45447,13 +45616,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45461,6 +45631,7 @@ SELECT
     'search_alias',
 1,
     'recipient address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45468,13 +45639,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45482,6 +45654,7 @@ SELECT
     'search_alias',
 2,
     'receiver address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45489,13 +45662,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45503,6 +45677,7 @@ SELECT
     'search_alias',
 0,
     'receiver email addresses',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45510,13 +45685,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45524,6 +45700,7 @@ SELECT
     'search_alias',
 1,
     'recipient email address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45531,13 +45708,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45545,6 +45723,7 @@ SELECT
     'search_alias',
 2,
     'receiver email address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45552,13 +45731,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45566,6 +45746,7 @@ SELECT
     'search_alias',
 3,
     'recipient e-mail address',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45573,13 +45754,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45587,6 +45769,7 @@ SELECT
     'search_alias',
 0,
     'security methods',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45594,13 +45777,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45608,6 +45792,7 @@ SELECT
     'search_alias',
 0,
     'star ratings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45615,13 +45800,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45629,6 +45815,7 @@ SELECT
     'search_alias',
 0,
     'state or provinces',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45636,13 +45823,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45650,6 +45838,7 @@ SELECT
     'search_alias',
 0,
     'text contents',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45657,13 +45846,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45671,6 +45861,7 @@ SELECT
     'legacy_alias',
 0,
     'title',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45678,13 +45869,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45692,6 +45884,7 @@ SELECT
     'search_alias',
 0,
     'content types',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45699,13 +45892,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45713,6 +45907,7 @@ SELECT
     'legacy_alias',
 0,
     'contentType',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45720,13 +45915,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45734,6 +45930,7 @@ SELECT
     'search_alias',
 0,
     'link',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45741,13 +45938,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45755,6 +45953,7 @@ SELECT
     'search_alias',
 0,
     'where from',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45762,13 +45961,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45776,6 +45976,7 @@ SELECT
     'search_alias',
 0,
     'time added',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45783,13 +45984,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45797,6 +45999,7 @@ SELECT
     'search_alias',
 1,
     'date addeds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45804,13 +46007,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45818,6 +46022,7 @@ SELECT
     'search_alias',
 2,
     'time addeds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45825,13 +46030,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45839,6 +46045,7 @@ SELECT
     'legacy_alias',
 0,
     'addedAt',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45846,13 +46053,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45860,6 +46068,7 @@ SELECT
     'search_alias',
 0,
     'attribute modified date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45867,13 +46076,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45881,6 +46091,7 @@ SELECT
     'search_alias',
 1,
     'attribute modification time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45888,13 +46099,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45902,6 +46114,7 @@ SELECT
     'search_alias',
 2,
     'attribute modification dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45909,13 +46122,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45923,6 +46137,7 @@ SELECT
     'search_alias',
 3,
     'attribute modified dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45930,13 +46145,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45944,6 +46160,7 @@ SELECT
     'search_alias',
 4,
     'attribute modification times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45951,13 +46168,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45965,6 +46183,7 @@ SELECT
     'search_alias',
 0,
     'content access time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45972,13 +46191,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -45986,6 +46206,7 @@ SELECT
     'search_alias',
 1,
     'content access dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -45993,13 +46214,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46007,6 +46229,7 @@ SELECT
     'search_alias',
 2,
     'content access times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46014,13 +46237,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46028,6 +46252,7 @@ SELECT
     'search_alias',
 0,
     'content created date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46035,13 +46260,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46049,6 +46275,7 @@ SELECT
     'search_alias',
 1,
     'content creation time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46056,13 +46283,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46070,6 +46298,7 @@ SELECT
     'search_alias',
 2,
     'content creation dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46077,13 +46306,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46091,6 +46321,7 @@ SELECT
     'search_alias',
 3,
     'content created dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46098,13 +46329,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46112,6 +46344,7 @@ SELECT
     'search_alias',
 4,
     'content creation times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46119,13 +46352,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46133,6 +46367,7 @@ SELECT
     'legacy_alias',
 0,
     'contentCreatedAt',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46140,13 +46375,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46154,6 +46390,7 @@ SELECT
     'search_alias',
 0,
     'created date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46161,13 +46398,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46175,6 +46413,7 @@ SELECT
     'search_alias',
 1,
     'creation time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46182,13 +46421,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46196,6 +46436,7 @@ SELECT
     'search_alias',
 2,
     'creation dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46203,13 +46444,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46217,6 +46459,7 @@ SELECT
     'search_alias',
 3,
     'created dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46224,13 +46467,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46238,6 +46482,7 @@ SELECT
     'search_alias',
 4,
     'creation times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46245,13 +46490,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46259,6 +46505,7 @@ SELECT
     'legacy_alias',
 0,
     'createdAt',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46266,13 +46513,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46280,6 +46528,7 @@ SELECT
     'search_alias',
 0,
     'downloaded time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46287,13 +46536,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46301,6 +46551,7 @@ SELECT
     'search_alias',
 1,
     'downloaded dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46308,13 +46559,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46322,6 +46574,7 @@ SELECT
     'search_alias',
 2,
     'downloaded times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46329,13 +46582,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46343,6 +46597,7 @@ SELECT
     'search_alias',
 0,
     'last used time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46350,13 +46605,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46364,6 +46620,7 @@ SELECT
     'search_alias',
 1,
     'last used dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46371,13 +46628,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46385,6 +46643,7 @@ SELECT
     'search_alias',
 2,
     'last used times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46392,13 +46651,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46406,6 +46666,7 @@ SELECT
     'legacy_alias',
 0,
     'lastUsedAt',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46413,13 +46674,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46427,6 +46689,7 @@ SELECT
     'search_alias',
 0,
     'content modified date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46434,13 +46697,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46448,6 +46712,7 @@ SELECT
     'search_alias',
 1,
     'content modification time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46455,13 +46720,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46469,6 +46735,7 @@ SELECT
     'search_alias',
 2,
     'content modification dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46476,13 +46743,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46490,6 +46758,7 @@ SELECT
     'search_alias',
 3,
     'content modified dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46497,13 +46766,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46511,6 +46781,7 @@ SELECT
     'search_alias',
 4,
     'content modification times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46518,13 +46789,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46532,6 +46804,7 @@ SELECT
     'legacy_alias',
 0,
     'modifiedAt',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46539,13 +46812,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46553,6 +46827,7 @@ SELECT
     'legacy_alias',
 1,
     'contentModifiedAt',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46560,13 +46835,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46574,6 +46850,7 @@ SELECT
     'search_alias',
 0,
     'display names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46581,13 +46858,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46595,6 +46873,7 @@ SELECT
     'search_alias',
 0,
     'file extension',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46602,13 +46881,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46616,6 +46896,7 @@ SELECT
     'search_alias',
 1,
     'ext',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46623,13 +46904,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46637,6 +46919,7 @@ SELECT
     'search_alias',
 2,
     'extensions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46644,13 +46927,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46658,6 +46942,7 @@ SELECT
     'search_alias',
 3,
     'file extensions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46665,13 +46950,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46679,6 +46965,7 @@ SELECT
     'search_alias',
 0,
     'filesystem node count',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46686,13 +46973,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46700,6 +46988,7 @@ SELECT
     'search_alias',
 1,
     'fs node number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46707,13 +46996,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46721,6 +47011,7 @@ SELECT
     'search_alias',
 2,
     'fs node counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46728,13 +47019,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46742,6 +47034,7 @@ SELECT
     'search_alias',
 3,
     'filesystem node counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46749,13 +47042,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46763,6 +47057,7 @@ SELECT
     'search_alias',
 4,
     'fs node numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46770,13 +47065,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46784,6 +47080,7 @@ SELECT
     'search_alias',
 0,
     'filesystem owner group id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46791,13 +47088,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46805,6 +47103,7 @@ SELECT
     'search_alias',
 1,
     'fs owner group identifier',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46812,13 +47111,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46826,6 +47126,7 @@ SELECT
     'search_alias',
 2,
     'fs owner group identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46833,13 +47134,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46847,6 +47149,7 @@ SELECT
     'search_alias',
 0,
     'filesystem owner user id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46854,13 +47157,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46868,6 +47172,7 @@ SELECT
     'search_alias',
 1,
     'fs owner user identifier',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46875,13 +47180,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46889,6 +47195,7 @@ SELECT
     'search_alias',
 2,
     'fs owner user identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46896,13 +47203,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46910,6 +47218,7 @@ SELECT
     'search_alias',
 0,
     'has invisible extension',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46917,13 +47226,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46931,6 +47241,7 @@ SELECT
     'search_alias',
 1,
     'has hidden extensions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46938,13 +47249,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46952,6 +47264,7 @@ SELECT
     'search_alias',
 2,
     'has invisible extensions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46959,13 +47272,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46973,6 +47287,7 @@ SELECT
     'search_alias',
 0,
     'is hidden',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -46980,13 +47295,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -46994,6 +47310,7 @@ SELECT
     'legacy_alias',
 0,
     'isInvisible',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47001,13 +47318,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47015,6 +47333,7 @@ SELECT
     'search_alias',
 0,
     'tag number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47022,13 +47341,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47036,6 +47356,7 @@ SELECT
     'search_alias',
 1,
     'label num',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47043,13 +47364,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47057,6 +47379,7 @@ SELECT
     'search_alias',
 2,
     'label numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47064,13 +47387,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47078,6 +47402,7 @@ SELECT
     'search_alias',
 3,
     'tag numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47085,13 +47410,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47099,6 +47425,7 @@ SELECT
     'search_alias',
 0,
     'full name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47106,13 +47433,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47120,6 +47448,7 @@ SELECT
     'search_alias',
 0,
     'name stems',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47127,13 +47456,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47141,6 +47471,7 @@ SELECT
     'legacy_alias',
 0,
     'name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47148,13 +47479,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47162,6 +47494,7 @@ SELECT
     'search_alias',
 0,
     'acquisition makes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47169,13 +47502,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47183,6 +47517,7 @@ SELECT
     'search_alias',
 0,
     'acquisition models',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47190,13 +47525,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47204,6 +47540,7 @@ SELECT
     'search_alias',
 0,
     'bits per samples',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47211,13 +47548,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47225,6 +47563,7 @@ SELECT
     'search_alias',
 0,
     'color spaces',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47232,13 +47571,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47246,6 +47586,7 @@ SELECT
     'legacy_alias',
 0,
     'colorSpace',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47253,13 +47594,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47267,6 +47609,7 @@ SELECT
     'search_alias',
 0,
     'exif versions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47274,13 +47617,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47288,6 +47632,7 @@ SELECT
     'search_alias',
 0,
     'exifgps versions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47295,13 +47640,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47309,6 +47655,7 @@ SELECT
     'search_alias',
 0,
     'shutter mode',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47316,13 +47663,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47330,6 +47678,7 @@ SELECT
     'search_alias',
 1,
     'exposure modes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47337,13 +47686,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47351,6 +47701,7 @@ SELECT
     'search_alias',
 2,
     'shutter modes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47358,13 +47709,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47372,6 +47724,7 @@ SELECT
     'search_alias',
 0,
     'shutter program',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47379,13 +47732,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47393,6 +47747,7 @@ SELECT
     'search_alias',
 1,
     'exposure programs',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47400,13 +47755,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47414,6 +47770,7 @@ SELECT
     'search_alias',
 2,
     'shutter programs',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47421,13 +47778,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47435,6 +47793,7 @@ SELECT
     'search_alias',
 0,
     'shutter time seconds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47442,13 +47801,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47456,6 +47816,7 @@ SELECT
     'search_alias',
 1,
     'exposure time sec',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47463,13 +47824,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47477,6 +47839,7 @@ SELECT
     'search_alias',
 0,
     'shutter time string',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47484,13 +47847,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47498,6 +47862,7 @@ SELECT
     'search_alias',
 1,
     'exposure time strings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47505,13 +47870,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47519,6 +47885,7 @@ SELECT
     'search_alias',
 2,
     'shutter time strings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47526,13 +47893,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47540,6 +47908,7 @@ SELECT
     'search_alias',
 0,
     'f num',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47547,13 +47916,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47561,6 +47931,7 @@ SELECT
     'search_alias',
 1,
     'f numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47568,13 +47939,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47582,6 +47954,7 @@ SELECT
     'search_alias',
 0,
     'flash on offs',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47589,13 +47962,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47603,6 +47977,7 @@ SELECT
     'search_alias',
 0,
     'focal duration',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47610,13 +47985,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47624,6 +48000,7 @@ SELECT
     'search_alias',
 1,
     'focal lengths',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47631,13 +48008,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47645,6 +48023,7 @@ SELECT
     'search_alias',
 2,
     'focal durations',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47652,13 +48031,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47666,6 +48046,7 @@ SELECT
     'search_alias',
 0,
     'gps tracks',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47673,13 +48054,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47687,6 +48069,7 @@ SELECT
     'search_alias',
 0,
     'has alpha channels',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47694,13 +48077,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47708,6 +48092,7 @@ SELECT
     'legacy_alias',
 0,
     'hasAlphaChannel',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47715,13 +48100,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47729,6 +48115,7 @@ SELECT
     'search_alias',
 0,
     'image directions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47736,13 +48123,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47750,6 +48138,7 @@ SELECT
     'search_alias',
 0,
     'iso speeds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47757,13 +48146,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47771,6 +48161,7 @@ SELECT
     'search_alias',
 0,
     'layer name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47778,13 +48169,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47792,6 +48184,7 @@ SELECT
     'search_alias',
 0,
     'max apertures',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47799,13 +48192,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47813,6 +48207,7 @@ SELECT
     'search_alias',
 0,
     'metering modes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47820,13 +48215,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47834,6 +48230,7 @@ SELECT
     'search_alias',
 0,
     'named locations',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47841,13 +48238,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47855,6 +48253,7 @@ SELECT
     'search_alias',
 0,
     'px count',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47862,13 +48261,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47876,6 +48276,7 @@ SELECT
     'search_alias',
 1,
     'pixel number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47883,13 +48284,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47897,6 +48299,7 @@ SELECT
     'search_alias',
 2,
     'pixel counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47904,13 +48307,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47918,6 +48322,7 @@ SELECT
     'search_alias',
 3,
     'px counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47925,13 +48330,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47939,6 +48345,7 @@ SELECT
     'search_alias',
 4,
     'pixel numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47946,13 +48353,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47960,6 +48368,7 @@ SELECT
     'search_alias',
 0,
     'px height',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47967,13 +48376,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -47981,6 +48391,7 @@ SELECT
     'search_alias',
 1,
     'pixel heights',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -47988,13 +48399,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48002,6 +48414,7 @@ SELECT
     'search_alias',
 2,
     'px heights',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48009,13 +48422,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48023,6 +48437,7 @@ SELECT
     'legacy_alias',
 0,
     'pixelHeight',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48030,13 +48445,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48044,6 +48460,7 @@ SELECT
     'search_alias',
 0,
     'px width',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48051,13 +48468,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48065,6 +48483,7 @@ SELECT
     'search_alias',
 1,
     'pixel widths',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48072,13 +48491,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48086,6 +48506,7 @@ SELECT
     'search_alias',
 2,
     'px widths',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48093,13 +48514,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48107,6 +48529,7 @@ SELECT
     'legacy_alias',
 0,
     'pixelWidth',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48114,13 +48537,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48128,6 +48552,7 @@ SELECT
     'search_alias',
 0,
     'profile names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48135,13 +48560,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48149,6 +48575,7 @@ SELECT
     'search_alias',
 0,
     'red eye on offs',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48156,13 +48583,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48170,6 +48598,7 @@ SELECT
     'search_alias',
 0,
     'res height dpi',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48177,13 +48606,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48191,6 +48621,7 @@ SELECT
     'search_alias',
 0,
     'res width dpi',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48198,13 +48629,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48212,6 +48644,7 @@ SELECT
     'search_alias',
 0,
     'white balances',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48219,13 +48652,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48233,6 +48667,7 @@ SELECT
     'search_alias',
 0,
     'added notifications',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48240,13 +48675,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48254,6 +48690,7 @@ SELECT
     'search_alias',
 0,
     'app categories',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48261,13 +48698,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48275,6 +48713,7 @@ SELECT
     'search_alias',
 1,
     'application category',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48282,13 +48721,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48296,6 +48736,7 @@ SELECT
     'search_alias',
 2,
     'app category',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48303,13 +48744,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48317,6 +48759,7 @@ SELECT
     'search_alias',
 0,
     'app is scriptable',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48324,13 +48767,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48338,6 +48782,7 @@ SELECT
     'search_alias',
 1,
     'application is scriptables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48345,13 +48790,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48359,6 +48805,7 @@ SELECT
     'search_alias',
 2,
     'app is scriptables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48366,13 +48813,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48380,6 +48828,7 @@ SELECT
     'search_alias',
 0,
     'package url',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48387,13 +48836,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48401,6 +48851,7 @@ SELECT
     'search_alias',
 1,
     'bundle link',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48408,13 +48859,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48422,6 +48874,7 @@ SELECT
     'search_alias',
 2,
     'bundle links',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48429,13 +48882,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48443,6 +48897,7 @@ SELECT
     'search_alias',
 0,
     'camera owners',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48450,13 +48905,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48464,6 +48920,7 @@ SELECT
     'search_alias',
 0,
     'canonical paths',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48471,13 +48928,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48485,6 +48943,7 @@ SELECT
     'search_alias',
 0,
     'changed notifications',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48492,13 +48951,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48506,6 +48966,7 @@ SELECT
     'search_alias',
 0,
     'content type trees',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48513,13 +48974,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48527,6 +48989,7 @@ SELECT
     'search_alias',
 0,
     'custom icons',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48534,13 +48997,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48548,6 +49012,7 @@ SELECT
     'search_alias',
 0,
     'document id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48555,13 +49020,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48569,6 +49035,7 @@ SELECT
     'search_alias',
 1,
     'document identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48576,13 +49043,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48590,6 +49058,7 @@ SELECT
     'search_alias',
 0,
     'effective icons',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48597,13 +49066,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48611,6 +49081,7 @@ SELECT
     'search_alias',
 0,
     'executable architecture',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48618,13 +49089,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48632,6 +49104,7 @@ SELECT
     'search_alias',
 0,
     'executable platforms',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48639,13 +49112,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48653,6 +49127,7 @@ SELECT
     'search_alias',
 0,
     'file content id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48660,13 +49135,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48674,6 +49150,7 @@ SELECT
     'search_alias',
 1,
     'file content identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48681,13 +49158,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48695,6 +49173,7 @@ SELECT
     'search_alias',
 0,
     'file protections',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48702,13 +49181,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48716,6 +49196,7 @@ SELECT
     'search_alias',
 0,
     'file resource id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48723,13 +49204,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48737,6 +49219,7 @@ SELECT
     'search_alias',
 1,
     'file resource identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48744,13 +49227,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48758,6 +49242,7 @@ SELECT
     'search_alias',
 0,
     'file resource types',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48765,13 +49250,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48779,6 +49265,7 @@ SELECT
     'search_alias',
 0,
     'file securities',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48786,13 +49273,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48800,6 +49288,7 @@ SELECT
     'search_alias',
 0,
     'focal length35mms',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48807,13 +49296,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48821,6 +49311,7 @@ SELECT
     'search_alias',
 0,
     'generation id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48828,13 +49319,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48842,6 +49334,7 @@ SELECT
     'search_alias',
 1,
     'generation identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48849,13 +49342,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48863,6 +49357,7 @@ SELECT
     'search_alias',
 0,
     'gps area informations',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48870,13 +49365,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48884,6 +49380,7 @@ SELECT
     'search_alias',
 0,
     'gps time stamp',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48891,13 +49388,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48905,6 +49403,7 @@ SELECT
     'search_alias',
 1,
     'gps date stamps',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48912,13 +49411,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48926,6 +49426,7 @@ SELECT
     'search_alias',
 2,
     'gps time stamps',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48933,13 +49434,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48947,6 +49449,7 @@ SELECT
     'search_alias',
 0,
     'gps dest bearings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48954,13 +49457,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48968,6 +49472,7 @@ SELECT
     'search_alias',
 0,
     'gps dest distances',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48975,13 +49480,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -48989,6 +49495,7 @@ SELECT
     'search_alias',
 0,
     'gps dest latitudes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -48996,13 +49503,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49010,6 +49518,7 @@ SELECT
     'search_alias',
 0,
     'gps dest longitudes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49017,13 +49526,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49031,6 +49541,7 @@ SELECT
     'search_alias',
 0,
     'gps differentals',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49038,13 +49549,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49052,6 +49564,7 @@ SELECT
     'search_alias',
 0,
     'gps map datums',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49059,13 +49572,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49073,6 +49587,7 @@ SELECT
     'search_alias',
 0,
     'gps measure modes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49080,13 +49595,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49094,6 +49610,7 @@ SELECT
     'search_alias',
 0,
     'gps processing methods',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49101,13 +49618,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49115,6 +49633,7 @@ SELECT
     'search_alias',
 0,
     'gps statu',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49122,13 +49641,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49136,6 +49656,7 @@ SELECT
     'search_alias',
 0,
     'html contents',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49143,13 +49664,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49157,6 +49679,7 @@ SELECT
     'search_alias',
 0,
     'icon datas',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49164,13 +49687,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49178,6 +49702,7 @@ SELECT
     'search_alias',
 0,
     'icon unique id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49185,13 +49710,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49199,6 +49725,7 @@ SELECT
     'search_alias',
 0,
     'is alias files',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49206,13 +49733,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49220,6 +49748,7 @@ SELECT
     'search_alias',
 0,
     'is app',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49227,13 +49756,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49241,6 +49771,7 @@ SELECT
     'search_alias',
 1,
     'is applications',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49248,13 +49779,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49262,6 +49794,7 @@ SELECT
     'search_alias',
 2,
     'is apps',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49269,13 +49802,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49283,6 +49817,7 @@ SELECT
     'search_alias',
 0,
     'is app managed',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49290,13 +49825,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49304,6 +49840,7 @@ SELECT
     'search_alias',
 1,
     'is application manageds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49311,13 +49848,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49325,6 +49863,7 @@ SELECT
     'search_alias',
 2,
     'is app manageds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49332,13 +49871,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49346,6 +49886,7 @@ SELECT
     'search_alias',
 0,
     'is folder',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49353,13 +49894,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49367,6 +49909,7 @@ SELECT
     'search_alias',
 1,
     'is directories',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49374,13 +49917,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49388,6 +49932,7 @@ SELECT
     'search_alias',
 2,
     'is folders',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49395,13 +49940,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49409,6 +49955,7 @@ SELECT
     'search_alias',
 0,
     'is excluded from backups',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49416,13 +49963,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49430,6 +49978,7 @@ SELECT
     'search_alias',
 0,
     'is executables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49437,13 +49986,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49451,6 +50001,7 @@ SELECT
     'search_alias',
 0,
     'is likely junks',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49458,13 +50009,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49472,6 +50024,7 @@ SELECT
     'search_alias',
 0,
     'is mount triggers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49479,13 +50032,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49493,6 +50047,7 @@ SELECT
     'search_alias',
 0,
     'is mutually exclusive set members',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49500,13 +50055,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49514,6 +50070,7 @@ SELECT
     'search_alias',
 0,
     'is packages',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49521,13 +50078,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49535,6 +50093,7 @@ SELECT
     'search_alias',
 0,
     'is purgeables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49542,13 +50101,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49556,6 +50116,7 @@ SELECT
     'search_alias',
 0,
     'is readables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49563,13 +50124,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49577,6 +50139,7 @@ SELECT
     'search_alias',
 0,
     'is regular files',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49584,13 +50147,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49598,6 +50162,7 @@ SELECT
     'search_alias',
 0,
     'is sparses',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49605,13 +50170,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49619,6 +50185,7 @@ SELECT
     'search_alias',
 0,
     'is symbolic links',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49626,13 +50193,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49640,6 +50208,7 @@ SELECT
     'search_alias',
 0,
     'is system immutables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49647,13 +50216,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49661,6 +50231,7 @@ SELECT
     'search_alias',
 0,
     'is ubiquitous items',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49668,13 +50239,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49682,6 +50254,7 @@ SELECT
     'search_alias',
 0,
     'is user immutables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49689,13 +50262,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49703,6 +50277,7 @@ SELECT
     'search_alias',
 0,
     'is volumes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49710,13 +50285,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49724,6 +50300,7 @@ SELECT
     'search_alias',
 0,
     'keys of unset value',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49731,13 +50308,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49745,6 +50323,7 @@ SELECT
     'search_alias',
 0,
     'kind is mutually exclusive set keys',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49752,13 +50331,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49766,6 +50346,7 @@ SELECT
     'search_alias',
 0,
     'kind visible key',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49773,13 +50354,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49787,6 +50369,7 @@ SELECT
     'search_alias',
 1,
     'kind visibility keys',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49794,13 +50377,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49808,6 +50392,7 @@ SELECT
     'search_alias',
 2,
     'kind visible keys',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49815,13 +50400,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49829,6 +50415,7 @@ SELECT
     'search_alias',
 0,
     'tag color',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49836,13 +50423,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49850,6 +50438,7 @@ SELECT
     'search_alias',
 1,
     'label colors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49857,13 +50446,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49871,6 +50461,7 @@ SELECT
     'search_alias',
 2,
     'tag colors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49878,13 +50469,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49892,6 +50484,7 @@ SELECT
     'search_alias',
 0,
     'lens models',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49899,13 +50492,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49913,6 +50507,7 @@ SELECT
     'search_alias',
 0,
     'link number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49920,13 +50515,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49934,6 +50530,7 @@ SELECT
     'search_alias',
 1,
     'link counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49941,13 +50538,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49955,6 +50553,7 @@ SELECT
     'search_alias',
 2,
     'link numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49962,13 +50561,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49976,6 +50576,7 @@ SELECT
     'search_alias',
 0,
     'local domains',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -49983,13 +50584,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -49997,6 +50599,7 @@ SELECT
     'search_alias',
 0,
     'localized tag',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50004,13 +50607,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50018,6 +50622,7 @@ SELECT
     'search_alias',
 1,
     'localized labels',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50025,13 +50630,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50039,6 +50645,7 @@ SELECT
     'search_alias',
 2,
     'localized tags',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50046,13 +50653,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50060,6 +50668,7 @@ SELECT
     'search_alias',
 0,
     'may have extended attribute',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50067,13 +50676,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50081,6 +50691,7 @@ SELECT
     'search_alias',
 0,
     'may share file contents',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50088,13 +50699,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50102,6 +50714,7 @@ SELECT
     'search_alias',
 0,
     'parent folder url',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50109,13 +50722,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50123,6 +50737,7 @@ SELECT
     'search_alias',
 1,
     'parent directory link',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50130,13 +50745,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50144,6 +50760,7 @@ SELECT
     'search_alias',
 2,
     'parent directory links',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50151,13 +50768,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50165,6 +50783,7 @@ SELECT
     'search_alias',
 0,
     'preferred io block bytes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50172,13 +50791,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50186,6 +50806,7 @@ SELECT
     'search_alias',
 1,
     'preferred io block sizes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50193,13 +50814,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50207,6 +50829,7 @@ SELECT
     'search_alias',
 0,
     'private visible',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50214,13 +50837,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50228,6 +50852,7 @@ SELECT
     'search_alias',
 1,
     'private visibilities',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50235,13 +50860,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50249,6 +50875,7 @@ SELECT
     'search_alias',
 2,
     'private visibles',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50256,13 +50883,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50270,6 +50898,7 @@ SELECT
     'search_alias',
 0,
     'public visible',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50277,13 +50906,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50291,6 +50921,7 @@ SELECT
     'search_alias',
 1,
     'public visibilities',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50298,13 +50929,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50312,6 +50944,7 @@ SELECT
     'search_alias',
 2,
     'public visibles',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50319,13 +50952,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50333,6 +50967,7 @@ SELECT
     'search_alias',
 0,
     'quarantine property',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50340,13 +50975,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50354,6 +50990,7 @@ SELECT
     'search_alias',
 0,
     'removed notifications',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50361,13 +50998,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50375,6 +51013,7 @@ SELECT
     'search_alias',
 0,
     'sets finder colors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50382,13 +51021,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50396,6 +51036,7 @@ SELECT
     'search_alias',
 0,
     'sizes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50403,13 +51044,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50417,6 +51059,7 @@ SELECT
     'search_alias',
 1,
     'file bytes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50424,13 +51067,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50438,6 +51082,7 @@ SELECT
     'search_alias',
 2,
     'file sizes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50445,13 +51090,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50459,6 +51105,7 @@ SELECT
     'legacy_alias',
 0,
     'file_allocated_size',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50466,13 +51113,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50480,6 +51128,7 @@ SELECT
     'search_alias',
 0,
     'label names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50487,13 +51136,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50501,6 +51151,7 @@ SELECT
     'search_alias',
 1,
     'tag name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50508,13 +51159,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50522,6 +51174,7 @@ SELECT
     'search_alias',
 2,
     'label name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50529,13 +51182,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50543,6 +51197,7 @@ SELECT
     'search_alias',
 0,
     'user domains',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50550,13 +51205,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50564,6 +51220,7 @@ SELECT
     'search_alias',
 0,
     'unique id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50571,13 +51228,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50585,6 +51243,7 @@ SELECT
     'search_alias',
 1,
     'unique identifier',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50592,13 +51251,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50606,6 +51266,7 @@ SELECT
     'search_alias',
 0,
     'visible',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50613,13 +51274,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50627,6 +51289,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item container display names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50634,13 +51297,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50648,6 +51312,7 @@ SELECT
     'search_alias',
 1,
     'icloud item container display names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50655,13 +51320,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50669,6 +51335,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item download requesteds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50676,13 +51343,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50690,6 +51358,7 @@ SELECT
     'search_alias',
 1,
     'icloud item download requesteds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50697,13 +51366,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50711,6 +51381,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item downloading errors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50718,13 +51389,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50732,6 +51404,7 @@ SELECT
     'search_alias',
 1,
     'icloud item downloading errors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50739,13 +51412,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50753,6 +51427,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item downloading status',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50760,13 +51435,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50774,6 +51450,7 @@ SELECT
     'search_alias',
 1,
     'icloud item downloading status',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50781,13 +51458,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50795,6 +51473,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item has unresolved conflicts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50802,13 +51481,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50816,6 +51496,7 @@ SELECT
     'search_alias',
 1,
     'icloud item has unresolved conflicts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50823,13 +51504,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50837,6 +51519,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item is downloadings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50844,13 +51527,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50858,6 +51542,7 @@ SELECT
     'search_alias',
 1,
     'icloud item is downloadings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50865,13 +51550,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50879,6 +51565,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item is excluded from syncs',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50886,13 +51573,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50900,6 +51588,7 @@ SELECT
     'search_alias',
 1,
     'icloud item is excluded from syncs',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50907,13 +51596,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50921,6 +51611,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item is shareds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50928,13 +51619,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50942,6 +51634,7 @@ SELECT
     'search_alias',
 1,
     'icloud item is shareds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50949,13 +51642,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50963,6 +51657,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item is uploadeds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50970,13 +51665,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -50984,6 +51680,7 @@ SELECT
     'search_alias',
 1,
     'icloud item is uploadeds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -50991,13 +51688,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51005,6 +51703,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item is uploadings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51012,13 +51711,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51026,6 +51726,7 @@ SELECT
     'search_alias',
 1,
     'icloud item is uploadings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51033,13 +51734,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51047,6 +51749,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous item uploading errors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51054,13 +51757,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51068,6 +51772,7 @@ SELECT
     'search_alias',
 1,
     'icloud item uploading errors',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51075,13 +51780,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51089,6 +51795,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous shared item current user permissions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51096,13 +51803,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51110,6 +51818,7 @@ SELECT
     'search_alias',
 1,
     'icloud shared item current user permissions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51117,13 +51826,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51131,6 +51841,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous shared item current user roles',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51138,13 +51849,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51152,6 +51864,7 @@ SELECT
     'search_alias',
 1,
     'icloud shared item current user roles',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51159,13 +51872,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51173,6 +51887,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous shared item most recent editor name components',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51180,13 +51895,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51194,6 +51910,7 @@ SELECT
     'search_alias',
 1,
     'icloud shared item most recent editor name components',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51201,13 +51918,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51215,6 +51933,7 @@ SELECT
     'search_alias',
 0,
     'ubiquitous shared item owner name components',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51222,13 +51941,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51236,6 +51956,7 @@ SELECT
     'search_alias',
 1,
     'icloud shared item owner name components',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51243,13 +51964,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51257,6 +51979,7 @@ SELECT
     'search_alias',
 0,
     'volume available capacities',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51264,13 +51987,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51278,6 +52002,7 @@ SELECT
     'search_alias',
 0,
     'volume available capacity for important usages',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51285,13 +52010,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51299,6 +52025,7 @@ SELECT
     'search_alias',
 0,
     'volume available capacity for opportunistic usages',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51306,13 +52033,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51320,6 +52048,7 @@ SELECT
     'search_alias',
 0,
     'volume created date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51327,13 +52056,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51341,6 +52071,7 @@ SELECT
     'search_alias',
 1,
     'volume creation time',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51348,13 +52079,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51362,6 +52094,7 @@ SELECT
     'search_alias',
 2,
     'volume creation dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51369,13 +52102,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51383,6 +52117,7 @@ SELECT
     'search_alias',
 3,
     'volume created dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51390,13 +52125,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51404,6 +52140,7 @@ SELECT
     'search_alias',
 4,
     'volume creation times',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51411,13 +52148,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51425,6 +52163,7 @@ SELECT
     'search_alias',
 0,
     'volume id',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51432,13 +52171,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51446,6 +52186,7 @@ SELECT
     'search_alias',
 1,
     'volume identifiers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51453,13 +52194,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51467,6 +52209,7 @@ SELECT
     'search_alias',
 0,
     'volume is automounteds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51474,13 +52217,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51488,6 +52232,7 @@ SELECT
     'search_alias',
 0,
     'volume is browsables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51495,13 +52240,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51509,6 +52255,7 @@ SELECT
     'search_alias',
 0,
     'volume is ejectables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51516,13 +52263,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51530,6 +52278,7 @@ SELECT
     'search_alias',
 0,
     'volume is encrypteds',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51537,13 +52286,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51551,6 +52301,7 @@ SELECT
     'search_alias',
 0,
     'volume is internals',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51558,13 +52309,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51572,6 +52324,7 @@ SELECT
     'search_alias',
 0,
     'volume is journalings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51579,13 +52332,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51593,6 +52347,7 @@ SELECT
     'search_alias',
 0,
     'volume is locals',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51600,13 +52355,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51614,6 +52370,7 @@ SELECT
     'search_alias',
 0,
     'volume is read onlies',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51621,13 +52378,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51635,6 +52393,7 @@ SELECT
     'search_alias',
 0,
     'volume is removables',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51642,13 +52401,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51656,6 +52416,7 @@ SELECT
     'search_alias',
 0,
     'volume is root file systems',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51663,13 +52424,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51677,6 +52439,7 @@ SELECT
     'search_alias',
 1,
     'volume is root filesystems',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51684,13 +52447,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51698,6 +52462,7 @@ SELECT
     'search_alias',
 0,
     'volume localized format descriptions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51705,13 +52470,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51719,6 +52485,7 @@ SELECT
     'search_alias',
 0,
     'volume localized names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51726,13 +52493,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51740,6 +52508,7 @@ SELECT
     'search_alias',
 0,
     'volume maximum file bytes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51747,13 +52516,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51761,6 +52531,7 @@ SELECT
     'search_alias',
 1,
     'volume maximum file sizes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51768,13 +52539,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51782,6 +52554,7 @@ SELECT
     'search_alias',
 2,
     'volume maximum filesizes',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51789,13 +52562,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51803,6 +52577,7 @@ SELECT
     'search_alias',
 0,
     'volume names',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51810,13 +52585,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51824,6 +52600,7 @@ SELECT
     'search_alias',
 0,
     'volume resource number',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51831,13 +52608,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51845,6 +52623,7 @@ SELECT
     'search_alias',
 1,
     'volume resource counts',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51852,13 +52631,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51866,6 +52646,7 @@ SELECT
     'search_alias',
 2,
     'volume resource numbers',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51873,13 +52654,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51887,6 +52669,7 @@ SELECT
     'search_alias',
 0,
     'volume supports access permission',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51894,13 +52677,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51908,6 +52692,7 @@ SELECT
     'search_alias',
 0,
     'volume supports advisory file lockings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51915,13 +52700,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51929,6 +52715,7 @@ SELECT
     'search_alias',
 0,
     'volume supports case preserved name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51936,13 +52723,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51950,6 +52738,7 @@ SELECT
     'search_alias',
 0,
     'volume supports case sensitive name',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51957,13 +52746,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51971,6 +52761,7 @@ SELECT
     'search_alias',
 0,
     'volume supports compressions',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51978,13 +52769,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -51992,6 +52784,7 @@ SELECT
     'search_alias',
 0,
     'volume supports exclusive renamings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -51999,13 +52792,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52013,6 +52807,7 @@ SELECT
     'search_alias',
 0,
     'volume supports extended securities',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52020,13 +52815,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52034,6 +52830,7 @@ SELECT
     'search_alias',
 0,
     'volume supports file clonings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52041,13 +52838,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52055,6 +52853,7 @@ SELECT
     'search_alias',
 0,
     'volume supports file protections',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52062,13 +52861,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52076,6 +52876,7 @@ SELECT
     'search_alias',
 0,
     'volume supports hard link',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52083,13 +52884,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52097,6 +52899,7 @@ SELECT
     'search_alias',
 0,
     'volume supports immutable file',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52104,13 +52907,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52118,6 +52922,7 @@ SELECT
     'search_alias',
 0,
     'volume supports journalings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52125,13 +52930,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52139,6 +52945,7 @@ SELECT
     'search_alias',
 0,
     'volume supports renamings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52146,13 +52953,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52160,6 +52968,7 @@ SELECT
     'search_alias',
 0,
     'volume supports root folder dates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52167,13 +52976,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52181,6 +52991,7 @@ SELECT
     'search_alias',
 1,
     'volume supports root directory date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52188,13 +52999,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52202,6 +53014,7 @@ SELECT
     'search_alias',
 2,
     'volume supports root folder date',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52209,13 +53022,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52223,6 +53037,7 @@ SELECT
     'search_alias',
 0,
     'volume supports sparse file',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52230,13 +53045,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52244,6 +53060,7 @@ SELECT
     'search_alias',
 0,
     'volume supports swap renamings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52251,13 +53068,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52265,6 +53083,7 @@ SELECT
     'search_alias',
 0,
     'volume supports symbolic link',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52272,13 +53091,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52286,6 +53106,7 @@ SELECT
     'search_alias',
 0,
     'volume supports volume siz',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52293,13 +53114,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52307,6 +53129,7 @@ SELECT
     'search_alias',
 0,
     'volume supports zero run',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52314,13 +53137,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52328,6 +53152,7 @@ SELECT
     'search_alias',
 0,
     'volume total capacities',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52335,13 +53160,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52349,6 +53175,7 @@ SELECT
     'search_alias',
 0,
     'volume link',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52356,13 +53183,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52370,6 +53198,7 @@ SELECT
     'search_alias',
 1,
     'volume links',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52377,13 +53206,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52391,6 +53221,7 @@ SELECT
     'search_alias',
 0,
     'volume link for remounting',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52398,13 +53229,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52412,6 +53244,7 @@ SELECT
     'search_alias',
 1,
     'volume url for remountings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52419,13 +53252,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52433,6 +53267,7 @@ SELECT
     'search_alias',
 2,
     'volume link for remountings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52440,13 +53275,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52454,6 +53290,7 @@ SELECT
     'search_alias',
 0,
     'volume unique id string',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52461,13 +53298,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52475,6 +53313,7 @@ SELECT
     'search_alias',
 1,
     'volume uuid strings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52482,13 +53321,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52496,6 +53336,7 @@ SELECT
     'search_alias',
 2,
     'volume unique id strings',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52503,13 +53344,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52517,6 +53359,7 @@ SELECT
     'search_alias',
 0,
     'sound bit rate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52524,13 +53367,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52538,6 +53382,7 @@ SELECT
     'search_alias',
 1,
     'audio bit bitrate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52545,13 +53390,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52559,6 +53405,7 @@ SELECT
     'search_alias',
 2,
     'sound bitrate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52566,13 +53413,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52580,6 +53428,7 @@ SELECT
     'search_alias',
 3,
     'audio bit rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52587,13 +53436,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52601,6 +53451,7 @@ SELECT
     'search_alias',
 4,
     'sound bit rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52608,13 +53459,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52622,6 +53474,7 @@ SELECT
     'legacy_alias',
 0,
     'audioBitRate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52629,13 +53482,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52643,6 +53497,7 @@ SELECT
     'search_alias',
 0,
     'delivery types',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52650,13 +53505,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52664,6 +53520,7 @@ SELECT
     'search_alias',
 0,
     'media type',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52671,13 +53528,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52685,6 +53543,7 @@ SELECT
     'search_alias',
 0,
     'original formats',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52692,13 +53551,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52706,6 +53566,7 @@ SELECT
     'search_alias',
 0,
     'original sources',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52713,13 +53574,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52727,6 +53589,7 @@ SELECT
     'search_alias',
 0,
     'total bit bitrate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52734,13 +53597,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52748,6 +53612,7 @@ SELECT
     'search_alias',
 1,
     'total bit rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52755,13 +53620,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52769,6 +53635,7 @@ SELECT
     'search_alias',
 2,
     'total bit bitrates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52776,13 +53643,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52790,6 +53658,7 @@ SELECT
     'search_alias',
 3,
     'total bitrates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52797,13 +53666,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52811,6 +53681,7 @@ SELECT
     'search_alias',
 0,
     'movie bit rate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52818,13 +53689,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52832,6 +53704,7 @@ SELECT
     'search_alias',
 1,
     'video bit bitrate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52839,13 +53712,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52853,6 +53727,7 @@ SELECT
     'search_alias',
 2,
     'movie bitrate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52860,13 +53735,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52874,6 +53750,7 @@ SELECT
     'search_alias',
 3,
     'video bit rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52881,13 +53758,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52895,6 +53773,7 @@ SELECT
     'search_alias',
 4,
     'movie bit rates',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52902,13 +53781,14 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
 
 INSERT INTO workspace_property_terms (
-    workspace_id, property_id, term_kind, ordinal, term_value, seed_owner,
-    seed_version, seed_source_version
+    workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
+    seed_owner, seed_version, seed_source_version
 )
 SELECT
     workspace_id,
@@ -52916,6 +53796,7 @@ SELECT
     'legacy_alias',
 0,
     'videoBitRate',
+    'active',
     'system_property_registry',
 1,
     '2.4.1'
@@ -52923,6 +53804,7 @@ FROM workspace_metadata
 WHERE singleton = 1
 ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     term_value = excluded.term_value,
+    lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version;
