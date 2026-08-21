@@ -78,6 +78,7 @@ public actor RuntimeControlPlane {
     let store: any RuntimeStateStore
     let restorationOwnerToken = UUID().uuidString
     let restorationHeartbeatInterval: Duration
+    let restorationClock: RuntimeRestorationClock
     var adapters: [RuntimeAdapterID: any ExternalAgentRuntimeAdapter] = [:]
     var sessions: SessionRegistry = [:]
     var hydrationTask: Task<RuntimeStoredState?, Error>?
@@ -104,11 +105,17 @@ public actor RuntimeControlPlane {
     public init(store: any RuntimeStateStore) {
         self.store = store
         restorationHeartbeatInterval = .seconds(20)
+        restorationClock = .live
     }
 
-    init(store: any RuntimeStateStore, restorationHeartbeatInterval: Duration) {
+    init(
+        store: any RuntimeStateStore,
+        restorationHeartbeatInterval: Duration,
+        restorationClock: RuntimeRestorationClock = .live,
+    ) {
         self.store = store
         self.restorationHeartbeatInterval = restorationHeartbeatInterval
+        self.restorationClock = restorationClock
     }
 
     public func register(_ adapter: any ExternalAgentRuntimeAdapter) throws {
@@ -150,6 +157,8 @@ public actor RuntimeControlPlane {
         return .adapterFailure(failure.kind, failure.diagnosticCode)
     }
 }
+
+extension RuntimeControlPlane.RuntimeLease: Sendable {}
 
 extension RuntimeStoredSession {
     func withProjection(_ projection: RuntimeProjection) -> Self {
