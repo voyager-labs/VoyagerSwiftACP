@@ -670,6 +670,7 @@ private func restoreCollectionOpenHistoryEffect(
 
 func cancelPendingCollectionOpen(
     state: inout FileManagerWindowState,
+    failedPinnedReturnTabID: ContentTabID? = nil,
 ) -> Effect<FileManagerWindowAction> {
     guard let request = state.pendingCollectionOpenRequest else { return .none }
     state.pendingCollectionOpenRequest = nil
@@ -681,13 +682,19 @@ func cancelPendingCollectionOpen(
     } else {
         .none
     }
-    return .concatenate(
+    var effects: [Effect<FileManagerWindowAction>] = [
         .cancel(id: OpenCollectionFileCancelID(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
         clearLoadingEffect,
         restoreCollectionOpenHistoryEffect(request),
-    )
+    ]
+    if let failedPinnedReturnTabID {
+        effects.append(.send(.delegate(.pinnedContentTabRuntimeNavigationFailed(
+            tabID: failedPinnedReturnTabID,
+        ))))
+    }
+    return .concatenate(effects)
 }
 
 private func isUserNavigationRequest(_ action: ContentPageNavigationAction) -> Bool {

@@ -175,6 +175,9 @@ extension FileManagerWindowRoutingReducer {
             return .none
         }
         let disposition = contentTabCloseDisposition(tabID: tabID, state: state)
+        let cancelCollectionOpenEffect = disposition.shouldResyncContentNavigation
+            ? cancelPendingCollectionOpen(state: &state, failedPinnedReturnTabID: tabID)
+            : .none
         state.pendingDirectoryReloadTabIDs.remove(tabID)
         let closedTabLoadingCancellationEffect = makeContentTabLoadingCancellationEffect(
             tabID: tabID,
@@ -205,14 +208,17 @@ extension FileManagerWindowRoutingReducer {
             disposition: disposition,
             state: state,
         )
-        return makeContentTabCloseEffects(
-            ContentTabCloseEffectInputs(
-                handoffCleanup: handoffCleanupEffect,
-                undoManagerLifecycle: undoManagerLifecycleEffect,
-                loadingCancellation: closedTabLoadingCancellationEffect,
+        return .concatenate(
+            cancelCollectionOpenEffect,
+            makeContentTabCloseEffects(
+                ContentTabCloseEffectInputs(
+                    handoffCleanup: handoffCleanupEffect,
+                    undoManagerLifecycle: undoManagerLifecycleEffect,
+                    loadingCancellation: closedTabLoadingCancellationEffect,
+                ),
+                disposition: disposition,
+                state: &state,
             ),
-            disposition: disposition,
-            state: &state,
         )
     }
 
@@ -454,7 +460,7 @@ extension FileManagerWindowRoutingReducer {
     ) -> Effect<Action>? {
         guard targetState.isCollectionMode, targetState.hasUnsavedCollectionChanges else { return nil }
         let cancelCollectionOpenEffect = isActiveTarget
-            ? cancelPendingCollectionOpen(state: &state)
+            ? cancelPendingCollectionOpen(state: &state, failedPinnedReturnTabID: tabID)
             : Effect<Action>.none
         return .concatenate(
             cancelCollectionOpenEffect,

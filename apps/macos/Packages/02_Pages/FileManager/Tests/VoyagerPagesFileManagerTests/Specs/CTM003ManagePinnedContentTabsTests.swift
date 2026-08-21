@@ -6864,6 +6864,62 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[inactiveID], inactiveRecord)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: Collection 복귀 중 tab close는 typed failure terminal을 전달한다.
+    /// 외부 열기 activation이 취소된 Collection load를 계속 기다리지 않도록 실제 close 완료 경계를 검증한다.
+    /// - 검증 내용: pending Collection open을 가진 active tab의 commitClose가 pinned 복귀 실패 delegate를 보냄
+    /// - 사전 조건: pinned persistence 완료 후 unpinned 상태가 된 active Collection tab과 pending open request
+    /// - 기대 결과: tab close state 반영 뒤 같은 tabID의 pinnedContentTabRuntimeNavigationFailed terminal 수신
+    func testClosingTabDuringPinnedCollectionReturnEmitsFailureTerminal() async {
+        let tabID = ContentTabID(rawValue: "closing-pinned-collection-return")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/runtime-closing.voycoll")
+        let durableURL = URL(fileURLWithPath: "/tmp/durable-closing.voycoll")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: runtimeURL),
+                    isPinned: false,
+                    title: "Closing Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: tabID,
+        )
+        state.content = .initialContent(for: .collectionFile(url: runtimeURL))
+        state.tabContentStates[tabID] = state.content
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: durableURL,
+            sourceRoute: state.content.navigation.navigationState,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        state.syncContentTabSidebarItems()
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(failedTabID)) = action {
+                    failedTabIDs.withValue { $0.append(failedTabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: close handoff 세부 action보다 pinned 복귀 terminal 전달을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.contentTabs(.commitClose(tabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(failedTabIDs.value, [tabID])
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned Directory 재선택 시 durable anchor로 복귀
     /// 이미 활성인 sidebar row 재선택도 pinned record의 최초 위치를 기존 navigation lifecycle로 적용하는지 검증한다.
     /// - 검증 내용: active identity 유지, durable anchor 복귀, pinned record 불변
