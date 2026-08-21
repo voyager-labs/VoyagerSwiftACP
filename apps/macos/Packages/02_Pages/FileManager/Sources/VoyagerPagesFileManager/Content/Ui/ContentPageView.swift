@@ -184,6 +184,11 @@ struct ContentPageView: View {
             characters: event.characters,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
         )
+        if FileManagerContentKeyCommandHandler.compositionPolicy(for: command, state: store.state)
+            == .cancelMarkedText
+        {
+            keyCommandFocusCoordinator?.cancelMarkedText()
+        }
         store.send(.view(.handleKeyCommand(command)))
     }
 

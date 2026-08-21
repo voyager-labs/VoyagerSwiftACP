@@ -9,6 +9,11 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+enum FileManagerKeyCommandCompositionPolicy: Equatable {
+    case preserveMarkedText
+    case cancelMarkedText
+}
+
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
@@ -54,6 +59,46 @@ enum FileManagerContentKeyCommandHandler {
             textResponderIsEditing: textResponderIsEditing,
         ) { return effect }
         return .none
+    }
+
+    static func compositionPolicy(
+        for command: KeyCommand,
+        state: FileManagerContentState,
+    ) -> FileManagerKeyCommandCompositionPolicy {
+        guard command.modifiers.contains(.command) else { return .preserveMarkedText }
+
+        if command.keyCode == 51 {
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        if command.modifiers.isDisjoint(with: [.option, .control]),
+           command.charactersIgnoringModifiers == "z"
+        {
+            return state.composer.isPresented ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        if command.characters == ".", command.modifiers.contains(.shift) {
+            return .cancelMarkedText
+        }
+
+        if command.keyCode == 125,
+           command.modifiers.isDisjoint(with: [.option, .control, .shift])
+        {
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        guard command.modifiers.isDisjoint(with: [.option, .control, .shift]) else {
+            return .preserveMarkedText
+        }
+
+        switch command.charactersIgnoringModifiers {
+        case "v":
+            return .cancelMarkedText
+        case "d":
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        default:
+            return .preserveMarkedText
+        }
     }
 
     private static func quickLookKeyEffect(

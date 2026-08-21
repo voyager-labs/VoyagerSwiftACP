@@ -1,8 +1,12 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import PerceptionCore
+import SwiftUI
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -189,6 +193,97 @@ extension EVM002FileManagerPagePresentationTests {
             return true
         }
         XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, alpha.id)
+    }
+
+    /// EVM-002-type_scroll_input: context-changing modifier commands는 marked text 취소 정책을 반환한다.
+    /// open, delete, paste, duplicate, visibility reload, undo/redo의 공통 composition invalidation을 검증한다.
+    /// - 검증 내용: 선택이 있는 상태에서 각 KeyCommand의 typed composition policy.
+    /// - 사전 조건: 일반 폴더 페이지에 선택된 엔트리가 있고 composer가 닫혀 있다.
+    /// - 기대 결과: 모든 context-changing command가 `.cancelMarkedText`를 반환한다.
+    func testContextChangingModifierCommandsCancelMarkedText() {
+        let selected = EntryModel.temporaryFolder(id: "/root/selected", name: "selected")
+        var state = FileManagerContentState()
+        state.entryViewLayout.entries = [selected]
+        state.entryViewLayout.selectedIds = [selected.id]
+        let commands: [KeyCommand] = [
+            .init(keyCode: 125, modifiers: [.command], characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}"),
+            .init(keyCode: 51, modifiers: [.command], characters: "\u{007F}", charactersIgnoringModifiers: "\u{007F}"),
+            .init(
+                keyCode: 51,
+                modifiers: [.command, .option],
+                characters: "\u{007F}",
+                charactersIgnoringModifiers: "\u{007F}",
+            ),
+            .init(keyCode: 47, modifiers: [.command, .shift], characters: ".", charactersIgnoringModifiers: "."),
+            .init(keyCode: 9, modifiers: [.command], characters: "v", charactersIgnoringModifiers: "v"),
+            .init(keyCode: 2, modifiers: [.command], characters: "d", charactersIgnoringModifiers: "d"),
+            .init(keyCode: 6, modifiers: [.command], characters: "z", charactersIgnoringModifiers: "z"),
+            .init(keyCode: 6, modifiers: [.command, .shift], characters: "Z", charactersIgnoringModifiers: "z"),
+        ]
+
+        for command in commands {
+            XCTAssertEqual(
+                FileManagerContentKeyCommandHandler.compositionPolicy(for: command, state: state),
+                .cancelMarkedText,
+            )
+        }
+    }
+
+    /// EVM-002-type_scroll_input: non-mutating, unhandled, 실행 불가능한 modifier command는 marked text를 보존한다.
+    /// copy/cut, Control-only, 알 수 없는 Command와 선택 없는 mutation command의 명시적 경계를 검증한다.
+    /// - 검증 내용: 각 KeyCommand와 state 조합의 typed composition policy.
+    /// - 사전 조건: 선택 유무와 composer 표시 상태를 command 의미에 맞게 구성한다.
+    /// - 기대 결과: 실제 context mutation이 없는 모든 경로가 `.preserveMarkedText`를 반환한다.
+    func testNonMutatingUnhandledAndUnavailableCommandsPreserveMarkedText() {
+        let selected = EntryModel.temporaryFolder(id: "/root/selected", name: "selected")
+        var selectedState = FileManagerContentState()
+        selectedState.entryViewLayout.entries = [selected]
+        selectedState.entryViewLayout.selectedIds = [selected.id]
+        let preservingCommands: [KeyCommand] = [
+            .init(keyCode: 8, modifiers: [.command], characters: "c", charactersIgnoringModifiers: "c"),
+            .init(keyCode: 7, modifiers: [.command], characters: "x", charactersIgnoringModifiers: "x"),
+            .init(keyCode: 12, modifiers: [.command], characters: "q", charactersIgnoringModifiers: "q"),
+            .init(keyCode: 12, modifiers: [.control], characters: "q", charactersIgnoringModifiers: "q"),
+        ]
+
+        for command in preservingCommands {
+            XCTAssertEqual(
+                FileManagerContentKeyCommandHandler.compositionPolicy(for: command, state: selectedState),
+                .preserveMarkedText,
+            )
+        }
+
+        let emptySelectionState = FileManagerContentState()
+        for command in [
+            KeyCommand(
+                keyCode: 125,
+                modifiers: [.command],
+                characters: "\u{F701}",
+                charactersIgnoringModifiers: "\u{F701}",
+            ),
+            KeyCommand(
+                keyCode: 51,
+                modifiers: [.command],
+                characters: "\u{007F}",
+                charactersIgnoringModifiers: "\u{007F}",
+            ),
+            KeyCommand(keyCode: 2, modifiers: [.command], characters: "d", charactersIgnoringModifiers: "d"),
+        ] {
+            XCTAssertEqual(
+                FileManagerContentKeyCommandHandler.compositionPolicy(for: command, state: emptySelectionState),
+                .preserveMarkedText,
+            )
+        }
+
+        var composerState = selectedState
+        composerState.composer.isPresented = true
+        XCTAssertEqual(
+            FileManagerContentKeyCommandHandler.compositionPolicy(
+                for: .init(keyCode: 6, modifiers: [.command], characters: "z", charactersIgnoringModifiers: "z"),
+                state: composerState,
+            ),
+            .preserveMarkedText,
+        )
     }
 
     /// EVM-002-type_scroll_input: 엔트리가 없으면 type-scroll을 발행하지 않는다.
@@ -378,4 +473,204 @@ extension EVM002FileManagerPagePresentationTests {
             ),
         )
     }
+
+    /// EVM-002-type_scroll_input: marked 상태의 Cmd+Down open은 조합을 취소한다.
+    func testMountedMarkedCommandDownCancelsCompositionBeforeOpen() async {
+        let perceptionCheckingWasEnabled = disableTypeScrollPerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let target = EntryModel.temporaryFolder(id: "/root/가나다", name: "가나다")
+        let fixture = await makeMountedTypeScrollFixture(entries: [target])
+        guard let host = await activateTypeScrollHost(fixture) else {
+            return XCTFail("Expected registered KeyCommandHostingView as first responder")
+        }
+        host.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        host.keyDown(with: makeTypeScrollKeyDown(
+            keyCode: 125,
+            characters: "\u{F701}",
+            modifiers: [.command],
+        ))
+        await drainTypeScrollFocusUpdates()
+
+        XCTAssertEqual(fixture.routedCommands(), ["navigation.openSelectedItem"])
+        XCTAssertFalse(host.hasMarkedText())
+        XCTAssertEqual(host.markedRange(), NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(host.selectedRange(), NSRange(location: 0, length: 0))
+        XCTAssertNil(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId)
+
+        host.unmarkText()
+        host.keyDown(with: makeTypeScrollKeyDown(keyCode: 49, characters: " "))
+        host.keyDown(with: makeTypeScrollKeyDown(keyCode: 36, characters: "\r"))
+        host.keyDown(with: makeTypeScrollKeyDown(keyCode: 125, characters: "\u{F701}"))
+        await drainTypeScrollFocusUpdates()
+
+        XCTAssertNil(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId)
+        XCTAssertEqual(
+            fixture.routedCommands(),
+            ["navigation.openSelectedItem", "navigation.quickLookSelectedItem", "rename", "selection"],
+        )
+    }
+
+    /// EVM-002-type_scroll_input: marked 상태의 Cmd+Delete mutation은 조합을 취소한다.
+    func testMountedMarkedCommandDeleteCancelsCompositionBeforeMutation() async {
+        let perceptionCheckingWasEnabled = disableTypeScrollPerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let target = EntryModel.temporaryFolder(id: "/root/가나다", name: "가나다")
+        let fixture = await makeMountedTypeScrollFixture(entries: [target])
+        guard let host = await activateTypeScrollHost(fixture) else {
+            return XCTFail("Expected registered KeyCommandHostingView as first responder")
+        }
+        host.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        host.keyDown(with: makeTypeScrollKeyDown(
+            keyCode: 51,
+            characters: "\u{007F}",
+            modifiers: [.command],
+        ))
+        await drainTypeScrollFocusUpdates()
+
+        XCTAssertEqual(fixture.routedCommands(), ["mutation.moveSelectedItemsToTrash"])
+        XCTAssertFalse(host.hasMarkedText())
+        XCTAssertEqual(host.markedRange(), NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(host.selectedRange(), NSRange(location: 0, length: 0))
+
+        host.unmarkText()
+        await drainTypeScrollFocusUpdates()
+        XCTAssertNil(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId)
+    }
+
+    /// EVM-002-type_scroll_input: copy와 unhandled Control shortcut은 marked state를 보존한다.
+    func testMountedNonMutatingAndUnhandledShortcutsPreserveComposition() async {
+        let perceptionCheckingWasEnabled = disableTypeScrollPerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let target = EntryModel.temporaryFolder(id: "/root/가나다", name: "가나다")
+        let fixture = await makeMountedTypeScrollFixture(entries: [target])
+        guard let host = await activateTypeScrollHost(fixture) else {
+            return XCTFail("Expected registered KeyCommandHostingView as first responder")
+        }
+        host.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        host.keyDown(with: makeTypeScrollKeyDown(keyCode: 8, characters: "c", modifiers: [.command]))
+        host.keyDown(with: makeTypeScrollKeyDown(keyCode: 12, characters: "q", modifiers: [.control]))
+        await drainTypeScrollFocusUpdates()
+
+        XCTAssertEqual(fixture.routedCommands(), ["clipboard.copySelectedItems"])
+        XCTAssertTrue(host.hasMarkedText())
+        XCTAssertEqual(host.markedRange(), NSRange(location: 0, length: 1))
+        XCTAssertEqual(host.selectedRange(), NSRange(location: 0, length: 1))
+        host.doCommandBy(#selector(NSResponder.cancelOperation(_:)))
+    }
+
+    private func makeMountedTypeScrollFixture(entries: [EntryModel]) async -> MountedTypeScrollFixture {
+        var initialState = FileManagerContentState()
+        initialState.navigation.seedInitialFolderPath("/root")
+        initialState.entryViewLayout.entries = entries
+        let routedCommands = LockIsolated<[String]>([])
+        let store: Store<FileManagerContentState, FileManagerContentAction> = Store(
+            initialState: initialState,
+        ) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                switch action {
+                case .view(.selectAllEntries):
+                    state.entryViewLayout.selectedIds = Set(entries.map(\.id))
+                case let .entryViewLayout(.delegate(.executeCommand(command))):
+                    routedCommands.withValue { $0.append(command) }
+                case .entryViewLayout(.delegate(.startRename)):
+                    routedCommands.withValue { $0.append("rename") }
+                case .entryViewLayout(.internal(.applySelectionOffset)):
+                    routedCommands.withValue { $0.append("selection") }
+                default:
+                    break
+                }
+                return .none
+            }
+            FileManagerContentKeyCommandReducer()
+            Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
+                EntryViewLayoutFeature()
+            }
+        }
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        let hostingController = NSHostingController(
+            rootView: ContentPageView(store: store)
+                .environment(\.fileManagerKeyCommandFocusCoordinator, coordinator),
+        )
+        let containerController = NSViewController()
+        containerController.view = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        containerController.addChild(hostingController)
+        hostingController.view.frame = containerController.view.bounds
+        containerController.view.addSubview(hostingController.view)
+        let window = NSWindow(contentViewController: containerController)
+        window.makeKey()
+        await drainTypeScrollFocusUpdates()
+        return MountedTypeScrollFixture(window: window, store: store, routedCommands: { routedCommands.value })
+    }
+
+    private func activateTypeScrollHost(_ fixture: MountedTypeScrollFixture) async -> KeyCommandHostingView? {
+        let nonTextResponder = KeyCommandHostingView()
+        fixture.window.contentView?.addSubview(nonTextResponder)
+        guard fixture.window.makeFirstResponder(nonTextResponder) else { return nil }
+        fixture.store.send(.view(.selectAllEntries))
+        await drainTypeScrollFocusUpdates()
+        guard let host = fixture.window.firstResponder as? KeyCommandHostingView, host !== nonTextResponder else {
+            return nil
+        }
+        return host
+    }
+
+    private func makeTypeScrollKeyDown(
+        keyCode: UInt16,
+        characters: String,
+        modifiers: NSEvent.ModifierFlags = [],
+    ) -> NSEvent {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: keyCode,
+        ) else {
+            preconditionFailure("keyDown 이벤트 생성 실패")
+        }
+        return event
+    }
+
+    private func disableTypeScrollPerceptionChecking() -> Bool {
+        let wasEnabled = PerceptionCore.isPerceptionCheckingEnabled
+        PerceptionCore.isPerceptionCheckingEnabled = false
+        return wasEnabled
+    }
+
+    private func drainTypeScrollFocusUpdates() async {
+        for _ in 0 ..< 8 {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async {
+                    continuation.resume()
+                }
+            }
+            await Task.yield()
+        }
+    }
+}
+
+private struct MountedTypeScrollFixture {
+    let window: NSWindow
+    let store: Store<FileManagerContentState, FileManagerContentAction>
+    let routedCommands: () -> [String]
 }

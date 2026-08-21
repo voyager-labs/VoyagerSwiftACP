@@ -18,6 +18,10 @@ final class FileManagerKeyCommandFocusCoordinator {
         }
     }
 
+    func cancelMarkedText() {
+        keyCommandView?.doCommandBy(#selector(NSResponder.cancelOperation(_:)))
+    }
+
     private static func isEditingText(_ responder: NSResponder?) -> Bool {
         guard let textView = responder as? NSTextView else { return false }
         return textView.isEditable
