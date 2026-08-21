@@ -59,6 +59,10 @@ var queryProfileOverride = map[string]string{
 	"filesystem.name_stem": "transform_unavailable",
 }
 
+var nativeTypeOverride = map[string]string{
+	"mditem:kMDItemFSName": "string",
+}
+
 // ProjectSystemRegistry는 System Registry를 정확한 active-set
 // PropertyCatalogSnapshot(278 정의, 294 source descriptor, 296 binding, 441
 // term)과 전체 SQL row model로 투영한다. 투영된 snapshot은 검증되고 canonical
@@ -155,8 +159,8 @@ func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, 
 					descriptorByRef[refKey] = entry.SourcePropertyDescriptor{
 						Ref:               ref,
 						NativeKey:         systemKey,
-						NativeType:        descriptor.Type,
-						NativeCardinality: nativeCardinality(descriptor.Type),
+						NativeType:        nativeTypeForKey(systemKey, descriptor.Type),
+						NativeCardinality: nativeCardinality(nativeTypeForKey(systemKey, descriptor.Type)),
 						Authority:         entry.AuthorityKindSystem,
 						SourceReadable:    true,
 						SourceQueryable:   sourceQueryable,
@@ -166,8 +170,8 @@ func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, 
 					descriptorRowByRef[refKey] = DescriptorRow{
 						Ref:               ref,
 						NativeKey:         systemKey,
-						NativeType:        descriptor.Type,
-						NativeCardinality: string(nativeCardinality(descriptor.Type)),
+						NativeType:        nativeTypeForKey(systemKey, descriptor.Type),
+						NativeCardinality: string(nativeCardinality(nativeTypeForKey(systemKey, descriptor.Type))),
 						Authority:         string(entry.AuthorityKindSystem),
 						SourceReadable:    true,
 						SourceQueryable:   sourceQueryable,
@@ -329,6 +333,13 @@ func nativeCardinality(registryType string) entry.PropertyCardinality {
 		return entry.PropertyCardinalityMany
 	}
 	return entry.PropertyCardinalityOne
+}
+
+func nativeTypeForKey(systemKey, registryType string) string {
+	if override := nativeTypeOverride[systemKey]; override != "" {
+		return override
+	}
+	return registryType
 }
 
 func strPtrOrNil(value string) *string {

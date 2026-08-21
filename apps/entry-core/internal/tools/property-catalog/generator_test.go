@@ -105,13 +105,18 @@ func TestFSNameThreeBindings(t *testing.T) {
 		t.Fatalf("project: %v", err)
 	}
 	var descriptorCount int
+	var nativeType string
 	for _, descriptor := range projection.Snapshot.Descriptors {
 		if descriptor.NativeKey == "mditem:kMDItemFSName" {
 			descriptorCount++
+			nativeType = string(descriptor.NativeType)
 		}
 	}
 	if descriptorCount != 1 {
 		t.Errorf("mditem:kMDItemFSName descriptors = %d, want 1", descriptorCount)
+	}
+	if nativeType != "string" {
+		t.Errorf("mditem:kMDItemFSName native type = %q, want string", nativeType)
 	}
 	transforms := map[string]string{}
 	for _, binding := range projection.Snapshot.Bindings {
