@@ -78,17 +78,22 @@ public struct ExternalDropReceivedFile: Equatable, Sendable {
     public let callbackOrdinal: Int
     /// staging 디렉터리 안의 실제 파일 경로.
     public let stagedPath: String
+    /// placement 정렬용 수신기 순번(pasteboard 순서). data flavor/legacy는 -1이며,
+    /// 콜백 도착 순서와 무관한 안정 정렬 키로 쓰인다(코멘트 #3830970670).
+    public let receiverIndex: Int
 
     public init(
         sessionID: ExternalDropSessionID,
         itemOrdinal: Int,
         callbackOrdinal: Int,
         stagedPath: String,
+        receiverIndex: Int = -1,
     ) {
         self.sessionID = sessionID
         self.itemOrdinal = itemOrdinal
         self.callbackOrdinal = callbackOrdinal
         self.stagedPath = stagedPath
+        self.receiverIndex = receiverIndex
     }
 }
 

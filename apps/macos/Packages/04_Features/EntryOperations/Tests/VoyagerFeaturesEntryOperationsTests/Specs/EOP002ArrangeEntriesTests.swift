@@ -7,6 +7,13 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
+/// StagingDirectory가 provider에 공개되지 않은 보관 디렉터리 경로를 재현한다.
+/// 세션 구현과 동일한 파생 규칙(`<parent>/.voyager-claimed-<rootName>`)을 쓴다.
+private func claimedContainer(_ stagingRoot: URL) -> URL {
+    stagingRoot.deletingLastPathComponent()
+        .appendingPathComponent(".voyager-claimed-\(stagingRoot.lastPathComponent)", isDirectory: true)
+}
+
 @MainActor
 final class EOP002ArrangeEntriesTests: XCTestCase {
     // MARK: - EOP-002-create_new_folder
@@ -2217,7 +2224,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let stagedData = staging.appendingPathComponent("Clipping 1.json")
         let stagedPromise = staging.appendingPathComponent("promise.txt")
-        let claimedPromise = staging.appendingPathComponent(".received/promise.txt")
+        let claimedPromise = claimedContainer(staging).appendingPathComponent("promise.txt")
         try Data("promise".utf8).write(to: stagedPromise)
         receiver.invokeReader(url: stagedPromise, error: nil)
 
@@ -2438,8 +2445,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(
             received.map(\.stagedPath),
             [
-                staging.appendingPathComponent(".received/first.eml").path,
-                staging.appendingPathComponent(".received/second.eml").path,
+                claimedContainer(staging).appendingPathComponent("first.eml").path,
+                claimedContainer(staging).appendingPathComponent("second.eml").path,
             ],
         )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
@@ -2483,8 +2490,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(
             received.map(\.stagedPath),
             [
-                staging.appendingPathComponent(".received/first.eml").path,
-                staging.appendingPathComponent(".received/second.eml").path,
+                claimedContainer(staging).appendingPathComponent("first.eml").path,
+                claimedContainer(staging).appendingPathComponent("second.eml").path,
             ],
         )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
@@ -2592,8 +2599,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(
             received.map(\.stagedPath),
             [
-                staging.appendingPathComponent(".received/a.txt").path,
-                staging.appendingPathComponent(".received/b.txt").path,
+                claimedContainer(staging).appendingPathComponent("a.txt").path,
+                claimedContainer(staging).appendingPathComponent("b.txt").path,
             ],
         )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
@@ -2631,9 +2638,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(received.map(\.callbackOrdinal), [1, 2, 3])
         XCTAssertEqual(
             received.map(\.stagedPath),
-            urls.map { staging.appendingPathComponent(".received/\($0.lastPathComponent)").path },
+            urls.map { claimedContainer(staging).appendingPathComponent("\($0.lastPathComponent)").path },
         )
-        XCTAssertTrue(received.allSatisfy { $0.stagedPath.hasPrefix(request.stagingDirectory) })
+        XCTAssertTrue(received.allSatisfy { $0.stagedPath.hasPrefix(claimedContainer(staging).path) })
     }
 
     /// EOP-002-import_external_objects: cardinality를 알 수 없는 receiver의 취소 재조정은
@@ -2692,6 +2699,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
         XCTAssertEqual(received.count, 1)
         XCTAssertNotEqual(received[0].stagedPath, source.path)
+        // claimed 파일은 provider에 전달된 staging root 밖 보관 디렉터리에 있어야 한다.
+        XCTAssertFalse(received[0].stagedPath.hasPrefix(request.stagingDirectory))
 
         try FileManager.default.createSymbolicLink(at: source, withDestinationURL: outside)
 
@@ -2751,7 +2760,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.map(\.stagedPath), [staging.appendingPathComponent(".received/message.eml").path])
+        XCTAssertEqual(
+            received.map(\.stagedPath),
+            [claimedContainer(staging).appendingPathComponent("message.eml").path],
+        )
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
         XCTAssertFalse(FileManager.default.fileExists(atPath: message.path))
     }
@@ -2850,7 +2862,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.compactMap { event -> ExternalDropReceivedFile? in
             guard case let .received(file) = event else { return nil }
             return file
-        }.map(\.stagedPath), [staging.appendingPathComponent(".received/a.txt").path])
+        }.map(\.stagedPath), [claimedContainer(staging).appendingPathComponent("a.txt").path])
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 
@@ -2882,8 +2894,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.map(\.stagedPath), [URL(fileURLWithPath: request.stagingDirectory)
-                .appendingPathComponent(".received/a.txt").path])
+        XCTAssertEqual(
+            received.map(\.stagedPath),
+            [claimedContainer(URL(fileURLWithPath: request.stagingDirectory)).appendingPathComponent("a.txt").path],
+        )
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 
@@ -3614,6 +3628,60 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(store.state.undoRecords.isEmpty)
         XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3830970670): 뒤쪽 receiver의 콜백이
+    /// 먼저 도착해도 placement는 pasteboard 순서(receiverIndex)를 유지한다.
+    /// - 검증 내용: B receiver 이벤트가 A보다 먼저 와도 복사 순서는 [a, b]다.
+    func testExternalDropImport_parallelArrivalPreservesDragOrder() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                events: { _ in AsyncStream { $0.finish() } },
+                cancel: { cleanup.recordCancel($0) },
+                finish: { cleanup.recordFinish($0) },
+                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
+            )
+        }
+        store.exhaustivity = .off
+
+        // 도착 순서(itemOrdinal)는 B가 먼저지만 receiverIndex로 A가 먼저 정렬돼야 한다.
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt", "b.txt"],
+            promisedOrdinals: [0, 1],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: b.path, receiverIndex: 1),
+                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: a.path, receiverIndex: 0),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [a.path, b.path])
+        XCTAssertEqual(cleanup.finishes, [sessionID])
     }
 
     /// EOP-002-import_external_objects: mixed drop의 즉시 URL이 staged 복사 배치에 포함된다.

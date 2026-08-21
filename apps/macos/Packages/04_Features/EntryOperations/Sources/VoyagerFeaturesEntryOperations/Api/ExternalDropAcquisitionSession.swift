@@ -185,6 +185,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             itemOrdinal: itemOrdinal,
             callbackOrdinal: 0,
             stagedPath: url.path,
+            receiverIndex: -1,
         )))
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
@@ -212,6 +213,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             itemOrdinal: itemOrdinal,
             callbackOrdinal: 0,
             stagedPath: url.path,
+            receiverIndex: -1,
         )))
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
@@ -378,7 +380,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             emitTerminalLocked(.failed(sessionID, .callbackError))
             return nil
         }
-        guard isInsideStaging(claimedURL) else {
+        guard isInsideClaimed(claimedURL) else {
             try? fileManager.removeItem(claimedURL)
             emitTerminalLocked(.failed(sessionID, .outsideStaging))
             return nil
@@ -511,7 +513,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             .filter {
                 fileManager.fileExists($0.path)
                     && isInsideStaging($0)
-                    && !staging.isOwnedContainer($0)
                     && !receivedStagedPaths.contains($0.standardizedFileURL.path)
             }
             .sorted { $0.path < $1.path }
@@ -537,6 +538,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             itemOrdinal: itemOrdinal,
             callbackOrdinal: callbackOrdinal,
             stagedPath: url.path,
+            receiverIndex: receiverIndex,
         )
         emitLocked(.received(receivedFile))
 
@@ -691,6 +693,18 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         return fileComponents.starts(with: stagingComponents) && fileComponents.count > stagingComponents.count
     }
 
+    /// claimed 파일 보관 디렉터리 안인지 검사한다. claim 결과는 provider에 공개되지 않은
+    /// 별도 디렉터리에 있어야 하므로 placement 전 최종 containment 기준이다.
+    private func isInsideClaimed(_ url: URL) -> Bool {
+        let claimedComponents = URL(
+            fileURLWithPath: FileChangeScopePolicy.canonicalPath(staging.claimedPath),
+        ).pathComponents
+        let fileComponents = URL(
+            fileURLWithPath: FileChangeScopePolicy.canonicalPath(url.path),
+        ).pathComponents
+        return fileComponents.starts(with: claimedComponents) && fileComponents.count > claimedComponents.count
+    }
+
     // MARK: - Cardinality
 
     enum Cardinality {
@@ -735,6 +749,9 @@ extension ExternalDropAcquisitionSession {
 private final class StagingDirectory {
     let path: String
     private let fileManager: FileManagerClient
+    /// callback 시점에 확정한 파일의 보관 디렉터리. staging root는 receive destination으로
+    /// provider에 전달되므로, provider가 root를 계속 쓸 수 있는 동안 claimed 파일을
+    /// symlink로 교체하지 못하게 root 밖에 둔다(코멘트 #3830970683).
     private let ownedPath: URL
     private(set) var isRemoved = false
     /// 파일시스템 관찰 소스. 외부에서 attach/teardown을 관리한다.
@@ -743,13 +760,15 @@ private final class StagingDirectory {
     init(path: String, fileManager: FileManagerClient) {
         self.path = path
         self.fileManager = fileManager
+        let rootName = URL(fileURLWithPath: path).lastPathComponent
         ownedPath = URL(fileURLWithPath: path, isDirectory: true)
-            .appendingPathComponent(".received", isDirectory: true)
+            .deletingLastPathComponent()
+            .appendingPathComponent(".voyager-claimed-\(rootName)", isDirectory: true)
         try? fileManager.createDirectory(ownedPath, true, nil)
     }
 
-    func isOwnedContainer(_ url: URL) -> Bool {
-        url.standardizedFileURL == ownedPath.standardizedFileURL
+    var claimedPath: String {
+        ownedPath.path
     }
 
     func claim(_ sourceURL: URL) -> URL? {
@@ -778,18 +797,23 @@ private final class StagingDirectory {
         observer = nil
     }
 
-    /// staging을 정확히 한 번 제거한다(멱등).
+    /// staging root와 보관 디렉터리를 정확히 한 번 제거한다(멱등).
     func remove() {
         guard !isRemoved else { return }
         isRemoved = true
-        try? fileManager.removeItem(URL(fileURLWithPath: path))
+        removeRoots()
     }
 
-    /// 이미 제거됐어도 물리 staging 경로 제거를 항상 시도한다(늦은 콜백 재생성 대비).
+    /// 이미 제거됐어도 두 경로의 제거를 항상 시도한다(늦은 콜백 재생성 대비).
     /// `remove()`와 달리 isRemoved 가드로 조기 반환하지 않으므로, finish 후 provider가
-    /// staging 루트를 재생성해도 늦은 콜백 시 다시 제거된다.
+    /// 경로를 재생성해도 늦은 콜백 시 다시 제거된다.
     func removeIfPresent() {
         isRemoved = true
+        removeRoots()
+    }
+
+    private func removeRoots() {
         try? fileManager.removeItem(URL(fileURLWithPath: path))
+        try? fileManager.removeItem(ownedPath)
     }
 }

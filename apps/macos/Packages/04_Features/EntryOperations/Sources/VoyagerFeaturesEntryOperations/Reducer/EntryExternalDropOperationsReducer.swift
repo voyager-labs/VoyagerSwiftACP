@@ -190,10 +190,15 @@ public struct EntryExternalDropOperationsReducer {
                 await acquisitionClient.finish(sessionID)
             }
         }
-        // 획득된 staged 파일을 item/callback ordinal 순서로 정렬하고, mixed drop의 즉시
-        // file URL을 뒤에 이어 붙여 promise/materialization과 함께 복사 배치로 전달한다.
+        // 콜백 도착 순서가 아닌 안정 키(receiver 순번 → receiver 내 콜백 순번 → 도착 순번)로
+        // 정렬해 병렬 완료 시에도 원래 drag 순서를 보존한다(코멘트 #3830970670). data
+        // flavor/legacy는 receiverIndex -1로 결정적 기여가 먼저 온다. mixed drop의 즉시
+        // file URL은 뒤에 이어 붙인다.
         let orderedSources = plan.receivedFiles
-            .sorted { ($0.itemOrdinal, $0.callbackOrdinal) < ($1.itemOrdinal, $1.callbackOrdinal) }
+            .sorted {
+                ($0.receiverIndex, $0.callbackOrdinal, $0.itemOrdinal)
+                    < ($1.receiverIndex, $1.callbackOrdinal, $1.itemOrdinal)
+            }
             .map(\.stagedPath)
             + plan.immediateURLPaths
         guard !orderedSources.isEmpty else {
