@@ -3,14 +3,13 @@ package entry
 import (
 	"context"
 	"errors"
-	"sort"
 	"testing"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
 )
 
-func TestUnifiedListCanonicalizesAdapterProperties(t *testing.T) {
+func TestUnifiedListRejectsUnsortedAdapterProperties(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	adapter := bindings[0].Adapter.(*recordingResourceAdapter)
 	item := adapterEntryFixture(t, bindings[0].SourceRef, "external", "item")
@@ -25,14 +24,13 @@ func TestUnifiedListCanonicalizesAdapterProperties(t *testing.T) {
 	service := mustUnifiedService(t, registry, bindings)
 	path := "/external"
 
-	result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+	_, err := service.UnifiedList(context.Background(), UnifiedListRequest{
 		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1,
 		RequestedProperties: []string{"property.a", "property.z"},
 	})
-	if err != nil {
-		t.Fatalf("UnifiedList() error = %v", err)
+	if !errors.Is(err, ErrApplicationAdapterFailure) {
+		t.Fatalf("UnifiedList() error = %v, want %v", err, ErrApplicationAdapterFailure)
 	}
-	assertCanonicalPropertyOrder(t, result.Entries[0].EntrySnapshot.CanonicalProperties)
 }
 
 func TestUnifiedListRejectsDuplicateAdapterRelativePath(t *testing.T) {
@@ -54,7 +52,7 @@ func TestUnifiedListRejectsDuplicateAdapterRelativePath(t *testing.T) {
 	}
 }
 
-func TestResolveEntryCanonicalizesAdapterProperties(t *testing.T) {
+func TestResolveEntryRejectsUnsortedAdapterProperties(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	adapter := bindings[0].Adapter.(*recordingResourceAdapter)
 	item := adapterEntryFixture(t, bindings[0].SourceRef, "external", "item")
@@ -63,27 +61,21 @@ func TestResolveEntryCanonicalizesAdapterProperties(t *testing.T) {
 	service := mustUnifiedService(t, registry, bindings)
 	path := "/external/item"
 
-	result, err := service.ResolveEntry(context.Background(), ResolveRequest{
+	_, err := service.ResolveEntry(context.Background(), ResolveRequest{
 		WorkspaceID: "workspace", VirtualPath: &path,
 		RequestedProperties: []string{"property.a", "property.z"},
 	})
-	if err != nil {
-		t.Fatalf("ResolveEntry() error = %v", err)
+	if !errors.Is(err, ErrApplicationAdapterFailure) {
+		t.Fatalf("ResolveEntry() error = %v, want %v", err, ErrApplicationAdapterFailure)
 	}
-	assertCanonicalPropertyOrder(t, result.EntrySnapshot.CanonicalProperties)
 }
 
 func unsortedCanonicalProperties(t *testing.T, item source.AdapterEntry) []domainentry.PropertyValue {
 	t.Helper()
 	properties := make([]domainentry.PropertyValue, 0, 2)
-	for _, propertyID := range []string{"property.a", "property.z"} {
-		propertyIDValue, err := domainentry.RegistryPropertyID(propertyID)
-		if err != nil {
-			t.Fatal(err)
-		}
+	for _, propertyID := range []string{"property.z", "property.a"} {
 		definition := domainentry.PropertyDefinition{
-			PropertyID: propertyIDValue, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
-			Namespace: "test", Key: propertyID,
+			PropertyID: propertyID, Namespace: "test", Key: propertyID,
 			DisplayName: propertyID, ValueType: domainentry.PropertyTypeText,
 			Cardinality: domainentry.PropertyCardinalityOne, Editable: true,
 			Provenance: domainentry.PropertyProvenanceSystem, ValidationRules: []domainentry.ValidationRule{},
@@ -98,23 +90,5 @@ func unsortedCanonicalProperties(t *testing.T, item source.AdapterEntry) []domai
 		}
 		properties = append(properties, value)
 	}
-	sort.Slice(properties, func(left, right int) bool {
-		return properties[left].PropertyID.String() < properties[right].PropertyID.String()
-	})
-	for left, right := 0, len(properties)-1; left < right; left, right = left+1, right-1 {
-		properties[left], properties[right] = properties[right], properties[left]
-	}
 	return properties
-}
-
-func assertCanonicalPropertyOrder(t *testing.T, properties []domainentry.PropertyValue) {
-	t.Helper()
-	if len(properties) != 2 {
-		t.Fatalf("properties = %#v, want two properties", properties)
-	}
-	for index := 1; index < len(properties); index++ {
-		if properties[index-1].PropertyID.String() >= properties[index].PropertyID.String() {
-			t.Fatalf("properties are not canonically sorted: %#v", properties)
-		}
-	}
 }

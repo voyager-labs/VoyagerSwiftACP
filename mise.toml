@@ -193,8 +193,8 @@ dir = "apps/entry-core"
 run = "go test ./integration -run '^TestDaemonProcessSmoke$' -count=1"
 
 [tasks.entry-core-check]
-description = "Entry Core build, test, race, smoke, 정적 검사, catalog/migration 검증과 module 불변식 검증"
-depends = ["entry-core-build", "entry-core-test", "entry-core-test-race", "entry-core-smoke", "entry-core-property-catalog-validate", "entry-core-migration-validate"]
+description = "Entry Core build, test, race, smoke, 정적 검사와 module 불변식 검증"
+depends = ["entry-core-build", "entry-core-test", "entry-core-test-race", "entry-core-smoke"]
 dir = "apps/entry-core"
 run = '''
 set -eu
@@ -211,16 +211,6 @@ test ! -f ../../go.work
 description = "Entry Core embedded migration 디렉터리 무결성 검증 (atlas.sum vs 실제 파일)"
 dir = "apps/entry-core"
 run = "mise exec -- atlas migrate validate --dir-format golang-migrate --dir file://internal/persistence/sqlite/migrations"
-
-[tasks.entry-core-property-catalog-generate]
-description = "Entry Core System Property catalog SQL seed와 Condition Go catalog 생성 (--write)"
-dir = "apps/entry-core"
-run = "go run ./internal/tools/property-catalog/cmd/property-catalog --system-registry ../../shared/system_property_registry.json --condition-registry ../../shared/property_condition_registry.json --seeds-dir internal/persistence/sqlite/seeds --condition-out internal/domain/entry/property_condition_catalog_gen.go --write"
-
-[tasks.entry-core-property-catalog-validate]
-description = "Entry Core catalog 생성 산출물이 최신인지 검증 (missing/stale 거부)"
-dir = "apps/entry-core"
-run = "go run ./internal/tools/property-catalog/cmd/property-catalog --system-registry ../../shared/system_property_registry.json --condition-registry ../../shared/property_condition_registry.json --seeds-dir internal/persistence/sqlite/seeds --condition-out internal/domain/entry/property_condition_catalog_gen.go --check"
 
 [tasks.entry-core-swift-test]
 description = "VoyagerEntryCoreClient unit 테스트 (process smoke 제외)"
