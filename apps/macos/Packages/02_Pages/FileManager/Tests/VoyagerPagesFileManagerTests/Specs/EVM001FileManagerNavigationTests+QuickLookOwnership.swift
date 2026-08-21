@@ -11,7 +11,7 @@ import XCTest
 /// window reducer(`FileManagerFeature`)는 포커스된 윈도우의 활성 탭에서만
 /// 전역 Quick Look 패널 동기화가 실제 client에 도달하도록 gate한다.
 @MainActor
-final class EVM001QuickLookOwnershipTests: XCTestCase {
+extension EVM001FileManagerNavigationTests {
     // MARK: - helpers
 
     private func contentWithSelection() -> FileManagerContentFeature.State {
