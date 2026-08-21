@@ -48,6 +48,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var usedStagedFilenames: Set<String> = []
     private var nextItemOrdinal: Int = 0
     private var callbackCounts: [Int: Int] = [:]
+    private var callbacksAwaitingCardinality: [(receiverIndex: Int, url: URL?, error: Error?)] = []
     private var pendingCancelledCallbacks: [Int: Int] = [:]
     private var callbackErrorTimeouts: [Int: DispatchWorkItem] = [:]
     private var stagingScanWorkItem: DispatchWorkItem?
@@ -95,8 +96,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 경로로만 종단한다. 그 외 결정적/미정 기여가 모두 비면 즉시 타입화 실패로 처리한다.
     func finalizeCardinality(fileNamesByReceiver: [[String]], dataCount: Int) {
         lock.lock()
-        defer { lock.unlock() }
-        guard phase == .acquiring else { return }
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
 
         var determinate = dataCount
         for (index, fileNames) in fileNamesByReceiver.enumerated() {
@@ -107,6 +110,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             switch ExternalDropAcquisitionSession.cardinalityState(for: fileNames) {
             case let .rejected(reason):
                 emitTerminalLocked(.failed(sessionID, reason))
+                lock.unlock()
                 return
             case let .count(count):
                 determinate += count
@@ -114,12 +118,23 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
         expectedCardinality = determinate
         cardinalityFinalized = true
+        let pendingCallbacks = callbacksAwaitingCardinality
+        callbacksAwaitingCardinality.removeAll()
         if determinate == 0, indeterminateReceivers.isEmpty {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
         } else if phase == .acquiring, sessionIsCompleteLocked() {
             // receive 중 동기적으로 도착한 콜백이 이미 받은 수를 채웠을 수 있다. cardinality
             // 확정 후에야 성공 판정이 가능하므로 lock을 보유한 채 재평가한다.
             emitTerminalLocked(.succeeded(sessionID))
+        }
+        lock.unlock()
+
+        for callback in pendingCallbacks {
+            handleCallback(
+                receiverIndex: callback.receiverIndex,
+                url: callback.url,
+                error: callback.error,
+            )
         }
     }
 
@@ -286,6 +301,11 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     func handleCallback(receiverIndex: Int, url: URL?, error: Error?) {
         lock.lock()
         if handleTerminalCallback(reportedURL: url) {
+            return
+        }
+        guard cardinalityFinalized else {
+            callbacksAwaitingCardinality.append((receiverIndex, url, error))
+            lock.unlock()
             return
         }
 

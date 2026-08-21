@@ -1985,6 +1985,21 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    func testExternalDropAcquisition_synchronousEmptyFileNamesCallbackFailsAfterFinalize() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("SyncEmptyNamesBeforeFinalize")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        receiver.deliverSynchronously = true
+        receiver.synchronousFilename = "message.eml"
+        let request = client.begin([receiver], [], "/dest", false, [])
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .emptyCardinality))
+    }
+
     // MARK: - EOP-002-import_external_objects (universal data-flavor materialization)
 
     /// 검증 내용: data-flavor item의 바이트가 staging에 그대로(변환 없이) 쓰이고 UTI 기반 이름을 갖는다.

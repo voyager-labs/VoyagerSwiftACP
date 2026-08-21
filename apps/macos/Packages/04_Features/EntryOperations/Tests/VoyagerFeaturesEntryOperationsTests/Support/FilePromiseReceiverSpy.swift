@@ -50,7 +50,7 @@ func collectEvents(
 /// `receivePromisedFiles`를 재정의해 실제 파일 수신 대신 reader 콜백을 저장하고,
 /// 테스트가 원하는 시점에 `invokeReader(url:error:)`로 직접 호출할 수 있게 한다.
 /// 이를 통해 sleep 없이 "제어된 연속(controlled continuation)"으로 콜백을 구동한다.
-final class FilePromiseReceiverSpy: NSFilePromiseReceiver {
+final class FilePromiseReceiverSpy: NSFilePromiseReceiver, @unchecked Sendable {
     private let names: [String]
 
     private(set) var receiveCalled = false
@@ -63,6 +63,7 @@ final class FilePromiseReceiverSpy: NSFilePromiseReceiver {
     /// 설정되면 receivePromisedFiles가 destination에 첫 이름 파일을 쓰고 reader를
     /// 동기적으로 호출한다. cardinality 확정보다 먼저 콜백이 도착하는 경로를 재현한다.
     var deliverSynchronously = false
+    var synchronousFilename: String?
 
     init(names: [String]) {
         self.names = names
@@ -91,7 +92,7 @@ final class FilePromiseReceiverSpy: NSFilePromiseReceiver {
         storedReader = { url, error in
             reader(url ?? URL(fileURLWithPath: "NSFilePromiseMissing"), error)
         }
-        if deliverSynchronously, let name = names.first {
+        if deliverSynchronously, let name = synchronousFilename ?? names.first {
             let delivered = destinationDir.appendingPathComponent(name)
             try? Data("sync".utf8).write(to: delivered)
             storedReader?(delivered, nil)
