@@ -2,16 +2,15 @@ package sqlite
 
 import "time"
 
-// This file declares the four catalog GORM row types that map 1:1 to migration
-// 0002_workspace_property_catalog. They are deliberately kept OUT of model.go
+// This file declares the four catalog GORM row types for the append-only catalog
+// migration chain. They are deliberately kept OUT of model.go
 // (which owns the single-row workspace_metadata identity) so the append-only
 // catalog schema is reviewable as its own unit. As with WorkspaceMetadataRow,
 // no embedded gorm.Model is used: every column, type, and nullability is
 // declared explicitly so the Atlas loader's generated schema matches the
-// hand-written migration. Cross-table foreign keys that Atlas cannot emit from
+// hand-written migrations. Cross-table foreign keys that Atlas cannot emit from
 // these tags (composite references and the workspace ownership chain) are
-// added by hand in 0002_workspace_property_catalog.up.sql and asserted through
-// PRAGMA in TestCatalogSchemaConstraints.
+// asserted through PRAGMA in TestCatalogSchemaConstraints.
 //
 // These types create no tables; they are only the input for the Atlas GORM
 // Provider loader (tools/atlas-schema) and the VOY-765 repository layer.
@@ -134,14 +133,14 @@ func (PropertyBindingRow) TableName() string {
 // WorkspacePropertyTermRow stores an ordered search/legacy alias for a
 // workspace Property. It is keyed by (workspace_id, property_id, term_kind,
 // ordinal); a term_kind's term_value is unique per property. Native source
-// keys are not terms (they live in source_property_descriptors). Terms inherit
-// their definition's lifecycle by joining workspace_property_definitions.
+// keys are not terms (they live in source_property_descriptors).
 type WorkspacePropertyTermRow struct {
-	WorkspaceID []byte `gorm:"column:workspace_id;type:blob;not null;check:length(workspace_id) = 16;primaryKey;uniqueIndex:idx_term_value"`
-	PropertyID  []byte `gorm:"column:property_id;type:blob;not null;check:length(property_id) = 16;primaryKey;uniqueIndex:idx_term_value"`
-	TermKind    string `gorm:"column:term_kind;type:text;not null;check:term_kind in ('search_alias','legacy_alias');primaryKey;uniqueIndex:idx_term_value"`
-	Ordinal     int    `gorm:"column:ordinal;type:integer;not null;check:ordinal >= 0;primaryKey"`
-	TermValue   string `gorm:"column:term_value;type:text;not null;uniqueIndex:idx_term_value"`
+	WorkspaceID    []byte `gorm:"column:workspace_id;type:blob;not null;check:length(workspace_id) = 16;primaryKey;uniqueIndex:idx_term_value"`
+	PropertyID     []byte `gorm:"column:property_id;type:blob;not null;check:length(property_id) = 16;primaryKey;uniqueIndex:idx_term_value"`
+	TermKind       string `gorm:"column:term_kind;type:text;not null;check:term_kind in ('search_alias','legacy_alias');primaryKey;uniqueIndex:idx_term_value"`
+	Ordinal        int    `gorm:"column:ordinal;type:integer;not null;check:ordinal >= 0;primaryKey"`
+	TermValue      string `gorm:"column:term_value;type:text;not null;uniqueIndex:idx_term_value"`
+	LifecycleState string `gorm:"column:lifecycle_state;type:text;not null;check:lifecycle_state in ('active','tombstoned')"`
 
 	SeedOwner         *string `gorm:"column:seed_owner;type:text"`
 	SeedVersion       *int    `gorm:"column:seed_version;type:integer"`
