@@ -2324,20 +2324,23 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let receiverA = FilePromiseReceiverSpy(names: ["a.txt"])
+        let receiverA = FilePromiseReceiverSpy(names: ["a1.txt", "a2.txt"])
         let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
         let request = client.begin([receiverA, receiverB], [], "/dest", false, [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        let a = staging.appendingPathComponent("a.txt")
+        let a1 = staging.appendingPathComponent("a1.txt")
+        let a2 = staging.appendingPathComponent("a2.txt")
         let b = staging.appendingPathComponent("b.txt")
-        try Data("a".utf8).write(to: a)
+        try Data("a1".utf8).write(to: a1)
+        try Data("a2".utf8).write(to: a2)
         try Data("b".utf8).write(to: b)
 
-        // receiverA만 콜백: 아직 성공하면 안 된다(receiverB 미완료).
-        receiverA.invokeReader(url: a, error: nil)
+        // receiverA의 cardinality만 충족: 아직 성공하면 안 된다(receiverB 미완료).
+        receiverA.invokeReader(url: a1, error: nil)
+        receiverA.invokeReader(url: a2, error: nil)
         var events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertNil(events.last, "한 receiver 기여만으로 성공하면 안 된다")
+        XCTAssertNil(events.last, "한 receiver의 cardinality만으로 성공하면 안 된다")
         XCTAssertFalse(events.contains { event in
             if case .succeeded = event { return true }
             return false
@@ -2350,8 +2353,34 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.count, 2)
+        XCTAssertEqual(received.count, 3)
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    func testExternalDropAcquisition_excessCallbacksFailBeforeOtherReceiverCompletes() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DeterminateOverflow")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiverA = FilePromiseReceiverSpy(names: ["a1.txt", "a2.txt"])
+        let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiverA, receiverB], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let a1 = staging.appendingPathComponent("a1.txt")
+        let a2 = staging.appendingPathComponent("a2.txt")
+        let a3 = staging.appendingPathComponent("a3.txt")
+        try Data("a1".utf8).write(to: a1)
+        try Data("a2".utf8).write(to: a2)
+        try Data("a3".utf8).write(to: a3)
+
+        receiverA.invokeReader(url: a1, error: nil)
+        receiverA.invokeReader(url: a2, error: nil)
+        receiverA.invokeReader(url: a3, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 
     /// EOP-002-import_external_objects (VOY-736 후속): receive 이후 fileNames로 예상 cardinality가
@@ -2934,6 +2963,29 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: lateURL.path))
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertTrue(events.isEmpty)
+    }
+
+    func testExternalDropAcquisition_lateCallbackAfterTombstoneIsCleanedUp() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LateTombstoneCallback")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient.live(
+            fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot),
+            sessionTombstoneSeconds: 0.01,
+        )
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        client.finish(request.sessionID)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let lateURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("late.txt")
+        try FileManager.default.createDirectory(
+            at: lateURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data("late".utf8).write(to: lateURL)
+        receiver.invokeReader(url: lateURL, error: nil)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lateURL.path))
     }
 
     /// 검증 내용: `.succeeded` emit 후(reducer가 placement 복사를 시작하기 전) 도착한 늦은

@@ -38,6 +38,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 발행된 terminal 이벤트. 정확히 한 번 발행을 보장하기 위해 저장한다.
     private var terminalEvent: ExternalDropAcquisitionEvent?
     private var expectedCardinality: Int = 0
+    private var expectedCardinalityByReceiver: [Int: Int] = [:]
     /// cardinality가 확정됐는지 여부. 확정 전에 도착한 콜백이 성공을 내지 못하게 하는
     /// 최소 수명주기 가드다(receive 시작 후 콜백이 확정보다 먼저 도착할 수 있다).
     private var cardinalityFinalized = false
@@ -120,6 +121,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
                 return
             case let .count(count):
                 determinate += count
+                expectedCardinalityByReceiver[index] = count
             }
         }
         expectedCardinality = determinate
@@ -278,8 +280,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             atDestination: destination,
             options: [:],
             operationQueue: queue,
-        ) { @Sendable [weak self] url, error in
-            self?.handleCallback(receiverIndex: index, url: url, error: error)
+        ) { @Sendable [self] url, error in
+            handleCallback(receiverIndex: index, url: url, error: error)
         }
     }
 
@@ -308,8 +310,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.lock()
         guard prepareCallback(receiverIndex: receiverIndex, url: url, error: error) else { return }
 
-        let callbackOrdinal = (callbackCounts[receiverIndex] ?? 0) + 1
-        callbackCounts[receiverIndex] = callbackOrdinal
+        guard let callbackOrdinal = recordCallback(receiverIndex: receiverIndex) else {
+            lock.unlock()
+            return
+        }
 
         // 일부 provider는 취소 callback 뒤에 source-owned 파일을 쓰므로 staging 관찰을 먼저 기다린다.
         let resolvedURL: URL?
@@ -373,6 +377,16 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             return false
         }
         return true
+    }
+
+    private func recordCallback(receiverIndex: Int) -> Int? {
+        let callbackOrdinal = (callbackCounts[receiverIndex] ?? 0) + 1
+        callbackCounts[receiverIndex] = callbackOrdinal
+        guard callbackOrdinal <= (expectedCardinalityByReceiver[receiverIndex] ?? callbackOrdinal) else {
+            emitTerminalLocked(.failed(sessionID, .callbackError))
+            return nil
+        }
+        return callbackOrdinal
     }
 
     private func prepareCallback(receiverIndex: Int, url: URL?, error: Error?) -> Bool {
@@ -692,6 +706,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private func sessionIsCompleteLocked() -> Bool {
         guard cardinalityFinalized else { return false }
         return receivedDeterminateCount >= expectedCardinality
+            && expectedCardinalityByReceiver.allSatisfy { receiverIndex, expected in
+                callbackCounts[receiverIndex, default: 0] == expected
+            }
             && completedIndeterminateReceivers.isSuperset(of: indeterminateReceivers)
     }
 }
