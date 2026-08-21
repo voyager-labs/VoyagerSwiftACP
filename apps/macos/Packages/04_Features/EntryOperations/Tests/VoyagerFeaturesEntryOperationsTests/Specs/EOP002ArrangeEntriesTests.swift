@@ -2222,6 +2222,31 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
     }
 
+    /// EOP-002-import_external_objects: legacy staging 내부 symlink가 가리키는 외부 파일은 거절된다.
+    /// legacy 경로의 lexical containment가 실제 symlink 대상까지 staging 안으로 허용하지 않는지 검증한다.
+    /// - 검증 내용: staging 내부 symlink를 통한 legacy staged path가 `.outsideStaging`으로 실패한다.
+    /// - 사전 조건: staging 내부 symlink가 staging 밖의 실제 파일을 가리킨다.
+    /// - 기대 결과: `.failed(sessionID, .outsideStaging)`이 emit되고 외부 파일은 남는다.
+    func testExternalDropAcquisition_beginLegacySymlinkOutsideStagingRejects() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacySymlinkOutside")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacySymlinkOutside")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let outside = temporaryRoot.appendingPathComponent("outside.eml")
+        let symlink = stagingDir.appendingPathComponent("escaped.eml")
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: outside)
+
+        let request = client.beginLegacy([symlink.path], stagingDir.path, "/dest", true)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
+    }
+
     /// EOP-002-import_external_objects (VOY-736 후속): fileNames가 빈 receiver는 기대 콜백 수가
     /// 미정이므로 첫 성공 콜백으로 완료 판정한다. Mail receiver는 fileNames가 비어도
     /// receiver 이행으로 `.eml`을 받는다(레거시 폴백·텍스트 플레이버로 떨어지지 않는다).

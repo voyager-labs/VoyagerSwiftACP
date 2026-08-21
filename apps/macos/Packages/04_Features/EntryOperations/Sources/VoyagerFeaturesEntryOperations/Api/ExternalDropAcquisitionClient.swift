@@ -372,8 +372,12 @@ private final class ExternalDropAcquisitionStore {
     /// 검증은 파일시스템 경계를 소유하는 client가 단일 수행한다.
     @MainActor
     private func isInsideDirectory(_ path: String, of directory: String) -> Bool {
-        let dirComponents = URL(fileURLWithPath: directory).standardizedFileURL.pathComponents
-        let fileComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        let dirComponents = URL(
+            fileURLWithPath: FileChangeScopePolicy.canonicalPath(directory),
+        ).pathComponents
+        let fileComponents = URL(
+            fileURLWithPath: FileChangeScopePolicy.canonicalPath(path),
+        ).pathComponents
         return fileComponents.starts(with: dirComponents) && fileComponents.count > dirComponents.count
     }
 
