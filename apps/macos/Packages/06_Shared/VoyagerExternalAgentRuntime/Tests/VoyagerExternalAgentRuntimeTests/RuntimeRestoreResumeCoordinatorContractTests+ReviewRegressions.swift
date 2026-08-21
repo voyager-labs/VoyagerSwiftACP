@@ -327,6 +327,67 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(counts.stream == 1)
         #expect(counts.terminalResult == 0)
     }
+
+    /// VOY-747-review_claim_conflict: resume claim CAS conflict adopts a same-run persisted terminal.
+    /// 복원 preflight와 claim 저장 사이에 다른 control plane이 저장한 같은 run terminal로 수렴하는지 검증한다.
+    /// - 검증 내용: completed 결과, exact restored owner 종료, persisted terminal 채택, provider 미호출.
+    /// - 사전 조건: restore claim 획득 뒤 resume claim apply가 같은 run의 completed snapshot과 충돌한다.
+    /// - 기대 결과: resume은 completed를 반환하고 lease는 none이 되며 retry restore는 activeRunExists가 아니다.
+    @Test
+    func `claim conflict adopts same run terminal and finalizes restored owner`() async throws {
+        let now = Date(timeIntervalSince1970: 4_102_444_800)
+        let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+        let host: ExternalAgentSessionReference = "review-claim-conflict-host"
+        let run = RuntimeRunReference("review-claim-conflict-run")
+        let receipt = ProviderInternalSessionReference("review-claim-conflict-receipt")
+        let context = makeContext()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: receipt,
+            runReference: run,
+            projection: .running,
+        )
+        let completed = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: receipt,
+            runReference: run,
+            projection: .completed,
+        )
+        let store = DeterministicHostMutationRuntimeStateStore(
+            state: makeState([stored]),
+            conflictingUpdateStates: [2: makeState([completed])],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        )
+        try await plane.register(adapter)
+
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let result = try await plane.resumeRestoredRun(hostReference: host)
+
+        let persisted = try #require(await store.currentState()?.sessions.first)
+        let counts = await adapter.counts()
+        let restartBindings = await adapter.receivedRestartBindings()
+        #expect(result == RuntimeResult(runReference: run, outcome: .completed, artifactReferences: []))
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(persisted.projection == .completed)
+        #expect(persisted.restorationClaim == nil)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .stale)
+        #expect(restartBindings.count == 1)
+        #expect(counts.stream == 0)
+        #expect(counts.terminalResult == 0)
+        #expect(await store.updateCount == 2)
+    }
 }
 
 private struct ReviewP1FourFixture {

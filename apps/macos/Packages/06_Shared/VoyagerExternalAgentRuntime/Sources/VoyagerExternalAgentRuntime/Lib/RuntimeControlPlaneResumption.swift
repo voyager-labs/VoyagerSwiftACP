@@ -21,7 +21,24 @@ public extension RuntimeControlPlane {
             }
             return terminal
         }
-        let claim = try await claimRestoredRun(hostReference)
+        let claim: RestoredRunClaim
+        do {
+            claim = try await claimRestoredRun(hostReference)
+        } catch RuntimeHostError.persistenceConflict {
+            guard let session = sessions[hostReference],
+                  case let .restored(lease) = session.lease,
+                  let terminal = try await persistedTerminalResult(
+                      host: hostReference,
+                      runReference: session.stored.runReference,
+                  )
+            else { throw RuntimeHostError.persistenceConflict }
+            finalizeVisibleResumptionTerminal(
+                host: hostReference,
+                runReference: terminal.runReference,
+                lease: lease,
+            )
+            return terminal
+        }
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
         if case let .persistedTerminal(terminal) = consumption {
