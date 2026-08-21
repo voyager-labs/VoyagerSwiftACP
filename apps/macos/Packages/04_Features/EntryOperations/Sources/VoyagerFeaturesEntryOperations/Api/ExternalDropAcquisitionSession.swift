@@ -335,7 +335,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             callbackOrdinal: callbackOrdinal,
             hasError: error != nil,
         )
-        if error != nil, phase == .acquiring, !indeterminateReceivers.contains(receiverIndex) {
+        if let error, phase == .acquiring, !shouldAwaitStagedFile(error: error, receiverIndex: receiverIndex) {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
         lock.unlock()

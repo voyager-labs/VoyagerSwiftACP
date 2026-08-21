@@ -45,14 +45,19 @@ struct EntryOperationsLifecycleReducer {
                 )
                 let sessionIDs = [externalDropSessionID, placementSessionID].compactMap(\.self)
                 guard !sessionIDs.isEmpty else { return .none }
-                return .merge(sessionIDs.flatMap { sessionID in
-                    [
-                        .cancel(id: CancelID.externalDrop(sessionID)),
-                        .run { [externalDropAcquisitionClient] _ in
-                            await externalDropAcquisitionClient.cancel(sessionID)
-                        },
-                    ]
-                })
+                // placement 세션은 즉시 cancel(staging 삭제)하지 않고 effect 취소만 적용한다.
+                // placement 복사(.pasteItemsEffect)가 진행 중일 때 staging을 지우면 읽던 원본이
+                // 사라져 부분 파일/복사 실패가 생긴다. placement staging 정리는 pasteItemsEffect의
+                // onCancelCleanup 지연 finish 경로가 단일 소유한다.
+                var effects: [Effect<Action>] = sessionIDs.map {
+                    .cancel(id: CancelID.externalDrop($0))
+                }
+                if let externalDropSessionID {
+                    effects.append(.run { [externalDropAcquisitionClient] _ in
+                        await externalDropAcquisitionClient.cancel(externalDropSessionID)
+                    })
+                }
+                return .merge(effects)
 
             case .loading(.itemsLoaded):
                 return refreshRestorableTrashPaths()

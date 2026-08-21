@@ -2536,6 +2536,36 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    /// EOP-002-import_external_objects: 미정 receiver가 실제 오류와 staged URL을 함께 보고하면 성공으로 승격하지 않는다.
+    /// - 검증 내용: staged 파일이 함께 와도 user-cancelled가 아닌 오류는 `.callbackError`로 종단한다.
+    /// - 사전 조건: fileNames가 빈 receiver가 staging 파일과 provider 오류를 함께 보고한다.
+    /// - 기대 결과: 파일은 `.received`로 기록되지만 세션은 실패하고 staging이 정리된다.
+    func testExternalDropAcquisition_nonCancelledErrorWithStagedFileFails() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("ProviderCallbackError")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let message = staging.appendingPathComponent("message.eml")
+        try Data("message".utf8).write(to: message)
+        receiver.invokeReader(
+            url: message,
+            error: NSError(domain: "ExternalProvider", code: 1),
+        )
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.map(\.stagedPath), [message.path])
+        XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: message.path))
+    }
+
     /// EOP-002-import_external_objects (VOY-736 회귀): source가 취소 콜백을 먼저 보낸 뒤
     /// promise 파일을 staging에 쓰더라도 callback 오류로 세션을 조기 종료하지 않는다.
     /// - 사전 조건: fileNames가 빈 receiver가 취소 오류를 보고한 다음 staging에 파일을 쓴다.
@@ -3595,6 +3625,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         gate.open()
         await store.finish()
 
+        XCTAssertTrue(
+            cleanup.cancels.isEmpty,
+            "placement reset은 동기 복사 중 acquisition cancel을 호출하면 안 된다",
+        )
+        XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(
             recorder.copiedPaths.isEmpty,
             "resetForDuplicate 후 placement 복사가 취소돼 destination으로 복사가 없어야 한다",
