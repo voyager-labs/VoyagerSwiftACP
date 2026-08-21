@@ -267,7 +267,7 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
             runReference: fixture.run,
             kind: .persistence,
         ))
-        #expect(await fixture.store.loadCount == 3)
+        #expect(await fixture.store.loadCount == 4)
         #expect(await fixture.store.applyCount == 3)
         #expect(await fixture.ownerAdapter.counts().stream == 1)
         #expect(await fixture.ownerAdapter.counts().terminalResult == 0)
@@ -595,7 +595,7 @@ private func ownershipMakeStaleResumptionCleanupFixture(
     let failureGate = RuntimeTestGate()
     let store = InMemoryRuntimeStateStore(
         state: makeState([stored]),
-        loadErrors: fencingLoadUnavailable ? [3: .unavailable] : [:],
+        loadErrors: fencingLoadUnavailable ? [4: .unavailable] : [:],
     )
     let ownerAdapter = DeterministicRuntimeAdapter(
         id: "sdk",

@@ -62,6 +62,114 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await adapter.counts().terminalResult == 1)
     }
 
+    /// VOY-747-shared_policy_terminal_lease: same-plane terminal finalizes the restored owner.
+    /// terminal-only 복원 소비가 이미 저장된 같은 plane의 terminal을 반환할 때 resuming lease까지 정리하는지 검증한다.
+    /// - 검증 내용: returned terminal, durable projection, inactive lease와 provider 호출 횟수.
+    /// - 사전 조건: terminal-only provider 결과가 gate에서 대기하고 같은 plane이 host terminal을 먼저 저장한다.
+    /// - 기대 결과: resume은 host terminal을 반환하고 session lease는 none으로 종료된다.
+    @Test
+    func `same-plane stored terminal clears restored owner`() async throws {
+        let host: ExternalAgentSessionReference = "shared-policy-same-plane-terminal-host"
+        let run = RuntimeRunReference("shared-policy-same-plane-terminal-run")
+        let context = makeContext()
+        let resultGate = RuntimeTestGate()
+        let capabilities = sharedPolicyTerminalCapabilities()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("same-plane-terminal-receipt"),
+            runReference: run,
+            adapterID: RuntimeAdapterID("terminal"),
+            providerNamespace: "terminal",
+            capabilitySnapshot: capabilities,
+            projection: .running,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "terminal",
+            transport: .processJSONL,
+            capabilities: capabilities,
+            terminalResultOverride: RuntimeResult(
+                runReference: run,
+                outcome: .completed,
+                artifactReferences: [],
+            ),
+            terminalResultGate: resultGate,
+        )
+        let store = InMemoryRuntimeStateStore(state: makeState([stored]))
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resume = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForTerminalResultCount(1)
+
+        let terminal = try #require(try await plane.ingestHostEvent(sharedPolicyHostTerminal(
+            host: host,
+            run: run,
+            kind: .interrupted,
+        )))
+        await resultGate.open()
+
+        #expect(try await resume.value == terminal)
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await plane.projection(for: host) == .interrupted)
+        #expect(try await store.currentState()?.sessions.first?.projection == .interrupted)
+        #expect(await adapter.counts().terminalResult == 1)
+    }
+
+    /// VOY-747-shared_policy_process_terminal: durable terminal wins process and transport interruption.
+    /// restored provider가 processExit/transportLoss를 반환하기 직전 저장된 host terminal을 우선 채택하는지 검증한다.
+    /// - 검증 내용: terminal result, durable projection, inactive lease와 typed provider call 경계.
+    /// - 사전 조건: stream failure가 gate에서 대기하고 같은 plane이 completed host terminal을 먼저 저장한다.
+    /// - 기대 결과: process/transport 오류 대신 completed terminal을 반환하고 resumption owner를 종료한다.
+    @Test(arguments: SharedPolicyResumptionInterruption.allCases)
+    private func `durable terminal wins restored process interruption`(
+        interruption: SharedPolicyResumptionInterruption,
+    ) async throws {
+        let host = ExternalAgentSessionReference("shared-policy-interruption-\(interruption.rawValue)")
+        let run = RuntimeRunReference("shared-policy-interruption-run-\(interruption.rawValue)")
+        let context = makeContext()
+        let failureGate = RuntimeTestGate()
+        let capabilities = sharedPolicyStreamOnlyCapabilities()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("interruption-receipt"),
+            runReference: run,
+            capabilitySnapshot: capabilities,
+            projection: .running,
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            capabilities: capabilities,
+            eventStreamRuntimeFailure: RuntimeAdapterFailure(
+                kind: interruption.kind,
+                diagnosticCode: RuntimeDiagnosticCode(interruption.rawValue),
+            ),
+            eventStreamRuntimeFailureGate: failureGate,
+        )
+        let store = InMemoryRuntimeStateStore(state: makeState([stored]))
+        let plane = RuntimeControlPlane(store: store)
+        let hostPlane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+        let resume = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(1)
+
+        let terminal = try #require(try await hostPlane.ingestHostEvent(sharedPolicyHostTerminal(
+            host: host,
+            run: run,
+            kind: .completed,
+        )))
+        await failureGate.open()
+
+        #expect(try await resume.value == terminal)
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(try await store.currentState()?.sessions.first?.projection == .completed)
+        #expect(await adapter.counts().stream == 1)
+        #expect(await adapter.counts().terminalResult == 0)
+    }
+
     /// VOY-747-shared_policy_cancellation: restored cancellation preserves the exact claim and CancellationError.
     /// 복원 caller 취소가 VOY-746 취소 분류를 유지하면서 claim owner/expiry를 바꾸지 않는지 검증한다.
     /// - 검증 내용: CancellationError, exact persisted claim, running projection과 provider 호출 횟수.
@@ -277,6 +385,18 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await plane.sessions[host]?.lease.isAwaitingResumption == true)
         #expect(await adapter.counts().stream == 1)
         #expect(await adapter.counts().terminalResult == 0)
+    }
+}
+
+private enum SharedPolicyResumptionInterruption: String, CaseIterable {
+    case processExit
+    case transportLoss
+
+    var kind: RuntimeAdapterFailureKind {
+        switch self {
+        case .processExit: .processExit
+        case .transportLoss: .transportLoss
+        }
     }
 }
 
