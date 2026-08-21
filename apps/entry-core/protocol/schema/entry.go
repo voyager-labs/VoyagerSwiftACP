@@ -503,7 +503,7 @@ func propertyValueFromDomain(value domainentry.PropertyValue) (PropertyValue, er
 			validation.RuleKind = &k
 		}
 	}
-	return PropertyValue{PropertyID: value.PropertyID, EntryID: value.EntryID, ValueType: string(value.Type), Value: payload, State: string(value.State), Provenance: string(value.Provenance), ObservedAt: formatTime(value.ObservedAt), SourceRevision: revisionFromDomain(value.SourceRevision.Revision), Editable: value.Editable, Validation: validation, Cardinality: string(value.Cardinality)}, nil
+	return PropertyValue{PropertyID: value.PropertyID.String(), EntryID: value.EntryID, ValueType: string(value.Type), Value: payload, State: string(value.State), Provenance: string(value.Provenance), ObservedAt: formatTime(value.ObservedAt), SourceRevision: revisionFromDomain(value.SourceRevision.Revision), Editable: value.Editable, Validation: validation, Cardinality: string(value.Cardinality)}, nil
 }
 func revisionFromDomain(v domainentry.Revision) Revision {
 	return Revision{Strength: string(v.Strength), Token: cloneWireString(v.Token)}

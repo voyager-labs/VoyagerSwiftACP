@@ -3,7 +3,9 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"io/fs"
 	"strings"
@@ -27,15 +29,17 @@ func TestMigrateCleanReplay(t *testing.T) {
 	}
 
 	// schema_migrations is the single version/dirty ledger (golang-migrate
-	// default); a clean replay reaches version 1 and is not dirty.
+	// default); a clean replay reaches the current head version and is not
+	// dirty. The embedded directory now holds 0001 (workspace_metadata), 0002
+	// (workspace property catalog), 0003 (term lifecycle), and 0004 (active term uniqueness), so head is version 4.
 	var version int
 	var dirty bool
 	if err := store.SQLDB().QueryRowContext(ctx,
 		"SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty); err != nil {
 		t.Fatalf("query schema_migrations: %v", err)
 	}
-	if version != 1 || dirty {
-		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=1 dirty=false", version, dirty)
+	if version != 4 || dirty {
+		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=4 dirty=false", version, dirty)
 	}
 
 	// The singleton CHECK (singleton = 1) is satisfied by the row insert, so a
@@ -81,18 +85,26 @@ func embeddedMigration(t *testing.T, base string) (up, down string) {
 // buildFixtureFS builds a MapFS migration directory (rooted under "migrations/")
 // containing the given up/down pairs plus an atlas.sum computed over exactly
 // those up files. Test-only 0002 lives only here, never in the embedded
-// (append-only) directory. The computed atlas.sum keeps the pre-apply checksum
-// gate green so the test exercises the migration runner itself.
+// (append-only) directory. The computed atlas.sum uses the same cumulative
+// per-file hashing Atlas's golang-migrate formatter emits, keeping the
+// pre-apply checksum gate green so the test exercises the migration runner
+// itself.
 func buildFixtureFS(t *testing.T, migrations ...fixtureMigration) fstest.MapFS {
 	t.Helper()
 	m := fstest.MapFS{}
 	var entries []sumEntry
+	var acc []byte
 	for _, mig := range migrations {
 		upName := mig.base + ".up.sql"
 		downName := mig.base + ".down.sql"
 		m["migrations/"+upName] = &fstest.MapFile{Data: []byte(mig.up)}
 		m["migrations/"+downName] = &fstest.MapFile{Data: []byte(mig.down)}
-		entries = append(entries, sumEntry{name: upName, hash: fileHash(upName, []byte(mig.up))})
+		// Cumulative per-file hash: SHA-256 over the concatenation of every up
+		// file's (name + content) from the first through this one.
+		acc = append(acc, []byte(upName)...)
+		acc = append(acc, []byte(mig.up)...)
+		sum := sha256.Sum256(acc)
+		entries = append(entries, sumEntry{name: upName, hash: base64.StdEncoding.EncodeToString(sum[:])})
 	}
 	var sb strings.Builder
 	sb.WriteString("h1:" + sumHash(entries) + "\n")
@@ -187,26 +199,18 @@ func TestMigratePopulatedUpgrade(t *testing.T) {
 	ctx := context.Background()
 	path := tempDBPath(t)
 
-	up1, down1 := embeddedMigration(t, "0001_workspace_metadata")
-	twoStep := buildFixtureFS(t,
-		fixtureMigration{base: "0001_workspace_metadata", up: up1, down: down1},
-		fixtureMigration{
-			base: "0002_benign",
-			up:   "CREATE TABLE `app_meta` (`key` text PRIMARY KEY, `value` text NOT NULL);",
-			down: "DROP TABLE `app_meta`;",
-		},
-	)
-
 	store, err := Open(ctx, path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	defer store.Close()
 
-	// Create the DB at version 1 using the embedded directory (0001 only).
+	// MigrateUp runs the embedded directory through the term lifecycle migration,
+	// reaching head version 4.
 	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
-		t.Fatalf("MigrateUp to version 1: %v", err)
+		t.Fatalf("MigrateUp: %v", err)
 	}
+	assertLedger(t, store.SQLDB(), 4, false)
 
 	// Insert a populated workspace_metadata singleton row (16-byte UUIDv7 blob
 	// satisfies the length CHECK).
@@ -221,14 +225,16 @@ func TestMigratePopulatedUpgrade(t *testing.T) {
 	// datetime literals, so compare against the actually-stored value).
 	before := readWorkspaceRow(t, ctx, store.SQLDB())
 
-	// Run the full two-step upgrade: 0001 (already applied, no-op) then 0002.
-	if err := MigrateUpFS(ctx, store.SQLDB(), twoStep); err != nil {
-		t.Fatalf("MigrateUpFS to version 2: %v", err)
+	// Re-run the embedded upgrade: all migrations already applied, no-op.
+	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
+		t.Fatalf("MigrateUp re-run: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 2, false)
 
-	// The benign 0002 table is present.
-	assertTablePresent(t, store.SQLDB(), "app_meta")
+	// The catalog tables are present.
+	assertTablePresent(t, store.SQLDB(), "workspace_property_definitions")
+	assertTablePresent(t, store.SQLDB(), "source_property_descriptors")
+	assertTablePresent(t, store.SQLDB(), "property_bindings")
+	assertTablePresent(t, store.SQLDB(), "workspace_property_terms")
 
 	// The populated workspace_metadata row survived byte-for-byte.
 	after := readWorkspaceRow(t, ctx, store.SQLDB())
@@ -409,8 +415,316 @@ func TestSharedSQLiteDriverLockRejectsDoubleLock(t *testing.T) {
 	}
 }
 
-// TestSharedSQLiteDriverLockRejectsAheadLedgerUnderLock proves the
-// future-version gate runs while the flock is held (not as a pre-lock check).
+// catalogTableNames are the four tables 0002_workspace_property_catalog must
+// create, plus the workspace_metadata table 0001 already owns. Constraint
+// assertions in the catalog tests reference these exact names.
+var catalogTableNames = []string{
+	"workspace_metadata",
+	"workspace_property_definitions",
+	"source_property_descriptors",
+	"property_bindings",
+	"workspace_property_terms",
+}
+
+// catalogFixtureFS returns a MapFS directory containing the committed migration
+// pairs (read from the embedded directory), with a computed atlas.sum, so a test
+// can replay a fresh or populated 0001→0004 upgrade.
+func catalogFixtureFS(t *testing.T) fstest.MapFS {
+	t.Helper()
+	up1, down1 := embeddedMigration(t, "0001_workspace_metadata")
+	up2, down2 := embeddedMigration(t, "0002_workspace_property_catalog")
+	up3, down3 := embeddedMigration(t, "0003_workspace_property_term_lifecycle")
+	up4, down4 := embeddedMigration(t, "0004_workspace_property_term_active_unique")
+	return buildFixtureFS(t,
+		fixtureMigration{base: "0001_workspace_metadata", up: up1, down: down1},
+		fixtureMigration{base: "0002_workspace_property_catalog", up: up2, down: down2},
+		fixtureMigration{base: "0003_workspace_property_term_lifecycle", up: up3, down: down3},
+		fixtureMigration{base: "0004_workspace_property_term_active_unique", up: up4, down: down4},
+	)
+}
+
+// assertTablesPresent asserts every catalog table (and workspace_metadata)
+// exists in the schema.
+func assertTablesPresent(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, name := range catalogTableNames {
+		assertTablePresent(t, db, name)
+	}
+}
+
+// assertWorkspaceIDUniqueIndex asserts the unique index on
+// workspace_metadata(workspace_id) that 0002 must add so catalog foreign keys
+// can reference the workspace identity column. Atlas emits it as a
+// CREATE UNIQUE INDEX, which pragma_index_list reports with origin='c'.
+func assertWorkspaceIDUniqueIndex(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(
+		`SELECT count(*) FROM pragma_index_list('workspace_metadata')
+		 WHERE "unique"=1 AND origin='c'`).Scan(&n); err != nil {
+		t.Fatalf("query workspace_metadata unique indexes: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("workspace_metadata has %d explicit unique index(es), want exactly 1 (workspace_id)", n)
+	}
+	var origin string
+	var unique int
+	if err := db.QueryRow(
+		`SELECT il."unique", ii.name FROM pragma_index_list('workspace_metadata') il
+		 JOIN pragma_index_info(il.name) ii ON ii.seqno=0
+		 WHERE il."unique"=1 AND il.origin='c'`).Scan(&unique, &origin); err != nil {
+		t.Fatalf("query workspace_id unique index column: %v", err)
+	}
+	if unique != 1 || origin != "workspace_id" {
+		t.Fatalf("workspace unique index: unique=%d first_col=%q, want unique=1 first_col=workspace_id", unique, origin)
+	}
+}
+
+// assertForeignKeys asserts the exact set of foreign keys a table must declare,
+// each with the expected referenced table and (in order) referenced columns.
+// It also proves foreign_keys enforcement is ON for the connection.
+func assertForeignKeys(t *testing.T, db *sql.DB, table string, want [][2]string) {
+	t.Helper()
+	// pragma_foreign_key_list returns one row per column of each FK constraint,
+	// keyed by the FK `id`. Group rows by `id` so each distinct id is one FK.
+	type fkCol struct {
+		refTable string
+		fromCol  string
+	}
+	rows, err := db.Query(`SELECT id, seq, "table", "from" FROM pragma_foreign_key_list(?) ORDER BY id, seq`, table)
+	if err != nil {
+		t.Fatalf("query FK list for %q: %v", table, err)
+	}
+	defer rows.Close()
+	groups := map[int][]fkCol{}
+	order := []int{}
+	for rows.Next() {
+		var id int
+		var seq int
+		var col fkCol
+		if err := rows.Scan(&id, &seq, &col.refTable, &col.fromCol); err != nil {
+			t.Fatalf("scan FK for %q: %v", table, err)
+		}
+		if _, ok := groups[id]; !ok {
+			order = append(order, id)
+		}
+		groups[id] = append(groups[id], col)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate FK list for %q: %v", table, err)
+	}
+	if len(order) != len(want) {
+		t.Fatalf("table %q has %d FK constraint(s), want %d", table, len(order), len(want))
+	}
+	for i, id := range order {
+		first := groups[id][0] // seq=0 row: referenced table + first referenced column
+		if first.refTable != want[i][0] || first.fromCol != want[i][1] {
+			t.Fatalf("table %q FK[%d] = (table=%q from=%q), want (table=%q from=%q)",
+				table, i, first.refTable, first.fromCol, want[i][0], want[i][1])
+		}
+	}
+}
+
+// assertSingleColumnCheck asserts a table's CHECK constraint that contains the
+// given column-name fragment exists (extracted from sqlite_master). The
+// fragment is matched as a whole word so a column like `origin` does not match
+// the `origin` part of an unrelated name.
+func assertSingleColumnCheck(t *testing.T, db *sql.DB, table, column string) {
+	t.Helper()
+	var ddl string
+	if err := db.QueryRow(
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&ddl); err != nil {
+		t.Fatalf("query table %q DDL: %v", table, err)
+	}
+	if !strings.Contains(ddl, "CHECK (length("+column+") = 16)") &&
+		!strings.Contains(ddl, "CHECK (length("+column+") = 16 )") &&
+		!strings.Contains(ddl, "CHECK(length("+column+") = 16)") {
+		t.Fatalf("table %q DDL missing 16-byte CHECK on %q:\n%s", table, column, ddl)
+	}
+}
+
+// TestMigrateWorkspacePropertyCatalogFreshReplay replays a fresh 0001→0004
+// upgrade on a new database and proves the ledger reaches version 4, all four
+// catalog tables exist, and the workspace_id unique index 0002 adds is present.
+func TestMigrateWorkspacePropertyCatalogFreshReplay(t *testing.T) {
+	ctx := context.Background()
+	path := tempDBPath(t)
+
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	// Fresh replay applies the workspace metadata, catalog, and term lifecycle migrations.
+	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
+		t.Fatalf("MigrateUpFS fresh 0001→0004: %v", err)
+	}
+	assertLedger(t, store.SQLDB(), 4, false)
+	assertTablesPresent(t, store.SQLDB())
+	assertWorkspaceIDUniqueIndex(t, store.SQLDB())
+}
+
+// TestMigrateWorkspacePropertyCatalogPopulatedReplay replays a populated
+// 0001→0004 upgrade: a database created at version 1 with a populated
+// workspace_metadata singleton row is upgraded to version 4, proving the
+// existing identity row survives byte-for-byte and the catalog tables appear.
+func TestMigrateWorkspacePropertyCatalogPopulatedReplay(t *testing.T) {
+	ctx := context.Background()
+	path := tempDBPath(t)
+
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	// Create the DB at version 1 using the embedded 0001-only directory.
+	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
+		t.Fatalf("MigrateUp to version 1: %v", err)
+	}
+
+	row := []byte("0123456789abcdef")
+	if _, err := store.SQLDB().ExecContext(ctx,
+		`INSERT INTO workspace_metadata (singleton, workspace_id, created_at, updated_at)
+		 VALUES (1, ?, datetime('now'), datetime('now'))`, row); err != nil {
+		t.Fatalf("insert populated row: %v", err)
+	}
+	before := readWorkspaceRow(t, ctx, store.SQLDB())
+
+	// Upgrade the populated database to version 4.
+	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
+		t.Fatalf("MigrateUpFS populated 0001→0004: %v", err)
+	}
+	assertLedger(t, store.SQLDB(), 4, false)
+	assertTablesPresent(t, store.SQLDB())
+	assertWorkspaceIDUniqueIndex(t, store.SQLDB())
+
+	after := readWorkspaceRow(t, ctx, store.SQLDB())
+	if !bytes.Equal(after.workspaceID, before.workspaceID) {
+		t.Fatalf("workspace_id = %x, want %x (row corrupted by catalog upgrade)", after.workspaceID, before.workspaceID)
+	}
+}
+
+// TestCatalogSchemaConstraints asserts the exact physical FK/index/check
+// contracts of the four catalog tables through PRAGMA and sqlite_master
+// queries — not by grepping the migration file. It proves:
+//
+//   - every table is owned by the workspace (FK → workspace_metadata),
+//   - definitions namespace/key uniqueness is workspace-scoped,
+//   - source descriptors and bindings are workspace-scoped via composite FK,
+//   - bindings reference both a definition and a source descriptor,
+//   - terms reference their definition (no orphans),
+//   - 16-byte ID checks, allowed-enum checks, and non-negative ordinal checks.
+func TestCatalogSchemaConstraints(t *testing.T) {
+	ctx := context.Background()
+	path := tempDBPath(t)
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
+		t.Fatalf("MigrateUpFS: %v", err)
+	}
+	db := store.SQLDB()
+
+	// Every catalog table must be owned by the workspace.
+	assertForeignKeys(t, db, "workspace_property_definitions", [][2]string{
+		{"workspace_metadata", "workspace_id"},
+	})
+	assertForeignKeys(t, db, "source_property_descriptors", [][2]string{
+		{"workspace_metadata", "workspace_id"},
+	})
+	// Bindings are owned by the workspace and reference a definition and a
+	// source descriptor (composite FKs). Cross-workspace rows are rejected
+	// because the workspace_id in each composite FK must match the referenced
+	// row's workspace_id.
+	assertForeignKeys(t, db, "property_bindings", [][2]string{
+		{"source_property_descriptors", "workspace_id"},
+		{"workspace_property_definitions", "workspace_id"},
+		{"workspace_metadata", "workspace_id"},
+	})
+	assertForeignKeys(t, db, "workspace_property_terms", [][2]string{
+		{"workspace_property_definitions", "workspace_id"},
+		{"workspace_metadata", "workspace_id"},
+	})
+
+	// Definitions: workspace-scoped namespace/key uniqueness. There must be a
+	// unique index whose columns are exactly (workspace_id, namespace,
+	// canonical_key).
+	{
+		var n int
+		if err := db.QueryRow(
+			`SELECT count(*) FROM pragma_index_list('workspace_property_definitions')
+			 WHERE "unique"=1 AND origin='c'`).Scan(&n); err != nil {
+			t.Fatalf("query definitions unique indexes: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("definitions has %d unique index(es), want exactly 1 (namespace/key)", n)
+		}
+		cols := []string{}
+		rows, err := db.Query(
+			`SELECT ii.name FROM pragma_index_list('workspace_property_definitions') il
+			 JOIN pragma_index_info(il.name) ii ON ii.seqno >= 0
+			 WHERE il."unique"=1 AND il.origin='c' ORDER BY ii.seqno`)
+		if err != nil {
+			t.Fatalf("query definitions unique index columns: %v", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				t.Fatalf("scan unique index column: %v", err)
+			}
+			cols = append(cols, c)
+		}
+		want := []string{"workspace_id", "namespace", "canonical_key"}
+		if len(cols) != len(want) {
+			t.Fatalf("definitions unique index columns = %v, want %v", cols, want)
+		}
+		for i := range want {
+			if cols[i] != want[i] {
+				t.Fatalf("definitions unique index columns = %v, want %v", cols, want)
+			}
+		}
+	}
+
+	// Terms: uniqueness on (workspace_id, property_id, term_kind, term_value)
+	// so a given alias value is not duplicated within a term kind.
+	{
+		var n int
+		if err := db.QueryRow(
+			`SELECT count(*) FROM pragma_index_list('workspace_property_terms')
+			 WHERE "unique"=1 AND origin='c'`).Scan(&n); err != nil {
+			t.Fatalf("query terms unique indexes: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("terms has %d unique index(es), want exactly 1 (term_value)", n)
+		}
+	}
+
+	// 16-byte ID checks on every BLOB(16) identity column.
+	for _, table := range []string{
+		"workspace_property_definitions",
+		"source_property_descriptors",
+		"property_bindings",
+		"workspace_property_terms",
+	} {
+		assertSingleColumnCheck(t, db, table, "workspace_id")
+	}
+	// property_id exists on every catalog table except source_property_descriptors,
+	// which is keyed by provider/source identifiers instead.
+	for _, table := range []string{
+		"workspace_property_definitions",
+		"property_bindings",
+		"workspace_property_terms",
+	} {
+		assertSingleColumnCheck(t, db, table, "property_id")
+	}
+}
+
 // A driver with maxVersion fails closed with ErrMigrationFailed when the
 // ledger is ahead of its embedded max, and must release the flock so another
 // instance can acquire it afterwards. A driver with the gate disabled
