@@ -81,19 +81,57 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(store.state.pendingTypeScrollTargetId, id)
     }
 
-    /// EVM-002-manage_entries_view_type_scroll: synchronizeEntries는 pending target을 소모한다.
+    /// EVM-002-manage_entries_view_type_scroll: synchronizeEntries는 entries에 없는(stale) pending target을 소모한다.
     ///
-    /// - 검증 내용: entries 동기화가 pendingTypeScrollTargetId를 nil로 만든다.
-    /// - 사전 조건: pendingTypeScrollTargetId가 id로 설정돼 있고 entries가 동기화된다.
+    /// - 검증 내용: 동기화 대상 entries에 pending target id가 없으면(stale/제거됨) pendingTypeScrollTargetId를 nil로 만든다.
+    /// - 사전 조건: pendingTypeScrollTargetId가 동기화 대상 entries에 없는 id로 설정돼 있다.
     /// - 기대 결과: synchronizeEntries 호출 후 pendingTypeScrollTargetId == nil.
     func testSynchronizeEntriesClearsPendingTypeScrollTarget() {
-        let id: EntryModel.ID = "/root/target"
-        let entry = EntryModel.temporaryFolder(id: id, name: "target")
+        let targetID: EntryModel.ID = "/root/target"
+        let staleID: EntryModel.ID = "/root/removed"
+        let entry = EntryModel.temporaryFolder(id: targetID, name: "target")
         var state = EntryViewLayoutState()
         state.entries = [entry]
-        state.pendingTypeScrollTargetId = id
+        // stale id: 동기화되는 entries에 존재하지 않으므로 clear되어야 한다.
+        state.pendingTypeScrollTargetId = staleID
 
         state.synchronizeEntries([entry])
+
+        XCTAssertNil(state.pendingTypeScrollTargetId)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: synchronizeEntries는 entries에 남아 있는 유효 pending target을 보존한다.
+    ///
+    /// - 검증 내용: collection follow-up batch/metadata 동기화가 throttle cooldown 동안 유효한 type-scroll target을
+    ///   drop하지 않도록, target id가 여전히 동기화된 entries에 존재하면 pendingTypeScrollTargetId를 유지한다.
+    /// - 사전 조건: pendingTypeScrollTargetId가 targetID로 설정돼 있고, 동기화 대상 entries에 targetID가 포함된다.
+    /// - 기대 결과: synchronizeEntries 호출 후 pendingTypeScrollTargetId == targetID (보존).
+    func testSynchronizeEntriesPreservesValidPendingTypeScrollTarget() {
+        let targetID: EntryModel.ID = "/root/target"
+        let otherID: EntryModel.ID = "/root/other"
+        let targetEntry = EntryModel.temporaryFolder(id: targetID, name: "target")
+        let otherEntry = EntryModel.temporaryFolder(id: otherID, name: "other")
+        var state = EntryViewLayoutState()
+        state.pendingTypeScrollTargetId = targetID
+
+        state.synchronizeEntries([targetEntry, otherEntry])
+
+        XCTAssertEqual(state.pendingTypeScrollTargetId, targetID)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: synchronizeEntries는 entries에서 제거된(stale) pending target만 소모한다.
+    ///
+    /// - 검증 내용: target id가 동기화된 entries에서 사라지면(stale) 영구 target/반복 스크롤 루프 없이 안전하게 nil로 정리한다.
+    /// - 사전 조건: pendingTypeScrollTargetId가 제거될 id로 설정돼 있고, 동기화 대상 entries에 그 id가 없다.
+    /// - 기대 결과: synchronizeEntries 호출 후 pendingTypeScrollTargetId == nil (정리).
+    func testSynchronizeEntriesClearsRemovedPendingTypeScrollTarget() {
+        let removedID: EntryModel.ID = "/root/removed"
+        let survivorID: EntryModel.ID = "/root/survivor"
+        let survivorEntry = EntryModel.temporaryFolder(id: survivorID, name: "survivor")
+        var state = EntryViewLayoutState()
+        state.pendingTypeScrollTargetId = removedID
+
+        state.synchronizeEntries([survivorEntry])
 
         XCTAssertNil(state.pendingTypeScrollTargetId)
     }
