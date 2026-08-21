@@ -124,14 +124,17 @@ export const surfaceRegistry: readonly Surface[] = [
   {
     id: "onboarding",
     kind: "component",
-    lifecycle: "planned",
+    lifecycle: "active",
     owner: "Onboarding",
-    design: null,
+    design: "packages/onboarding-illustration/DESIGN.md",
     fixtureOwner: "Onboarding",
-    packageRoot: null,
+    packageRoot: "packages/onboarding-illustration",
     rootConsumer: "OnboardingHost",
-    story: null,
-    retirementCondition: null,
+    story: {
+      directory: "../src/Onboarding",
+      titlePrefix: "Onboarding",
+      files: "**/*.stories.tsx",
+    },
   },
   {
     id: "feedback",
