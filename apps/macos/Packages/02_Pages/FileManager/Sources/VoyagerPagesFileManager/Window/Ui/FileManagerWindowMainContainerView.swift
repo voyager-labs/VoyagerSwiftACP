@@ -28,6 +28,7 @@ struct FileManagerWindowMainContainerView: View {
                         viewState: ContentTabSwitcherViewState.make(
                             source: presentation.source,
                             contentTabs: store.contentTabs,
+                            focusedCandidateID: presentation.focusedCandidateID,
                         ),
                         onDismiss: dismissContentTabSwitcher,
                     )

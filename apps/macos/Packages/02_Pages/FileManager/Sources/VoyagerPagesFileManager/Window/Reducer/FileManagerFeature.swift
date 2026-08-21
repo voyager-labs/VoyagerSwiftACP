@@ -490,6 +490,11 @@ private extension FileManagerFeature {
         }
 
         Reduce { state, action in
+            if case .request(.moveContentTabSwitcherFocus) = action {
+                // stale focus의 방향 정보는 command reducer에서 처리한다.
+            } else {
+                reconcileContentTabSwitcherPresentation(state: &state)
+            }
             switch action {
             case let .contentTabs(.updateActivePageAnchor(tabID, _))
                 where state.contentTabs.activeTabID == tabID:

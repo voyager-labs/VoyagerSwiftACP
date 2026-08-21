@@ -13,6 +13,11 @@ import VoyagerShared
 extension FileManagerWindowRoutingReducer {
     var routingBody: some ReducerOf<Self> {
         Reduce<Self.State, Self.Action> { state, action in
+            if case .request(.moveContentTabSwitcherFocus) = action {
+                // stale focus는 방향 정보를 보존해야 하므로 command handler가 직접 reconcile한다.
+            } else {
+                reconcileContentTabSwitcherPresentation(state: &state)
+            }
             switch action {
             case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState):
                 return applyPinnedContentTabRuntimeNavigation(

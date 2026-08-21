@@ -55,7 +55,7 @@ struct FileManagerContentTabSwitcherView: View {
 
     @Environment(\.colorScheme)
     private var colorScheme
-    @FocusState private var isSwitcherFocused: Bool
+    @FocusState private var focusedRowID: ContentTabID?
 
     init(
         viewState: ContentTabSwitcherViewState,
@@ -73,21 +73,50 @@ struct FileManagerContentTabSwitcherView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .focusable()
-        .focused($isSwitcherFocused)
-        .onAppear { isSwitcherFocused = true }
+        .focusSection()
+        .onAppear(perform: synchronizeFocus)
+        .onChange(of: focusRenderState) { _ in
+            synchronizeFocus()
+        }
         .onExitCommand(perform: onDismiss)
     }
 
     private enum Metrics {
         static let statusSurfaceWidth: CGFloat = 420
-        static let cardHeight: CGFloat = 132
+        static let cardHeight: CGFloat = 116
         static let previewHeight: CGFloat = 76
         static let statusHeight: CGFloat = 48
         static let verticalPadding: CGFloat = 12
         static let cardPadding: CGFloat = 8
         static let textSpacing: CGFloat = 4
         static let iconSize: CGFloat = 28
+        static let focusRingWidth: CGFloat = 2
+    }
+
+    private struct FocusRenderState: Equatable {
+        let focusedCandidateID: ContentTabID?
+        let rowIDs: [ContentTabID]
+    }
+
+    private var focusedCandidateID: ContentTabID? {
+        guard case let .content(rows) = viewState else { return nil }
+        return rows.first(where: \.isFocused)?.id
+    }
+
+    private var focusRenderState: FocusRenderState {
+        .init(
+            focusedCandidateID: focusedCandidateID,
+            rowIDs: rowIDs,
+        )
+    }
+
+    private var rowIDs: [ContentTabID] {
+        guard case let .content(rows) = viewState else { return [] }
+        return rows.map(\.id)
+    }
+
+    private func synchronizeFocus() {
+        focusedRowID = focusedCandidateID
     }
 
     private func switcherSurface(availableWidth: CGFloat) -> some View {
@@ -139,7 +168,7 @@ struct FileManagerContentTabSwitcherView: View {
             ) { _, row in
                 HStack(spacing: ContentTabSwitcherLayout.cardSpacing) {
                     ForEach(row, id: \.id) { item in
-                        SwitcherRow(row: item)
+                        SwitcherRow(row: item, focusedRowID: $focusedRowID)
                             .frame(width: cardWidth)
                     }
                 }
@@ -182,12 +211,13 @@ struct FileManagerContentTabSwitcherView: View {
 
     private struct SwitcherRow: View {
         let row: ContentTabSwitcherViewState.Row
+        let focusedRowID: FocusState<ContentTabID?>.Binding
 
         @Environment(\.colorScheme)
         private var colorScheme
 
         var body: some View {
-            VStack(alignment: .leading, spacing: Metrics.textSpacing) {
+            VStack(alignment: .center, spacing: Metrics.textSpacing) {
                 ZStack(alignment: .topTrailing) {
                     RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
                         .fill(VoyagerDS.SystemColor.controlBackground)
@@ -218,16 +248,8 @@ struct FileManagerContentTabSwitcherView: View {
                     .foregroundStyle(VoyagerDS.SystemColor.label)
                     .lineLimit(1)
                     .truncationMode(.tail)
-
-                HStack(spacing: Metrics.textSpacing) {
-                    Text(row.pageLabel)
-                        .fixedSize(horizontal: true, vertical: false)
-                    Text(row.anchorSummary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .font(VoyagerDS.Typography.caption)
-                .foregroundStyle(VoyagerDS.SystemColor.secondaryLabel)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
             }
             .padding(Metrics.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -238,12 +260,34 @@ struct FileManagerContentTabSwitcherView: View {
                         ? VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
                         : Color.clear)
             }
+            .overlay {
+                if row.isFocused {
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
+                        .strokeBorder(
+                            VoyagerDS.BrandPrimaryColor.c500,
+                            lineWidth: Metrics.focusRingWidth,
+                        )
+                }
+            }
             .contentShape(Rectangle())
             .focusable()
+            .focusEffectDisabledIfAvailable()
+            .focused(focusedRowID, equals: row.id)
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier(row.accessibilityIdentifier)
             .accessibilityLabel(Text(row.accessibilityLabel))
             .accessibilityValue(Text(row.accessibilityValue))
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func focusEffectDisabledIfAvailable() -> some View {
+        if #available(macOS 14.0, *) {
+            focusEffectDisabled()
+        } else {
+            self
         }
     }
 }
