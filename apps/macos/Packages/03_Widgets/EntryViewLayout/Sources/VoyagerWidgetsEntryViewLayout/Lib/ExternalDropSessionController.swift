@@ -3,7 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesEntryOperations
 
-/// Grid/List 각각 하나씩 보유하며 외부 drop 획득 세션의 local 수명을 소유하는 controller.
+/// Grid/List 각각 하나씩 보유하며 외부 drop 획득 세션의 view-local 수명을 추적하는 controller.
 ///
 /// - `activeSessionID`: 이 controller가 직접 시작한 세션의 local ID만 추적한다. TCA state에 두지
 ///   않는다(Shared actor 경계를 넘지 않는 AppKit/coordinator 소유 상태).
@@ -11,7 +11,7 @@ import VoyagerFeaturesEntryOperations
 ///   `beginExternalDropAcquisition`에 위임하고 반환된 accepted action을 store로 보낸다.
 /// - terminal transition 관찰: render-loop가 reducer의 종단 전이(non-nil → nil)를
 ///   `handleSessionTerminal`로 알려주면 local ID를 해제한다.
-/// - cancel: 소유한 세션을 취소하고 `.externalDropCancelSession`을 store로 보낸다.
+/// - cancel: local ID를 해제하고 reducer가 여전히 acquisition을 소유할 때만 취소 action을 보낸다.
 ///
 /// **cross-Grid/List 직렬화**: 두 controller가 같은 store를 보므로 `beginAcquisition`의 첫 guard는
 /// 같은 store의 `state.entryOperations.activeExternalDrop == nil`을 본다. 이 shared TCA state가
@@ -92,12 +92,12 @@ final class ExternalDropSessionController {
         activeExternalDropSessionID = nil
     }
 
-    /// 현재 소유 세션이 있으면 정확히 그 세션만 취소하고 local ID를 해제한다.
-    /// representable teardown / current-path change에서 호출된다.
+    /// 현재 local 세션을 해제하고 reducer가 여전히 acquisition을 소유할 때만 취소한다.
+    /// 성공 뒤 placement로 넘어간 세션은 reducer active state가 nil이므로 staging을 건드리지 않는다.
     func cancel() {
         guard let sessionID = activeExternalDropSessionID else { return }
         activeExternalDropSessionID = nil
-        clientProvider().cancel(sessionID)
+        guard store.state.entryOperations.activeExternalDrop?.sessionID == sessionID else { return }
         store.send(.view(.externalDropCancelSession(sessionID)))
     }
 }

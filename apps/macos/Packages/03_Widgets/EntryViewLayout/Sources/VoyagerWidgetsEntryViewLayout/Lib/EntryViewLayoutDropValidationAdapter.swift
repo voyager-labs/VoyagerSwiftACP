@@ -585,33 +585,4 @@ extension EntryViewLayoutDropValidationAdapter {
         }
         return result
     }
-
-    /// 현재 활성 외부 drop 획득 세션이 있으면 해당 세션만 취소하고 정리한다.
-    /// representable teardown / current-path change에서 호출되며, 취소된 세션이 다음 Grid/List 세션을 오염시키지 않는다.
-    @MainActor
-    static func cancelActiveExternalDropSession(
-        activeSessionID: inout ExternalDropSessionID?,
-        client: ExternalDropAcquisitionClient,
-        sendCancelSession: (ExternalDropSessionID) -> Void,
-    ) {
-        guard let sessionID = activeSessionID else { return }
-        activeSessionID = nil
-        client.cancel(sessionID)
-        sendCancelSession(sessionID)
-    }
-
-    /// 세션 종단(성공/실패/취소)을 관찰해 `ExternalDropSessionController`의 local 세션 ID를 정리한다.
-    ///
-    /// EntryOperations reducer는 종단 이벤트(`.succeeded`/`.failed`/`.cancelled`)에서
-    /// `state.activeExternalDrop`을 nil로 만든다. controller는 render loop에서 그 전이
-    /// (non-nil → nil)를 관찰해 자신이 소유한 세션 ID를 해제한다. 이로써 한 폴더에서 성공한
-    /// 외부 drop 이후에도 같은 폴더에서 다음 promise drop이 다시 수락된다.
-    static func handleExternalDropSessionTerminal(
-        activeSessionID: inout ExternalDropSessionID?,
-        previousActive: ExternalDropActiveSession?,
-        currentActive: ExternalDropActiveSession?,
-    ) {
-        guard previousActive != nil, currentActive == nil else { return }
-        activeSessionID = nil
-    }
 }

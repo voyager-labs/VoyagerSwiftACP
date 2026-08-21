@@ -30,6 +30,10 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
         context.coordinator.updateRootView(view)
         view.tableView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
     }
+
+    public static func dismantleNSView(_: EntryListView, coordinator: EntryListCoordinator) {
+        coordinator.externalDropSessionController.cancel()
+    }
 }
 
 final class EntryListSelectionRowView: NSTableRowView {

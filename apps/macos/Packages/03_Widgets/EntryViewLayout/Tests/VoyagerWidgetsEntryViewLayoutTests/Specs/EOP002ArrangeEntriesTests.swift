@@ -127,7 +127,7 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
                 return nil
             }
         }
-        client.finalizeLegacyStaging = { [self] names, expectedCount, stagingDirectory in
+        client.finalizeLegacyStaging = { names, expectedCount, stagingDirectory in
             let stagingURL = URL(fileURLWithPath: stagingDirectory, isDirectory: true)
             guard !names.isEmpty, names.count == expectedCount else {
                 try? FileManager.default.removeItem(at: stagingURL)
@@ -1700,7 +1700,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// 검증 내용: teardown이 활성 세션만 정확히 취소한다.
     /// 사전 조건: promise 세션이 시작되어 활성 외부 drop 세션이 설정되어 있다.
     /// 기대 결과: cancel이 해당 sessionID로 정확히 한 번 호출되고 pending이 해제된다.
-    func testGridTeardownCancelsOnlyActiveSession() {
+    func testGridTeardownCancelsOnlyActiveSession() async {
         let transport = DragTransport()
         let recorder = DropRecorder()
         let acquisition = ExternalDropAcquisitionRecorder()
@@ -1721,6 +1721,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         } operation: {
             grid.externalDropSessionController.cancel()
         }
+        await waitForCancellation(acquisition)
 
         XCTAssertEqual(acquisition.cancelledSessionIDs, [acquisition.sessionID])
         XCTAssertNil(grid.externalDropSessionController.activeSessionID)
@@ -1800,7 +1801,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// 검증 내용: teardown(current-path change)이 List의 활성 세션만 정확히 취소한다.
     /// 사전 조건: promise 세션이 시작되어 활성 외부 drop 세션이 설정되어 있다.
     /// 기대 결과: cancel이 해당 sessionID로 정확히 한 번 호출되고 pending이 해제된다.
-    func testListTeardownCancelsOnlyActiveSession() {
+    func testListTeardownCancelsOnlyActiveSession() async {
         let transport = DragTransport()
         let recorder = DropRecorder()
         let acquisition = ExternalDropAcquisitionRecorder()
@@ -1826,6 +1827,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         } operation: {
             list.externalDropSessionController.cancel()
         }
+        await waitForCancellation(acquisition)
 
         XCTAssertEqual(acquisition.cancelledSessionIDs, [acquisition.sessionID])
         XCTAssertNil(list.externalDropSessionController.activeSessionID)
@@ -2136,7 +2138,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// - 검증 내용: cancel recorder가 owned ID를 정확히 1회 수신하고 local ID가 nil이 된다.
     /// - 사전 조건: promise 세션이 시작되어 controller가 세션 ID를 소유한다.
     /// - 기대 결과: cancelledSessionIDs가 [sessionID]이고 activeSessionID가 nil이다.
-    func testExternalDropSessionControllerCancelsOwnedSession() {
+    func testExternalDropSessionControllerCancelsOwnedSession() async {
         let transport = DragTransport()
         let recorder = DropRecorder()
         let acquisition = ExternalDropAcquisitionRecorder()
@@ -2165,9 +2167,87 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(controller.activeSessionID, acquisition.sessionID)
 
         controller.cancel()
+        await waitForCancellation(acquisition)
 
         XCTAssertEqual(acquisition.cancelledSessionIDs, [acquisition.sessionID], "owned 세션은 정확히 1회 취소되어야 한다")
         XCTAssertNil(controller.activeSessionID)
+    }
+
+    /// EOP-002-import_external_objects: 성공 종단 뒤 늦은 view 취소는 placement staging을 삭제하지 않는다.
+    /// - 검증 내용: reducer가 acquisition을 종단한 뒤 controller cancel이 client cancel을 호출하지 않는다.
+    /// - 사전 조건: controller local ID는 남아 있지만 reducer activeExternalDrop은 성공으로 nil이다.
+    /// - 기대 결과: local ID만 해제되고 cancelledSessionIDs는 비어 있다.
+    func testExternalDropSessionControllerIgnoresLateCancelAfterSuccess() {
+        let transport = DragTransport()
+        let recorder = DropRecorder()
+        let acquisition = ExternalDropAcquisitionRecorder()
+        let store = makeStore(transport: transport, recorder: recorder) {
+            $0.externalDropAcquisitionClient = acquisition.client
+        }
+        let controller = ExternalDropSessionController(
+            store: store,
+            clientProvider: { acquisition.client },
+            clearDropState: {},
+        )
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+        let negotiation = VoyagerFeaturesEntryOperations.ExternalDropNegotiation.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+
+        XCTAssertTrue(controller.beginAcquisition(
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: "/destination",
+        ))
+        store.send(.entryOperations(.externalDrop(.event(.succeeded(acquisition.sessionID)))))
+        XCTAssertNil(store.state.entryOperations.activeExternalDrop)
+
+        controller.cancel()
+
+        XCTAssertTrue(acquisition.cancelledSessionIDs.isEmpty, "성공한 placement staging은 늦은 view 취소가 삭제하면 안 된다")
+        XCTAssertNil(controller.activeSessionID)
+    }
+
+    /// EOP-002-import_external_objects: Grid/List representable teardown은 진행 중 acquisition을 취소한다.
+    /// - 검증 내용: 각 dismantleNSView가 controller-owned session을 reducer cancellation으로 전달한다.
+    /// - 사전 조건: Grid와 List가 각각 promise acquisition을 시작해 activeExternalDrop을 보유한다.
+    /// - 기대 결과: 두 client가 각 session ID를 정확히 한 번 취소하고 reducer active state가 nil이다.
+    func testExternalDropRepresentableDismantleCancelsAcquisition() async {
+        let gridAcquisition = ExternalDropAcquisitionRecorder()
+        let gridStore = makeStore(transport: DragTransport(), recorder: DropRecorder()) {
+            $0.externalDropAcquisitionClient = gridAcquisition.client
+        }
+        let grid = EntryGridCoordinator(store: gridStore)
+        withDependencies {
+            $0.externalDropAcquisitionClient = gridAcquisition.client
+        } operation: {
+            beginPromiseAcquisition(controller: grid.externalDropSessionController)
+        }
+
+        EntryGridViewRepresentable.dismantleNSView(EntryGridView(), coordinator: grid)
+        await waitForCancellation(gridAcquisition)
+
+        XCTAssertEqual(gridAcquisition.cancelledSessionIDs, [gridAcquisition.sessionID])
+        XCTAssertNil(gridStore.state.entryOperations.activeExternalDrop)
+
+        let listAcquisition = ExternalDropAcquisitionRecorder()
+        let listStore = makeStore(transport: DragTransport(), recorder: DropRecorder()) {
+            $0.externalDropAcquisitionClient = listAcquisition.client
+        }
+        let list = EntryListCoordinator(store: listStore)
+        withDependencies {
+            $0.externalDropAcquisitionClient = listAcquisition.client
+        } operation: {
+            beginPromiseAcquisition(controller: list.externalDropSessionController)
+        }
+
+        EntryListViewRepresentable.dismantleNSView(EntryListView(), coordinator: list)
+        await waitForCancellation(listAcquisition)
+
+        XCTAssertEqual(listAcquisition.cancelledSessionIDs, [listAcquisition.sessionID])
+        XCTAssertNil(listStore.state.entryOperations.activeExternalDrop)
     }
 
     /// EOP-002-import_external_objects: 같은 store를 보는 두 controller에서 두 번째 begin이 shared state로 차단된다.
@@ -2280,6 +2360,27 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
 @MainActor
 private extension EOP002ArrangeEntriesTests {
+    func waitForCancellation(_ acquisition: ExternalDropAcquisitionRecorder) async {
+        for _ in 0 ..< 20 {
+            if !acquisition.cancelledSessionIDs.isEmpty { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    func beginPromiseAcquisition(controller: ExternalDropSessionController) {
+        let pasteboard = DragInfoFixture.makePromiseOnlyPasteboard(count: 1)
+        let info = DragInfoFixture(source: nil, operationMask: [.copy, .move], pasteboard: pasteboard)
+        let negotiation = VoyagerFeaturesEntryOperations.ExternalDropNegotiation.negotiateExternalDrop(
+            from: pasteboard,
+            wantsCopy: false,
+        )
+        XCTAssertTrue(controller.beginAcquisition(
+            draggingInfo: info,
+            negotiation: negotiation,
+            destinationPath: "/destination",
+        ))
+    }
+
     func makeStore(
         transport: DragTransport,
         recorder: DropRecorder,

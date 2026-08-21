@@ -30,6 +30,10 @@ public struct EntryGridViewRepresentable: NSViewRepresentable {
         context.coordinator.updateView(view)
         view.collectionView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
     }
+
+    public static func dismantleNSView(_: EntryGridView, coordinator: EntryGridCoordinator) {
+        coordinator.externalDropSessionController.cancel()
+    }
 }
 
 public final class EntryGridView: NSView {
