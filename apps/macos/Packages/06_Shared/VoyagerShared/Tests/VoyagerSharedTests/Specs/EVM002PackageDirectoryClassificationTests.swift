@@ -2,7 +2,7 @@ import Foundation
 @testable import VoyagerShared
 import XCTest
 
-final class PackageDirectoryClassificationTests: XCTestCase {
+final class EVM002PackageDirectoryClassificationTests: XCTestCase {
     // MARK: - VOY-594: delegated package classifier deterministic cells
 
     /// `PackageDirectoryClassification.isPackageDirectory`의 결정적 cell만 검증한다.
