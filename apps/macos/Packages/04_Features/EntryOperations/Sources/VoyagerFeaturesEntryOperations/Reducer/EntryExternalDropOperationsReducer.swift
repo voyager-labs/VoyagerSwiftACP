@@ -278,15 +278,30 @@ public struct EntryExternalDropOperationsReducer {
     }
 
     private func cancelActiveIfAny(state: inout State) -> Effect<Action> {
-        guard let active = state.activeExternalDrop else { return .none }
-        let sessionID = active.sessionID
+        // 획득(activeExternalDrop)과 placement 복사(externalDropImportPlacement)는 각각
+        // 별도 세션 ID로 관리된다. windowIDChanged가 placement 복사 중 도착하면 acquisition은
+        // 이미 종단(nil)됐을 수 있으므로 placement 상태도 함께 정리해야 다음 drop이 시작된다.
+        let acquisitionSessionID = state.activeExternalDrop?.sessionID
+        let placementSessionID = state.externalDropImportPlacement?.sessionID
+        guard acquisitionSessionID != nil || placementSessionID != nil else {
+            return .none
+        }
         state.activeExternalDrop = nil
+        state.externalDropImportPlacement = nil
         state.externalObjectImportStatus = nil
-        return .merge(
-            .cancel(id: CancelID.externalDrop(sessionID)),
-            .run { [acquisitionClient] _ in
-                await acquisitionClient.cancel(sessionID)
-            },
-        )
+        var effects: [Effect<Action>] = []
+        if let acquisitionSessionID {
+            effects.append(.cancel(id: CancelID.externalDrop(acquisitionSessionID)))
+            effects.append(.run { [acquisitionClient] _ in
+                await acquisitionClient.cancel(acquisitionSessionID)
+            })
+        }
+        if let placementSessionID {
+            // placement 복사 effect 취소는 onCancelCleanup이 staging finish를 단일 소유한다.
+            // 여기서 client.cancel을 호출하면 복사가 읽던 staging을 지워 부분 파일이 생기므로
+            // effect 취소만 적용한다.
+            effects.append(.cancel(id: CancelID.externalDrop(placementSessionID)))
+        }
+        return .merge(effects)
     }
 }

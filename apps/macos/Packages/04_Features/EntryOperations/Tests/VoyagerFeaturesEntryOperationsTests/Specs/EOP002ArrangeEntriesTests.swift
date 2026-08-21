@@ -2990,6 +2990,45 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
     }
 
+    /// EOP-002-import_external_objects (F2 P1): finish 후 늦은 콜백이 재생성한 staging 루트를 다시 제거한다.
+    /// finish로 staging 루트가 제거된 뒤 provider가 staging 경로 자체를 재생성하면 `removeIfPresent`가
+    /// isRemoved 플래그 때문에 no-op이 되어 잔류한다. 늦은 콜백이 재생성된 루트 안에서 보고되면
+    /// 루트 디렉터리가 다시 제거돼야 한다.
+    /// - 사전 조건: 세션이 성공 종단되고 finish로 staging 루트가 제거된 뒤, staging 루트를 재생성하고 늦은 콜백을 보고한다.
+    /// - 기대 결과: 늦은 콜백 후 staging 루트 디렉터리가 다시 제거된다.
+    func testExternalDropAcquisition_lateCallbackRecreatedStagingRootIsRemovedAgain() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LateRecreatedRoot")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: staged)
+        receiver.invokeReader(url: staged, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        // placement 복사 완료로 finish가 staging 루트를 제거한다.
+        client.finish(request.sessionID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+
+        // finish 후 provider가 staging 루트 디렉터리 자체를 재생성하고 늦은 콜백이 그 안에 파일을 보고한다.
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let late = staging.appendingPathComponent("late.txt")
+        try Data("late".utf8).write(to: late)
+        receiver.invokeReader(url: late, error: nil)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: staging.path),
+            "finish 후 늦은 콜백이 재생성한 staging 루트는 다시 제거돼야 한다",
+        )
+    }
+
     /// 검증 내용: `.succeeded` emit 후(placement 시작 전) cancel이 와도 staging을 제거한다.
     /// 성공 종단 직후 finish 호출자가 사라질 수 있으므로 staging 영구 잔류를 막는다.
     /// 사전 조건: 세션이 성공 종단된 직후 cancel을 호출한다.
@@ -3744,6 +3783,93 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             recorder.copiedPaths.isEmpty,
             "resetForDuplicate 후 placement 복사가 취소돼 destination으로 복사가 없어야 한다",
         )
+    }
+
+    /// EOP-002-import_external_objects (F2 P1): windowIDChanged가 진행 중 placement 상태를 정리한다.
+    /// 창 전환(windowIDChanged)은 resetForDuplicate와 달리 activeExternalDrop만 취소하고
+    /// externalDropImportPlacement는 남겨둔다. placement 복사가 gate로 대기 중일 때
+    /// windowIDChanged가 오면 placement가 정리돼 다음 drop이 새 placement를 시작할 수 있어야 한다.
+    /// - 사전 조건: 세션 1의 placement 복사가 gate로 대기 중(placement 진행 중)이다.
+    /// - 기대 결과: windowIDChanged 후 placement가 nil이고, 세션 2의 applyImport가 새 placement를 시작한다.
+    func testExternalDropImport_windowIDChangedClearsInProgressPlacement() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let gate = PasteCancellationGate()
+        var fileOps = makeRecordedFileOpsClient(recorder: recorder)
+        let ungatedPaste = fileOps.pasteFile
+        fileOps.pasteFile = { sourceURL, destinationURL in
+            try await withTaskCancellationHandler {
+                await gate.wait()
+                try Task.checkCancellation()
+            } onCancel: {
+                gate.open()
+            }
+            try await ungatedPaste(sourceURL, destinationURL)
+        }
+        let firstSession = ExternalDropSessionID()
+        let secondSession = ExternalDropSessionID()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = fileOps
+            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                events: { _ in AsyncStream { $0.finish() } },
+                cancel: { cleanup.recordCancel($0) },
+                finish: { cleanup.recordFinish($0) },
+                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
+                finalizeLegacyStaging: { _, _, _ in fatalError("finalizeLegacyStaging not used") },
+            )
+        }
+        store.exhaustivity = .off
+
+        func makePlan(sessionID: ExternalDropSessionID) -> ExternalDropImportPlan {
+            ExternalDropImportPlan(
+                sessionID: sessionID,
+                destination: dest.path,
+                forcedCopy: true,
+                orderedPromisedNames: ["a.txt"],
+                promisedOrdinals: [0],
+                receivedFiles: [
+                    .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                ],
+            )
+        }
+
+        // 세션 1의 placement 복사가 gate로 대기 중(placement 진행 중)이다.
+        await store.send(.externalDrop(.applyImport(makePlan(sessionID: firstSession))))
+        await gate.waitForStart()
+        XCTAssertEqual(store.state.externalDropImportPlacement?.sessionID, firstSession)
+
+        // windowIDChanged가 진행 중 placement 상태를 정리해야 한다.
+        await store.send(.lifecycle(.windowIDChanged(UUID())))
+        XCTAssertNil(
+            store.state.externalDropImportPlacement,
+            "windowIDChanged 후 진행 중 placement가 남아 있으면 다음 drop이 시작되지 않는다",
+        )
+
+        // placement가 정리됐다면 세션 2의 applyImport가 새 placement를 시작한다.
+        await store.send(.externalDrop(.applyImport(makePlan(sessionID: secondSession))))
+        XCTAssertEqual(
+            store.state.externalDropImportPlacement?.sessionID,
+            secondSession,
+            "windowIDChanged로 정리된 뒤 두 번째 applyImport가 새 placement를 시작해야 한다",
+        )
+
+        gate.open()
+        await store.finish()
+
+        XCTAssertEqual(Set(cleanup.finishes), Set([firstSession, secondSession]))
+        XCTAssertTrue(cleanup.cancels.isEmpty)
     }
 
     /// EOP-002-import_external_objects: 이름 충돌 stop은 해당 항목만 실패시키고 나머지는 유지한다.

@@ -697,8 +697,11 @@ private final class StagingDirectory {
         try? fileManager.removeItem(URL(fileURLWithPath: path))
     }
 
-    /// 이미 제거됐으면 아무것도 하지 않고, 그렇지 않으면 제거한다(늦은 콜백 재생성 대비).
+    /// 이미 제거됐어도 물리 staging 경로 제거를 항상 시도한다(늦은 콜백 재생성 대비).
+    /// `remove()`와 달리 isRemoved 가드로 조기 반환하지 않으므로, finish 후 provider가
+    /// staging 루트를 재생성해도 늦은 콜백 시 다시 제거된다.
     func removeIfPresent() {
-        remove()
+        isRemoved = true
+        try? fileManager.removeItem(URL(fileURLWithPath: path))
     }
 }
