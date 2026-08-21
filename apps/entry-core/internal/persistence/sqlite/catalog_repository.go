@@ -89,12 +89,10 @@ func loadCatalogRows(
 		return nil, nil, nil, nil, err
 	}
 
-	// Terms inherit their definition's lifecycle, so only terms whose property
-	// is an active definition are loaded (single query, no per-term fetch).
 	var termRows []WorkspacePropertyTermRow
 	if err := db.Where(
-		"workspace_id = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND lifecycle_state = ?)",
-		wsBytes, wsBytes, "active",
+		"workspace_id = ? AND lifecycle_state = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND lifecycle_state = ?)",
+		wsBytes, "active", wsBytes, "active",
 	).Find(&termRows).Error; err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -131,8 +129,8 @@ func loadSeedRows(
 
 	var termRows []WorkspacePropertyTermRow
 	if err := db.Where(
-		"workspace_id = ? AND seed_owner = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?)",
-		wsBytes, owner, wsBytes, owner, "active",
+		"workspace_id = ? AND seed_owner = ? AND lifecycle_state = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?)",
+		wsBytes, owner, "active", wsBytes, owner, "active",
 	).Find(&termRows).Error; err != nil {
 		return nil, nil, nil, nil, err
 	}

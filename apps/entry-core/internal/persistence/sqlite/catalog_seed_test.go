@@ -24,6 +24,7 @@ func TestCatalogSeed(t *testing.T) {
 	t.Run("NewerFailsClosed", TestCatalogSeedNewerFailsClosed)
 	t.Run("PartialFailsClosed", TestCatalogSeedPartialFailsClosed)
 	t.Run("RemovalsTombstone", TestCatalogSeedRemovalsTombstone)
+	t.Run("RemovedTermTombstone", TestCatalogSeedRemovedTermTombstone)
 	t.Run("PreservesNonSeed", TestCatalogSeedPreservesNonSeed)
 	t.Run("TamperedHashFailsBeforeWrite", TestCatalogSeedTamperedHashFailsBeforeWrite)
 	t.Run("PartialSQLRollback", TestCatalogSeedPartialSQLRollback)
@@ -135,7 +136,7 @@ func assertRawActiveCounts(t *testing.T, store *Store, wsctx domainentry.Workspa
 		t.Fatalf("count active bindings: %v", err)
 	}
 	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
-		Where("workspace_id = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND lifecycle_state = ?)", wsBytes, wsBytes, "active").
+		Where("workspace_id = ? AND lifecycle_state = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND lifecycle_state = ?)", wsBytes, "active", wsBytes, "active").
 		Count(&terms).Error; err != nil {
 		t.Fatalf("count active terms: %v", err)
 	}
@@ -256,6 +257,7 @@ func insertUserRows(t *testing.T, store *Store, wsctx domainentry.WorkspaceConte
 		TermKind:          "search_alias",
 		Ordinal:           0,
 		TermValue:         "user-alias",
+		LifecycleState:    "active",
 		SeedOwner:         nil,
 		SeedVersion:       nil,
 		SeedSourceVersion: nil,
@@ -538,6 +540,15 @@ func TestCatalogSeedRemovalsTombstone(t *testing.T) {
 	if historicalTerms != 1 {
 		t.Fatalf("historical terms = %d, want 1 preserved (not deleted)", historicalTerms)
 	}
+	var historicalTerm WorkspacePropertyTermRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND seed_owner = ? AND term_value = ?", wsBytes, "system_property_registry", "alias-0").
+		First(&historicalTerm).Error; err != nil {
+		t.Fatalf("read historical term: %v", err)
+	}
+	if historicalTerm.LifecycleState != "tombstoned" {
+		t.Fatalf("historical term state = %q, want tombstoned", historicalTerm.LifecycleState)
+	}
 
 	// Active catalog = fresh seed dataset + the one preserved user row each.
 	meta := seeds.Current()
@@ -548,6 +559,42 @@ func TestCatalogSeedRemovalsTombstone(t *testing.T) {
 		terms:       meta.TermCount + 1,
 	})
 	assertSeedDigestMatches(t, store, wsctx)
+}
+
+func TestCatalogSeedRemovedTermTombstone(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 1, 1, 1, 1, systemSeedTrio(1, "2.4.1"))
+
+	if result := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND term_value = ?", wsctx.ID.Bytes(), "alias-0").
+		Updates(map[string]any{"seed_version": 0, "seed_source_version": "2.3.0"}); result.Error != nil || result.RowsAffected != 1 {
+		t.Fatalf("repoint term seed tuple: err=%v rows=%d", result.Error, result.RowsAffected)
+	}
+
+	if err := store.WithinTx(ctx, func(tx *gorm.DB) error {
+		return reconcileSeedOwned(tx, wsctx.ID.Bytes(), seeds.Current())
+	}); err != nil {
+		t.Fatalf("reconcileSeedOwned: %v", err)
+	}
+
+	var term WorkspacePropertyTermRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND term_value = ?", wsctx.ID.Bytes(), "alias-0").
+		First(&term).Error; err != nil {
+		t.Fatalf("read term: %v", err)
+	}
+	if term.LifecycleState != "tombstoned" {
+		t.Fatalf("term lifecycle_state = %q, want tombstoned", term.LifecycleState)
+	}
+
+	loaded, err := NewPropertyCatalogRepository(store).Load(ctx, wsctx)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.Snapshot.Definitions) != 1 || len(loaded.Snapshot.Terms) != 0 {
+		t.Fatalf("loaded catalog counts = definitions:%d terms:%d, want 1 and 0", len(loaded.Snapshot.Definitions), len(loaded.Snapshot.Terms))
+	}
 }
 
 // TestCatalogSeedPreservesNonSeed proves NULL-seed user/provider rows are left

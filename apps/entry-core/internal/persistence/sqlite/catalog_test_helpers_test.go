@@ -179,6 +179,7 @@ func buildCatalogFixture(
 			TermKind:          "search_alias",
 			Ordinal:           0,
 			TermValue:         fmt.Sprintf("alias-%d", i),
+			LifecycleState:    "active",
 			SeedOwner:         seed.owner,
 			SeedVersion:       seed.version,
 			SeedSourceVersion: seed.sourceVersion,

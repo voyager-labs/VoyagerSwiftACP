@@ -166,9 +166,7 @@ func classifySeedState(state SeedState, digest [32]byte, meta seeds.SeedMetadata
 // seed_owner = system_property_registry, never retargets by label/alias, and
 // preserves identity (tombstone, never hard delete). Removed Registry
 // descriptors tombstone their definition and all bindings; removed native keys
-// tombstone their binding/source descriptor. Terms have no lifecycle column and
-// are preserved as historical terms, excluded from the active view by their
-// definition's tombstone.
+// tombstone their binding/source descriptor.
 func reconcileSeedOwned(tx *gorm.DB, wsBytes []byte, meta seeds.SeedMetadata) error {
 	owner := seedOwnerSystemPropertyRegistry
 	now := time.Now().UTC()
@@ -212,6 +210,12 @@ func reconcileSeedOwned(tx *gorm.DB, wsBytes []byte, meta seeds.SeedMetadata) er
 		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ? AND (seed_version IS NOT ? OR seed_source_version IS NOT ?)",
 			wsBytes, owner, "active", curVersion, curSource).
 		Updates(map[string]any{"lifecycle_state": "tombstoned", "updated_at": now}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ? AND (seed_version IS NOT ? OR seed_source_version IS NOT ?)",
+			wsBytes, owner, "active", curVersion, curSource).
+		Updates(map[string]any{"lifecycle_state": "tombstoned"}).Error; err != nil {
 		return err
 	}
 
