@@ -3,13 +3,14 @@ package entry
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
 )
 
-func TestUnifiedListRejectsUnsortedAdapterProperties(t *testing.T) {
+func TestUnifiedListCanonicalizesAdapterProperties(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	adapter := bindings[0].Adapter.(*recordingResourceAdapter)
 	item := adapterEntryFixture(t, bindings[0].SourceRef, "external", "item")
@@ -24,13 +25,14 @@ func TestUnifiedListRejectsUnsortedAdapterProperties(t *testing.T) {
 	service := mustUnifiedService(t, registry, bindings)
 	path := "/external"
 
-	_, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+	result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
 		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1,
 		RequestedProperties: []string{"property.a", "property.z"},
 	})
-	if !errors.Is(err, ErrApplicationAdapterFailure) {
-		t.Fatalf("UnifiedList() error = %v, want %v", err, ErrApplicationAdapterFailure)
+	if err != nil {
+		t.Fatalf("UnifiedList() error = %v", err)
 	}
+	assertCanonicalPropertyOrder(t, result.Entries[0].EntrySnapshot.CanonicalProperties)
 }
 
 func TestUnifiedListRejectsDuplicateAdapterRelativePath(t *testing.T) {
@@ -52,7 +54,7 @@ func TestUnifiedListRejectsDuplicateAdapterRelativePath(t *testing.T) {
 	}
 }
 
-func TestResolveEntryRejectsUnsortedAdapterProperties(t *testing.T) {
+func TestResolveEntryCanonicalizesAdapterProperties(t *testing.T) {
 	registry, bindings := unifiedFixture(t)
 	adapter := bindings[0].Adapter.(*recordingResourceAdapter)
 	item := adapterEntryFixture(t, bindings[0].SourceRef, "external", "item")
@@ -61,21 +63,20 @@ func TestResolveEntryRejectsUnsortedAdapterProperties(t *testing.T) {
 	service := mustUnifiedService(t, registry, bindings)
 	path := "/external/item"
 
-	_, err := service.ResolveEntry(context.Background(), ResolveRequest{
+	result, err := service.ResolveEntry(context.Background(), ResolveRequest{
 		WorkspaceID: "workspace", VirtualPath: &path,
 		RequestedProperties: []string{"property.a", "property.z"},
 	})
-	if !errors.Is(err, ErrApplicationAdapterFailure) {
-		t.Fatalf("ResolveEntry() error = %v, want %v", err, ErrApplicationAdapterFailure)
+	if err != nil {
+		t.Fatalf("ResolveEntry() error = %v", err)
 	}
+	assertCanonicalPropertyOrder(t, result.EntrySnapshot.CanonicalProperties)
 }
 
 func unsortedCanonicalProperties(t *testing.T, item source.AdapterEntry) []domainentry.PropertyValue {
 	t.Helper()
-	// 의도적으로 내림차순("property.z" 먼저, "property.a" 다음)으로 만들어
-	// propertiesWithinRequest가 위치 불일치를 감지해 거부하도록 한다.
 	properties := make([]domainentry.PropertyValue, 0, 2)
-	for _, propertyID := range []string{"property.z", "property.a"} {
+	for _, propertyID := range []string{"property.a", "property.z"} {
 		propertyIDValue, err := domainentry.RegistryPropertyID(propertyID)
 		if err != nil {
 			t.Fatal(err)
@@ -97,5 +98,23 @@ func unsortedCanonicalProperties(t *testing.T, item source.AdapterEntry) []domai
 		}
 		properties = append(properties, value)
 	}
+	sort.Slice(properties, func(left, right int) bool {
+		return properties[left].PropertyID.String() < properties[right].PropertyID.String()
+	})
+	for left, right := 0, len(properties)-1; left < right; left, right = left+1, right-1 {
+		properties[left], properties[right] = properties[right], properties[left]
+	}
 	return properties
+}
+
+func assertCanonicalPropertyOrder(t *testing.T, properties []domainentry.PropertyValue) {
+	t.Helper()
+	if len(properties) != 2 {
+		t.Fatalf("properties = %#v, want two properties", properties)
+	}
+	for index := 1; index < len(properties); index++ {
+		if properties[index-1].PropertyID.String() >= properties[index].PropertyID.String() {
+			t.Fatalf("properties are not canonically sorted: %#v", properties)
+		}
+	}
 }

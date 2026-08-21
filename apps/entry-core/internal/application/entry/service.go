@@ -275,7 +275,8 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if observedErr != nil {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
-	canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, item.EntrySnapshot.CanonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
+	canonicalProperties := sortCanonicalProperties(item.EntrySnapshot.CanonicalProperties)
+	canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, canonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
 	if snapshotErr != nil {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
@@ -502,7 +503,8 @@ func (service *UnifiedService) consumeScopePage(snapshot mount.MountRegistrySnap
 		if item.EntryRef.SourceInstanceID != scope.sourceRef.SourceInstanceID || item.EntrySnapshot.Availability != result.Availability || !equalCanonicalFreshnessEnvelope(item.EntrySnapshot.Freshness, result.Freshness) {
 			return scopePage{}, source.ErrAdapterFailure
 		}
-		canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, item.EntrySnapshot.CanonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
+		canonicalProperties := sortCanonicalProperties(item.EntrySnapshot.CanonicalProperties)
+		canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, canonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
 		if snapshotErr != nil {
 			return scopePage{}, source.ErrAdapterFailure
 		}
@@ -857,29 +859,37 @@ func longestMatchingMount(mounts []domainentry.MountRef, path string) *domainent
 	return best
 }
 func propertiesWithinRequest(properties []domainentry.PropertyValue, requested []string) bool {
-	// 어댑터는 requested(프로퍼티 이름 key) 순서대로 PropertyValue를 반환하며,
-	// source에 없는 프로퍼티는 생략할 수 있다. 따라서 반환 목록은 requested의
-	// Registry 파생 PropertyID 시퀀스의 부분수열이어야 하고, 미요청 프로퍼티나
-	// 순서 뒤섞임은 거부한다.
-	expected := make([]domainentry.PropertyID, 0, len(requested))
+	expected := make(map[domainentry.PropertyID]struct{}, len(requested))
 	for _, name := range requested {
 		id, err := domainentry.RegistryPropertyID(name)
 		if err != nil {
 			return false
 		}
-		expected = append(expected, id)
+		expected[id] = struct{}{}
 	}
-	index := 0
+	seen := make(map[domainentry.PropertyID]struct{}, len(properties))
 	for _, property := range properties {
-		for index < len(expected) && expected[index] != property.PropertyID {
-			index++
-		}
-		if index >= len(expected) {
+		if _, ok := expected[property.PropertyID]; !ok {
 			return false
 		}
-		index++
+		if _, duplicate := seen[property.PropertyID]; duplicate {
+			return false
+		}
+		seen[property.PropertyID] = struct{}{}
 	}
 	return true
+}
+
+func sortCanonicalProperties(properties []domainentry.PropertyValue) []domainentry.PropertyValue {
+	if properties == nil {
+		return nil
+	}
+	canonical := make([]domainentry.PropertyValue, len(properties))
+	copy(canonical, properties)
+	sort.Slice(canonical, func(left, right int) bool {
+		return canonical[left].PropertyID.String() < canonical[right].PropertyID.String()
+	})
+	return canonical
 }
 
 func nilResourceAdapter(adapter ResourceAdapter) bool {
