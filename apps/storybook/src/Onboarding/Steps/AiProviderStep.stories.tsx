@@ -14,16 +14,17 @@ const meta = {
   decorators: [
     (Story) => (
       <div data-design-foundation data-onboarding-illustration>
-        <main className="onb-stage">
-          <section className="onb-window" aria-label="AI provider step preview">
-            <div className="onb-shell">
-              <header className="onb-summary">
-                <span>Onboarding component</span>
-                <h1>AI Provider</h1>
-              </header>
-              <Story />
-            </div>
-          </section>
+        <main
+          className="onb-specimen"
+          style={{ minHeight: "100dvh", padding: 48, background: "var(--macos-under-page-background-color)" }}
+        >
+          <header className="onb-summary" style={{ maxWidth: 720 }}>
+            <span>Onboarding component</span>
+            <h1>AI Provider</h1>
+          </header>
+          <div style={{ maxWidth: 720 }}>
+            <Story />
+          </div>
         </main>
       </div>
     ),
