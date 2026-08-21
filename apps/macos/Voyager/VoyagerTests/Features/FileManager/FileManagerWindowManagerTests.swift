@@ -289,6 +289,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(focusedID)
             $0.focusedWindowID = nil
+            $0.windows[id: focusedID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
@@ -537,6 +538,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.windows[id: closingID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.send(.event(.windowClosed(closingID))) {
@@ -554,6 +556,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
         XCTAssertNil(store.state.focusedWindowID)
+        XCTAssertEqual(store.state.windows[id: closingID]?.window.isFocused, false)
         XCTAssertEqual(finalizeCalls.value, [])
         await store.finish()
     }
@@ -580,6 +583,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.windows[id: closingID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         XCTAssertEqual(store.state.lastUsedWindowIDs, [closingID, otherID])
@@ -621,7 +625,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
     func testOpenWindowSessionDoesNotCreateSecondFocusOwnerBeforeBecameKey() async {
         let existingID = UUID()
         let newID = UUID()
-        var initialState = makeState(
+        let initialState = makeState(
             focusedID: existingID,
             windows: [(existingID, Spec.focusedPath)],
         )
@@ -647,7 +651,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
     /// - 기대 결과: focusedWindowID == nil, isFocused == false
     func testWindowResignedKeyClearsFocusOwnership() async {
         let windowID = UUID()
-        var initialState = makeState(
+        let initialState = makeState(
             focusedID: windowID,
             windows: [(windowID, Spec.focusedPath)],
         )
@@ -687,6 +691,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeAllWindows)) {
             $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.windows[id: firstID]?.window.isFocused = false
+            $0.windows[id: secondID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 

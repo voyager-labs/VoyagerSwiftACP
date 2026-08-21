@@ -174,4 +174,33 @@ extension EVM001FileManagerNavigationTests {
 
         XCTAssertTrue(syncCalls.value.isEmpty)
     }
+
+    /// AC2: 닫기 시작 후 큐에 남은 selectionChanged는 전역 Quick Look 패널을 동기화하지 않는다.
+    func testClosingWindowQueuedSelectionDoesNotSyncQuickLook() async {
+        let activeID = ContentTabID(rawValue: "closing")
+        let syncCalls = LockIsolated<[[String]]>([])
+        var state = makeWindowState(
+            activeTabID: activeID,
+            inactiveTabID: nil,
+            focused: false,
+            activeContent: contentWithSelection(),
+        )
+        state.isClosing = true
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = .init(
+                quickLook: { _, _ in },
+                syncQuickLookSelection: { urls, _ in
+                    syncCalls.withValue { $0.append(urls.map(\.path)) }
+                },
+            )
+        }
+        store.exhaustivity = .off
+
+        await store.send(.tabContent(tabID: activeID, action: .entryViewLayout(.delegate(.selectionChanged))))
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertTrue(syncCalls.value.isEmpty)
+    }
 }
