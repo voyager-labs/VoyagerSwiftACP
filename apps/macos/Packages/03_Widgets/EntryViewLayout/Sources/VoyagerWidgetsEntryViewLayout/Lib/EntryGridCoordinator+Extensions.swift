@@ -141,18 +141,17 @@ extension EntryGridCoordinator {
         guard previous.pendingTypeScrollTargetId != snapshot.pendingTypeScrollTargetId,
               let targetId = snapshot.pendingTypeScrollTargetId
         else { return }
-        scrollToTypeScrollTarget(targetId)
+        consumeTypeScrollTargetIfLaidOut(targetId)
     }
 
-    /// 첫 bind 시점에 이미 설정돼 있던 pending type-scroll target을 소비한다.
-    /// unmount 중 생성된 target은 nil→id 엣지가 처음 baseline(lastRenderSnapshot)에 흡수돼
-    /// consumeTypeScrollTargetIfNeeded가 못 잡으므로, 첫 layout(scroll 가능 시점)에서 일회성 소비한다.
-    /// 한 번 소비한 뒤에는 post-mount nil→id 엣지는 consumeTypeScrollTargetIfNeeded가 담당하므로
-    /// 이중 소비를 막기 위해 hasConsumedInitialTypeScrollTarget으로 1회만 실행한다.
-    func consumeInitialTypeScrollTargetIfNeeded() {
-        guard !hasConsumedInitialTypeScrollTarget else { return }
-        hasConsumedInitialTypeScrollTarget = true
+    func completePhysicalLayoutAndConsumePendingTypeScrollTarget() {
+        hasCompletedFirstPhysicalLayout = true
         guard let targetId = state.pendingTypeScrollTargetId else { return }
+        consumeTypeScrollTargetIfLaidOut(targetId)
+    }
+
+    private func consumeTypeScrollTargetIfLaidOut(_ targetId: EntryModel.ID) {
+        guard hasCompletedFirstPhysicalLayout else { return }
         scrollToTypeScrollTarget(targetId)
     }
 

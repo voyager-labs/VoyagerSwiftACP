@@ -36,8 +36,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var isLassoSelecting = false
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
-    /// 첫 layout 이후 initial pending type-scroll target을 한 번만 소비했는지 여부.
-    var hasConsumedInitialTypeScrollTarget = false
+    var hasCompletedFirstPhysicalLayout = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
     var contextMenuAnchor: CGPoint?
@@ -82,8 +81,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
-            // 첫 layout에서 scrollToItems가 유효해진 뒤에야 initial pending target을 소비한다.
-            consumeInitialTypeScrollTargetIfNeeded()
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
         guard !didBind else {
@@ -99,6 +97,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     func updateView(_ view: EntryGridView) {
         guard self.view !== view else { return }
         self.view = view
+        hasCompletedFirstPhysicalLayout = false
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.contextMenuProvider = self
@@ -112,8 +111,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
-            // 첫 layout에서 scrollToItems가 유효해진 뒤에야 initial pending target을 소비한다.
-            consumeInitialTypeScrollTargetIfNeeded()
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
     }

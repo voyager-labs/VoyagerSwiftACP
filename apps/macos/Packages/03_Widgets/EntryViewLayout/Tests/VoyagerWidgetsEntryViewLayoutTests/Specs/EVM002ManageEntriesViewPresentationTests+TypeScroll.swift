@@ -217,6 +217,20 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(id, entry.id)
     }
 
+    /// EVM-002-manage_entries_view_type_scroll: folding으로 확장되는 입력 그래프는 이름의 다른 원본 그래프와 일치하지 않는다.
+    func testFirstMatchIDDoesNotMatchExpandedInputGraphemeToLatinInitial() {
+        let entry = EntryModel.temporaryFolder(id: "/song", name: "Song")
+        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "ß")
+        XCTAssertNil(id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 이름의 첫 원본 그래프가 folding으로 확장돼도 입력의 일부와 일치하지 않는다.
+    func testFirstMatchIDDoesNotMatchLatinInputToExpandedNameGrapheme() {
+        let entry = EntryModel.temporaryFolder(id: "/beta", name: "ßeta")
+        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "s")
+        XCTAssertNil(id)
+    }
+
     /// EVM-002-manage_entries_view_type_scroll: 전달된 entries 순서에서 첫 매칭 항목의 id를 반환한다.
     func testFirstMatchIDReturnsFirstInGivenOrder() {
         let beta = EntryModel.temporaryFolder(id: "/B", name: "Beta")
@@ -684,6 +698,59 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after first layout consume")
         XCTAssertNotEqual(gridClipOrigin(view), .zero, "grid must actually scroll to the target after layout")
         XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged")
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: grid는 bind 후 첫 physical layout 전에 도착한 target도 보존한다.
+    ///
+    /// - 검증 내용: nil→id snapshot edge가 첫 layout 전에는 scroll/reset되지 않고, mounted 첫 layout에서 실제 scroll 후
+    ///   reset되며 후속 layout에서는 중복 소비하지 않는다.
+    /// - 사전 조건: pending target 없이 bind한 뒤 첫 layout 전에 offscreen target을 설정한다.
+    /// - 기대 결과: layout 전 pending/offset 유지, 첫 layout 후 offset 이동 + pending nil, 재-layout 후 offset 불변.
+    func testGridDefersPostBindTypeScrollTargetUntilFirstPhysicalLayout() {
+        let entries = (0 ..< 80).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        let target = entries[70]
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.selectedIds = [entries[0].id]
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryGridCoordinator(store: store)
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        coordinator.bind(to: view)
+        coordinator.isRenderObservationEnabled = false
+
+        let beforeOrigin = gridClipOrigin(view)
+        store.send(.view(.setTypeScrollTarget(target.id)))
+        var currentState = state
+        currentState.pendingTypeScrollTargetId = target.id
+        coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: state),
+            snapshot: EntryGridRenderSnapshot(state: currentState),
+        )
+
+        XCTAssertEqual(store.state.pendingTypeScrollTargetId, target.id, "pending target must survive before layout")
+        XCTAssertEqual(gridClipOrigin(view), beforeOrigin, "pre-layout target must not move the grid")
+        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must stay unchanged before layout")
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+
+        let consumedOrigin = gridClipOrigin(view)
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "first physical layout must reset after scrolling")
+        XCTAssertNotEqual(consumedOrigin, beforeOrigin, "first physical layout must scroll to the target")
+        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must stay unchanged after consume")
+
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(gridClipOrigin(view), consumedOrigin, "later layouts must not consume the same target twice")
+        XCTAssertNil(store.state.pendingTypeScrollTargetId)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: grid는 첫 bind 전에 설정된 stale/unknown pending target이면

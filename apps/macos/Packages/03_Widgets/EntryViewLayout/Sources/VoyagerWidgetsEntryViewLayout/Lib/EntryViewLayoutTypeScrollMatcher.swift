@@ -11,11 +11,11 @@ public enum EntryViewLayoutTypeScrollMatcher {
         // 입력이 정확히 한 그래프가 아니면 무효 — prefix 자르지 않는다.
         guard let committed = CommittedTypeScrollInput.character(from: inputText) else { return nil }
 
-        let normalizedInput = normalize(committed).first
+        let normalizedInput = normalize(committed)
 
         for entry in entries {
-            let normalizedName = normalize(entry.name).first
-            if normalizedName == normalizedInput {
+            guard let firstCharacter = entry.name.first else { continue }
+            if normalize(String(firstCharacter)) == normalizedInput {
                 return entry.id
             }
         }
