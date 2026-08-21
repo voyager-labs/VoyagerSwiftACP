@@ -1,15 +1,6 @@
-import type { SidebarTabItem } from "@voyager-labs/design-foundation"
-
 export type EntryKind = "pdf" | "image" | "folder" | "sheet" | "doc" | "video" | "archive"
 
 export type EntryViewMode = "grid" | "list"
-
-export type {
-  SidebarTabItem,
-  SidebarIconProps,
-  SidebarNavItemProps,
-  TrafficLightsProps,
-} from "@voyager-labs/design-foundation"
 
 /** Public file projection — the only file shape consumers pass. */
 export type FileEntry = {
@@ -29,6 +20,19 @@ export type EntrySelectionIntent = "replace" | "toggle" | "range"
 export type BreadcrumbSegment = {
   readonly label: string
   readonly symbolName: string
+}
+
+export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
+
+export type SidebarTabItem = {
+  readonly id: string
+  readonly label: string
+  readonly icon: SidebarIconKind
+  readonly active?: boolean
+  readonly isPinned?: boolean
+  readonly secondary?: string
+  readonly pageAnchor?: string
+  readonly breadcrumb?: readonly BreadcrumbSegment[]
 }
 
 export type SidebarTabAction = (item: SidebarTabItem) => void

@@ -27,15 +27,6 @@ import type {
   FileManagerIllustrationProps,
   SidebarTabItem,
 } from "../model/types"
-import "@voyager-labs/design-foundation/tokens.css"
-import "@voyager-labs/design-foundation/fonts.css"
-import "../styles/file-manager.css"
-import "../styles/composer.css"
-import "../styles/composer-overlays.css"
-import "../styles/inspector.css"
-import "../styles/sidebar.css"
-import "../styles/window-shell.css"
-
 export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props) => {
   const { files, contentContext, initialPresentation } = props
   const initial = propsToInitialParams(props)

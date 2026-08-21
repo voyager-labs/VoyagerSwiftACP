@@ -37,10 +37,18 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 
 ## Storybook browser verification
 
-- Use the `agent-browser` CLI for Storybook accessibility, interaction, and screenshot verification required by this skill.
-- Do not substitute Playwright MCP for this project workflow. If `agent-browser` is unavailable, report the verification as blocked instead of silently changing tools.
+Browser verification is conditional, change-scoped evidence. Use it only when the acceptance criteria make a visual, responsive, accessibility, or interaction claim. Do not turn every Storybook edit into a browser run, screenshot, native build/test, full application E2E, or exhaustive story × viewport × state matrix.
+
+- Inspect only affected stories and representative changed states after implementation convergence; do not capture intermediate edits.
+- Use one viewport by default. Add viewports, schemes, or states only when the acceptance criteria require them.
+- Use the `agent-browser` CLI for the required Storybook accessibility, interaction, or screenshot claim. Do not substitute Playwright MCP for this project workflow.
+- If browser evidence is required and `agent-browser` is unavailable, report the verification as blocked instead of silently changing tools. If browser evidence is not required, do not run it and report it as not applicable.
 - Use a fresh named session, wait for `networkidle`, capture `snapshot -i --json`, exercise the target interaction, and save a screenshot after the final state.
-- Record the Storybook URL, session, viewport, state, interaction result, and screenshot path. A successful build remains insufficient evidence for visual or interaction claims.
+- Record the Storybook URL, session, viewport, state, interaction result, and screenshot path when browser evidence is collected.
+- A Storybook browser capture proves only the inspected Storybook presentation or interaction. It does not prove native runtime, reducer/backend/auth/filesystem behavior, or production E2E.
+- If a server is intentionally started for verification, prove readiness with `lsof` and `curl`, then stop it and re-check the port.
+
+Native evidence and full application E2E are opt-in for explicit named runtime claims. OMO and Hephaestus handoffs must state changed paths, affected stories, required evidence, out-of-scope checks, and the stop condition; do not infer a larger verification matrix from a generic visual-change instruction. Do not introduce named verification profiles for this workflow.
 
 ## Common mistakes
 
