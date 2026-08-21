@@ -237,6 +237,120 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
         XCTAssertEqual(committed, ["가"])
     }
 
+    // MARK: - IME 조합 중 우선순위 (VOY-661 P1)
+
+    /// 조합 중 Return(0x0D)은 입력 시스템에 먼저 전달돼야 한다. (AC1/AC3)
+    func testMarkedReturnOfferedToInputSystemNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        spy.keyDown(with: makeKeyDown(characters: "\r"))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+    }
+
+    /// 조합 중 Space는 입력 시스템에 먼저 전달돼야 한다. (AC1/AC3)
+    func testMarkedSpaceOfferedToInputSystemNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        spy.keyDown(with: makeKeyDown(characters: " "))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+    }
+
+    /// 조합 중 Escape(0x1B)는 입력 시스템에 먼저 전달돼야 한다. (AC1/AC3)
+    func testMarkedEscapeOfferedToInputSystemNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        spy.keyDown(with: makeKeyDown(characters: "\u{001B}"))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+    }
+
+    /// 조합 중 방향키(함수 키 0xF700...0xF8FF)는 입력 시스템에 먼저 전달돼야 한다. (AC1/AC3)
+    func testMarkedArrowOfferedToInputSystemNotOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        spy.keyDown(with: makeKeyDown(characters: "\u{F702}"))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+    }
+
+    /// 조합 중 command 단축키는 여전히 onKeyDown으로 (AC4). 조합 중에도 Cmd+C는 단축키.
+    func testModifierComboDuringMarkedRoutesToOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        spy.keyDown(with: makeKeyDown(characters: "c", modifierFlags: [.command]))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 0)
+        XCTAssertEqual(keyDowns.count, 1)
+    }
+
+    /// 조합 없이 Space는 onKeyDown (비회귀: Quick Look 보존).
+    func testNoMarkedSpaceRoutesToOnKeyDown() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+
+        spy.keyDown(with: makeKeyDown(characters: " "))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 0)
+        XCTAssertEqual(keyDowns.count, 1)
+    }
+
+    /// 조합 없이 printable은 입력 시스템으로 (비회귀: type-scroll 보존).
+    func testNoMarkedPrintableRoutesThroughInterpretKeyEvents() {
+        let spy = InputSystemSpyHostingView()
+        var keyDowns: [NSEvent] = []
+        var committed: [String] = []
+        spy.onKeyDown = { keyDowns.append($0) }
+        spy.onTextInput = { committed.append($0) }
+
+        spy.keyDown(with: makeKeyDown(characters: "a"))
+
+        XCTAssertEqual(spy.interpretedEvents.count, 1)
+        XCTAssertEqual(keyDowns.count, 0)
+        XCTAssertEqual(committed, ["a"])
+    }
+
     /// 스파이 뷰: `interpretKeyEvents`를 override해 입력 시스템을 시뮬레이션한다.
     private final class InputSystemSpyHostingView: KeyCommandHostingView {
         var interpretedEvents: [NSEvent] = []

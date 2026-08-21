@@ -13,13 +13,22 @@ public class KeyCommandHostingView: NSView {
     private var markedSelectedRange: NSRange = .init(location: 0, length: 0)
 
     override public func keyDown(with event: NSEvent) {
-        // modifier 조합 / 빈 문자 / 제어·함수 키·공백 문자는 기존 keyCommand 경로로 보낸다
-        // (space Quick Look·방향키·단축키 보존).
+        // Modifier 조합은 항상 앱 단축키 경로로 보낸다 (Cmd+C 등). 조합 중에도 단축키 유지 (AC2/AC4).
+        if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) == false {
+            onKeyDown?(event)
+            return
+        }
+        // 조합 중에는 IME가 후보/조합 제어 키(Space, Return, Escape, 방향키, 제어/함수/공백)를 소유한다.
+        // 입력 시스템에 먼저 전달해 소비하도록 한다 (AC1/AC3).
+        if hasMarkedText() {
+            interpretKeyEvents([event])
+            return
+        }
+        // 조합 없음: printable 문자는 입력 시스템, 특수 키는 keyCommand 경로.
         if shouldRouteToKeyDown(event) {
             onKeyDown?(event)
             return
         }
-        // 그 외 printable 무수정 문자 후보는 입력 시스템에 전달해 IME 조합/커밋을 받는다.
         interpretKeyEvents([event])
     }
 
