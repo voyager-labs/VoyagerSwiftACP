@@ -21,6 +21,12 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         case finished
     }
 
+    private struct PendingCallback {
+        let receiverIndex: Int
+        let url: URL?
+        let error: Error?
+    }
+
     let sessionID: ExternalDropSessionID
     private let staging: StagingDirectory
     private let fileManager: FileManagerClient
@@ -48,7 +54,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var usedStagedFilenames: Set<String> = []
     private var nextItemOrdinal: Int = 0
     private var callbackCounts: [Int: Int] = [:]
-    private var callbacksAwaitingCardinality: [(receiverIndex: Int, url: URL?, error: Error?)] = []
+    private var callbacksAwaitingCardinality: [PendingCallback] = []
     private var pendingCancelledCallbacks: [Int: Int] = [:]
     private var callbackErrorTimeouts: [Int: DispatchWorkItem] = [:]
     private var stagingScanWorkItem: DispatchWorkItem?
@@ -300,14 +306,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// reader 콜백. non-main OperationQueue에서 실행된다.
     func handleCallback(receiverIndex: Int, url: URL?, error: Error?) {
         lock.lock()
-        if handleTerminalCallback(reportedURL: url) {
-            return
-        }
-        guard cardinalityFinalized else {
-            callbacksAwaitingCardinality.append((receiverIndex, url, error))
-            lock.unlock()
-            return
-        }
+        guard prepareCallback(receiverIndex: receiverIndex, url: url, error: error) else { return }
 
         let callbackOrdinal = (callbackCounts[receiverIndex] ?? 0) + 1
         callbackCounts[receiverIndex] = callbackOrdinal
@@ -336,21 +335,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             lock.unlock()
             return
         }
-        guard fileManager.fileExists(resolvedURL.path) else {
-            emitTerminalLocked(.failed(sessionID, .fileAbsent))
-            lock.unlock()
-            return
-        }
-        guard isInsideStaging(resolvedURL) else {
-            emitTerminalLocked(.failed(sessionID, .outsideStaging))
-            lock.unlock()
-            return
-        }
-        guard receivedStagedPaths.insert(resolvedURL.standardizedFileURL.path).inserted else {
-            emitTerminalLocked(.failed(sessionID, .callbackError))
-            lock.unlock()
-            return
-        }
+        guard validateAndReserveCallbackURL(resolvedURL) else { return }
         if error != nil { Self.logger.info("callback error reconciled by staged file") }
 
         // 결정적 수신기에서 마지막 콜백이 URL과 error를 함께 전달하면, registerReceivedFile이
@@ -369,6 +354,41 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
         lock.unlock()
+    }
+
+    private func validateAndReserveCallbackURL(_ url: URL) -> Bool {
+        guard fileManager.fileExists(url.path) else {
+            emitTerminalLocked(.failed(sessionID, .fileAbsent))
+            lock.unlock()
+            return false
+        }
+        guard isInsideStaging(url) else {
+            emitTerminalLocked(.failed(sessionID, .outsideStaging))
+            lock.unlock()
+            return false
+        }
+        guard receivedStagedPaths.insert(url.standardizedFileURL.path).inserted else {
+            emitTerminalLocked(.failed(sessionID, .callbackError))
+            lock.unlock()
+            return false
+        }
+        return true
+    }
+
+    private func prepareCallback(receiverIndex: Int, url: URL?, error: Error?) -> Bool {
+        if handleTerminalCallback(reportedURL: url) {
+            return false
+        }
+        guard cardinalityFinalized else {
+            callbacksAwaitingCardinality.append(PendingCallback(
+                receiverIndex: receiverIndex,
+                url: url,
+                error: error,
+            ))
+            lock.unlock()
+            return false
+        }
+        return true
     }
 
     private func isUserCancelled(_ error: Error?) -> Bool {
