@@ -2328,6 +2328,44 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    /// 검증 내용: 미정 receiver의 콜백 간격이 quiescence 임계값(250ms)을 넘어도
+    /// 세션이 일부 파일만 수용한 채 `.succeeded`로 종료되지 않는다.
+    /// 사전 조건: 빈 fileNames receiver가 staging에 파일 2개를 쓰고 콜백 2회를
+    /// 600ms 간격으로 호출(250ms 초과, 1s 이내).
+    /// 기대 결과: `.received` 2건이 모두 관측되고 `.succeeded`로 끝난다.
+    func testExternalDropAcquisition_indeterminateCallbackGapExceeding250msStillSucceeds() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("IndeterminateGap")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: [])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let first = staging.appendingPathComponent("first.eml")
+        let second = staging.appendingPathComponent("second.eml")
+        try Data("one".utf8).write(to: first)
+        try Data("two".utf8).write(to: second)
+
+        receiver.invokeReader(url: first, error: nil)
+        // 250ms quiescence가 종단을 내기에 충분한 간격을 둔 뒤 다음 콜백을 보낸다.
+        try await Task.sleep(nanoseconds: 600_000_000)
+        receiver.invokeReader(url: second, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 5_000_000_000,
+        )
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 2)
+        XCTAssertEqual(received.map(\.stagedPath), [first.path, second.path])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
     /// EOP-002-import_external_objects: 모든 receiver가 같은 destination(staging)을 사용한다.
     /// 여러 receiver는 반드시 동일한 destination location으로 receive를 호출해야 한다.
     /// - 검증 내용: 두 receiver의 `receivedDestination`이 같고 begin이 반환한 staging 경로와 일치한다.

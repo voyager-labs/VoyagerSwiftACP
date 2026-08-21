@@ -461,6 +461,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 미정 수신기의 종단 판정을 quiescence(추가 콜백 대기) 후로 지연한다. 같은 receiver에서
     /// 여러 파일이 콜백으로 전달될 때 첫 callback만으로 완료 처리하지 않도록 한다.
     /// caller는 lock을 보유해야 한다.
+    ///
+    /// quiescence는 1초로 잡는다. provider가 대용량 파일을 쓰는 동안 콜백 간격이 벌어져도
+    /// 세션이 일부 파일만 수용한 채 `.succeeded`로 종료되지 않도록, 마지막 콜백 후 추가
+    /// 콜백이 도착할 여지를 250ms보다 넉넉하게 둔다. (모든 콜백은 이 타이머를 매번 재예약한다)
     private func scheduleIndeterminateQuiescenceLocked() {
         guard phase == .acquiring else { return }
         indeterminateQuiescenceWorkItem?.cancel()
@@ -468,7 +472,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             self?.evaluateIndeterminateCompletion()
         }
         indeterminateQuiescenceWorkItem = workItem
-        observationQueue.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        observationQueue.asyncAfter(deadline: .now() + 1, execute: workItem)
     }
 
     private func evaluateIndeterminateCompletion() {
