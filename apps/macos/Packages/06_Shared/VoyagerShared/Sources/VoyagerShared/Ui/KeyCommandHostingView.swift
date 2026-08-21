@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-public class KeyCommandHostingView: NSView {
+public final class KeyCommandHostingView: NSView {
     var onKeyDown: ((NSEvent) -> Void)?
     var onTextInput: ((String) -> Void)?
+    var interpretKeyEventsHandler: (([NSEvent]) -> Void)?
 
     // MARK: - NSTextInputClient 상태 저장소
 
@@ -22,7 +23,7 @@ public class KeyCommandHostingView: NSView {
         // 조합 중에는 IME가 후보/조합 제어 키(Space, Return, Escape, 방향키, 제어/함수/공백)를 소유한다.
         // 입력 시스템에 먼저 전달해 소비하도록 한다 (AC1/AC3).
         if hasMarkedText() {
-            interpretKeyEvents([event])
+            dispatchToInputSystem([event])
             return
         }
         // 조합 없음: printable 문자는 입력 시스템, 특수 키는 keyCommand 경로.
@@ -30,7 +31,7 @@ public class KeyCommandHostingView: NSView {
             onKeyDown?(event)
             return
         }
-        interpretKeyEvents([event])
+        dispatchToInputSystem([event])
     }
 
     /// `keyDown`을 `onKeyDown`으로 보낼지 판정한다.
@@ -60,6 +61,14 @@ public class KeyCommandHostingView: NSView {
             return true
         }
         return false
+    }
+
+    private func dispatchToInputSystem(_ events: [NSEvent]) {
+        guard let interpretKeyEventsHandler else {
+            interpretKeyEvents(events)
+            return
+        }
+        interpretKeyEventsHandler(events)
     }
 
     override public func mouseDown(with event: NSEvent) {
