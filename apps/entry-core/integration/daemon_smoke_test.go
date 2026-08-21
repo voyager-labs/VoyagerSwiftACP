@@ -17,6 +17,10 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	sqlite "github.com/voyager-labs/voyager-app/apps/entry-core/internal/persistence/sqlite"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/persistence/sqlite/seeds"
 )
 
 const (
@@ -178,6 +182,156 @@ func TestDaemonProcessSmoke(t *testing.T) {
 			t.Fatalf("daemon stderr=%q, must not reach serve on corrupt database", stderr)
 		}
 	})
+
+	t.Run("catalog fresh seed + restart no-op", func(t *testing.T) {
+		dbPath := filepath.Join(tempRoot, "catalog.db")
+		seed := seeds.Current()
+
+		freshBoot := startDaemonWithDatabase(t, daemonPath, socketPath, dbPath)
+		waitForSocket(t, freshBoot, socketPath, 15*time.Second)
+		if err := freshBoot.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("send SIGTERM to catalog fresh boot: %v", err)
+		}
+		if err := freshBoot.wait(5 * time.Second); err != nil {
+			t.Fatalf("catalog fresh boot did not exit: %v; stderr=%q", err, freshBoot.stderr.String())
+		}
+		if !strings.Contains(freshBoot.stderr.String(), "workspace metadata initialized") {
+			t.Fatalf("fresh boot stderr=%q, want workspace metadata initialized", freshBoot.stderr.String())
+		}
+
+		// Fresh seed must persist the full catalog (identity + counts + digest).
+		counts, identity := inspectCatalogStore(t, dbPath)
+		if counts["defs"] != seed.DefinitionCount || counts["descs"] != seed.DescriptorCount ||
+			counts["bindings"] != seed.BindingCount || counts["terms"] != seed.TermCount {
+			t.Fatalf("fresh seed counts=%v, want defs=%d descs=%d bindings=%d terms=%d",
+				counts, seed.DefinitionCount, seed.DescriptorCount, seed.BindingCount, seed.TermCount)
+		}
+		if identity == "" {
+			t.Fatal("workspace identity not persisted after fresh seed")
+		}
+
+		// Clean restart must no-op the seed and preserve identity/counts.
+		restart := startDaemonWithDatabase(t, daemonPath, socketPath, dbPath)
+		waitForSocket(t, restart, socketPath, 15*time.Second)
+		if err := restart.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("send SIGTERM to catalog restart: %v", err)
+		}
+		if err := restart.wait(5 * time.Second); err != nil {
+			t.Fatalf("catalog restart did not exit: %v; stderr=%q", err, restart.stderr.String())
+		}
+		if !strings.Contains(restart.stderr.String(), "workspace metadata restored") {
+			t.Fatalf("restart stderr=%q, want workspace metadata restored", restart.stderr.String())
+		}
+
+		countsAfter, identityAfter := inspectCatalogStore(t, dbPath)
+		if countsAfter["defs"] != counts["defs"] || countsAfter["descs"] != counts["descs"] ||
+			countsAfter["bindings"] != counts["bindings"] || countsAfter["terms"] != counts["terms"] {
+			t.Fatalf("restart no-op changed counts: before=%v after=%v", counts, countsAfter)
+		}
+		if identityAfter != identity {
+			t.Fatalf("restart changed persisted identity: before=%q after=%q", identity, identityAfter)
+		}
+	})
+
+	t.Run("catalog drift fails closed", func(t *testing.T) {
+		dbPath := filepath.Join(tempRoot, "catalog-drift.db")
+
+		firstBoot := startDaemonWithDatabase(t, daemonPath, socketPath, dbPath)
+		waitForSocket(t, firstBoot, socketPath, 15*time.Second)
+		if err := firstBoot.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("send SIGTERM to drift first boot: %v", err)
+		}
+		if err := firstBoot.wait(5 * time.Second); err != nil {
+			t.Fatalf("drift first boot did not exit: %v; stderr=%q", err, firstBoot.stderr.String())
+		}
+
+		// Mutate a seed-owned definition row (digest-relevant) on a disposable DB.
+		mutateCatalogSeedRow(t, dbPath)
+
+		// Same-version drift must fail closed: exit 1, no socket.
+		drifted := startDaemonWithDatabase(t, daemonPath, socketPath, dbPath)
+		if !drifted.reaped(15 * time.Second) {
+			t.Fatalf("drifted daemon did not exit within 15s; stderr=%q", drifted.stderr.String())
+		}
+		if drifted.cmd.ProcessState == nil || !drifted.cmd.ProcessState.Exited() || drifted.cmd.ProcessState.ExitCode() != 1 {
+			t.Fatalf("drifted daemon exit = %v, want exit 1; stderr=%q", drifted.cmd.ProcessState, drifted.stderr.String())
+		}
+		if _, err := os.Lstat(socketPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("socket was created on catalog drift: %v", err)
+		}
+		if !strings.Contains(drifted.stderr.String(), "startup failed") {
+			t.Fatalf("drifted daemon stderr=%q, want startup failed", drifted.stderr.String())
+		}
+	})
+}
+
+// inspectCatalogStore는 daemon 종료 후 DB를 열어 (workspace identity, seed row
+// count, seed no-op digest)를 검증하고 counts map과 identity hex를 반환한다.
+// digest는 Store.ApplyCatalogSeed no-op 성공으로 확인하므로 persistence
+// state-machine 상세를 여기서 재구현하지 않는다.
+func inspectCatalogStore(t *testing.T, dbPath string) (counts map[string]int, identity string) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open catalog store for verification: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("read persisted workspace identity: %v", err)
+	}
+	if wsctx.ID == (domainentry.WorkspaceID{}) {
+		t.Fatal("persisted workspace identity is zero")
+	}
+	identity = wsctx.ID.String()
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed on seeded DB = %v, want nil no-op (digest verified)", err)
+	}
+
+	tables := []struct {
+		name      string
+		table     string
+		lifecycle bool
+	}{
+		{name: "defs", table: "workspace_property_definitions", lifecycle: true},
+		{name: "descs", table: "source_property_descriptors", lifecycle: true},
+		{name: "bindings", table: "property_bindings", lifecycle: true},
+		{name: "terms", table: "workspace_property_terms", lifecycle: false},
+	}
+	counts = make(map[string]int)
+	for _, entry := range tables {
+		query := "SELECT COUNT(*) FROM " + entry.table + " WHERE seed_owner = 'system_property_registry'"
+		if entry.lifecycle {
+			query += " AND lifecycle_state = 'active'"
+		}
+		var n int
+		if err := store.SQLDB().QueryRow(query).Scan(&n); err != nil {
+			t.Fatalf("count %s: %v", entry.table, err)
+		}
+		counts[entry.name] = n
+	}
+	return counts, identity
+}
+
+// mutateCatalogSeedRow는 disposable DB의 seed-owned active definition 한 행의
+// digest-relevant field를 drift시켜 same-version digest mismatch를 유발한다.
+// persistence state-machine을 재구현하지 않고 raw row mutation만 수행한다.
+func mutateCatalogSeedRow(t *testing.T, dbPath string) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open catalog store for mutation: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if _, err := store.SQLDB().Exec(
+		"UPDATE workspace_property_definitions SET canonical_key = canonical_key || '-drifted' WHERE seed_owner = 'system_property_registry' AND lifecycle_state = 'active' AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE seed_owner = 'system_property_registry' AND lifecycle_state = 'active' LIMIT 1)",
+	); err != nil {
+		t.Fatalf("mutate seed-owned definition row: %v", err)
+	}
 }
 
 func socketOnlyAllowedLogLines() map[string]bool {
