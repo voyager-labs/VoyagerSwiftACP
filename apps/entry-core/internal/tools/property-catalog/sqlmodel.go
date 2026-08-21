@@ -77,6 +77,7 @@ type TermRow struct {
 	TermKind          string
 	Ordinal           int
 	TermValue         string
+	LifecycleState    string
 	SeedOwner         string
 	SeedVersion       int
 	SeedSourceVersion string
