@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 @testable import VoyagerPagesFileManager
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -118,6 +120,110 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.view(.handleTextInput("a")))
     }
 
+    /// EVM-002-type_scroll_input: collapsed group에 숨겨진 첫 매칭이 later visible 매칭을 막지 않는다.
+    /// grouping 활성 + 그룹 "A"(collapsed, "Alices" 보유) + 그룹 "B"(expanded, "Aaron" 보유)에서
+    /// 입력 "A"는 숨겨진 "Alices"가 아니라 visible한 "Aaron"을 type-scroll 타깃으로 삼아야 한다.
+    /// - 사전 조건: /root 폴더 페이지, Name grouping 활성, "A" 그룹 collapsed
+    /// - 기대 결과: setTypeScrollTarget(Aaron)
+    func testHandleTextInputSkipsHiddenEntryInCollapsedGroup() async {
+        let alices = EntryModel.temporaryFolder(id: "/root/alices", name: "Alices")
+        let aaron = EntryModel.temporaryFolder(id: "/root/aaron", name: "Aaron")
+        let store = makeGroupedTypeScrollStore(
+            entries: [alices, aaron],
+            groupedItems: [
+                GroupedItems(groupName: "A", items: [alices]),
+                GroupedItems(groupName: "B", items: [aaron]),
+            ],
+            collapsedGroups: ["A"],
+        )
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            return id == aaron.id
+        }
+    }
+
+    /// EVM-002-type_scroll_input: collapsed group의 hidden first match는 later visible match 도달을 막지 않는다.
+    /// 위 시나리오에서 첫 매칭 후보("Alices")가 hidden이므로 visible한 "Aaron"이 타깃이 되어야 한다.
+    /// - 사전 조건: /root 폴더 페이지, Name grouping 활성, "A" 그룹 collapsed
+    /// - 기대 결과: setTypeScrollTarget(Aaron)
+    func testHandleTextInputHiddenFirstMatchDoesNotBlockLaterVisibleMatch() async {
+        let alices = EntryModel.temporaryFolder(id: "/root/alices", name: "Alices")
+        let aaron = EntryModel.temporaryFolder(id: "/root/aaron", name: "Aaron")
+        let store = makeGroupedTypeScrollStore(
+            entries: [alices, aaron],
+            groupedItems: [
+                GroupedItems(groupName: "A", items: [alices]),
+                GroupedItems(groupName: "B", items: [aaron]),
+            ],
+            collapsedGroups: ["A"],
+        )
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            return id == aaron.id
+        }
+    }
+
+    /// EVM-002-type_scroll_input: hierarchy(list) 모드에서는 outline projection의 visible selectable entries를 사용한다.
+    /// expanded folder의 visible child가 입력과 매칭되면 그 child를 타깃으로 삼는다 (hierarchy 모드 비회귀).
+    /// - 사전 조건: /root 폴더 페이지, list 모드, rootPath 설정, "Docs" folder expanded, "Alpha.txt" visible child
+    /// - 기대 결과: setTypeScrollTarget(Alpha.txt)
+    func testHandleTextInputUsesOutlineProjectionInHierarchyMode() async {
+        let docs = EntryModel.temporaryFolder(id: "/root/docs", name: "Docs")
+        let alphaChild = makeTypeScrollHierarchyFile(id: "/root/docs/alpha.txt", name: "Alpha.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [docs]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            nodesByID: [
+                docs.id: FolderNodeState(
+                    children: [alphaChild],
+                    loadPhase: .loaded,
+                    generation: 1,
+                    coreFinished: true,
+                ),
+            ],
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([docs.id])
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            return id == alphaChild.id
+        }
+    }
+
+    /// EVM-002-type_scroll_input: 두 expanded group 중 첫 group의 matching entry를 타깃으로 삼는다.
+    /// group 순서를 보존한 visible entries에서 첫 매칭이 선택된다.
+    /// - 사전 조건: /root 폴더 페이지, Name grouping 활성, 그룹 "A"/"B" 모두 expanded
+    /// - 기대 결과: setTypeScrollTarget(그룹 "A"의 "Anna")
+    func testHandleTextInputUsesGroupedVisibleOrdering() async {
+        let anna = EntryModel.temporaryFolder(id: "/root/anna", name: "Anna")
+        let avery = EntryModel.temporaryFolder(id: "/root/avery", name: "Avery")
+        let store = makeGroupedTypeScrollStore(
+            entries: [anna, avery],
+            groupedItems: [
+                GroupedItems(groupName: "A", items: [anna]),
+                GroupedItems(groupName: "B", items: [avery]),
+            ],
+            collapsedGroups: [],
+        )
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            return id == anna.id
+        }
+    }
+
     /// type-scroll 테스트 전용 store: /root 폴더 페이지에 엔트리를 세팅한다.
     @MainActor
     private func makeTypeScrollStore(
@@ -129,5 +235,46 @@ extension EVM002FileManagerPagePresentationTests {
         return TestStore(initialState: state) {
             FileManagerContentKeyCommandReducer()
         }
+    }
+
+    /// type-scroll 테스트 전용 grouped store: /root 폴더 페이지에 grouping 활성 상태로 세팅한다.
+    @MainActor
+    private func makeGroupedTypeScrollStore(
+        entries: [EntryModel],
+        groupedItems: [GroupedItems],
+        collapsedGroups: Set<String>,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = entries
+        state.entryViewLayout.entryArrangements.groupKey = .name
+        state.entryViewLayout.entryArrangements.groupedItems = groupedItems
+        state.entryViewLayout.entryArrangements.collapsedGroups = collapsedGroups
+        return TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+    }
+
+    /// hierarchy type-scroll 테스트용 file entry: 임의 파일을 만든다.
+    @MainActor
+    private func makeTypeScrollHierarchyFile(id: String, name: String) -> EntryModel {
+        EntryModel(
+            name: name,
+            fullPath: id,
+            isFolder: false,
+            isHidden: false,
+            size: 0,
+            modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            fileExtension: "txt",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 1_700_000_000),
+                addedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
     }
 }

@@ -25,7 +25,7 @@ enum FileManagerContentKeyCommandHandler {
         // rename이 우선권을 가지므로 rename 중에는 type-scroll을 비활성화한다.
         guard state.entryViewLayout.entryOperations.renamingItemId == nil else { return .none }
 
-        let entries = commandEntries(state: state)
+        let entries = typeScrollCandidateEntries(state: state)
         guard let firstMatch = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: entries, inputText: text)
         else { return .none }
 
@@ -299,6 +299,18 @@ enum FileManagerContentKeyCommandHandler {
         state.entryViewLayout.visibleSelectableEntries(
             isNormalDirectoryPage: isNormalDirectoryPage(state),
         )
+    }
+
+    /// type-scroll 후보 엔트리 목록. 계층형 목록 모드에서는 outline projection의
+    /// visibleSelectableEntries(expanded folder를 반영)를, 그 외 flat/grouped 모드에서는
+    /// collapsed group을 반영한 presentation.visibleEntries를 사용한다.
+    private static func typeScrollCandidateEntries(state: FileManagerContentState) -> [EntryModel] {
+        if state.entryViewLayout.hierarchyProjectionIsActive {
+            return state.entryViewLayout.visibleSelectableEntries(
+                isNormalDirectoryPage: isNormalDirectoryPage(state),
+            )
+        }
+        return state.entryViewLayout.presentation.visibleEntries
     }
 
     private static func sendNativeAction(_ selector: Selector) -> Bool {
