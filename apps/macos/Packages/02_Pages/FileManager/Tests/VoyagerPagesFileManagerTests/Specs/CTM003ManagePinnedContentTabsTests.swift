@@ -6689,6 +6689,91 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: durable Directory의 stale listing은 reload 후 pending을 소비한다.
+    /// - 검증 내용: 즉시 매칭 실패 뒤 canonical Directory reload와 파일 선택
+    /// - 사전 조건: active pinned Directory가 durable path에 있고 오래된 entry만 로드됨
+    /// - 기대 결과: 같은 route를 reload해 새 파일을 선택하고 pendingSelectEntryID를 제거함
+    func testReturnActivePinnedDirectoryAlreadyAtPathReloadsMissingPendingSelection() async {
+        let pinnedID = ContentTabID(rawValue: "pinned-directory-stale")
+        let durablePath = "/Users/test/Pinned"
+        let pendingSelectEntryID = "\(durablePath)/new.txt"
+        let durableAnchor: ContentTabPageAnchor = .directory(path: durablePath)
+        let record = Self.pinnedRecord(id: pinnedID, anchor: durableAnchor, title: "Pinned", iconName: "folder")
+        var state = ContentTabTestStateBuilder.pinnedDirectoryWindowState(
+            tabID: pinnedID,
+            path: durablePath,
+            record: record,
+        )
+        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(uniqueElements: [
+            EntryModel(
+                name: "old.txt",
+                fullPath: "\(durablePath)/old.txt",
+                isFolder: false,
+                isHidden: false,
+                size: 1,
+                modifiedDate: Date(timeIntervalSince1970: 0),
+                fileExtension: "txt",
+                facets: .init(
+                    createdDate: Date(timeIntervalSince1970: 0),
+                    addedDate: Date(timeIntervalSince1970: 0),
+                    lastOpenedDate: nil,
+                    kind: "Text",
+                    creatorApplication: nil,
+                    tags: nil,
+                    supplementaryMetadata: nil,
+                ),
+            ),
+        ])
+        state.syncActiveTabContentState()
+        let loadPaths = LockIsolated<[String]>([])
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return [
+                    EntryModel(
+                        name: "new.txt",
+                        fullPath: pendingSelectEntryID,
+                        isFolder: false,
+                        isHidden: false,
+                        size: 1,
+                        modifiedDate: Date(timeIntervalSince1970: 0),
+                        fileExtension: "txt",
+                        facets: .init(
+                            createdDate: Date(timeIntervalSince1970: 0),
+                            addedDate: Date(timeIntervalSince1970: 0),
+                            lastOpenedDate: nil,
+                            kind: "Text",
+                            creatorApplication: nil,
+                            tags: nil,
+                            supplementaryMetadata: nil,
+                        ),
+                    ),
+                ]
+            }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: reload child action보다 stale listing의 pending reveal 완료를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.returnContentTabToPinnedLocation(
+            pinnedID,
+            pendingSelectEntryID: pendingSelectEntryID,
+        ))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(loadPaths.value, [durablePath])
+        XCTAssertNil(store.state.content.pendingSelectEntryID)
+        XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [pendingSelectEntryID])
+        XCTAssertTrue(store.state.content.entryViewLayout.shouldScrollToSelection)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: route 복귀 전에는 pending selection을 소비하지 않는다
     /// runtime이 다른 Collection이고 durable이 Directory면 현재 Collection 결과가 파일을 포함해도 pending을 유지한다.
     /// - 검증 내용: route 불일치 시 pending 보존, snapshot selectedIds 미변경, record 불변

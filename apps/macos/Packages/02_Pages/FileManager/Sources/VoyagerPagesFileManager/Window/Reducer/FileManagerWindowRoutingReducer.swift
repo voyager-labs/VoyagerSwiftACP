@@ -297,7 +297,12 @@ struct FileManagerWindowRoutingReducer {
             Effect<Action>.none
         }
         if isActiveTab, currentNavigationState == navigationState {
-            return .concatenate(cancelCollectionOpenEffect, resetCollectionModeEffect, selectionChangedEffect)
+            return .concatenate(
+                cancelCollectionOpenEffect,
+                resetCollectionModeEffect,
+                selectionChangedEffect,
+                pinnedReturnReloadEffect(anchor: anchor, state: state),
+            )
         }
         guard currentNavigationState != navigationState || shouldResetCollectionMode else {
             return selectionChangedEffect
@@ -324,6 +329,16 @@ struct FileManagerWindowRoutingReducer {
             .send(.navigation(.internal(.applyPinnedPeerNavigationState(navigationState)))),
             handleNavigateToState(navigationState, state: &state),
         )
+    }
+
+    private func pinnedReturnReloadEffect(
+        anchor: ContentTabPageAnchor,
+        state: State,
+    ) -> Effect<Action> {
+        guard case .directory = anchor,
+              state.content.pendingSelectEntryID != nil
+        else { return .none }
+        return .send(.content(.internal(.reloadDirectoryListing)))
     }
 
     private func pinnedAnchor(for navigationState: ContentPageNavigationRoute) -> ContentTabPageAnchor? {
