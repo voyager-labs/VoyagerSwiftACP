@@ -105,11 +105,10 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 		return nil
 	}
 
-	// Apply: execute the embedded seed SQL, then reconcile seed-owned rows.
-	if err := tx.Exec(meta.SQLBody).Error; err != nil {
+	if err := reconcileSeedOwned(tx, wsctx.ID.Bytes(), meta); err != nil {
 		return err
 	}
-	if err := reconcileSeedOwned(tx, wsctx.ID.Bytes(), meta); err != nil {
+	if err := tx.Exec(meta.SQLBody).Error; err != nil {
 		return err
 	}
 

@@ -597,6 +597,38 @@ func TestCatalogSeedRemovedTermTombstone(t *testing.T) {
 	}
 }
 
+func TestCatalogSeedTombstonedTermValueCanBeReused(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 2, 1, 1, 2, systemSeedTrio(0, "2.3.0"))
+	propertyID, err := domainentry.RegistryPropertyID("cat.0")
+	if err != nil {
+		t.Fatalf("RegistryPropertyID: %v", err)
+	}
+
+	if err := store.WithinTx(ctx, func(tx *gorm.DB) error {
+		return reconcileSeedOwned(tx, wsctx.ID.Bytes(), seeds.Current())
+	}); err != nil {
+		t.Fatalf("reconcileSeedOwned: %v", err)
+	}
+
+	seed := systemSeedTrio(1, "2.4.1")
+	err = store.db.WithContext(ctx).Create(&WorkspacePropertyTermRow{
+		WorkspaceID:       wsctx.ID.Bytes(),
+		PropertyID:        propertyID.Bytes(),
+		TermKind:          "search_alias",
+		Ordinal:           2,
+		TermValue:         "alias-0",
+		LifecycleState:    "active",
+		SeedOwner:         seed.owner,
+		SeedVersion:       seed.version,
+		SeedSourceVersion: seed.sourceVersion,
+	}).Error
+	if err != nil {
+		t.Fatalf("reuse tombstoned term value: %v", err)
+	}
+}
+
 // TestCatalogSeedPreservesNonSeed proves NULL-seed user/provider rows are left
 // untouched by apply.
 func TestCatalogSeedPreservesNonSeed(t *testing.T) {
