@@ -81,14 +81,13 @@ final class ExternalDropSessionController {
         )
     }
 
-    /// 세션 종단(성공/실패/취소)을 render-loop에서 관찰해 owned ID를 해제한다.
-    /// reducer가 `.succeeded`/`.failed`/`.cancelled`에서 `activeExternalDrop`을 nil로 만들고,
-    /// 그 전이(non-nil → nil)를 받아 local 소유 세션을 정리한다.
+    /// render-loop가 snapshot을 합쳐도 reducer의 현재 canonical session과 local ID를 재동기화한다.
     func handleSessionTerminal(
-        previousActive: ExternalDropActiveSession?,
-        currentActive: ExternalDropActiveSession?,
+        previousActive _: ExternalDropActiveSession?,
+        currentActive _: ExternalDropActiveSession?,
     ) {
-        guard previousActive != nil, currentActive == nil else { return }
+        let reducerSessionID = store.state.entryOperations.activeExternalDrop?.sessionID
+        guard activeExternalDropSessionID != reducerSessionID else { return }
         activeExternalDropSessionID = nil
     }
 

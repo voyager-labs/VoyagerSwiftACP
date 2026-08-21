@@ -2088,12 +2088,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
     // MARK: - EOP-002-import_external_objects (ExternalDropSessionController local lifecycle)
 
-    /// EOP-002-import_external_objects: 종단 전이(non-nil → nil) 후 controller의 local 세션 ID가 해제된다.
-    /// controller가 소유한 activeSessionID는 terminal transition 관찰로 nil이 되어야 한다.
-    /// - 검증 내용: begin 후 activeSessionID가 설정되고, reducer 종단 후 handleSessionTerminal이 local ID를 nil로 만든다.
+    /// EOP-002-import_external_objects: throttled snapshot이 nil → nil로 합쳐져도 local 세션 ID가 해제된다.
+    /// controller가 소유한 activeSessionID는 reducer의 canonical state와 재동기화되어야 한다.
+    /// - 검증 내용: begin 후 activeSessionID가 설정되고, reducer 종단 뒤 병합된 snapshot이 local ID를 nil로 만든다.
     /// - 사전 조건: promise 세션이 시작되어 activeExternalDrop과 controller local ID가 모두 설정되어 있다.
     /// - 기대 결과: handleSessionTerminal 후 controller.activeSessionID가 nil이다.
-    func testExternalDropSessionControllerClearsActiveSessionAfterTerminal() {
+    func testExternalDropSessionControllerClearsActiveSessionAfterCoalescedTerminal() {
         let transport = DragTransport()
         let recorder = DropRecorder()
         let acquisition = ExternalDropAcquisitionRecorder()
@@ -2121,16 +2121,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         ))
         XCTAssertEqual(controller.activeSessionID, acquisition.sessionID)
 
-        let previousActive = store.state.entryOperations.activeExternalDrop
-        XCTAssertNotNil(previousActive)
         store.send(.entryOperations(.externalDrop(.event(.succeeded(acquisition.sessionID)))))
         XCTAssertNil(store.state.entryOperations.activeExternalDrop)
 
-        controller.handleSessionTerminal(
-            previousActive: previousActive,
-            currentActive: store.state.entryOperations.activeExternalDrop,
-        )
-        XCTAssertNil(controller.activeSessionID, "종단 전이 후 local 세션 ID는 해제되어야 한다")
+        controller.handleSessionTerminal(previousActive: nil, currentActive: nil)
+
+        XCTAssertNil(controller.activeSessionID, "throttled nil-to-nil snapshot 뒤에도 local 세션 ID를 해제해야 한다")
     }
 
     /// EOP-002-import_external_objects: cancel이 소유한 세션 ID를 정확히 한 번 취소한다.
