@@ -111,7 +111,7 @@ actor InMemoryRuntimeStateStore: RuntimeStateStore {
         state
     }
 
-    func replaceState(_ state: RuntimeStoredState) {
+    func replaceState(_ state: RuntimeStoredState?) {
         self.state = state
     }
 
