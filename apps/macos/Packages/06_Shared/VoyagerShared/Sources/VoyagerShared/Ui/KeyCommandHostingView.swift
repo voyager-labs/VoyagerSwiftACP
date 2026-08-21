@@ -5,6 +5,7 @@ public final class KeyCommandHostingView: NSView {
     var onKeyDown: ((NSEvent) -> Void)?
     var onTextInput: ((String) -> Void)?
     var interpretKeyEventsHandler: (([NSEvent]) -> Void)?
+    var inputContextProvider: (() -> NSTextInputContext?)?
 
     // MARK: - NSTextInputClient 상태 저장소
 
@@ -79,6 +80,16 @@ public final class KeyCommandHostingView: NSView {
     override public var acceptsFirstResponder: Bool {
         true
     }
+
+    /// 활성 입력기의 변환 세션과 local marked text를 커밋 없이 취소한다.
+    public func cancelMarkedTextComposition() {
+        if let inputContextProvider {
+            inputContextProvider()?.discardMarkedText()
+        } else {
+            inputContext?.discardMarkedText()
+        }
+        cancelMarkedTextLocally()
+    }
 }
 
 // MARK: - NSTextInputClient
@@ -147,7 +158,7 @@ extension KeyCommandHostingView: @MainActor NSTextInputClient {
 
     public func doCommandBy(_ selector: Selector) {
         if selector == #selector(NSResponder.cancelOperation(_:)) {
-            clearMarkedState()
+            cancelMarkedTextLocally()
         }
     }
 
@@ -157,6 +168,10 @@ extension KeyCommandHostingView: @MainActor NSTextInputClient {
         clearMarkedState()
         guard let text, let committedText = CommittedTypeScrollInput.character(from: text) else { return }
         onTextInput?(committedText)
+    }
+
+    private func cancelMarkedTextLocally() {
+        clearMarkedState()
     }
 
     /// marked 상태를 해제한다.

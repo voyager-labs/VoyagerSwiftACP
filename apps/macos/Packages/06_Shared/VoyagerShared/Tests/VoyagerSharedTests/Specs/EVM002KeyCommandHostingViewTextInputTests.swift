@@ -516,6 +516,54 @@ extension EVM002KeyCommandHostingViewTextInputTests {
         XCTAssertFalse(view.hasMarkedText())
     }
 
+    /// EVM-002-type_scroll_text_input: canonical 취소는 입력기 세션을 먼저 폐기하고 local marked state를 해제한다.
+    /// FileManager mutation 직전 취소가 stale IME commit을 남기지 않는 client 계약을 검증한다.
+    /// - 검증 내용: discard 호출 시점의 marked state, 이후 range 초기화, text callback 부재.
+    /// - 사전 조건: 유효한 marked text와 discard 관찰 seam이 설정되어 있다.
+    /// - 기대 결과: discard 시점에는 marked state가 남아 있고 호출 후에는 callback 없이 모두 해제된다.
+    func testCancelMarkedTextCompositionDiscardsInputContextBeforeClearingStateWithoutCommit() {
+        let view = KeyCommandHostingView()
+        var discardedWhileMarked: [Bool] = []
+        var committed: [String] = []
+        let inputContext = DiscardTrackingTextInputContext(client: view) { [weak view] in
+            discardedWhileMarked.append(view?.hasMarkedText() == true)
+        }
+        view.inputContextProvider = { inputContext }
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.cancelMarkedTextComposition()
+
+        XCTAssertEqual(discardedWhileMarked, [true])
+        XCTAssertFalse(view.hasMarkedText())
+        XCTAssertEqual(view.markedRange(), NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
+        XCTAssertTrue(committed.isEmpty)
+    }
+
+    /// EVM-002-type_scroll_text_input: canonical 취소는 input context와 marked text가 없어도 멱등이다.
+    /// - 검증 내용: detached view의 nil input context와 반복 취소 후 callback/state.
+    /// - 사전 조건: window와 marked text가 없는 새 host이다.
+    /// - 기대 결과: 반복 취소가 crash나 callback 없이 no-op이다.
+    func testCancelMarkedTextCompositionIsIdempotentWithoutInputContextOrMarkedText() {
+        let view = KeyCommandHostingView()
+        var committed: [String] = []
+        view.inputContextProvider = { nil }
+        view.onTextInput = { committed.append($0) }
+
+        view.cancelMarkedTextComposition()
+        view.cancelMarkedTextComposition()
+
+        XCTAssertFalse(view.hasMarkedText())
+        XCTAssertEqual(view.markedRange(), NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
+        XCTAssertTrue(committed.isEmpty)
+    }
+
     /// EVM-002-type_scroll_text_input: Escape command가 진행 중인 IME 조합을 취소한다.
     /// 입력 시스템이 Escape를 `cancelOperation:`으로 전달하는 경로를 검증한다.
     /// - 검증 내용: marked text와 selected/marked range가 함께 초기화된다.
@@ -695,5 +743,18 @@ extension EVM002KeyCommandHostingViewTextInputTests {
             preconditionFailure("keyDown 이벤트 생성 실패")
         }
         return event
+    }
+}
+
+private final class DiscardTrackingTextInputContext: NSTextInputContext {
+    private let onDiscardMarkedText: () -> Void
+
+    init(client: any NSTextInputClient, onDiscardMarkedText: @escaping () -> Void) {
+        self.onDiscardMarkedText = onDiscardMarkedText
+        super.init(client: client)
+    }
+
+    override func discardMarkedText() {
+        onDiscardMarkedText()
     }
 }
