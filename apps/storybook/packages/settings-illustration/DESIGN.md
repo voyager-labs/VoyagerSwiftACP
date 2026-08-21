@@ -67,7 +67,6 @@ This surface's active registry root is `surface-registry.ts` (id `settings`, `li
 - Target WCAG 2.2 AA semantics: the tab bar is a `<nav aria-label="Settings categories">` with real `<button>` items exposing `aria-current="page"` on the active item; the window is a `<section aria-label="Voyager Settings">`. The horizontal tab bar changes only the visual geometry, not the semantic structure — the `<nav aria-label>` and `aria-current` contract is unchanged.
 - Toggles are real `<button role="switch" aria-checked>`; the theme cards and disclosure rows are real interactive elements where the review surface needs it.
 - Icons render through `SFSymbol` with `aria-hidden="true"` on their owning controls; no visible emoji icons.
-- Browser verification: after every visual change, drive a real browser (`agent-browser`) to capture and inspect the affected states. Screenshot evidence is required before declaring a visual task complete.
 
 ## 7. Not in scope
 

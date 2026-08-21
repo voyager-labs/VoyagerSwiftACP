@@ -179,7 +179,6 @@ Use mixed native materials: translucent sidebar and toolbar, one clipped content
 
 - Target WCAG 2.2 AA semantics, full keyboard reachability, visible focus, and meaningful landmarks.
 - Icons are inline SVG with accessible labels on their owning buttons; visible emoji icons are not permitted.
-- Browser verification: after every visual change, the agent must drive a real browser (agent-browser) to capture and inspect the affected states. Screenshot evidence is required before declaring a visual task complete.
 
 ## 9. Entry Thumbnail Static Fixtures
 

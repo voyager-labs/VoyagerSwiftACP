@@ -58,4 +58,4 @@ Every material state carries a review record (see `review-and-verification.md`):
 ## 7. Discovery and verification routes
 
 - Discovery is registry-driven: `surface-registry.ts` → `.storybook/main.ts` → Storybook. To add/move/retire a surface, edit the registry and the story root, never a parallel discovery mechanism.
-- Verification is change-scoped: a Storybook-only package/catalog change is proven by Storybook evidence (`pnpm check`, `build-storybook`, `verify:contract`); native evidence is required only for the runtime claims named by `native-evidence-contract.md`. This workspace never claims native parity from a static render.
+- Design authority is split from agent execution: this document owns design contracts and evidence boundaries; operational verification routes and commands live in `.agents/skills/voyager-design-lab/` and repository agent rules. A Storybook render does not claim native parity.

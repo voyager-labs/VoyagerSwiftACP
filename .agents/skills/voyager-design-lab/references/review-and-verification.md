@@ -17,6 +17,14 @@ Storybook-only package/catalog changes are proven with Storybook evidence. Nativ
 
 If an unrelated working-tree failure blocks a command, name its path and diagnostics. Do not modify unrelated work merely to obtain a green result.
 
+## Browser boundary and stop conditions
+
+Browser evidence is conditional on an explicit visual, responsive, accessibility, or interaction claim. Collect it after implementation convergence and inspect only affected stories and representative changed states. Use one viewport by default; add viewports, schemes, or states only when the acceptance criteria require them.
+
+A Storybook browser capture proves only the inspected Storybook presentation or interaction. It does not prove native runtime, reducer/backend/auth/filesystem behavior, or production E2E. Native evidence and full application E2E are opt-in for named runtime claims, not default consequences of a Storybook change.
+
+If browser verification is intentionally run, prove readiness with `lsof` and `curl`, then stop the server and re-check the port. If the acceptance criteria do not require browser or native evidence, stop after the focused checks and record those evidence classes as not applicable. OMO and Hephaestus handoffs must state the required evidence, out-of-scope checks, and stop condition; do not introduce named verification profiles.
+
 ## Review record
 
 For a material state, leave a concise record in the issue, PR, or the existing native-evidence document:
