@@ -8,7 +8,7 @@ export function verifyChatMessageContract(packageRoot, css) {
     "utf8",
   )
   const assistantStorySource = readFileSync(
-    resolve(packageRoot, "src/Domains/Chat/AiChatAssistantCard.stories.tsx"),
+    resolve(packageRoot, "../../src/FileManager/Domains/Chat/AiChatAssistantCard.stories.tsx"),
     "utf8",
   )
   const assistantPresentationSource = readFileSync(
@@ -24,7 +24,7 @@ export function verifyChatMessageContract(packageRoot, css) {
     "utf8",
   )
   const userStorySource = readFileSync(
-    resolve(packageRoot, "src/Domains/Chat/AiChatUserMessageBubble.stories.tsx"),
+    resolve(packageRoot, "../../src/FileManager/Domains/Chat/AiChatUserMessageBubble.stories.tsx"),
     "utf8",
   )
   const conversationSource = readFileSync(

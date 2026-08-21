@@ -40,7 +40,7 @@ const css = [
 ].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
 const designTokensStorySource = readFileSync(
-  resolve(packageRoot, "src/Foundations/DesignTokens.stories.tsx"),
+  resolve(storybookRoot, "src/FileManager/Foundations/DesignTokens.stories.tsx"),
   "utf8",
 )
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
@@ -367,10 +367,7 @@ const designTokensStory = fileManagerStories.find(
 verifyContentBrowserContract(packageRoot, css, runtime, fileManagerStories)
 
 assert.ok(designTokensStory, "Missing File Manager design tokens overview story")
-assert.equal(
-  designTokensStory.importPath,
-  "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
-)
+assert.equal(designTokensStory.importPath, "./src/FileManager/Foundations/DesignTokens.stories.tsx")
 // UI 키트 이관(Design Foundation) 후 File Manager 스토리 축소 — 176 기준 마진 170
 assert.ok(fileManagerStories.length >= 170)
 // UI 키트 이관(Design Foundation) 후 경로 축소 — 현값 38 기준 마진 35
@@ -380,8 +377,7 @@ for (const storyName of ["Centered Empty", "Centered Unconnected", "Connection E
   assert.ok(
     fileManagerStories.some(
       (entry) =>
-        entry.importPath ===
-          "./packages/file-manager-illustration/src/Domains/Chat/AiChatView.stories.tsx" &&
+        entry.importPath === "./src/FileManager/Domains/Chat/AiChatView.stories.tsx" &&
         entry.name === storyName,
     ),
     `Missing AiChatView story: ${storyName}`,
@@ -391,8 +387,7 @@ for (const rootStoryName of ["Chat Connection Error", "Chat Rebind"]) {
   assert.ok(
     fileManagerStories.some(
       (entry) =>
-        entry.importPath ===
-          "./packages/file-manager-illustration/src/Stories/FileManagerIllustration.stories.tsx" &&
+        entry.importPath === "./src/FileManager/Stories/FileManagerIllustration.stories.tsx" &&
         entry.name === rootStoryName,
     ),
     `Missing root story: ${rootStoryName}`,
@@ -401,16 +396,14 @@ for (const rootStoryName of ["Chat Connection Error", "Chat Rebind"]) {
 assert.ok(
   fileManagerStories.some(
     (entry) =>
-      entry.importPath ===
-        "./packages/file-manager-illustration/src/Domains/Chat/AiChatView.stories.tsx" &&
+      entry.importPath === "./src/FileManager/Domains/Chat/AiChatView.stories.tsx" &&
       entry.name === "Unconnected",
   ),
 )
 assert.ok(
   fileManagerStories.some(
     (entry) =>
-      entry.importPath ===
-        "./packages/file-manager-illustration/src/Stories/FileManagerIllustration.stories.tsx" &&
+      entry.importPath === "./src/FileManager/Stories/FileManagerIllustration.stories.tsx" &&
       entry.name === "Chat Unconnected",
   ),
 )
