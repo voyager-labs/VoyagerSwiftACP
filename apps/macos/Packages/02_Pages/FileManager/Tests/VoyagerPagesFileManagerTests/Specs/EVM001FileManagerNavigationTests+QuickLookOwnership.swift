@@ -32,13 +32,13 @@ extension EVM001FileManagerNavigationTests {
 
     // MARK: - helpers
 
-    private func contentWithSelection() -> FileManagerContentFeature.State {
-        let a = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+    private func contentWithSelection(id: String = "/root/a") -> FileManagerContentFeature.State {
+        let entry = EntryModel.temporaryFolder(id: id, name: (id as NSString).lastPathComponent)
         var content = FileManagerContentFeature.State()
         content.navigation.navigationState = .folder("/root")
-        content.entryViewLayout.entries = [a]
-        content.entryViewLayout.selectedIds = [a.id]
-        content.entryViewLayout.lastSelectedId = a.id
+        content.entryViewLayout.entries = [entry]
+        content.entryViewLayout.selectedIds = [entry.id]
+        content.entryViewLayout.lastSelectedId = entry.id
         return content
     }
 
@@ -202,5 +202,46 @@ extension EVM001FileManagerNavigationTests {
         try? await Task.sleep(for: .milliseconds(100))
 
         XCTAssertTrue(syncCalls.value.isEmpty)
+    }
+
+    // MARK: - EVM-001-quick_look_selection_sync
+
+    /// VOY-618: 활성 탭 전환(`setCurrent`) 후 새 활성 탭의 ordered 선택 경로를
+    /// 정확히 한 번 Quick Look 패널에 동기화한다.
+    /// - 검증 내용: `.syncQuickLookSelection` client가 새 활성 탭(B)의 선택 경로로 정확히 1회 호출된다.
+    /// - 사전 조건: 포커스된 윈도우, A(활성)/B(비활성) 두 탭, B가 `/root/b` 선택을 보유.
+    /// - 기대 결과: `.contentTabs(.setCurrent(B))` 후 B의 ordered 선택 경로로 정확히 1회 동기화.
+    func testActiveTabSwitchSyncsNewActiveTabQuickLookSelection() async {
+        let activeID = ContentTabID(rawValue: "active")
+        let targetID = ContentTabID(rawValue: "target")
+        let syncCalls = LockIsolated<[[String]]>([])
+        let syncCalled = expectation(description: "new active tab Quick Look selection synchronized")
+        let store = TestStore(
+            initialState: makeWindowState(
+                activeTabID: activeID,
+                inactiveTabID: targetID,
+                focused: true,
+                activeContent: contentWithSelection(),
+                inactiveContent: contentWithSelection(id: "/root/b"),
+            ),
+        ) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.entryQuickLookClient = .init(
+                quickLook: { _, _ in },
+                syncQuickLookSelection: { urls, _ in
+                    syncCalls.withValue { $0.append(urls.map(\.path)) }
+                    syncCalled.fulfill()
+                },
+            )
+        }
+        // handoff 효과는 .merge로 결합된 비결정적 효과를 남기므로 미소비 효과를 허용한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(targetID)))
+        await fulfillment(of: [syncCalled], timeout: 2)
+
+        XCTAssertEqual(syncCalls.value, [["/root/b"]])
     }
 }

@@ -149,7 +149,14 @@ struct WindowManagerFeature {
                     let isFocused = windowID == id && !closingWindowIDs.contains(windowID)
                     state.windows[id: windowID]?.window.isFocused = isFocused
                 }
-                return .none
+                guard state.windows[id: id]?.window.content.entryViewLayout.selectedIds.isEmpty == false
+                else {
+                    return .none
+                }
+                return .send(.windows(.element(
+                    id: id,
+                    action: .window(.content(.entryViewLayout(.delegate(.selectionChanged)))),
+                )))
 
             case let .event(.windowResignedKey(id)):
                 if state.focusedWindowID == id {
