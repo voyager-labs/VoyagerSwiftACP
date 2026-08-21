@@ -68,6 +68,12 @@ var nativeTypeOverride = map[string]string{
 // term)과 전체 SQL row model로 투영한다. 투영된 snapshot은 검증되고 canonical
 // dataset digest가 함께 반환된다.
 func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, error) {
+	// row의 seed_source_version/provenance는 reviewed 상수, metadata는 입력
+	// registry.Version을 쓴다. 두 값이 어긋나면 fresh seed 적용 뒤 다음 시작에서
+	// source-version drift로 차단되므로 generation 시점에 실패시킨다.
+	if registry.Version != SeedSourceVersion {
+		return ProjectedCatalog{}, fmt.Errorf("system registry version %q does not match SeedSourceVersion %q; update project.go constants and regenerate", registry.Version, SeedSourceVersion)
+	}
 	var projection ProjectedCatalog
 
 	descriptorByRef := make(map[string]entry.SourcePropertyDescriptor)

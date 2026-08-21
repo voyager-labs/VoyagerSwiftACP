@@ -105,3 +105,17 @@ func TestRejectTrailingRegistryJSON(t *testing.T) {
 		t.Errorf("expected trailing condition registry JSON to be rejected")
 	}
 }
+
+// TestRejectRegistryVersionSeedConstantMismatch asserts generation fails when the
+// input System Registry version diverges from the reviewed SeedSourceVersion
+// constant, preventing row/metadata source-version drift.
+func TestRejectRegistryVersionSeedConstantMismatch(t *testing.T) {
+	raw := `{"$kind":"system_property_registry","$version":"9.9.9","categories":{"a":{"x":{"ui_label":"X","type":"string","system_keys":["mditem:kMDItemX"]}}}}`
+	registry, err := parseSystemRegistry([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ProjectSystemRegistry(registry); err == nil || !strings.Contains(err.Error(), "SeedSourceVersion") {
+		t.Fatalf("version mismatch error = %v", err)
+	}
+}
