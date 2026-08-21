@@ -145,9 +145,16 @@ extension EntryGridCoordinator {
     }
 
     func completePhysicalLayoutAndConsumePendingTypeScrollTarget() {
+        guard isTypeScrollViewportReady else { return }
         hasCompletedFirstPhysicalLayout = true
         guard let targetId = state.pendingTypeScrollTargetId else { return }
         consumeTypeScrollTargetIfLaidOut(targetId)
+    }
+
+    private var isTypeScrollViewportReady: Bool {
+        guard view?.window != nil else { return false }
+        let viewport = scrollView.contentView.bounds
+        return viewport.width > 0 && viewport.height > 0
     }
 
     private func consumeTypeScrollTargetIfLaidOut(_ targetId: EntryModel.ID) {

@@ -572,6 +572,13 @@ extension EVM002ManageEntriesViewPresentationTests {
         let coordinator = EntryGridCoordinator(store: store)
         let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
         coordinator.bind(to: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = view
         view.layoutSubtreeIfNeeded()
 
         let beforeOrigin = gridClipOrigin(view)
@@ -770,6 +777,13 @@ extension EVM002ManageEntriesViewPresentationTests {
         let coordinator = EntryGridCoordinator(store: store)
         let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
         coordinator.bind(to: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = view
         view.layoutSubtreeIfNeeded()
 
         let beforeOrigin = gridClipOrigin(view)
