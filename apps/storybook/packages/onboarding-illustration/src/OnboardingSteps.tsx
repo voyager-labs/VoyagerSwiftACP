@@ -48,7 +48,11 @@ export const PermissionsStep: FC<PermissionsStepProps> = ({ state }) => {
 
       <section className="onb-card onb-toggle-row">
         <h2>Launch at Login</h2>
-        <Toggle checked={state.launchAtLogin} onChange={() => undefined} />
+        <Toggle
+          checked={state.launchAtLogin}
+          ariaLabel="Launch at Login"
+          onChange={() => undefined}
+        />
       </section>
     </div>
   )
