@@ -628,10 +628,12 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     }
 
     private func isInsideStaging(_ url: URL) -> Bool {
-        let stagingComponents = URL(fileURLWithPath: staging.path)
-            .standardizedFileURL
-            .pathComponents
-        let fileComponents = url.standardizedFileURL.pathComponents
+        let stagingComponents = URL(
+            fileURLWithPath: FileChangeScopePolicy.canonicalPath(staging.path),
+        ).pathComponents
+        let fileComponents = URL(
+            fileURLWithPath: FileChangeScopePolicy.canonicalPath(url.path),
+        ).pathComponents
         return fileComponents.starts(with: stagingComponents) && fileComponents.count > stagingComponents.count
     }
 

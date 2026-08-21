@@ -2737,6 +2737,32 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
     }
 
+    /// EOP-002-import_external_objects: staging 내부 symlink가 가리키는 외부 파일은 거절된다.
+    /// callback URL의 lexical 경로가 staging 하위여도 실제 파일시스템 대상이 staging 밖이면 수용하지 않는다.
+    /// - 검증 내용: staging 내부 symlink를 통한 callback이 `.outsideStaging`으로 실패한다.
+    /// - 사전 조건: staging 내부 symlink가 staging 밖의 실제 파일을 가리킨다.
+    /// - 기대 결과: `.failed(sessionID, .outsideStaging)`이 emit되고 외부 파일은 남는다.
+    func testExternalDropAcquisition_symlinkedCallbackOutsideStagingRejects() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("SymlinkCallbackOutside")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["escaped.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let outside = temporaryRoot.appendingPathComponent("outside.txt")
+        let symlink = staging.appendingPathComponent("escaped.txt")
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: outside)
+
+        receiver.invokeReader(url: symlink, error: nil)
+
+        let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
+    }
+
     /// EOP-002-import_external_objects: finish는 멱등하며 추가 이벤트를 내지 않는다.
     /// 정상 종료 후 다시 finish를 호출해도 세션 상태가 변하지 않아야 한다.
     /// - 검증 내용: begin 후 finish를 두 번 호출해도 crash 없이 종료되고 성공 이벤트가 없을 수 있다.
