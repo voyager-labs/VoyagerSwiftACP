@@ -505,6 +505,7 @@ enum ExternalOpenPlacementApplication {
         let activeTabID: ContentTabID
         let pinnedAnchorReturns: [PinnedAnchorReturn]
         let shouldPublishSelectionChange: Bool
+        let shouldReloadActiveDirectory: Bool
     }
 
     struct Result {
@@ -636,6 +637,10 @@ enum ExternalOpenPlacementApplication {
         }
         windows[id: placement.windowID]?.window = window
         guard let activeItem = placement.items.last else { return nil }
+        let publishedContent = activeItem.tabID == window.contentTabs.activeTabID
+            ? window.content
+            : window.tabContentStates[activeItem.tabID]
+        let isDirectoryAnchor = if case .directory = activeItem.anchor { true } else { false }
         var pinnedAnchorReturns: [PinnedAnchorReturn] = []
         for item in placement.items where item.requiresPinnedAnchorReturn {
             let pinnedReturn = PinnedAnchorReturn(
@@ -653,14 +658,14 @@ enum ExternalOpenPlacementApplication {
             tabIDs: reservations.map(\.id),
             activeTabID: activeItem.tabID,
             pinnedAnchorReturns: pinnedAnchorReturns,
-            shouldPublishSelectionChange: {
-                let publishedContent = activeItem.tabID == window.contentTabs.activeTabID
-                    ? window.content
-                    : window.tabContentStates[activeItem.tabID]
-                return activeItem.pendingSelectEntryID != nil
-                    && publishedContent?.pendingSelectEntryID == nil
-                    && !(publishedContent?.entryViewLayout.selectedIds.isEmpty ?? true)
-            }(),
+            shouldPublishSelectionChange: activeItem.pendingSelectEntryID != nil
+                && publishedContent?.pendingSelectEntryID == nil
+                && !(publishedContent?.entryViewLayout.selectedIds.isEmpty ?? true),
+            shouldReloadActiveDirectory: !activeItem.requiresReservation
+                && !activeItem.requiresPinnedAnchorReturn
+                && activeItem.pendingSelectEntryID != nil
+                && isDirectoryAnchor
+                && publishedContent?.pendingSelectEntryID != nil,
         )
     }
 }

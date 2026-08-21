@@ -134,7 +134,14 @@ extension WindowManagerFeature {
                     id: activation.windowID,
                     action: .window(.contentTabs(.collapseSelectionToActive)),
                 ))),
-            ] + (activation.shouldPublishSelectionChange
+            ] + (activation.shouldReloadActiveDirectory
+                ? [
+                    .send(.windows(.element(
+                        id: activation.windowID,
+                        action: .window(.content(.internal(.reloadDirectoryListing))),
+                    ))),
+                ]
+                : []) + (activation.shouldPublishSelectionChange
                 ? [
                     .send(.windows(.element(
                         id: activation.windowID,
@@ -215,7 +222,21 @@ extension WindowManagerFeature {
         else { return .none }
         state.externalOpenActivationAttempt = nil
         state.externalOpenActivationBecameKey = false
-        guard let request = attempt.plan.request?.retryExcluding(Set([tabID])),
+        let failedItem = attempt.plan.orderedItems.last(where: {
+            $0.tabID == tabID && $0.requiresPinnedAnchorReturn
+        })
+        var excludedTabIDs = Set([tabID])
+        if let failedAnchor = failedItem?.anchor {
+            for window in state.windows {
+                for tab in window.window.contentTabs.tabs
+                    where tab.isPinned
+                    && window.window.contentTabs.pinnedRecords[tab.id]?.anchor == failedAnchor
+                {
+                    excludedTabIDs.insert(tab.id)
+                }
+            }
+        }
+        guard let request = attempt.plan.request?.retryExcluding(excludedTabIDs),
               case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
                   request,
                   state: state,

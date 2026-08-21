@@ -9657,6 +9657,101 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(application.existingWindowActivations.first?.shouldPublishSelectionChange, true)
     }
 
+    /// 재사용 Directory tab의 stale listing에 파일이 없으면 canonical reload로 reveal을 완료한다.
+    /// - 검증 내용: pending selection 보존, Directory reload 실행, 새 entry 선택과 scroll 반영
+    /// - 사전 조건: active exact-route tab에 오래된 entry만 로드되고 새 파일 경로로 외부 열기가 요청됨
+    /// - 기대 결과: 새 tab 없이 같은 route를 reload하고 새 파일 pending을 소비함
+    func testPlacementApplicationReloadsReusedDirectoryWhenRevealIsMissingFromLoadedEntries() async throws {
+        let batchID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "reused-stale-reveal")
+        let route = ContentTabPageAnchor.directory(path: "/tmp/reused-stale")
+        let revealPath = "/tmp/reused-stale/new.txt"
+        var reusedWindow = Self.makeRouteWindow(id: windowID, tabs: [(tabID, route)], activeTabID: tabID)
+        reusedWindow.window.content.navigation.seedInitialFolderPath("/tmp/reused-stale")
+        reusedWindow.window.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
+            uniqueElements: [
+                EntryModel(
+                    name: "old.txt",
+                    fullPath: "/tmp/reused-stale/old.txt",
+                    isFolder: false,
+                    isHidden: false,
+                    size: 1,
+                    modifiedDate: Date(timeIntervalSince1970: 0),
+                    fileExtension: "txt",
+                    facets: .init(
+                        createdDate: Date(timeIntervalSince1970: 0),
+                        addedDate: Date(timeIntervalSince1970: 0),
+                        lastOpenedDate: nil,
+                        kind: "Text",
+                        creatorApplication: nil,
+                        tags: nil,
+                        supplementaryMetadata: nil,
+                    ),
+                ),
+            ],
+        )
+        reusedWindow.window.syncActiveTabContentState()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [reusedWindow]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [.init(itemID: UUID(), anchor: route, pendingSelectEntryID: revealPath)],
+            preferredWindowIDs: [],
+        )
+        let result = ExternalOpenPlacementPlanner.make(
+            request,
+            state: initialState,
+            generateUUID: UUID(),
+        )
+        let plan = try result.get()
+        let reloadStarted = expectation(description: "stale reused directory reload started")
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                XCTAssertEqual(url.path, "/tmp/reused-stale")
+                reloadStarted.fulfill()
+                return [
+                    EntryModel(
+                        name: "new.txt",
+                        fullPath: revealPath,
+                        isFolder: false,
+                        isHidden: false,
+                        size: 1,
+                        modifiedDate: Date(timeIntervalSince1970: 0),
+                        fileExtension: "txt",
+                        facets: .init(
+                            createdDate: Date(timeIntervalSince1970: 0),
+                            addedDate: Date(timeIntervalSince1970: 0),
+                            lastOpenedDate: nil,
+                            kind: "Text",
+                            creatorApplication: nil,
+                            tags: nil,
+                            supplementaryMetadata: nil,
+                        ),
+                    ),
+                ]
+            }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: reload child action보다 외부 열기 reveal의 최종 상태를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(plan: plan, reservationsByItemID: [:])))
+        await fulfillment(of: [reloadStarted], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let window = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(window.contentTabs.tabs.map(\.id), [tabID])
+        XCTAssertNil(window.content.pendingSelectEntryID)
+        XCTAssertEqual(window.content.entryViewLayout.selectedIds, [revealPath])
+        XCTAssertTrue(window.content.entryViewLayout.shouldScrollToSelection)
+    }
+
     /// 비활성 Directory tab을 파일 열기로 재사용해도 즉시 selection 변경을 activation delegate로 넘긴다.
     /// - 검증 내용: inactive snapshot에서 pending 소비, shouldPublishSelectionChange true
     /// - 사전 조건: 다른 tab이 활성, 재사용 Directory tab snapshot에 대상 파일이 이미 로드됨
@@ -10114,14 +10209,43 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertTrue(store.state.externalOpenActivationBecameKey)
     }
 
-    /// pinned Collection 복귀가 실패하면 typed failure delegate로 배치를 한 번 재계획한다.
-    /// - 검증 내용: pinnedContentTabRuntimeNavigationFailed 수신 시 retry apply가 신규 reservation을 만듦
-    /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection
-    /// - 기대 결과: retryCount 1 신규 tab reservation, 기존 tab 보존
+    /// pinned Collection 복귀가 실패하면 같은 durable anchor 후보를 모두 제외하고 배치를 한 번 재계획한다.
+    /// - 검증 내용: pinnedContentTabRuntimeNavigationFailed 수신 시 같은 anchor의 다른 pinned tab도 건너뜀
+    /// - 사전 조건: 두 pinned tab이 같은 durable Collection을 가리키고 첫 후보의 복귀가 실패함
+    /// - 기대 결과: retryCount 1 신규 tab reservation, 두 기존 pinned tab 보존
     func testPlacementActivationReplansWhenPinnedCollectionReturnFailed() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let windowID = fixture.plan.windows[0].windowID
         var state = fixture.state
+        let duplicateWindowID = UUID()
+        let duplicateTabID = ContentTabID(rawValue: "duplicate-pinned-collection-return")
+        let duplicateRuntimeAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/tmp/duplicate-runtime-wait.voycoll"),
+        )
+        let durableAnchor = fixture.plan.orderedItems[0].anchor
+        var duplicateWindow = FileManagerWindowFeature.State.makeInitial(path: "/tmp")
+        duplicateWindow.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: duplicateTabID,
+                    page: .collection,
+                    anchor: duplicateRuntimeAnchor,
+                    isPinned: true,
+                ),
+            ],
+            activeTabID: duplicateTabID,
+            pinnedRecords: [
+                duplicateTabID: .init(
+                    id: duplicateTabID.rawValue,
+                    page: .collection,
+                    anchor: durableAnchor,
+                    title: "Duplicate Durable Collection",
+                    iconName: "rectangle.stack",
+                    pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                ),
+            ],
+        )
+        state.windows.append(.init(id: duplicateWindowID, window: duplicateWindow))
         state.externalOpenActivationAttempt = .init(
             batchID: fixture.plan.batchID,
             plan: fixture.plan,
@@ -10153,6 +10277,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             return plan.request?.retryCount == 1
                 && plan.orderedItems.count == 1
                 && plan.orderedItems[0].tabID != fixture.tabID
+                && plan.orderedItems[0].tabID != duplicateTabID
                 && plan.orderedItems[0].requiresReservation
                 && reservationsByItemID.count == 1
         }
@@ -10162,6 +10287,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let tabs = store.state.windows[id: windowID]?.window.contentTabs.tabs
         XCTAssertGreaterThan(tabs?.count ?? 0, 1)
         XCTAssertEqual(tabs?.ids.contains(fixture.tabID), true)
+        XCTAssertEqual(
+            store.state.windows[id: duplicateWindowID]?.window.contentTabs.tabs.map(\.id),
+            [duplicateTabID],
+        )
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
     }
 
