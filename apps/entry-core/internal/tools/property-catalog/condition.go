@@ -1,7 +1,6 @@
 package propertycatalog
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,9 +63,7 @@ func LoadConditionRegistry(path string) (*PropertyConditionRegistry, error) {
 
 func parseConditionRegistry(data []byte) (*PropertyConditionRegistry, error) {
 	var raw rawConditionRegistry
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := decodeJSONDocument(data, &raw); err != nil {
 		return nil, fmt.Errorf("decode condition registry: %w", err)
 	}
 	if raw.Kind != "property_condition_registry" {

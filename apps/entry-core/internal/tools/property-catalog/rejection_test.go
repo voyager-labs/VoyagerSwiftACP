@@ -1,6 +1,7 @@
 package propertycatalog
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -78,5 +79,29 @@ func TestRejectInvalidInverse(t *testing.T) {
 	}
 	if strings.Contains(body, "does_not_exist") == false {
 		t.Errorf("expected mutated inverse to appear in rendered output")
+	}
+}
+
+func TestRunDefaultsToCheck(t *testing.T) {
+	tempDir := t.TempDir()
+	result := Run([]string{
+		"--system-registry", repoRoot(t) + "/shared/system_property_registry.json",
+		"--condition-registry", repoRoot(t) + "/shared/property_condition_registry.json",
+		"--seeds-dir", tempDir,
+		"--condition-out", filepath.Join(tempDir, "property_condition_catalog_gen.go"),
+	})
+	if result != 1 {
+		t.Errorf("default Run result = %d, want 1 for missing checked outputs", result)
+	}
+}
+
+func TestRejectTrailingRegistryJSON(t *testing.T) {
+	system := `{"$kind":"system_property_registry","$version":"2.4.1","categories":{"test":{"key":{"ui_label":"X","type":"string","system_keys":["mditem:kMDItemX"]}}}}\n{}`
+	if _, err := parseSystemRegistry([]byte(system)); err == nil {
+		t.Errorf("expected trailing system registry JSON to be rejected")
+	}
+	condition := `{"$kind":"property_condition_registry","$version":"2.2.0","property_types":{"string":{"operators":["eq"]}},"operators":{"eq":{"ui_label":"Is","value_shape":"single","value_count":"1","allowed_types":["string"],"ui_value_kind":{"string":"text"}}}}\n{}`
+	if _, err := parseConditionRegistry([]byte(condition)); err == nil {
+		t.Errorf("expected trailing condition registry JSON to be rejected")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 )
@@ -83,9 +84,7 @@ func LoadSystemRegistry(path string) (*SystemPropertyRegistry, error) {
 // inline fixture를 주입할 수 있도록 LoadSystemRegistry와 분리했다.
 func parseSystemRegistry(data []byte) (*SystemPropertyRegistry, error) {
 	var raw rawSystemRegistry
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := decodeJSONDocument(data, &raw); err != nil {
 		return nil, fmt.Errorf("decode system registry: %w", err)
 	}
 	if raw.Kind != "system_property_registry" {
@@ -128,6 +127,21 @@ func parseSystemRegistry(data []byte) (*SystemPropertyRegistry, error) {
 		return nil, err
 	}
 	return registry, nil
+}
+
+func decodeJSONDocument[T any](data []byte, value *T) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return fmt.Errorf("decode trailing JSON: %w", err)
+	}
+	return nil
 }
 
 // Validate는 Registry 불변식을 검사한다: 정확한 여섯 native type, 비어 있지 않은

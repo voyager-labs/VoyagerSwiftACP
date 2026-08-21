@@ -42,7 +42,7 @@ func Run(args []string) int {
 		return 2
 	}
 	// Default mode is side-effect-free check.
-	write := options.Write || (!options.Write && !options.Check)
+	write := options.Write
 	if err := generate(options, write); err != nil {
 		fmt.Fprintln(os.Stderr, "property-catalog:", err)
 		return 1
