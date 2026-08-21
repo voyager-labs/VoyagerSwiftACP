@@ -146,8 +146,12 @@ extension EntryGridCoordinator {
 
     /// 첫 bind 시점에 이미 설정돼 있던 pending type-scroll target을 소비한다.
     /// unmount 중 생성된 target은 nil→id 엣지가 처음 baseline(lastRenderSnapshot)에 흡수돼
-    /// consumeTypeScrollTargetIfNeeded가 못 잡으므로, section/item이 존재한 뒤 여기서 일회성 소비한다.
+    /// consumeTypeScrollTargetIfNeeded가 못 잡으므로, 첫 layout(scroll 가능 시점)에서 일회성 소비한다.
+    /// 한 번 소비한 뒤에는 post-mount nil→id 엣지는 consumeTypeScrollTargetIfNeeded가 담당하므로
+    /// 이중 소비를 막기 위해 hasConsumedInitialTypeScrollTarget으로 1회만 실행한다.
     func consumeInitialTypeScrollTargetIfNeeded() {
+        guard !hasConsumedInitialTypeScrollTarget else { return }
+        hasConsumedInitialTypeScrollTarget = true
         guard let targetId = state.pendingTypeScrollTargetId else { return }
         scrollToTypeScrollTarget(targetId)
     }

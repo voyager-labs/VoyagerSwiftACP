@@ -639,14 +639,14 @@ extension EVM002ManageEntriesViewPresentationTests {
 
     // MARK: - EVM-002-manage_entries_view_type_scroll_grid_initial_bind_consume
 
-    /// EVM-002-manage_entries_view_type_scroll: grid는 첫 bind 전에 이미 설정된 유효 pending target을
-    /// 첫 렌더 기준으로 소비해 reset하고 selection은 유지한다.
+    /// EVM-002-manage_entries_view_type_scroll: grid는 첫 bind 전에 설정된 유효 pending target을 첫 layout까지
+    /// 보존했다가, layout 이후 scroll이 가능한 시점에 소비해 실제로 스크롤하고 reset한다.
     ///
-    /// - 검증 내용: view가 unmount된 동안 생성된 target도 첫 bind의 section/item 존재 이후 소비되어
-    ///   pendingTypeScrollTargetId가 nil로 reset된다. (unmounted NSCollectionView에서는 scrollToItems가
-    ///   clip offset을 이동시키지 않아 기존 grid consume 테스트와 동일하게 consume 계약만 단언한다.)
+    /// - 검증 내용: bind는 layout 전이라 scrollToItems가 유효하지 않으므로 pending target이 아직 reset되지 않고
+    ///   보존돼야 한다. 첫 layout 이후 소비되어 clip offset이 실제로 이동하고 pending이 nil로 reset된다.
     /// - 사전 조건: pending target id가 bind 이전부터 실제 entry의 id로 설정돼 있다.
-    /// - 기대 결과: target이 index 경로로 매핑 가능하고 pendingTypeScrollTargetId == nil, selectedIds 불변.
+    /// - 기대 결과: bind 직후에는 pending이 보존되고, layout 후 clip offset 이동 + pendingTypeScrollTargetId == nil,
+    ///   selectedIds 불변.
     func testGridConsumesPendingTypeScrollTargetPresentBeforeFirstBind() {
         let entries = (0 ..< 80).map { index in
             EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
@@ -659,10 +659,30 @@ extension EVM002ManageEntriesViewPresentationTests {
         state.pendingTypeScrollTargetId = target.id
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let coordinator = EntryGridCoordinator(store: store)
-        coordinator.bind(to: EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240)))
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        coordinator.bind(to: view)
 
+        // bind는 layout 전이라 유효 스크롤이 불가능 → pending target은 아직 reset되지 않고 보존돼야 한다.
         XCTAssertNotNil(coordinator.indexPathByEntryId[target.id], "target must be mappable to an indexPath")
-        XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after initial-bind consume")
+        XCTAssertEqual(
+            store.state.pendingTypeScrollTargetId,
+            target.id,
+            "pending target must survive bind until first layout",
+        )
+        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged at bind")
+
+        // mounted/laid-out 상태에서 scrollToItems가 실제로 clip offset을 이동시킬 수 있어야 한다.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after first layout consume")
+        XCTAssertNotEqual(gridClipOrigin(view), .zero, "grid must actually scroll to the target after layout")
         XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged")
     }
 
