@@ -573,7 +573,7 @@ func TestEntrySnapshotCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	properties[0].PropertyID = mustRegistryPropertyID("property.mutated")
+	properties[0].PropertyID = "mutated"
 	if snapshot.CanonicalProperties[0].PropertyID != definition.PropertyID {
 		t.Fatal("snapshot aliases property input")
 	}
@@ -624,7 +624,7 @@ func TestEntrySnapshotAggregateBudget(t *testing.T) {
 	}
 	first := mustCanonicalPropertyValue(t, definition, ref.EntryID, TextManyPayload(items))
 	secondDefinition := definition
-	secondDefinition.PropertyID = mustRegistryPropertyID("property.second")
+	secondDefinition.PropertyID = "property.second"
 	secondDefinition.Key = "second"
 	second := mustCanonicalPropertyValue(t, secondDefinition, ref.EntryID, TextManyPayload(items))
 	observedAt := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
@@ -648,7 +648,7 @@ func TestEntrySnapshotNestedBudgetWithinCanonicalRevisionLimit(t *testing.T) {
 	properties := make([]PropertyValue, 256)
 	for index := range properties {
 		definition := validTextDefinition()
-		definition.PropertyID = mustRegistryPropertyID(fmt.Sprintf("property.%03d", index))
+		definition.PropertyID = fmt.Sprintf("property.%03d", index)
 		definition.Key = fmt.Sprintf("p%03d", index)
 		properties[index], err = NewPropertyValue(definition, ref.EntryID, PropertyStateValue, PropertyProvenanceSystem, observedAt, sourceRevision, false, TextPayload(strings.Repeat("x", 16384)))
 		if err != nil {

@@ -31,12 +31,11 @@ type daemonServer interface {
 }
 
 // daemonStore is the seam through which the daemon drives store lifecycle:
-// migrate, workspace bootstrap/restore, catalog seed apply, and close. Migration
-// and seed apply are invoked only through this seam, never around it.
+// migrate, workspace bootstrap/restore, and close. Migration is invoked only
+// through this seam, never around it.
 type daemonStore interface {
 	Migrate(ctx context.Context) error
 	BootstrapOrRestoreWorkspace(ctx context.Context) (domainentry.WorkspaceContext, error)
-	ApplyCatalogSeed(ctx context.Context, wsctx domainentry.WorkspaceContext) error
 	Close() error
 }
 
@@ -80,13 +79,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer, dependencies daemonD
 			_ = store.Close()
 			return 1
 		}
-		wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
-		if err != nil {
-			logger.Printf("startup failed: %v", err)
-			_ = store.Close()
-			return 1
-		}
-		if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		if _, err := store.BootstrapOrRestoreWorkspace(ctx); err != nil {
 			logger.Printf("startup failed: %v", err)
 			_ = store.Close()
 			return 1
@@ -239,10 +232,6 @@ func (s sqliteDaemonStore) Migrate(ctx context.Context) error {
 
 func (s sqliteDaemonStore) BootstrapOrRestoreWorkspace(ctx context.Context) (domainentry.WorkspaceContext, error) {
 	return s.store.BootstrapOrRestoreWorkspace(ctx)
-}
-
-func (s sqliteDaemonStore) ApplyCatalogSeed(ctx context.Context, wsctx domainentry.WorkspaceContext) error {
-	return s.store.ApplyCatalogSeed(ctx, wsctx)
 }
 
 func (s sqliteDaemonStore) Close() error {

@@ -806,11 +806,7 @@ func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.Locator
 }
 
 func canonicalPropertyValue(property entry.Property, entryID string, observedAt time.Time, sourceRevision entry.SourceRevision, provenance entry.PropertyProvenance) (entry.PropertyValue, error) {
-	propertyID, err := entry.RegistryPropertyID(property.Key)
-	if err != nil {
-		return entry.PropertyValue{}, ErrAdapterFailure
-	}
-	definition := entry.PropertyDefinition{PropertyID: propertyID, IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived, Namespace: "adapter", Key: property.Key, DisplayName: property.Key, Cardinality: entry.PropertyCardinalityOne, Provenance: provenance, ValidationRules: []entry.ValidationRule{}}
+	definition := entry.PropertyDefinition{PropertyID: property.Key, Namespace: "adapter", Key: property.Key, DisplayName: property.Key, Cardinality: entry.PropertyCardinalityOne, Provenance: provenance, ValidationRules: []entry.ValidationRule{}}
 	var payload entry.PropertyPayload
 	switch property.Value.Type {
 	case entry.PropertyValueTypeString:

@@ -275,8 +275,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if observedErr != nil {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
-	canonicalProperties := sortCanonicalProperties(item.EntrySnapshot.CanonicalProperties)
-	canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, canonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
+	canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, item.EntrySnapshot.CanonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
 	if snapshotErr != nil {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
@@ -503,8 +502,7 @@ func (service *UnifiedService) consumeScopePage(snapshot mount.MountRegistrySnap
 		if item.EntryRef.SourceInstanceID != scope.sourceRef.SourceInstanceID || item.EntrySnapshot.Availability != result.Availability || !equalCanonicalFreshnessEnvelope(item.EntrySnapshot.Freshness, result.Freshness) {
 			return scopePage{}, source.ErrAdapterFailure
 		}
-		canonicalProperties := sortCanonicalProperties(item.EntrySnapshot.CanonicalProperties)
-		canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, canonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
+		canonicalSnapshot, snapshotErr := domainentry.NewCanonicalEntrySnapshot(item.EntryRef, item.EntrySnapshot.DisplayName, item.EntrySnapshot.ParentRef, item.EntrySnapshot.CanonicalProperties, item.EntrySnapshot.SourceRevision, observedRevision, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.CanonicalModifiedAt, item.EntrySnapshot.Availability, item.EntrySnapshot.Freshness)
 		if snapshotErr != nil {
 			return scopePage{}, source.ErrAdapterFailure
 		}
@@ -859,37 +857,16 @@ func longestMatchingMount(mounts []domainentry.MountRef, path string) *domainent
 	return best
 }
 func propertiesWithinRequest(properties []domainentry.PropertyValue, requested []string) bool {
-	expected := make(map[domainentry.PropertyID]struct{}, len(requested))
-	for _, name := range requested {
-		id, err := domainentry.RegistryPropertyID(name)
-		if err != nil {
+	for propertyIndex, property := range properties {
+		if propertyIndex > 0 && properties[propertyIndex-1].PropertyID >= property.PropertyID {
 			return false
 		}
-		expected[id] = struct{}{}
-	}
-	seen := make(map[domainentry.PropertyID]struct{}, len(properties))
-	for _, property := range properties {
-		if _, ok := expected[property.PropertyID]; !ok {
+		index := sort.SearchStrings(requested, property.PropertyID)
+		if index >= len(requested) || requested[index] != property.PropertyID {
 			return false
 		}
-		if _, duplicate := seen[property.PropertyID]; duplicate {
-			return false
-		}
-		seen[property.PropertyID] = struct{}{}
 	}
 	return true
-}
-
-func sortCanonicalProperties(properties []domainentry.PropertyValue) []domainentry.PropertyValue {
-	if properties == nil {
-		return nil
-	}
-	canonical := make([]domainentry.PropertyValue, len(properties))
-	copy(canonical, properties)
-	sort.Slice(canonical, func(left, right int) bool {
-		return canonical[left].PropertyID.String() < canonical[right].PropertyID.String()
-	})
-	return canonical
 }
 
 func nilResourceAdapter(adapter ResourceAdapter) bool {
