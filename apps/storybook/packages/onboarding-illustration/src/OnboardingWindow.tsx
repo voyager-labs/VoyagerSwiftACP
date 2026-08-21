@@ -1,11 +1,9 @@
-import { Button, TrafficLights } from "@voyager-labs/design-foundation"
 import { useEffect, useState } from "react"
 import type { FC, ReactNode } from "react"
-import "@voyager-labs/design-foundation/tokens.css"
+import { OnboardingLayout } from "./OnboardingLayout"
 import { AiProviderStep, CompleteStep, PermissionsStep } from "./OnboardingSteps"
 import type { OnboardingState, OnboardingStep, OnboardingWindowProps } from "./model"
-import "./styles/onboarding-shell.css"
-import "./styles/onboarding-steps.css"
+import "./onboarding-styles"
 
 const STEPS: readonly OnboardingStep[] = ["welcome", "permissions", "aiProvider", "complete"]
 
@@ -78,64 +76,23 @@ export const OnboardingWindow: FC<OnboardingWindowProps> = ({ state }) => {
   const disabledMessage = nextDisabledMessage(state, step)
 
   return (
-    <div data-design-foundation data-onboarding-illustration>
-      <main className="onb-stage">
-        <section className="onb-window" aria-label="Voyager Onboarding">
-          <div className="onb-window-controls">
-            <TrafficLights />
-          </div>
-
-          <div className="onb-shell">
-            <nav className="onb-topbar" aria-label="Onboarding navigation">
-              <div className="onb-side-slot is-leading">
-                <Button
-                  variant="subtle"
-                  disabled={!canGoBack}
-                  onClick={() => setStep(STEPS[currentIndex - 1] ?? step)}
-                >
-                  Back
-                </Button>
-              </div>
-
-              <ol className="onb-progress" aria-label="Onboarding progress">
-                {STEPS.map((candidate) => (
-                  <li
-                    key={candidate}
-                    className={candidate === step ? "is-active" : ""}
-                    aria-current={candidate === step ? "step" : undefined}
-                  />
-                ))}
-              </ol>
-
-              <div className="onb-side-slot is-trailing">
-                <Button
-                  variant="primary"
-                  disabled={step === "complete" ? state.completePhase === "opening" : !canGoNext}
-                  onClick={() => {
-                    if (step !== "complete") {
-                      setStep(STEPS[currentIndex + 1] ?? step)
-                    }
-                  }}
-                >
-                  {step === "complete" ? "Complete (Enter)" : "Next (Enter)"}
-                </Button>
-              </div>
-            </nav>
-
-            {disabledMessage ? <p className="onb-disabled-message">{disabledMessage}</p> : null}
-
-            <div className="onb-content">
-              <header className="onb-summary">
-                <span>Voyager</span>
-                <h1>{copy.title}</h1>
-                <p>{copy.subtitle}</p>
-              </header>
-              <div className="onb-step-content">{stepContent(state, step)}</div>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
+    <OnboardingLayout
+      steps={STEPS}
+      currentStep={step}
+      canGoBack={canGoBack}
+      nextDisabled={step === "complete" ? state.completePhase === "opening" : !canGoNext}
+      onBack={() => setStep(STEPS[currentIndex - 1] ?? step)}
+      onNext={() => {
+        if (step !== "complete") {
+          setStep(STEPS[currentIndex + 1] ?? step)
+        }
+      }}
+      title={copy.title}
+      subtitle={copy.subtitle}
+      disabledMessage={disabledMessage}
+    >
+      {stepContent(state, step)}
+    </OnboardingLayout>
   )
 }
 
