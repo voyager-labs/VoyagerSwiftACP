@@ -6,13 +6,7 @@ import { ComposerPropertyPicker } from "./ComposerPropertyPicker"
 import { ComposerScopeSummaryChip } from "./ComposerScopeSummaryChip"
 import { ComposerScopeTokenChip } from "./ComposerScopeTokenChip"
 import { ComposerValuePicker } from "./ComposerValuePicker"
-import type {
-  ComposerClearMode,
-  ComposerFixture,
-  ComposerSaveMode,
-  ComposerScopeItem,
-  ComposerScopePicker,
-} from "./composer-fixtures"
+import type { ComposerFixture, ComposerScopeItem, ComposerScopePicker } from "./composer-fixtures"
 
 export type CollectionComposerProps = {
   readonly fixture: ComposerFixture
@@ -20,6 +14,7 @@ export type CollectionComposerProps = {
   readonly onRedo?: () => void
   readonly onClear?: () => void
   readonly onSave?: () => void
+  readonly onQueryChange?: (query: string) => void
   readonly onEditScope?: () => void
   readonly onScopeSelect?: (item: string) => void
   readonly onScopeRemove?: (path: string) => void
@@ -41,26 +36,13 @@ export type CollectionComposerProps = {
 // 네이티브 ComposerFeedbackToastView는 종류와 무관하게 경고 삼각형 하나만 렌더
 const transientFeedbackIcon = "exclamationmark.triangle.fill"
 
-const clearButtonContent = (
-  mode: ComposerClearMode,
-): { readonly symbol: string; readonly label: string } => ({
-  symbol: "xmark.square",
-  label: mode === "discard" ? "Discard" : "Clear",
-})
-
-const saveButtonContent = (
-  mode: ComposerSaveMode,
-): { readonly symbol: string; readonly label: string } =>
-  mode === "saveAs"
-    ? { symbol: "square.and.arrow.down", label: "Save As" }
-    : { symbol: "tray.and.arrow.down", label: "Save" }
-
 export const CollectionComposer: FC<CollectionComposerProps> = ({
   fixture,
   onUndo,
   onRedo,
   onClear,
   onSave,
+  onQueryChange,
   onEditScope,
   onScopeSelect,
   onScopeRemove,
@@ -78,8 +60,9 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
   onValueClick,
   onValueCommit,
 }) => {
-  const clearContent = clearButtonContent(fixture.clearMode ?? "clear")
-  const saveContent = saveButtonContent(fixture.saveMode ?? "save")
+  const isClearEnabled =
+    !fixture.isProcessing &&
+    (fixture.query.trim().length > 0 || fixture.scopes.length > 0 || fixture.conditions.length > 0)
 
   return (
     <section className="collection-composer" aria-label="Collection Composer">
@@ -100,35 +83,54 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
           <input
             aria-label="Collection query"
             value={fixture.query}
-            readOnly
+            readOnly={onQueryChange == null}
             placeholder="Describe the collection you want..."
             title={fixture.query}
+            onChange={(event) => onQueryChange?.(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && fixture.query.trim().length > 0) {
+                event.preventDefault()
+                onSubmit?.()
+              }
+            }}
           />
-          <ComposerSymbolButton
-            symbol={fixture.isProcessing ? "stop.fill" : "arrow.right"}
-            label={fixture.isProcessing ? "Stop" : "Submit"}
-            accent
-            disabled={!fixture.isProcessing && fixture.query.trim().length === 0}
-            onClick={onSubmit}
-          />
+          {fixture.isProcessing && (
+            <ComposerSymbolButton symbol="stop.fill" label="Stop" accent onClick={onSubmit} />
+          )}
         </label>
-        <ComposerTextButton
-          symbol={clearContent.symbol}
-          label={clearContent.label}
-          disabled={
-            fixture.isProcessing ||
-            (fixture.query.trim().length === 0 &&
-              fixture.scopes.length === 0 &&
-              fixture.conditions.length === 0)
-          }
-          onClick={onClear}
-        />
-        <ComposerTextButton
-          symbol={saveContent.symbol}
-          label={saveContent.label}
+        <ComposerSymbolButton
+          symbol="square.and.arrow.down"
+          label="Save"
           disabled={!fixture.canSave || fixture.isProcessing}
           onClick={onSave}
         />
+        <details className="collection-composer-overflow" open={fixture.overflowOpen}>
+          <summary aria-label="More actions">
+            <SFSymbol name="ellipsis" size={13} weight={500} />
+          </summary>
+          <div className="collection-composer-overflow-menu" role="menu">
+            <button type="button" role="menuitem" disabled={!isClearEnabled} onClick={onClear}>
+              Clear
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!fixture.canDiscard || fixture.isProcessing}
+              onClick={onClear}
+            >
+              Discard
+            </button>
+            <div className="collection-composer-overflow-separator" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!fixture.canSave || fixture.isProcessing}
+              onClick={onSave}
+            >
+              Save As…
+            </button>
+          </div>
+        </details>
       </div>
 
       <div className="collection-composer-separator" />
@@ -244,23 +246,6 @@ const ComposerSymbolButton: FC<{
     onClick={onClick}
   >
     <SFSymbol name={symbol} size={compact ? 10 : accent ? 9 : 13} weight={accent ? 400 : 500} />
-  </button>
-)
-
-const ComposerTextButton: FC<{
-  readonly symbol: string
-  readonly label: string
-  readonly disabled?: boolean
-  readonly onClick?: () => void
-}> = ({ symbol, label, disabled, onClick }) => (
-  <button
-    type="button"
-    className="collection-composer-text-button"
-    disabled={disabled}
-    onClick={onClick}
-  >
-    <SFSymbol name={symbol} size={11} weight={500} />
-    {label}
   </button>
 )
 

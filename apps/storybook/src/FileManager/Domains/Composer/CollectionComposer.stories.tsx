@@ -32,26 +32,11 @@ const scopeSummary = (scopes: readonly string[], excludedScopes: readonly string
 }
 
 const baseDraft = (): DraftState => ({
-  query: "Find PDFs modified this month",
-  scopes: ["/VoyagerFixtures/Documents"],
+  query: composerFixtures.populatedDraft.query,
+  scopes: composerFixtures.populatedDraft.scopes,
   excludedScopes: [],
   includeSubfolders: true,
-  conditions: [
-    {
-      id: "file_kind",
-      property: "Kind",
-      propertySymbol: "tag",
-      operator: "Contains any",
-      value: "PDF",
-    },
-    {
-      id: "modification_date",
-      property: "Content modification date",
-      propertySymbol: "calendar.badge.clock",
-      operator: "Is greater than",
-      value: "2026-08-01",
-    },
-  ],
+  conditions: composerFixtures.populatedDraft.conditions,
 })
 
 const ComposerSelectionFlow = ({
@@ -208,7 +193,7 @@ const ComposerSelectionFlow = ({
   }
 
   const selectScope = (item: string) => {
-    const resolved = item.startsWith("/") ? item : `/VoyagerFixtures/${item}`
+    const resolved = item.startsWith("/") ? item : `/Fixture/${item}`
     // 네이티브 pushHistory 계약: 동일 scope 재선택 시 빈 Undo 스냅샷을 만들지 않는다
     if (draft.scopes.length !== 1 || draft.scopes[0] !== resolved) {
       commit({ ...draft, scopes: [resolved] })
@@ -304,10 +289,10 @@ const ComposerSelectionFlow = ({
                   rootOnly: draft.scopes.length === 0,
                   // 네이티브 makeScopeSections: 행 상태를 현재 selection에서 파생한다
                   items: [
-                    "/VoyagerFixtures/Documents",
-                    "/VoyagerFixtures/Projects",
-                    "/VoyagerFixtures/Projects/Legacy",
-                    "/VoyagerFixtures/Inbox",
+                    "/Fixture/Documents",
+                    "/Fixture/Projects",
+                    "/Fixture/Projects/Legacy",
+                    "/Fixture/Inbox",
                   ].map((path) => {
                     // 네이티브 resolvedCandidateState: direct base는 included+clearDirectRule,
                     // 상속 하위는 subfolders on일 때만 included(상속)이며 exclude를 제공한다
@@ -329,7 +314,7 @@ const ComposerSelectionFlow = ({
                       depth: Math.max(
                         0,
                         path.split("/").filter(Boolean).length -
-                          "/VoyagerFixtures".split("/").filter(Boolean).length -
+                          "/Fixture".split("/").filter(Boolean).length -
                           1,
                       ),
                       status: isExcluded
@@ -357,6 +342,7 @@ const ComposerSelectionFlow = ({
       onRedo={redo}
       onClear={clear}
       onSave={save}
+      onQueryChange={(query) => setDraft((current) => ({ ...current, query }))}
       onEditScope={() => {
         setStep("complete")
         setScopePickerOpen((open) => !open)
@@ -502,6 +488,13 @@ const meta = {
   tags: ["autodocs"],
   parameters: { layout: "fullscreen" },
   args: { fixture: composerFixtures.emptyDraft },
+  decorators: [
+    (Story) => (
+      <div className="collection-composer-story-frame">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof CollectionComposer>
 
 export default meta
@@ -509,8 +502,7 @@ type Story = StoryObj<typeof meta>
 
 export const EmptyDraft: Story = {}
 export const PopulatedDraft: Story = { args: { fixture: composerFixtures.populatedDraft } }
-export const DiscardMode: Story = { args: { fixture: composerFixtures.discardMode } }
-export const SaveAsMode: Story = { args: { fixture: composerFixtures.saveAsMode } }
+export const OverflowMenu: Story = { args: { fixture: composerFixtures.overflowMenu } }
 export const SavedConfirmation: Story = { args: { fixture: composerFixtures.savedConfirmation } }
 export const CompactNarrow: Story = {
   args: { fixture: composerFixtures.populatedDraft },

@@ -68,10 +68,6 @@ export type ComposerScopePicker = {
   readonly feedback?: ComposerScopeFeedback
 }
 
-// 네이티브 ComposerTopRowView와 동일하게 한 버튼이 모드에 따라 Clear/Discard, Save/Save As 로 전환
-export type ComposerClearMode = "clear" | "discard"
-export type ComposerSaveMode = "save" | "saveAs"
-
 export type ComposerTransientFeedback = {
   // 네이티브 ComposerTransientFeedback는 info/error만 지원
   readonly type: "info" | "error"
@@ -85,8 +81,8 @@ export type ComposerFixture = {
   readonly canUndo: boolean
   readonly canRedo: boolean
   readonly canSave: boolean
-  readonly clearMode?: ComposerClearMode
-  readonly saveMode?: ComposerSaveMode
+  readonly canDiscard?: boolean
+  readonly overflowOpen?: boolean
   readonly isProcessing?: boolean
   readonly transientFeedback?: ComposerTransientFeedback
   readonly picker?:
@@ -97,22 +93,15 @@ export type ComposerFixture = {
 }
 
 const populatedDraft = {
-  query: "Find PDFs modified this month",
-  scopes: ["/VoyagerFixtures/Documents"],
+  query: "Find files named Voyager",
+  scopes: ["/Fixture/Documents"],
   conditions: [
     {
-      id: "file_kind",
-      property: "Kind",
-      propertySymbol: "tag",
-      operator: "Contains any",
-      value: "PDF",
-    },
-    {
-      id: "modification_date",
-      property: "Content modification date",
-      propertySymbol: "calendar.badge.clock",
-      operator: "Is greater than",
-      value: "2026-08-01",
+      id: "name_stem",
+      property: "Name",
+      propertySymbol: "textformat",
+      operator: "Is",
+      value: "Voyager",
     },
   ],
   canUndo: true,
@@ -130,30 +119,27 @@ export const composerFixtures = {
     canSave: false,
   },
   populatedDraft,
-  discardMode: {
+  overflowMenu: {
     ...populatedDraft,
-    clearMode: "discard" as const,
-  },
-  saveAsMode: {
-    ...populatedDraft,
-    saveMode: "saveAs" as const,
+    canDiscard: true,
+    overflowOpen: true,
   },
   propertyPickerOpen: {
     ...populatedDraft,
     picker: {
       kind: "property",
       items: composerPropertyOptions,
-      existingKeys: ["file_kind", "modification_date"],
+      existingKeys: ["name_stem"],
     },
   },
   operatorPickerOpen: {
     ...populatedDraft,
     picker: {
       kind: "operator",
-      conditionID: "file_kind",
-      selectedCode: "any",
+      conditionID: "name_stem",
+      selectedCode: "eq",
       options:
-        composerPropertyOptions.find((property) => property.key === "file_kind")?.operators ?? [],
+        composerPropertyOptions.find((property) => property.key === "name_stem")?.operators ?? [],
     },
   },
   valuePickerOpen: {
@@ -188,7 +174,7 @@ export const composerFixtures = {
       includeSubfolders: true,
       items: [
         {
-          path: "/VoyagerFixtures/Documents",
+          path: "/Fixture/Documents",
           depth: 0,
           status: "included",
           kind: "base",
@@ -196,7 +182,7 @@ export const composerFixtures = {
           actions: ["clearDirectRule"],
         },
         {
-          path: "/VoyagerFixtures/Projects",
+          path: "/Fixture/Projects",
           depth: 0,
           status: "available",
           kind: "candidate",
@@ -215,7 +201,7 @@ export const composerFixtures = {
       includeSubfolders: true,
       items: [
         {
-          path: "/VoyagerFixtures/Documents",
+          path: "/Fixture/Documents",
           depth: 0,
           status: "included",
           kind: "base",
@@ -223,7 +209,7 @@ export const composerFixtures = {
           actions: ["clearDirectRule"],
         },
         {
-          path: "/VoyagerFixtures/Projects",
+          path: "/Fixture/Projects",
           depth: 0,
           status: "included",
           kind: "base",
@@ -231,7 +217,7 @@ export const composerFixtures = {
           actions: ["clearDirectRule"],
         },
         {
-          path: "/VoyagerFixtures/Projects/Legacy",
+          path: "/Fixture/Projects/Legacy",
           depth: 1,
           status: "excluded",
           kind: "exception",
@@ -251,7 +237,7 @@ export const composerFixtures = {
       includeSubfolders: true,
       items: [
         {
-          path: "/VoyagerFixtures/Documents",
+          path: "/Fixture/Documents",
           depth: 0,
           status: "included",
           kind: "base",
@@ -259,16 +245,16 @@ export const composerFixtures = {
           actions: ["clearDirectRule"],
         },
         {
-          path: "/VoyagerFixtures/Projects",
+          path: "/Fixture/Projects",
           depth: 0,
           status: "included",
           kind: "base",
           ruleSource: "inherited",
-          inheritedFrom: "/VoyagerFixtures",
+          inheritedFrom: "/Fixture",
           actions: [],
         },
         {
-          path: "/VoyagerFixtures/Inbox",
+          path: "/Fixture/Inbox",
           depth: 0,
           status: "available",
           kind: "candidate",
