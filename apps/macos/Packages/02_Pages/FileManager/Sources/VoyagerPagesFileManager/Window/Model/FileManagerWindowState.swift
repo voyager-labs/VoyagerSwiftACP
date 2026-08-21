@@ -236,7 +236,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
-        isFocused = true
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
@@ -397,7 +397,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
-        isFocused = true
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle

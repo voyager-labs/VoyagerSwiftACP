@@ -614,6 +614,51 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertEqual(store.state.windows[id: firstID]?.window.isFocused, false)
     }
 
+    /// VOY-618: 새 윈도우 append는 native key callback 전에 포커스 소유권을 획득하지 않는다.
+    /// - 검증 내용: 기존 key window만 focused이고 새 pending window는 unfocused
+    /// - 사전 조건: 기존 focused window 한 개와 고정된 새 window ID
+    /// - 기대 결과: windowBecameKey 전까지 isFocused == true인 window는 기존 window 하나뿐임
+    func testOpenWindowSessionDoesNotCreateSecondFocusOwnerBeforeBecameKey() async {
+        let existingID = UUID()
+        let newID = UUID()
+        var initialState = makeState(
+            focusedID: existingID,
+            windows: [(existingID, Spec.focusedPath)],
+        )
+        let store = makeStore(initialState: initialState, uuid: newID) {
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
+        }
+        // store.exhaustivity = .off: 새 윈도우 준비 effect보다 key callback 전 focus ownership만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: Spec.backgroundPath)))
+
+        XCTAssertEqual(store.state.windows[id: existingID]?.window.isFocused, true)
+        XCTAssertEqual(store.state.windows[id: newID]?.window.isFocused, false)
+        XCTAssertEqual(store.state.windows.filter(\.window.isFocused).count, 1)
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// VOY-618: key window resign은 해당 윈도우의 포커스 소유권을 제거한다.
+    /// - 검증 내용: focusedWindowID와 child isFocused를 함께 해제
+    /// - 사전 조건: 단일 key window
+    /// - 기대 결과: focusedWindowID == nil, isFocused == false
+    func testWindowResignedKeyClearsFocusOwnership() async {
+        let windowID = UUID()
+        var initialState = makeState(
+            focusedID: windowID,
+            windows: [(windowID, Spec.focusedPath)],
+        )
+        let store = makeStore(initialState: initialState)
+
+        await store.send(.event(.windowResignedKey(windowID))) {
+            $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
+        }
+    }
+
     // MARK: - CTM-001-open_new_content_tab
 
     // MARK: - FMW-001-quit_voyager
@@ -1238,7 +1283,9 @@ enum WindowManagerTestSupport {
     ) -> WindowManagerFeature.State {
         var state = WindowManagerFeature.State()
         state.windows = .init(uniqueElements: windows.map { id, path in
-            WindowSessionState(id: id, window: .makeInitial(path: path))
+            var window = FileManagerWindowFeature.State.makeInitial(path: path)
+            window.isFocused = id == focusedID
+            return WindowSessionState(id: id, window: window)
         })
         state.focusedWindowID = focusedID
         return state

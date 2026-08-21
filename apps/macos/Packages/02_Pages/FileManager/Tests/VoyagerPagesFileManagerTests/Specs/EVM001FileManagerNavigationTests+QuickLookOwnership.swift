@@ -12,6 +12,24 @@ import XCTest
 /// 전역 Quick Look 패널 동기화가 실제 client에 도달하도록 gate한다.
 @MainActor
 extension EVM001FileManagerNavigationTests {
+    // MARK: - AC2: 윈도우는 key callback 전까지 포커스되지 않는다
+
+    /// AC2: 기본, 복원, 외부 예약 윈도우 state는 모두 비포커스 상태로 생성된다.
+    func testWindowStateFactoriesStartUnfocused() throws {
+        let restoredTabs = ContentTabState.withHomeTab()
+        let externalState = try XCTUnwrap(FileManagerFeature.State.makeExternalInitial(reservations: [
+            ExternalContentTabReservation(
+                id: ContentTabID(rawValue: "external"),
+                anchor: .directory(path: "/external"),
+            ),
+        ]))
+
+        XCTAssertFalse(FileManagerFeature.State().isFocused)
+        XCTAssertFalse(FileManagerFeature.State.makeInitial(path: nil).isFocused)
+        XCTAssertFalse(FileManagerFeature.State.makeInitial(path: nil, contentTabs: restoredTabs).isFocused)
+        XCTAssertFalse(externalState.isFocused)
+    }
+
     // MARK: - helpers
 
     private func contentWithSelection() -> FileManagerContentFeature.State {
