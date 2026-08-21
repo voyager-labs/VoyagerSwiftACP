@@ -8,7 +8,7 @@ public final class KeyCommandHostingView: NSView {
 
     // MARK: - NSTextInputClient 상태 저장소
 
-    /// 조합 중인 marked text. 커밋(`insertText`) 시 해제된다.
+    /// 조합 중인 marked text. 커밋(`insertText`/`unmarkText`) 시 해제된다.
     private var markedText: String = ""
     /// marked text 내 현재 선택 범위 (marked 문자열 UTF-16 기준으로 clamp된 값).
     private var markedSelectedRange: NSRange = .init(location: 0, length: 0)
@@ -85,14 +85,7 @@ public final class KeyCommandHostingView: NSView {
 
 extension KeyCommandHostingView: @MainActor NSTextInputClient {
     public func insertText(_ object: Any, replacementRange _: NSRange) {
-        let text = textValue(from: object)
-        // 어떤 경우든 marked state를 먼저 해제한다 (composition 종료).
-        clearMarkedState()
-        guard let text else { return }
-        // 정확히 한 유효 그래핌 커밋만 `onTextInput`으로 전달한다.
-        if CommittedTypeScrollInput.character(from: text) != nil {
-            onTextInput?(text)
-        }
+        commitText(textValue(from: object))
     }
 
     public func setMarkedText(_ object: Any, selectedRange: NSRange, replacementRange _: NSRange) {
@@ -112,7 +105,8 @@ extension KeyCommandHostingView: @MainActor NSTextInputClient {
     }
 
     public func unmarkText() {
-        clearMarkedState()
+        let text = markedText
+        commitText(text)
     }
 
     public func selectedRange() -> NSRange {
@@ -158,6 +152,12 @@ extension KeyCommandHostingView: @MainActor NSTextInputClient {
     }
 
     // MARK: - 내부 헬퍼
+
+    private func commitText(_ text: String?) {
+        clearMarkedState()
+        guard let text, let committedText = CommittedTypeScrollInput.character(from: text) else { return }
+        onTextInput?(committedText)
+    }
 
     /// marked 상태를 해제한다.
     private func clearMarkedState() {

@@ -3,7 +3,7 @@ import AppKit
 import XCTest
 
 /// `KeyCommandHostingView`의 `NSTextInputClient` 상태 머신과 `keyDown` 라우팅 계약을 고정한다.
-/// - client 계약: `setMarkedText`는 marked state만 갱신, `insertText`만 커밋 후 `onTextInput`을 호출.
+/// - client 계약: `setMarkedText`는 marked state만 갱신, `insertText`/`unmarkText`가 커밋 후 `onTextInput`을 호출.
 /// - 라우팅: printable 무수정 문자만 `interpretKeyEvents`로, 그 외(space/함수키/단축키)는 `onKeyDown`으로.
 @MainActor
 final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
@@ -33,25 +33,6 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
         XCTAssertFalse(view.hasMarkedText())
         XCTAssertEqual(view.markedRange().location, NSNotFound)
         XCTAssertEqual(committed, ["가"])
-    }
-
-    /// (i/ii) `unmarkText()`는 marked state를 해제하고 callback을 호출하지 않는다.
-    func testUnmarkTextClearsMarkedStateWithoutCallback() {
-        let view = KeyCommandHostingView()
-        var committed: [String] = []
-        view.onTextInput = { committed.append($0) }
-
-        view.setMarkedText(
-            "ㄱ",
-            selectedRange: NSRange(location: 0, length: 1),
-            replacementRange: NSRange(location: NSNotFound, length: 0),
-        )
-        XCTAssertTrue(view.hasMarkedText())
-
-        view.unmarkText()
-        XCTAssertFalse(view.hasMarkedText())
-        XCTAssertEqual(view.markedRange().location, NSNotFound)
-        XCTAssertEqual(committed.count, 0)
     }
 
     /// (ii) `setMarkedText`는 빈 문자열이면 composition을 종료한다.
@@ -422,6 +403,119 @@ final class EVM002KeyCommandHostingViewTextInputTests: XCTestCase {
 extension EVM002KeyCommandHostingViewTextInputTests {
     // MARK: - EVM-002-type_scroll_text_input
 
+    /// EVM-002-type_scroll_text_input: `unmarkText`가 유효한 marked text를 한 번 커밋한다.
+    /// 입력기가 `insertText` 대신 `unmarkText`로 현재 조합을 확정하는 경로를 검증한다.
+    /// - 검증 내용: 검증된 문자열 callback 횟수와 marked/selected range 초기화.
+    /// - 사전 조건: 선택 범위가 있는 유효한 단일 그래핌 marked text가 설정되어 있다.
+    /// - 기대 결과: 문자열이 정확히 한 번 전달되고 조합 상태와 범위가 모두 해제된다.
+    func testUnmarkTextCommitsValidMarkedTextOnceAndClearsRanges() {
+        let view = KeyCommandHostingView()
+        var committed: [String] = []
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.unmarkText()
+
+        XCTAssertEqual(committed, ["가"])
+        XCTAssertFalse(view.hasMarkedText())
+        XCTAssertEqual(view.markedRange(), NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
+    }
+
+    /// EVM-002-type_scroll_text_input: attributed marked text도 plain string으로 한 번 커밋한다.
+    /// 속성이 포함된 IME 조합 문자열의 실제 텍스트 값이 보존되는 경로를 검증한다.
+    /// - 검증 내용: `NSAttributedString.string` 추출값과 callback 횟수.
+    /// - 사전 조건: attributed 단일 그래핌 marked text가 설정되어 있다.
+    /// - 기대 결과: plain string만 정확히 한 번 전달되고 marked state가 해제된다.
+    func testUnmarkTextCommitsAttributedMarkedTextAsPlainStringOnce() {
+        let view = KeyCommandHostingView()
+        var committed: [String] = []
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            NSAttributedString(string: "나", attributes: [.foregroundColor: NSColor.red]),
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.unmarkText()
+
+        XCTAssertEqual(committed, ["나"])
+        XCTAssertFalse(view.hasMarkedText())
+    }
+
+    /// EVM-002-type_scroll_text_input: 유효하지 않은 marked text는 커밋하지 않고 해제한다.
+    /// 빈 값, 다중 그래핌, 공백, 제어 문자 조합의 안전한 종료 경로를 검증한다.
+    /// - 검증 내용: `CommittedTypeScrollInput` 거부 입력의 callback과 marked state.
+    /// - 사전 조건: 각 유효하지 않은 문자열을 marked text로 설정한다.
+    /// - 기대 결과: callback 없이 조합 상태가 해제된다.
+    func testUnmarkTextRejectsInvalidMarkedTextAndClearsState() {
+        for text in ["", "가나", " ", "\u{001F}"] {
+            let view = KeyCommandHostingView()
+            var committed: [String] = []
+            view.onTextInput = { committed.append($0) }
+            view.setMarkedText(
+                text,
+                selectedRange: NSRange(location: 0, length: (text as NSString).length),
+                replacementRange: NSRange(location: NSNotFound, length: 0),
+            )
+
+            view.unmarkText()
+
+            XCTAssertTrue(committed.isEmpty, "unexpected commit for \(text.debugDescription)")
+            XCTAssertFalse(view.hasMarkedText(), "marked state remained for \(text.debugDescription)")
+            XCTAssertEqual(view.markedRange(), NSRange(location: NSNotFound, length: 0))
+            XCTAssertEqual(view.selectedRange(), NSRange(location: 0, length: 0))
+        }
+    }
+
+    /// EVM-002-type_scroll_text_input: `insertText` 뒤의 `unmarkText`는 중복 커밋하지 않는다.
+    /// 일부 입력기가 조합 확정 뒤 추가로 unmark를 보내는 경로를 검증한다.
+    /// - 검증 내용: 두 protocol 호출 뒤 callback 누적 횟수.
+    /// - 사전 조건: 유효한 marked text를 같은 문자열로 `insertText` 커밋한다.
+    /// - 기대 결과: 후속 `unmarkText`는 no-op이고 문자열은 한 번만 전달된다.
+    func testUnmarkTextAfterInsertTextDoesNotDoubleCommit() {
+        let view = KeyCommandHostingView()
+        var committed: [String] = []
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.insertText("가", replacementRange: NSRange(location: NSNotFound, length: 0))
+        view.unmarkText()
+
+        XCTAssertEqual(committed, ["가"])
+        XCTAssertFalse(view.hasMarkedText())
+    }
+
+    /// EVM-002-type_scroll_text_input: 반복 `unmarkText`는 첫 커밋 뒤 멱등이다.
+    /// 입력기가 같은 조합 종료 신호를 중복 전달하는 경로를 검증한다.
+    /// - 검증 내용: 반복 호출 뒤 callback 누적 횟수와 marked state.
+    /// - 사전 조건: 유효한 marked text가 한 번 설정되어 있다.
+    /// - 기대 결과: 첫 호출만 커밋하고 이후 호출은 callback 없는 no-op이다.
+    func testRepeatedUnmarkTextIsIdempotent() {
+        let view = KeyCommandHostingView()
+        var committed: [String] = []
+        view.onTextInput = { committed.append($0) }
+        view.setMarkedText(
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+
+        view.unmarkText()
+        view.unmarkText()
+
+        XCTAssertEqual(committed, ["가"])
+        XCTAssertFalse(view.hasMarkedText())
+    }
+
     /// EVM-002-type_scroll_text_input: Escape command가 진행 중인 IME 조합을 취소한다.
     /// 입력 시스템이 Escape를 `cancelOperation:`으로 전달하는 경로를 검증한다.
     /// - 검증 내용: marked text와 selected/marked range가 함께 초기화된다.
@@ -434,8 +528,8 @@ extension EVM002KeyCommandHostingViewTextInputTests {
         view.onKeyDown = { keyDowns.append($0) }
         view.onTextInput = { committed.append($0) }
         view.setMarkedText(
-            "가나",
-            selectedRange: NSRange(location: 1, length: 1),
+            "가",
+            selectedRange: NSRange(location: 0, length: 1),
             replacementRange: NSRange(location: NSNotFound, length: 0),
         )
 
