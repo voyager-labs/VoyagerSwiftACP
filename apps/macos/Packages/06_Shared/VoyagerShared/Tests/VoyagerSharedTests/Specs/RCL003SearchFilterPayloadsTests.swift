@@ -203,4 +203,92 @@ final class RCL003SearchFilterPayloadsTests: XCTestCase {
         XCTAssertEqual(roundTripped.tags?.first?.name, "Work")
         XCTAssertEqual(roundTripped.creatorApplication, "Preview")
     }
+
+    /// RCL-003-retrieve_entries_with_filters: search entry payload는 isPackage를 encode→decode round-trip 보존함
+    /// package 분류가 helper 검색 페이로드 직렬화에서 손실되지 않는지 검증한다.
+    /// - 검증 내용: `SearchEntryPayload` encode/decode 후 isPackage 동등성 유지
+    /// - 사전 조건: isPackage: true로 설정된 directory payload
+    /// - 기대 결과: decode 결과가 원본 payload와 동일하고 isPackage가 true로 유지됨
+    func testSearchEntryPayloadRoundTripsIsPackageTrue() throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let payload = SearchEntryPayload(
+            name: "Voyager.app",
+            fullPath: "/tmp/Voyager.app",
+            isFolder: true,
+            isHidden: false,
+            size: 0,
+            modifiedDate: date,
+            fileExtension: "app",
+            createdDate: date,
+            addedDate: date,
+            lastOpenedDate: date,
+            kind: "Folder",
+            creatorApplication: nil,
+            tags: nil,
+            supplementaryMetadata: nil,
+            isPackage: true,
+        )
+
+        let roundTripped = try JSONDecoder().decode(
+            SearchEntryPayload.self,
+            from: JSONEncoder().encode(payload),
+        )
+
+        XCTAssertEqual(roundTripped, payload)
+        XCTAssertTrue(roundTripped.isPackage)
+    }
+
+    /// RCL-003-retrieve_entries_with_filters: legacy search entry payload는 isPackage 누락을 false로 해석함
+    /// 기존 helper 검색 응답 페이로드와의 backward compatibility를 검증한다.
+    /// - 검증 내용: `SearchEntryPayload` decode 시 isPackage key가 없으면 false로 보정
+    /// - 사전 조건: isPackage key를 제외한 legacy directory payload
+    /// - 기대 결과: decode가 성공하고 isPackage가 false로 해석됨
+    func testSearchEntryPayloadDecodesMissingIsPackageAsFalse() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "name": "Voyager.app",
+            "fullPath": "/tmp/Voyager.app",
+            "isFolder": true,
+            "isHidden": false,
+            "size": 0,
+            "modifiedDate": 1_700_000_000,
+            "fileExtension": "app",
+            "createdDate": 1_700_000_000,
+            "addedDate": 1_700_000_000,
+            "lastOpenedDate": 1_700_000_000,
+            "kind": "Folder",
+            "creatorApplication": NSNull(),
+            "tags": NSNull(),
+            "supplementaryMetadata": NSNull(),
+        ])
+
+        let decoded = try JSONDecoder().decode(SearchEntryPayload.self, from: data)
+
+        XCTAssertFalse(decoded.isPackage)
+        XCTAssertTrue(decoded.isFolder)
+    }
+
+    /// RCL-003-retrieve_entries_with_filters: legacy search entry payload는 필수 key 누락 시 여전히 throw함
+    /// backward compatibility가 신규 key로만 한정되고 필수 legacy key는 여전히 보호되는지 검증한다.
+    /// - 검증 내용: `SearchEntryPayload` decode 시 fullPath key가 없으면 실패
+    /// - 사전 조건: fullPath를 제외한 legacy payload
+    /// - 기대 결과: decode가 throw하고 isPackage false 보정이 필수 key 검증을 우회하지 않음
+    func testSearchEntryPayloadDecodeThrowsWhenRequiredLegacyKeyMissing() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "name": "Voyager.app",
+            "isFolder": true,
+            "isHidden": false,
+            "size": 0,
+            "modifiedDate": 1_700_000_000,
+            "fileExtension": "app",
+            "createdDate": 1_700_000_000,
+            "addedDate": 1_700_000_000,
+            "lastOpenedDate": 1_700_000_000,
+            "kind": "Folder",
+            "creatorApplication": NSNull(),
+            "tags": NSNull(),
+            "supplementaryMetadata": NSNull(),
+        ])
+
+        XCTAssertThrowsError(try JSONDecoder().decode(SearchEntryPayload.self, from: data))
+    }
 }
