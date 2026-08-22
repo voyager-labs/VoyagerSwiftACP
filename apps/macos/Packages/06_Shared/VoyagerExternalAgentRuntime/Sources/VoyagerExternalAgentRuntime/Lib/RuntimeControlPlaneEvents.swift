@@ -145,6 +145,7 @@ extension RuntimeControlPlane {
               event.source == expectedSource,
               event.providerEventID.rawValue.isRuntimeBounded,
               event.idempotencyKey.rawValue.isRuntimeBounded,
+              event.sequence != UInt64.max,
               let session = sessions[host],
               event.runReference == session.stored.runReference
         else { throw RuntimeHostError.malformedAdapterResponse }

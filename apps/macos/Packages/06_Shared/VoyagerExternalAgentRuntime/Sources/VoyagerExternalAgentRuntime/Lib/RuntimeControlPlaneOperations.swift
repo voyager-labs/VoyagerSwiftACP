@@ -14,6 +14,7 @@ public extension RuntimeControlPlane {
         guard let providerReference = session.providerInternalSessionReference
         else { throw RuntimeHostError.malformedAdapterResponse }
         do {
+            try Task.checkCancellation()
             try await claim.adapter.respondToApproval(RuntimeApprovalRequest(
                 externalAgentSessionReference: hostReference,
                 providerInternalSessionReference: providerReference,
@@ -40,6 +41,7 @@ public extension RuntimeControlPlane {
         else { throw RuntimeHostError.malformedAdapterResponse }
         let claim = try beginOperation(for: hostReference, requiring: .queuedInput)
         do {
+            try Task.checkCancellation()
             try await claim.adapter.enqueueInput(RuntimeQueuedInputRequest(
                 operationID: operationID,
                 runReference: claim.session.runReference,
@@ -60,6 +62,7 @@ public extension RuntimeControlPlane {
         guard operationID.isWithinRuntimeBounds else { throw RuntimeHostError.malformedAdapterResponse }
         let claim = try beginOperation(for: hostReference, requiring: .cancellation)
         do {
+            try Task.checkCancellation()
             try await claim.adapter.requestCancellation(RuntimeCancellationRequest(
                 operationID: operationID,
                 runReference: claim.session.runReference,
