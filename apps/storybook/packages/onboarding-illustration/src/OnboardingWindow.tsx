@@ -3,6 +3,7 @@ import type { FC, ReactNode } from "react"
 import { OnboardingLayout } from "./OnboardingLayout"
 import { AiProviderStep, CompleteStep, PermissionsStep } from "./OnboardingSteps"
 import type { OnboardingState, OnboardingStep, OnboardingWindowProps } from "./model"
+import { aiSetupComplete } from "./model"
 import "./onboarding-styles"
 
 const STEPS: readonly OnboardingStep[] = ["welcome", "permissions", "aiProvider", "complete"]
@@ -27,7 +28,7 @@ function isComplete(state: OnboardingState, step: OnboardingStep): boolean {
     )
   }
   if (step === "aiProvider") {
-    return state.aiPhase === "ready"
+    return aiSetupComplete(state)
   }
   return false
 }

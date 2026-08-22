@@ -45,6 +45,11 @@ export interface OnboardingState {
   readonly completePhase: CompletePhase
 }
 
+// 네이티브 AiProviderSetupState.isComplete 정합: ready 상태의 provider 연결만 완료로 판정
+export function aiSetupComplete(state: OnboardingState): boolean {
+  return state.aiPhase === "ready" && state.providers.some(({ status }) => status === "Connected")
+}
+
 export interface OnboardingWindowProps {
   readonly state: OnboardingState
 }
