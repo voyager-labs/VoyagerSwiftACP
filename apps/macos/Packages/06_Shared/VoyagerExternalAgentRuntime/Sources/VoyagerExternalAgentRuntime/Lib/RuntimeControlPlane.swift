@@ -101,6 +101,8 @@ public actor RuntimeControlPlane {
     var hydrationTask: Task<RuntimeStoredState?, Error>?
     var hydrationGeneration: UInt64 = 0
     var hydrationWaiterCounts: [UInt64: Int] = [:]
+    var hydrationWaiterExits: [UInt64: [HydrationWaiterExit]] = [:]
+    var hydrationResultPumps: [UInt64: Task<Void, Never>] = [:]
     var hydrationDeliveryOrdinal = 0
     var hydrationDeliveryPauseOrdinal: Int?
     var hydrationDeliveryPauseBackground = false

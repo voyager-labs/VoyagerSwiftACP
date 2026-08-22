@@ -1,5 +1,46 @@
 import Foundation
 
+enum HydrationWaiterOutcome {
+    case delivered(Result<RuntimeStoredState?, any Error>)
+    case cancelled
+}
+
+final class HydrationWaiterExit: @unchecked Sendable {
+    private var continuation: CheckedContinuation<HydrationWaiterOutcome, Never>?
+
+    init(_ continuation: CheckedContinuation<HydrationWaiterOutcome, Never>) {
+        self.continuation = continuation
+    }
+
+    func resumeDelivered(_ result: Result<RuntimeStoredState?, any Error>) {
+        if let continuation {
+            self.continuation = nil
+            continuation.resume(returning: .delivered(result))
+        }
+    }
+
+    func resumeCancelled() {
+        if let continuation {
+            self.continuation = nil
+            continuation.resume(returning: .cancelled)
+        }
+    }
+}
+
+final class HydrationWaiterExitHolder: @unchecked Sendable {
+    private var exit: HydrationWaiterExit?
+
+    func set(_ exit: HydrationWaiterExit) {
+        self.exit = exit
+    }
+
+    func take() -> HydrationWaiterExit? {
+        let current = exit
+        exit = nil
+        return current
+    }
+}
+
 extension RuntimeControlPlane {
     func hydrateIfNeeded() async throws {
         guard !hydrated else { return }
@@ -17,7 +58,33 @@ extension RuntimeControlPlane {
         }
         hydrationWaiterCounts[generation, default: 0] += 1
         resumeHydrationWaiterAdmissionContinuations()
-        let result = await task.result
+        let waiterExitHolder = HydrationWaiterExitHolder()
+        let outcome = await withTaskCancellationHandler {
+            await suspendHydrationWaiter(
+                task: task,
+                generation: generation,
+                holder: waiterExitHolder,
+            )
+        } onCancel: {
+            Task { await self.finishHydrationWaiterAsCancelled(waiterExitHolder, generation: generation) }
+        }
+        let result: Result<RuntimeStoredState?, any Error>
+        switch outcome {
+        case .cancelled:
+            if finishHydrationWaiter(generation) {
+                hydrationTask = nil
+            }
+            throw CancellationError()
+        case let .delivered(delivered):
+            result = delivered
+        }
+        try await processHydrationDelivery(result, generation: generation)
+    }
+
+    private func processHydrationDelivery(
+        _ result: Result<RuntimeStoredState?, any Error>,
+        generation: UInt64,
+    ) async throws {
         hydrationDeliveryOrdinal += 1
         if hydrationDeliveryPauseOrdinal == hydrationDeliveryOrdinal
             || (hydrationDeliveryPauseBackground && Task.currentPriority == .background)
@@ -45,6 +112,53 @@ extension RuntimeControlPlane {
         }
 
         try handleHydrationResult(result, generation: generation)
+    }
+
+    private func suspendHydrationWaiter(
+        task: Task<RuntimeStoredState?, Error>,
+        generation: UInt64,
+        holder: HydrationWaiterExitHolder,
+    ) async -> HydrationWaiterOutcome {
+        await withCheckedContinuation { continuation in
+            if Task.isCancelled {
+                continuation.resume(returning: .cancelled)
+                return
+            }
+            let exit = HydrationWaiterExit(continuation)
+            holder.set(exit)
+            hydrationWaiterExits[generation, default: []].append(exit)
+            guard hydrationResultPumps[generation] == nil else { return }
+            hydrationResultPumps[generation] = Task { [weak self] in
+                await self?.pumpHydrationResults(task: task, generation: generation)
+            }
+        }
+    }
+
+    private func pumpHydrationResults(
+        task: Task<RuntimeStoredState?, Error>,
+        generation: UInt64,
+    ) async {
+        let result = await task.result
+        hydrationResultPumps.removeValue(forKey: generation)
+        let exits = hydrationWaiterExits.removeValue(forKey: generation) ?? []
+        for exit in exits {
+            exit.resumeDelivered(result)
+        }
+    }
+
+    func finishHydrationWaiterAsCancelled(_ holder: HydrationWaiterExitHolder, generation: UInt64) {
+        guard let exit = holder.take() else { return }
+        if var exits = hydrationWaiterExits[generation],
+           let index = exits.firstIndex(where: { $0 === exit })
+        {
+            exits.remove(at: index)
+            if exits.isEmpty {
+                hydrationWaiterExits.removeValue(forKey: generation)
+            } else {
+                hydrationWaiterExits[generation] = exits
+            }
+        }
+        exit.resumeCancelled()
     }
 
     private func finishHydrationWaiter(_ generation: UInt64) -> Bool {
