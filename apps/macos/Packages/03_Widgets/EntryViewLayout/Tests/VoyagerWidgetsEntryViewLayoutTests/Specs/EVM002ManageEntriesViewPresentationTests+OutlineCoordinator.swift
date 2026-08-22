@@ -1186,6 +1186,55 @@ extension EVM002ManageEntriesViewPresentationTests {
         let selectedItem = try XCTUnwrap(coordinator.entryItemById[after.id])
         XCTAssertEqual(coordinator.tableView.selectedRow, coordinator.tableView.row(forItem: selectedItem))
     }
+
+    /// EVM-002-atomic_identity_swap: expanded List child swap은 함께 바뀐 retained sibling row도 다시 그린다.
+    /// retained OutlineItem payload만 교체하고 cell reload를 건너뛰는 회귀를 검증한다.
+    /// - 검증 내용: child identity swap 뒤 retained sibling object identity와 표시 이름
+    /// - 사전 조건: before→after 교체와 retained sibling old→new payload가 같은 projection에 들어온다.
+    /// - 기대 결과: retained item은 `===`로 유지되고 보이는 name cell은 구조 batch 뒤 new를 표시한다.
+    func testExpandedListIdentitySwapReloadsRetainedSiblingPayload() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let before = makePresentationFile(id: "/root/folder/before.txt", name: "before.txt")
+        let after = makePresentationFile(id: "/root/folder/after.txt", name: "after.txt")
+        let retainedOld = makePresentationFile(id: "/root/folder/retained.txt", name: "old.txt")
+        let retainedNew = makePresentationFile(id: retainedOld.id, name: "new.txt")
+        let oldSnapshot = makeExpandedListProjection(revision: 1, folder: folder, children: [before, retainedOld])
+        let newSnapshot = makeExpandedListProjection(revision: 2, folder: folder, children: [after, retainedNew])
+        var state = EntryViewLayoutState()
+        state.mode = .list
+        state.entries = [folder]
+        state.hierarchy = newSnapshot.hierarchy
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: view)
+        coordinator.isRenderObservationEnabled = false
+
+        coordinator.applyStoreProjection(oldSnapshot.projection)
+        view.layoutSubtreeIfNeeded()
+        coordinator.tableView.layoutSubtreeIfNeeded()
+        let retainedItem = try XCTUnwrap(coordinator.entryItemById[retainedOld.id])
+        let retainedRow = coordinator.tableView.row(forItem: retainedItem)
+        let nameColumn = try XCTUnwrap(coordinator.nameColumnIndex)
+        let oldCell = try XCTUnwrap(coordinator.tableView.view(
+            atColumn: nameColumn,
+            row: retainedRow,
+            makeIfNecessary: true,
+        ) as? EntryListEntryCellView)
+        XCTAssertEqual(oldCell.textField?.stringValue, "old.txt")
+
+        coordinator.applyStoreProjection(newSnapshot.projection)
+
+        let updatedItem = try XCTUnwrap(coordinator.entryItemById[retainedNew.id])
+        XCTAssertIdentical(updatedItem, retainedItem)
+        let updatedRow = coordinator.tableView.row(forItem: updatedItem)
+        let updatedCell = try XCTUnwrap(coordinator.tableView.view(
+            atColumn: nameColumn,
+            row: updatedRow,
+            makeIfNecessary: true,
+        ) as? EntryListEntryCellView)
+        XCTAssertEqual(updatedCell.textField?.stringValue, "new.txt")
+    }
 }
 
 private extension EntryListOutlineItem {
@@ -1234,6 +1283,33 @@ private func makePresentationFile(id: String, name: String) -> EntryModel {
             tags: nil,
             supplementaryMetadata: nil,
         ),
+    )
+}
+
+private func makeExpandedListProjection(
+    revision: Int,
+    folder: EntryModel,
+    children: [EntryModel],
+) -> (projection: EntryListOutlineProjection, hierarchy: EntryListHierarchyState) {
+    var hierarchy = EntryListHierarchyState(rootPath: "/root")
+    hierarchy.nodesByID[folder.id] = .init(
+        children: children,
+        loadPhase: .loaded,
+        generation: 1,
+        expectedBatchIndex: 1,
+        coreFinished: true,
+    )
+    hierarchy.setExpandedIDs([folder.id])
+    return (
+        EntryListOutlineProjection(
+            revision: revision,
+            rootEntries: [folder],
+            hierarchyState: hierarchy,
+            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
+            sortKey: .name,
+            sortOrder: .ascending,
+        ),
+        hierarchy,
     )
 }
 

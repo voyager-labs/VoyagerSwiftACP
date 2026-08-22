@@ -260,6 +260,10 @@ extension EntryListCoordinator {
 
     func tryIncrementalHierarchyIdentitySwap(items: [OutlineItem]) -> Bool {
         guard let plan = makeHierarchyIdentitySwapPlan(items: items) else { return false }
+        let retainedItemsWithChangedPayload = retainedHierarchyItemsWithChangedPayload(
+            existingItems: outlineItems,
+            incomingItems: items,
+        )
         applyHierarchyIdentitySwap(plan, items: items)
         let parent = outlineItems[plan.rootIndex]
         rebuildItemIndexes()
@@ -267,7 +271,37 @@ extension EntryListCoordinator {
         tableView.removeItems(at: plan.removed, inParent: parent, withAnimation: .slideLeft)
         tableView.insertItems(at: plan.inserted, inParent: parent, withAnimation: .slideDown)
         tableView.endUpdates()
+        let updatedRowIndexes = IndexSet(retainedItemsWithChangedPayload.compactMap { item in
+            let row = tableView.row(forItem: item)
+            return row >= 0 ? row : nil
+        })
+        if !updatedRowIndexes.isEmpty {
+            let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+            tableView.reloadData(forRowIndexes: updatedRowIndexes, columnIndexes: columnIndexes)
+        }
         return true
+    }
+
+    private func retainedHierarchyItemsWithChangedPayload(
+        existingItems: [OutlineItem],
+        incomingItems: [OutlineItem],
+    ) -> [OutlineItem] {
+        let incomingByID = outlineItemsByEntryID(incomingItems)
+        return existingItems.flatMap { existingItem -> [OutlineItem] in
+            guard let id = outlineEntryID(existingItem),
+                  let incomingItem = incomingByID[id],
+                  case let .entry(existingEntry) = existingItem.kind,
+                  case let .entry(incomingEntry) = incomingItem.kind
+            else { return [] }
+            let changedItem = existingEntry != incomingEntry
+                || existingItem.isLoadingChildren != incomingItem.isLoadingChildren
+                ? [existingItem]
+                : []
+            return changedItem + retainedHierarchyItemsWithChangedPayload(
+                existingItems: existingItem.children,
+                incomingItems: incomingItem.children,
+            )
+        }
     }
 
     private func makeHierarchyIdentitySwapPlan(items: [OutlineItem]) -> HierarchyIdentitySwapPlan? {

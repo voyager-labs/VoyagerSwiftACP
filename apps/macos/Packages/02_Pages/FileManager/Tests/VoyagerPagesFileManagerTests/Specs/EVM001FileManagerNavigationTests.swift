@@ -2276,6 +2276,56 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNil(store.state.content.pendingIdentityTransition, "after-path projection이 전이를 소비한다")
     }
 
+    /// EVM-001-command_external_refresh_correlation: coarse 외부 이벤트는 대기 전이와 겹쳐도 억제하지 않는다.
+    /// 유실 복구 플래그가 붙은 event가 command refresh 병합으로 사라지지 않는지 검증한다.
+    /// - 검증 내용: MustScanSubDirs/UserDropped/KernelDropped 각각 coarse hierarchy invalidation과 root reload를 생성
+    /// - 사전 조건: 현재 root에서 old→new rename 전이가 같은 generation으로 대기 중이다.
+    /// - 기대 결과: coarse event는 전이를 보존하면서 coarseHierarchyInvalidated와 loadItems를 실행한다.
+    func testCorrelatedCoarseExternalEventsStillReloadCachedHierarchy() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let coarseFlags = [
+            kFSEventStreamEventFlagMustScanSubDirs,
+            kFSEventStreamEventFlagUserDropped,
+            kFSEventStreamEventFlagKernelDropped,
+        ].map(UInt32.init)
+        let eventPaths = [folderPath, URL(fileURLWithPath: folderPath).deletingLastPathComponent().path]
+
+        for (eventPath, flags) in eventPaths.flatMap({ path in coarseFlags.map { (path, $0) } }) {
+            var initialState = makeCorrelationState(folderPath: folderPath)
+            initialState.content.pendingIdentityTransition = .init(
+                recordID: UUID(),
+                beforePath: Self.canonicalPath(oldPath),
+                afterPath: Self.canonicalPath("\(folderPath)/new.txt"),
+                rootPath: Self.canonicalPath(folderPath),
+                refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+            )
+            let store = TestStore(initialState: initialState) {
+                CommandExternalRefreshHarness()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.content(.externalFileSystemChanged(
+                Self.externalChangeEvents([eventPath], flags: flags),
+                deliveryChainToken: nil,
+            )))
+            await store.receive { action in
+                guard case let .content(.entryViewLayout(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes)))) =
+                    action
+                else { return false }
+                return removedPrefixes.isEmpty
+            }
+            await store.receive { action in
+                guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                    return false
+                }
+                return true
+            }
+
+            XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+        }
+    }
+
     /// EVM-001-command_external_refresh_correlation: 명령 → 일치 이벤트 → 무관/빈 첫 배치 → after-path 배치가
     /// 하나의 correlated refresh로 수렴하고, after-path가 나타날 때까지 선택을 유지한 뒤
     /// 정확히 한 번 migration하고 전이를 소비한다.

@@ -693,6 +693,66 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [oldEntry.id])
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: root 안의 symlink entry도 같은-root projection으로 유지한다.
+    /// 실제 target이 root 밖이어도 표시 entry의 lexical parent가 현재 root인지 검증한다.
+    /// - 검증 내용: 외부 target을 가리키는 실제 symlink가 있는 root의 loadItems 시작·실패 projection
+    /// - 사전 조건: 완전 projection의 유일한 entry는 current root 안의 symlink다.
+    /// - 기대 결과: symlink-resolved target 위치와 무관하게 기존 entry와 selection을 유지한다.
+    func testRealReloadRetainsInRootSymlinkWhoseTargetIsOutside() async throws {
+        let sandboxRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerSameRootSymlink-\(UUID().uuidString)", isDirectory: true)
+        let rootURL = sandboxRoot.appendingPathComponent("root", isDirectory: true)
+        let outsideTargetURL = sandboxRoot.appendingPathComponent("outside.txt")
+        let symlinkURL = rootURL.appendingPathComponent("linked.txt")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data("outside".utf8).write(to: outsideTargetURL)
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: outsideTargetURL)
+        defer { try? FileManager.default.removeItem(at: sandboxRoot) }
+
+        let symlinkEntry = makeSharedProjectionFile(path: symlinkURL.path)
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootURL.path)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entryOperations.items = [symlinkEntry]
+        state.entryViewLayout.entries = [symlinkEntry]
+        state.entryViewLayout.selectedIds = [symlinkEntry.id]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = false
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: StubbedReloadFailure())
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            path: rootURL.path,
+            showHidden: false,
+        )))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [symlinkEntry]
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [symlinkEntry]
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.entryViewLayout.entries, [symlinkEntry])
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [symlinkEntry.id])
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: 실제 operationFinished → loadItems 액션 순서로
     /// 재로드를 시작해도 완전한 같은-root projection이 유지된다.
     /// V20-P1-1 회귀: loadItems를 직접 주입하지 않고, coordinator가 operationFinished 성공에
@@ -1039,10 +1099,10 @@ extension EVM002FileManagerPagePresentationTests {
     }
 }
 
-private func makeSharedProjectionFile(tags: [Tag]? = nil) -> EntryModel {
+private func makeSharedProjectionFile(path: String = "/root/file.txt", tags: [Tag]? = nil) -> EntryModel {
     EntryModel(
         name: "file.txt",
-        fullPath: "/root/file.txt",
+        fullPath: path,
         isFolder: false,
         isHidden: false,
         size: 1,

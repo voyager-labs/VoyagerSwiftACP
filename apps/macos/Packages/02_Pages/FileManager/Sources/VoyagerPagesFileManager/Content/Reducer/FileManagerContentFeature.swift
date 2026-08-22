@@ -484,8 +484,9 @@ public struct FileManagerContentFeature {
         guard canonicalizedPath(path) == normalizedRoot,
               !state.entryViewLayout.entries.isEmpty
         else { return false }
+        let lexicalRoot = URL(fileURLWithPath: currentPath).standardizedFileURL.path
         return state.entryViewLayout.entries.allSatisfy { entry in
-            URL(fileURLWithPath: canonicalizedPath(entry.id)).deletingLastPathComponent().path == normalizedRoot
+            URL(fileURLWithPath: entry.id).standardizedFileURL.deletingLastPathComponent().path == lexicalRoot
         }
     }
 

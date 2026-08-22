@@ -72,7 +72,10 @@ struct FileManagerContentSyncReducer {
                 // 일치 이벤트는 명령이 이미 예약한 refresh로 병합한다(중복 refresh 억제).
                 // 전이는 소비하지 않는다: after-path projection이 도착해 선택을 옮길 때까지
                 // 유지되어야 selection migration이 완료된다.
-                scheduledEvents = events.filter { !transitionOverlaps(normalizedPath(for: $0.path), transition) }
+                scheduledEvents = events.filter {
+                    requiresCoarseHierarchyReload($0)
+                        || !transitionOverlaps(normalizedPath(for: $0.path), transition)
+                }
                 if scheduledEvents.isEmpty {
                     // 모든 경로가 명령 refresh에 병합됨. 중복 refresh를 예약하지 않는다.
                     return .none
