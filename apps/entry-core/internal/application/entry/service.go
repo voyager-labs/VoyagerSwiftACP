@@ -156,6 +156,126 @@ func (service *UnifiedService) catalogDefinitionFor(requested string, definition
 	return matched, found, nil
 }
 
+// sourcePropertyContracts는 요청 이름별로 현재 소스 인스턴스에 적용 가능한 실행
+// 바인딩과 네이티브 디스크립터를 연결한다. 바인딩이 전혀 없는 이름은 맵에서 생략해
+// 어댑터 raw 키 fallback을 유지하고, 호출마다 새 맵을 만들어 요청 간 공유를 차단한다.
+// 바인딩 후보는 정의 PropertyID와 요청 인스턴스가 일치하는 전체 집합을 모은 뒤 실행
+// 조건(read 방향, EffectiveReadable, approved 승인, 활성 lifecycle, 디스크립터 존재·읽기
+// 가능·활성)으로 걸러낸다. 후보가 있지만 실행 불가능하면 ErrNoExecutableSourceBinding,
+// 실행 가능한 후보 가운데 스코프 구체성(repository > workspace > system)이 가장 높은
+// 계층 하나를 선택하고 그 계층에 후보가 둘 이상 남으면 reviewed precedence가 런타임
+// 계약에 없으므로 ErrAmbiguousSourceBinding으로 카탈로그 순회 순서와 무관하게 실패
+// 닫기한다.
+func (service *UnifiedService) sourcePropertyContracts(
+	definitions map[string]domainentry.PropertyDefinition,
+	sourceInstanceID, workspaceID, repositoryID string,
+) (map[string]domainentry.SourcePropertyDescriptor, map[string]domainentry.PropertyBinding, error) {
+	selectors := make(map[string]domainentry.SourcePropertyDescriptor)
+	transforms := make(map[string]domainentry.PropertyBinding)
+	if len(definitions) == 0 || len(service.catalog.Bindings) == 0 {
+		return selectors, transforms, nil
+	}
+	descriptorByRef := make(map[domainentry.SourcePropertyRef]domainentry.SourcePropertyDescriptor, len(service.catalog.Descriptors))
+	for _, descriptor := range service.catalog.Descriptors {
+		descriptorByRef[descriptor.Ref] = descriptor
+	}
+	for requested, definition := range definitions {
+		var candidates []domainentry.PropertyBinding
+		for _, binding := range service.catalog.Bindings {
+			if binding.PropertyID != definition.PropertyID || binding.SourceRef.SourceInstanceID != sourceInstanceID {
+				continue
+			}
+			if !sourceBindingApplies(binding.SourceRef, workspaceID, repositoryID) {
+				continue
+			}
+			candidates = append(candidates, binding)
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+		executable := candidates[:0]
+		for _, candidate := range candidates {
+			if executableReadBinding(candidate, descriptorByRef[candidate.SourceRef]) {
+				executable = append(executable, candidate)
+			}
+		}
+		if len(executable) == 0 {
+			return nil, nil, newApplicationError("internal_error", "binding_not_executable", ErrNoExecutableSourceBinding)
+		}
+		selected, selectErr := selectExecutableSourceBinding(executable)
+		if selectErr != nil {
+			return nil, nil, selectErr
+		}
+		selectors[requested] = descriptorByRef[selected.SourceRef]
+		transforms[requested] = selected
+	}
+	return selectors, transforms, nil
+}
+
+func sourceBindingApplies(ref domainentry.SourcePropertyRef, workspaceID, repositoryID string) bool {
+	switch ref.ScopeKind {
+	case domainentry.SourceScopeKindWorkspace:
+		return ref.ScopeExternalID == workspaceID
+	case domainentry.SourceScopeKindRepository:
+		return ref.ScopeExternalID == repositoryID
+	case domainentry.SourceScopeKindSystem:
+		return true
+	default:
+		return false
+	}
+}
+
+// sourceScopePrecedence는 스코프 구체성 기준 바인딩 우선순위를 매긴다. repository가
+// 가장 구체적이고 system이 가장 일반적이다.
+func sourceScopePrecedence(kind domainentry.SourceScopeKind) int {
+	switch kind {
+	case domainentry.SourceScopeKindRepository:
+		return 3
+	case domainentry.SourceScopeKindWorkspace:
+		return 2
+	default:
+		return 1 // SourceScopeKindSystem
+	}
+}
+
+// selectExecutableSourceBinding는 실행 가능한 후보 중 가장 구체적인 스코프 계층을
+// 선택한다. 최상위 계층에 서로 다른 후보가 둘 이상 남으면 동순위 모호로 실패 닫기하며,
+// 판정은 슬라이스 순서와 무관하다.
+func selectExecutableSourceBinding(candidates []domainentry.PropertyBinding) (domainentry.PropertyBinding, error) {
+	best := candidates[0]
+	bestPrecedence := sourceScopePrecedence(best.SourceRef.ScopeKind)
+	ambiguous := false
+	for _, candidate := range candidates[1:] {
+		switch precedence := sourceScopePrecedence(candidate.SourceRef.ScopeKind); {
+		case precedence > bestPrecedence:
+			best, bestPrecedence, ambiguous = candidate, precedence, false
+		case precedence == bestPrecedence:
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return domainentry.PropertyBinding{}, newApplicationError("internal_error", "ambiguous_source_binding", ErrAmbiguousSourceBinding)
+	}
+	return best, nil
+}
+
+func executableReadBinding(binding domainentry.PropertyBinding, descriptor domainentry.SourcePropertyDescriptor) bool {
+	readDirection := binding.Direction == "read" || binding.Direction == "bidirectional"
+	return readDirection && binding.EffectiveReadable && binding.ApprovalState == "approved" &&
+		binding.Lifecycle == domainentry.PropertyLifecycleActive &&
+		supportedReadTransform(binding.ReadTransform) &&
+		descriptor.SourceReadable && descriptor.Lifecycle == domainentry.PropertyLifecycleActive
+}
+
+func supportedReadTransform(transform string) bool {
+	switch transform {
+	case "identity", "filename_extension", "filename_stem":
+		return true
+	default:
+		return false
+	}
+}
+
 func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedListRequest) (UnifiedListResult, error) {
 	if service == nil || ctx == nil || service.mountRegistry == nil || service.clock == nil || !validApplicationID(request.WorkspaceID, 64) ||
 		(request.VirtualPath == nil) == (request.ParentRef == nil) || (request.MountID != nil && request.SourceInstanceID != nil) ||
@@ -235,6 +355,13 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		if requestErr != nil {
 			return UnifiedListResult{}, newApplicationError("internal_error", "internal_error", ErrApplicationAdapterFailure)
 		}
+		scopeSelectors, scopeTransforms, contractsErr := service.sourcePropertyContracts(
+			definitions, scope.sourceRef.SourceInstanceID, scope.mount.WorkspaceID, scope.mount.MountID,
+		)
+		if contractsErr != nil {
+			return UnifiedListResult{}, contractsErr
+		}
+		adapterRequest.SourceSelectors, adapterRequest.ReadTransforms = scopeSelectors, scopeTransforms
 		adapterRequest.PropertyDefinitions = clonePropertyDefinitions(definitions)
 		adapterResult, adapterErr := scope.adapter.List(ctx, adapterRequest)
 		if adapterErr != nil {
@@ -342,6 +469,13 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if definitionsErr != nil {
 		return ResolveResult{}, definitionsErr
 	}
+	resolveSelectors, resolveTransforms, contractsErr := service.sourcePropertyContracts(
+		definitions, binding.SourceRef.SourceInstanceID, mountRef.WorkspaceID, mountRef.MountID,
+	)
+	if contractsErr != nil {
+		return ResolveResult{}, contractsErr
+	}
+	adapterRequest.SourceSelectors, adapterRequest.ReadTransforms = resolveSelectors, resolveTransforms
 	adapterRequest.PropertyDefinitions = clonePropertyDefinitions(definitions)
 	adapterResult, adapterErr := binding.Adapter.Resolve(ctx, adapterRequest)
 	if adapterErr != nil {
@@ -460,6 +594,13 @@ func (service *UnifiedService) resolveParentPaths(ctx context.Context, scopes []
 		if err != nil {
 			return newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 		}
+		parentSelectors, parentTransforms, contractsErr := service.sourcePropertyContracts(
+			definitions, scopes[index].sourceRef.SourceInstanceID, scopes[index].mount.WorkspaceID, scopes[index].mount.MountID,
+		)
+		if contractsErr != nil {
+			return contractsErr
+		}
+		request.SourceSelectors, request.ReadTransforms = parentSelectors, parentTransforms
 		request.PropertyDefinitions = clonePropertyDefinitions(definitions)
 		result, err := scopes[index].adapter.Resolve(ctx, request)
 		if err != nil {

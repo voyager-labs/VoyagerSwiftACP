@@ -21,6 +21,11 @@ var (
 	ErrApplicationSourceUnavailable = errors.New("source unavailable")
 	ErrApplicationSourceDeleted     = errors.New("source deleted")
 	ErrApplicationAdapterFailure    = errors.New("adapter failure")
+	// ErrAmbiguousSourceBinding와 ErrNoExecutableSourceBinding는 소스 바인딩 선택
+	// 계약의 실패 닫기 센티넬이다. 카탈로그에 바인딩이 있는데 실행 가능한 후보가
+	// 없거나 동순위 후보가 둘 이상이면 어댑터 호출 없이 요청을 거절한다.
+	ErrAmbiguousSourceBinding    = errors.New("ambiguous source binding")
+	ErrNoExecutableSourceBinding = errors.New("no executable source binding")
 )
 
 type ResourceAdapter interface {

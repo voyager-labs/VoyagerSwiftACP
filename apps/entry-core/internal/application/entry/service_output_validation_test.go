@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/mount"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/fakeexternal"
 )
 
 func TestUnifiedListCanonicalizesAdapterProperties(t *testing.T) {
@@ -601,6 +603,175 @@ func TestResolveEntryRejectsAdapterMutatedRequestDefinitions(t *testing.T) {
 		WorkspaceID: "workspace", VirtualPath: &path, RequestedProperties: []string{"title"},
 	})
 	assertCatalogTypeCardinalityRejected(t, err)
+}
+
+// VOY-764 회귀(후속 P1-A): canonical key·정확한 PropertyID 요청이 활성 바인딩을 거쳐
+// 네이티브 소스 선택자로 라우팅되고, 검토된 transform이 권위 검증 전에 적용된다.
+func nativeTitleProperty(t *testing.T) domainentry.Property {
+	t.Helper()
+	value, err := domainentry.NewStringPropertyValue("Roadmap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	property, err := domainentry.NewProperty("title", value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return property
+}
+
+func boundTitleCatalogFixture(sourceInstanceID string) domainentry.PropertyCatalogSnapshot {
+	catalog := titleCatalogFixture()
+	ref := domainentry.SourcePropertyRef{
+		ProviderID: "macos.fakeexternal", SourceInstanceID: sourceInstanceID,
+		ScopeKind: domainentry.SourceScopeKindWorkspace, ScopeExternalID: "workspace",
+		ExternalPropertyID: "kMDItemTitle",
+	}
+	catalog.Descriptors = append(catalog.Descriptors, domainentry.SourcePropertyDescriptor{
+		Ref: ref, NativeKey: "title", NativeType: "string", NativeCardinality: domainentry.PropertyCardinalityOne,
+		Authority: domainentry.AuthorityKindProvider, SourceReadable: true,
+		Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	catalog.Bindings = append(catalog.Bindings, domainentry.PropertyBinding{
+		PropertyID: catalogTitleID, SourceRef: ref, ReadTransform: "identity", Direction: "read",
+		EffectiveReadable: true, ApprovalState: "approved", Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	return catalog
+}
+
+func fakeExternalFixture(t *testing.T, properties []domainentry.Property) (*mount.Registry, []ResourceAdapterBinding, string) {
+	t.Helper()
+	core, err := fakeexternal.New(fakeexternal.Config{
+		Namespace: "binding-fixture", Generation: "generation-1",
+		CursorKey: []byte(strings.Repeat("k", 32)),
+		Fixtures: []fakeexternal.Fixture{{
+			Key: "doc", RelativePath: "doc", Name: "Report.pdf", ResourceType: "document",
+			Properties: properties, Capabilities: domainentry.Capabilities{ReadProperties: true},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := core.SourceIdentity()
+	available, _ := domainentry.NewAvailability(domainentry.AvailabilityStateAvailable)
+	sourceRef, err := domainentry.NewSourceRef(identity.SourceID, "fakeexternal", "external", available, identity.IdentityStrength)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := mount.NewMountRegistry()
+	path, _ := domainentry.NewResolvedVirtualPath("external", "/external", "seed")
+	mountRef, err := domainentry.NewMountRef("external", "workspace", sourceRef.SourceInstanceID, path, available, domainentry.CachePolicyNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(mountRef); err != nil {
+		t.Fatal(err)
+	}
+	bindings := []ResourceAdapterBinding{{SourceRef: sourceRef, Adapter: fakeexternal.NewResourceAdapter(core)}}
+	return registry, bindings, identity.SourceID
+}
+
+func TestUnifiedListResolvesCanonicalKeyThroughSourceBinding(t *testing.T) {
+	registry, bindings, sourceInstanceID := fakeExternalFixture(t, []domainentry.Property{nativeTitleProperty(t)})
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, boundTitleCatalogFixture(sourceInstanceID))
+	path := "/external"
+
+	result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1, RequestedProperties: []string{"common.title"},
+	})
+	if err != nil {
+		t.Fatalf("UnifiedList() error = %v", err)
+	}
+	if len(result.Entries) != 1 || len(result.Entries[0].EntrySnapshot.CanonicalProperties) != 1 ||
+		result.Entries[0].EntrySnapshot.CanonicalProperties[0].PropertyID != catalogTitleID ||
+		result.Entries[0].EntrySnapshot.CanonicalProperties[0].Payload.Text == nil ||
+		*result.Entries[0].EntrySnapshot.CanonicalProperties[0].Payload.Text != "Roadmap" {
+		t.Fatalf("entries = %#v, want native title value under voyager-issued %s", result.Entries, catalogTitleID)
+	}
+}
+
+func TestUnifiedListResolvesExactPropertyIDThroughSourceBinding(t *testing.T) {
+	registry, bindings, sourceInstanceID := fakeExternalFixture(t, []domainentry.Property{nativeTitleProperty(t)})
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, boundTitleCatalogFixture(sourceInstanceID))
+	path := "/external"
+
+	result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1, RequestedProperties: []string{catalogTitleID.String()},
+	})
+	if err != nil {
+		t.Fatalf("UnifiedList() error = %v", err)
+	}
+	if len(result.Entries) != 1 || len(result.Entries[0].EntrySnapshot.CanonicalProperties) != 1 ||
+		result.Entries[0].EntrySnapshot.CanonicalProperties[0].PropertyID != catalogTitleID {
+		t.Fatalf("entries = %#v, want exact-ID request routed through binding %s", result.Entries, catalogTitleID)
+	}
+}
+
+func TestResolveEntryResolvesCanonicalKeyThroughSourceBinding(t *testing.T) {
+	registry, bindings, sourceInstanceID := fakeExternalFixture(t, []domainentry.Property{nativeTitleProperty(t)})
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, boundTitleCatalogFixture(sourceInstanceID))
+	path := "/external/doc"
+
+	result, err := service.ResolveEntry(context.Background(), ResolveRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, RequestedProperties: []string{"common.title"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveEntry() error = %v", err)
+	}
+	if len(result.EntrySnapshot.CanonicalProperties) != 1 || result.EntrySnapshot.CanonicalProperties[0].PropertyID != catalogTitleID {
+		t.Fatalf("canonical properties = %#v, want bound title value", result.EntrySnapshot.CanonicalProperties)
+	}
+}
+
+func TestUnifiedListAppliesReviewedTransformBeforeValidation(t *testing.T) {
+	extensionID := domainentry.MustPropertyID("0198dead-f1ce-7000-8000-3b9ac9e12345")
+	fsNameValue, err := domainentry.NewStringPropertyValue("Report.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsName, err := domainentry.NewProperty("fsName", fsNameValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, bindings, sourceInstanceID := fakeExternalFixture(t, []domainentry.Property{fsName})
+	catalog := boundTitleCatalogFixture(sourceInstanceID)
+	ref := domainentry.SourcePropertyRef{
+		ProviderID: "macos.fakeexternal", SourceInstanceID: sourceInstanceID,
+		ScopeKind: domainentry.SourceScopeKindWorkspace, ScopeExternalID: "workspace",
+		ExternalPropertyID: "kMDItemFSName",
+	}
+	catalog.Definitions = append(catalog.Definitions, domainentry.WorkspacePropertyDefinition{
+		PropertyID: extensionID, Origin: domainentry.PropertyOriginBuiltIn,
+		IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+		Namespace:      "system", CanonicalKey: "filesystem.extension", DisplayName: "Extension",
+		ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+		Editable: true, Provenance: domainentry.PropertyProvenanceSystem, Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	catalog.Descriptors = append(catalog.Descriptors, domainentry.SourcePropertyDescriptor{
+		Ref: ref, NativeKey: "fsName", NativeType: "string", NativeCardinality: domainentry.PropertyCardinalityOne,
+		Authority: domainentry.AuthorityKindProvider, SourceReadable: true,
+		Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	catalog.Bindings = append(catalog.Bindings, domainentry.PropertyBinding{
+		PropertyID: extensionID, SourceRef: ref, ReadTransform: "filename_extension", Direction: "read",
+		EffectiveReadable: true, ApprovalState: "approved", Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, catalog)
+	path := "/external"
+
+	result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1, RequestedProperties: []string{"filesystem.extension"},
+	})
+	if err != nil {
+		t.Fatalf("UnifiedList() error = %v", err)
+	}
+	if len(result.Entries) != 1 || len(result.Entries[0].EntrySnapshot.CanonicalProperties) != 1 {
+		t.Fatalf("entries = %#v, want transformed extension value", result.Entries)
+	}
+	property := result.Entries[0].EntrySnapshot.CanonicalProperties[0]
+	if property.PropertyID != extensionID || property.Payload.Text == nil || *property.Payload.Text != "pdf" {
+		t.Fatalf("property = %#v, want filename_extension transform to yield pdf", property)
+	}
 }
 
 // VOY-764 회귀(후속 P1-3): ParentRef 사전 resolve의 어댑터 변조는 본 List 요청과

@@ -16,15 +16,16 @@ import (
 )
 
 var (
-	ErrInvalidConfig     = errors.New("invalid source configuration")
-	ErrInvalidRequest    = errors.New("invalid source request")
-	ErrInvalidCursor     = errors.New("invalid cursor")
-	ErrPathEscape        = errors.New("source path escapes root")
-	ErrAdapterFailure    = errors.New("source adapter failure")
-	ErrSourceUnavailable = errors.New("source unavailable")
-	ErrPermissionDenied  = errors.New("permission denied")
-	ErrSourceDeleted     = errors.New("source deleted")
-	ErrEntryNotFound     = errors.New("entry not found")
+	ErrInvalidConfig         = errors.New("invalid source configuration")
+	ErrInvalidRequest        = errors.New("invalid source request")
+	ErrInvalidCursor         = errors.New("invalid cursor")
+	ErrPathEscape            = errors.New("source path escapes root")
+	ErrAdapterFailure        = errors.New("source adapter failure")
+	ErrSourceUnavailable     = errors.New("source unavailable")
+	ErrPermissionDenied      = errors.New("permission denied")
+	ErrSourceDeleted         = errors.New("source deleted")
+	ErrEntryNotFound         = errors.New("entry not found")
+	errPropertyNotApplicable = errors.New("source property not applicable")
 )
 
 const (
@@ -497,6 +498,8 @@ type AdapterListRequest struct {
 	ChildCursor         *string
 	RequestedProperties []string
 	PropertyDefinitions map[string]entry.PropertyDefinition
+	SourceSelectors     map[string]entry.SourcePropertyDescriptor
+	ReadTransforms      map[string]entry.PropertyBinding
 }
 
 func NewAdapterListRequest(sourceRef entry.SourceRef, mountRef entry.MountRef, relativePath string, pageQuota int, childCursor *string, requestedProperties []string) (AdapterListRequest, error) {
@@ -615,6 +618,8 @@ type AdapterResolveRequest struct {
 	RelativePath        *string
 	RequestedProperties []string
 	PropertyDefinitions map[string]entry.PropertyDefinition
+	SourceSelectors     map[string]entry.SourcePropertyDescriptor
+	ReadTransforms      map[string]entry.PropertyBinding
 }
 
 func NewAdapterResolveRequest(sourceRef entry.SourceRef, mountRef entry.MountRef, entryRef *entry.EntryRef, relativePath *string, requestedProperties []string) (AdapterResolveRequest, error) {
@@ -760,10 +765,14 @@ func CanonicalizeSourceItem(item SourceItem, requestedProperties []string, obser
 	if err != nil {
 		return AdapterEntry{}, err
 	}
-	return CanonicalizeSourceItemWithLocator(item, locatorRef, requestedProperties, nil, observedAt, sourceRevision, availability, freshness, provenance)
+	return CanonicalizeSourceItemWithLocator(item, locatorRef, requestedProperties, nil, nil, nil, observedAt, sourceRevision, availability, freshness, provenance)
 }
 
-func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.LocatorRef, requestedProperties []string, propertyDefinitions map[string]entry.PropertyDefinition, observedAt time.Time, sourceRevision entry.Revision, availability entry.Availability, freshness entry.Freshness, provenance entry.PropertyProvenance) (AdapterEntry, error) {
+// CanonicalizeSourceItemWithLocator는 소스 아이템을 canonical AdapterEntry로 투영한다.
+// requestedProperties는 workspace 요청 문자열(canonical key/alias/정확한 PropertyID
+// 텍스트)이고, sourceSelectors는 요청 이름을 네이티브 소스 키로 연결하고 readTransforms는
+// 검토된 변환 계약을 전달한다. 두 맵에 없는 이름은 요청 문자열 자체를 네이티브 키로 쓴다.
+func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.LocatorRef, requestedProperties []string, propertyDefinitions map[string]entry.PropertyDefinition, sourceSelectors map[string]entry.SourcePropertyDescriptor, readTransforms map[string]entry.PropertyBinding, observedAt time.Time, sourceRevision entry.Revision, availability entry.Availability, freshness entry.Freshness, provenance entry.PropertyProvenance) (AdapterEntry, error) {
 	if item.Validate() != nil || locatorRef.Validate() != nil || !validRequestedProperties(requestedProperties) || sourceRevision.Validate() != nil || availability.ValidateCanonical() != nil || freshness.ValidateCanonical() != nil {
 		return AdapterEntry{}, ErrAdapterFailure
 	}
@@ -782,16 +791,36 @@ func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.Locator
 	}
 	properties := make([]entry.PropertyValue, 0, len(requestedProperties))
 	for _, requested := range requestedProperties {
+		nativeKey := requested
+		descriptor, bound := sourceSelectors[requested]
+		if bound {
+			nativeKey = descriptor.NativeKey
+		}
+		transform := "identity"
+		if binding, ok := readTransforms[requested]; ok {
+			transform = binding.ReadTransform
+		}
+		found := false
 		for _, property := range item.Snapshot.Properties {
-			if property.Key != requested {
+			if property.Key != nativeKey {
 				continue
 			}
-			value, valueErr := canonicalPropertyValue(property, propertyDefinitions[requested], ref.EntryID, observedAt, sourceRevisionValue, provenance)
+			found = true
+			if bound && !nativeValueMatchesDescriptor(property.Value, descriptor) {
+				return AdapterEntry{}, ErrAdapterFailure
+			}
+			value, valueErr := canonicalPropertyValue(property, transform, propertyDefinitions[requested], ref.EntryID, observedAt, sourceRevisionValue, provenance)
+			if errors.Is(valueErr, errPropertyNotApplicable) {
+				break
+			}
 			if valueErr != nil {
 				return AdapterEntry{}, valueErr
 			}
 			properties = append(properties, value)
 			break
+		}
+		if bound && !found && propertyDefinitions[requested].Required {
+			return AdapterEntry{}, ErrAdapterFailure
 		}
 	}
 	observedRevision, _ := entry.NewObservedRevision(1)
@@ -807,8 +836,62 @@ func CanonicalizeSourceItemWithLocator(item SourceItem, locatorRef entry.Locator
 	return result, nil
 }
 
-func canonicalPropertyValue(property entry.Property, definition entry.PropertyDefinition, entryID string, observedAt time.Time, sourceRevision entry.SourceRevision, provenance entry.PropertyProvenance) (entry.PropertyValue, error) {
+func nativeValueMatchesDescriptor(value entry.PropertyValue, descriptor entry.SourcePropertyDescriptor) bool {
+	if value.Validate() != nil {
+		return false
+	}
+	cardinality := entry.PropertyCardinalityOne
+	if value.Type == entry.PropertyValueTypeStringList {
+		cardinality = entry.PropertyCardinalityMany
+	}
+	if descriptor.NativeCardinality != cardinality {
+		return false
+	}
+	switch descriptor.NativeType {
+	case "string", "categorical":
+		return value.Type == entry.PropertyValueTypeString
+	case "string_list":
+		return value.Type == entry.PropertyValueTypeStringList
+	case "number":
+		return value.Type == entry.PropertyValueTypeInt64
+	case "boolean":
+		return value.Type == entry.PropertyValueTypeBool
+	case "date", "datetime":
+		return value.Type == entry.PropertyValueTypeTimestamp
+	default:
+		return false
+	}
+}
+
+// canonicalPropertyValue는 네이티브 소스 프로퍼티를 canonical PropertyValue로 투영한다.
+// transform은 검토된 읽기 변환(filename_extension, filename_stem, identity)만 허용하고,
+// 그 외 값은 실패 닫기한다. 카탈로그 바인딩된 정의는 타입·cardinality 계약을 보존하며
+// select 계약에는 text 네이티브 값을 select payload로 투영한다.
+func canonicalPropertyValue(property entry.Property, transform string, definition entry.PropertyDefinition, entryID string, observedAt time.Time, sourceRevision entry.SourceRevision, provenance entry.PropertyProvenance) (entry.PropertyValue, error) {
 	catalogBound := definition.PropertyID != (entry.PropertyID{})
+	value := property.Value
+	switch transform {
+	case "", "identity":
+	case "filename_extension":
+		name, ok := stringValuePayload(value)
+		if !ok {
+			return entry.PropertyValue{}, ErrAdapterFailure
+		}
+		_, extension, hasExtension := foundationFilenameParts(name)
+		if !hasExtension {
+			return entry.PropertyValue{}, errPropertyNotApplicable
+		}
+		value = stringPropertyValue(extension)
+	case "filename_stem":
+		name, ok := stringValuePayload(value)
+		if !ok {
+			return entry.PropertyValue{}, ErrAdapterFailure
+		}
+		stem, _, _ := foundationFilenameParts(name)
+		value = stringPropertyValue(stem)
+	default:
+		return entry.PropertyValue{}, ErrAdapterFailure
+	}
 	if !catalogBound {
 		propertyID, err := entry.RegistryPropertyID(property.Key)
 		if err != nil {
@@ -819,25 +902,42 @@ func canonicalPropertyValue(property entry.Property, definition entry.PropertyDe
 	var valueType entry.PropertyType
 	cardinality := entry.PropertyCardinalityOne
 	var payload entry.PropertyPayload
-	switch property.Value.Type {
+	switch value.Type {
 	case entry.PropertyValueTypeString:
 		valueType = entry.PropertyTypeText
-		payload = entry.TextPayload(*property.Value.StringValue)
+		payload = entry.TextPayload(*value.StringValue)
 	case entry.PropertyValueTypeInt64:
 		valueType = entry.PropertyTypeNumber
-		payload = entry.NumberPayload(strconv.FormatInt(*property.Value.Int64Value, 10))
+		payload = entry.NumberPayload(strconv.FormatInt(*value.Int64Value, 10))
 	case entry.PropertyValueTypeBool:
 		valueType = entry.PropertyTypeBoolean
-		payload = entry.BooleanPayload(*property.Value.BoolValue)
+		payload = entry.BooleanPayload(*value.BoolValue)
 	case entry.PropertyValueTypeTimestamp:
 		valueType = entry.PropertyTypeDateTime
-		payload = entry.DateTimePayload(property.Value.TimestampValue.Round(0).Format(time.RFC3339Nano))
+		payload = entry.DateTimePayload(value.TimestampValue.Round(0).Format(time.RFC3339Nano))
 	case entry.PropertyValueTypeStringList:
 		valueType = entry.PropertyTypeText
 		cardinality = entry.PropertyCardinalityMany
-		payload = entry.TextManyPayload(*property.Value.StringListValue)
+		payload = entry.TextManyPayload(*value.StringListValue)
 	default:
 		return entry.PropertyValue{}, ErrAdapterFailure
+	}
+	if catalogBound && definition.ValueType == entry.PropertyTypeSelect && valueType == entry.PropertyTypeText {
+		switch cardinality {
+		case entry.PropertyCardinalityOne:
+			if payload.Text == nil {
+				return entry.PropertyValue{}, ErrAdapterFailure
+			}
+			payload = entry.SelectPayload(*payload.Text)
+		case entry.PropertyCardinalityMany:
+			if payload.TextMany == nil {
+				return entry.PropertyValue{}, ErrAdapterFailure
+			}
+			payload = entry.SelectManyPayload(*payload.TextMany)
+		default:
+			return entry.PropertyValue{}, ErrAdapterFailure
+		}
+		valueType = entry.PropertyTypeSelect
 	}
 	if catalogBound {
 		// 카탈로그에 바인딩된 정의는 타입·cardinality 계약을 보존한다. adapter
@@ -853,11 +953,30 @@ func canonicalPropertyValue(property entry.Property, definition entry.PropertyDe
 	if err != nil {
 		return entry.PropertyValue{}, ErrAdapterFailure
 	}
-	value, err := entry.NewPropertyValue(validated, entryID, entry.PropertyStateValue, provenance, observedAt.Round(0).UTC(), sourceRevision, false, payload)
+	canonical, err := entry.NewPropertyValue(validated, entryID, entry.PropertyStateValue, provenance, observedAt.Round(0).UTC(), sourceRevision, false, payload)
 	if err != nil {
 		return entry.PropertyValue{}, ErrAdapterFailure
 	}
-	return value, nil
+	return canonical, nil
+}
+
+func foundationFilenameParts(name string) (stem string, extension string, hasExtension bool) {
+	lastDot := strings.LastIndexByte(name, '.')
+	if lastDot <= 0 || lastDot == len(name)-1 {
+		return name, "", false
+	}
+	return name[:lastDot], name[lastDot+1:], true
+}
+
+func stringValuePayload(value entry.PropertyValue) (string, bool) {
+	if value.Type == entry.PropertyValueTypeString && value.StringValue != nil {
+		return *value.StringValue, true
+	}
+	return "", false
+}
+
+func stringPropertyValue(text string) entry.PropertyValue {
+	return entry.PropertyValue{Type: entry.PropertyValueTypeString, StringValue: &text}
 }
 
 func canonicalCapabilities(value entry.Capabilities) entry.Capabilities {
