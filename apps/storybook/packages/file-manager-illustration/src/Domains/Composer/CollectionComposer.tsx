@@ -1,3 +1,4 @@
+import { Menu, MenuItem, MenuSeparator } from "@voyager-labs/design-foundation"
 import { type FC, useEffect, useRef, useState } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 import { ComposerConditionChip } from "./ComposerConditionChip"
@@ -108,28 +109,20 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
           <summary aria-label="More actions">
             <SFSymbol name="ellipsis" size={13} weight={500} />
           </summary>
-          <div className="collection-composer-overflow-menu" role="menu">
-            <button type="button" role="menuitem" disabled={!isClearEnabled} onClick={onClear}>
-              Clear
-            </button>
-            <button
-              type="button"
-              role="menuitem"
+          <Menu className="collection-composer-overflow-menu" aria-label="More actions">
+            <MenuItem label="Clear" disabled={!isClearEnabled} onClick={onClear} />
+            <MenuItem
+              label="Discard"
               disabled={!fixture.canDiscard || fixture.isProcessing}
               onClick={onClear}
-            >
-              Discard
-            </button>
-            <div className="collection-composer-overflow-separator" />
-            <button
-              type="button"
-              role="menuitem"
+            />
+            <MenuSeparator />
+            <MenuItem
+              label="Save As…"
               disabled={!fixture.canSave || fixture.isProcessing}
               onClick={onSave}
-            >
-              Save As…
-            </button>
-          </div>
+            />
+          </Menu>
         </details>
       </div>
 

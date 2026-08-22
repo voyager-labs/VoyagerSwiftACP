@@ -170,6 +170,9 @@
 
 [data-file-manager-illustration] .collection-composer-operator-picker {
   width: 180px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--fm-space-2);
 }
 
 [data-file-manager-illustration] .collection-composer-value-picker {

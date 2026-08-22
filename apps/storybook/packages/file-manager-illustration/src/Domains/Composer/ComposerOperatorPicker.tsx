@@ -1,4 +1,5 @@
-import { type FC, useEffect, useRef } from "react"
+import { Menu, MenuItem } from "@voyager-labs/design-foundation"
+import type { FC } from "react"
 import type { ComposerOperatorPicker as ComposerOperatorPickerFixture } from "./composer-fixtures"
 
 export type ComposerOperatorPickerProps = {
@@ -7,36 +8,22 @@ export type ComposerOperatorPickerProps = {
 }
 
 export const ComposerOperatorPicker: FC<ComposerOperatorPickerProps> = ({ picker, onSelect }) => {
-  const selectedOptionRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    selectedOptionRef.current?.focus()
-  }, [])
-
   return (
-    <dialog
+    <Menu
       className="collection-composer-operator-picker"
-      open
       aria-label="Condition operator picker"
+      focusOnMount
     >
-      <div className="collection-composer-picker-list">
-        {picker.options.map((operator, index) => (
-          <button
-            type="button"
-            ref={
-              operator.code === picker.selectedCode || (picker.selectedCode === "" && index === 0)
-                ? selectedOptionRef
-                : undefined
-            }
-            key={operator.code}
-            aria-pressed={operator.code === picker.selectedCode}
-            onClick={() => onSelect?.(operator.code)}
-          >
-            {operator.label}
-          </button>
-        ))}
-      </div>
-    </dialog>
+      {picker.options.map((operator) => (
+        <MenuItem
+          key={operator.code}
+          role="menuitemradio"
+          label={operator.label}
+          checked={operator.code === picker.selectedCode}
+          onClick={() => onSelect?.(operator.code)}
+        />
+      ))}
+    </Menu>
   )
 }
 
