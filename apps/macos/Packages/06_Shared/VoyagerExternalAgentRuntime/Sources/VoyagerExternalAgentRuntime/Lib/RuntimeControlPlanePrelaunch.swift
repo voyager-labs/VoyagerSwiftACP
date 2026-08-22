@@ -59,20 +59,26 @@ private extension RuntimeControlPlane {
         _ request: RuntimeLaunchRequest,
     ) async throws {
         let host = request.externalAgentSessionReference
-        guard let current = sessions[host],
-              !current.lease.isActive,
+        guard let current = sessions[host] else { return }
+        // 소유자 작업이 사라진 분리 소유자는 스스로 수렴하지 못하므로 교체 전 저장된 terminal 채택을 허용한다.
+        let ownershipReleased = !current.lease.isActive || current.lease.isDetachedOwner
+        guard ownershipReleased,
               !current.stored.projection.isTerminal,
               current.stored.runReference != request.runReference
         else { return }
         try await withPersistedState { plane, loaded in
             guard plane.sessions[host] == current,
-                  let adopted = plane.adoptingPersistedTerminal(
+                  var adopted = plane.adoptingPersistedTerminal(
                       host: host,
                       runReference: current.stored.runReference,
                       expectedSession: current,
                       loaded: loaded,
                   )
             else { return }
+            // 같은 평면 terminal 경계와 동일하게 분리 소유권은 채택과 함께 해제한다.
+            if adopted.lease.isDetachedOwner {
+                adopted.lease = .none
+            }
             plane.sessions[host] = adopted
         }
         try Task.checkCancellation()
