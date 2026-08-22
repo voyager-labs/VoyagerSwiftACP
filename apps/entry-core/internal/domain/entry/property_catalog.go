@@ -208,9 +208,15 @@ type WorkspacePropertyDefinition struct {
 	Namespace      string
 	CanonicalKey   string
 	DisplayName    string
+	Description    string
 	ValueType      PropertyType
 	Cardinality    PropertyCardinality
+	Nullable       bool
 	Editable       bool
+	DefaultHidden  bool
+	DefaultPinned  bool
+	DBIndexedHint  bool
+	DefinitionRev  int
 	Provenance     PropertyProvenance
 	Unit           *string
 	Lifecycle      PropertyLifecycleState
@@ -219,7 +225,8 @@ type WorkspacePropertyDefinition struct {
 func (definition WorkspacePropertyDefinition) Validate() error {
 	if !definition.PropertyID.valid() || !definition.Origin.valid() || !definition.IdentityScheme.valid() ||
 		!validUTF8Bytes(definition.Namespace, 1, 128) || !validUTF8Bytes(definition.CanonicalKey, 1, 128) ||
-		!validUTF8Bytes(definition.DisplayName, 1, 256) || !canonicalPropertyType(definition.ValueType) ||
+		!validUTF8Bytes(definition.DisplayName, 1, 256) || !validUTF8Bytes(definition.Description, 0, 4096) ||
+		!canonicalPropertyType(definition.ValueType) || definition.DefinitionRev < 0 ||
 		!definition.Cardinality.valid() || !definition.Provenance.valid() || !definition.Lifecycle.valid() {
 		return ErrInvalidPropertyCatalogSnapshot
 	}
@@ -335,8 +342,9 @@ func (snapshot PropertyCatalogSnapshot) Digest() ([32]byte, error) {
 		}
 		frameFamily(digestFamilyDefinitions,
 			[]byte(definition.PropertyID.String()), []byte(definition.Origin), []byte(definition.IdentityScheme),
-			[]byte(definition.Namespace), []byte(definition.CanonicalKey), []byte(definition.DisplayName),
-			[]byte(definition.ValueType), []byte(definition.Cardinality), boolByte(definition.Editable),
+			[]byte(definition.Namespace), []byte(definition.CanonicalKey), []byte(definition.DisplayName), []byte(definition.Description),
+			[]byte(definition.ValueType), []byte(definition.Cardinality), boolByte(definition.Nullable), boolByte(definition.Editable),
+			boolByte(definition.DefaultHidden), boolByte(definition.DefaultPinned), boolByte(definition.DBIndexedHint), uint64Bytes(definition.DefinitionRev),
 			[]byte(definition.Provenance), []byte(unit), []byte(definition.Lifecycle),
 		)
 	}

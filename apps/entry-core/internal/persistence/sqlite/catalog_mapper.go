@@ -93,10 +93,6 @@ func validateSeedTrio(owner *string, version *int, sourceVersion *string) error 
 	return nil
 }
 
-// mapDefinitionRow maps a WorkspacePropertyDefinitionRow to the domain
-// WorkspacePropertyDefinition, dropping runtime workspace_id/timestamps and
-// non-digest row fields (description, nullable, defaults, definition_revision).
-// Identity scheme and origin are preserved for the digest.
 func mapDefinitionRow(row WorkspacePropertyDefinitionRow) (domainentry.WorkspacePropertyDefinition, error) {
 	if err := validateWorkspaceID(row.WorkspaceID); err != nil {
 		return domainentry.WorkspacePropertyDefinition{}, err
@@ -127,9 +123,15 @@ func mapDefinitionRow(row WorkspacePropertyDefinitionRow) (domainentry.Workspace
 		Namespace:      row.Namespace,
 		CanonicalKey:   row.CanonicalKey,
 		DisplayName:    row.DisplayName,
+		Description:    row.Description,
 		ValueType:      domainentry.PropertyValueType(row.ValueType),
 		Cardinality:    domainentry.PropertyCardinality(row.Cardinality),
+		Nullable:       row.Nullable,
 		Editable:       row.Editable,
+		DefaultHidden:  row.DefaultHidden,
+		DefaultPinned:  row.DefaultPinned,
+		DBIndexedHint:  row.DBIndexedHint,
+		DefinitionRev:  row.DefinitionRev,
 		Provenance:     provenance,
 		Lifecycle:      domainentry.PropertyLifecycleState(row.LifecycleState),
 	}

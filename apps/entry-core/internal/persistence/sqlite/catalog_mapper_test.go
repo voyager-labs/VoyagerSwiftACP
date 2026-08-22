@@ -155,6 +155,32 @@ func TestCatalogMapperPreservesBindingOrdinal(t *testing.T) {
 	}
 }
 
+func TestCatalogMapperPreservesDefinitionDigestFields(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	id := domainentry.MustPropertyID("0198dead-beef-7000-8000-3b9ac9e12345")
+	row := WorkspacePropertyDefinitionRow{
+		WorkspaceID: wsctx.ID.Bytes(), PropertyID: id.Bytes(), Origin: "built_in", IdentityScheme: "voyager_issued",
+		Namespace: "system", CanonicalKey: "title", DisplayName: "Title", Description: "A title",
+		ValueType: "text", Cardinality: "one", Nullable: true, Editable: true,
+		DefaultHidden: true, DefaultPinned: true, DBIndexedHint: true, DefinitionRev: 7,
+		Provenance: "system", LifecycleState: "active",
+	}
+	definition, err := mapDefinitionRow(row)
+	if err != nil {
+		t.Fatalf("mapDefinitionRow: %v", err)
+	}
+	if definition.Description != row.Description || definition.Nullable != row.Nullable ||
+		definition.DefaultHidden != row.DefaultHidden || definition.DefaultPinned != row.DefaultPinned ||
+		definition.DBIndexedHint != row.DBIndexedHint || definition.DefinitionRev != row.DefinitionRev {
+		t.Fatalf("mapped definition dropped digest fields: %#v", definition)
+	}
+}
+
 // TestCatalogMapperRejectsPartialSeedMetadata proves the mapper rejects a row
 // whose seed provenance trio is partially populated, and a foreign seed owner.
 func TestCatalogMapperRejectsPartialSeedMetadata(t *testing.T) {

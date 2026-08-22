@@ -137,6 +137,40 @@ func TestSourcePropertyCatalogDigestIncludesBindingOrdinal(t *testing.T) {
 	}
 }
 
+func TestSourcePropertyCatalogDigestIncludesDefinitionFields(t *testing.T) {
+	definition := WorkspacePropertyDefinition{
+		PropertyID: mustRegistryPropertyID("filesystem.extension"), Origin: PropertyOriginBuiltIn,
+		IdentityScheme: PropertyIdentitySchemeRegistryDerived, Namespace: "system",
+		CanonicalKey: "filesystem.extension", DisplayName: "Extension", Description: "Extension",
+		ValueType: PropertyTypeSelect, Cardinality: PropertyCardinalityOne, Nullable: true,
+		DefaultHidden: true, DefaultPinned: true, DBIndexedHint: true, DefinitionRev: 3,
+		Provenance: PropertyProvenanceSystem, Lifecycle: PropertyLifecycleActive,
+	}
+	base, err := (PropertyCatalogSnapshot{Definitions: []WorkspacePropertyDefinition{definition}}).Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutations := []func(*WorkspacePropertyDefinition){
+		func(value *WorkspacePropertyDefinition) { value.Description = "changed" },
+		func(value *WorkspacePropertyDefinition) { value.Nullable = !value.Nullable },
+		func(value *WorkspacePropertyDefinition) { value.DefaultHidden = !value.DefaultHidden },
+		func(value *WorkspacePropertyDefinition) { value.DefaultPinned = !value.DefaultPinned },
+		func(value *WorkspacePropertyDefinition) { value.DBIndexedHint = !value.DBIndexedHint },
+		func(value *WorkspacePropertyDefinition) { value.DefinitionRev++ },
+	}
+	for index, mutate := range mutations {
+		changed := definition
+		mutate(&changed)
+		digest, digestErr := (PropertyCatalogSnapshot{Definitions: []WorkspacePropertyDefinition{changed}}).Digest()
+		if digestErr != nil {
+			t.Fatalf("mutation[%d] Digest: %v", index, digestErr)
+		}
+		if digest == base {
+			t.Fatalf("mutation[%d] did not change digest", index)
+		}
+	}
+}
+
 func TestSourcePropertyCatalogContractsRejectInvalidNaturalRef(t *testing.T) {
 	valid := mustSourcePropertyRef(t, "macos.mditem")
 	candidates := []SourcePropertyRef{
