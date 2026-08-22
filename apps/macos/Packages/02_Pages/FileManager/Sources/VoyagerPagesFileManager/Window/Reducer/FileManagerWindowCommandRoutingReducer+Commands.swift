@@ -250,6 +250,12 @@ extension FileManagerWindowCommandRoutingReducer {
         case let .presentContentTabSwitcher(source):
             handlePresentContentTabSwitcher(source: source, state: &state)
 
+        case let .moveContentTabSwitcherFocus(direction):
+            handleMoveContentTabSwitcherFocus(direction: direction, state: &state)
+
+        case .dismissContentTabSwitcher:
+            handleDismissContentTabSwitcher(state: &state)
+
         default:
             nil
         }

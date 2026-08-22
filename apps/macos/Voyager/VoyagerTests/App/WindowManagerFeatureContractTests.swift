@@ -3254,6 +3254,100 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window?.contentTabs.tabs.last?.anchor, directoryAnchor, "복원된 tab의 anchor가 일치해야 함")
     }
 
+    func testContentTabSwitcherSemanticCommandsNoOpUntilFocusedWindowIsReady() async {
+        let commands: [(WindowManagerAction.FileCommand, FileManagerWindowAction.WindowCommand)] = [
+            (.selectMostRecentlyUsedContentTab, .selectMostRecentlyUsedContentTab),
+            (.presentContentTabSwitcher, .presentContentTabSwitcher(source: .automatic)),
+            (.moveNextContentTabSwitcher, .moveContentTabSwitcherFocus(direction: .next)),
+            (.movePreviousContentTabSwitcher, .moveContentTabSwitcherFocus(direction: .previous)),
+            (.dismissContentTabSwitcher, .dismissContentTabSwitcher),
+        ]
+
+        for (fileCommand, windowCommand) in commands {
+            let windowID = UUID()
+            var initialState = WindowManagerFeature.State()
+            initialState.windows = [
+                WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+            ]
+            initialState.focusedWindowID = windowID
+
+            let store = TestStore(initialState: initialState) {
+                WindowManagerFeature()
+            }
+
+            await store.send(.file(fileCommand))
+            await store.receive { action in
+                guard case let .windows(.element(id, action: .window(.request(actualCommand)))) = action,
+                      id == windowID
+                else { return false }
+                return Self.matches(actualCommand, expected: windowCommand)
+            }
+            await store.finish()
+        }
+
+        for scenario in 0 ..< 5 {
+            let windowID = UUID()
+            var initialState = WindowManagerFeature.State()
+            if scenario != 1 {
+                initialState.windows = [
+                    WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+                ]
+            }
+            switch scenario {
+            case 0:
+                initialState.focusedWindowID = UUID()
+            case 1:
+                initialState.focusedWindowID = windowID
+            default:
+                initialState.focusedWindowID = scenario == 2 ? nil : windowID
+            }
+            switch scenario {
+            case 3:
+                initialState.pendingWindowOpenIDs = [windowID]
+            case 4:
+                initialState.closingWindowIDs = [windowID]
+            default:
+                break
+            }
+
+            let store = TestStore(initialState: initialState) {
+                WindowManagerFeature()
+            }
+
+            let before = store.state
+            for (fileCommand, _) in commands {
+                await store.send(.file(fileCommand))
+            }
+            await store.finish()
+            XCTAssertEqual(store.state, before)
+        }
+    }
+
+    private static func matches(
+        _ actual: FileManagerWindowAction.WindowCommand,
+        expected: FileManagerWindowAction.WindowCommand,
+    ) -> Bool {
+        switch expected {
+        case .selectMostRecentlyUsedContentTab:
+            guard case .selectMostRecentlyUsedContentTab = actual else { return false }
+            return true
+        case let .presentContentTabSwitcher(expectedSource):
+            guard case let .presentContentTabSwitcher(actualSource) = actual else { return false }
+            return actualSource == expectedSource
+        case .moveContentTabSwitcherFocus(direction: .next):
+            guard case .moveContentTabSwitcherFocus(direction: .next) = actual else { return false }
+            return true
+        case .moveContentTabSwitcherFocus(direction: .previous):
+            guard case .moveContentTabSwitcherFocus(direction: .previous) = actual else { return false }
+            return true
+        case .dismissContentTabSwitcher:
+            guard case .dismissContentTabSwitcher = actual else { return false }
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - Default Pinned Favorites Seed
 
     /// 최초 실행(finder flag=false, pinnedStore empty)에서 Finder Favorites를 compatible pinned tab으로 변환하고
