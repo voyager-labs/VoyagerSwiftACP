@@ -73,6 +73,19 @@ private func inactivePinnedReturnCompletionEffect(
     )
 }
 
+/// Directory 복귀는 동기 commit이므로 즉시 성공 terminal을 보내고 Collection은 load 결과가 terminal을 대신한다.
+private func activePinnedReturnCompletionEffect(
+    tabID: ContentTabID,
+    anchor: ContentTabPageAnchor,
+    navigationState: ContentPageNavigationRoute,
+) -> Effect<FileManagerWindowAction> {
+    guard case .directory = anchor else { return .none }
+    return .send(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+        tabID: tabID,
+        navigationState: navigationState,
+    )))
+}
+
 @Reducer
 struct FileManagerWindowRoutingReducer {
     typealias State = FileManagerWindowState
@@ -346,6 +359,7 @@ struct FileManagerWindowRoutingReducer {
                 : .send(.contentTabs(.updateRuntimePageAnchor(tabID, anchor))),
             .send(.navigation(.internal(.applyPinnedPeerNavigationState(navigationState)))),
             handleNavigateToState(navigationState, state: &state),
+            activePinnedReturnCompletionEffect(tabID: tabID, anchor: anchor, navigationState: navigationState),
         )
     }
 
@@ -360,10 +374,7 @@ struct FileManagerWindowRoutingReducer {
     }
 
     private func pinnedAnchor(for navigationState: ContentPageNavigationRoute) -> ContentTabPageAnchor? {
-        contentTabAnchor(
-            for: navigationState,
-            computerName: fileManagerClient.displayName("/"),
-        )
+        contentTabAnchor(for: navigationState, computerName: fileManagerClient.displayName("/"))
     }
 
     private func abortPinnedReturn(
