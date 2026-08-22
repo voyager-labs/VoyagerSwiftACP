@@ -106,11 +106,6 @@
   padding-right: 8px;
 }
 
-[data-file-manager-illustration] .collection-composer-query:focus-within {
-  background: var(--fm-composer-input-background);
-  box-shadow: inset 0 0 0 1px var(--fm-composer-input-border), 0 0 0 2px var(--fm-focus-ring);
-}
-
 [data-file-manager-illustration] .collection-composer-query input {
   min-width: 0;
   flex: 1;
