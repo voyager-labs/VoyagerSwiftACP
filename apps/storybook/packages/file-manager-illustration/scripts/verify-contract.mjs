@@ -354,8 +354,8 @@ const fileManagerStories = entries.filter(
   (entry) => entry.type === "story" && entry.title?.startsWith("File Manager/"),
 )
 const fileManagerPaths = new Set(fileManagerStories.map((entry) => entry.importPath))
-// 다중 서페이스 계약: File Manager, Settings, Design Foundation 세 화면이 공용 스토리북을 공유한다
-const KNOWN_SURFACE_PREFIXES = ["File Manager/", "Settings/", "Design Foundation/"]
+// 다중 서페이스 계약: 등록된 제품 화면이 공용 스토리북을 공유한다
+const KNOWN_SURFACE_PREFIXES = ["File Manager/", "Settings/", "Design Foundation/", "Onboarding/"]
 const nonKnownStories = entries.filter(
   (entry) =>
     entry.type === "story" &&
