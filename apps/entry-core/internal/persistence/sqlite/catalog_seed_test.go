@@ -704,6 +704,25 @@ func TestCatalogSeedTamperedHashFailsBeforeWrite(t *testing.T) {
 	}
 }
 
+func TestCatalogSeedTamperedBodyFailsAgainstGeneratedHash(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	meta := seeds.Current()
+	meta.SQLBody += "\n-- tampered embedded artifact"
+	if err := store.applyCatalogSeedMeta(ctx, wsctx, meta); !errors.Is(err, ErrCatalogSeedChecksum) {
+		t.Fatalf("apply error = %v, want ErrCatalogSeedChecksum", err)
+	}
+	var count int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ?", wsctx.ID.Bytes()).Count(&count).Error; err != nil {
+		t.Fatalf("count definitions: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("definitions written despite embedded body checksum failure: %d", count)
+	}
+}
+
 // TestCatalogSeedPartialSQLRollback proves a seed whose SQL executes but whose
 // read-back digest does not match rolls back the entire transaction, leaving
 // the pre-call (empty) state.

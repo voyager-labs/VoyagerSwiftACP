@@ -179,3 +179,18 @@ func TestCatalogRepositoryOrphanRefFails(t *testing.T) {
 		t.Fatalf("Load error = %v, want ErrCatalogOrphanRef", err)
 	}
 }
+
+func TestCatalogRepositoryActiveTermOrphanFails(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 1, 1, 1, 1, noneSeedTrio())
+	res := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "cat.0").
+		Update("lifecycle_state", "tombstoned")
+	if res.Error != nil || res.RowsAffected != 1 {
+		t.Fatalf("tombstone definition: err=%v rows=%d", res.Error, res.RowsAffected)
+	}
+	if _, err := NewPropertyCatalogRepository(store).Load(ctx, wsctx); !errors.Is(err, ErrCatalogOrphanRef) {
+		t.Fatalf("Load error = %v, want ErrCatalogOrphanRef", err)
+	}
+}

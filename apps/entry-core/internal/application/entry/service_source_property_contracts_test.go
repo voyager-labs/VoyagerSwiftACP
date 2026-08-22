@@ -229,6 +229,29 @@ func TestSourcePropertyContractsSelectCurrentInstanceAmongMultipleBindings(t *te
 	}
 }
 
+func TestSelectExecutableSourceBindingUsesScopeThenOrdinalIndependentOfOrder(t *testing.T) {
+	_, bindings := unifiedFixture(t)
+	base := boundTitleCatalogFixture(bindings[0].SourceRef.SourceInstanceID).Bindings[0]
+	workspace := base
+	workspace.SourceRef.ScopeKind = domainentry.SourceScopeKindWorkspace
+	workspace.BindingOrdinal = 9
+	system := base
+	system.SourceRef.ScopeKind = domainentry.SourceScopeKindSystem
+	system.BindingOrdinal = 0
+	if selected, err := selectExecutableSourceBinding([]domainentry.PropertyBinding{workspace, system}); err != nil || selected.SourceRef.ScopeKind != domainentry.SourceScopeKindWorkspace {
+		t.Fatalf("scope precedence selected = %#v, err = %v", selected, err)
+	}
+
+	low := workspace
+	low.BindingOrdinal = 1
+	if selected, err := selectExecutableSourceBinding([]domainentry.PropertyBinding{workspace, low}); err != nil || selected.BindingOrdinal != 1 {
+		t.Fatalf("ordinal precedence selected = %#v, err = %v", selected, err)
+	}
+	if selected, err := selectExecutableSourceBinding([]domainentry.PropertyBinding{low, workspace}); err != nil || selected.BindingOrdinal != 1 {
+		t.Fatalf("reversed ordinal precedence selected = %#v, err = %v", selected, err)
+	}
+}
+
 // bindingWithoutDescriptorCatalog는 활성 바인딩만 남기고 디스크립터를 카탈로그에서
 // 제외한다. 바인딩은 적용 가능하지만 실행 조건 검증에 필요한 디스크립터가 없다.
 func bindingWithoutDescriptorCatalog(sourceInstanceID string) domainentry.PropertyCatalogSnapshot {

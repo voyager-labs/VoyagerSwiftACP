@@ -131,6 +131,30 @@ func TestCatalogMapperRejectsInvalidNaturalRefAndLifecycle(t *testing.T) {
 	})
 }
 
+func TestCatalogMapperPreservesBindingOrdinal(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	id := domainentry.MustPropertyID("0198dead-beef-7000-8000-3b9ac9e12345")
+	row := PropertyBindingRow{
+		WorkspaceID: wsctx.ID.Bytes(), PropertyID: id.Bytes(), ProviderID: "macos.fakeexternal",
+		SourceInstanceID: "src:m-KQdBGV6oTOo0uNavbxU6UH9heJBwQTseDcv_utLsE", ScopeKind: "workspace",
+		ScopeExternalID: "workspace", ExternalPropertyID: "title", BindingOrdinal: 7,
+		ReadTransform: "identity", Direction: "read", EffectiveReadable: true,
+		ApprovalState: "approved", LifecycleState: "active",
+	}
+	binding, err := mapBindingRow(row)
+	if err != nil {
+		t.Fatalf("mapBindingRow: %v", err)
+	}
+	if binding.BindingOrdinal != 7 {
+		t.Fatalf("BindingOrdinal = %d, want 7", binding.BindingOrdinal)
+	}
+}
+
 // TestCatalogMapperRejectsPartialSeedMetadata proves the mapper rejects a row
 // whose seed provenance trio is partially populated, and a foreign seed owner.
 func TestCatalogMapperRejectsPartialSeedMetadata(t *testing.T) {
