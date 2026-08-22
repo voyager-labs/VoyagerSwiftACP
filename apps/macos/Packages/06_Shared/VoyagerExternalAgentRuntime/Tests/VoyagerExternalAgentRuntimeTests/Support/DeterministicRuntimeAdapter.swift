@@ -17,14 +17,19 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     nonisolated let descriptor: RuntimeAdapterDescriptor
 
     private let eventsByLaunch: [[RuntimeEventEnvelope]]
+    private let eventsByEventStream: [[RuntimeEventEnvelope]]?
     private let clock: DeterministicRuntimeClock
     private let IDs: DeterministicRuntimeIDs
     private let launchDelay: Duration
     private let launchGate: RuntimeTestGate?
     private let launchReceiptRunReference: RuntimeRunReference?
     private let eventStreamDelay: Duration
+    private let eventStreamInvocationGate: RuntimeTestGate?
     private let eventStreamGate: RuntimeTestGate?
     private let eventStreamFailure: EventStreamFailure?
+    private let eventStreamRuntimeFailure: RuntimeAdapterFailure?
+    private let eventStreamRuntimeFailuresByLaunch: [Int: RuntimeAdapterFailure]
+    private let eventStreamRuntimeFailureGate: RuntimeTestGate?
     private let operationDelay: Duration
     private let operationGate: RuntimeTestGate?
     private let restartDelay: Duration
@@ -54,14 +59,19 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         transport: RuntimeTransportKind = .processJSONL,
         capabilities: RuntimeCapabilities = .allSupported,
         eventsByLaunch: [[RuntimeEventEnvelope]] = [[]],
+        eventsByEventStream: [[RuntimeEventEnvelope]]? = nil,
         clock: DeterministicRuntimeClock = .live,
         IDs: DeterministicRuntimeIDs = .sequential,
         launchDelay: Duration = .zero,
         launchGate: RuntimeTestGate? = nil,
         launchReceiptRunReference: RuntimeRunReference? = nil,
         eventStreamDelay: Duration = .zero,
+        eventStreamInvocationGate: RuntimeTestGate? = nil,
         eventStreamGate: RuntimeTestGate? = nil,
         eventStreamFailure: EventStreamFailure? = nil,
+        eventStreamRuntimeFailure: RuntimeAdapterFailure? = nil,
+        eventStreamRuntimeFailuresByLaunch: [Int: RuntimeAdapterFailure] = [:],
+        eventStreamRuntimeFailureGate: RuntimeTestGate? = nil,
         operationDelay: Duration = .zero,
         operationGate: RuntimeTestGate? = nil,
         failsLaunch: Bool = false,
@@ -84,14 +94,19 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
             providerBranch: providerBranch,
         )
         self.eventsByLaunch = eventsByLaunch
+        self.eventsByEventStream = eventsByEventStream
         self.clock = clock
         self.IDs = IDs
         self.launchDelay = launchDelay
         self.launchGate = launchGate
         self.launchReceiptRunReference = launchReceiptRunReference
         self.eventStreamDelay = eventStreamDelay
+        self.eventStreamInvocationGate = eventStreamInvocationGate
         self.eventStreamGate = eventStreamGate
         self.eventStreamFailure = eventStreamFailure
+        self.eventStreamRuntimeFailure = eventStreamRuntimeFailure
+        self.eventStreamRuntimeFailuresByLaunch = eventStreamRuntimeFailuresByLaunch
+        self.eventStreamRuntimeFailureGate = eventStreamRuntimeFailureGate
         self.operationDelay = operationDelay
         self.operationGate = operationGate
         self.restartDelay = restartDelay
@@ -140,13 +155,24 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         if eventStreamDelay != .zero {
             try await clock.sleep(eventStreamDelay)
         }
+        await eventStreamInvocationGate?.wait()
+        if let eventStreamRuntimeFailure = eventStreamRuntimeFailuresByLaunch[eventStreamCount]
+            ?? eventStreamRuntimeFailure
+        {
+            await eventStreamRuntimeFailureGate?.wait()
+            throw eventStreamRuntimeFailure
+        }
         if eventStreamFailure == .creation {
             await eventStreamGate?.wait()
             throw InjectedFailure.eventStream
         }
         let index = max(0, launchCount - 1)
-        let events = eventsByLaunch.first(where: { $0.first?.runReference == runReference })
-            ?? eventsByLaunch[min(index, eventsByLaunch.count - 1)]
+        let events: [RuntimeEventEnvelope] = if let eventsByEventStream {
+            eventsByEventStream[min(eventStreamCount - 1, eventsByEventStream.count - 1)]
+        } else {
+            eventsByLaunch.first(where: { $0.first?.runReference == runReference })
+                ?? eventsByLaunch[min(index, eventsByLaunch.count - 1)]
+        }
         return AsyncThrowingStream { continuation in
             Task {
                 await eventStreamGate?.wait()
@@ -213,6 +239,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         RuntimeAdapterInvocationCounts(
             launch: launchCount,
             stream: eventStreamCount,
+            terminalResult: terminalResultCount,
             cancellation: cancellationCount,
             approval: approvalCount,
             input: queuedInputCount,
@@ -291,6 +318,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
 struct RuntimeAdapterInvocationCounts {
     let launch: Int
     let stream: Int
+    let terminalResult: Int
     let cancellation: Int
     let approval: Int
     let input: Int
@@ -299,11 +327,27 @@ struct RuntimeAdapterInvocationCounts {
 actor RuntimeTestGate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiterCountWaiters: [CheckedContinuation<Void, Never>] = []
 
     func wait() async {
         guard !isOpen else { return }
         await withCheckedContinuation { continuation in
             waiters.append(continuation)
+            guard waiters.count == 1 else { return }
+            let pending = waiterCountWaiters
+            waiterCountWaiters.removeAll()
+            for waiter in pending {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard !waiters.isEmpty else {
+            await withCheckedContinuation { continuation in
+                waiterCountWaiters.append(continuation)
+            }
+            return
         }
     }
 
@@ -312,6 +356,11 @@ actor RuntimeTestGate {
         let pending = waiters
         waiters.removeAll()
         for waiter in pending {
+            waiter.resume()
+        }
+        let countWaiters = waiterCountWaiters
+        waiterCountWaiters.removeAll()
+        for waiter in countWaiters {
             waiter.resume()
         }
     }

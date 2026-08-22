@@ -7,20 +7,34 @@ extension RuntimeControlPlane {
         let acceptedKeys: [RuntimeIdempotencyKey]
     }
 
+    private struct AcceptedEventProjection {
+        let terminal: RuntimeResult?
+        let projection: RuntimeProjection
+        let lease: RuntimeLease?
+    }
+
     func accept(
         _ event: RuntimeEventEnvelope,
         host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws -> RuntimeResult? {
         try validateEventAdmission(event, host: host, expectedSource: expectedSource)
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: event.runReference,
+            )
+        }
         let terminal = terminalResult(for: event)
         do {
             return try await commit(host: host) { plane, registry in
                 try plane.apply(
                     event,
-                    host: host,
                     expectedSource: expectedSource,
                     terminal: terminal,
+                    restoredContext: restoredContext,
                     in: &registry,
                 )
             }
@@ -28,6 +42,7 @@ extension RuntimeControlPlane {
             let persistedTerminal = try await readRepairPersistedEventTerminal(
                 host: host,
                 runReference: event.runReference,
+                restoredContext: restoredContext,
             )
             if let persistedTerminal { return persistedTerminal }
             return try await repairTerminalEventAfterConflict(
@@ -35,6 +50,7 @@ extension RuntimeControlPlane {
                 host: host,
                 expectedSource: expectedSource,
                 terminal: terminal,
+                restoredContext: restoredContext,
             )
         }
     }
@@ -44,14 +60,15 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
         terminal: RuntimeResult?,
+        restoredContext: RuntimeRestoredResumeContext?,
     ) async throws -> RuntimeResult {
         do {
             let result = try await commit(host: host) { plane, registry in
                 try plane.apply(
                     event,
-                    host: host,
                     expectedSource: expectedSource,
                     terminal: terminal,
+                    restoredContext: restoredContext,
                     in: &registry,
                 )
             }
@@ -61,6 +78,7 @@ extension RuntimeControlPlane {
             let persistedTerminal = try await readRepairPersistedEventTerminal(
                 host: host,
                 runReference: event.runReference,
+                restoredContext: restoredContext,
             )
             guard let persistedTerminal else { throw RuntimeHostError.persistenceConflict }
             return persistedTerminal
@@ -70,20 +88,50 @@ extension RuntimeControlPlane {
     private func readRepairPersistedEventTerminal(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
+        restoredContext: RuntimeRestoredResumeContext?,
     ) async throws -> RuntimeResult? {
         try await withPersistedState { plane, loaded -> RuntimeResult? in
-            let current = plane.sessions[host]?.freshRunSnapshot()
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                )
+            }
+            let expectedSession = plane.sessions[host]
+            let current = expectedSession?.freshRunSnapshot()
             guard let loaded else { return nil }
-            plane.sessions = plane.reconciledRegistry(candidate: plane.sessions, persisted: loaded)
-            guard let session = plane.sessions[host],
-                  session.stored.runReference == runReference
-            else { return nil }
-            let persisted = session.freshRunSnapshot()
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                    in: expectedSession.map { [host: $0] },
+                )
+            }
+            guard let adopted = plane.adoptingPersistedTerminal(
+                host: host,
+                runReference: runReference,
+                expectedSession: expectedSession,
+                loaded: loaded,
+            ) else { return nil }
+            let persisted = adopted.freshRunSnapshot()
             guard case .adoptPersisted = RuntimeFreshRunDecisionTable.decide(
                 .persistConflict(persisted: persisted),
                 on: current ?? persisted,
             ) else { return nil }
-            return plane.terminalResult(for: session.stored)
+            var reconciled = plane.reconciledRegistry(candidate: plane.sessions, persisted: loaded)
+            reconciled[host] = adopted
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                    in: reconciled,
+                )
+            }
+            plane.sessions = reconciled
+            return plane.terminalResult(for: adopted.stored)
         }
     }
 
@@ -104,24 +152,73 @@ extension RuntimeControlPlane {
 
     private func apply(
         _ event: RuntimeEventEnvelope,
-        host: ExternalAgentSessionReference,
         expectedSource: RuntimeEventSource,
         terminal: RuntimeResult?,
+        restoredContext: RuntimeRestoredResumeContext?,
         in registry: inout SessionRegistry,
     ) throws -> RuntimeResult? {
+        let host = event.externalAgentSessionReference
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: event.runReference,
+                in: registry,
+            )
+        }
         try validate(event, host: host, expectedSource: expectedSource, in: registry)
         guard var session = registry[host] else { throw RuntimeHostError.malformedAdapterResponse }
         let isProvider = expectedSource == .provider
         try advanceProcessedCount(in: &session, isProvider: isProvider)
         let cursor = eventCursor(for: session, isProvider: isProvider)
-        if cursor.acceptedKeys.contains(event.idempotencyKey) {
-            session.stored = session.stored
-                .withEvidence(.ignoredDuplicate(event.idempotencyKey))
+        if try applyReplayEvidence(
+            event,
+            session: &session,
+            cursor: cursor,
+            registry: &registry,
+        ) { return nil }
+        let expected = cursor.lastSequence + 1
+        let hasGap = event.sequence != expected
+        if hasGap { session.stored = session.stored.withEvidence(.sequenceGap(
+            expected: expected,
+            received: event.sequence,
+        )) }
+        let accepted = acceptedEventProjection(
+            event,
+            terminal: terminal,
+            session: session,
+            isProvider: isProvider,
+            hasGap: hasGap,
+        )
+        persistAccepted(
+            event,
+            source: expectedSource,
+            session: &session,
+            projection: accepted.projection,
+            registry: &registry,
+        )
+        if let lease = accepted.lease, session.lease != lease {
+            session.lease = lease
             session.revision += 1
             registry[host] = session
-            return nil
         }
-        if event.sequence <= cursor.lastSequence {
+        return accepted.terminal
+    }
+
+    private func applyReplayEvidence(
+        _ event: RuntimeEventEnvelope,
+        session: inout Session,
+        cursor: EventCursor,
+        registry: inout SessionRegistry,
+    ) throws -> Bool {
+        let host = event.externalAgentSessionReference
+        if cursor.acceptedKeys.contains(event.idempotencyKey) {
+            session.stored = session.stored.withEvidence(.ignoredDuplicate(event.idempotencyKey))
+            session.revision += 1
+            registry[host] = session
+            return true
+        }
+        guard event.sequence > cursor.lastSequence else {
             let projection = session.stored.projection == .launching
                 ? RuntimeProjection.launching
                 : .eventOutOfOrder
@@ -133,18 +230,21 @@ extension RuntimeControlPlane {
                 .withProjection(projection)
             session.revision += 1
             registry[host] = session
-            return nil
+            return true
         }
         guard cursor.acceptedCount < RuntimeBoundaryLimits.acceptedEventsPerRun else {
             throw RuntimeHostError.malformedAdapterResponse
         }
-        let expected = cursor.lastSequence + 1
-        let hasGap = event.sequence != expected
-        if hasGap {
-            session.stored = session.stored.withEvidence(
-                .sequenceGap(expected: expected, received: event.sequence),
-            )
-        }
+        return false
+    }
+
+    private func acceptedEventProjection(
+        _ event: RuntimeEventEnvelope,
+        terminal: RuntimeResult?,
+        session: Session,
+        isProvider: Bool,
+        hasGap: Bool,
+    ) -> AcceptedEventProjection {
         let usesFreshRunProviderPolicy = switch session.lease {
         case .consuming, .detachedConsuming:
             true
@@ -167,38 +267,26 @@ extension RuntimeControlPlane {
         } else {
             nil
         }
-        let acceptedTerminal: RuntimeResult?
-        let acceptedProjection: RuntimeProjection
         switch providerDecision {
-        case let .persist(projection, _, _):
-            acceptedTerminal = terminal
-            acceptedProjection = projection
+        case let .persist(projection, _, lease):
+            return AcceptedEventProjection(terminal: terminal, projection: projection, lease: lease)
         case .ignore, .recordCleanupFailure, .throwCancellation, .throwHost, .adoptPersisted:
-            acceptedTerminal = nil
-            acceptedProjection = hasGap
-                ? .eventOutOfOrder
-                : nonterminalProjection(from: session.stored.projection)
+            return AcceptedEventProjection(
+                terminal: nil,
+                projection: hasGap ? .eventOutOfOrder : nonterminalProjection(from: session.stored.projection),
+                lease: nil,
+            )
         case nil:
-            acceptedTerminal = hasGap ? nil : terminal
-            acceptedProjection = projection(
-                after: event.kind,
-                from: session.stored.projection,
-                hasGap: hasGap,
+            return AcceptedEventProjection(
+                terminal: hasGap ? nil : terminal,
+                projection: projection(
+                    after: event.kind,
+                    from: session.stored.projection,
+                    hasGap: hasGap,
+                ),
+                lease: nil,
             )
         }
-        persistAccepted(
-            event,
-            source: expectedSource,
-            session: &session,
-            projection: acceptedProjection,
-            registry: &registry,
-        )
-        if case let .persist(_, _, lease) = providerDecision, session.lease != lease {
-            session.lease = lease
-            session.revision += 1
-            registry[host] = session
-        }
-        return acceptedTerminal
     }
 
     private func nonterminalProjection(from current: RuntimeProjection) -> RuntimeProjection {

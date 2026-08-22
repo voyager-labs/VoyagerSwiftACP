@@ -81,12 +81,7 @@ public extension RuntimeControlPlane {
         guard !original.lease.isActive else { throw RuntimeHostError.activeRunExists }
         let stored = original.stored
         guard !stored.projection.isTerminal else { return .stale }
-        if let claim = stored.restorationClaim,
-           claim.ownerToken != restorationOwnerToken,
-           claim.isLive(at: Date())
-        {
-            return .stale
-        }
+        guard try evaluateRestore(original) else { return .stale }
         guard let providerInternalSessionReference = stored.providerInternalSessionReference,
               stored.storedContext == RuntimeStoredContext(contextPolicy: expectedContext),
               let adapter = adapters[stored.adapterID],
@@ -124,6 +119,19 @@ public extension RuntimeControlPlane {
         }
     }
 
+    private func evaluateRestore(_ session: Session) throws -> Bool {
+        switch restoreDecision(.evaluateRestore, for: session) {
+        case .stale:
+            return false
+        case .acquireClaim:
+            return true
+        case let .throwHost(error):
+            throw error
+        case .beginResume, .renewClaim, .restoreClaim, .adoptPersisted:
+            throw RuntimeHostError.invalidEvent
+        }
+    }
+
     private func acquireRestoreClaim(
         _ original: Session,
         at host: ExternalAgentSessionReference,
@@ -131,27 +139,86 @@ public extension RuntimeControlPlane {
         do {
             return try await commit(host: host) { plane, registry in
                 guard plane.sessionUnchanged(original, at: host, in: registry),
-                      var current = registry[host],
-                      plane.canAcquireRestorationClaim(current.stored.restorationClaim)
+                      let current = registry[host]
                 else { return .stale }
-                current.stored = current.stored.withRestorationClaim(plane.makeRestorationClaim())
-                _ = current.issueLease(RuntimeLease.restored)
-                registry[host] = current
-                return .restored
+                switch plane.canAcquireRestorationClaim(current) {
+                case .stale:
+                    return .stale
+                case .acquireClaim:
+                    var replacement = current
+                    replacement.stored = replacement.stored
+                        .withRestorationClaim(plane.makeRestorationClaim())
+                    _ = replacement.issueLease(RuntimeLease.restored)
+                    registry[host] = replacement
+                    return .restored
+                case let .throwHost(error):
+                    throw error
+                case .beginResume, .renewClaim, .restoreClaim, .adoptPersisted:
+                    throw RuntimeHostError.invalidEvent
+                }
             }
         } catch RuntimeHostError.persistenceConflict {
-            return .stale
+            return try await reconcileRestoreClaimConflict(at: host)
         }
     }
 
-    private func canAcquireRestorationClaim(_ claim: RuntimeRestorationClaim?) -> Bool {
-        claim.map { $0.ownerToken == restorationOwnerToken || !$0.isLive(at: Date()) } ?? true
+    private func canAcquireRestorationClaim(
+        _ session: Session,
+    ) -> RuntimeRestoreResumeDecisionTable.Decision {
+        restoreDecision(.acquireClaim, for: session)
+    }
+
+    private func restoreDecision(
+        _ signal: RuntimeRestoreResumeDecisionTable.Signal,
+        for session: Session,
+    ) -> RuntimeRestoreResumeDecisionTable.Decision {
+        RuntimeRestoreResumeDecisionTable.decide(
+            signal,
+            on: RuntimeRestoreResumeDecisionTable.Snapshot(
+                projection: session.stored.projection,
+                lease: session.lease,
+                claimState: restorationClaimState(
+                    session.stored.restorationClaim,
+                    now: restorationClock.now(),
+                ),
+            ),
+        )
+    }
+
+    internal func restorationClaimState(
+        _ claim: RuntimeRestorationClaim?,
+        now: Date,
+    ) -> RuntimeRestoreResumeDecisionTable.ClaimState {
+        guard let claim else { return .absent }
+        guard claim.expiresAt > now else { return .expired }
+        return claim.ownerToken == restorationOwnerToken ? .ownedLive : .foreignLive
+    }
+
+    private func reconcileRestoreClaimConflict(
+        at host: ExternalAgentSessionReference,
+    ) async throws -> RuntimeRestoreResult {
+        try await withPersistedState { plane, loaded in
+            guard let loaded else { return .stale }
+            plane.sessions = plane.reconciledRegistry(
+                candidate: plane.sessions,
+                persisted: loaded,
+            )
+            guard let persisted = plane.sessions[host] else { return .stale }
+            switch plane.restoreDecision(.persistConflict, for: persisted) {
+            case .adoptPersisted, .stale:
+                return .stale
+            case let .throwHost(error):
+                throw error
+            case .acquireClaim, .beginResume, .renewClaim, .restoreClaim:
+                throw RuntimeHostError.invalidEvent
+            }
+        }
     }
 
     internal func makeRestorationClaim() -> RuntimeRestorationClaim {
         RuntimeRestorationClaim(
             ownerToken: restorationOwnerToken,
-            expiresAt: Date().addingTimeInterval(60),
+            expiresAt: restorationClock.now().addingTimeInterval(60),
         )
     }
 

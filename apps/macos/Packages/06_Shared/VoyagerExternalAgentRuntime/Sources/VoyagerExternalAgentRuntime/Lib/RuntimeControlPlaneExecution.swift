@@ -397,14 +397,20 @@ extension RuntimeControlPlane {
         }
     }
 
-    private func interruptAfterConsumptionFailure(
+    func interruptAfterConsumptionFailure(
         receipt: RuntimeLaunchReceipt,
         host: ExternalAgentSessionReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws -> RuntimeResult? {
         do {
             _ = try await commit(host: host) { plane, registry in
-                try plane.interruptTransition(host: host, lease: lease, in: &registry)
+                try plane.interruptTransition(
+                    host: host,
+                    lease: lease,
+                    in: &registry,
+                    restoredContext: restoredContext,
+                )
             }
         } catch is CancellationError {
             throw CancellationError()
@@ -412,6 +418,7 @@ extension RuntimeControlPlane {
             if let terminal = try await readRepairPersistedTerminal(
                 host: host,
                 runReference: receipt.runReference,
+                restoredContext: restoredContext,
             ) {
                 return try await reconcileConsumedResult(terminal, host: host, lease: lease)
             }
@@ -443,7 +450,7 @@ extension RuntimeControlPlane {
         }
     }
 
-    private func applyCleanupFailedDecision(
+    func applyCleanupFailedDecision(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
     ) {
@@ -462,8 +469,16 @@ extension RuntimeControlPlane {
         _ result: RuntimeResult,
         host: ExternalAgentSessionReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws -> RuntimeResult? {
         try await mutateAfterPersistedTransitions { plane in
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: result.runReference,
+                )
+            }
             guard var session = plane.sessions[host],
                   session.stored.runReference == result.runReference,
                   session.lease == .consuming(lease) || session.lease == .resuming(lease),
@@ -498,16 +513,28 @@ extension RuntimeControlPlane {
         _ result: RuntimeResult,
         host: ExternalAgentSessionReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws -> RuntimeResult {
         do {
             let terminal = try await commit(host: host) { plane, registry in
-                try plane.finishTransition(result, host: host, lease: lease, in: &registry)
+                try plane.finishTransition(
+                    result,
+                    host: host,
+                    lease: lease,
+                    in: &registry,
+                    restoredContext: restoredContext,
+                )
             }
             try Task.checkCancellation()
             return terminal
         } catch RuntimeHostError.persistenceConflict {
             try Task.checkCancellation()
-            return try await repairTerminalResultAfterConflict(result, host: host, lease: lease)
+            return try await repairTerminalResultAfterConflict(
+                result,
+                host: host,
+                lease: lease,
+                restoredContext: restoredContext,
+            )
         }
     }
 
@@ -515,23 +542,48 @@ extension RuntimeControlPlane {
         _ result: RuntimeResult,
         host: ExternalAgentSessionReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext?,
     ) async throws -> RuntimeResult {
-        if try await readRepairPersistedTerminal(host: host, runReference: result.runReference) != nil,
-           let terminal = try await reconcileConsumedResult(result, host: host, lease: lease)
+        if try await readRepairPersistedTerminal(
+            host: host,
+            runReference: result.runReference,
+            restoredContext: restoredContext,
+        ) != nil,
+            let terminal = try await reconcileConsumedResult(
+                result,
+                host: host,
+                lease: lease,
+                restoredContext: restoredContext,
+            )
         {
             try Task.checkCancellation()
             return terminal
         }
         do {
             let terminal = try await commit(host: host) { plane, registry in
-                try plane.finishTransition(result, host: host, lease: lease, in: &registry)
+                try plane.finishTransition(
+                    result,
+                    host: host,
+                    lease: lease,
+                    in: &registry,
+                    restoredContext: restoredContext,
+                )
             }
             try Task.checkCancellation()
             return terminal
         } catch RuntimeHostError.persistenceConflict {
             try Task.checkCancellation()
-            if try await readRepairPersistedTerminal(host: host, runReference: result.runReference) != nil,
-               let terminal = try await reconcileConsumedResult(result, host: host, lease: lease)
+            if try await readRepairPersistedTerminal(
+                host: host,
+                runReference: result.runReference,
+                restoredContext: restoredContext,
+            ) != nil,
+                let terminal = try await reconcileConsumedResult(
+                    result,
+                    host: host,
+                    lease: lease,
+                    restoredContext: restoredContext,
+                )
             {
                 try Task.checkCancellation()
                 return terminal

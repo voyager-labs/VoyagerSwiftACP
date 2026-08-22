@@ -145,7 +145,16 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         lease: UInt64,
         in registry: inout SessionRegistry,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) throws -> RuntimeResult {
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: result.runReference,
+                in: registry,
+            )
+        }
         guard var session = registry[host], session.stored.runReference == result.runReference else {
             throw RuntimeHostError.invalidEvent
         }
@@ -286,8 +295,17 @@ extension RuntimeControlPlane {
         lease: UInt64?,
         in registry: inout SessionRegistry,
         receipt: RuntimeLaunchReceipt? = nil,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) throws -> RuntimeResult? {
         guard var session = registry[host] else { return nil }
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: session.stored.runReference,
+                in: registry,
+            )
+        }
         if let lease {
             guard session.lease == .launching(lease)
                 || session.lease == .consuming(lease)
