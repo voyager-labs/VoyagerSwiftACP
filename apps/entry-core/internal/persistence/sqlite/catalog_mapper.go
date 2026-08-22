@@ -187,7 +187,7 @@ func mapDescriptorRow(row SourcePropertyDescriptorRow) (domainentry.SourceProper
 
 // mapBindingRow maps a PropertyBindingRow to the domain PropertyBinding. The
 // row's binding_ordinal is a reviewed system-key ordering hint carried into the
-// domain for scope-ambiguous disambiguation; it does not participate in the digest.
+// domain for scope-ambiguous disambiguation and covered by the dataset digest.
 func mapBindingRow(row PropertyBindingRow) (domainentry.PropertyBinding, error) {
 	if err := validateWorkspaceID(row.WorkspaceID); err != nil {
 		return domainentry.PropertyBinding{}, err

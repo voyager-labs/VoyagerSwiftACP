@@ -9,7 +9,7 @@ var generatedSeedMetadata = SeedMetadata{
 	SeedOrdinal:           1,
 	SystemRegistryVersion: "2.4.1",
 	SQLSHA256:             "af1e5522ab2dd2300171c5fcefc5109286d9c795f69b89c81a30d718d1ff8362",
-	DatasetSHA256:         "578a6f1d3ac93344c6539d769619ed213526a102a45b3c6bff2b90b71da65271",
+	DatasetSHA256:         "be14f9cd9ca43342f1c7ddb2e68661b580114f93ee697352c7d553ce15376d9a",
 	DefinitionCount:       278,
 	DescriptorCount:       294,
 	BindingCount:          296,

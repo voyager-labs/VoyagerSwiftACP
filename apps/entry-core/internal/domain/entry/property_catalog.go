@@ -354,7 +354,7 @@ func (snapshot PropertyCatalogSnapshot) Digest() ([32]byte, error) {
 	sort.Slice(bindings, func(i, j int) bool { return bindings[i].logicalKey() < bindings[j].logicalKey() })
 	for _, binding := range bindings {
 		frameFamily(digestFamilyBindings,
-			[]byte(binding.logicalKey()), []byte(binding.ReadTransform), []byte(binding.Direction),
+			[]byte(binding.logicalKey()), uint64Bytes(binding.BindingOrdinal), []byte(binding.ReadTransform), []byte(binding.Direction),
 			boolByte(binding.EffectiveReadable), boolByte(binding.EffectiveQueryable), boolByte(binding.EffectiveWritable),
 			[]byte(binding.QueryProfile), uint64Bytes(binding.MappingVersion), uint64Bytes(binding.ValueContractRevision),
 			[]byte(binding.Provenance), []byte(binding.ApprovalState), []byte(binding.Lossiness), []byte(binding.Lifecycle),

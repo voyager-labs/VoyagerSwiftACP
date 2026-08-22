@@ -113,6 +113,30 @@ func TestSourcePropertyCatalogDigestOrderIndependence(t *testing.T) {
 	}
 }
 
+func TestSourcePropertyCatalogDigestIncludesBindingOrdinal(t *testing.T) {
+	propertyID := mustRegistryPropertyID("filesystem.extension")
+	binding := PropertyBinding{
+		PropertyID: propertyID, SourceRef: mustSourcePropertyRef(t, "macos.mditem"), BindingOrdinal: 1,
+		ReadTransform: "identity", Direction: "read", EffectiveReadable: true,
+		QueryProfile: "mdquery_identity", MappingVersion: 1, ValueContractRevision: 1,
+		Provenance: "system_property_registry@2.4.1", ApprovalState: "approved", Lossiness: "none",
+		Lifecycle: PropertyLifecycleActive,
+	}
+	snapshot := PropertyCatalogSnapshot{Bindings: []PropertyBinding{binding}}
+	firstDigest, err := snapshot.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding.BindingOrdinal = 2
+	secondDigest, err := (PropertyCatalogSnapshot{Bindings: []PropertyBinding{binding}}).Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstDigest == secondDigest {
+		t.Fatal("digest must change when binding ordinal changes")
+	}
+}
+
 func TestSourcePropertyCatalogContractsRejectInvalidNaturalRef(t *testing.T) {
 	valid := mustSourcePropertyRef(t, "macos.mditem")
 	candidates := []SourcePropertyRef{
