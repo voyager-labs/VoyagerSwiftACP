@@ -40,8 +40,8 @@ type WorkspacePropertyDefinitionRow struct {
 	DefinitionRev  int    `gorm:"column:definition_revision;type:integer;not null;check:definition_revision >= 0"`
 	LifecycleState string `gorm:"column:lifecycle_state;type:text;not null;check:lifecycle_state in ('active','tombstoned')"`
 
-	DefaultDisplayUnit string `gorm:"column:default_display_unit;type:text;not null"`
-	UnitsJSON          string `gorm:"column:units_json;type:text;not null"`
+	DefaultDisplayUnit string `gorm:"column:default_display_unit;type:text;not null;default:''"`
+	UnitsJSON          string `gorm:"column:units_json;type:text;not null;default:''"`
 
 	// Seed provenance trio: bundled rows carry all three
 	// (system_property_registry / version / source version), user rows keep all
