@@ -42,8 +42,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isFolder,
-           !entry.isPackage
+           entry.acceptsDropInto
         {
             outlineView.setDropItem(outlineItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
             destinationPath = entry.fullPath
@@ -69,8 +68,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isFolder,
-           !entry.isPackage
+           entry.acceptsDropInto
         {
             destinationPath = entry.fullPath
         }

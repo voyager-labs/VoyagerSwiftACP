@@ -466,8 +466,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var destinationPath = state.currentPath
         var targetEntryId: EntryModel.ID?
         if let entry = entry(at: indexPath),
-           entry.isFolder,
-           !entry.isPackage
+           entry.acceptsDropInto
         {
             destinationPath = entry.fullPath
             targetEntryId = entry.id
