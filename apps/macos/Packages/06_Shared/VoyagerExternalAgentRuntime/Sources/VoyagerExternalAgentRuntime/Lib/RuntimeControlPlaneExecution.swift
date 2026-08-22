@@ -27,6 +27,7 @@ extension RuntimeControlPlane {
         }
         let receipt: RuntimeLaunchReceipt
         do {
+            try Task.checkCancellation()
             receipt = try await reservation.adapter.launch(request)
         } catch is CancellationError {
             try await propagateCallerCancellation(
