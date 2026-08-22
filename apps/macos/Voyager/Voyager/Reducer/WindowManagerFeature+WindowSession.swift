@@ -331,7 +331,6 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         let wasFocused = state.focusedWindowID == id
         let trackedWindow = state.trackedSingletonWindow.flatMap { $0.windowID == id ? $0 : nil }
-        let activationAttempt = state.externalOpenActivationAttempt.flatMap { $0.windowID == id ? $0 : nil }
         state.windows.remove(id: id)
         state.pendingWindowOpenIDs.remove(id)
         state.closingWindowIDs.remove(id)
@@ -359,18 +358,21 @@ extension WindowManagerFeature {
                 effects.append(trackedSingletonCompletionEffect(trackedWindow.requestID))
             }
         }
-        if let activationAttempt, state.authorizedExternalOpenBatchID == activationAttempt.batchID {
-            state.externalOpenActivationAttempt = nil
-            effects.append(retryExternalOpenActivation(after: activationAttempt, state: &state))
-        } else if let attempt = state.externalOpenActivationAttempt,
-                  state.authorizedExternalOpenBatchID == attempt.batchID,
-                  let removedPlanWindow = attempt.plan.windows.first(where: { $0.windowID == id }),
-                  let unsettledTabID = removedPlanWindow.items.last(where: {
-                      $0.requiresPinnedAnchorReturn
-                          && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
-                  })?.tabID
+        if let attempt = state.externalOpenActivationAttempt,
+           state.authorizedExternalOpenBatchID == attempt.batchID,
+           let removedPlanWindow = attempt.plan.windows.first(where: { $0.windowID == id })
         {
-            effects.append(replanExternalOpenActivationExcluding(tabID: unsettledTabID, state: &state))
+            let unsettledPinnedTabID = removedPlanWindow.items.last(where: {
+                $0.requiresPinnedAnchorReturn
+                    && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
+            })?.tabID
+            if let unsettledPinnedTabID {
+                // 창 제거로 terminal을 받을 수 없는 미정착 pinned 복귀는 실패로 소비해 재계획한다.
+                effects.append(replanExternalOpenActivationExcluding(tabID: unsettledPinnedTabID, state: &state))
+            } else if attempt.windowID == id {
+                // .discarded 재시도와 같이 attempt를 유지해 settled 상태와 pinned 재시작 억제를 보존한다.
+                effects.append(retryExternalOpenActivation(after: attempt, state: &state))
+            }
         }
         if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
             state.defaultWindowBootstrapRequestID = nil
