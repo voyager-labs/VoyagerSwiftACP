@@ -14,8 +14,9 @@ public struct ExternalDropAcquisitionClient: Sendable {
     /// 외부 drop 획득을 동기적으로 시작한다. main actor에서 호출되며 Todo 4/5의
     /// Grid/List `acceptDrop`이 이 진입점을 사용한다. promise receiver와 data flavor를 함께
     /// 받아 물리화하고, 즉시 file URL 경로는 복사 배치에 포함시킨다. Sendable 요청 메타데이터만 반환한다.
-    public var begin: @MainActor @Sendable ([NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String])
-        -> ExternalDropAcceptedRequest
+    public var begin: @MainActor @Sendable (
+        [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String], [Int], [Int],
+    ) -> ExternalDropAcceptedRequest
 
     /// 주어진 세션의 종단 획득 이벤트 스트림. reducer가 구독해 소비한다.
     public var events: @MainActor @Sendable (ExternalDropSessionID) -> AsyncStream<ExternalDropAcquisitionEvent>
@@ -31,8 +32,11 @@ public struct ExternalDropAcquisitionClient: Sendable {
     /// (`com.apple.pasteboard.promised-file-url`/`NSPromiseContentsPboardType` 기반) 드래그에서
     /// `acceptDrop` 내부에서 source가 staging에 써 둔 파일 경로들을 받아 이미 물리화된
     /// received-item으로 등록한다. `stagedPaths`는 이미 staging 안에 존재·검증된 경로여야 한다.
+    /// `promisedOrdinals`는 negotiation이 확정한 logical promise item의 pasteboard 순번이다.
+    /// 이름 수 == 항목 수면 1:1, 항목이 하나면 전체가 그 항목에 속한다. 그 외엔 경계를
+    /// 복구할 수 없으므로 출력 수로 pasteboard ordinal을 날조하지 않고 fail-closed한다(P1-C).
     public var beginLegacy: @MainActor @Sendable (
-        [String], String, String, Bool,
+        [String], String, String, Bool, [String], [Int], [Int],
     ) -> ExternalDropAcceptedRequest
 
     /// 레거시 promised-file 폴백의 staging 디렉터리를 destination 하위에 준비한다.
@@ -59,12 +63,14 @@ public struct ExternalDropAcquisitionClient: Sendable {
 
     nonisolated public init(
         begin: @escaping @MainActor @Sendable (
-            [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String],
+            [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String], [Int], [Int],
         ) -> ExternalDropAcceptedRequest,
         events: @escaping @MainActor @Sendable (ExternalDropSessionID) -> AsyncStream<ExternalDropAcquisitionEvent>,
         cancel: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
         finish: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
-        beginLegacy: @escaping @MainActor @Sendable ([String], String, String, Bool) -> ExternalDropAcceptedRequest,
+        beginLegacy: @escaping @MainActor @Sendable (
+            [String], String, String, Bool, [String], [Int], [Int],
+        ) -> ExternalDropAcceptedRequest,
         prepareLegacyStaging: @escaping @MainActor @Sendable (String) -> String?,
         finalizeLegacyStaging: @escaping @MainActor @Sendable ([String], String) -> [String]?,
         beginDeferred: @escaping @MainActor @Sendable (
@@ -148,7 +154,7 @@ enum ExternalDropAcquisitionLive {
     /// 결정적 no-op 클라이언트. 실제 획득 없이 안전하게 빈 요청/이벤트만 반환한다.
     static var noop: ExternalDropAcquisitionClient {
         ExternalDropAcquisitionClient(
-            begin: { _, _, destination, forcedCopy, immediateURLPaths in
+            begin: { _, _, destination, forcedCopy, immediateURLPaths, immediateURLOrdinals, _ in
                 ExternalDropAcceptedRequest(
                     sessionID: ExternalDropSessionID(),
                     destination: destination,
@@ -157,12 +163,13 @@ enum ExternalDropAcquisitionLive {
                     forcedCopy: forcedCopy,
                     stagingDirectory: "",
                     immediateURLPaths: immediateURLPaths,
+                    immediateOrdinals: immediateURLOrdinals,
                 )
             },
             events: { _ in AsyncStream { _ in } },
             cancel: { _ in },
             finish: { _ in },
-            beginLegacy: { _, stagingDirectory, destination, forcedCopy in
+            beginLegacy: { _, stagingDirectory, destination, forcedCopy, immediateURLPaths, immediateURLOrdinals, _ in
                 ExternalDropAcceptedRequest(
                     sessionID: ExternalDropSessionID(),
                     destination: destination,
@@ -170,6 +177,8 @@ enum ExternalDropAcquisitionLive {
                     promisedOrdinals: [],
                     forcedCopy: forcedCopy,
                     stagingDirectory: stagingDirectory,
+                    immediateURLPaths: immediateURLPaths,
+                    immediateOrdinals: immediateURLOrdinals,
                 )
             },
             prepareLegacyStaging: { _ in nil },
@@ -186,15 +195,23 @@ enum ExternalDropAcquisitionLive {
             fileManager: fileManager,
             sessionTombstoneSeconds: sessionTombstoneSeconds,
         )
-        return ExternalDropAcquisitionClient(
-            begin: { receivers, dataFlavors, destination, forcedCopy, immediateURLPaths in
-                store.begin(
+        return makeClient(store: store)
+    }
+
+    /// live 클라이언트 조립. store 클로저 바인딩만 담당해 `live` 본문을 짧게 유지한다.
+    @MainActor
+    private static func makeClient(store: ExternalDropAcquisitionStore) -> ExternalDropAcquisitionClient {
+        ExternalDropAcquisitionClient(
+            begin: { receivers, flavors, destination, forcedCopy, immediateURLs, immediateOrdinals, receiverOrds in
+                store.begin(.init(
                     receivers: receivers,
-                    dataFlavors: dataFlavors,
+                    dataFlavors: flavors,
                     destination: destination,
                     forcedCopy: forcedCopy,
-                    immediateURLPaths: immediateURLPaths,
-                )
+                    immediateURLPaths: immediateURLs,
+                    immediateURLOrdinals: immediateOrdinals,
+                    receiverOrdinals: receiverOrds,
+                ))
             },
             events: { sessionID in
                 store.events(for: sessionID)
@@ -205,12 +222,15 @@ enum ExternalDropAcquisitionLive {
             finish: { sessionID in
                 store.finish(sessionID)
             },
-            beginLegacy: { stagedPaths, stagingDirectory, destination, forcedCopy in
+            beginLegacy: { paths, stagingDir, destination, forcedCopy, immediates, immOrds, promisedOrds in
                 store.beginLegacy(
-                    stagedPaths: stagedPaths,
-                    stagingDirectory: stagingDirectory,
+                    stagedPaths: paths,
+                    stagingDirectory: stagingDir,
                     destination: destination,
                     forcedCopy: forcedCopy,
+                    immediateURLPaths: immediates,
+                    immediateURLOrdinals: immOrds,
+                    promisedOrdinals: promisedOrds,
                 )
             },
             prepareLegacyStaging: { destinationPath in
@@ -229,6 +249,18 @@ enum ExternalDropAcquisitionLive {
             loadMailSource: { MailMessageSourceExport.load($0) },
         )
     }
+}
+
+/// modern begin의 입력 묶음. 클로저 시그니처 호환을 유지하면서 store 진입 파라미터 수를
+/// function_parameter_count 한도 안으로 유지한다.
+private struct ModernBeginInput {
+    let receivers: [NSFilePromiseReceiver]
+    let dataFlavors: [ExternalDropDataFlavor]
+    let destination: String
+    let forcedCopy: Bool
+    let immediateURLPaths: [String]
+    let immediateURLOrdinals: [Int]
+    let receiverOrdinals: [Int]
 }
 
 /// AppKit receiver registry는 main actor에 격리하고, 콜백 세션에는 Sendable 상태만 둔다.
@@ -257,13 +289,13 @@ private final class ExternalDropAcquisitionStore {
 
     /// 외부 drop 획득을 동기적으로 시작한다. main actor에서 호출된다.
     @MainActor
-    func begin(
-        receivers: [NSFilePromiseReceiver],
-        dataFlavors: [ExternalDropDataFlavor],
-        destination: String,
-        forcedCopy: Bool,
-        immediateURLPaths: [String],
-    ) -> ExternalDropAcceptedRequest {
+    func begin(_ input: ModernBeginInput) -> ExternalDropAcceptedRequest {
+        let receivers = input.receivers
+        let dataFlavors = input.dataFlavors
+        let destination = input.destination
+        let forcedCopy = input.forcedCopy
+        let immediateURLPaths = input.immediateURLPaths
+        let immediateURLOrdinals = input.immediateURLOrdinals
         let sessionID = ExternalDropSessionID()
         let stagingURL = fileManager
             .temporaryDirectory()
@@ -276,6 +308,7 @@ private final class ExternalDropAcquisitionStore {
             stagingDirectory: stagingURL.path,
             fileManager: fileManager,
             queue: makeSessionQueue(),
+            receiverOrdinals: input.receiverOrdinals,
         )
 
         sessions[sessionID] = session
@@ -283,6 +316,66 @@ private final class ExternalDropAcquisitionStore {
             session.startStagingObservation()
         }
 
+        // 즉시 file URL을 accept 시점에 보관 디렉터리로 pinning한다(코멘트 #3831133026).
+        // cardinality 확정·data 물리화처럼 성공 종단(.succeeded)을 낼 수 있는 연산보다
+        // 반드시 먼저 수행한다(P1-A). pinning이 성공 종단 뒤에 오면 실패 종단(.fileAbsent)이
+        // terminalEvent 가드에 묻혀 결함 있는 drop이 성공으로 확정된다. pinning은
+        // all-or-nothing이며, 실패 시 이미 .fileAbsent 종단을 냈으므로 receiver 수신 시작,
+        // cardinality 확정, data 물리화를 진행하지 않고 빈 immediates로 fail-closed한다.
+        guard let pinnedImmediatePaths = session.pinImmediateURLs(immediateURLPaths) else {
+            return failClosedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                forcedCopy: forcedCopy,
+                stagingDirectory: stagingURL.path,
+            )
+        }
+
+        startDeterminateAcquisition(
+            receivers: receivers,
+            dataFlavors: dataFlavors,
+            session: session,
+            sessionID: sessionID,
+            stagingURL: stagingURL,
+        )
+
+        let promised = promisedNamesAndOrdinals(of: receivers)
+
+        return ExternalDropAcceptedRequest(
+            sessionID: sessionID,
+            destination: destination,
+            orderedPromisedNames: promised.names,
+            promisedOrdinals: promised.ordinals,
+            forcedCopy: forcedCopy,
+            stagingDirectory: stagingURL.path,
+            immediateURLPaths: pinnedImmediatePaths,
+            immediateOrdinals: pinnedImmediatePaths.isEmpty ? [] : immediateURLOrdinals,
+        )
+    }
+
+    /// receiver 순서대로 promise 파일명과 파일별 pasteboard ordinal(receiver index)을 확장한다.
+    /// 한 receiver가 여러 파일을 산출하면 그 index가 파일 수만큼 반복된다.
+    private func promisedNamesAndOrdinals(
+        of receivers: [NSFilePromiseReceiver],
+    ) -> (names: [String], ordinals: [Int]) {
+        let names = receivers.flatMap(\.fileNames)
+        var ordinals: [Int] = []
+        for (index, receiver) in receivers.enumerated() {
+            ordinals.append(contentsOf: receiver.fileNames.map { _ in index })
+        }
+        return (names, ordinals)
+    }
+
+    /// receiver 수신 시작부터 cardinality 확정·data 물리화까지의 결정적 획득 단계를 순서대로
+    /// 실행한다. pinning 실패 시에는 호출돼선 안 된다(P1-A).
+    @MainActor
+    private func startDeterminateAcquisition(
+        receivers: [NSFilePromiseReceiver],
+        dataFlavors: [ExternalDropDataFlavor],
+        session: ExternalDropAcquisitionSession,
+        sessionID: ExternalDropSessionID,
+        stagingURL: URL,
+    ) {
         // receive를 먼저 시작한다. provider cardinality(fileNames)는 receive 후에만
         // 채워지므로, 수신 시작 후의 값을 기준으로 cardinality를 확정·예약해야 한다.
         for (index, receiver) in receivers.enumerated() {
@@ -302,21 +395,23 @@ private final class ExternalDropAcquisitionStore {
         for flavor in dataFlavors {
             session.materialize(dataFlavor: flavor)
         }
+    }
 
-        let orderedPromisedNames = receivers.flatMap(\.fileNames)
-        var promisedOrdinals: [Int] = []
-        for (index, receiver) in receivers.enumerated() {
-            promisedOrdinals.append(contentsOf: receiver.fileNames.map { _ in index })
-        }
-
-        return ExternalDropAcceptedRequest(
+    /// 종단 실패 후 reducer가 이벤트만 소비하도록 비어 있는 배치 요청을 만든다.
+    /// accepted immediates/promises는 비운다(fail-closed).
+    private func failClosedRequest(
+        sessionID: ExternalDropSessionID,
+        destination: String,
+        forcedCopy: Bool,
+        stagingDirectory: String,
+    ) -> ExternalDropAcceptedRequest {
+        ExternalDropAcceptedRequest(
             sessionID: sessionID,
             destination: destination,
-            orderedPromisedNames: orderedPromisedNames,
-            promisedOrdinals: promisedOrdinals,
+            orderedPromisedNames: [],
+            promisedOrdinals: [],
             forcedCopy: forcedCopy,
-            stagingDirectory: stagingURL.path,
-            immediateURLPaths: immediateURLPaths,
+            stagingDirectory: stagingDirectory,
         )
     }
 
@@ -391,6 +486,9 @@ private final class ExternalDropAcquisitionStore {
         stagingDirectory: String,
         destination: String,
         forcedCopy: Bool,
+        immediateURLPaths: [String] = [],
+        immediateURLOrdinals: [Int] = [],
+        promisedOrdinals: [Int] = [],
     ) -> ExternalDropAcceptedRequest {
         let sessionID = ExternalDropSessionID()
         let session = ExternalDropAcquisitionSession(
@@ -401,10 +499,34 @@ private final class ExternalDropAcquisitionStore {
         )
         sessions[sessionID] = session
 
-        session.finalizeLegacyCardinality(stagedPaths.count)
-        for path in stagedPaths {
-            session.registerLegacyStagedFile(stagedPath: path)
+        // 즉시 file URL을 accept 시점에 보관 디렉터리로 pinning한다(코멘트 #3831133026).
+        let pinnedImmediatePaths = session.pinImmediateURLs(immediateURLPaths)
+        guard let pinnedImmediatePaths else {
+            return failClosedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                forcedCopy: forcedCopy,
+                stagingDirectory: stagingDirectory,
+            )
         }
+
+        // flat 이름 목록과 logical promise item의 경계 복구(P1-C). 이름 수 == 항목 수면
+        // 1:1 대응, 항목이 하나뿐이면 전체 파일이 그 항목에 속한다. 그 외엔 경계를 복구할
+        // 수 없으므로 출력 수로 pasteboard ordinal을 날조하지 않고 fail-closed한다.
+        guard let mappedOrdinals = mappedLegacyOrdinals(pathCount: stagedPaths.count,
+                                                        promisedOrdinals: promisedOrdinals)
+        else {
+            // .indeterminateCardinality 종단이 staging(보관 디렉터리 포함)을 정리한다.
+            session.fail(reason: .indeterminateCardinality)
+            return failClosedRequest(
+                sessionID: sessionID,
+                destination: destination,
+                forcedCopy: forcedCopy,
+                stagingDirectory: stagingDirectory,
+            )
+        }
+
+        registerLegacyStagedFiles(stagedPaths, ordinals: mappedOrdinals, on: session)
 
         return ExternalDropAcceptedRequest(
             sessionID: sessionID,
@@ -413,7 +535,42 @@ private final class ExternalDropAcquisitionStore {
             promisedOrdinals: [],
             forcedCopy: forcedCopy,
             stagingDirectory: stagingDirectory,
+            immediateURLPaths: pinnedImmediatePaths,
+            immediateOrdinals: pinnedImmediatePaths.isEmpty ? [] : immediateURLOrdinals,
         )
+    }
+
+    /// flat 이름 수와 logical promise item 순번으로 pasteboard ordinal 대응을 복구한다(P1-C).
+    /// 이름 수 == 항목 수면 1:1, 항목이 하나면 전체가 그 항목에 속한다. 그 외엔 nil(복구 불가).
+    private func mappedLegacyOrdinals(pathCount: Int, promisedOrdinals: [Int]) -> [Int]? {
+        if promisedOrdinals.count == pathCount {
+            return promisedOrdinals
+        }
+        if promisedOrdinals.count == 1 {
+            return Array(repeating: promisedOrdinals[0], count: pathCount)
+        }
+        return nil
+    }
+
+    /// 복구된 ordinal대로 legacy staged 파일을 received-item으로 등록하고 cardinality를 확정한다.
+    /// 같은 logical item의 파일은 같은 pasteboard ordinal에 항목 내 순번(0-based)만 다르게 붙는다.
+    private func registerLegacyStagedFiles(
+        _ paths: [String],
+        ordinals: [Int],
+        on session: ExternalDropAcquisitionSession,
+    ) {
+        var withinItemCounts: [Int: Int] = [:]
+        session.finalizeLegacyCardinality(paths.count)
+        for (index, path) in paths.enumerated() {
+            let pasteboardOrdinal = ordinals[index]
+            let withinItemOrdinal = withinItemCounts[pasteboardOrdinal, default: 0]
+            withinItemCounts[pasteboardOrdinal] = withinItemOrdinal + 1
+            session.registerLegacyStagedFile(
+                stagedPath: path,
+                pasteboardOrdinal: pasteboardOrdinal,
+                callbackOrdinal: withinItemOrdinal,
+            )
+        }
     }
 
     /// 지연 data-flavor 획득 세션을 시작한다. request는 로드 완료 전에 반환되고,

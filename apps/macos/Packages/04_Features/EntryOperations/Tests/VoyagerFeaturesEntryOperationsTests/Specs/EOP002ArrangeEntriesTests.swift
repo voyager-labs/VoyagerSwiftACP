@@ -7,11 +7,53 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
-/// StagingDirectory가 provider에 공개되지 않은 보관 디렉터리 경로를 재현한다.
-/// 세션 구현과 동일한 파생 규칙(`<parent>/.voyager-claimed-<rootName>`)을 쓴다.
+// StagingDirectory가 provider에 공개되지 않은 보관 디렉터리 경로를 재현한다.
+// 세션 구현과 동일한 파생 규칙(`<parent>/.voyager-claimed-<rootName>`)을 쓴다.
+
+/// placement 정렬 회귀 테스트 공용 store. 획득 클라이언트는 fatalError 스텁으로 고정하고
+/// 파일 연산만 recorder로 관찰한다. 각 테스트는 plan만 구성해 중복 setup을 피한다.
+@MainActor
+private func makeImportPlacementStore(
+    recorder: FileOpsRecorder,
+    cleanup: AcquisitionCleanupRecorder,
+) -> TestStore<EntryOperationsFeature.State, EntryOperationsFeature.Action> {
+    let store = EntryOperationsTestSupport.makeStore {
+        $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
+            begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
+            events: { _ in AsyncStream { $0.finish() } },
+            cancel: { cleanup.recordCancel($0) },
+            finish: { cleanup.recordFinish($0) },
+            beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
+            prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
+            finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
+        )
+    }
+    store.exhaustivity = .off
+    return store
+}
+
 private func claimedContainer(_ stagingRoot: URL) -> URL {
     stagingRoot.deletingLastPathComponent()
         .appendingPathComponent(".voyager-claimed-\(stagingRoot.lastPathComponent)", isDirectory: true)
+}
+
+/// P1 검증 전용 종단 프러브. 획득 계약상 모든 흐름은 정확히 한 번의 종단 이벤트로 끝나므로
+/// 종단 도착 즉시 반환한다. 비종단 자식을 기다리는 태스크 그룹 타임아웃 없이 결정적으로 끝난다.
+private func collectEventsUntilTerminal(
+    from stream: AsyncStream<ExternalDropAcquisitionEvent>,
+) async -> [ExternalDropAcquisitionEvent] {
+    var collected: [ExternalDropAcquisitionEvent] = []
+    for await event in stream {
+        collected.append(event)
+        switch event {
+        case .succeeded, .failed, .cancelled:
+            return collected
+        case .received:
+            continue
+        }
+    }
+    return collected
 }
 
 @MainActor
@@ -1960,7 +2002,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
         let receiver = FilePromiseReceiverSpy(names: ["file.txt"])
 
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let stagingURL = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
         let stagedURL = stagingURL.appendingPathComponent("file.txt")
@@ -1986,8 +2028,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let receiver = FilePromiseReceiverSpy(names: ["sync.eml"])
         receiver.deliverSynchronously = true
-        let request = client.begin([receiver], [], "/dest", false, [])
-
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
@@ -2001,8 +2042,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let receiver = FilePromiseReceiverSpy(names: [])
         receiver.deliverSynchronously = true
         receiver.synchronousFilename = "message.eml"
-        let request = client.begin([receiver], [], "/dest", false, [])
-
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .failed(request.sessionID, .emptyCardinality))
     }
@@ -2020,8 +2060,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let bytes = Data(#"{"k":"v","n":1}"#.utf8)
         let flavor = ExternalDropDataFlavor(uti: "public.json", bytes: bytes, filename: "Clipping 1.json")
-        let request = client.begin([], [flavor], "/dest", false, [])
-
+        let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clipping 1.json")
         XCTAssertEqual(try Data(contentsOf: stagedURL), bytes)
 
@@ -2043,8 +2082,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             bytes: Data("Quarterly Report\nrevenue up\n".utf8),
             filename: "Quarterly Report.txt",
         )
-        let request = client.begin([], [flavor], "/dest", false, [])
-
+        let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
             .appendingPathComponent("Quarterly Report.txt")
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
@@ -2066,8 +2104,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             bytes: Data("raw".utf8),
             filename: "Clipping 1.data",
         )
-        let request = client.begin([], [flavor], "/dest", false, [])
-
+        let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
             .appendingPathComponent("Clipping 1.data")
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
@@ -2096,8 +2133,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             bytes: Data("second".utf8),
             filename: "Clip 1.txt",
         )
-        let request = client.begin([], [flavorA, flavorB], "/dest", false, [])
-
+        let request = client.begin([], [flavorA, flavorB], "/dest", false, [], [], [])
         let firstURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clip 1.txt")
         let secondURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clip 1 2.txt")
         XCTAssertEqual(try Data(contentsOf: firstURL), Data("first".utf8))
@@ -2128,7 +2164,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             bytes: Data("text".utf8),
             filename: "Clip 1.txt",
         )
-        let request = client.begin([receiver], [flavor], "/dest", false, [])
+        let request = client.begin([receiver], [flavor], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
 
         // data flavor는 promise 이름을 피해 고유 이름으로 물리화된다.
@@ -2220,7 +2256,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             bytes: Data(#"{"k":1}"#.utf8),
             filename: "Clipping 1.json",
         )
-        let request = client.begin([receiver], [flavor], "/dest", false, [])
+        let request = client.begin([receiver], [flavor], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let stagedData = staging.appendingPathComponent("Clipping 1.json")
         let stagedPromise = staging.appendingPathComponent("promise.txt")
@@ -2255,7 +2291,15 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         try Data("a".utf8).write(to: firstURL)
         try Data("b".utf8).write(to: secondURL)
 
-        let request = client.beginLegacy([firstURL.path, secondURL.path], stagingDir.path, "/dest", true)
+        let request = client.beginLegacy(
+            [firstURL.path, secondURL.path],
+            stagingDir.path,
+            "/dest",
+            true,
+            [],
+            [],
+            [0, 1],
+        )
 
         XCTAssertEqual(request.stagingDirectory, stagingDir.path)
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
@@ -2281,7 +2325,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let outsideURL = temporaryRoot.appendingPathComponent("outside.eml")
         try Data("x".utf8).write(to: outsideURL)
 
-        let request = client.beginLegacy([outsideURL.path], stagingDir.path, "/dest", true)
+        let request = client.beginLegacy([outsideURL.path], stagingDir.path, "/dest", true, [], [], [0])
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
@@ -2305,7 +2349,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         try Data("outside".utf8).write(to: outside)
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: outside)
 
-        let request = client.beginLegacy([symlink.path], stagingDir.path, "/dest", true)
+        let request = client.beginLegacy([symlink.path], stagingDir.path, "/dest", true, [], [], [0])
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .failed(request.sessionID, .outsideStaging))
@@ -2327,7 +2371,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         // Mail처럼 receiver가 1개지만 fileNames가 비어 있다(기대 콜백 수 미정).
         let receiver = FilePromiseReceiverSpy(names: [])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let staged = staging.appendingPathComponent("message.eml")
@@ -2357,7 +2401,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let receiverA = FilePromiseReceiverSpy(names: ["a1.txt", "a2.txt"])
         let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
-        let request = client.begin([receiverA, receiverB], [], "/dest", false, [])
+        let request = client.begin([receiverA, receiverB], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let a1 = staging.appendingPathComponent("a1.txt")
@@ -2396,7 +2440,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let receiverA = FilePromiseReceiverSpy(names: ["a1.txt", "a2.txt"])
         let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
-        let request = client.begin([receiverA, receiverB], [], "/dest", false, [])
+        let request = client.begin([receiverA, receiverB], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let a1 = staging.appendingPathComponent("a1.txt")
@@ -2425,7 +2469,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["first.eml", "second.eml"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let first = staging.appendingPathComponent("first.eml")
@@ -2465,7 +2509,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["first.eml", "second.eml"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let first = staging.appendingPathComponent("first.eml")
@@ -2510,8 +2554,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let receiverA = FilePromiseReceiverSpy(names: ["a.txt"])
         let receiverB = FilePromiseReceiverSpy(names: ["b.txt"])
-        let request = client.begin([receiverA, receiverB], [], "/dest", false, [])
-
+        let request = client.begin([receiverA, receiverB], [], "/dest", false, [], [], [])
         let expected = URL(fileURLWithPath: request.stagingDirectory)
         XCTAssertEqual(receiverA.receivedDestination?.path, expected.path)
         XCTAssertEqual(receiverB.receivedDestination?.path, expected.path)
@@ -2530,8 +2573,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        _ = client.begin([receiver], [], "/dest", false, [])
-
+        _ = client.begin([receiver], [], "/dest", false, [], [], [])
         XCTAssertNotNil(receiver.receivedOperationQueue)
         XCTAssertFalse(receiver.receivedOperationQueue === OperationQueue.main)
     }
@@ -2550,7 +2592,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let staged = staging.appendingPathComponent("a.txt")
@@ -2578,7 +2620,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt", "b.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
 
         let a = staging.appendingPathComponent("a.txt")
@@ -2618,7 +2660,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["1.txt", "2.txt", "3.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
 
         let urls = (1 ... 3).map { staging.appendingPathComponent("\($0).txt") }
@@ -2655,7 +2697,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: [])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let message = staging.appendingPathComponent("message.eml")
         try Data("message".utf8).write(to: message)
@@ -2682,7 +2724,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["message.eml"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let source = staging.appendingPathComponent("message.eml")
         let outside = temporaryRoot.appendingPathComponent("outside.eml")
@@ -2701,10 +2743,251 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertNotEqual(received[0].stagedPath, source.path)
         // claimed 파일은 provider에 전달된 staging root 밖 보관 디렉터리에 있어야 한다.
         XCTAssertFalse(received[0].stagedPath.hasPrefix(request.stagingDirectory))
-
         try FileManager.default.createSymbolicLink(at: source, withDestinationURL: outside)
 
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: received[0].stagedPath)), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3831133026): mixed drop의 즉시 file URL은
+    /// accept 시점에 Voyager 보관 디렉터리로 복사되어 identity가 고정된다.
+    /// - 검증 내용: begin 직후 request immediates가 원본 경로가 아닌 보관 사본이고, 이후
+    ///   원본을 덮어쓰거나 symlink로 교체해도 placement 입력은 원본 바이트를 유지한다.
+    /// - 사전 조건: receiver 1개와 staging 밖 원본 파일 1개로 begin한다.
+    /// - 기대 결과: pinned 경로 ≠ 원본, 내용은 원본과 동일, 원본 변조 후에도 불변.
+    func testExternalDropAcquisition_pinsImmediateURLsAtAccept() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("ImmediatePin")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
+
+        // accept 시점에 이미 보관 사본이 request immediates다.
+        XCTAssertEqual(request.immediateURLPaths.count, 1)
+        let pinnedPath = request.immediateURLPaths[0]
+        XCTAssertNotEqual(pinnedPath, original.path)
+        XCTAssertTrue(pinnedPath.hasPrefix(claimedContainer(URL(fileURLWithPath: request.stagingDirectory)).path))
+        XCTAssertEqual(request.immediateOrdinals, [0])
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinnedPath)), Data("safe".utf8))
+        // source-app 소유 원본은 그대로 유지된다(copy, move 아님).
+        XCTAssertEqual(try Data(contentsOf: original), Data("safe".utf8))
+
+        // promise 완료 전에 원본을 변조하고 symlink로 교체해도 placement 입력은 불변이다.
+        try FileManager.default.removeItem(at: original)
+        let outside = temporaryRoot.appendingPathComponent("outside.txt")
+        try Data("evil".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: original, withDestinationURL: outside)
+
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinnedPath)), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3831133039): legacy staged 파일에도
+    /// negotiation이 확정한 pasteboard 순번이 라우팅돼 placement 통합 정렬 키가 안정적이다.
+    /// - 검증 내용: beginLegacy 2파일(1:1 항목 대응)의 received 이벤트 pasteboardOrdinal이 [0, 1]이다.
+    func testExternalDropAcquisition_beginLegacyAssignsSequentialPasteboardOrdinals() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyOrdinals")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacyOrdinals")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let firstURL = stagingDir.appendingPathComponent("a.eml")
+        let secondURL = stagingDir.appendingPathComponent("b.eml")
+        try Data("a".utf8).write(to: firstURL)
+        try Data("b".utf8).write(to: secondURL)
+
+        let request = client.beginLegacy(
+            [firstURL.path, secondURL.path],
+            stagingDir.path,
+            "/dest",
+            true,
+            [],
+            [],
+            [0, 1],
+        )
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        let ordinals = events.compactMap { event -> Int? in
+            guard case let .received(file) = event else { return nil }
+            return file.pasteboardOrdinal
+        }
+        XCTAssertEqual(ordinals, [0, 1])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-C): legacy logical item 하나가
+    /// 파일 2개를 산출하면 두 파일 모두 같은 pasteboard ordinal을 쓰고 항목 내 순번은 0/1이다.
+    /// - 검증 내용: pasteboard ordinal 1짜리 promise 항목 1개 → flat 파일 2개의
+    ///   received 이벤트 pasteboardOrdinal [1, 1], callbackOrdinal [0, 1].
+    func testExternalDropAcquisition_beginLegacySinglePromiseTwoFilesSharesPasteboardOrdinal() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyTwoFiles")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacyTwoFiles")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let firstURL = stagingDir.appendingPathComponent("a.eml")
+        let secondURL = stagingDir.appendingPathComponent("b.eml")
+        try Data("a".utf8).write(to: firstURL)
+        try Data("b".utf8).write(to: secondURL)
+
+        let request = client.beginLegacy(
+            [firstURL.path, secondURL.path],
+            stagingDir.path,
+            "/dest",
+            true,
+            [],
+            [],
+            [1],
+        )
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.map(\.pasteboardOrdinal), [1, 1])
+        XCTAssertEqual(received.map(\.callbackOrdinal), [0, 1])
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-C): flat 이름이 여러 logical item에
+    /// 걸치고 경계를 복구할 수 없으면 출력 수로 pasteboard ordinal을 날조하지 않고 실패한다.
+    /// - 검증 내용: 항목 2개([0, 1]) + flat 파일 3개 → `.indeterminateCardinality` 종단,
+    ///   staging(보관 디렉터리 포함) 정리.
+    func testExternalDropAcquisition_beginLegacyAmbiguousBoundariesFailClosed() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyAmbiguous")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacyAmbiguous")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        var stagedPaths: [String] = []
+        for name in ["a.eml", "b.eml", "c.eml"] {
+            let url = stagingDir.appendingPathComponent(name)
+            try Data(name.utf8).write(to: url)
+            stagedPaths.append(url.path)
+        }
+
+        let request = client.beginLegacy(
+            stagedPaths,
+            stagingDir.path,
+            "/dest",
+            true,
+            [],
+            [],
+            [0, 1],
+        )
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .indeterminateCardinality))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingDir.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: claimedContainer(stagingDir).path),
+            "보관 디렉터리도 함께 정리된다",
+        )
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-A): 즉시 URL pinning은 data 물리화가
+    /// 동기 성공 종단을 내기 전에 수행돼야 한다.
+    /// - 검증 내용: data + immediate 혼합 drop에서 succeeded 이후에도 request immediates가
+    ///   보관 사본으로 유지된다.
+    func testExternalDropAcquisition_pinsImmediateURLsBeforeDataSuccessTerminal() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("PinBeforeSuccess")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+        let flavor = ExternalDropDataFlavor(
+            uti: "public.json",
+            bytes: Data(#"{"k":1}"#.utf8),
+            filename: "Clipping 1.json",
+            ordinal: 0,
+        )
+
+        let request = client.begin([], [flavor], "/dest", false, [original.path], [0], [])
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(request.immediateURLPaths.count, 1)
+        let pinnedPath = try XCTUnwrap(request.immediateURLPaths.first)
+        XCTAssertNotEqual(pinnedPath, original.path)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinnedPath)), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-A): pinning 실패는 실패 종단만 내고
+    /// accepted immediates는 비어 있어야 한다.
+    func testExternalDropAcquisition_immediatePinFailureFailsClosedWithoutImmediates() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("PinFailure")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let missing = temporaryRoot.appendingPathComponent("missing.txt")
+
+        let request = client.begin([], [], "/dest", false, [missing.path], [0], [])
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .fileAbsent))
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-B): 즉시 URL이 디렉터리여도 하위
+    /// 내용과 함께 보관 디렉터리로 pinning된다.
+    func testExternalDropAcquisition_pinsImmediateDirectoryWithNestedContent() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("PinDirectory")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        let nested = sourceDir.appendingPathComponent("inner.txt")
+        try Data("nested".utf8).write(to: nested)
+
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [sourceDir.path], [0], [1])
+
+        XCTAssertEqual(request.immediateURLPaths.count, 1)
+        let pinnedPath = try XCTUnwrap(request.immediateURLPaths.first)
+        XCTAssertNotEqual(pinnedPath, sourceDir.path)
+        XCTAssertFalse(pinnedPath.hasPrefix(request.stagingDirectory))
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pinnedPath, isDirectory: &isDir))
+        XCTAssertTrue(isDir.boolValue)
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: pinnedPath).appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-B): symlink immediate는 fail-closed다.
+    func testExternalDropAcquisition_symlinkImmediateIsRejectedFailClosed() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("PinSymlink")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let target = temporaryRoot.appendingPathComponent("target.txt")
+        try Data("outside".utf8).write(to: target)
+        let link = temporaryRoot.appendingPathComponent("link.txt")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [link.path], [0], [1])
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .failed(request.sessionID, .fileAbsent))
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
     }
 
     /// EOP-002-import_external_objects: mixed drop의 indeterminate receiver는 이름 있는 receiver가
@@ -2720,7 +3003,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let emptyReceiver = FilePromiseReceiverSpy(names: [])
         let namedReceiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([emptyReceiver, namedReceiver], [], "/dest", false, [])
+        let request = client.begin([emptyReceiver, namedReceiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let message = staging.appendingPathComponent("message.eml")
         try Data("message".utf8).write(to: message)
@@ -2746,7 +3029,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: [])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let message = staging.appendingPathComponent("message.eml")
         try Data("message".utf8).write(to: message)
@@ -2780,7 +3063,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: [])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         receiver.invokeReader(
             url: URL(fileURLWithPath: "/message.eml"),
@@ -2816,7 +3099,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             bytes: Data("Fwd: hello".utf8),
             filename: "Fwd hello.txt",
         )
-        let request = client.begin([receiver], [flavor], "/dest", false, [])
+        let request = client.begin([receiver], [flavor], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let dataURL = staging.appendingPathComponent("Fwd hello.txt")
 
@@ -2848,7 +3131,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt", "b.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let a = staging.appendingPathComponent("a.txt")
         try Data("a".utf8).write(to: a)
@@ -2879,7 +3162,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let a = staging.appendingPathComponent("a.txt")
         try Data("a".utf8).write(to: a)
@@ -2913,7 +3196,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["ghost.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let missing = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("ghost.txt")
         receiver.invokeReader(url: missing, error: nil)
 
@@ -2933,7 +3216,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["leak.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let outside = temporaryRoot.appendingPathComponent("leak.txt")
         try Data("leak".utf8).write(to: outside)
         receiver.invokeReader(url: outside, error: nil)
@@ -2954,7 +3237,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["escaped.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         let outside = temporaryRoot.appendingPathComponent("outside.txt")
         let symlink = staging.appendingPathComponent("escaped.txt")
@@ -2980,7 +3263,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         client.finish(request.sessionID)
         client.finish(request.sessionID)
 
@@ -3001,7 +3284,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
         receiver.invokeReader(url: staging.appendingPathComponent("a.txt"), error: nil)
@@ -3025,7 +3308,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         client.finish(request.sessionID)
 
         // finish 후 늦은 콜백이 새 출력을 보고한다.
@@ -3050,7 +3333,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionTombstoneSeconds: 0.01,
         )
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         client.finish(request.sessionID)
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -3076,7 +3359,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
         let receiver = FilePromiseReceiverSpy(names: ["first.eml"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let first = staging.appendingPathComponent("first.eml")
@@ -3107,7 +3390,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let staged = staging.appendingPathComponent("a.txt")
@@ -3146,7 +3429,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let staged = staging.appendingPathComponent("a.txt")
@@ -3183,7 +3466,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let staged = staging.appendingPathComponent("a.txt")
@@ -3211,7 +3494,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let staged = staging.appendingPathComponent("a.txt")
@@ -3240,7 +3523,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         let staging = URL(fileURLWithPath: request.stagingDirectory)
         try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
 
@@ -3263,7 +3546,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         client.cancel(request.sessionID)
 
         // 취소 후 늦은 콜백이 새 출력을 보고한다.
@@ -3290,7 +3573,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
-        let request = client.begin([receiver], [], "/dest", false, [])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
         client.cancel(request.sessionID)
 
         // 취소 후 늦은 콜백이 staging 밖의 source 파일을 보고한다.
@@ -3539,11 +3822,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let store = EntryOperationsTestSupport.makeStore {
             $0.uuid = .constant(injectedUUID)
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin is not used by barrier tests") },
+                begin: { _, _, _, _, _, _, _ in fatalError("begin is not used by barrier tests") },
                 events: { _ in AsyncStream { $0.finish() } },
                 cancel: { recorder.recordCancel($0) },
                 finish: { recorder.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
+                beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
@@ -3589,19 +3872,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let sessionID = ExternalDropSessionID()
-        let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
-                events: { _ in AsyncStream { $0.finish() } },
-                cancel: { cleanup.recordCancel($0) },
-                finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
-                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
-            )
-        }
-        store.exhaustivity = .off
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
 
         let plan = ExternalDropImportPlan(
             sessionID: sessionID,
@@ -3631,7 +3902,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     }
 
     /// EOP-002-import_external_objects (VOY-736 리뷰 #3830970670): 뒤쪽 receiver의 콜백이
-    /// 먼저 도착해도 placement는 pasteboard 순서(receiverIndex)를 유지한다.
+    /// 먼저 도착해도 placement는 pasteboard 순서(pasteboardOrdinal)를 유지한다.
     /// - 검증 내용: B receiver 이벤트가 A보다 먼저 와도 복사 순서는 [a, b]다.
     func testExternalDropImport_parallelArrivalPreservesDragOrder() async throws {
         let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
@@ -3649,21 +3920,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let sessionID = ExternalDropSessionID()
-        let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
-                events: { _ in AsyncStream { $0.finish() } },
-                cancel: { cleanup.recordCancel($0) },
-                finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
-                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
-            )
-        }
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
         store.exhaustivity = .off
 
-        // 도착 순서(itemOrdinal)는 B가 먼저지만 receiverIndex로 A가 먼저 정렬돼야 한다.
+        // 도착 순서(itemOrdinal)는 B가 먼저지만 pasteboardOrdinal로 A가 먼저 정렬돼야 한다.
         let plan = ExternalDropImportPlan(
             sessionID: sessionID,
             destination: dest.path,
@@ -3671,8 +3931,20 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             orderedPromisedNames: ["a.txt", "b.txt"],
             promisedOrdinals: [0, 1],
             receivedFiles: [
-                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: b.path, receiverIndex: 1),
-                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: a.path, receiverIndex: 0),
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 1,
+                    callbackOrdinal: 1,
+                    stagedPath: b.path,
+                    pasteboardOrdinal: 1,
+                ),
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 2,
+                    callbackOrdinal: 1,
+                    stagedPath: a.path,
+                    pasteboardOrdinal: 0,
+                ),
             ],
         )
 
@@ -3681,6 +3953,171 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         await store.skipReceivedActions()
 
         XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [a.path, b.path])
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3831133039): 즉시 URL이 앞 항목이면
+    /// promise 완료가 늦어도 placement는 pasteboard 순서대로 immediate를 먼저 복사한다.
+    /// - 검증 내용: [URL-A, promise-B]에서 B 이벤트만 있어도 복사 순서는 [A, B]다.
+    func testExternalDropImport_immediateInterleavesByPasteboardOrdinal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let immediateA = staging.appendingPathComponent("a.txt")
+        let promisedB = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: immediateA)
+        try Data("b".utf8).write(to: promisedB)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
+
+        // promise B(itemOrdinal 1)가 유일한 received 파일이고, immediate A는 ordinal 0이다.
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["b.txt"],
+            promisedOrdinals: [1],
+            receivedFiles: [
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 1,
+                    callbackOrdinal: 1,
+                    stagedPath: promisedB.path,
+                    pasteboardOrdinal: 1,
+                ),
+            ],
+            immediateURLPaths: [immediateA.path],
+            immediateOrdinals: [0],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [immediateA.path, promisedB.path])
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-C): legacy logical item 하나가 파일
+    /// 2개를 산출하면 두 파일 모두 같은 pasteboard ordinal로 placement되고, 앞선 immediate
+    /// 다음에 항목 내 도착 순서대로 복사된다.
+    /// - 검증 내용: [immediate-A(0), promise 항목(1) → f1, f2] 복사 순서 [A, f1, f2].
+    func testExternalDropImport_legacyTwoFilesSharePasteboardOrderAfterImmediate() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let immediateA = staging.appendingPathComponent("a.txt")
+        let legacyFirst = staging.appendingPathComponent("f1.eml")
+        let legacySecond = staging.appendingPathComponent("f2.eml")
+        try Data("a".utf8).write(to: immediateA)
+        try Data("1".utf8).write(to: legacyFirst)
+        try Data("2".utf8).write(to: legacySecond)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
+
+        // 두 파일 모두 pasteboard ordinal 1이고 항목 내 순번(callbackOrdinal) 0/1로 정렬된다.
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["f1.eml", "f2.eml"],
+            promisedOrdinals: [1],
+            receivedFiles: [
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 1,
+                    callbackOrdinal: 0,
+                    stagedPath: legacyFirst.path,
+                    pasteboardOrdinal: 1,
+                ),
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 2,
+                    callbackOrdinal: 1,
+                    stagedPath: legacySecond.path,
+                    pasteboardOrdinal: 1,
+                ),
+            ],
+            immediateURLPaths: [immediateA.path],
+            immediateOrdinals: [0],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            recorder.copiedPaths.map(\.source.path),
+            [immediateA.path, legacyFirst.path, legacySecond.path],
+        )
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3831133039): data flavor가 뒤 pasteboard
+    /// 항목이면 물리화가 먼저 끝나도 promise 뒤에 배치된다.
+    /// - 검증 내용: [promise-A, data-B]에서 도착 순서와 무관하게 복사 순서는 [A, B]다.
+    func testExternalDropImport_promiseBeforeLaterDataByOrdinal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let promisedA = staging.appendingPathComponent("a.txt")
+        let dataB = staging.appendingPathComponent("b.json")
+        try Data("a".utf8).write(to: promisedA)
+        try Data("b".utf8).write(to: dataB)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
+
+        // 도착 순서(itemOrdinal)는 data B가 먼저지만 pasteboardOrdinal로 promise A가 먼저다.
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt"],
+            promisedOrdinals: [0],
+            receivedFiles: [
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 1,
+                    callbackOrdinal: 0,
+                    stagedPath: dataB.path,
+                    pasteboardOrdinal: 1,
+                ),
+                .init(
+                    sessionID: sessionID,
+                    itemOrdinal: 2,
+                    callbackOrdinal: 1,
+                    stagedPath: promisedA.path,
+                    pasteboardOrdinal: 0,
+                ),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [promisedA.path, dataB.path])
         XCTAssertEqual(cleanup.finishes, [sessionID])
     }
 
@@ -3703,19 +4140,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let sessionID = ExternalDropSessionID()
-        let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
-                events: { _ in AsyncStream { $0.finish() } },
-                cancel: { cleanup.recordCancel($0) },
-                finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
-                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
-            )
-        }
-        store.exhaustivity = .off
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
 
         let plan = ExternalDropImportPlan(
             sessionID: sessionID,
@@ -3732,9 +4157,6 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         await store.send(.externalDrop(.applyImport(plan)))
         await store.finish()
         await store.skipReceivedActions()
-        print(
-            "DEBUG after-finish placement=\(String(describing: store.state.externalDropImportPlacement)) status=\(String(describing: store.state.externalObjectImportStatus))",
-        )
 
         XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [a.path, immediate.path])
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
@@ -3762,19 +4184,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let sessionID = ExternalDropSessionID()
-        let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
-                events: { _ in AsyncStream { $0.finish() } },
-                cancel: { cleanup.recordCancel($0) },
-                finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
-                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
-            )
-        }
-        store.exhaustivity = .off
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
 
         let plan = ExternalDropImportPlan(
             sessionID: sessionID,
@@ -3857,11 +4267,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let store = EntryOperationsTestSupport.makeStore {
             $0.entryFileOpsClient = fileOps
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
                 cancel: { cleanup.recordCancel($0) },
                 finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+                beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
@@ -3937,11 +4347,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.uuid = .constant(UUID())
             $0.entryFileOpsClient = fileOps
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
                 cancel: { cleanup.recordCancel($0) },
                 finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+                beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
@@ -4019,11 +4429,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let store = EntryOperationsTestSupport.makeStore {
             $0.entryFileOpsClient = fileOps
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
                 cancel: { cleanup.recordCancel($0) },
                 finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+                beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
@@ -4096,11 +4506,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
             $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _ in fatalError("begin not used") },
+                begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
                 cancel: { cleanup.recordCancel($0) },
                 finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _ in fatalError("beginLegacy not used") },
+                beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
             )
@@ -4325,11 +4735,11 @@ private func makeExternalDropBarrierHarness() -> (
     let recorder = AcquisitionCleanupRecorder()
     let store = EntryOperationsTestSupport.makeStore {
         $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-            begin: { _, _, _, _, _ in fatalError("begin is not used by barrier tests") },
+            begin: { _, _, _, _, _, _, _ in fatalError("begin is not used by barrier tests") },
             events: { _ in AsyncStream { $0.finish() } },
             cancel: { recorder.recordCancel($0) },
             finish: { recorder.recordFinish($0) },
-            beginLegacy: { _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
+            beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy is not used by barrier tests") },
             prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
             finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
         )

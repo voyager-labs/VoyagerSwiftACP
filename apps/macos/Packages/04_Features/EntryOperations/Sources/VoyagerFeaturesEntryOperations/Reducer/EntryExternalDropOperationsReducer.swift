@@ -155,6 +155,7 @@ public struct EntryExternalDropOperationsReducer {
                 promisedOrdinals: active.promisedOrdinals,
                 receivedFiles: active.receivedFiles,
                 immediateURLPaths: active.immediateURLPaths,
+                immediateOrdinals: active.immediateOrdinals,
             )
             state.activeExternalDrop = nil
             // 획득은 완료됐지만 placement(복사)는 아직 시작 전이므로 pending을 유지한다.
@@ -190,17 +191,36 @@ public struct EntryExternalDropOperationsReducer {
                 await acquisitionClient.finish(sessionID)
             }
         }
-        // 콜백 도착 순서가 아닌 안정 키(receiver 순번 → receiver 내 콜백 순번 → 도착 순번)로
-        // 정렬해 병렬 완료 시에도 원래 drag 순서를 보존한다(코멘트 #3830970670). data
-        // flavor/legacy는 receiverIndex -1로 결정적 기여가 먼저 온다. mixed drop의 즉시
-        // file URL은 뒤에 이어 붙인다.
-        let orderedSources = plan.receivedFiles
+        // 표현(promise/data/immediate/legacy) 전체를 원본 pasteboard logical ordinal 하나로
+        // 통합 정렬한다(코멘트 #3831133039). data/legacy를 전역 먼저, immediate를 전역 나중에
+        // 두지 않고, 동률은 receiver 내 콜백 순번 → 도착 순번으로 결정적 유지한다. ordinal이
+        // 없는 구형 plan(immediateOrdinals 비어 있음)은 기존 계약대로 immediate를 마지막에 붙인다.
+        var orderedEntries: [PlacementEntry] = plan.receivedFiles.map { file in
+            PlacementEntry(
+                pasteboardOrdinal: file.pasteboardOrdinal,
+                withinItemOrdinal: file.callbackOrdinal,
+                arrivalOrdinal: file.itemOrdinal,
+                sourcePath: file.stagedPath,
+            )
+        }
+        let immediateCount = plan.immediateURLPaths.count
+        for (index, path) in plan.immediateURLPaths.enumerated() {
+            let ordinal = index < plan.immediateOrdinals.count
+                ? plan.immediateOrdinals[index]
+                : Int.max - immediateCount + index
+            orderedEntries.append(PlacementEntry(
+                pasteboardOrdinal: ordinal,
+                withinItemOrdinal: 0,
+                arrivalOrdinal: Int.max / 2 + index,
+                sourcePath: path,
+            ))
+        }
+        let orderedSources = orderedEntries
             .sorted {
-                ($0.receiverIndex, $0.callbackOrdinal, $0.itemOrdinal)
-                    < ($1.receiverIndex, $1.callbackOrdinal, $1.itemOrdinal)
+                ($0.pasteboardOrdinal, $0.withinItemOrdinal, $0.arrivalOrdinal)
+                    < ($1.pasteboardOrdinal, $1.withinItemOrdinal, $1.arrivalOrdinal)
             }
-            .map(\.stagedPath)
-            + plan.immediateURLPaths
+            .map(\.sourcePath)
         guard !orderedSources.isEmpty else {
             state.externalObjectImportStatus = .failed
             return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
@@ -309,4 +329,13 @@ public struct EntryExternalDropOperationsReducer {
         }
         return .merge(effects)
     }
+}
+
+/// placement 통합 정렬의 한 항목. pasteboard logical ordinal이 1차 키고, 동률은
+/// receiver 내 콜백 순번 → 도착 순번으로 결정적 유지한다(코멘트 #3831133039).
+private struct PlacementEntry {
+    let pasteboardOrdinal: Int
+    let withinItemOrdinal: Int
+    let arrivalOrdinal: Int
+    let sourcePath: String
 }

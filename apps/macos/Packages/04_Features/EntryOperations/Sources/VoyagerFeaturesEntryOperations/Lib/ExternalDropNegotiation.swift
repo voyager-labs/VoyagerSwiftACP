@@ -15,9 +15,12 @@ public enum ExternalDropItemRepresentation: Equatable {
 
 /// 즉시 file URL descriptor. `sourcePaths(from:)`의 순서/dedup 계약을 유지한다.
 public struct ExternalDropImmediateURLDescriptor: Equatable {
-    public var path: String
+    /// 원본 pasteboard에서의 logical item 순번. placement 통합 정렬 키로 쓰인다.
+    public let ordinal: Int
+    public let path: String
 
-    public init(path: String) {
+    public init(ordinal: Int, path: String) {
+        self.ordinal = ordinal
         self.path = path
     }
 }
@@ -159,15 +162,15 @@ public struct ExternalDropNegotiation: Equatable {
                 promisedOrdinals.append(ordinal)
             case let .immediateFileURL(path):
                 if seen.insert(path).inserted {
-                    descriptors.append(.init(path: path))
+                    descriptors.append(.init(ordinal: ordinal, path: path))
                 }
             case let .legacyFilename(filename):
                 if seen.insert(filename).inserted {
-                    descriptors.append(.init(path: filename))
+                    descriptors.append(.init(ordinal: ordinal, path: filename))
                 }
             case let .legacyFilenames(filenames):
                 for filename in filenames where seen.insert(filename).inserted {
-                    descriptors.append(.init(path: filename))
+                    descriptors.append(.init(ordinal: ordinal, path: filename))
                 }
             case let .dataFlavor(uti):
                 dataFlavors.append(.init(ordinal: ordinal, uti: uti))

@@ -70,6 +70,7 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
         var stagingDirectory: String
         var destination: String
         var forcedCopy: Bool
+        var promisedOrdinals: [Int]
     }
 
     struct DeferredCall {
@@ -80,40 +81,47 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
 
     var client: ExternalDropAcquisitionClient {
         var client = ExternalDropAcquisitionClient.testValue
-        client.begin = { [self] receivers, dataFlavors, destination, forcedCopy, immediateURLPaths in
-            beginCalls.append(BeginCall(
-                receiverCount: receivers.count,
-                dataFlavorCount: dataFlavors.count,
-                dataFlavors: dataFlavors,
-                destination: destination,
-                forcedCopy: forcedCopy,
-            ))
-            return ExternalDropAcceptedRequest(
-                sessionID: sessionID,
-                destination: destination,
-                orderedPromisedNames: [],
-                promisedOrdinals: [],
-                forcedCopy: forcedCopy,
-                stagingDirectory: "/tmp/grid-staging",
-                immediateURLPaths: immediateURLPaths,
-            )
-        }
-        client.beginLegacy = { [self] stagedPaths, stagingDirectory, destination, forcedCopy in
-            legacyCalls.append(LegacyCall(
-                stagedPathCount: stagedPaths.count,
-                stagingDirectory: stagingDirectory,
-                destination: destination,
-                forcedCopy: forcedCopy,
-            ))
-            return ExternalDropAcceptedRequest(
-                sessionID: sessionID,
-                destination: destination,
-                orderedPromisedNames: [],
-                promisedOrdinals: [],
-                forcedCopy: forcedCopy,
-                stagingDirectory: stagingDirectory,
-            )
-        }
+        client
+            .begin =
+            { [self] receivers, dataFlavors, destination, forcedCopy, immediateURLPaths, immediateURLOrdinals, _ in
+                beginCalls.append(BeginCall(
+                    receiverCount: receivers.count,
+                    dataFlavorCount: dataFlavors.count,
+                    dataFlavors: dataFlavors,
+                    destination: destination,
+                    forcedCopy: forcedCopy,
+                ))
+                return ExternalDropAcceptedRequest(
+                    sessionID: sessionID,
+                    destination: destination,
+                    orderedPromisedNames: [],
+                    promisedOrdinals: [],
+                    forcedCopy: forcedCopy,
+                    stagingDirectory: "/tmp/grid-staging",
+                    immediateURLPaths: immediateURLPaths,
+                    immediateOrdinals: immediateURLOrdinals,
+                )
+            }
+        client
+            .beginLegacy = { [self] paths, stagingDir, destination, forcedCopy, immediates, immOrds, promisedOrds in
+                legacyCalls.append(LegacyCall(
+                    stagedPathCount: paths.count,
+                    stagingDirectory: stagingDir,
+                    destination: destination,
+                    forcedCopy: forcedCopy,
+                    promisedOrdinals: promisedOrds,
+                ))
+                return ExternalDropAcceptedRequest(
+                    sessionID: sessionID,
+                    destination: destination,
+                    orderedPromisedNames: [],
+                    promisedOrdinals: [],
+                    forcedCopy: forcedCopy,
+                    stagingDirectory: stagingDir,
+                    immediateURLPaths: immediates,
+                    immediateOrdinals: immOrds,
+                )
+            }
         client.cancel = { [self] sessionID in
             cancelledSessionIDs.append(sessionID)
         }
@@ -1435,6 +1443,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(accepted)
         XCTAssertEqual(acquisition.beginCalls.count, 0)
         XCTAssertEqual(acquisition.legacyCalls.count, 1)
+        XCTAssertEqual(acquisition.legacyCalls.first?.promisedOrdinals, negotiation.promisedOrdinals)
         XCTAssertEqual(acceptedRequests.count, 1)
         XCTAssertEqual(acceptedRequests.first?.immediateURLPaths, [immediateURL.path])
     }

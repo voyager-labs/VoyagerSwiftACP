@@ -244,6 +244,7 @@ public struct ExternalDropActiveSession: Equatable, Sendable {
     public let forcedCopy: Bool
     public let stagingDirectory: String
     public let immediateURLPaths: [String]
+    public let immediateOrdinals: [Int]
     public var receivedFiles: [ExternalDropReceivedFile]
 
     public init(request: ExternalDropAcceptedRequest) {
@@ -254,6 +255,7 @@ public struct ExternalDropActiveSession: Equatable, Sendable {
         forcedCopy = request.forcedCopy
         stagingDirectory = request.stagingDirectory
         immediateURLPaths = request.immediateURLPaths
+        immediateOrdinals = request.immediateOrdinals
         receivedFiles = []
     }
 }
@@ -310,6 +312,8 @@ public struct ExternalDropImportPlan: Equatable, Sendable {
     public let receivedFiles: [ExternalDropReceivedFile]
     /// promise/materialization 없이 즉시 복사 가능한 file URL 경로. staged 복사와 함께 배치된다.
     public let immediateURLPaths: [String]
+    /// `immediateURLPaths`와 1:1 대응하는 pasteboard logical item 순번(코멘트 #3831133039).
+    public let immediateOrdinals: [Int]
 
     public init(
         sessionID: ExternalDropSessionID,
@@ -319,6 +323,7 @@ public struct ExternalDropImportPlan: Equatable, Sendable {
         promisedOrdinals: [Int],
         receivedFiles: [ExternalDropReceivedFile],
         immediateURLPaths: [String] = [],
+        immediateOrdinals: [Int] = [],
     ) {
         self.sessionID = sessionID
         self.destination = destination
@@ -327,5 +332,6 @@ public struct ExternalDropImportPlan: Equatable, Sendable {
         self.promisedOrdinals = promisedOrdinals
         self.receivedFiles = receivedFiles
         self.immediateURLPaths = immediateURLPaths
+        self.immediateOrdinals = immediateOrdinals
     }
 }

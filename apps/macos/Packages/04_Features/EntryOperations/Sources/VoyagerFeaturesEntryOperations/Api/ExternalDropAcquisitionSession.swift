@@ -35,6 +35,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 
     private let lock = NSLock()
     private var phase: Phase = .acquiring
+    /// receiver index → 원본 pasteboard logical ordinal 매핑. placement 통합 정렬 키로 쓰인다.
+    private let receiverOrdinals: [Int]
     /// 발행된 terminal 이벤트. 정확히 한 번 발행을 보장하기 위해 저장한다.
     private var terminalEvent: ExternalDropAcquisitionEvent?
     private var expectedCardinality: Int = 0
@@ -65,11 +67,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         stagingDirectory: String,
         fileManager: FileManagerClient,
         queue: OperationQueue,
+        receiverOrdinals: [Int] = [],
     ) {
         self.sessionID = sessionID
         staging = StagingDirectory(path: stagingDirectory, fileManager: fileManager)
         self.fileManager = fileManager
         self.queue = queue
+        self.receiverOrdinals = receiverOrdinals
         observationQueue = DispatchQueue(label: "fm.voyager.external-drop.\(sessionID.rawValue)")
     }
 
@@ -185,7 +189,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             itemOrdinal: itemOrdinal,
             callbackOrdinal: 0,
             stagedPath: url.path,
-            receiverIndex: -1,
+            pasteboardOrdinal: dataFlavor.ordinal,
         )))
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
@@ -194,7 +198,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 
     /// 레거시 폴백: staging에 이미 물리화된 파일 한 건을 received-item으로 등록한다.
     /// 파일 존재·containment를 재검증하고 실패는 타입화 실패로 승격하지 않는다.
-    func registerLegacyStagedFile(stagedPath: String) {
+    /// 하나의 logical legacy item이 여러 파일을 산출하면 같은 pasteboard ordinal에
+    /// 항목 내 순번(0-based `callbackOrdinal`)이 붙는다(P1-C).
+    func registerLegacyStagedFile(
+        stagedPath: String,
+        pasteboardOrdinal: Int,
+        callbackOrdinal: Int = 0,
+    ) {
         lock.lock()
         defer { lock.unlock() }
         guard phase == .acquiring else { return }
@@ -211,9 +221,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         emitLocked(.received(ExternalDropReceivedFile(
             sessionID: sessionID,
             itemOrdinal: itemOrdinal,
-            callbackOrdinal: 0,
+            callbackOrdinal: callbackOrdinal,
             stagedPath: url.path,
-            receiverIndex: -1,
+            pasteboardOrdinal: pasteboardOrdinal,
         )))
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
@@ -255,6 +265,26 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             .precomposedStringWithCanonicalMapping
     }
 
+    /// mixed drop의 즉시 file URL을 accept 시점에 Voyager 보관 디렉터리로 복사해 identity를
+    /// 고정한다(코멘트 #3831133026). 원본은 source-app 소유로 그대로 둔다. 하나라도 복사에
+    /// 실패하면 전체를 `.fileAbsent`로 종단하고 nil을 반환한다(all-or-nothing).
+    func pinImmediateURLs(_ paths: [String]) -> [String]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard phase == .acquiring else { return nil }
+        var pinned: [String] = []
+        pinned.reserveCapacity(paths.count)
+        for path in paths {
+            guard let claimed = staging.copyClaim(URL(fileURLWithPath: path)) else {
+                emitTerminalLocked(.failed(sessionID, .fileAbsent))
+                return nil
+            }
+            receivedStagedPaths.insert(claimed.standardizedFileURL.path)
+            pinned.append(claimed.path)
+        }
+        return pinned
+    }
+
     /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
     func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
         queue.addOperation { [weak self] in
@@ -267,6 +297,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
                 uti: flavor.uti,
                 bytes: bytes,
                 filename: flavor.filename,
+                ordinal: flavor.ordinal,
             ))
         }
     }
@@ -538,7 +569,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             itemOrdinal: itemOrdinal,
             callbackOrdinal: callbackOrdinal,
             stagedPath: url.path,
-            receiverIndex: receiverIndex,
+            pasteboardOrdinal: receiverOrdinals.indices.contains(receiverIndex)
+                ? receiverOrdinals[receiverIndex]
+                : receiverIndex,
         )
         emitLocked(.received(receivedFile))
 
@@ -783,6 +816,35 @@ private final class StagingDirectory {
         }
         do {
             try fileManager.moveItem(sourceURL, candidate)
+            return candidate
+        } catch {
+            return nil
+        }
+    }
+
+    /// provider가 수정할 수 없는 보관 디렉터리로 원본을 "복사"해 identity를 고정한다.
+    /// claim과 달리 move가 아니므로 source-app 소유 원본은 그대로 유지된다. root regular
+    /// 파일은 파일로, root 디렉터리는 하위 트리째 복사한다(P1-B). symlink는 따라가지 않고
+    /// 거부하고(placement가 Voyager 권한으로 외부 파일을 읽지 않게 한다), 그 외 root
+    /// 타입도 거부한다.
+    func copyClaim(_ sourceURL: URL) -> URL? {
+        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
+        var suffix = 2
+        while fileManager.fileExists(candidate.path) {
+            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
+            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
+            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
+            candidate = ownedPath.appendingPathComponent(suffixedName)
+            suffix += 1
+        }
+        guard let attributes = try? fileManager.attributesOfItem(sourceURL.path),
+              let fileType = attributes[.type] as? FileAttributeType,
+              fileType == .typeRegular || fileType == .typeDirectory
+        else {
+            return nil
+        }
+        do {
+            try fileManager.copyItem(sourceURL, candidate)
             return candidate
         } catch {
             return nil

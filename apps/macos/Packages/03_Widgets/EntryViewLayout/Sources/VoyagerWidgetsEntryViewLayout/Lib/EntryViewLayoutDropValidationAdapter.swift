@@ -306,8 +306,19 @@ extension EntryViewLayoutDropValidationAdapter {
             .info("acquisition path \(receivers.isEmpty ? "data-only" : "modern-promise", privacy: .public)")
         // promise/mixed/data 외부 drop은 항상 `.copy`를 사용하고 path 기반 move(`dropItems` false)를 내지 않는다.
         // mixed drop의 즉시 file URL은 promise/materialization과 함께 복사 배치에 포함시켜 누락을 막는다.
+        // client.begin이 immediates를 보관 디렉터리로 pinning하고, receiverOrdinals로 pasteboard
+        // 순서를 전달해 placement 통합 정렬을 가능하게 한다(코멘트 #3831133026/#3831133039).
         let immediateURLPaths = negotiation.immediateURLDescriptors.map(\.path)
-        let request = context.client.begin(receivers, combinedDataFlavors, destinationPath, true, immediateURLPaths)
+        let immediateURLOrdinals = negotiation.immediateURLDescriptors.map(\.ordinal)
+        let request = context.client.begin(
+            receivers,
+            combinedDataFlavors,
+            destinationPath,
+            true,
+            immediateURLPaths,
+            immediateURLOrdinals,
+            negotiation.promisedOrdinals,
+        )
         activeSessionID = request.sessionID
         context.sendAccepted(request)
         context.clearDropState()
@@ -405,7 +416,11 @@ extension EntryViewLayoutDropValidationAdapter {
                 usedFilenames: &usedFilenames,
             )
             let lookup = descriptor.lookup
-            result.append(ExternalDropDeferredFlavor(uti: emailUTI, filename: filename) {
+            result.append(ExternalDropDeferredFlavor(
+                uti: emailUTI,
+                filename: filename,
+                ordinal: ordinal,
+            ) {
                 loadSource(lookup)
             })
         }
@@ -488,20 +503,20 @@ extension EntryViewLayoutDropValidationAdapter {
             context.clearDropState()
             return false
         }
-        let request = context.client.beginLegacy(stagedPaths, stagingPath, destinationPath, true)
-        // legacy 경로도 negotiation이 확정한 즉시 URL을 병합해 modern 경로와 동일한
-        // ordered placement plan으로 전달한다(조용한 누락 방지).
-        let mergedRequest = ExternalDropAcceptedRequest(
-            sessionID: request.sessionID,
-            destination: request.destination,
-            orderedPromisedNames: request.orderedPromisedNames,
-            promisedOrdinals: request.promisedOrdinals,
-            forcedCopy: request.forcedCopy,
-            stagingDirectory: request.stagingDirectory,
-            immediateURLPaths: negotiation.immediateURLDescriptors.map(\.path),
+        // 즉시 URL pinning과 pasteboard ordinal 전달을 client.beginLegacy가 단일 소유한다.
+        // negotiation이 확정한 logical promise item 순번을 그대로 라우팅해 client가
+        // flat 이름 목록의 pasteboard ordinal을 출력 수로 날조하지 않게 한다(P1-C).
+        let request = context.client.beginLegacy(
+            stagedPaths,
+            stagingPath,
+            destinationPath,
+            true,
+            negotiation.immediateURLDescriptors.map(\.path),
+            negotiation.immediateURLDescriptors.map(\.ordinal),
+            negotiation.promisedOrdinals,
         )
-        activeSessionID = mergedRequest.sessionID
-        context.sendAccepted(mergedRequest)
+        activeSessionID = request.sessionID
+        context.sendAccepted(request)
         context.clearDropState()
         logger.info("legacy fallback invoked files=\(stagedPaths.count, privacy: .public)")
         return true
@@ -582,7 +597,12 @@ extension EntryViewLayoutDropValidationAdapter {
                 bytes: bytes,
                 ordinal: descriptor.ordinal + 1,
             )
-            result.append(ExternalDropDataFlavor(uti: descriptor.uti, bytes: bytes, filename: filename))
+            result.append(ExternalDropDataFlavor(
+                uti: descriptor.uti,
+                bytes: bytes,
+                filename: filename,
+                ordinal: descriptor.ordinal,
+            ))
         }
         return result
     }

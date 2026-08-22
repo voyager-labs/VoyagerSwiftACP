@@ -43,8 +43,12 @@ public struct ExternalDropAcceptedRequest: Equatable, Sendable {
     /// 이 세션 전용 staging 디렉터리 경로.
     public let stagingDirectory: String
     /// mixed drop에서 promise/materialization 없이 즉시 획득 가능한 file URL 경로.
+    /// accept 시점에 Voyager 보관 디렉터리로 pinning된 경로다(원본은 source 소유 유지).
     /// promise와 함께 온 즉시 URL이 조용히 누락되지 않도록 ordered import plan에 합쳐진다.
     public let immediateURLPaths: [String]
+    /// `immediateURLPaths`와 1:1 대응하는 pasteboard logical item 순번. placement 통합
+    /// 정렬에 쓰인다(코멘트 #3831133039).
+    public let immediateOrdinals: [Int]
 
     public init(
         sessionID: ExternalDropSessionID,
@@ -54,6 +58,7 @@ public struct ExternalDropAcceptedRequest: Equatable, Sendable {
         forcedCopy: Bool,
         stagingDirectory: String,
         immediateURLPaths: [String] = [],
+        immediateOrdinals: [Int] = [],
     ) {
         self.sessionID = sessionID
         self.destination = destination
@@ -62,6 +67,7 @@ public struct ExternalDropAcceptedRequest: Equatable, Sendable {
         self.forcedCopy = forcedCopy
         self.stagingDirectory = stagingDirectory
         self.immediateURLPaths = immediateURLPaths
+        self.immediateOrdinals = immediateOrdinals
     }
 }
 
@@ -80,20 +86,20 @@ public struct ExternalDropReceivedFile: Equatable, Sendable {
     public let stagedPath: String
     /// placement 정렬용 수신기 순번(pasteboard 순서). data flavor/legacy는 -1이며,
     /// 콜백 도착 순서와 무관한 안정 정렬 키로 쓰인다(코멘트 #3830970670).
-    public let receiverIndex: Int
+    public let pasteboardOrdinal: Int
 
     public init(
         sessionID: ExternalDropSessionID,
         itemOrdinal: Int,
         callbackOrdinal: Int,
         stagedPath: String,
-        receiverIndex: Int = -1,
+        pasteboardOrdinal: Int = -1,
     ) {
         self.sessionID = sessionID
         self.itemOrdinal = itemOrdinal
         self.callbackOrdinal = callbackOrdinal
         self.stagedPath = stagedPath
-        self.receiverIndex = receiverIndex
+        self.pasteboardOrdinal = pasteboardOrdinal
     }
 }
 
@@ -109,11 +115,14 @@ public struct ExternalDropDataFlavor: Equatable, Sendable {
     public let bytes: Data
     /// staging에 쓸 최종 파일명 (base name + 확장자).
     public let filename: String
+    /// placement 통합 정렬에 쓰는 pasteboard logical item 순번(코멘트 #3831133039).
+    public let ordinal: Int
 
-    public init(uti: String, bytes: Data, filename: String) {
+    public init(uti: String, bytes: Data, filename: String, ordinal: Int = -1) {
         self.uti = uti
         self.bytes = bytes
         self.filename = filename
+        self.ordinal = ordinal
     }
 }
 
@@ -125,12 +134,20 @@ public struct ExternalDropDeferredFlavor: Sendable {
     public let uti: String
     /// staging에 쓸 최종 파일명 (base name + 확장자).
     public let filename: String
+    /// placement 통합 정렬에 쓰는 pasteboard logical item 순번(코멘트 #3831133039).
+    public let ordinal: Int
     /// 원본 바이트를 비동기로 로드한다. nil을 반환하면 타입화 실패로 종단 처리된다.
     public let load: @Sendable () -> Data?
 
-    public init(uti: String, filename: String, load: @escaping @Sendable () -> Data?) {
+    public init(
+        uti: String,
+        filename: String,
+        ordinal: Int = -1,
+        load: @escaping @Sendable () -> Data?,
+    ) {
         self.uti = uti
         self.filename = filename
+        self.ordinal = ordinal
         self.load = load
     }
 }
