@@ -96,6 +96,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case shareItems(paths: [String], anchor: CGPoint?)
         case performService(paths: [String], name: String)
         case revealInFinder(paths: [String])
+        case syncQuickLookSelection(paths: [String], selectedIndex: Int)
     }
 
     @CasePathable

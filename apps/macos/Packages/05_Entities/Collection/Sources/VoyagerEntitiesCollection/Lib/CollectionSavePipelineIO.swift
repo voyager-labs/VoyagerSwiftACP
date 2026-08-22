@@ -75,78 +75,19 @@ func buildSaveRequest(
 
 func executeSave(
     request: CollectionSaveRequest,
-    source: String,
-    snapshot: CollectionSaveSnapshot,
     savedContext: CollectionContext,
-    clients: (file: CollectionFileClient, metric: CollectionMetricClient),
+    fileClient: CollectionFileClient,
 ) -> Effect<CollectionAction> {
     .run { send in
         do {
-            try await clients.file.save(request.file, request.url)
-            logCollectionSaveResult(
-                outcome: "saved",
-                reason: "none",
-                source: source,
-                snapshot: snapshot,
-                collectionMetricClient: clients.metric,
-            )
+            try await fileClient.save(request.file, request.url)
             await send(.saveCompleted(.success(.init(
                 url: request.url,
                 file: request.file,
                 savedContext: savedContext,
             ))))
         } catch {
-            logCollectionSaveResult(
-                outcome: "save_failed",
-                reason: "storage_error",
-                source: source,
-                snapshot: snapshot,
-                collectionMetricClient: clients.metric,
-                level: .error,
-            )
             await send(.saveCompleted(.failure(error)))
         }
     }
-}
-
-func logCollectionSaveResult(
-    outcome: String,
-    reason: String,
-    source: String,
-    payload: SaveRequestPayload,
-    collectionMetricClient: CollectionMetricClient,
-    level: CollectionMetricLevel = .info,
-) {
-    collectionMetricClient.logMetric(
-        CollectionFilterSaveMetrics.saveResult,
-        value: 1,
-        tags: CollectionFilterSaveMetrics.tags(
-            outcome: outcome,
-            reason: reason,
-            source: source,
-            payload: payload,
-        ),
-        level: level,
-    )
-}
-
-func logCollectionSaveResult(
-    outcome: String,
-    reason: String,
-    source: String,
-    snapshot: CollectionSaveSnapshot,
-    collectionMetricClient: CollectionMetricClient,
-    level: CollectionMetricLevel = .info,
-) {
-    collectionMetricClient.logMetric(
-        CollectionFilterSaveMetrics.saveResult,
-        value: 1,
-        tags: CollectionFilterSaveMetrics.tags(
-            outcome: outcome,
-            reason: reason,
-            source: source,
-            snapshot: snapshot,
-        ),
-        level: level,
-    )
 }

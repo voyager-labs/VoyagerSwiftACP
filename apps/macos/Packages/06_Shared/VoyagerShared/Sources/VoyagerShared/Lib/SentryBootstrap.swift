@@ -39,4 +39,10 @@ public enum SentryBootstrap {
             }
         }
     }
+
+    public static func updateUser(userId: String) {
+        SentrySDK.configureScope { scope in
+            scope.setUser(Sentry.User(userId: userId))
+        }
+    }
 }

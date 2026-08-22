@@ -17,6 +17,45 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testProductAnalyticsContextUsesResolvedAppEnvironment() {
+        let occurredAtUTC = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertEqual(
+            VoyagerApp.makeProductAnalyticsEventContext(
+                environment: .dev,
+                occurredAtUTC: occurredAtUTC,
+            ).environment,
+            "dev",
+        )
+        XCTAssertEqual(
+            VoyagerApp.makeProductAnalyticsEventContext(
+                environment: .prod,
+                occurredAtUTC: occurredAtUTC,
+            ).environment,
+            "prod",
+        )
+        XCTAssertEqual(
+            VoyagerApp.makeProductAnalyticsEventContext(
+                environment: .dev,
+                occurredAtUTC: occurredAtUTC,
+            ).sourceProject,
+            "app",
+        )
+    }
+
+    func testBuiltInSeedIdentityTagsMapToSafeSourceSurfaceValues() {
+        for identity in ["recents", "all_tags"] {
+            XCTAssertEqual(
+                VoyagerApp.productMetricProperties(
+                    name: "built_in_pinned_item_seeded",
+                    value: 1,
+                    tags: ["identity": identity],
+                )["source_surface"],
+                .string(identity),
+            )
+        }
+    }
+
     func testLiveUndoManagerClientUsesCanonicalRegistryStackForSequentialUndo() async throws {
         let windowID = UUID()
         let ownerID = UUID()
@@ -616,6 +655,156 @@ final class AppRootCompositionTests: XCTestCase {
             }
             return false
         })
+    }
+
+    func testLaunchUsesInjectedDeviceIdentityClient() async {
+        let deviceIdentityCalls = LockIsolated(0)
+        let analyticsIdentities = LockIsolated<[String?]>([])
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.deviceIdentityClient = DeviceIdentityClient(deviceId: {
+                deviceIdentityCalls.withValue { $0 += 1 }
+                return "test-device-id"
+            })
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: launch bootstrap은 장기 notification effect를 포함하고 identity 호출만 단정함.
+        store.exhaustivity = .off
+
+        await store.send(.launch(.willFinishLaunching))
+
+        XCTAssertEqual(deviceIdentityCalls.value, 1)
+        XCTAssertTrue(analyticsIdentities.value.isEmpty)
+        await store.finish()
+    }
+
+    func testIdentityFailureDoesNotPreventDidFinishLaunching() async {
+        let deviceIdentityCalls = LockIsolated(0)
+        let sentryIdentities = LockIsolated<[String?]>([])
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.deviceIdentityClient = DeviceIdentityClient(deviceId: {
+                deviceIdentityCalls.withValue { $0 += 1 }
+                throw DeviceIdentityError.platformUUIDUnavailable
+            })
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.appTechnicalSentryClient = AppTechnicalSentryClient(
+                startIfNeeded: { _, userId, _ in
+                    sentryIdentities.withValue { $0.append(userId) }
+                },
+                updateUser: { _ in },
+            )
+            $0.helperAppClient = helperAppClient()
+            $0.helperStateClient = readyHelperStateClient
+            $0.onboardingWindowClient.showIfNeeded = { true }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: identity failure는 fire-and-forget이고 이 테스트는 launch 완료만 소유함.
+        store.exhaustivity = .off
+
+        await store.send(.launch(.willFinishLaunching))
+        await store.send(.launch(.didFinishLaunching)) {
+            $0.didFinishLaunching = true
+        }
+
+        XCTAssertEqual(deviceIdentityCalls.value, 1)
+        XCTAssertEqual(sentryIdentities.value, [nil])
+        XCTAssertTrue(store.state.didFinishLaunching)
+        await store.finish()
+    }
+
+    func testMalformedIdentityDoesNotUpdateSentry() async {
+        let sentryUserUpdates = LockIsolated<[String]>([])
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.deviceIdentityClient = DeviceIdentityClient(deviceId: { " \n\t" })
+            $0.appTechnicalSentryClient.updateUser = { identity in
+                sentryUserUpdates.withValue { $0.append(identity) }
+            }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: malformed identity normalization과 launch effect completion만 단정함.
+        store.exhaustivity = .off
+
+        await store.send(.launch(.willFinishLaunching))
+        await store.finish()
+
+        XCTAssertTrue(sentryUserUpdates.value.isEmpty)
+    }
+
+    func testLaunchCallerReturnsWhileIdentityAcquisitionIsBlocked() async {
+        let deviceIdentityCalls = LockIsolated(0)
+        let sentryIdentities = LockIsolated<[String?]>([])
+        let sentryUserUpdates = LockIsolated<[String]>([])
+        let identityStarted = expectation(description: "Identity acquisition starts")
+        let sentryUserUpdated = expectation(description: "Sentry user updates independently")
+        let identityRelease = DispatchSemaphore(value: 0)
+        let store = Store(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.deviceIdentityClient = DeviceIdentityClient(deviceId: {
+                deviceIdentityCalls.withValue { $0 += 1 }
+                identityStarted.fulfill()
+                identityRelease.wait()
+                return " \n test-device-id \t"
+            })
+            $0.appTechnicalSentryClient = AppTechnicalSentryClient(
+                startIfNeeded: { _, userId, _ in
+                    sentryIdentities.withValue { $0.append(userId) }
+                },
+                updateUser: { userId in
+                    sentryUserUpdates.withValue { $0.append(userId) }
+                    sentryUserUpdated.fulfill()
+                },
+            )
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+
+        let launchStart = ContinuousClock.now
+        store.send(.launch(.willFinishLaunching))
+        let launchElapsed = ContinuousClock.now - launchStart
+
+        await fulfillment(of: [identityStarted], timeout: 1)
+        XCTAssertLessThan(launchElapsed, .seconds(1))
+        XCTAssertEqual(deviceIdentityCalls.value, 1)
+        XCTAssertEqual(sentryIdentities.value, [nil])
+
+        identityRelease.signal()
+        await fulfillment(of: [sentryUserUpdated], timeout: 1)
+        XCTAssertEqual(sentryIdentities.value, [nil])
+        XCTAssertEqual(sentryUserUpdates.value, ["test-device-id"])
+    }
+
+    func testLaunchCallerReturnsAfterSchedulingIdentityAcquisition() async {
+        let deviceIdentityCalls = LockIsolated(0)
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.deviceIdentityClient = DeviceIdentityClient(deviceId: {
+                deviceIdentityCalls.withValue { $0 += 1 }
+                return "test-device-id"
+            })
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: launch bootstrap의 장기 notification effect와 identity scheduling을 함께 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.launch(.willFinishLaunching))
+        await store.finish()
+        XCTAssertEqual(deviceIdentityCalls.value, 1)
     }
 
     // MARK: - VOY-521 Auth callback canonical routing

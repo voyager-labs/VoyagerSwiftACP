@@ -232,6 +232,7 @@ public final class EntryListCoordinator: NSObject {
         if !restoredScrollForCurrentPath {
             scrollToSelectionIfNeeded()
         }
+        consumeInitialTypeScrollTargetIfNeeded()
         CATransaction.commit()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }

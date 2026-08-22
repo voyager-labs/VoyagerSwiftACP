@@ -140,6 +140,8 @@ EXPECTED_TRACKED_ENV_KEYS: set[str] = {
     "PUBLIC_GATEWAY_URL",
     "PUBLIC_HELPER_NAME",
     "PUBLIC_LOG_LEVEL",
+    "PUBLIC_POSTHOG_HOST",
+    "PUBLIC_POSTHOG_PROJECT_TOKEN",
     "PUBLIC_SENTRY_DSN",
     "PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
     "PUBLIC_WEB_BASE_URL",
@@ -923,6 +925,17 @@ def check_ci_references(errors: list[str]) -> None:
                     f"{CI_WORKFLOW}:{i}: CONFIGURATION is '{value}', "
                     f"expected '{PROD_RELEASE}'"
                 )
+    build_step = content.split("- name: Build, notarize, package release payload", 1)
+    if len(build_step) == 1:
+        errors.append(f"{CI_WORKFLOW}: build-notarize step is missing")
+        return
+    build_content = build_step[1].split("- name: Upload artifacts", 1)[0]
+    for key in ("PUBLIC_POSTHOG_PROJECT_TOKEN", "PUBLIC_POSTHOG_HOST"):
+        expected = f"{key}: ${{{{ vars.{key} }}}}"
+        if expected not in build_content:
+            errors.append(
+                f"{CI_WORKFLOW}: build-notarize step must source {key} from production vars"
+            )
 
 
 # ── VOY-432: tracked env key parsing, parity, launch-surface, and deprecated checks ──

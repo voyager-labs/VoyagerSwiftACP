@@ -40,6 +40,7 @@ extension EntryGridCoordinator {
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
@@ -133,6 +134,32 @@ extension EntryGridCoordinator {
 
     func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection { scrollToSelectionIfNeeded() }
+    }
+
+    /// pending type-scroll target의 nil→id 엣지에서 첫 매칭 item으로 스크롤하고 reset한다.
+    func consumeTypeScrollTargetIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.pendingTypeScrollTargetId != snapshot.pendingTypeScrollTargetId,
+              let targetId = snapshot.pendingTypeScrollTargetId
+        else { return }
+        consumeTypeScrollTargetIfLaidOut(targetId)
+    }
+
+    func completePhysicalLayoutAndConsumePendingTypeScrollTarget() {
+        guard isTypeScrollViewportReady else { return }
+        hasCompletedFirstPhysicalLayout = true
+        guard let targetId = state.pendingTypeScrollTargetId else { return }
+        consumeTypeScrollTargetIfLaidOut(targetId)
+    }
+
+    private var isTypeScrollViewportReady: Bool {
+        guard view?.window != nil else { return false }
+        let viewport = scrollView.contentView.bounds
+        return viewport.width > 0 && viewport.height > 0
+    }
+
+    private func consumeTypeScrollTargetIfLaidOut(_ targetId: EntryModel.ID) {
+        guard hasCompletedFirstPhysicalLayout else { return }
+        scrollToTypeScrollTarget(targetId)
     }
 
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {

@@ -8,6 +8,45 @@ import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
 import VoyagerShared
 
+struct AppTechnicalSentryClient {
+    var startIfNeeded: @Sendable (String?, String?, String) -> Void
+    var updateUser: @Sendable (String) -> Void
+}
+
+extension AppTechnicalSentryClient: DependencyKey {
+    nonisolated static let liveValue = AppTechnicalSentryClient(
+        startIfNeeded: { appVersion, userId, component in
+            guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
+                  NSClassFromString("XCTestCase") == nil
+            else { return }
+            SentryBootstrap.startIfNeeded(
+                appVersion: appVersion,
+                userId: userId,
+                component: component,
+            )
+        },
+        updateUser: { userId in
+            guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
+                  NSClassFromString("XCTestCase") == nil
+            else { return }
+            SentryBootstrap.updateUser(userId: userId)
+        },
+    )
+
+    nonisolated static let testValue = AppTechnicalSentryClient(
+        startIfNeeded: { _, _, _ in },
+        updateUser: { _ in },
+    )
+    nonisolated static let previewValue = testValue
+}
+
+extension DependencyValues {
+    nonisolated var appTechnicalSentryClient: AppTechnicalSentryClient {
+        get { self[AppTechnicalSentryClient.self] }
+        set { self[AppTechnicalSentryClient.self] = newValue }
+    }
+}
+
 @Reducer
 struct AppLifecycleFeature {
     typealias State = AppLifecycleState
@@ -35,6 +74,10 @@ struct AppLifecycleFeature {
     var date
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
+    @Dependency(\.deviceIdentityClient)
+    var deviceIdentityClient
+    @Dependency(\.appTechnicalSentryClient)
+    var appTechnicalSentryClient
     @Dependency(\.entryCoreEndpointClient)
     var entryCoreEndpointClient
     @Dependency(\.entryCoreClient)
@@ -62,21 +105,32 @@ struct AppLifecycleFeature {
 
                 let notificationCenterClient = notificationCenterClient
 
-                if isRunningXCTest() {
-                    return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
+                let isRunningXCTest = isRunningXCTest()
+                if !isRunningXCTest {
+                    try? EnvironmentLoader.loadEnvFiles()
+                    EnvironmentLoader.requireAppEnv()
                 }
-
-                try? EnvironmentLoader.loadEnvFiles()
-                EnvironmentLoader.requireAppEnv()
-                let userId = DeviceIdentifierProvider.current()
                 let appVersion = AppVersionInfo.shortVersion
-                SentryBootstrap.startIfNeeded(
-                    appVersion: appVersion,
-                    userId: userId,
-                    component: "app",
+                let deviceIdentityClient = deviceIdentityClient
+                let appTechnicalSentryClient = appTechnicalSentryClient
+                appTechnicalSentryClient.startIfNeeded(appVersion, nil, "app")
+                let identityEffect = Effect<Action>.run { _ in
+                    let userId: String? = await Task.detached(priority: .utility) {
+                        guard let rawValue = try? deviceIdentityClient.deviceId() else { return nil }
+                        let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return normalized.isEmpty ? nil : normalized
+                    }.value
+
+                    if let userId {
+                        await MainActor.run {
+                            appTechnicalSentryClient.updateUser(userId)
+                        }
+                    }
+                }
+                return .merge(
+                    identityEffect,
+                    observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient),
                 )
-                VoyagerSentryMetricLogger.setUserId(userId)
-                return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
 
             case .launch(.didFinishLaunching):
                 state.didFinishLaunching = true

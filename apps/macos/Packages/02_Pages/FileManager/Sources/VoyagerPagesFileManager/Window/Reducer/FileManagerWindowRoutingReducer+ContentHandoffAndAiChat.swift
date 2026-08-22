@@ -216,6 +216,19 @@ func activeTabHandoffEffect(
     }
     state.pendingCollectionOpenRequest = nil
     let navigationEffect = resyncContentNavigationEffect(state: state)
+    // navigation/content 복원 이후에만 포커스된 활성 탭의 selectionChanged를 발행해
+    // 전역 Quick Look 패널이 새 활성 탭 선택으로 동기화되게 한다.
+    let quickLookResyncEffect: Effect<FileManagerWindowAction> = if state.isFocused,
+                                                                    !state.isClosing,
+                                                                    let activeTabID = state.contentTabs.activeTabID
+    {
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.delegate(.selectionChanged)),
+        ))
+    } else {
+        .none
+    }
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
         restoreHistoryEffect,
@@ -226,6 +239,7 @@ func activeTabHandoffEffect(
                 aiConnectionsFileClient: aiConnectionsFileClient,
             ),
         ),
+        quickLookResyncEffect,
     )
 }
 

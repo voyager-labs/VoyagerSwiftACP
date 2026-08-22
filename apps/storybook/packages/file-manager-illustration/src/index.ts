@@ -6,4 +6,4 @@ export type {
   ContentContext,
   FileManagerInitialPresentation,
 } from "./model/types"
-export { FileManagerIllustration } from "./FileManagerIllustration"
+export { FileManagerIllustration } from "./Stories/FileManagerIllustration"

@@ -1,0 +1,22 @@
+/* General 설정 pane 전용 스타일.
+ * 공유 폼/섹션/행/각주/토글 프리미티브는 settings.css에서 가져오고,
+ * 여기서는 pane 고유 클래스만 정의한다. 모든 색상은 토큰(--set-*, --macos-*)만 사용.
+ */
+
+/* 행의 좌측 라벨. */
+[data-settings-illustration] .settings-row-label {
+  font-size: 13px;
+  color: var(--set-text-primary);
+}
+
+/* 업데이트 섹션의 행 구분선. */
+[data-settings-illustration] .settings-divider {
+  height: 1px;
+  margin: 0 12px;
+  background: var(--set-separator);
+}
+
+/* Default File Viewer 섹션의 각주 여백. */
+[data-settings-illustration] .settings-footnote {
+  padding: 4px 12px 12px;
+}

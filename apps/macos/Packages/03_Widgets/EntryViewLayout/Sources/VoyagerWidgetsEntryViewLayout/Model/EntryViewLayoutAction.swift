@@ -57,6 +57,8 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case moveListColumn(from: Int, to: Int)
         case resetListVisibleColumns
         case resetScrollFlag
+        case setTypeScrollTarget(EntryModel.ID)
+        case resetTypeScrollTarget
         case setDropTargeted(Bool)
         case startDrag(paths: [String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String)

@@ -189,6 +189,14 @@ public struct EntryViewLayoutFeature {
             case .view(.resetScrollFlag):
                 return .send(.internal(.resetScrollFlag))
 
+            case let .view(.setTypeScrollTarget(id)):
+                state.pendingTypeScrollTargetId = id
+                return .none
+
+            case .view(.resetTypeScrollTarget):
+                state.pendingTypeScrollTargetId = nil
+                return .none
+
             case let .view(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
                 return .send(.delegate(.dropItems(
                     sourcePaths: sourcePaths,

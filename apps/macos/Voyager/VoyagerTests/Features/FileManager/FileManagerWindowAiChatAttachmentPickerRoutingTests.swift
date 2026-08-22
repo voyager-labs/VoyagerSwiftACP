@@ -1,7 +1,6 @@
 import AppKit
 import ApplicationServices
 import ComposableArchitecture
-import PerceptionCore
 import SwiftUI
 @testable import Voyager
 import VoyagerEntitiesAi
@@ -15,13 +14,29 @@ import XCTest
 @MainActor
 final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
     func testAiChatHostsExposeAttachmentPickerOnlyInInspector() async throws {
+        // 프로덕션 TCA AiChat 뷰를 호스팅하는 동안 발현되는 Perception "not being tracked" 디버그
+        // 경고를 의도된 것으로 표기한다. 이 경고는 `#if DEBUG` 와 macOS 14+ Observation 호스트에서만
+        // 발생하는 swift-perception 진단으로, 프로덕션(RELEASE/13.5) 동작에는 영향이 없다. 테스트는
+        // PerceptionCore 의 macOS-14 전용 심볼을 직접 참조하지 않으므로 13.5 deployment target 으로
+        // 링크되며, 이 뷰의 AX 계약(Content 는 attachment picker 를 노출하지 않는다)을 그대로 검증한다.
+        // `issueMatcher` 로 Perception 진단 메시지일 때만 예상 실패로 처리하므로, Inspector 버튼
+        // 노출·picker delegate 전달·Content 미노출 같은 AX assertion 이 실패하면 정상 실패로 남아
+        // 회귀를 탐지한다.
+        XCTExpectFailure(
+            "Production AiChat TCA view emits Perception 'not being tracked' debug diagnostics only",
+            options: {
+                var options = XCTExpectedFailure.Options()
+                options.isEnabled = true
+                options.isStrict = false
+                options.issueMatcher = { issue in
+                    issue.compactDescription.contains("not being tracked")
+                        || issue.compactDescription.contains("Perceptible state was accessed")
+                }
+                return options
+            }(),
+        )
         _ = NSApplication.shared
         // production hosting 경로와 AX 계약만 검증하며, 하위 뷰의 기존 Perception 경고는 이 테스트 범위가 아닙니다.
-        let wasPerceptionCheckingEnabled = PerceptionCore.isPerceptionCheckingEnabled
-        PerceptionCore.isPerceptionCheckingEnabled = false
-        defer {
-            PerceptionCore.isPerceptionCheckingEnabled = wasPerceptionCheckingEnabled
-        }
         let aiChatState = makeMountedAiChatState()
         var inspectorState = FileManagerInspectorFeature.State()
         inspectorState.aiChat = aiChatState
@@ -74,13 +89,11 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         } withDependencies: {
             $0.continuousClock = ImmediateClock()
         }
-        let contentController = NSHostingController(rootView: WithPerceptionTracking {
-            FileManagerAiChatPageView(
-                store: contentStore,
-                chromeProps: self.makeAiChatChromeProps(),
-                onNavigationAction: { _ in },
-            )
-        })
+        let contentController = NSHostingController(rootView: FileManagerAiChatPageView(
+            store: contentStore,
+            chromeProps: makeAiChatChromeProps(),
+            onNavigationAction: { _ in },
+        ))
         let contentWindow = makeWindow(hosting: contentController)
         contentWindow.title = "VOY-748 Content AX Host"
         defer {

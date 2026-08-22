@@ -39,6 +39,73 @@ extension EVM001FileManagerNavigationTests {
             guard case let .delegate(.currentContextChanged(context)) = action else { return false }
             return context.items.map(\.identifier) == [child.id]
         }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.open(.syncQuickLookSelection(paths, selectedIndex)))) =
+                action
+            else { return false }
+            return paths == [child.fullPath] && selectedIndex == 0
+        }
+    }
+
+    /// EVM-001-route_selection_commands: selectionChanged가 선택 순서를 유지한 Quick Look sync를 방출한다.
+    /// - 검증 내용: 다중 선택이 display 순서대로 paths로 전달되고, lastSelectedId가 selectedIndex로 매핑된다.
+    /// - 사전 조건: root entries [a, b, entryC]에서 b, entryC가 선택되고 lastSelectedId가 entryC다.
+    /// - 기대 결과: syncQuickLookSelection paths == [b.fullPath, entryC.fullPath], selectedIndex == 1.
+    func testSelectionChangedEmitsOrderedQuickLookSync() async {
+        let a = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let b = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        let entryC = EntryModel.temporaryFolder(id: "/root/c", name: "c")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [a, b, entryC]
+        state.entryViewLayout.entryOperations.items = [a, b, entryC]
+        state.entryViewLayout.selectedIds = [b.id, entryC.id]
+        state.entryViewLayout.lastSelectedId = entryC.id
+        let store = TestStore(initialState: state) {
+            FileManagerContentEntryOperationsBridgeReducer()
+        }
+
+        await store.send(.entryViewLayout(.delegate(.selectionChanged)))
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs(selectedIDs)))) = action
+            else { return false }
+            return selectedIDs == [b.id, entryC.id]
+        }
+        await store.receive { action in
+            guard case let .delegate(.currentContextChanged(context)) = action else { return false }
+            return context.items.map(\.identifier) == [b.id, entryC.id]
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.open(.syncQuickLookSelection(paths, selectedIndex)))) =
+                action
+            else { return false }
+            return paths == [b.fullPath, entryC.fullPath] && selectedIndex == 1
+        }
+    }
+
+    /// EVM-001-route_selection_commands: 빈 selection은 Quick Look sync를 방출하지 않는다 (frozen no-op).
+    /// - 검증 내용: 선택이 비어 있으면 기존 두 effect(syncSelectedEntryIDs, currentContextChanged)만 방출한다.
+    /// - 사전 조건: selectedIds가 비어 있다.
+    /// - 기대 결과: Quick Look sync action이 없고, store exhaustivity로 추가 action 발생 시 실패한다.
+    func testSelectionChangedEmptySelectionEmitsNoQuickLookSync() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [EntryModel.temporaryFolder(id: "/root/a", name: "a")]
+        state.entryViewLayout.selectedIds = []
+        let store = TestStore(initialState: state) {
+            FileManagerContentEntryOperationsBridgeReducer()
+        }
+
+        await store.send(.entryViewLayout(.delegate(.selectionChanged)))
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs(selectedIDs)))) = action
+            else { return false }
+            return selectedIDs.isEmpty
+        }
+        await store.receive { action in
+            guard case let .delegate(.currentContextChanged(context)) = action else { return false }
+            return context.items.isEmpty
+        }
     }
 
     /// 중첩 행의 command context가 root snapshot 대신 가시 projection payload를 사용하는지 검증한다.

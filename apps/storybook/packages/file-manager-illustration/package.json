@@ -1,6 +1,6 @@
 {
   "name": "@voyager-labs/file-manager-illustration",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "repository": { "type": "git", "url": "git+https://github.com/voyager-labs/voyager-app.git" },
   "type": "module",
   "files": ["dist"],
@@ -10,6 +10,7 @@
       "default": "./dist/index.js"
     },
     "./styles.css": {
+      "types": "./dist/styles.d.ts",
       "default": "./dist/file-manager-illustration.css"
     }
   },
@@ -21,14 +22,15 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@voyager-labs/design-foundation": "workspace:*",
     "@vitejs/plugin-react": "^6.0.3",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   },
   "scripts": {
-    "build": "vite build && rm -f tsconfig.tsbuildinfo && tsc -b",
+    "build": "vite build && node scripts/externalize-font-assets.mjs && rm -f tsconfig.tsbuildinfo && tsc -b",
     "typecheck": "tsc -b",
-    "verify:contract": "node scripts/verify-contract.mjs"
+    "verify:contract": "node scripts/verify-contract.mjs && node scripts/verify-package-artifact.mjs"
   },
   "dependencies": {
     "highlight.js": "^11.12.0",

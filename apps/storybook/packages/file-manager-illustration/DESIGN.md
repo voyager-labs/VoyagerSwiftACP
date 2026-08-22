@@ -32,10 +32,14 @@ Scroll ownership is explicit: sidebar tabs, entry content, and inspector chat ow
 
 ## 5. Catalog Taxonomy
 
-- **Foundations and UI** are product-agnostic visual primitives and controls. They may be used by any higher layer and do not own File Manager workflow state.
-- **Patterns** combine primitives into reusable File Manager interaction or chrome structures without owning a product workflow.
-- **Layouts** place patterns and domains within the window shell and own pane geometry, resize behavior, and scroll boundaries.
-- **Domains** own product language, fixtures, and stateful review flows. A domain may expose a domain pattern when a composition is reusable inside that domain but is not product-agnostic.
+The catalog follows a single axis with four categories (`src/FileManager/`):
+
+- **`Foundations`** — product-agnostic visual primitives and controls (shared via `design-foundation` when cross-surface). They may be used by any higher layer and do not own File Manager workflow state.
+- **`Domains`** — feature domains that own product language, fixtures, and stateful review flows (`Domains/Entries`, `Domains/Chat`, `Domains/Composer`). A domain may expose a reusable composition inside that domain, but it is not product-agnostic.
+- **`Pages`** — window/page compositions and panes that place domains within the shell and own geometry, resize behavior, and scroll boundaries (`Pages/FileManager`, `Pages/Sidebar`, `Pages/Inspector`, `Pages/Overlays`, `Pages/Home`).
+- **`Stories`** — root composition(s) (`FileManagerIllustration`, `ContentBrowserStates`), the only canonical integration point.
+
+There is no `Layouts` or `Patterns` category. Chrome/interaction structures that combine primitives (e.g. `Content Chrome`) and window-shell geometry (e.g. `Native Window Shell`, `Sidebar`, `Contextual Inspector`) live under `Pages/`; reusable domain compositions stay inside their owning `Domains/` folder.
 
 ### Domains: Entries
 
@@ -77,7 +81,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **QuickLook:** parent wrapper scales the SVG 1.55× via CSS `transform: scale(1.55)`.
 - **Constraint:** all three scaling tiers must preserve the silhouette — no element is hidden or added at different sizes.
 
-### Layouts
+### Pages
 
 #### Native Window Shell
 
@@ -95,7 +99,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Structure:** 40px chat-only header and chat body.
 - **States:** Chat History, connected empty (blank body + bottom composer), unconnected provider setup (top status banner), connection error (top banner + Retry), rebind required (top banner + two actions), conversation, closed. The content-page centered empty ("Ask Voyager" + optional compactConnectionCTA) is modeled only as an isolated AiChatView specimen, never in the inspector root.
 
-### Patterns
+### Pages: Content
 
 #### Content Chrome
 
@@ -175,7 +179,6 @@ Use mixed native materials: translucent sidebar and toolbar, one clipped content
 
 - Target WCAG 2.2 AA semantics, full keyboard reachability, visible focus, and meaningful landmarks.
 - Icons are inline SVG with accessible labels on their owning buttons; visible emoji icons are not permitted.
-- Browser verification: after every visual change, the agent must drive a real browser (agent-browser) to capture and inspect the affected states. Screenshot evidence is required before declaring a visual task complete.
 
 ## 9. Entry Thumbnail Static Fixtures
 

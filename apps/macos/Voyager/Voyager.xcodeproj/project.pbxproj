@@ -56,6 +56,7 @@
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
+		A52700000000000000000001 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A52700000000000000000002 /* PostHog */; };
 		7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
 		7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64502E8CE684004ACEA5 /* SwiftDotenv */; };
 		A018A998CD9F45ABB1050941 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
@@ -226,6 +227,7 @@
 				F2000000000000000000003D /* Clocks in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
+				A52700000000000000000001 /* PostHog in Frameworks */,
 				6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */,
 				6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */,
 				7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */,
@@ -405,6 +407,7 @@
 				7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */,
 				6C57FBA82F02111500D85C72 /* Sparkle */,
 				6C727A2C2F0DF4A10012D44A /* Logging */,
+				A52700000000000000000002 /* PostHog */,
 			);
 			productName = Voyager;
 			productReference = 7E14EDCC2E86622C005AC834 /* Voyager.app */;
@@ -647,6 +650,7 @@
 				6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
 				7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+				A52700000000000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -2106,6 +2110,14 @@
 				minimumVersion = 9.2.0;
 			};
 		};
+		A52700000000000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 3.69.0;
+			};
+		};
 		7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/krzysztofzablocki/Inject.git";
@@ -2197,6 +2209,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
 			productName = Sentry;
+		};
+		A52700000000000000000002 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A52700000000000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
 		};
 		7E6AF6AC2E8BABD8005DC7D3 /* Inject */ = {
 			isa = XCSwiftPackageProductDependency;

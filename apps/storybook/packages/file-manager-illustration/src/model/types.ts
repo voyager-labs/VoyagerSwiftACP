@@ -1,5 +1,7 @@
 export type EntryKind = "pdf" | "image" | "folder" | "sheet" | "doc" | "video" | "archive"
 
+export type EntryViewMode = "grid" | "list"
+
 /** Public file projection — the only file shape consumers pass. */
 export type FileEntry = {
   readonly id: string
@@ -14,13 +16,13 @@ export type FileEntry = {
 
 export type EntrySelectionIntent = "replace" | "toggle" | "range"
 
-export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
-
 /** Internal breadcrumb segment with SF Symbol name for icon rendering. */
 export type BreadcrumbSegment = {
   readonly label: string
   readonly symbolName: string
 }
+
+export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
 
 export type SidebarTabItem = {
   readonly id: string
@@ -73,21 +75,6 @@ export type SidebarSectionProps = {
   readonly title?: string
   readonly compact?: boolean
 }
-
-export type SidebarIconProps = {
-  readonly icon: SidebarIconKind
-  readonly isActive?: boolean
-}
-
-export type SidebarNavItemProps = {
-  readonly item: SidebarTabItem
-  readonly actionRevealed?: boolean
-  readonly onSelect?: SidebarTabAction
-  readonly onUnpin?: SidebarTabAction
-  readonly onClose?: SidebarTabAction
-}
-
-export type TrafficLightsProps = Record<string, never>
 
 export type ContextMenuAction = {
   readonly id: string
@@ -144,6 +131,8 @@ export type ChatSessionSection = {
   readonly title: string
   readonly rows: readonly ChatSessionRow[]
 }
+
+export type InspectorChatHeader = "sessions" | "chat"
 
 export type ChatConnectionError = {
   readonly title: string

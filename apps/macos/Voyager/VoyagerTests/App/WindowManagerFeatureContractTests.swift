@@ -7261,6 +7261,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.focusedWindowID = secondID
             $0.lastUsedWindowIDs = [secondID, thirdID]
             $0.refreshContentTabMoveTargets()
+            $0.windows[id: secondID]?.window.isFocused = true
+            $0.windows[id: firstID]?.window.isFocused = false
+            $0.windows[id: thirdID]?.window.isFocused = false
         }
 
         XCTAssertEqual(
@@ -9221,13 +9224,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.event(.windowBecameKey(firstID))) {
             $0.focusedWindowID = firstID
             $0.lastUsedWindowIDs = [firstID]
+            $0.windows[id: firstID]?.window.isFocused = true
+            $0.windows[id: secondID]?.window.isFocused = false
         }
         await store.send(.event(.windowBecameKey(secondID))) {
             $0.focusedWindowID = secondID
             $0.lastUsedWindowIDs = [secondID, firstID]
+            $0.windows[id: secondID]?.window.isFocused = true
+            $0.windows[id: firstID]?.window.isFocused = false
         }
         await store.send(.event(.windowResignedKey(secondID))) {
             $0.focusedWindowID = nil
+            $0.windows[id: secondID]?.window.isFocused = false
         }
         await store.send(.event(.windowClosed(secondID))) {
             $0.closingWindowIDs.insert(secondID)
@@ -10425,14 +10433,19 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.focusedWindowID = finalWindowID
             $0.lastUsedWindowIDs = [finalWindowID]
             $0.refreshContentTabMoveTargets()
+            $0.windows[id: finalWindowID]?.window.isFocused = true
+            $0.windows[id: firstWindowID]?.window.isFocused = false
         }
         await store.send(.event(.windowResignedKey(finalWindowID))) {
             $0.focusedWindowID = nil
+            $0.windows[id: finalWindowID]?.window.isFocused = false
         }
         await store.send(.event(.windowBecameKey(firstWindowID))) {
             $0.focusedWindowID = firstWindowID
             $0.lastUsedWindowIDs = [firstWindowID, finalWindowID]
             $0.refreshContentTabMoveTargets()
+            $0.windows[id: firstWindowID]?.window.isFocused = true
+            $0.windows[id: finalWindowID]?.window.isFocused = false
         }
 
         await store.send(.externalOpenActivationResult(attempt: attempt, result: .becameKey)) {
