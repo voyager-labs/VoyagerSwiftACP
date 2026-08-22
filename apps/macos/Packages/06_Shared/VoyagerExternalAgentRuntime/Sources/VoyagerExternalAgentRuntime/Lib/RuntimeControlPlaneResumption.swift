@@ -37,47 +37,88 @@ public extension RuntimeControlPlane {
             }
             throw RuntimeHostError.persistenceConflict
         }
-        if let terminal = try await terminalAfterRestorationClaim(claim, host: hostReference) {
+        let attemptID = try beginRestoredResumeAttempt(
+            host: hostReference,
+            runReference: claim.receipt.runReference,
+            lease: claim.lease,
+        )
+        let restoredContext = RuntimeRestoredResumeContext(
+            attemptID: attemptID,
+            lease: claim.lease,
+        )
+        defer {
+            invalidateRestoredResumeAttempt(attemptID, host: hostReference)
+        }
+        if let terminal = try await terminalAfterRestorationClaim(
+            claim,
+            host: hostReference,
+            restoredContext: restoredContext,
+        ) {
             return terminal
         }
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
-        let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
+        return try await finishRestoredResumeAttempt(
+            claim,
+            from: adapter,
+            host: hostReference,
+            restoredContext: restoredContext,
+        )
+    }
+
+    private func finishRestoredResumeAttempt(
+        _ claim: RestoredRunClaim,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
+    ) async throws -> RuntimeResult {
+        let consumption = try await consumeRestoredClaim(
+            claim,
+            from: adapter,
+            host: host,
+            restoredContext: restoredContext,
+        )
         if case let .persistedTerminal(terminal) = consumption {
             finalizeVisibleResumptionTerminal(
-                host: hostReference,
+                host: host,
                 runReference: terminal.runReference,
                 lease: claim.lease,
+                restoredContext: restoredContext,
             )
             return terminal
         }
         guard case let .provider(result) = consumption else { throw RuntimeHostError.invalidEvent }
-        if let terminal = storedTerminalResult(
-            host: hostReference,
-            runReference: result.runReference,
-        ) {
+        if let terminal = storedTerminalResult(host: host, runReference: result.runReference) {
             finalizeVisibleResumptionTerminal(
-                host: hostReference,
+                host: host,
                 runReference: result.runReference,
                 lease: claim.lease,
+                restoredContext: restoredContext,
             )
             return terminal.outcome == result.outcome ? result : terminal
         }
         try await validateRestorationResultAdmission(
             claim,
-            host: hostReference,
+            host: host,
             runReference: result.runReference,
+            restoredContext: restoredContext,
         )
         if let terminal = try await reconcileConsumedResult(
             result,
-            host: hostReference,
+            host: host,
             lease: claim.lease,
+            restoredContext: restoredContext,
         ) {
             return terminal
         }
         do {
-            return try await persistTerminalResult(result, host: hostReference, lease: claim.lease)
+            return try await persistTerminalResult(
+                result,
+                host: host,
+                lease: claim.lease,
+                restoredContext: restoredContext,
+            )
         } catch {
-            try? await restoreResumptionClaimIfNeeded(hostReference, lease: claim.lease)
+            try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw error
         }
     }
@@ -86,6 +127,7 @@ public extension RuntimeControlPlane {
         _ claim: RestoredRunClaim,
         from adapter: any ExternalAgentRuntimeAdapter,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RestoredConsumptionResult {
         do {
             if claim.isPersisted {
@@ -94,6 +136,7 @@ public extension RuntimeControlPlane {
                     from: adapter,
                     host: host,
                     lease: claim.lease,
+                    restoredContext: restoredContext,
                 ))
             }
             return try await .provider(consume(claim.receipt, from: adapter, host: host))
@@ -109,16 +152,35 @@ public extension RuntimeControlPlane {
         } catch is CancellationError {
             try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw CancellationError()
+        } catch is RuntimeRestoredResumeAttemptError {
+            throw RuntimeHostError.persistenceConflict
         } catch let error as RuntimeHostError {
-            return try await resolveResumedHostError(error, claim: claim, host: host)
+            guard activeRestoredResumeAttempts[host] == restoredContext.attemptID else {
+                throw error
+            }
+            return try await resolveResumedHostError(
+                error,
+                claim: claim,
+                host: host,
+                restoredContext: restoredContext,
+            )
         } catch {
-            return try await resolveResumedAdapterError(error, claim: claim, host: host)
+            guard activeRestoredResumeAttempts[host] == restoredContext.attemptID else {
+                throw error
+            }
+            return try await resolveResumedAdapterError(
+                error,
+                claim: claim,
+                host: host,
+                restoredContext: restoredContext,
+            )
         }
     }
 
     private func terminalAfterRestorationClaim(
         _ claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult? {
         if pendingPersistenceMutations[host, default: 0] > 0 {
             _ = try await mutateAfterPersistedTransitions { _ in () }
@@ -129,6 +191,11 @@ public extension RuntimeControlPlane {
             try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw CancellationError()
         }
+        try requireRestoredResumeContext(
+            restoredContext,
+            host: host,
+            runReference: claim.receipt.runReference,
+        )
         guard let terminal = storedTerminalResult(
             host: host,
             runReference: claim.receipt.runReference,
@@ -137,6 +204,7 @@ public extension RuntimeControlPlane {
             host: host,
             runReference: claim.receipt.runReference,
             lease: claim.lease,
+            restoredContext: restoredContext,
         )
         return terminal
     }
@@ -145,8 +213,14 @@ public extension RuntimeControlPlane {
         _ claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws {
         guard claim.isPersisted else { return }
+        try requireRestoredResumeContext(
+            restoredContext,
+            host: host,
+            runReference: runReference,
+        )
         switch restorationHeartbeatDecision(
             host: host,
             runReference: runReference,
@@ -161,6 +235,7 @@ public extension RuntimeControlPlane {
                 runReference: runReference,
                 lease: claim.lease,
                 now: restorationClock.now(),
+                restoredContext: restoredContext,
             )
             throw RuntimeHostError.persistenceConflict
         case .stale:
@@ -177,19 +252,27 @@ public extension RuntimeControlPlane {
         _ error: RuntimeHostError,
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RestoredConsumptionResult {
-        try await resolveResumedFailure(error, claim: claim, host: host)
+        try await resolveResumedFailure(
+            error,
+            claim: claim,
+            host: host,
+            restoredContext: restoredContext,
+        )
     }
 
     private func resolveResumedAdapterError(
         _ error: any Error,
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RestoredConsumptionResult {
         try await resolveResumedFailure(
             normalizeAdapterError(error),
             claim: claim,
             host: host,
+            restoredContext: restoredContext,
         )
     }
 
@@ -197,23 +280,41 @@ public extension RuntimeControlPlane {
         _ error: RuntimeHostError,
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RestoredConsumptionResult {
+        try requireRestoredResumeContext(
+            restoredContext,
+            host: host,
+            runReference: claim.receipt.runReference,
+        )
         switch error {
         case .persistenceConflict, .persistenceFailure, .invalidPersistedState, .unsupportedSchemaVersion:
-            return try await propagateResumedRunFailure(error, claim: claim, host: host)
+            return try await propagateResumedRunFailure(
+                error,
+                claim: claim,
+                host: host,
+                restoredContext: restoredContext,
+            )
         case .adapterFailure(.processExit, _), .adapterFailure(.transportLoss, _):
             if let terminal = try await terminalBeforeResumedInterruption(
                 claim: claim,
                 host: host,
+                restoredContext: restoredContext,
             ) {
                 return .persistedTerminal(terminal)
             }
-            return try await propagateResumedRunFailure(error, claim: claim, host: host)
+            return try await propagateResumedRunFailure(
+                error,
+                claim: claim,
+                host: host,
+                restoredContext: restoredContext,
+            )
         default:
             do {
                 if let terminal = try await persistedTerminalResult(
                     host: host,
                     runReference: claim.receipt.runReference,
+                    restoredContext: restoredContext,
                 ) {
                     try await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
                     return .persistedTerminal(terminal)
@@ -237,6 +338,7 @@ public extension RuntimeControlPlane {
                 receipt: claim.receipt,
                 host: host,
                 lease: claim.lease,
+                restoredContext: restoredContext,
             )
         }
     }
@@ -244,7 +346,13 @@ public extension RuntimeControlPlane {
     private func terminalBeforeResumedInterruption(
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult? {
+        try requireRestoredResumeContext(
+            restoredContext,
+            host: host,
+            runReference: claim.receipt.runReference,
+        )
         if let terminal = storedTerminalResult(
             host: host,
             runReference: claim.receipt.runReference,
@@ -260,11 +368,13 @@ public extension RuntimeControlPlane {
             guard let terminal = try await persistedTerminalResult(
                 host: host,
                 runReference: claim.receipt.runReference,
+                restoredContext: restoredContext,
             ) else { return nil }
             finalizeVisibleResumptionTerminal(
                 host: host,
                 runReference: claim.receipt.runReference,
                 lease: claim.lease,
+                restoredContext: restoredContext,
             )
             return terminal
         } catch is CancellationError {
@@ -287,7 +397,11 @@ public extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) {
+        if let restoredContext {
+            guard activeRestoredResumeAttempts[host] == restoredContext.attemptID else { return }
+        }
         guard var session = sessions[host],
               session.stored.runReference == runReference,
               session.stored.projection.isTerminal,
@@ -402,20 +516,98 @@ public extension RuntimeControlPlane {
         from adapter: any ExternalAgentRuntimeAdapter,
         host: ExternalAgentSessionReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult {
-        try await withThrowingTaskGroup(of: RuntimeResult.self) { group in
-            group.addTask { try await self.consume(receipt, from: adapter, host: host) }
-            group.addTask {
-                try await self.restorationHeartbeatResult(
+        let (stream, continuation) = AsyncStream<RuntimeRestoredResumeRaceOutcome>.makeStream(
+            bufferingPolicy: .bufferingOldest(1),
+        )
+        let providerTask = Task { [self] in
+            do {
+                try await continuation.yield(.result(consume(
+                    receipt,
+                    from: adapter,
+                    host: host,
+                    restoredContext: restoredContext,
+                )))
+            } catch {
+                continuation.yield(.failure(mapRestoredResumeRaceFailure(error)))
+            }
+        }
+        let heartbeatTask = Task { [self] in
+            do {
+                try await continuation.yield(.result(restorationHeartbeatResult(
                     host: host,
                     receipt: receipt,
                     lease: lease,
-                )
+                    restoredContext: restoredContext,
+                )))
+            } catch {
+                continuation.yield(.failure(mapRestoredResumeRaceFailure(error)))
             }
-            defer { group.cancelAll() }
-            guard let result = try await group.next() else { throw RuntimeHostError.invalidEvent }
+        }
+        defer {
+            providerTask.cancel()
+            heartbeatTask.cancel()
+            continuation.finish()
+        }
+        return try await withTaskCancellationHandler(operation: {
+            var iterator = stream.makeAsyncIterator()
+            guard let outcome = await iterator.next() else { throw RuntimeHostError.invalidEvent }
             try Task.checkCancellation()
-            return result
+            switch outcome {
+            case let .result(result):
+                return result
+            case let .failure(failure):
+                try throwRestoredResumeRaceFailure(failure)
+            case .cancelled:
+                throw CancellationError()
+            }
+        }, onCancel: {
+            continuation.yield(.cancelled)
+        })
+    }
+
+    private func mapRestoredResumeRaceFailure(_ error: any Error) -> RuntimeRestoredResumeRaceFailure {
+        if error is CancellationError {
+            return .cancellation
+        }
+        if error is RuntimeRestoredResumeAttemptError {
+            return .attemptLost
+        }
+        if error is RuntimeTerminalEventPersistenceError {
+            return .terminalEventPersistence
+        }
+        if error is RuntimeRestorationHeartbeatPersistenceError {
+            return .heartbeatPersistence
+        }
+        if error is RuntimeProviderTerminalAdmissionError {
+            return .providerTerminalAdmission
+        }
+        if let error = error as? RuntimeHostError {
+            return .host(error)
+        }
+        if let error = error as? RuntimeAdapterFailure {
+            return .host(.adapterFailure(error.kind, error.diagnosticCode))
+        }
+        return .host(.adapterUnavailable)
+    }
+
+    private func throwRestoredResumeRaceFailure(
+        _ failure: RuntimeRestoredResumeRaceFailure,
+    ) throws -> Never {
+        switch failure {
+        case .cancellation:
+            throw CancellationError()
+        case .attemptLost:
+            throw RuntimeHostError.persistenceConflict
+        case let .host(error):
+            throw error
+        case .terminalEventPersistence:
+            throw RuntimeTerminalEventPersistenceError.persistenceFailure
+        case .heartbeatPersistence:
+            throw RuntimeRestorationHeartbeatPersistenceError.persistenceFailure
+        case .providerTerminalAdmission:
+            throw RuntimeProviderTerminalAdmissionError.rejected
         }
     }
 
@@ -423,14 +615,21 @@ public extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         receipt: RuntimeLaunchReceipt,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult {
         while true {
             try await restorationClock.sleep(restorationHeartbeatInterval)
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
             do {
                 try await renewRestorationClaim(
                     host,
                     runReference: receipt.runReference,
                     lease: lease,
+                    restoredContext: restoredContext,
                 )
             } catch let error as RuntimeHostError {
                 switch error {
@@ -441,6 +640,7 @@ public extension RuntimeControlPlane {
                         error,
                         host: host,
                         runReference: receipt.runReference,
+                        restoredContext: restoredContext,
                     ) {
                         return terminal
                     }
@@ -451,6 +651,7 @@ public extension RuntimeControlPlane {
                     error,
                     host: host,
                     runReference: receipt.runReference,
+                    restoredContext: restoredContext,
                 ) {
                     return terminal
                 }
@@ -463,19 +664,31 @@ public extension RuntimeControlPlane {
         _ error: any Error,
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult? {
         if error is CancellationError { throw CancellationError() }
         do {
             if let terminal = storedTerminalResult(host: host, runReference: runReference) {
                 return terminal
             }
-            if let terminal = try await persistedTerminalResult(host: host, runReference: runReference) {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: runReference,
+            )
+            if let terminal = try await persistedTerminalResult(
+                host: host,
+                runReference: runReference,
+                restoredContext: restoredContext,
+            ) {
                 return terminal
             }
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as RuntimeHostError {
             throw error
+        } catch is RuntimeRestoredResumeAttemptError {
+            throw RuntimeRestoredResumeAttemptError.lost
         } catch {
             throw RuntimeRestorationHeartbeatPersistenceError.persistenceFailure
         }
@@ -494,6 +707,7 @@ public extension RuntimeControlPlane {
         _ error: RuntimeHostError,
         claim: RestoredRunClaim,
         host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RestoredConsumptionResult {
         let runReference = claim.receipt.runReference
         let lease = claim.lease
@@ -507,6 +721,7 @@ public extension RuntimeControlPlane {
                     host,
                     lease: lease,
                     runReference: runReference,
+                    restoredContext: restoredContext,
                 )
                 if let terminal = storedTerminalResult(host: host, runReference: runReference) {
                     return .persistedTerminal(terminal)
@@ -522,6 +737,7 @@ public extension RuntimeControlPlane {
                         runReference: runReference,
                         lease: lease,
                         now: restorationClock.now(),
+                        restoredContext: restoredContext,
                     )
                 }
                 if !hasPersistedProof {
@@ -563,7 +779,13 @@ public extension RuntimeControlPlane {
         _ host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws {
+        try requireRestoredResumeContext(
+            restoredContext,
+            host: host,
+            runReference: runReference,
+        )
         let now = restorationClock.now()
         switch restorationHeartbeatDecision(
             host: host,
@@ -578,12 +800,14 @@ public extension RuntimeControlPlane {
                     runReference: runReference,
                     lease: lease,
                     expiresAt: now.addingTimeInterval(60),
+                    restoredContext: restoredContext,
                 )
             } catch RuntimeHostError.persistenceConflict {
                 try await repairRestorationClaimAfterConflict(
                     host: host,
                     runReference: runReference,
                     lease: lease,
+                    restoredContext: restoredContext,
                 )
             }
         case .restoreClaim:
@@ -592,6 +816,7 @@ public extension RuntimeControlPlane {
                 runReference: runReference,
                 lease: lease,
                 now: now,
+                restoredContext: restoredContext,
             )
             throw RuntimeHostError.persistenceConflict
         case .stale:
@@ -609,7 +834,15 @@ public extension RuntimeControlPlane {
         runReference: RuntimeRunReference,
         lease: UInt64,
         now: Date,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws {
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: runReference,
+            )
+        }
         guard let claimState = sessions[host].map({
             restorationClaimState($0.stored.restorationClaim, now: now)
         }) else { throw RuntimeHostError.invalidEvent }
@@ -621,7 +854,11 @@ public extension RuntimeControlPlane {
                     runReference: runReference,
                     lease: lease,
                     now: now,
+                    restoredContext: restoredContext,
                 )
+                if let restoredContext {
+                    invalidateRestoredResumeAttempt(restoredContext.attemptID, host: host)
+                }
             } catch RuntimeHostError.persistenceConflict {
                 try await restoreResumptionClaimIfNeeded(
                     host,
@@ -649,8 +886,17 @@ public extension RuntimeControlPlane {
         runReference: RuntimeRunReference,
         lease: UInt64,
         expiresAt: Date,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws {
         _ = try await commit(host: host) { plane, registry in
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                    in: registry,
+                )
+            }
             guard var session = registry[host],
                   session.stored.runReference == runReference,
                   session.lease == .resuming(lease),
@@ -669,11 +915,13 @@ public extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws {
         let decision = try await reconcileRestorationClaimAfterConflict(
             host: host,
             runReference: runReference,
             lease: lease,
+            restoredContext: restoredContext,
         )
         guard decision == .renewClaim else {
             try await restoreResumptionClaimIfNeeded(host, lease: lease)
@@ -687,12 +935,14 @@ public extension RuntimeControlPlane {
                 runReference: runReference,
                 lease: lease,
                 expiresAt: now.addingTimeInterval(60),
+                restoredContext: restoredContext,
             )
         } catch RuntimeHostError.persistenceConflict {
             _ = try await reconcileRestorationClaimAfterConflict(
                 host: host,
                 runReference: runReference,
                 lease: lease,
+                restoredContext: restoredContext,
             )
             throw RuntimeHostError.persistenceConflict
         }
@@ -702,10 +952,25 @@ public extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws -> RuntimeRestoreResumeDecisionTable.Decision {
         try await withPersistedState { plane, loaded in
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                )
+            }
             guard let loaded else { throw RuntimeHostError.persistenceConflict }
             let expectedStored = plane.sessions[host]?.stored
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                )
+            }
             plane.sessions = plane.reconciledRegistry(
                 candidate: plane.sessions,
                 persisted: loaded,
@@ -765,12 +1030,14 @@ public extension RuntimeControlPlane {
         receipt: RuntimeLaunchReceipt,
         host hostReference: ExternalAgentSessionReference,
         lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RestoredConsumptionResult {
         do {
             if let terminal = try await interruptAfterConsumptionFailure(
                 receipt: receipt,
                 host: hostReference,
                 lease: lease,
+                restoredContext: restoredContext,
             ) {
                 return .persistedTerminal(terminal)
             }
@@ -796,6 +1063,7 @@ public extension RuntimeControlPlane {
         lease: UInt64,
         fencePersistedOwner shouldFencePersistedOwner: Bool = false,
     ) async throws {
+        activeRestoredResumeAttempts.removeValue(forKey: hostReference)
         if shouldFencePersistedOwner {
             let expectedRunReference = sessions[hostReference]?.stored.runReference
             let hasPersistedOwner = try await fencePersistedOwner(hostReference, lease: lease)
@@ -834,8 +1102,16 @@ public extension RuntimeControlPlane {
         _ hostReference: ExternalAgentSessionReference,
         lease: UInt64,
         runReference: RuntimeRunReference? = nil,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws -> Bool {
         try await withPersistedState { plane, loaded in
+            if let restoredContext, let runReference {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: hostReference,
+                    runReference: runReference,
+                )
+            }
             guard let loaded else { return false }
             let expectedSession = plane.sessions[hostReference]
             plane.sessions = plane.reconciledRegistry(
@@ -850,11 +1126,18 @@ public extension RuntimeControlPlane {
                    loaded: loaded,
                )
             {
+                if let restoredContext {
+                    guard plane.activeRestoredResumeAttempts[hostReference] == restoredContext.attemptID,
+                          expectedSession?.stored.runReference == runReference,
+                          expectedSession?.lease == .resuming(restoredContext.lease)
+                    else { throw RuntimeRestoredResumeAttemptError.lost }
+                }
                 plane.sessions[hostReference] = adopted
                 plane.finalizeVisibleResumptionTerminal(
                     host: hostReference,
                     runReference: runReference,
                     lease: lease,
+                    restoredContext: restoredContext,
                 )
                 return true
             }
@@ -882,8 +1165,17 @@ public extension RuntimeControlPlane {
         runReference: RuntimeRunReference,
         lease: UInt64,
         now: Date,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
     ) async throws {
         try await commit(host: host) { plane, registry in
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                    in: registry,
+                )
+            }
             guard var session = registry[host],
                   session.stored.runReference == runReference,
                   session.lease == .resuming(lease),
@@ -939,3 +1231,21 @@ private enum RestoredConsumptionResult {
     case provider(RuntimeResult)
     case persistedTerminal(RuntimeResult)
 }
+
+private enum RuntimeRestoredResumeRaceOutcome {
+    case result(RuntimeResult)
+    case failure(RuntimeRestoredResumeRaceFailure)
+    case cancelled
+}
+
+private enum RuntimeRestoredResumeRaceFailure {
+    case cancellation
+    case attemptLost
+    case host(RuntimeHostError)
+    case terminalEventPersistence
+    case heartbeatPersistence
+    case providerTerminalAdmission
+}
+
+extension RuntimeRestoredResumeRaceOutcome: Sendable {}
+extension RuntimeRestoredResumeRaceFailure: Sendable {}
