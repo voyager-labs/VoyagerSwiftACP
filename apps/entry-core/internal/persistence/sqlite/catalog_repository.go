@@ -90,10 +90,7 @@ func loadCatalogRows(
 	}
 
 	var termRows []WorkspacePropertyTermRow
-	if err := db.Where(
-		"workspace_id = ? AND lifecycle_state = ? AND property_id IN (SELECT property_id FROM workspace_property_definitions WHERE workspace_id = ? AND lifecycle_state = ?)",
-		wsBytes, "active", wsBytes, "active",
-	).Find(&termRows).Error; err != nil {
+	if err := db.Where("workspace_id = ? AND lifecycle_state = ?", wsBytes, "active").Find(&termRows).Error; err != nil {
 		return nil, nil, nil, nil, err
 	}
 
@@ -190,6 +187,12 @@ func assembleSnapshot(
 		term, err := mapTermRow(row)
 		if err != nil {
 			return domainentry.PropertyCatalogSnapshot{}, err
+		}
+		// An active term must target an active definition; otherwise the
+		// snapshot would be referentially inconsistent (orphan) and must fail
+		// closed instead of silently dropping the term from Load results.
+		if _, ok := activeDefIDs[term.PropertyID]; !ok {
+			return domainentry.PropertyCatalogSnapshot{}, ErrCatalogOrphanRef
 		}
 		snapshot.Terms = append(snapshot.Terms, term)
 	}
