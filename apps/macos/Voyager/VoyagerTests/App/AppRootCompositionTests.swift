@@ -1150,6 +1150,7 @@ final class AppRootCompositionTests: XCTestCase {
             AppRootFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
         }
         // store.exhaustivity = .off: WindowManager의 native activation 세부 action은 해당 owner suite가 검증함.
