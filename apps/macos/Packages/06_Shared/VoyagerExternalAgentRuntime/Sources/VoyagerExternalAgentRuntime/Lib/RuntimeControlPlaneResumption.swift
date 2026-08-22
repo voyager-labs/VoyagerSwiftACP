@@ -628,6 +628,14 @@ public extension RuntimeControlPlane {
                     lease: lease,
                     fencePersistedOwner: true,
                 )
+            } catch {
+                applyCleanupFailedDecision(host: host, runReference: runReference)
+                deactivateLocalResumptionLeaseIfOwned(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
+                throw error
             }
         case .absent:
             try await restoreResumptionClaimIfNeeded(host, lease: lease)
