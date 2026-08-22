@@ -138,7 +138,12 @@ final class AppKeyboardShortcutMonitor {
         }
         flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             guard let self else { return event }
-            return handleFlagsChangedEvent(event, context: context(), emit: onCommand)
+            return handleFlagsChangedEvent(
+                event,
+                context: context(),
+                firstResponder: NSApp.keyWindow?.firstResponder ?? event.window?.firstResponder,
+                emit: onCommand,
+            )
         }
         resignActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
@@ -262,24 +267,14 @@ final class AppKeyboardShortcutMonitor {
         }
 
         switch controlTabState {
-        case let .pending(timestamp, _, _):
-            if event.timestamp - timestamp < Self.holdThreshold {
-                let canSwitchMRU = isContentTabContextAllowed(context, firstResponder: firstResponder)
-                    && pendingOwnerMatches(context)
-                    && !context.isContentTabSwitcherPresented
-                    && context.contentTabSwitcherSource == nil
-                cancelControlTabGesture()
-                if canSwitchMRU {
-                    emitControlTabCommand(.immediateMostRecentlyUsed, fallback: emit)
-                }
-            } else {
-                fireHold(
-                    generation: generation,
-                    context: context,
-                    firstResponder: firstResponder,
-                    emit: emit,
-                )
-            }
+        case .pending:
+            completePendingGesture(
+                timestamp: event.timestamp,
+                context: context,
+                firstResponder: firstResponder,
+                dismissHold: false,
+                emit: emit,
+            )
         case .overlayOwned:
             break
         case .idle:
@@ -297,6 +292,7 @@ final class AppKeyboardShortcutMonitor {
     func handleFlagsChangedEvent(
         _ event: NSEvent,
         context: ContentTabShortcutContext,
+        firstResponder: NSResponder? = nil,
         emit: @escaping (ControlTabGestureCommand) -> Void,
     ) -> NSEvent? {
         overlayDismiss = { [weak self] in
@@ -313,12 +309,53 @@ final class AppKeyboardShortcutMonitor {
             true
         }
         guard Self.isExactControlTab(modifierFlags: event.modifierFlags) else {
-            if wasActive {
+            if case .pending = controlTabState,
+               !event.modifierFlags.contains(.control)
+            {
+                completePendingGesture(
+                    timestamp: event.timestamp,
+                    context: context,
+                    firstResponder: firstResponder,
+                    dismissHold: true,
+                    emit: emit,
+                )
+            } else if wasActive {
                 cancelControlTabGesture(emit: emit)
             }
             return wasActive ? nil : event
         }
         return event
+    }
+
+    private func completePendingGesture(
+        timestamp: TimeInterval,
+        context: ContentTabShortcutContext,
+        firstResponder: NSResponder?,
+        dismissHold: Bool,
+        emit: @escaping (ControlTabGestureCommand) -> Void,
+    ) {
+        guard case let .pending(startTimestamp, token, _) = controlTabState else { return }
+        if timestamp - startTimestamp < Self.holdThreshold {
+            let canSwitchMRU = isContentTabContextAllowed(context, firstResponder: firstResponder)
+                && pendingOwnerMatches(context)
+                && !context.isContentTabSwitcherPresented
+                && context.contentTabSwitcherSource == nil
+            cancelControlTabGesture()
+            if canSwitchMRU {
+                emitControlTabCommand(.immediateMostRecentlyUsed, fallback: emit)
+            }
+            return
+        }
+
+        fireHold(
+            generation: token,
+            context: context,
+            firstResponder: firstResponder,
+            emit: emit,
+        )
+        if dismissHold, case .overlayOwned = controlTabState {
+            cancelControlTabGesture(emit: emit)
+        }
     }
 
     static func processKeyDownEvent(

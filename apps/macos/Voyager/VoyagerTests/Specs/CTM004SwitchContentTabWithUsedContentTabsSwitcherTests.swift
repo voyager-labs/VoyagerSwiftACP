@@ -43,6 +43,34 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         XCTAssertEqual(fixture.commands, [.immediateMostRecentlyUsed])
     }
 
+    /// CTM-004-short_hold_arbitration: releasing Control before Tab preserves a short gesture.
+    /// Control-first key release도 Tab-first release와 동일한 short arbitration을 수행하는지 검증한다.
+    /// - 검증 내용: pending Control release와 후속 Tab key-up의 semantic command
+    /// - 사전 조건: focused File Manager window에서 Control+Tab를 100ms 동안 누른다.
+    /// - 기대 결과: MRU 명령을 한 번만 실행하고 후속 Tab key-up은 중복 명령을 만들지 않는다.
+    func testControlFirstReleasePreservesShortGesture() {
+        let fixture = MonitorFixture()
+        _ = fixture.monitor.handleKeyDownEvent(
+            fixture.event(.keyDown, timestamp: 10),
+            context: fixture.context,
+            firstResponder: nil,
+            emit: fixture.emit,
+        )
+
+        XCTAssertNil(fixture.monitor.handleFlagsChangedEvent(
+            fixture.event(.flagsChanged, timestamp: 10.1, modifiers: []),
+            context: fixture.context,
+            emit: fixture.emit,
+        ))
+        _ = fixture.monitor.handleKeyUpEvent(
+            fixture.event(.keyUp, timestamp: 10.11, modifiers: []),
+            context: fixture.context,
+            emit: fixture.emit,
+        )
+
+        XCTAssertEqual(fixture.commands, [.immediateMostRecentlyUsed])
+    }
+
     func testConsumedShortControlTabDispatchesExactlyOnce() {
         let fixture = MonitorFixture()
 
