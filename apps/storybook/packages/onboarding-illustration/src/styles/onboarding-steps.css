@@ -22,7 +22,6 @@
   gap: 8px;
   padding: 12px;
   border-radius: 12px;
-  background: var(--onb-card);
 }
 
 .onb-card h2,
@@ -135,6 +134,7 @@
 
 .onb-provider-card {
   gap: 10px;
+  background: var(--onb-card);
 }
 
 .onb-provider-heading {
