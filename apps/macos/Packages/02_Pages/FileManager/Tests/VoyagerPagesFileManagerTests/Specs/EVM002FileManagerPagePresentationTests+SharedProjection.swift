@@ -322,6 +322,623 @@ extension EVM002FileManagerPagePresentationTests {
         }
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: 빈 대체 batch는 마지막 완전 root projection을 유지한다.
+    /// - 검증 내용: reload 첫 batch가 비어도 ContentProjection entries와 선택이 기존 row를 유지한다.
+    /// - 사전 조건: `/root/file.txt`가 선택된 complete root projection에서 generation 1 reload가 시작됐다.
+    /// - 기대 결과: 빈 batchIndex 0 뒤에도 projection과 선택은 `/root/file.txt`다.
+    func testEmptyReplacementBatchRetainsCompleteRootProjectionAndSelection() async {
+        let rootPath = "/root"
+        let oldEntry = makeSharedProjectionFile()
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldEntry.id]
+        state.entryViewLayout.lastSelectedId = oldEntry.id
+        state.entryViewLayout.rangeAnchorId = oldEntry.id
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [oldEntry.id])
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 무관한(비어 있지 않은) 첫 대체 batch가 와도
+    /// 진행 중인 identity 전이가 after-path를 얻기 전까지 선택을 유지한다.
+    /// - 검증 내용: after-path 없는 무관 batch 뒤에도 before-path 선택·전이 보존
+    /// - 사전 조건: generation 1 reload 중인 root projection에 선택된 before→after 대기 전이
+    /// - 기대 결과: 무관 batch에서 선택 유지, 이후 after-path batch에서 1회 migration + 전이 소비
+    func testUnrelatedFirstReplacementBatchRetainsSelectionUntilAfterPath() async {
+        let rootPath = "/root"
+        let oldPath = "/root/old.txt"
+        let newPath = "/root/new.txt"
+        let oldEntry = hierarchyFile(id: oldPath, name: "old.txt")
+        let unrelatedEntry = hierarchyFile(id: "/root/unrelated.txt", name: "unrelated.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // 무관한 첫 대체 batch: after-path가 없으므로 선택과 전이를 유지해야 한다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [unrelatedEntry]
+        }
+
+        XCTAssertEqual(
+            store.state.entryViewLayout.selectedIds,
+            [oldPath],
+            "after-path가 도착하기 전까지 before-path 선택을 유지한다",
+        )
+        XCTAssertNotNil(store.state.pendingIdentityTransition, "무관 첫 배치는 전이를 소비하지 않는다")
+
+        // after-path 배치: 선택을 after-path로 옮기고 전이를 소비한다.
+        let renamedEntry = hierarchyFile(id: newPath, name: "new.txt")
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry, renamedEntry], batchIndex: 1),
+        ))))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.selectedIds,
+            [newPath],
+            "선택은 after-path로 정확히 한 번 옮긴다",
+        )
+        XCTAssertNil(store.state.pendingIdentityTransition, "전이는 소비된다")
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 사용자가 before-path를 이미 deselect하면
+    /// 비종료 대체 batch가 선택을 되돌리지 않는다.
+    /// - 검증 내용: 대기 전이 상태에서 applyClearSelection 후 무관 batch가 선택을 비운 채 유지
+    /// - 사전 조건: 선택된 before-path와 대기 전이, 이후 사용자 deselect
+    /// - 기대 결과: 비종료 batch 뒤에도 selectedIds는 빈 채로 유지되고 전이는 살아 있다
+    func testUserDeselectDuringPendingTransitionIsNotUndoneByReplacementBatch() async {
+        let rootPath = "/root"
+        let oldPath = "/root/old.txt"
+        let newPath = "/root/new.txt"
+        let oldEntry = hierarchyFile(id: oldPath, name: "old.txt")
+        let unrelatedEntry = hierarchyFile(id: "/root/unrelated.txt", name: "unrelated.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // 사용자 deselect.
+        await store.send(.entryViewLayout(.internal(.applyClearSelection)))
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+
+        // 비종료 무관 batch: deselect된 before-path를 되돌리지 않아야 한다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [unrelatedEntry]
+        }
+
+        XCTAssertTrue(
+            store.state.entryViewLayout.selectedIds.isEmpty,
+            "사용자 deselect는 비종료 batch에 의해 되돌려지지 않는다",
+        )
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 종료(accepted) projection에서 after-path가
+    /// 끝내 없으면 전이를 소비하고 일반 선택 reconcile이 이긴다.
+    /// - 검증 내용: coreFinished(빈) 후 selectedIds가 비워지고 pendingIdentityTransition == nil
+    /// - 사전 조건: 선택된 before-path와 대기 전이, after-path 없는 reload 진행
+    /// - 기대 결과: 종료 projection에서 선택이 사라지고 전이가 소비됨
+    func testTerminalAcceptedProjectionWithoutAfterPathClearsTransition() async {
+        let rootPath = "/root"
+        let oldPath = "/root/old.txt"
+        let newPath = "/root/new.txt"
+        let oldEntry = hierarchyFile(id: oldPath, name: "old.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // after-path 없는 종료(accepted) projection.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreFinished(batchCount: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries.isEmpty
+        }
+
+        XCTAssertTrue(
+            store.state.entryViewLayout.selectedIds.isEmpty,
+            "종료 projection에서 일반 선택 reconcile이 이긴다",
+        )
+        XCTAssertNil(store.state.pendingIdentityTransition, "after-path 없는 종료 projection은 전이를 소비한다")
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 실제 네비게이션(root 변경)으로 이동하면
+    /// 대기 전이가 즉시 만료되고 선택을 옮기거나 되살리지 않는다(루트 불일치 만료).
+    /// - 검증 내용: applyNavigationState(.folder(/other)) 전송 직후 전이 만료, 이후 배치에서 stale-migrate 없음
+    /// - 사전 조건: /root에 대기 전이와 before 선택, 이후 실제 applyNavigationState로 /other 이동
+    /// - 기대 결과: 네비게이션 즉시 전이 nil, after-path 배치가 와도 newPath로 선택 이동 없음
+    func testNavigationAwayDoesNotStaleMigrateOrReselect() async {
+        let rootPath = "/root"
+        let otherRootPath = "/other"
+        let oldPath = "/root/old.txt"
+        let newPath = "/root/new.txt"
+        let oldEntry = hierarchyFile(id: oldPath, name: "old.txt")
+        let renamedEntry = hierarchyFile(id: newPath, name: "new.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // 실제 네비게이션(root 변경) 액션으로 이동하면 전이가 즉시 만료된다.
+        await store.send(.internal(.applyNavigationState(.folder(otherRootPath))))
+        XCTAssertNil(
+            store.state.pendingIdentityTransition,
+            "다른 root로 이동하면 전이가 즉시 만료된다",
+        )
+
+        // after-path가 포함된 배치가 와도 root가 다르고 전이가 이미 만료되어
+        // newPath로 stale-migrate되지 않는다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [renamedEntry], batchIndex: 0),
+        ))))))
+
+        XCTAssertFalse(
+            store.state.entryViewLayout.selectedIds.contains(newPath),
+            "다른 root에서는 after-path로 stale-migrate되지 않는다",
+        )
+        XCTAssertNil(store.state.pendingIdentityTransition, "전이는 만료된 채 유지된다")
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 대체 stream이 첫 batch 전에 실패해도 마지막 root row를 유지한다.
+    /// - 검증 내용: streamFailed가 loading items를 비운 뒤 emitted ContentProjection payload를 확인한다.
+    /// - 사전 조건: complete root projection에서 generation 1 reload가 진행 중이다.
+    /// - 기대 결과: failure projection entries는 마지막 complete root entry다.
+    func testReplacementFailureBeforeFirstBatchRetainsCompleteRootProjection() async {
+        let rootPath = "/root"
+        let oldEntry = makeSharedProjectionFile()
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 실제 operationFinished 재로드의 loadItems 시작도
+    /// 완전한 같은-root projection을 유지한다.
+    /// reload 시작 action이 items를 비운 시점(isReloading=false)에도 화면의 마지막 완전
+    /// root projection이 유지되는지 검증한다.
+    /// - 검증 내용: loadItems 시작 projection과 첫 batch 전 실패 projection 모두 기존 root entries 유지
+    /// - 사전 조건: `/root/file.txt`가 표시된 완전 projection에서 isReloading=false 재로드 시작
+    /// - 기대 결과: loadItems 시점과 streamFailed 시점 projection entries 모두 기존 항목이다.
+    func testRealReloadLoadItemsStartRetainsCompleteSameRootProjection() async {
+        let rootPath = "/root"
+        let oldEntry = makeSharedProjectionFile()
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldEntry.id]
+        state.entryViewLayout.lastSelectedId = oldEntry.id
+        state.entryViewLayout.rangeAnchorId = oldEntry.id
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = false
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: StubbedReloadFailure())
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            path: rootPath,
+            showHidden: false,
+        )))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.entryViewLayout.entries, [oldEntry])
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [oldEntry.id])
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 실제 operationFinished → loadItems 액션 순서로
+    /// 재로드를 시작해도 완전한 같은-root projection이 유지된다.
+    /// V20-P1-1 회귀: loadItems를 직접 주입하지 않고, coordinator가 operationFinished 성공에
+    /// 발행하는 실제 loadItems로 이어붙여 projection 보존을 검증한다.
+    /// - 검증 내용: operationFinished 성공 → coordinator 발행 loadItems → 실패까지 projection 보존
+    /// - 사전 조건: `/root/file.txt`가 표시된 완전 projection에서 isReloading=false 재로드
+    /// - 기대 결과: loadItems 시작과 streamFailed 시점 projection entries 모두 기존 항목이다
+    func testOperationFinishedEmittedLoadItemsRetainsCompleteSameRootProjection() async {
+        let rootPath = "/root"
+        let oldEntry = makeSharedProjectionFile()
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldEntry.id]
+        state.entryViewLayout.lastSelectedId = oldEntry.id
+        state.entryViewLayout.rangeAnchorId = oldEntry.id
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = false
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: StubbedReloadFailure())
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        // 실제 순서: operationFinished 성공 → coordinator가 같은 root의 loadItems를 발행.
+        await store.send(.entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
+            "\(rootPath)/file.txt",
+            .rename,
+            .success(()),
+        )))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.entryViewLayout.entries, [oldEntry])
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [oldEntry.id])
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 비종료 대체 batch의 선택 복원은 원본 lexical ID를
+    /// 정확히 재삽입한다.
+    /// 선택 ID의 lexical 표기가 canonical 경로와 달라도(여기서는 dot-segment 표기) 화면 표기의
+    /// lexical 선택 ID가 복원되는지 검증한다.
+    /// - 검증 내용: 무관 첫 batch 후 selectedIds/lastSelectedId/rangeAnchorId가 lexical before ID 그대로
+    /// - 사전 조건: `/root` route에서 lexical(`/root/./old.txt`) 선택과 canonical(`/root/old.txt`) 전이
+    /// - 기대 결과: 복원 선택은 lexical ID이며 이후 after-path batch에서 lexical after로 이동한다
+    func testReplacementBatchRestoresExactLexicalSelectedBeforeID() async {
+        let rootPath = "/root"
+        let lexicalOld = "/root/./old.txt"
+        let canonicalOld = URL(fileURLWithPath: lexicalOld).standardizedFileURL.resolvingSymlinksInPath().path
+        let lexicalNew = "/root/new.txt"
+        let unrelatedEntry = hierarchyFile(id: "/root/unrelated.txt", name: "unrelated.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [hierarchyFile(id: lexicalOld, name: "old.txt")]
+        state.entryViewLayout.entries = [hierarchyFile(id: lexicalOld, name: "old.txt")]
+        state.entryViewLayout.selectedIds = [lexicalOld]
+        state.entryViewLayout.lastSelectedId = lexicalOld
+        state.entryViewLayout.rangeAnchorId = lexicalOld
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: canonicalOld,
+            afterPath: lexicalNew,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // 무관한 첫 batch: 선택 복원은 canonical 경로가 아닌 원본 lexical ID를 재삽입해야 한다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [unrelatedEntry]
+        }
+
+        XCTAssertEqual(
+            store.state.entryViewLayout.selectedIds,
+            [lexicalOld],
+            "복원된 선택은 canonical 경로가 아니라 원본 lexical ID여야 한다",
+        )
+        XCTAssertEqual(store.state.entryViewLayout.lastSelectedId, lexicalOld)
+        XCTAssertEqual(store.state.entryViewLayout.rangeAnchorId, lexicalOld)
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+
+        // after-path batch: lexical after ID로 선택을 옮기고 전이를 소비한다.
+        let renamedEntry = hierarchyFile(id: lexicalNew, name: "new.txt")
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry, renamedEntry], batchIndex: 1),
+        ))))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.selectedIds,
+            [lexicalNew],
+            "선택은 lexical after-path ID로 이동한다",
+        )
+        XCTAssertNil(store.state.pendingIdentityTransition, "전이는 소비된다")
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 실제 임시 symlink 경로의 lexical 선택 ID가
+    /// 비종료 대체 batch에서 정확히 보존된다.
+    /// 선택 ID가 실제 파일시스템 symlink(`link/<file> → real/<file>`)를 거쳐 canonical 경로와
+    /// 달라도 화면 표기의 lexical 선택 ID가 복원되는지 검증한다.
+    /// - 검증 내용: 무관 첫 batch 후 selectedIds/lastSelectedId/rangeAnchorId가 symlink lexical before ID 그대로
+    /// - 사전 조건: real 폴더 route에서 lexical(`.../link/11.txt`) 선택과 canonical(`.../real/11.txt`) 전이
+    /// - 기대 결과: 복원 선택은 canonical이 아닌 원본 symlink lexical ID다
+    func testReplacementBatchRestoresRealSymlinkLexicalSelectedBeforeID() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+
+        let rootPath = sandbox.fileURL.deletingLastPathComponent().path
+        let lexicalBefore = sandbox.symlinkedFileURL.path
+        let canonicalBefore = URL(fileURLWithPath: lexicalBefore)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let afterPath = "\(rootPath)/renamed.txt"
+        let unrelatedEntry = hierarchyFile(id: "\(rootPath)/unrelated.txt", name: "unrelated.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [hierarchyFile(id: lexicalBefore, name: "11.txt")]
+        state.entryViewLayout.entries = [hierarchyFile(id: lexicalBefore, name: "11.txt")]
+        state.entryViewLayout.selectedIds = [lexicalBefore]
+        state.entryViewLayout.lastSelectedId = lexicalBefore
+        state.entryViewLayout.rangeAnchorId = lexicalBefore
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: canonicalBefore,
+            afterPath: afterPath,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // 무관한 첫 batch: 선택 복원은 canonical 경로가 아니라 원본 symlink lexical ID를 재삽입해야 한다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [unrelatedEntry]
+        }
+
+        XCTAssertEqual(
+            store.state.entryViewLayout.selectedIds,
+            [lexicalBefore],
+            "복원된 선택은 canonical 경로가 아니라 원본 symlink lexical ID여야 한다",
+        )
+        XCTAssertEqual(store.state.entryViewLayout.lastSelectedId, lexicalBefore)
+        XCTAssertEqual(store.state.entryViewLayout.rangeAnchorId, lexicalBefore)
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: expanded child 교체는 같은 reducer cycle에서 선택을 after-path로 옮긴다.
+    /// - 검증 내용: retained before child가 첫 새 batch의 after child로 교체될 때 selection과 transition을 함께 확인한다.
+    /// - 사전 조건: generation 4 loading folder와 선택된 before→after 대기 전이가 있다.
+    /// - 기대 결과: folder children과 selectedIds는 after-path만 포함하고 transition은 소비된다.
+    func testExpandedReplacementBatchMigratesSelectionAndConsumesTransition() {
+        let rootPath = "/root"
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let before = hierarchyFile(id: "/root/folder/before.txt", name: "before.txt")
+        let after = hierarchyFile(id: "/root/folder/after.txt", name: "after.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [folder]
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[folder.id] = FolderNodeState(
+            folder: FolderSnapshot(children: [before]),
+            expansionIntent: true,
+            generation: 4,
+            loadPhase: .loadingCore,
+        )
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        // 프로덕션과 동일하게 전이 생성 세대(3)와 root 로딩 세대를 일치시킨다.
+        state.entryViewLayout.entryOperations.loadingContext.generation = 3
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: after.id,
+            rootPath: rootPath,
+            refreshGeneration: 3,
+        )
+        _ = FileManagerContentFeature().reduce(
+            into: &state,
+            action: .entryViewLayout(.hierarchy(.folderChildrenResponse(
+                rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+                folderID: folder.id,
+                folderGeneration: 4,
+                .event(.coreBatch(items: [after], batchIndex: 0)),
+            ))),
+        )
+
+        XCTAssertEqual(state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.children, [after])
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [after.id])
+        XCTAssertNil(state.pendingIdentityTransition)
+    }
+
     /// EVM-002-switch_entries_view: accepted root completion은 content projection 이후 root snapshot reconciliation을 발행한다.
     /// - 검증 내용: itemsLoaded가 applyContentProjection과 rootSnapshotCompleted를 순서대로 발행한다.
     /// - 사전 조건: root 항목이 있는 FileManager content state
@@ -442,3 +1059,6 @@ private func makeSharedProjectionFile(tags: [Tag]? = nil) -> EntryModel {
         ),
     )
 }
+
+/// 재로드 stream을 즉시 실패시키는 테스트용 오류.
+private struct StubbedReloadFailure: Error {}

@@ -1467,6 +1467,34 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         return state
     }
 
+    private func makeCorrelationEntry(id: String, name: String) -> EntryModel {
+        EntryModel(
+            name: name,
+            fullPath: id,
+            isFolder: false,
+            isHidden: false,
+            size: 0,
+            modifiedDate: .distantPast,
+            fileExtension: "",
+            facets: EntryFacets(
+                createdDate: .distantPast,
+                addedDate: .distantPast,
+                lastOpenedDate: nil,
+                kind: "",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
+    }
+
+    private func makeCorrelationState(folderPath: String) -> CommandExternalRefreshHarness.State {
+        var state = CommandExternalRefreshHarness.State()
+        state.content.navigation.seedInitialFolderPath(folderPath)
+        state.content.navigation.navigationState = .folder(folderPath)
+        return state
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: folder route entry operation 완료 시 directory reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: folder route에서 entry operation 완료 액션이 현재 folder loader로 전달되는지 검증
@@ -1966,6 +1994,1008 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 기대 결과: hierarchyInvalidated가 두 parent refresh만 요청하며 subtree prune을 요청하지 않는다.
     func testPathsMutatedInvalidatesParentsWithoutRemovedPrefixes() async {
         await assertPathsMutatedInvalidatesParentsWithoutRemovedPrefixes()
+    }
+
+    // MARK: - EVM-001-command_external_refresh_correlation
+
+    /// EVM-001-command_external_refresh_correlation: 명령 완료 후 일치하는 외부 rename 이벤트가 중복 refresh를 예약한다(현행 고정).
+    /// rename 명령 완료가 예약한 계층 무효화와 동일 identity 변경의 외부 이벤트 무효화가
+    /// 현재는 별도의 visible refresh로 중복 예약되는 현행 동작을 고정한다.
+    /// - 검증 내용: hierarchyInvalidation 총 2회(명령 1 + 외부 1)와 외부 root reload 1회 예약 수
+    /// - 사전 조건: folder 라우트에서 old.txt 선택 후 rename 완료 기록, 같은 경로의 외부 renamed 이벤트
+    /// - 기대 결과: 계층 무효화 2회, 외부 loadItems 1회로 중복 refresh 의도가 관측됨
+    func testCommandCompletionThenMatchingExternalEventSchedulesDuplicateRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let store = TestStore(initialState: makeCorrelationState(folderPath: folderPath)) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([oldPath], flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
+            deliveryChainToken: nil,
+        )))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(oldPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes == [Self.canonicalPath(oldPath)]
+        }
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.entryOperations(.loading(.loadItems(path, _, _))))) =
+                action else { return false }
+            return path == folderPath
+        }
+
+        XCTAssertEqual(store.state.hierarchyInvalidations.count, 2, "명령과 외부 이벤트가 각각 계층 무효화를 예약한다")
+        XCTAssertEqual(store.state.rootReloadCount, 1, "외부 이벤트가 root reload를 추가로 예약한다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 일치하는 외부 rename 이벤트는 명령 refresh에 병합된다.
+    /// consume-once 경로 전이가 있으면 동일 identity 변경의 외부 이벤트가 중복 계층 무효화와
+    /// 중복 root reload를 예약하지 않는지 검증한다. 뒤이은 무관한 이벤트로 큐를 배출해 결정적으로 관측한다.
+    /// - 검증 내용: 무관한 후속 이벤트 처리까지 마친 뒤 hierarchyInvalidation 총 2회, loadItems 총 1회
+    /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 기록으로 생성된 대기 전이
+    /// - 기대 결과: 일치 이벤트는 추가 refresh 의도를 만들지 않고 무관한 이벤트만 정상 예약된다
+    func testCorrelatedExternalRenameMergesIntoCommandRefreshWithoutDuplicate() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let unrelatedPath = "\(folderPath)/unrelated.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        // 프로덕션 순서: operationFinished가 먼저 reload를 예약·실행해 세대를 연다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([oldPath], flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
+            deliveryChainToken: nil,
+        )))
+        // 큐를 배출할 후속 무관한 이벤트. 이것의 출력 수신이 끝났는데도 앞선 일치 이벤트의
+        // 출력이 없었다면 병합(중복 억제)이 확정된다.
+        await store.send(.content(.externalFileSystemChanged(Self.externalChangeEvents([unrelatedPath]))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(unrelatedPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "일치하는 외부 이벤트는 계층 무효화를 추가하지 않고 무관한 이벤트만 추가한다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "일치하는 외부 이벤트는 중복 root reload를 예약하지 않는다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 상관 배치의 추가 경로는 같은 refresh 창에서 계속 전달된다.
+    /// 전이와 겹치는 경로와 무관한 경로가 한 배치에 섞이면 무관한 경로만 기존 라우트 동작으로
+    /// refresh를 예약하고 겹치는 경로는 명령 refresh에 병합되는지 검증한다.
+    /// - 검증 내용: 혼합 배치 처리 후 마지막 무효화가 [other, root]만 포함하고 reload는 1회
+    /// - 사전 조건: 대기 전이가 있고 외부 배치가 renamed old.txt와 modified other.txt를 함께 담음
+    /// - 기대 결과: 계층 무효화 총 2회, root reload 1회, 무관한 경로의 이벤트는 폐기되지 않음
+    func testCorrelatedExternalBatchKeepsUnrelatedPathRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let otherPath = "\(folderPath)/other.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        // 프로덕션 순서: operationFinished가 먼저 reload를 예약·실행해 세대를 연다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        let mixedEvents = [
+            FileChangeGatewayEvent(
+                path: oldPath,
+                flags: UInt32(kFSEventStreamEventFlagItemRenamed),
+                emittedAt: .distantPast,
+            ),
+            FileChangeGatewayEvent(
+                path: otherPath,
+                flags: UInt32(kFSEventStreamEventFlagItemModified),
+                emittedAt: .distantPast,
+            ),
+        ]
+        await store.send(.content(.externalFileSystemChanged(mixedEvents, deliveryChainToken: nil)))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(otherPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "무관한 경로의 refresh는 유지된다",
+        )
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.last,
+            [Self.canonicalPath(otherPath), Self.canonicalPath(folderPath)],
+            "병합된 refresh에는 무관한 경로와 그 parent만 남는다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "무관한 경로의 root reload는 한 번 예약된다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 일치 외부 이벤트는 전이를 소비하지 않고 중복 refresh를 억제한다.
+    /// 명령 완료가 예약한 reload 이후에 도달한 일치 이벤트는 그 refresh로 병합되어
+    /// selection migration을 위한 전이가 보존되는지 검증한다.
+    /// - 검증 내용: 일치 이벤트 뒤 pendingIdentityTransition 유지 + root reload 미예약
+    /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 기록과 그 reload 실행
+    /// - 기대 결과: 일치 이벤트는 전이를 보존하고 중복 refresh를 예약하지 않는다
+    func testCorrelatedExternalEventRetainsPendingTransitionAndSuppressesRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        // 프로덕션 순서: operationFinished가 먼저 reload를 예약·실행해 세대를 연다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        XCTAssertEqual(store.state.content.pendingIdentityTransition?.recordID, record.id)
+        XCTAssertEqual(store.state.content.pendingIdentityTransition?.beforePath, Self.canonicalPath(oldPath))
+        XCTAssertEqual(store.state.content.pendingIdentityTransition?.afterPath, Self.canonicalPath(newPath))
+        XCTAssertEqual(store.state.content.pendingIdentityTransition?.rootPath, Self.canonicalPath(folderPath))
+
+        let matchingEvents = Self.externalChangeEvents(
+            [oldPath],
+            flags: UInt32(kFSEventStreamEventFlagItemRenamed),
+        )
+        await store.send(.content(.externalFileSystemChanged(matchingEvents, deliveryChainToken: nil)))
+
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "일치 이벤트는 전이를 소비하지 않고 보존한다",
+        )
+        XCTAssertEqual(store.state.hierarchyInvalidations.count, 1, "일치 이벤트는 계층 무효화를 추가하지 않는다")
+        XCTAssertEqual(store.state.rootReloadCount, 1, "명령 완료가 예약한 reload만 남는다")
+
+        // after-path projection이 도착하면 선택을 옮기고 전이를 소비한다.
+        let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [newPath])
+        XCTAssertNil(store.state.content.pendingIdentityTransition, "after-path projection이 전이를 소비한다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 명령 → 일치 이벤트 → 무관/빈 첫 배치 → after-path 배치가
+    /// 하나의 correlated refresh로 수렴하고, after-path가 나타날 때까지 선택을 유지한 뒤
+    /// 정확히 한 번 migration하고 전이를 소비한다.
+    /// - 검증 내용: 일치 이벤트 후 refresh 미예약, 무관 첫 배치에서 선택·전이 보존, after-path 배치에서 1회 migration
+    /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 + reload 실행 + 일치 이벤트
+    /// - 기대 결과: reload 총 1회, after-path 도착 전 선택 유지, 도착 후 selectedIds == [newPath] + 전이 nil
+    func testCommandMatchingEventEarlyBatchThenAfterPathMigratesOnce() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let unrelatedPath = "\(folderPath)/unrelated.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        initialState.content.entryViewLayout.lastSelectedId = oldPath
+        initialState.content.entryViewLayout.rangeAnchorId = oldPath
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        // 프로덕션 순서: operationFinished가 먼저 reload를 예약·실행해 세대를 연다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        // 일치 외부 이벤트: 명령 refresh로 병합되어 중복 refresh를 예약하지 않고 전이를 보존한다.
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([oldPath], flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
+            deliveryChainToken: nil,
+        )))
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations,
+            "일치 이벤트는 refresh를 예약하지 않는다",
+        )
+        XCTAssertEqual(store.state.rootReloadCount, baselineReloads, "명령 완료가 예약한 reload만 남는다")
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        // 무관한 첫 projection batch: after-path가 없으므로 선택과 전이를 유지한다.
+        let unrelatedEntry = makeCorrelationEntry(id: unrelatedPath, name: "unrelated.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([unrelatedEntry]))))
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [oldPath],
+            "after-path가 도착하기 전까지 선택을 유지한다",
+        )
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition, "무관 첫 배치는 전이를 소비하지 않는다")
+
+        // after-path projection batch: 선택을 정확히 한 번 옮기고 전이를 소비한다.
+        let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([unrelatedEntry, renamedEntry]))))
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [newPath],
+            "선택은 after-path로 정확히 한 번 옮긴다",
+        )
+        XCTAssertNil(store.state.content.pendingIdentityTransition, "전이는 소비된다")
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations,
+            "correlated refresh는 명령 완료의 하나만 존재한다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 무관한 외부 이벤트는 대기 전이를 유지한다.
+    /// 전이와 겹치지 않는 경로의 이벤트가 기존 refresh를 예약하면서도 전이를 소비하지 않는지 검증한다.
+    /// - 검증 내용: 무관한 경로 이벤트 처리 후에도 pendingIdentityTransition이 남아 있음
+    /// - 사전 조건: rename 완료 기록으로 생성된 대기 전이와 무관한 경로의 modified 이벤트
+    /// - 기대 결과: 정상 refresh와 함께 전이 보존
+    func testUnrelatedExternalEventDoesNotConsumePendingTransition() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let unrelatedPath = "\(folderPath)/unrelated.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+
+        await store.send(.content(.externalFileSystemChanged(Self.externalChangeEvents([unrelatedPath]))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(unrelatedPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition, "무관한 이벤트는 전이를 소비하지 않는다")
+        XCTAssertEqual(store.state.hierarchyInvalidations.count, 2)
+        XCTAssertEqual(store.state.rootReloadCount, 1)
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 실패한 명령도 대기 전이를 만료시키지 않는다.
+    /// operationFinished는 record identity가 없어 이 실패가 전이의 원인 명령인지 확정할 수 없다.
+    /// 경로·종류를 추측해 만료하면 무관한 실패가 성공한 전이를 파괴하므로, 같은 경로·종류의
+    /// 실패라도 전이를 유지한다.
+    /// - 검증 내용: rename 실패 수신 뒤에도 pendingIdentityTransition 유지 + reload 미발행
+    /// - 사전 조건: rename 완료 기록으로 생성된 대기 전이
+    /// - 기대 결과: 실패 시점에 전이가 유지되고 reload가 예약되지 않는다
+    func testFailedOperationKeepsPendingTransitionWithoutReload() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: "\(folderPath)/new.txt")],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .failure(.system(message: "forced failure")),
+        ))))
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "실패는 record identity가 없어 전이를 만료시키지 않는다",
+        )
+        XCTAssertEqual(store.state.rootReloadCount, 0, "실패한 연산은 reload를 예약하지 않는다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 취소된 rename은 완료된 대기 전이를 만료하지 않는다.
+    /// cancelRename은 이미 성공해 기록된 identity 연산과 무관한 편집 취소이므로
+    /// 대기 전이를 파괴하지 않는지 검증한다.
+    /// - 검증 내용: cancelRename 수신 뒤에도 pendingIdentityTransition 유지
+    /// - 사전 조건: rename 완료 기록으로 생성된 대기 전이
+    /// - 기대 결과: 취소 시점에 전이가 유지됨
+    func testCanceledRenameKeepsUnrelatedPendingTransition() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: "\(folderPath)/new.txt")],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        await store.send(.bridge(.edit(.cancelRename)))
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "cancelRename은 완료된 identity 연산과 무관해 전이를 유지한다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: itemsLoaded 시점에 경로 전이가 선택을 이후 경로로 옮기고 소비한다.
+    /// rename/move 최종 데이터 도착 시 선택이 새 identity로 이어지는지 검증한다.
+    /// - 검증 내용: 이전 경로가 선택된 상태에서 이후 경로가 포함된 itemsLoaded가 선택을 교체하고 전이를 소비한다.
+    /// - 사전 조건: before→after 대기 전이와 before가 선택된 상태.
+    /// - 기대 결과: selectedIds는 after만 포함하고 pendingIdentityTransition은 nil이다.
+    func testItemsLoadedMigratesSelectionAlongIdentityTransitionAndConsumesIt() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        initialState.content.entryViewLayout.lastSelectedId = oldPath
+        initialState.content.entryViewLayout.rangeAnchorId = oldPath
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: folderPath,
+            refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+        )
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
+        let otherEntry = makeCorrelationEntry(id: "\(folderPath)/other.txt", name: "other.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry, otherEntry]))))
+
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [newPath],
+            "선택은 이후 경로로 이동한다",
+        )
+        XCTAssertEqual(store.state.content.entryViewLayout.lastSelectedId, newPath)
+        XCTAssertNil(store.state.content.pendingIdentityTransition, "전이는 소비된다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 이후 경로가 아직 도착하지 않으면 선택을 유지하고 전이를 보존한다.
+    /// 실패·미도착 시 기존 stale-selection 정리가 이기는지 검증한다.
+    /// - 검증 내용: after-path가 없는 itemsLoaded는 선택과 전이를 그대로 둔다.
+    /// - 사전 조건: 대기 전이와 before 선택.
+    /// - 기대 결과: selectedIds는 before 유지, 전이 미소비.
+    func testItemsLoadedWithoutAfterPathKeepsSelectionAndTransition() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let transition = FileManagerContentState.EntryIdentityTransition(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: folderPath,
+            refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+        )
+        initialState.content.pendingIdentityTransition = transition
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let otherEntry = makeCorrelationEntry(id: "\(folderPath)/other.txt", name: "other.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([otherEntry]))))
+
+        XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [oldPath])
+        XCTAssertEqual(store.state.content.pendingIdentityTransition, transition)
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 새 성공 기록은 대기 전이를 대체(supersede)한다.
+    /// 두 번째 rename 완료 기록이 첫 번째 전이를 교체하는지 검증한다.
+    /// - 검증 내용: 두 기록 전송 뒤 pendingIdentityTransition.recordID == 두 번째 기록 id
+    /// - 사전 조건: 서로 다른 원본을 순차 rename한 두 완료 기록
+    /// - 기대 결과: 슬롯은 하나이며 최신 기록으로 대체됨
+    func testSupersedingRecordReplacesPendingTransition() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let firstOldPath = "\(folderPath)/first-old.txt"
+        let secondOldPath = "\(folderPath)/second-old.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [firstOldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let firstRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: firstOldPath, afterPath: "\(folderPath)/first-new.txt")],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(firstRecord))))
+        XCTAssertEqual(store.state.content.pendingIdentityTransition?.recordID, firstRecord.id)
+
+        await store.send(.select(secondOldPath)) {
+            $0.content.entryViewLayout.selectedIds = [secondOldPath]
+        }
+        let secondRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: secondOldPath, afterPath: "\(folderPath)/moved/second-old.txt")],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(secondRecord))))
+        XCTAssertEqual(
+            store.state.content.pendingIdentityTransition?.recordID,
+            secondRecord.id,
+            "새 성공 기록이 이전 전이를 대체한다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 세대가 어긋난 전이는 만료되고 정상 refresh로 처리한다.
+    /// 로딩 세대 불일치 시 겹치는 이벤트라도 중복 억제하지 않는지 검증한다.
+    /// - 검증 내용: stale 세대 전이 상태에서 일치 모양 이벤트가 무효화+reload를 예약하고 전이를 만료
+    /// - 사전 조건: refreshGeneration이 현재 로딩 세대보다 오래된 대기 전이
+    /// - 기대 결과: 기존 라우트 동작 그대로 처리, 전이 소비
+    func testGenerationSupersededTransitionExpiresWithNormalRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.entryOperations.loadingContext.generation = 7
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: Self.canonicalPath(oldPath),
+            afterPath: Self.canonicalPath("\(folderPath)/new.txt"),
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: 5,
+        )
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([oldPath], flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
+            deliveryChainToken: nil,
+        )))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(oldPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes == [Self.canonicalPath(oldPath)]
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertNil(store.state.content.pendingIdentityTransition, "세대 불일치 전이는 만료된다")
+        XCTAssertEqual(store.state.hierarchyInvalidations.count, 1, "stale 전이는 중복 억제하지 않는다")
+        XCTAssertEqual(store.state.rootReloadCount, 1)
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 현재 root/포함 디렉터리 경로의 FSEvent도
+    /// 전이와 상관되어 명령 refresh로 병합된다. FSEvents가 변경 파일 대신 폴더 경로를 보고해도
+    /// 중복 refresh를 예약하지 않고, 같은 배치의 무관한 경로는 폐기하지 않는지 검증한다.
+    /// - 검증 내용: root 경로+무관 경로 혼합 배치가 무관 경로만 남겨 계층 무효화·reload를 1회씩 예약
+    /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 전이와 그 reload 실행
+    /// - 기대 결과: root 이벤트는 병합되고 무관 경로의 refresh만 예약되며 전이는 유지된다
+    func testCorrelatedParentRootEventMergesWithoutHidingUnrelatedPaths() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let unrelatedPath = "\(folderPath)/unrelated.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        // 프로덕션 순서: operationFinished가 먼저 reload를 예약·실행해 세대를 연다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        // 혼합 배치: 현재 root 경로 이벤트(renamed) + 무관한 sibling 이벤트(modified).
+        let mixedEvents = [
+            FileChangeGatewayEvent(
+                path: folderPath,
+                flags: UInt32(kFSEventStreamEventFlagItemRenamed),
+                emittedAt: .distantPast,
+            ),
+            FileChangeGatewayEvent(
+                path: unrelatedPath,
+                flags: UInt32(kFSEventStreamEventFlagItemModified),
+                emittedAt: .distantPast,
+            ),
+        ]
+        await store.send(.content(.externalFileSystemChanged(mixedEvents, deliveryChainToken: nil)))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(unrelatedPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "root 경로 이벤트는 병합되고 무관 경로만 계층 무효화를 예약한다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "root 경로 이벤트는 중복 reload를 예약하지 않는다",
+        )
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "root 경로 이벤트 병합 시 전이는 보존된다",
+        )
+        // 참고: 무관 경로 remainder가 예약한 reload는 세대를 연다. 그 세대 불일치로 전이가
+        // 만료되는 것은 의도된 V20-P1-2 동작이며 testGenerationMismatchExpiresTransitionAtMigration에서
+        // 별도로 검증한다.
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 무관한 명령 실패·취소는 대기 전이를 파괴하지 않는다.
+    /// 성공한 rename 전이가 있을 때 다른 경로·종류의 operationFinished 실패와 cancelRename이
+    /// 전이를 유지하는지 검증한다.
+    /// - 검증 내용: 무관 실패·취소 뒤에도 pendingIdentityTransition 유지
+    /// - 사전 조건: 선택된 old.txt의 rename 완료 기록으로 생성된 대기 전이
+    /// - 기대 결과: 전이는 유지되어 이후 동일 세대 projection에서 동작할 수 있다
+    func testUnrelatedFailureAndCancelKeepPendingIdentityTransition() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let otherPath = "\(folderPath)/other.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        // 무관한 경로·종류의 압축 실패: 전이와 무관하므로 만료하지 않고 reload도 예약하지 않는다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            otherPath,
+            .compress,
+            .failure(.system(message: "forced failure")),
+        ))))
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "무관한 종류·경로의 실패는 전이를 만료하지 않는다",
+        )
+        XCTAssertEqual(store.state.rootReloadCount, 0, "무관한 실패는 reload를 예약하지 않는다")
+
+        // 같은 rename 종류라도 다른 경로의 실패는 전이와 무관하다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            otherPath,
+            .rename,
+            .failure(.system(message: "forced failure")),
+        ))))
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "다른 경로의 rename 실패는 전이를 만료하지 않는다",
+        )
+        XCTAssertEqual(store.state.rootReloadCount, 0, "무관한 rename 실패는 reload를 예약하지 않는다")
+
+        // rename 편집 취소도 완료된 identity 연산과 무관하므로 전이를 유지한다.
+        await store.send(.bridge(.edit(.cancelRename)))
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "cancelRename은 완료된 전이를 만료하지 않는다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 세대가 어긋난 전이는 migration 시점에 만료된다.
+    /// 같은 root라도 로딩 세대가 전이 생성 세대와 다르면 선택을 옮기지 않고 만료하는지 검증한다.
+    /// - 검증 내용: after-path가 포함된 itemsLoaded에도 selectedIds 유지 + pendingIdentityTransition == nil
+    /// - 사전 조건: refreshGeneration 3, 현재 loadingContext.generation 7인 대기 전이와 before 선택
+    /// - 기대 결과: migration 미발생(선택 유지), 세대 불일치 전이 만료
+    func testGenerationMismatchExpiresTransitionAtMigration() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        initialState.content.entryViewLayout.entryOperations.loadingContext.generation = 7
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: Self.canonicalPath(oldPath),
+            afterPath: Self.canonicalPath(newPath),
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: 3,
+        )
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [oldPath],
+            "세대가 어긋난 전이는 선택을 옮기지 않는다",
+        )
+        XCTAssertNil(store.state.content.pendingIdentityTransition, "세대 불일치 전이는 만료된다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 포함 디렉터리(현재 root의 조상) 경로의
+    /// FSEvent도 대기 전이가 겹치면 관련으로 판정되어 명령 refresh로 병합된다.
+    /// FSEvents가 변경 파일 대신 root의 조상 디렉터리를 보고해도 상관관계 사전 gate가
+    /// 이벤트를 버리지 않고, 같은 배치의 무관한 경로는 폐기하지 않는지 검증한다.
+    /// - 검증 내용: root 조상 이벤트+무관 경로 혼합 배치가 무관 경로만 계층 무효화·reload를 예약
+    /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 대기 전이
+    /// - 기대 결과: 조상 이벤트는 병합되고 무관 경로의 refresh만 예약되며 전이는 유지된다
+    func testCorrelatedContainingParentEventMergesWithoutHidingUnrelatedPaths() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let parentPath = "/tmp"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let unrelatedPath = "/tmp/voyager-other/unrelated.txt"
+        let canonicalUnrelated = Self.canonicalPath(unrelatedPath)
+        let unrelatedParent = URL(fileURLWithPath: canonicalUnrelated).deletingLastPathComponent().path
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        // 혼합 배치: root의 조상(포함 디렉터리) renamed 이벤트 + 무관한 sibling modified 이벤트.
+        let mixedEvents = [
+            FileChangeGatewayEvent(
+                path: parentPath,
+                flags: UInt32(kFSEventStreamEventFlagItemRenamed),
+                emittedAt: .distantPast,
+            ),
+            FileChangeGatewayEvent(
+                path: unrelatedPath,
+                flags: UInt32(kFSEventStreamEventFlagItemModified),
+                emittedAt: .distantPast,
+            ),
+        ]
+        await store.send(.content(.externalFileSystemChanged(mixedEvents, deliveryChainToken: nil)))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [canonicalUnrelated, unrelatedParent] && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "조상 이벤트는 병합되고 무관한 경로만 계층 무효화를 예약한다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "무관한 경로의 root reload는 한 번 예약된다",
+        )
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "조상 이벤트 병합 시 전이는 보존된다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 성공한 rename 뒤 무관한 실패·취소가 와도
+    /// 전이가 보존되고, 이후 같은 세대의 after-path projection에서 선택 migration이 완료된다.
+    /// 무관 실패·취소가 직접(만료) 또는 간접(reload 세대 상승)으로 전이를 파괴하지 않는지 검증한다.
+    /// - 검증 내용: 무관 실패·취소 뒤 전이 보존 + reload 미예약, after-path projection에서 1회 migration
+    /// - 사전 조건: 선택된 old.txt의 rename 완료 전이와 동일 세대
+    /// - 기대 결과: after-path 배치 도착 시 selectedIds == [newPath] + 전이 소비
+    func testUnrelatedFailureAndCancelThenAfterPathMigratesOnce() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let otherPath = "\(folderPath)/other.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        initialState.content.entryViewLayout.lastSelectedId = oldPath
+        initialState.content.entryViewLayout.rangeAnchorId = oldPath
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        // 무관한 경로·종류의 실패와 취소.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            otherPath,
+            .rename,
+            .failure(.system(message: "forced failure")),
+        ))))
+        await store.send(.bridge(.edit(.cancelRename)))
+        XCTAssertNotNil(
+            store.state.content.pendingIdentityTransition,
+            "무관 실패·취소는 전이를 만료하지 않는다",
+        )
+        XCTAssertEqual(store.state.rootReloadCount, 0, "무관 실패·취소는 reload를 예약하지 않는다")
+
+        // after-path projection: 같은 세대에서 선택을 옮기고 전이를 소비한다.
+        let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [newPath],
+            "무관 실패·취소 후에도 선택은 after-path로 이동한다",
+        )
+        XCTAssertNil(store.state.content.pendingIdentityTransition, "전이는 소비된다")
+    }
+}
+
+/// 명령 완료(coordinator)와 외부 변경(sync reducer)을 한 Store에서 이어 붙이고
+/// 예약된 visible refresh 의도를 세는 harness. 상단 파일 레벨 선언으로 nesting lint를 피한다.
+@Reducer
+private struct CommandExternalRefreshHarness {
+    struct State: Equatable {
+        var content = FileManagerContentState()
+        /// hierarchyInvalidated에 전달된 affectedPaths 기록 (명령/외부 refresh 의도 수집)
+        var hierarchyInvalidations: [[String]] = []
+        /// 외부 경로 root reload(loadItems) 예약 횟수
+        var rootReloadCount = 0
+    }
+
+    enum Action {
+        case bridge(EntryOperationsAction)
+        case content(FileManagerContentAction)
+        case select(String)
+    }
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .bridge(entryAction):
+                return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                    entryAction,
+                    state: &state.content,
+                )
+                .map(Action.content)
+            case let .select(path):
+                state.content.entryViewLayout.selectedIds = [path]
+                return .none
+            case .content:
+                return .none
+            }
+        }
+        Scope(state: \.content, action: \.content) {
+            FileManagerContentSyncReducer()
+        }
+        Reduce { state, action in
+            switch action {
+            case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, _)))):
+                state.hierarchyInvalidations.append(affectedPaths)
+                return .none
+            case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))):
+                state.rootReloadCount += 1
+                // 명령 완료가 예약한 reload가 실행되면 실제 LoadingReducer가 세대를 +1 올린다.
+                // 일치 이벤트가 그 이후에 도달해도 같은 세대로 판정되도록 여기서 세대를 맞춘다.
+                state.content.entryViewLayout.entryOperations.loadingContext.generation &+= 1
+                return .none
+            default:
+                return .none
+            }
+        }
     }
 }
 

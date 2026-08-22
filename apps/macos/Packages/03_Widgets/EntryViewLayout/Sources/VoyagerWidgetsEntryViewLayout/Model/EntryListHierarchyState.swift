@@ -9,15 +9,21 @@ public struct FolderSnapshot: Equatable, Sendable {
     public var children: [EntryModel]
     public var expectedBatchIndex: Int
     public var coreFinished: Bool
+    /// 이번 generation에서 내용(non-empty) core batch를 한 번이라도 적용했는지 여부.
+    /// startLoad가 이전 세대 완료 스냅샷을 보존(retained)할 때 false로 유지되어,
+    /// 아직 새 내용을 받지 않은 상태에서 첫 내용 배치가 retained children을 교체하도록 표시한다.
+    public var hasAppliedContentBatch: Bool
 
     public init(
         children: [EntryModel] = [],
         expectedBatchIndex: Int = 0,
         coreFinished: Bool = false,
+        hasAppliedContentBatch: Bool = false,
     ) {
         self.children = children
         self.expectedBatchIndex = expectedBatchIndex
         self.coreFinished = coreFinished
+        self.hasAppliedContentBatch = hasAppliedContentBatch
     }
 }
 
@@ -97,17 +103,28 @@ public struct EntryListHierarchyState: Equatable, Sendable {
 public extension FolderNodeState {
     /// children + loadPhase + generation + expectedBatchIndex + coreFinished를 folder: FolderSnapshot으로 변환한다.
     /// children과 loadPhase가 required이므로 canonical init과의 ambiguity가 없다.
+    /// hasAppliedContentBatch는 생략 시 테스트 편의 의미로 유추한다(내용 존재 + 진행 상태).
     init(
         children: [EntryModel],
         loadPhase: FolderLoadPhase,
         generation: Int,
         expectedBatchIndex: Int = 0,
         coreFinished: Bool = false,
+        hasAppliedContentBatch: Bool? = nil,
     ) {
+        let appliedContent = hasAppliedContentBatch ?? {
+            let hasContent = !children.isEmpty
+            let progressed = loadPhase == .loaded
+                || loadPhase == .enriching
+                || coreFinished
+                || expectedBatchIndex > 0
+            return hasContent && progressed
+        }()
         folder = FolderSnapshot(
             children: children,
             expectedBatchIndex: expectedBatchIndex,
             coreFinished: coreFinished,
+            hasAppliedContentBatch: appliedContent,
         )
         self.generation = generation
         self.loadPhase = loadPhase

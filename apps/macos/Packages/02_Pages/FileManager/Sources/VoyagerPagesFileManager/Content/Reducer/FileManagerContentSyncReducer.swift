@@ -28,23 +28,14 @@ struct FileManagerContentSyncReducer {
                     return .send(.collection(.externalPathsChanged(paths)))
 
                 case let .folder(path):
-                    guard pathsAffectCurrentFolder(paths, currentPath: path) else {
+                    guard pathsAffectCurrentFolder(paths, currentPath: path, state: state) else {
                         return .none
                     }
-                    logFileManagerReloadRequest(events, deliveryChainToken: deliveryChainToken)
-                    let normalizedPaths = paths.map(normalizedPath(for:))
-                    let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
-                    let removedPrefixes = removedPrefixes(for: events)
-                    let hierarchyAction: EntryListHierarchyAction = events
-                        .contains(where: requiresCoarseHierarchyReload)
-                        ? .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
-                        : .hierarchyInvalidated(
-                            affectedPaths: affectedPaths,
-                            removedPrefixes: removedPrefixes,
-                        )
-                    return .concatenate(
-                        .send(.entryViewLayout(.hierarchy(hierarchyAction))),
-                        FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+                    return scheduleExternalFolderRefresh(
+                        events,
+                        deliveryChainToken: deliveryChainToken,
+                        currentPath: path,
+                        state: &state,
                     )
 
                 case .recents, .tags, .computer:
@@ -61,6 +52,67 @@ struct FileManagerContentSyncReducer {
         }
     }
 
+    /// 외부 변경 배치를 현재 폴더 refresh로 예약한다.
+    /// 대기 중인 명령 완료 전이와 겹치는 경로는 명령 경로가 이미 예약한 refresh에 병합하고(중복 제거),
+    /// 나머지 경로는 기존 라우트 동작을 그대로 따른다. 루트·세대가 어긋난 전이도 여기서 만료된다.
+    private func scheduleExternalFolderRefresh(
+        _ events: [FileChangeGatewayEvent],
+        deliveryChainToken: String?,
+        currentPath: String,
+        state: inout State,
+    ) -> Effect<Action> {
+        var scheduledEvents = events
+        if let transition = state.pendingIdentityTransition,
+           events.contains(where: { transitionOverlaps(normalizedPath(for: $0.path), transition) })
+        {
+            let rootMatches = transition.rootPath == normalizedPath(for: currentPath)
+            let generationMatches = state.entryViewLayout.entryOperations.loadingContext.generation == transition
+                .refreshGeneration
+            if rootMatches, generationMatches {
+                // 일치 이벤트는 명령이 이미 예약한 refresh로 병합한다(중복 refresh 억제).
+                // 전이는 소비하지 않는다: after-path projection이 도착해 선택을 옮길 때까지
+                // 유지되어야 selection migration이 완료된다.
+                scheduledEvents = events.filter { !transitionOverlaps(normalizedPath(for: $0.path), transition) }
+                if scheduledEvents.isEmpty {
+                    // 모든 경로가 명령 refresh에 병합됨. 중복 refresh를 예약하지 않는다.
+                    return .none
+                }
+            } else {
+                // 루트·세대가 어긋난(stale) 전이는 결정적으로 만료하고 기존 라우트 동작으로 처리한다.
+                state.pendingIdentityTransition = nil
+            }
+        }
+
+        logFileManagerReloadRequest(scheduledEvents, deliveryChainToken: deliveryChainToken)
+        let normalizedPaths = scheduledEvents.map { normalizedPath(for: $0.path) }
+        let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
+        let removedPrefixes = removedPrefixes(for: scheduledEvents)
+        let hierarchyAction: EntryListHierarchyAction = scheduledEvents
+            .contains(where: requiresCoarseHierarchyReload)
+            ? .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
+            : .hierarchyInvalidated(
+                affectedPaths: affectedPaths,
+                removedPrefixes: removedPrefixes,
+            )
+        return .concatenate(
+            .send(.entryViewLayout(.hierarchy(hierarchyAction))),
+            FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+        )
+    }
+
+    /// 이벤트 경로와 전이 before/after identity(또는 그 subtree/조상)가 겹치는지 판정한다.
+    /// FSEvents는 변경 파일 경로 대신 포함 디렉터리나 현재 root 경로를 보고하기도 하므로
+    /// 조상 방향까지 포함해 pathComponents 기준으로 대칭 비교한다(문자열 prefix 오매칭 방지).
+    private func transitionOverlaps(
+        _ normalizedEventPath: String,
+        _ transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> Bool {
+        isSameOrDescendant(path: normalizedEventPath, of: transition.beforePath)
+            || isSameOrDescendant(path: normalizedEventPath, of: transition.afterPath)
+            || isSameOrDescendant(path: transition.beforePath, of: normalizedEventPath)
+            || isSameOrDescendant(path: transition.afterPath, of: normalizedEventPath)
+    }
+
     private func logFileManagerReloadRequest(
         _ events: [FileChangeGatewayEvent],
         deliveryChainToken: String?,
@@ -74,17 +126,23 @@ struct FileManagerContentSyncReducer {
         )
     }
 
-    private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String) -> Bool {
+    private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String, state: State) -> Bool {
         let normalizedCurrentPath = normalizedPath(for: currentPath)
 
-        return paths.contains { path in
+        if paths.contains(where: { path in
             let candidatePath = normalizedPath(for: path)
-            if candidatePath == normalizedCurrentPath {
-                return true
-            }
-
-            return isSameOrDescendant(path: candidatePath, of: normalizedCurrentPath)
+            return candidatePath == normalizedCurrentPath
+                || isSameOrDescendant(path: candidatePath, of: normalizedCurrentPath)
+        }) {
+            return true
         }
+
+        // 조상/포함 디렉터리 또는 현재 root 이벤트: FSEvents는 변경 파일 대신
+        // 포함 디렉터리 경로를 보고할 수 있다. 대기 중인 identity 전이가 겹칠 때만
+        // 관련으로 판정해 상관관계(중복 refresh 병합)로 흘려보낸다. 이때 무관한
+        // 경로를 버리지 않는다(배치 전체를 그대로 전달).
+        guard let transition = state.pendingIdentityTransition else { return false }
+        return paths.contains { transitionOverlaps(normalizedPath(for: $0), transition) }
     }
 
     private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {

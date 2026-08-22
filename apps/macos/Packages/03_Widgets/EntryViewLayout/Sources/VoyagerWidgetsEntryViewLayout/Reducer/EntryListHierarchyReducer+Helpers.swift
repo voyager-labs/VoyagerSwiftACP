@@ -10,9 +10,24 @@ extension EntryListHierarchyReducer {
         state: inout State,
     ) -> Effect<Action> {
         var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
+        var retainsCompleteSnapshot = nodeState.folder.coreFinished || nodeState.loadPhase == .loaded
+        if case .failed = nodeState.loadPhase {
+            // 실패 재시도에서 커서 0 + children 존재는 이전 완전 세대의 retained 스냅샷이다.
+            // 부분 수신은 내용 배치를 받을 때마다 커서를 올리므로(생산자 계약) 커서 > 0이면 진짜 partial로 폐기한다.
+            retainsCompleteSnapshot = nodeState.folder.expectedBatchIndex == 0 && !nodeState.folder.children.isEmpty
+        }
         nodeState.generation &+= 1
         nodeState.loadPhase = FolderLoadPhase.loadingCore
-        nodeState.folder = FolderSnapshot()
+        // 대체 재로드는 마지막 완전 스냅샷을 유지하고, 배치 커서만 0으로 되돌려
+        // 다음 유효 배치가 retained children을 교체하게 표시한다(중간 빈 투영 방지).
+        // 초기 확장(idle)·실패 재시도(failed)처럼 캐시가 없으면 오늘과 같이 비운다.
+        if retainsCompleteSnapshot {
+            nodeState.folder.coreFinished = false
+            nodeState.folder.expectedBatchIndex = 0
+            nodeState.folder.hasAppliedContentBatch = false
+        } else {
+            nodeState.folder = FolderSnapshot()
+        }
         // parentID를 설정한다: nodesByID에서 이 node를 children으로 포함하는 node를 찾는다.
         if nodeState.parentID == nil {
             nodeState.parentID = state.hierarchy.nodesByID.first(where: { _, node in
@@ -239,13 +254,31 @@ extension EntryListHierarchyReducer {
         batchIndex: Int,
         to snapshot: inout FolderSnapshot,
     ) -> Bool {
-        guard !snapshot.coreFinished, batchIndex == snapshot.expectedBatchIndex else { return false }
+        guard !snapshot.coreFinished else { return false }
+        // 아직 이번 세대 내용 배치를 받지 않은 상태에서 이전 세대 children이 남아 있으면
+        // startLoad가 심은 retained 스냅샷(교체 대기)이다. 생산자는 빈 배치도 커서를 올리므로,
+        // 빈 배치는 children을 유지한 채 커서만 소진하고, 첫 내용 배치가 retained children을 한 번에 교체한다.
+        if !snapshot.hasAppliedContentBatch, !snapshot.children.isEmpty {
+            guard batchIndex == snapshot.expectedBatchIndex else { return false }
+            guard !items.isEmpty else {
+                snapshot.expectedBatchIndex += 1
+                return true
+            }
+            snapshot.children = items
+            snapshot.hasAppliedContentBatch = true
+            snapshot.expectedBatchIndex += 1
+            return true
+        }
+        guard batchIndex == snapshot.expectedBatchIndex else { return false }
         for item in items {
             if let index = snapshot.children.firstIndex(where: { $0.id == item.id }) {
                 snapshot.children[index] = item
             } else {
                 snapshot.children.append(item)
             }
+        }
+        if !items.isEmpty {
+            snapshot.hasAppliedContentBatch = true
         }
         snapshot.expectedBatchIndex &+= 1
         return true
@@ -256,6 +289,11 @@ extension EntryListHierarchyReducer {
         to snapshot: inout FolderSnapshot,
     ) -> Bool {
         guard !snapshot.coreFinished, batchCount == snapshot.expectedBatchIndex else { return false }
+        // 이번 세대에서 내용 배치를 하나도 적용하지 못했다면(빈 배치뿐) 실제 빈 스냅샷으로 커밋해
+        // retained children이 남는 것을 막는다.
+        if !snapshot.hasAppliedContentBatch {
+            snapshot.children = []
+        }
         snapshot.coreFinished = true
         return true
     }

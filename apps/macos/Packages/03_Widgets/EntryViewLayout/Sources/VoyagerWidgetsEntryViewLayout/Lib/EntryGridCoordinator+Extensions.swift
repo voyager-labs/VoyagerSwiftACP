@@ -29,10 +29,12 @@ extension EntryGridCoordinator {
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if shouldRebuildSections(previous: previous, snapshot: snapshot) {
-            rebuildSectionsAndReload()
-        } else if !applyIncrementalEntryRemoval(previous: previous, snapshot: snapshot) {
-            reloadVisibleItemsForEntryContentChange(previous: previous, snapshot: snapshot)
+        // 한 Store emission당 change set을 한 번만 계산해 모든 렌더 헬퍼가 재사용한다.
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        if shouldRebuildSections(previous: previous, snapshot: snapshot, changes: changes) {
+            rebuildSectionsAndReload(presentation: snapshot.presentation)
+        } else if !applyIncrementalEntryChanges(previous: previous, snapshot: snapshot, changes: changes) {
+            reloadVisibleItemsForEntryContentChange(snapshot: snapshot, changes: changes)
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
         reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
@@ -47,8 +49,11 @@ extension EntryGridCoordinator {
         restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
     }
 
-    func shouldRebuildSections(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
-        let changes = snapshot.presentation.changes(from: previous.presentation)
+    func shouldRebuildSections(
+        previous: RenderSnapshot,
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) -> Bool {
         guard changes.sectionStructureChanged || changes.groupExpansionChanged else { return false }
         guard !changes.groupExpansionChanged else { return true }
 
@@ -62,13 +67,16 @@ extension EntryGridCoordinator {
 
         let previousIDs = previous.entries.map(\.id)
         let nextIDs = snapshot.entries.map(\.id)
-        return !canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs)
+        return !canApplyIncrementalEntryChanges(previousIDs: previousIDs, nextIDs: nextIDs)
     }
 
-    func reloadVisibleItemsForEntryContentChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        let changedIDs = snapshot.presentation.changes(from: previous.presentation).updatedEntryIDs
+    func reloadVisibleItemsForEntryContentChange(
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) {
+        let changedIDs = changes.updatedEntryIDs
         guard !changedIDs.isEmpty else { return }
-        updateSectionsFromState()
+        updateSections(presentation: snapshot.presentation)
         let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
             collectionView.indexPathsForVisibleItems()
         }
@@ -80,31 +88,72 @@ extension EntryGridCoordinator {
         }
     }
 
-    func applyIncrementalEntryRemoval(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+    func applyIncrementalEntryChanges(
+        previous: RenderSnapshot,
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) -> Bool {
         let previousIDs = previous.entries.map(\.id)
         let nextIDs = snapshot.entries.map(\.id)
-        guard canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs) else { return false }
+        guard canApplyIncrementalEntryChanges(previousIDs: previousIDs, nextIDs: nextIDs) else { return false }
 
-        let nextIDSet = Set(nextIDs)
         let removedIndexPaths = Set(previousIDs.enumerated().compactMap { index, id in
-            nextIDSet.contains(id) ? nil : IndexPath(item: index, section: 0)
+            changes.removedEntryIDs.contains(id) ? IndexPath(item: index, section: 0) : nil
         })
-        updateSectionsFromState()
+        let insertedIndexPaths = Set(nextIDs.enumerated().compactMap { index, id in
+            changes.insertedEntryIDs.contains(id) ? IndexPath(item: index, section: 0) : nil
+        })
+        // 구조 batch와 같은 emission의 retained payload 갱신은 batch 완료 후 다시 그린다.
+        let retainedUpdatedIDs = Set(changes.updatedEntryIDs)
+            .subtracting(changes.insertedEntryIDs)
+            .subtracting(changes.removedEntryIDs)
+        updateSections(presentation: snapshot.presentation)
         MainActor.assumeIsolated {
             collectionView.performBatchUpdates {
-                collectionView.deleteItems(at: removedIndexPaths)
+                if !removedIndexPaths.isEmpty {
+                    collectionView.deleteItems(at: removedIndexPaths)
+                }
+                if !insertedIndexPaths.isEmpty {
+                    collectionView.insertItems(at: insertedIndexPaths)
+                }
+            } completionHandler: { [weak self] _ in
+                guard let self else { return }
+                reloadVisibleRetainedUpdatedItems(retainedUpdatedIDs: retainedUpdatedIDs)
             }
         }
         return true
     }
 
-    func canApplyIncrementalEntryRemoval(
+    /// 구조 배치 완료 후 유지된 보이는 updated 항목만 다시 그린다. post-update section data 기준 index path를 사용한다.
+    func reloadVisibleRetainedUpdatedItems(retainedUpdatedIDs: Set<EntryModel.ID>) {
+        guard !retainedUpdatedIDs.isEmpty else { return }
+        let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
+            collectionView.indexPathsForVisibleItems()
+        }
+        let changedIndexPaths = Set(retainedUpdatedIDs.compactMap { indexPathByEntryId[$0] })
+            .intersection(visibleIndexPaths)
+        guard !changedIndexPaths.isEmpty else { return }
+        MainActor.assumeIsolated {
+            collectionView.reloadItems(at: changedIndexPaths)
+        }
+    }
+
+    func canApplyIncrementalEntryChanges(
         previousIDs: [EntryModel.ID],
         nextIDs: [EntryModel.ID],
     ) -> Bool {
+        let previousIDSet = Set(previousIDs)
         let nextIDSet = Set(nextIDs)
-        return previousIDs.count > nextIDs.count
-            && previousIDs.filter(nextIDSet.contains) == nextIDs
+        guard previousIDSet.count == previousIDs.count,
+              nextIDSet.count == nextIDs.count
+        else { return false }
+        let removed = previousIDSet.subtracting(nextIDSet)
+        let inserted = nextIDSet.subtracting(previousIDSet)
+        guard !removed.isEmpty || !inserted.isEmpty,
+              max(removed.count, inserted.count) == 1
+        else { return false }
+        let retained = previousIDSet.intersection(nextIDSet)
+        return previousIDs.filter(retained.contains) == nextIDs.filter(retained.contains)
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {

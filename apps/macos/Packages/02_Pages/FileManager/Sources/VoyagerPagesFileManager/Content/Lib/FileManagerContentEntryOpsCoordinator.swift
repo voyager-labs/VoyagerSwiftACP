@@ -16,6 +16,7 @@ enum FileManagerContentEntryOpsCoordinator {
 
         case let .lifecycle(.entryActionCompleted(record)):
             .merge(
+                recordIdentityTransitionIfEligible(record, state: &state),
                 handleEntryActionCompleted(record, state: state),
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
             )
@@ -30,9 +31,14 @@ enum FileManagerContentEntryOpsCoordinator {
             handleMutatedPaths(paths, removedPrefixes: [], state: state)
 
         case let .lifecycle(.operationFinished(path, kind, result)):
+            // operationFinished는 record identity가 없어 이 전이와의 연관을 확정할 수 없다.
+            // 경로·종류를 추측해 전이를 만료하면 무관한 실패가 성공한 전이를 파괴한다.
+            // 따라서 실패로는 전이를 직접 만료하지 않는다. after-path가 끝내 도착하지
+            // 않으면 종료(accepted) projection의 소비 경로가 정리한다.
             handleOperationFinished(path: path, kind: kind, result: result, state: state)
 
-        case .lifecycle(.operationFinished(_, _, .failure)):
+        case .edit(.cancelRename):
+            // 편집 취소는 이미 완료된 identity 연산과 무관하므로 대기 전이를 만료하지 않는다.
             .none
 
         case .lifecycle(.dropOperationFinished):
@@ -110,6 +116,44 @@ enum FileManagerContentEntryOpsCoordinator {
         return didChangeSelection
     }
 
+    /// 성공한 rename/move 기록에서 선택된 원본 하나가 after-path로 정확히 대응될 때만
+    /// consume-once 경로 전이를 기록한다. 기존 전이는 새 기록으로 대체된다(supersession).
+    @discardableResult
+    static func recordIdentityTransitionIfEligible(
+        _ record: EntryActionRecord,
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard record.operationKind == .rename || record.operationKind == .pasteFileMove else { return .none }
+        guard case let .folder(currentPath) = state.navigation.navigationState else { return .none }
+        let normalizedRoot = canonicalizedPath(currentPath)
+        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
+        let movedTargets = record.targets.compactMap { target -> (before: String, after: String)? in
+            guard let beforePath = target.beforePath, let afterPath = target.afterPath else { return nil }
+            let before = canonicalizedPath(beforePath)
+            let after = canonicalizedPath(afterPath)
+            return before == after ? nil : (before, after)
+        }
+        let selectedMoves = movedTargets.filter { selectedPaths.contains($0.before) }
+        guard selectedMoves.count == 1, let move = selectedMoves.first else { return .none }
+        // 동일 원본이 여러 after-path로 기록되면 대응이 모호하므로 전이를 만들지 않는다.
+        guard movedTargets.count(where: { $0.before == move.before }) == 1 else { return .none }
+        guard isSameOrDescendant(path: move.before, of: normalizedRoot) else { return .none }
+
+        // 명령 파이프라인은 operationFinished를 먼저 보내 그 reload가 이미 세대를 연 뒤,
+        // entryActionCompleted가 여기 도달한다(EntryEditOperations 참조). 따라서 현재
+        // loadingContext.generation은 이미 이 명령의 reload 세대다. 외부 일치 이벤트가
+        // 이후에 도달해도 같은 세대로 판정되어 전이가 selection migration까지 유지된다.
+        // 중간에 다른 reload가 끼면 generation 불일치로 전이가 만료된다.
+        state.pendingIdentityTransition = FileManagerContentState.EntryIdentityTransition(
+            recordID: record.id,
+            beforePath: move.before,
+            afterPath: move.after,
+            rootPath: normalizedRoot,
+            refreshGeneration: state.entryViewLayout.entryOperations.loadingContext.generation,
+        )
+        return .none
+    }
+
     static func rootMetadataPriority(
         for arrangements: EntryArrangementsFeature.State,
     ) -> EntryMetadataPriority {
@@ -128,6 +172,43 @@ enum FileManagerContentEntryOpsCoordinator {
             metadataProbe(for: groupKey),
         ].compactMap(\.self)
         return probes.isEmpty ? .none : .active(probes)
+    }
+
+    @discardableResult
+    static func migrateSelectionAlongIdentityTransition(
+        entries: [EntryModel],
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard let transition = state.pendingIdentityTransition else { return false }
+        guard case let .folder(currentPath) = state.navigation.navigationState,
+              canonicalizedPath(currentPath) == transition.rootPath
+        else {
+            // 루트가 어긋난(다른 폴더로 이동한) 전이는 되살리지 않고 결정적으로 만료시킨다.
+            state.pendingIdentityTransition = nil
+            return false
+        }
+        guard state.entryViewLayout.entryOperations.loadingContext.generation == transition.refreshGeneration else {
+            // 세대가 어긋난 전이도 만료시킨다(뒤늦은 batch가 stale 선택을 잘못 옮기지 않게).
+            state.pendingIdentityTransition = nil
+            return false
+        }
+        let matchedBeforeID = state.entryViewLayout.selectedIds.first {
+            canonicalizedPath($0) == transition.beforePath
+        }
+        guard let matchedBeforeID else { return false }
+        let standardizedAfter = standardizedPath(transition.afterPath)
+        let matchedAfterID = entries.first(where: { standardizedPath($0.id) == standardizedAfter })?.id
+            ?? entries.first(where: { resolvedPath($0.id) == resolvedPath(transition.afterPath) })?.id
+        guard let matchedAfterID else { return false }
+
+        var selectedIds = state.entryViewLayout.selectedIds
+        selectedIds.remove(matchedBeforeID)
+        selectedIds.insert(matchedAfterID)
+        state.entryViewLayout.selectedIds = selectedIds
+        state.entryViewLayout.lastSelectedId = matchedAfterID
+        state.entryViewLayout.rangeAnchorId = matchedAfterID
+        state.pendingIdentityTransition = nil
+        return true
     }
 
     private static func setTagsRefreshEffect(
@@ -245,9 +326,17 @@ enum FileManagerContentEntryOpsCoordinator {
         } else {
             .none
         }
+        // 실패한 연산은 파일시스템을 바꾸지 않으므로 reload가 필요 없다. 무관한 실패의
+        // reload가 로딩 세대를 올려 대기 중인 identity 전이를 간접적으로 만료하지 않게 한다.
+        let shouldReload: Bool = switch result {
+        case .success:
+            kind != .setTags
+        case .failure:
+            false
+        }
         return .merge(
             removedPathEffect,
-            kind == .setTags ? .none : reloadEntryItemsEffect(state: state),
+            shouldReload ? reloadEntryItemsEffect(state: state) : .none,
         )
     }
 
@@ -256,7 +345,9 @@ enum FileManagerContentEntryOpsCoordinator {
         entries: [EntryModel],
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
-        guard applyPendingSelectionForLoadedEntries(entries: entries, state: &state) else {
+        let pendingSelectionApplied = applyPendingSelectionForLoadedEntries(entries: entries, state: &state)
+        let identityMigrated = migrateSelectionAlongIdentityTransition(entries: entries, state: &state)
+        guard pendingSelectionApplied || identityMigrated else {
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
@@ -268,6 +359,15 @@ enum FileManagerContentEntryOpsCoordinator {
 
     private static func resolvedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
+
+    /// 외부 이벤트 비교와 같은 표준화 기준(standardize + symlink resolve)을 적용한다.
+    private static func canonicalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private static func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
+        URL(fileURLWithPath: path).pathComponents.starts(with: URL(fileURLWithPath: ancestor).pathComponents)
     }
 
     private static func parentPath(for path: String) -> String {

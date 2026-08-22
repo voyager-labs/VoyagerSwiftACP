@@ -11,6 +11,7 @@ extension FileManagerContentFeature.State {
             && collection == baseline.collection
             && aiChat.isPassiveContentTabProjection(matching: baseline.aiChat)
             && pendingSelectEntryID == baseline.pendingSelectEntryID
+            && pendingIdentityTransition == baseline.pendingIdentityTransition
             && homeFavoriteItems == baseline.homeFavoriteItems
             && homeLocationItems == baseline.homeLocationItems
             && homeDirectoryItemCounts == baseline.homeDirectoryItemCounts

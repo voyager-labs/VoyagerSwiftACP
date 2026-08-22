@@ -260,7 +260,12 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(
             state.hierarchy.nodesByID[folder.id as String],
             FolderNodeState(
-                folder: FolderSnapshot(children: [cachedChild], expectedBatchIndex: 1, coreFinished: true),
+                folder: FolderSnapshot(
+                    children: [cachedChild],
+                    expectedBatchIndex: 1,
+                    coreFinished: true,
+                    hasAppliedContentBatch: true,
+                ),
                 expansionIntent: true,
                 generation: 4,
                 loadPhase: .loaded,
@@ -279,7 +284,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = hierarchyState(roots: [folder])
         state.hierarchy.setExpandedIDs([folder.id as String])
         state.hierarchy.nodesByID[folder.id as String] = .init(
-            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+            children: [cachedChild],
+            loadPhase: .loaded,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: true,
         )
 
         _ = EntryListHierarchyReducer().reduce(
@@ -467,6 +476,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             generation: 1,
             expectedBatchIndex: 1,
             coreFinished: true,
+            hasAppliedContentBatch: true,
         )
 
         _ = EntryListHierarchyReducer().reduce(into: &state, action: folderResponse(
@@ -729,6 +739,277 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(state.outlineProjectionRevision, baselineRevision)
     }
 
+    // MARK: - EVM-002-replacement_reload_snapshot_retention
+
+    /// EVM-002-replacement_reload_snapshot_retention: 완료된 폴더의 대체 재로드는 마지막 완전 스냅샷을 유지한다.
+    /// rename/move 무효화 뒤 재로드가 중간 빈 프레임을 만들지 않는지 검증한다.
+    /// - 검증 내용: startLoad가 세대를 올리고 loadingCore로 전환하되 완료 스냅샷 children을 보존하고 배치 추적만 초기화한다.
+    /// - 사전 조건: /root/a가 children 2개를 가진 loaded 확장 폴더다.
+    /// - 기대 결과: children은 그대로고 expectedBatchIndex는 0, coreFinished는 false다.
+    func testReplacementReloadRetainsCompleteSnapshotUntilFirstNewBatch() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(node?.folder.children, [old1, old2], "대체 재로드 중 마지막 완전 스냅샷이 유지된다")
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node?.folder.coreFinished ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(node?.generation, 4)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 새 세대의 첫 core batch는 보존된 스냅샷을 한 번에 교체한다.
+    /// 이전 데이터와 새 데이터가 섞이지 않는지 검증한다.
+    /// - 검증 내용: 보존 재로드 뒤 batchIndex 0 수신 시 children이 새 배치로 대체되고 이후 배치는 append된다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: 첫 배치 뒤 children은 정확히 새 배치뿐이다.
+    func testReplacementFirstCoreBatchReplacesRetainedChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let new1 = hierarchyFile(id: "/root/a/new-1", name: "new-1")
+        let new2 = hierarchyFile(id: "/root/a/new-2", name: "new-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [new1], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [new1], "첫 배치는 보존 데이터를 교체한다")
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [new2], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [new1, new2])
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 빈 중간 배치는 보존된 children을 지우지 않고 커서만 소진한다.
+    /// 생산자는 빈 배치도 커서를 올리므로, 빈 배치 뒤 다음 내용 배치는 batchIndex 1로 온다.
+    /// - 검증 내용: coreBatch([], 0) 뒤 children과 cursor(=1)가 유지되고, 이어지는 batchIndex 1 배치가 교체한다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: 빈 배치 후에도 children은 [old1]이고 cursor는 1이며, batchIndex 1 배치 뒤 정확히 새 배치뿐이다.
+    func testReplacementEmptyInterimBatchRetainsChildrenUntilFirstNonEmptyBatch() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let new1 = hierarchyFile(id: "/root/a/new-1", name: "new-1")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [old1],
+            "빈 중간 배치는 보존된 children을 지우지 않는다",
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex,
+            1,
+            "빈 배치도 커서를 소진한다(생산자 계약)",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [new1], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [new1],
+            "첫 non-empty 배치는 원자적으로 교체한다",
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 배치 없이 온 coreFinished(0)는 실제 빈 스냅샷으로 커밋한다.
+    /// 진짜 빈 폴더로의 대체 재로드가 이전 세대 행을 남기지 않는지 검증한다.
+    /// - 검증 내용: batchCount 0 수신 시 retained children이 비우고 coreFinished로 전환된다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: children은 []이고 coreFinished는 true, loadPhase는 enriching이다.
+    func testBatchlessCoreFinishedCommitsActualEmptySnapshot() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1, old2])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreFinished(batchCount: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [],
+            "배치 없는 완료는 실제 빈 스냅샷으로 커밋한다",
+        )
+        XCTAssertTrue(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? false)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .enriching)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 교체 스트림 실패는 보존된 children을 유지한다.
+    /// - 검증 내용: failed 응답 뒤에도 retained children과 미완료 상태가 유지된다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: children은 그대로고 loadPhase는 failed다.
+    func testReplacementStreamFailurePreservesRetainedChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(folder.id, .failed(.permissionDenied), folderGeneration: 4),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [old1],
+            "실패 시 보존된 children이 유지된다",
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .failed(.permissionDenied))
+        XCTAssertFalse(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? true)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 완전 세대 기원의 retained children은 첫 배치 전 실패 뒤에도
+    /// 재시도가 유지한다.
+    /// 교체 재로드가 완전 스냅샷을 커서 0으로 보존한 채 첫 배치 전에 실패하면, 이는 부분 수신(커서 > 0)이 아니라
+    /// 완전 세대 기원이므로 재시도가 children을 비우지 않아야 한다.
+    /// - 검증 내용: 커서 0 + children 존재인 실패 노드의 retry가 children과 커서를 유지한 loadingCore 시작으로 전환된다.
+    /// - 사전 조건: 완료 스냅샷을 커서 0으로 보존한 채 첫 배치 전에 실패한 loadingCore 폴더.
+    /// - 기대 결과: 재시도 뒤에도 children은 그대로이고 expectedBatchIndex는 0, coreFinished는 false, loadPhase는 loadingCore다.
+    func testRetryAfterReplacementFailureRetainsCompleteOriginChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1, old2])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(folder.id, .failed(.permissionDenied), folderGeneration: 4),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .failed(.permissionDenied))
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex, 0)
+
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderRetryRequested(id: folder.id)))
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(
+            node?.folder.children,
+            [old1, old2],
+            "완전 세대 기원 children은 첫 배치 전 실패 뒤 재시도에도 유지된다",
+        )
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node?.folder.coreFinished ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(node?.generation, 5)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 초기 확장과 실패 재시도는 여전히 빈 스냅샷으로 시작한다.
+    /// 보존 정책이 캐시 없는 확장 동작을 바꾸지 않는지 검증한다.
+    /// - 검증 내용: idle 노드의 startLoad와 failed 노드의 retry startLoad 모두 children을 비운다.
+    /// - 사전 조건: 캐시 없는 idle 폴더와 partial children을 가진 failed 폴더.
+    /// - 기대 결과: 두 경우 모두 children 없이 loadingCore로 시작한다.
+    func testInitialExpansionAndRetryStillStartEmpty() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = hierarchyFile(id: "/root/a/stale", name: "stale")
+        let reducer = EntryListHierarchyReducer()
+
+        var freshState = hierarchyState(roots: [folder])
+        _ = reducer.reduce(into: &freshState, action: .hierarchy(.folderExpansionRequested(id: folder.id)))
+        XCTAssertEqual(freshState.hierarchy.nodesByID[folder.id as String]?.folder.children, [])
+        XCTAssertEqual(freshState.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loadingCore)
+
+        var failedState = hierarchyState(roots: [folder])
+        failedState.hierarchy.setExpandedIDs([folder.id as String])
+        failedState.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [staleChild], loadPhase: .failed(.permissionDenied), generation: 2, expectedBatchIndex: 1,
+        )
+        _ = reducer.reduce(into: &failedState, action: .hierarchy(.folderRetryRequested(id: folder.id)))
+        XCTAssertEqual(failedState.hierarchy.nodesByID[folder.id as String]?.folder.children, [], "재시도는 부분 결과를 버린다")
+        XCTAssertEqual(failedState.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loadingCore)
+    }
+
     private func hierarchyState(roots: [EntryModel]) -> EntryViewLayoutState {
         var state = EntryViewLayoutState()
         state.entries = roots
@@ -739,11 +1020,12 @@ extension EVM002ManageEntriesViewPresentationTests {
     private func folderResponse(
         _ folderID: EntryModel.ID,
         _ response: EntryListFolderChildrenResponse,
+        folderGeneration: Int = 1,
     ) -> EntryViewLayoutAction {
         .hierarchy(.folderChildrenResponse(
             rootContextGeneration: 0,
             folderID: folderID,
-            folderGeneration: 1,
+            folderGeneration: folderGeneration,
             response,
         ))
     }

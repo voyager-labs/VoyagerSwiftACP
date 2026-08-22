@@ -618,6 +618,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertFalse(coordinator.shouldRebuildSections(
             previous: EntryGridRenderSnapshot(state: previousState),
             snapshot: snapshot,
+            changes: snapshot.presentation.changes(from: EntryGridRenderSnapshot(state: previousState).presentation),
         ))
         coordinator.handleSnapshotChanges(
             previous: EntryGridRenderSnapshot(state: previousState),
@@ -647,7 +648,10 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         store.send(.internal(.setCollectionItems([updated])))
         let snapshot = EntryGridRenderSnapshot(state: store.state)
-        coordinator.reloadVisibleItemsForEntryContentChange(previous: previous, snapshot: snapshot)
+        coordinator.reloadVisibleItemsForEntryContentChange(
+            snapshot: snapshot,
+            changes: snapshot.presentation.changes(from: previous.presentation),
+        )
 
         XCTAssertEqual(coordinator.sections.first?.items.first?.name, updated.name)
     }
@@ -846,11 +850,370 @@ extension EVM002ManageEntriesViewPresentationTests {
     }
 }
 
+extension EVM002ManageEntriesViewPresentationTests {
+    // MARK: - EVM-002-single_presentation_delta_per_render
+
+    /// EVM-002-single_presentation_delta_per_render: grid 구조 렌더는 emission snapshot presentation을 한 번만 유도해 소비한다.
+    /// 구조 rebuild가 live state를 다시 읽지 않고 전달된 snapshot.presentation에서 섹션을 재구성함을 diverged state로 검증한다.
+    /// - 검증 내용: handleSnapshotChanges 구조 rebuild 결과 sections가 snapshot의 new entry만 반영하는지 확인
+    /// - 사전 조건: store state가 snapshot과 다른 diverged entry를 갖고 previous/snapshot은 rename 형태(old→new)다.
+    /// - 기대 결과: 최종 sections가 live state의 diverged entry가 아닌 snapshot의 renamed entry를 포함한다.
+    func testGridStructuralRenameRenderConsumesSnapshotPresentationNotLiveState() {
+        let old = EntryModel.temporaryFolder(id: "/root/old", name: "old")
+        let renamed = EntryModel.temporaryFolder(id: "/root/new", name: "new")
+        let diverged = EntryModel.temporaryFolder(id: "/root/diverged", name: "live-diverged")
+        var previousState = EntryViewLayoutState()
+        previousState.entries = [old]
+        var snapshotState = EntryViewLayoutState()
+        snapshotState.entries = [renamed]
+        var liveState = EntryViewLayoutState()
+        liveState.entries = [diverged]
+
+        let store = Store(initialState: liveState) { EntryViewLayoutFeature() }
+        let coordinator = EntryGridCoordinator(store: store)
+        coordinator.bind(to: EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240)))
+        coordinator.isRenderObservationEnabled = false
+
+        coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: previousState),
+            snapshot: EntryGridRenderSnapshot(state: snapshotState),
+        )
+
+        XCTAssertEqual(coordinator.sections.flatMap(\.items).map(\.id), [renamed.id])
+        XCTAssertEqual(coordinator.sections.flatMap(\.items).map(\.name), ["new"])
+    }
+
+    /// EVM-002-single_presentation_delta_per_render: grid payload-only 렌더는 공유 change set과 snapshot presentation을 소비한다.
+    /// payload 재적용이 live state.presentation을 다시 유도하지 않음을 diverged state로 검증한다.
+    /// - 검증 내용: payload-only 경로 뒤 섹션이 snapshot의 갱신된 이름을 반영하는지 확인
+    /// - 사전 조건: 같은 ID의 payload 변화가 담긴 previous/snapshot과 이름이 다른 diverged live state가 있다.
+    /// - 기대 결과: 섹션이 live state의 diverged 이름이 아닌 snapshot의 새 이름을 반영한다.
+    func testGridPayloadOnlyRenderConsumesSnapshotPresentationNotLiveState() {
+        let original = EntryModel.temporaryFolder(id: "/root/a", name: "old")
+        let updated = EntryModel.temporaryFolder(id: "/root/a", name: "snapshot-new")
+        let diverged = EntryModel.temporaryFolder(id: "/root/a", name: "live-diverged")
+        var previousState = EntryViewLayoutState()
+        previousState.entries = [original]
+        var snapshotState = EntryViewLayoutState()
+        snapshotState.entries = [updated]
+        var liveState = EntryViewLayoutState()
+        liveState.entries = [diverged]
+
+        let store = Store(initialState: liveState) { EntryViewLayoutFeature() }
+        let coordinator = EntryGridCoordinator(store: store)
+        coordinator.bind(to: EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240)))
+        coordinator.isRenderObservationEnabled = false
+
+        coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: previousState),
+            snapshot: EntryGridRenderSnapshot(state: snapshotState),
+        )
+
+        XCTAssertEqual(coordinator.sections.first?.items.first?.name, "snapshot-new")
+    }
+
+    /// EVM-002-single_presentation_delta_per_render: list flat group expansion rebuild는 snapshot presentation을 직접 소비한다.
+    /// groupExpansionChanged 경로가 새 RenderSnapshot/EntryListOutlineProjection 없이 전달된 snapshot.presentation으로
+    /// row를 재구성함을 diverged state로 검증한다.
+    /// - 검증 내용: groupExpansionChanged 뒤 Text 그룹이 접히고 row가 snapshot의 entry를 반영하는지 확인
+    /// - 사전 조건: previous는 Text 그룹이 펼쳐져 있고 snapshot은 접힘 상태며 live state는 다른 payload의 펼침 상태다.
+    /// - 기대 결과: Text 그룹은 접히고 row는 live state의 diverged payload가 아닌 snapshot의 file을 포함한다.
+    func testListFlatGroupExpansionRebuildConsumesSnapshotPresentationNotLiveState() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let file = makePresentationFile(id: "/root/file.txt", name: "file.txt")
+        let divergedFile = makePresentationFile(id: "/root/diverged.txt", name: "live-diverged")
+        var previousState = EntryViewLayoutState()
+        previousState.entryArrangements.groupKey = .kind
+        previousState.entryArrangements.groupedItems = [
+            .init(groupName: "Folders", items: [folder]),
+            .init(groupName: "Text", items: [file]),
+        ]
+        var snapshotState = previousState
+        snapshotState.entryArrangements.collapsedGroups = ["Text"]
+        var liveState = previousState
+        liveState.entryArrangements.groupedItems = [
+            .init(groupName: "Folders", items: [folder]),
+            .init(groupName: "Text", items: [divergedFile]),
+        ]
+
+        let store = Store(initialState: liveState) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.isRenderObservationEnabled = false
+
+        coordinator.handleSnapshotChanges(
+            previous: EntryListCoordinatorRenderSnapshot(state: previousState),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: snapshotState),
+        )
+
+        let textGroup = try XCTUnwrap(coordinator.groupItemByName["Text"])
+        XCTAssertFalse(coordinator.tableView.isItemExpanded(textGroup))
+        XCTAssertEqual(
+            coordinator.outlineItems.flatMap { $0.flattenEntries().map(\.0) },
+            [folder.id, file.id],
+        )
+    }
+
+    /// EVM-002-single_presentation_delta_per_render: selection-only emission은 grid 구조 재유도를 유발하지 않는다.
+    /// selectedIds만 바뀐 emission에서 어떤 렌더 헬퍼도 섹션 데이터 소스를 다시 만들지 않음을 sentinel로 검증한다.
+    /// - 검증 내용: selection 차이만 있는 emission에서 sections가 재작성되지 않고 selection만 collection view에 동기화됨
+    /// - 사전 조건: 두 entry를 렌더한 뒤 sections를 비운 sentinel 상태로 만들고 previous/snapshot이 selection만 다르다.
+    /// - 기대 결과: sentinel sections가 유지되고 collection view 선택이 snapshot selection을 반영한다.
+    func testGridSelectionOnlyRenderSkipsStructuralWorkAndSyncsSelection() {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var base = EntryViewLayoutState()
+        base.entries = [first, second]
+        base.selectedIds = [second.id]
+        var previousState = base
+        previousState.selectedIds = []
+
+        let store = Store(initialState: base) { EntryViewLayoutFeature() }
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        let coordinator = EntryGridCoordinator(store: store)
+        coordinator.bind(to: view)
+        coordinator.isRenderObservationEnabled = false
+        // sentinel: 어떤 구조 헬퍼든 updateSections를 부르면 live state 내용으로 채워진다.
+        coordinator.sections = []
+
+        coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: previousState),
+            snapshot: EntryGridRenderSnapshot(state: base),
+        )
+
+        XCTAssertTrue(coordinator.sections.isEmpty, "selection-only emission은 section 재유도를 유발하지 않아야 함")
+        XCTAssertEqual(view.collectionView.selectionIndexPaths, [IndexPath(item: 1, section: 0)])
+    }
+
+    /// EVM-002-single_presentation_delta_per_render: selection-only emission은 list row 객체를 교체하지 않는다.
+    /// - 검증 내용: selection 차이만 있는 emission에서 outline item identity가 유지되고 selection만 동기화됨
+    /// - 사전 조건: 두 entry를 렌더한 flat list에 previous/snapshot이 selection만 다르게 주어진다.
+    /// - 기대 결과: outline item 인스턴스가 동일하게 유지되고 첫 row가 선택된다.
+    func testListSelectionOnlyRenderKeepsOutlineItemsAndSyncsSelection() {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var base = EntryViewLayoutState()
+        base.entries = [first, second]
+        base.selectedIds = [first.id]
+        var previousState = base
+        previousState.selectedIds = []
+
+        let store = Store(initialState: base) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.isRenderObservationEnabled = false
+        let boundItems = coordinator.outlineItems
+
+        coordinator.handleSnapshotChanges(
+            previous: EntryListCoordinatorRenderSnapshot(state: previousState),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: base),
+        )
+
+        XCTAssertEqual(coordinator.outlineItems.map(\.id), boundItems.map(\.id))
+        for (rendered, bound) in zip(coordinator.outlineItems, boundItems) {
+            XCTAssertIdentical(rendered, bound)
+        }
+        XCTAssertEqual(coordinator.tableView.selectedRowIndexes, IndexSet(integer: 0))
+    }
+
+    // MARK: - EVM-002-atomic_identity_swap
+
+    /// EVM-002-atomic_identity_swap: Grid flat rename/move는 full reload 대신 하나의 incremental batch를 사용한다.
+    /// - 검증 내용: before-path 한 건이 after-path로 교체된 change set의 rebuild 판정과 최종 selection을 확인한다.
+    /// - 사전 조건: unaffected sibling과 선택된 after-path가 있는 단일 identity swap이다.
+    /// - 기대 결과: shouldRebuildSections는 false이고 최종 Grid IDs/selection은 after-path다.
+    func testGridFlatIdentitySwapUsesIncrementalBatchAndSelectsAfterPath() {
+        for operationName in ["rename", "move"] {
+            let before = EntryModel.temporaryFolder(id: "/root/\(operationName)-before", name: "before")
+            let after = EntryModel.temporaryFolder(id: "/root/\(operationName)-after", name: "after")
+            let unaffected = EntryModel.temporaryFolder(id: "/root/unaffected", name: "unaffected")
+            var previousState = EntryViewLayoutState()
+            previousState.entries = [before, unaffected]
+            var currentState = EntryViewLayoutState()
+            currentState.entries = [after, unaffected]
+            currentState.selectedIds = [after.id]
+            currentState.lastSelectedId = after.id
+
+            let store = Store(initialState: currentState) { EntryViewLayoutFeature() }
+            let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+            let coordinator = EntryGridCoordinator(store: store)
+            coordinator.bind(to: view)
+            coordinator.isRenderObservationEnabled = false
+            let previous = EntryGridRenderSnapshot(state: previousState)
+            let current = EntryGridRenderSnapshot(state: currentState)
+            let changes = current.presentation.changes(from: previous.presentation)
+
+            XCTAssertFalse(
+                coordinator.shouldRebuildSections(previous: previous, snapshot: current, changes: changes),
+                "\(operationName) identity swap는 하나의 Grid batch여야 한다",
+            )
+            coordinator.handleSnapshotChanges(previous: previous, snapshot: current)
+
+            XCTAssertEqual(coordinator.sections.flatMap(\.items).map(\.id), [after.id, unaffected.id])
+            XCTAssertEqual(view.collectionView.selectionIndexPaths, [IndexPath(item: 0, section: 0)])
+        }
+    }
+
+    /// EVM-002-atomic_identity_swap: Grid identity swap과 같은 emission의 retained payload 갱신은 구조 배치 후 retained
+    /// visible 항목을 다시 그려 화면의 이름을 갱신한다.
+    /// - 검증 내용: 구조 batch 뒤 retained updated 항목의 보이는 cell이 새 payload로 reconfigure되는지 확인
+    /// - 사전 조건: before→after identity swap과 동시에 retained entry payload가 old→new로 바뀐 단일 emission이 있다.
+    /// - 기대 결과: full reload 없이 incremental 경로를 쓰며 retained visible cell의 표시 이름이 new가 된다.
+    func testGridIdentitySwapReloadsRetainedUpdatedVisibleEntry() throws {
+        let before = EntryModel.temporaryFolder(id: "/root/before", name: "before")
+        let after = EntryModel.temporaryFolder(id: "/root/after", name: "after")
+        let retainedOld = EntryModel.temporaryFolder(id: "/root/retained", name: "old")
+        let retainedNew = EntryModel.temporaryFolder(id: retainedOld.id, name: "new")
+        var previousState = EntryViewLayoutState()
+        previousState.isCollectionMode = true
+        previousState.entries = [retainedOld, before]
+        var currentState = EntryViewLayoutState()
+        currentState.isCollectionMode = true
+        currentState.entries = [retainedNew, after]
+
+        let store = Store(initialState: previousState) { EntryViewLayoutFeature() }
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        let coordinator = EntryGridCoordinator(store: store)
+        coordinator.bind(to: view)
+        coordinator.isRenderObservationEnabled = false
+        view.layoutSubtreeIfNeeded()
+        view.collectionView.layoutSubtreeIfNeeded()
+        let previous = EntryGridRenderSnapshot(state: previousState)
+        let current = EntryGridRenderSnapshot(state: currentState)
+        let changes = current.presentation.changes(from: previous.presentation)
+
+        XCTAssertFalse(
+            coordinator.shouldRebuildSections(previous: previous, snapshot: current, changes: changes),
+            "identity swap + retained payload 갱신은 하나의 Grid batch여야 한다",
+        )
+        XCTAssertEqual(changes.updatedEntryIDs, [retainedNew.id])
+
+        let retainedIndexPath = try XCTUnwrap(coordinator.indexPathByEntryId[retainedOld.id])
+        XCTAssertEqual(try displayedNameOfItem(at: retainedIndexPath, in: view), "old")
+
+        coordinator.handleSnapshotChanges(previous: previous, snapshot: current)
+
+        XCTAssertEqual(coordinator.sections.flatMap(\.items).map(\.id), [retainedNew.id, after.id])
+        XCTAssertEqual(try displayedNameOfItem(at: retainedIndexPath, in: view), "new")
+    }
+
+    /// EVM-002-atomic_identity_swap: List flat rename/move는 한 row batch에서 교체하고 unaffected row identity를 유지한다.
+    /// - 검증 내용: tryIncrementalFlatRowUpdate 결과와 retained OutlineItem object identity를 확인한다.
+    /// - 사전 조건: 한 section에 before-path와 unaffected sibling이 있고 after-path로 교체된다.
+    /// - 기대 결과: incremental update가 true이며 unaffected OutlineItem이 `===`로 유지된다.
+    func testListFlatIdentitySwapUsesSingleBatchAndRetainsUnaffectedRow() throws {
+        for operationName in ["rename", "move"] {
+            let before = EntryModel.temporaryFolder(id: "/root/\(operationName)-before", name: "before")
+            let after = EntryModel.temporaryFolder(id: "/root/\(operationName)-after", name: "after")
+            let unaffected = EntryModel.temporaryFolder(id: "/root/unaffected", name: "unaffected")
+            var previousState = EntryViewLayoutState()
+            previousState.entries = [before, unaffected]
+            var currentState = EntryViewLayoutState()
+            currentState.entries = [after, unaffected]
+            let store = Store(initialState: previousState) { EntryViewLayoutFeature() }
+            let coordinator = EntryListCoordinator(store: store)
+            coordinator.bind(to: EntryListView(frame: .zero))
+            coordinator.isRenderObservationEnabled = false
+            let retainedItem = try XCTUnwrap(coordinator.entryItemById[unaffected.id])
+            let previous = EntryListCoordinatorRenderSnapshot(state: previousState)
+            let current = EntryListCoordinatorRenderSnapshot(state: currentState)
+            let changes = current.presentation.changes(from: previous.presentation)
+
+            XCTAssertTrue(coordinator.tryIncrementalFlatRowUpdate(
+                previous: previous.presentation,
+                current: current.presentation,
+                changes: changes,
+            ))
+
+            XCTAssertEqual(coordinator.outlineItems.flatMap { $0.flattenEntries().map(\.0) }, [after.id, unaffected.id])
+            XCTAssertIdentical(coordinator.entryItemById[unaffected.id], retainedItem)
+        }
+    }
+
+    /// EVM-002-atomic_identity_swap: expanded List child rename/move는 parent batch에서 교체하고 sibling identity를 유지한다.
+    /// - 검증 내용: applyStoreProjection 뒤 after child/selection과 unaffected child object identity를 확인한다.
+    /// - 사전 조건: expanded folder가 before child와 unaffected child를 완전 snapshot으로 표시한다.
+    /// - 기대 결과: after child만 남고 selected row가 after이며 unaffected OutlineItem은 `===`다.
+    func testExpandedListIdentitySwapRetainsUnaffectedChildAndSelectsAfterPath() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let before = makePresentationFile(id: "/root/folder/before.txt", name: "before.txt")
+        let after = makePresentationFile(id: "/root/folder/after.txt", name: "after.txt")
+        let unaffected = makePresentationFile(id: "/root/folder/unaffected.txt", name: "unaffected.txt")
+        var oldHierarchy = EntryListHierarchyState(rootPath: "/root")
+        oldHierarchy.nodesByID[folder.id] = .init(
+            children: [before, unaffected],
+            loadPhase: .loaded,
+            generation: 1,
+            expectedBatchIndex: 1,
+            coreFinished: true,
+        )
+        oldHierarchy.setExpandedIDs([folder.id])
+        var newHierarchy = oldHierarchy
+        newHierarchy.nodesByID[folder.id]?.folder.children = [after, unaffected]
+        let oldProjection = EntryListOutlineProjection(
+            revision: 1,
+            rootEntries: [folder],
+            hierarchyState: oldHierarchy,
+            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+        let newProjection = EntryListOutlineProjection(
+            revision: 2,
+            rootEntries: [folder],
+            hierarchyState: newHierarchy,
+            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+        var state = EntryViewLayoutState()
+        state.mode = .list
+        state.entries = [folder]
+        state.hierarchy = newHierarchy
+        state.selectedIds = [after.id]
+        state.lastSelectedId = after.id
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.isRenderObservationEnabled = false
+
+        coordinator.applyStoreProjection(oldProjection)
+        let retainedItem = try XCTUnwrap(coordinator.entryItemById[unaffected.id])
+        coordinator.applyStoreProjection(newProjection)
+
+        XCTAssertEqual(newProjection.visibleSelectableEntryIDs, [folder.id, after.id, unaffected.id])
+        XCTAssertIdentical(coordinator.entryItemById[unaffected.id], retainedItem)
+        let selectedItem = try XCTUnwrap(coordinator.entryItemById[after.id])
+        XCTAssertEqual(coordinator.tableView.selectedRow, coordinator.tableView.row(forItem: selectedItem))
+    }
+}
+
 private extension EntryListOutlineItem {
     var groupName: String? {
         guard case let .group(name, _, _) = kind else { return nil }
         return name
     }
+}
+
+@MainActor
+private func displayedNameOfItem(at indexPath: IndexPath, in view: EntryGridView) throws -> String {
+    let item = try XCTUnwrap(view.collectionView.item(at: indexPath), "index path의 grid item이 materialized 되어 있어야 함")
+    let nameField = try XCTUnwrap(
+        descendantView(
+            withIdentifier: NSUserInterfaceItemIdentifier("entryGrid.nameField"),
+            in: item.view,
+        ) as? NSTextField,
+    )
+    return nameField.stringValue
+}
+
+@MainActor
+private func descendantView(withIdentifier identifier: NSUserInterfaceItemIdentifier, in root: NSView) -> NSView? {
+    if root.identifier == identifier { return root }
+    for subview in root.subviews {
+        if let found = descendantView(withIdentifier: identifier, in: subview) { return found }
+    }
+    return nil
 }
 
 private func makePresentationFile(id: String, name: String) -> EntryModel {

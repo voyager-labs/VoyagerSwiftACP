@@ -150,14 +150,19 @@ extension EntryListCoordinator {
                 let newVisibleRows = projection.visibleRows
                 let hasHierarchyTopology = !projection.childrenByParent.isEmpty
                 let hasVisibleHierarchyRows = newVisibleRows.count > projection.rootItemIDs.count
+                let appliedHierarchyIdentitySwap = hasVisibleHierarchyRows
+                    && lastProjectionHasHierarchyTopology == hasHierarchyTopology
+                    && tryIncrementalHierarchyIdentitySwap(items: items)
                 let shouldForceFullReload = lastProjectionHasHierarchyTopology != hasHierarchyTopology
-                    || hasVisibleHierarchyRows
-                if shouldForceFullReload || !tryIncrementalRowUpdate(
-                    old: oldVisibleRows,
-                    new: newVisibleRows,
-                    items: items,
-                    projection: projection,
-                ) {
+                    || (hasVisibleHierarchyRows && !appliedHierarchyIdentitySwap)
+                if !appliedHierarchyIdentitySwap,
+                   shouldForceFullReload || !tryIncrementalRowUpdate(
+                       old: oldVisibleRows,
+                       new: newVisibleRows,
+                       items: items,
+                       projection: projection,
+                   )
+                {
                     outlineItems = items
                     rebuildItemIndexes()
                     tableView.reloadData()
@@ -197,6 +202,206 @@ extension EntryListCoordinator {
             tableView.reloadData(forRowIndexes: plan.updatedRowIndexes, columnIndexes: columnIndexes)
         }
         return true
+    }
+
+    func tryIncrementalFlatRootRowUpdate(
+        incomingItems: [OutlineItem],
+        changes: EntryViewLayoutPresentationChangeSet,
+        presentation: EntryViewLayoutPresentation,
+    ) -> Bool {
+        let oldEntries = outlineItems.compactMap { item -> EntryModel? in
+            guard case let .entry(entry) = item.kind else { return nil }
+            return entry
+        }
+        let newEntries = incomingItems.compactMap { item -> EntryModel? in
+            guard case let .entry(entry) = item.kind else { return nil }
+            return entry
+        }
+        guard oldEntries.count == outlineItems.count,
+              newEntries.count == incomingItems.count
+        else { return false }
+
+        let oldIDs = oldEntries.map(\.id)
+        let newIDs = newEntries.map(\.id)
+        let oldIDSet = Set(oldIDs)
+        let newIDSet = Set(newIDs)
+        let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
+        let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
+        guard !removed.isEmpty || !inserted.isEmpty,
+              max(removed.count, inserted.count) == 1
+        else { return false }
+        let retained = oldIDSet.intersection(newIDSet)
+        guard oldIDs.filter(retained.contains) == newIDs.filter(retained.contains) else { return false }
+
+        let oldItemsByID = Dictionary(uniqueKeysWithValues: zip(oldEntries, outlineItems).map { ($0.id, $1) })
+        outlineItems = zip(newEntries, incomingItems).map { entry, incoming in
+            guard let existing = oldItemsByID[entry.id] else { return incoming }
+            existing.kind = incoming.kind
+            existing.isLoadingChildren = incoming.isLoadingChildren
+            return existing
+        }
+        rebuildItemIndexes()
+        tableView.beginUpdates()
+        if !removed.isEmpty {
+            tableView.removeItems(at: removed, inParent: nil, withAnimation: .slideLeft)
+        }
+        if !inserted.isEmpty {
+            tableView.insertItems(at: inserted, inParent: nil, withAnimation: .slideDown)
+        }
+        tableView.endUpdates()
+        if !changes.updatedEntryIDs.isEmpty {
+            reloadVisibleRowsForPresentationChange(
+                changedEntryIDs: changes.updatedEntryIDs,
+                presentation: presentation,
+            )
+        }
+        return true
+    }
+
+    func tryIncrementalHierarchyIdentitySwap(items: [OutlineItem]) -> Bool {
+        guard let plan = makeHierarchyIdentitySwapPlan(items: items) else { return false }
+        applyHierarchyIdentitySwap(plan, items: items)
+        let parent = outlineItems[plan.rootIndex]
+        rebuildItemIndexes()
+        tableView.beginUpdates()
+        tableView.removeItems(at: plan.removed, inParent: parent, withAnimation: .slideLeft)
+        tableView.insertItems(at: plan.inserted, inParent: parent, withAnimation: .slideDown)
+        tableView.endUpdates()
+        return true
+    }
+
+    private func makeHierarchyIdentitySwapPlan(items: [OutlineItem]) -> HierarchyIdentitySwapPlan? {
+        guard outlineItems.count == items.count else { return nil }
+        var candidate: HierarchyIdentitySwapPlan?
+        for (rootIndex, pair) in zip(outlineItems, items).enumerated() {
+            switch hierarchyRootIdentityDelta(existing: pair.0, incoming: pair.1, rootIndex: rootIndex) {
+            case .unchanged:
+                continue
+            case let .swap(plan):
+                guard candidate == nil else { return nil }
+                candidate = plan
+            case .unsupported:
+                return nil
+            }
+        }
+        return candidate
+    }
+
+    private func hierarchyRootIdentityDelta(
+        existing: OutlineItem,
+        incoming: OutlineItem,
+        rootIndex: Int,
+    ) -> HierarchyRootIdentityDelta {
+        guard outlineEntryID(existing) == outlineEntryID(incoming) else { return .unsupported }
+        let oldIDs = existing.children.compactMap(outlineEntryID)
+        let newIDs = incoming.children.compactMap(outlineEntryID)
+        guard oldIDs.count == existing.children.count,
+              newIDs.count == incoming.children.count
+        else { return .unsupported }
+        guard oldIDs != newIDs else {
+            return outlineEntryShape(existing) == outlineEntryShape(incoming) ? .unchanged : .unsupported
+        }
+
+        let oldIDSet = Set(oldIDs)
+        let newIDSet = Set(newIDs)
+        let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
+        let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
+        guard removed.count == 1, inserted.count == 1 else { return .unsupported }
+        let retained = oldIDSet.intersection(newIDSet)
+        guard oldIDs.filter(retained.contains) == newIDs.filter(retained.contains),
+              retainedHierarchyChildrenHaveSameShape(
+                  retained,
+                  existingChildren: existing.children,
+                  incomingChildren: incoming.children,
+              )
+        else { return .unsupported }
+        return .swap(.init(rootIndex: rootIndex, removed: removed, inserted: inserted))
+    }
+
+    private func retainedHierarchyChildrenHaveSameShape(
+        _ retained: Set<EntryModel.ID>,
+        existingChildren: [OutlineItem],
+        incomingChildren: [OutlineItem],
+    ) -> Bool {
+        let existingByID = outlineItemsByEntryID(existingChildren)
+        let incomingByID = outlineItemsByEntryID(incomingChildren)
+        return retained.allSatisfy { id in
+            guard let existing = existingByID[id], let incoming = incomingByID[id] else { return false }
+            return outlineEntryShape(existing) == outlineEntryShape(incoming)
+        }
+    }
+
+    private func applyHierarchyIdentitySwap(_ plan: HierarchyIdentitySwapPlan, items: [OutlineItem]) {
+        for (rootIndex, pair) in zip(outlineItems, items).enumerated() {
+            let existingRoot = pair.0
+            let incomingRoot = pair.1
+            guard rootIndex == plan.rootIndex else {
+                mergeOutlinePayload(existing: existingRoot, incoming: incomingRoot)
+                continue
+            }
+            let existingChildrenByID = outlineItemsByEntryID(existingRoot.children)
+            existingRoot.kind = incomingRoot.kind
+            existingRoot.isLoadingChildren = incomingRoot.isLoadingChildren
+            existingRoot.children = incomingRoot.children.map { incomingChild in
+                guard let id = outlineEntryID(incomingChild), let existingChild = existingChildrenByID[id] else {
+                    return incomingChild
+                }
+                mergeOutlinePayload(existing: existingChild, incoming: incomingChild)
+                return existingChild
+            }
+        }
+    }
+
+    private func outlineItemsByEntryID(_ items: [OutlineItem]) -> [EntryModel.ID: OutlineItem] {
+        Dictionary(uniqueKeysWithValues: items.compactMap { item in
+            outlineEntryID(item).map { ($0, item) }
+        })
+    }
+
+    func sectionsMatch(
+        _ previous: EntryViewLayoutPresentation,
+        _ current: EntryViewLayoutPresentation,
+    ) -> Bool {
+        guard previous.sections.count == current.sections.count else { return false }
+        return previous.sections.enumerated().allSatisfy { index, section in
+            let next = current.sections[index]
+            return section.id == next.id
+                && section.title == next.title
+                && section.colorCode == next.colorCode
+                && section.isCollapsed == next.isCollapsed
+        }
+    }
+
+    private func outlineEntryID(_ item: OutlineItem) -> EntryModel.ID? {
+        guard case let .entry(entry) = item.kind else { return nil }
+        return entry.id
+    }
+
+    private func outlineEntryShape(_ item: OutlineItem) -> [EntryModel.ID]? {
+        guard let id = outlineEntryID(item) else { return nil }
+        let childShapes = item.children.compactMap(outlineEntryShape)
+        guard childShapes.count == item.children.count else { return nil }
+        return [id] + childShapes.flatMap(\.self)
+    }
+
+    private func mergeOutlinePayload(existing: OutlineItem, incoming: OutlineItem) {
+        existing.kind = incoming.kind
+        existing.isLoadingChildren = incoming.isLoadingChildren
+        for (existingChild, incomingChild) in zip(existing.children, incoming.children) {
+            mergeOutlinePayload(existing: existingChild, incoming: incomingChild)
+        }
+    }
+
+    private struct HierarchyIdentitySwapPlan {
+        let rootIndex: Int
+        let removed: IndexSet
+        let inserted: IndexSet
+    }
+
+    private enum HierarchyRootIdentityDelta {
+        case unchanged
+        case swap(HierarchyIdentitySwapPlan)
+        case unsupported
     }
 
     struct IncrementalRowUpdatePlan {
@@ -373,9 +578,15 @@ extension EntryListCoordinator {
     }
 
     func applyGroupExpansionState() {
+        applyGroupExpansionState(presentation: state.presentation)
+    }
+
+    /// state 재유도 없이 전달된 presentation의 접힘 상태를 outline에 적용한다.
+    func applyGroupExpansionState(presentation: EntryViewLayoutPresentation) {
         isUpdatingGroupExpansion = true
-        for (name, item) in groupItemByName {
-            if state.entryArrangements.collapsedGroups.contains(name) {
+        for section in presentation.sections {
+            guard let name = section.title, let item = groupItemByName[name] else { continue }
+            if section.isCollapsed {
                 tableView.collapseItem(item)
             } else {
                 tableView.expandItem(item)

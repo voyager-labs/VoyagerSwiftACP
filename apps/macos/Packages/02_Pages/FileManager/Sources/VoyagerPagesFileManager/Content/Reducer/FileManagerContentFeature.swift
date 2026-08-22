@@ -55,6 +55,12 @@ public struct FileManagerContentFeature {
             case .internal(.reloadDirectoryListing):
                 guard case .folder = state.navigation.navigationState else { return .none }
                 return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
+            case let .internal(.applyNavigationState(navigationState)):
+                // 실제 네비게이션·root 변경 시 대기 중인 identity 전이를 즉시 만료한다.
+                // 같은 root로의 재적용은 유지하고, 다른 root·비폴더 라우트로 이동하면
+                // stale 전이가 되살아나 선택을 잘못 옮기지 않게 한다.
+                expireTransitionOnNavigation(navigationState, state: &state)
+                return .none
             default:
                 return .none
             }
@@ -69,7 +75,9 @@ public struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
+            let effect = handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
+            markPreserveSelectionForReplacementProjection(on: action, state: &state)
+            return effect
         }
 
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
@@ -81,7 +89,9 @@ public struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
+            let effect = handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
+            resolvePreserveSelectionForReplacementProjection(on: action, state: &state)
+            return effect
         }
 
         FileManagerContentComposerReducer()
@@ -103,9 +113,32 @@ public struct FileManagerContentFeature {
 
             let isClearingCollection = FileManagerContentFeature.isClearingCollectionMode(action)
             let useCollectionItems = state.isCollectionMode && !isClearingCollection
-            let projectionEntries = useCollectionItems
+            let loadedProjectionEntries = useCollectionItems
                 ? Array(state.entryViewLayout.collectionItems)
                 : Array(state.entryViewLayout.entryOperations.items)
+            let isFolderRoute = if case .folder = state.navigation.navigationState { true } else { false }
+            let isRetainedProjectionTrigger = switch action {
+            case .entryViewLayout(.entryOperations(.loading(.streamEvent))),
+                 .entryViewLayout(.entryOperations(.loading(.streamFailed))):
+                true
+            case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, _, _)))):
+                // operationFinished가 예약한 같은 폴더 재로드의 실제 loadItems 시작 시점에도
+                // 마지막 완전 root projection을 유지한다(isReloading=false로 items가 비워지는 창).
+                isSameRootFolderReload(path: path, state: state)
+            default:
+                false
+            }
+            let projectionEntries = if !useCollectionItems,
+                                       isFolderRoute,
+                                       isRetainedProjectionTrigger,
+                                       loadedProjectionEntries.isEmpty,
+                                       !state.entryViewLayout.entryOperations.loadingContext.coreFinished,
+                                       !state.entryViewLayout.entries.isEmpty
+            {
+                state.entryViewLayout.entries
+            } else {
+                loadedProjectionEntries
+            }
             _ = EntryArrangementsFeature().reduce(
                 into: &state.entryViewLayout.entryArrangements,
                 action: .apply(items: projectionEntries, isCollectionMode: useCollectionItems),
@@ -293,19 +326,51 @@ public struct FileManagerContentFeature {
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action,
-              case let .coreBatch(items: entries, batchIndex: batchIndex) = streamEvent.event,
-              streamEvent.generation == state.entryViewLayout.entryOperations.loadingContext.generation,
-              batchIndex == state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex
-        else {
+        let entries: [EntryModel]
+        let appliesPendingExternalSelection: Bool
+        switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(items)))):
+            entries = items
+            appliesPendingExternalSelection = true
+
+        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+            guard case let .coreBatch(items: items, batchIndex: batchIndex) = streamEvent.event,
+                  streamEvent.generation == state.entryViewLayout.entryOperations.loadingContext.generation,
+                  batchIndex == state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex
+            else { return .none }
+            entries = items
+            appliesPendingExternalSelection = true
+
+        case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration,
+            folderID,
+            folderGeneration,
+            response,
+        ))):
+            guard rootContextGeneration == state.entryViewLayout.hierarchy.rootContextGeneration,
+                  let node = state.entryViewLayout.hierarchy.nodesByID[folderID],
+                  node.generation == folderGeneration,
+                  node.loadPhase == .loadingCore || node.loadPhase == .enriching,
+                  case let .event(.coreBatch(items: items, batchIndex: batchIndex)) = response,
+                  batchIndex == node.folder.expectedBatchIndex
+            else { return .none }
+            entries = items
+            appliesPendingExternalSelection = false
+
+        default:
             return .none
         }
-        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+
+        let pendingSelectionApplied = appliesPendingExternalSelection
+            && FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+                entries: entries,
+                state: &state,
+            )
+        let identityMigrated = FileManagerContentEntryOpsCoordinator.migrateSelectionAlongIdentityTransition(
             entries: entries,
             state: &state,
-        ) else {
-            return .none
-        }
+        )
+        guard pendingSelectionApplied || identityMigrated else { return .none }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
@@ -330,6 +395,117 @@ public struct FileManagerContentFeature {
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    /// 비종료 대체 projection이 reconcile로 before-path 선택을 지우기 직전에 transient 표시를 세운다.
+    /// 종료(accepted) projection 또는 사용자가 이미 선택을 바꾼 경우에는 세우지 않아
+    /// deselect를 되돌리지 않는다.
+    private func markPreserveSelectionForReplacementProjection(
+        on action: Action,
+        state: inout State,
+    ) {
+        guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return }
+        guard var transition = state.pendingIdentityTransition else { return }
+        // 루트·세대가 어긋난 stale 전이는 이 projection에서 만료한다(이후 되살리지 않게).
+        guard case let .folder(currentPath) = state.navigation.navigationState,
+              canonicalizedPath(currentPath) == transition.rootPath,
+              state.entryViewLayout.entryOperations.loadingContext.generation == transition.refreshGeneration
+        else {
+            state.pendingIdentityTransition = nil
+            return
+        }
+        guard !state.entryViewLayout.entryOperations.loadingContext.coreFinished else { return }
+        let beforePath = canonicalizedPath(transition.beforePath)
+        let afterPath = canonicalizedPath(transition.afterPath)
+        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
+        guard selectedPaths.contains(beforePath),
+              !selectedPaths.contains(afterPath)
+        else { return }
+        // 이 projection에 after-path가 없으면 reconcile이 before-path를 지우므로 보존 표시를 남긴다.
+        let loadedPaths = Set(
+            state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) },
+        )
+        guard !loadedPaths.contains(afterPath) else { return }
+        // 재선택은 canonical이 아닌 현재 선택의 원본 lexical ID로 수행해야 표기가 유지된다.
+        transition.preservedLexicalBeforeID = state.entryViewLayout.selectedIds.first {
+            canonicalizedPath($0) == beforePath
+        }
+        transition.preserveSelectionForReplacementBatch = true
+        state.pendingIdentityTransition = transition
+    }
+
+    /// reconcile 후 transient 표시가 있으면 before-path 선택을 복원하고, 종료(accepted) projection에서
+    /// after-path가 끝내 없으면 전이를 소비해 기존 선택 reconcile이 이기게 한다.
+    private func resolvePreserveSelectionForReplacementProjection(
+        on action: Action,
+        state: inout State,
+    ) {
+        guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return }
+        guard var transition = state.pendingIdentityTransition else { return }
+        let afterPath = canonicalizedPath(transition.afterPath)
+        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
+
+        if transition.preserveSelectionForReplacementBatch {
+            transition.preserveSelectionForReplacementBatch = false
+            let preservedLexicalBeforeID = transition.preservedLexicalBeforeID
+            transition.preservedLexicalBeforeID = nil
+            state.pendingIdentityTransition = transition
+            let beforePath = canonicalizedPath(transition.beforePath)
+            guard !selectedPaths.contains(beforePath), !selectedPaths.contains(afterPath) else { return }
+            // canonical이 아닌 보존된 원본 lexical ID를 재선택해 표기·표시 선택이 유지되게 한다.
+            let restoredID = preservedLexicalBeforeID ?? transition.beforePath
+            state.entryViewLayout.selectedIds.insert(restoredID)
+            state.entryViewLayout.lastSelectedId = restoredID
+            state.entryViewLayout.rangeAnchorId = restoredID
+            return
+        }
+
+        // 종료 projection에서 after-path가 없으면 전이를 소비하고 선택 reconcile이 이긴다.
+        guard state.entryViewLayout.entryOperations.loadingContext.coreFinished else { return }
+        let visiblePaths = visibleEntryPaths(in: state)
+        guard !visiblePaths.contains(afterPath), !selectedPaths.contains(afterPath) else { return }
+        state.pendingIdentityTransition = nil
+    }
+
+    private func visibleEntryPaths(in state: State) -> Set<String> {
+        let flatPaths = state.entryViewLayout.entries.map(\.id).map(canonicalizedPath)
+        let hierarchyPaths = state.entryViewLayout.hierarchy.nodesByID.values
+            .flatMap(\.folder.children)
+            .map(\.id)
+            .map(canonicalizedPath)
+        return Set(flatPaths + hierarchyPaths)
+    }
+
+    /// loadItems 시작이 현재 표시 중인 완전 projection과 같은 root의 재로드인지 판정한다.
+    /// 표시 항목이 모두 대상 경로의 직속 하위일 때만 유지한다(다른 폴더 이동과 구분).
+    private func isSameRootFolderReload(path: String, state: State) -> Bool {
+        guard case let .folder(currentPath) = state.navigation.navigationState else { return false }
+        let normalizedRoot = canonicalizedPath(currentPath)
+        guard canonicalizedPath(path) == normalizedRoot,
+              !state.entryViewLayout.entries.isEmpty
+        else { return false }
+        return state.entryViewLayout.entries.allSatisfy { entry in
+            URL(fileURLWithPath: canonicalizedPath(entry.id)).deletingLastPathComponent().path == normalizedRoot
+        }
+    }
+
+    private func canonicalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// 실제 네비게이션·root 변경 시 대기 중인 identity 전이를 만료한다.
+    /// 같은 root로의 재적용은 유지하고, 다른 root 또는 비폴더 라우트로 이동하면
+    /// 만료해 stale 전이가 선택을 되살리거나 잘못 옮기지 않게 한다.
+    private func expireTransitionOnNavigation(_ navigationState: ContentPageNavigationRoute, state: inout State) {
+        guard let transition = state.pendingIdentityTransition else { return }
+        switch navigationState {
+        case let .folder(newPath):
+            if canonicalizedPath(newPath) != transition.rootPath {
+                state.pendingIdentityTransition = nil
+            }
+        default:
+            state.pendingIdentityTransition = nil
+        }
     }
 
     // MARK: - Projection Bridge
