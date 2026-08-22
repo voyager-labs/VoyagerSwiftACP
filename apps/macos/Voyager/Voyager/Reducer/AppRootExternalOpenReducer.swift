@@ -208,6 +208,8 @@ extension AppRootFeature {
             consumeExternalOpenAlertCompletion(completion, state: &state)
         case let .windowManager(.delegate(.externalOpenActivationCompleted(batchID))):
             consumeExternalOpenActivation(batchID: batchID, state: &state)
+        case let .windowManager(.delegate(.externalOpenActivationFailed(batchID, _))):
+            consumeExternalOpenActivation(batchID: batchID, state: &state)
         case let .windowManager(.delegate(.trackedSingletonCompleted(requestID))):
             consumeTrackedSingletonCompletion(requestID: requestID, state: &state)
         case let .externalOpenAdvanceToNextBatch(batchID):

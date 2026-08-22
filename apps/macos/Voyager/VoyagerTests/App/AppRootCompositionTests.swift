@@ -2074,7 +2074,7 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// AppRoot가 matching activation terminal을 수락할 때 ownership을 release한 뒤 batch를 advance한다.
+    /// AppRoot가 matching activation failure terminal을 수락할 때 ownership을 release한 뒤 batch를 advance한다.
     /// 이후 같은 batch의 stale cancel은 성공한 window나 persistent marker를 제거하지 않는다.
     func testActivationTerminalAcceptanceReleasesPlacementOwnershipBeforeAdvance() async throws {
         let batchID = UUID()
@@ -2130,7 +2130,10 @@ final class AppRootCompositionTests: XCTestCase {
         // store.exhaustivity = .off: AppRoot terminal acceptance와 stale cancel 경계만 검증함.
         store.exhaustivity = .off
 
-        await store.send(.windowManager(.delegate(.externalOpenActivationCompleted(batchID: batchID)))) {
+        await store.send(.windowManager(.delegate(.externalOpenActivationFailed(
+            batchID: batchID,
+            failure: .recoveryExhausted,
+        )))) {
             $0.windowManager.retainedExternalOpenPlacementOwnership = nil
             $0.activeExternalOpenBatch?.phase = .advancing
         }
