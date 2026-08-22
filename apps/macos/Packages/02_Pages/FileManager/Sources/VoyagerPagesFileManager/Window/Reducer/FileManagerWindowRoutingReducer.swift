@@ -55,6 +55,24 @@ private func applyExternalPendingSelection(
     return false
 }
 
+private func inactivePinnedReturnCompletionEffect(
+    tabID: ContentTabID,
+    anchor: ContentTabPageAnchor,
+    navigationState: ContentPageNavigationRoute,
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    let anchorUpdateEffect: Effect<FileManagerWindowAction> = state.contentTabs.tabs[id: tabID]?.anchor == anchor
+        ? .none
+        : .send(.contentTabs(.updateRuntimePageAnchor(tabID, anchor)))
+    return .concatenate(
+        anchorUpdateEffect,
+        .send(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+            tabID: tabID,
+            navigationState: navigationState,
+        ))),
+    )
+}
+
 @Reducer
 struct FileManagerWindowRoutingReducer {
     typealias State = FileManagerWindowState
@@ -425,10 +443,12 @@ struct FileManagerWindowRoutingReducer {
             break
         }
         state.tabContentStates[tabID] = contentState
-        let tabAnchor = state.contentTabs.tabs[id: tabID]?.anchor
-        return tabAnchor == anchor
-            ? .none
-            : .send(.contentTabs(.updateRuntimePageAnchor(tabID, anchor)))
+        return inactivePinnedReturnCompletionEffect(
+            tabID: tabID,
+            anchor: anchor,
+            navigationState: navigationState,
+            state: state,
+        )
     }
 
     func undoManagerScope(tabID: ContentTabID, state: State) -> UndoManagerScope? {

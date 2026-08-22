@@ -6923,7 +6923,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let loadedURLs = LockIsolated<[URL]>([])
-        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+        let changedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationChanged(tabID, _)) = action {
+                    changedTabIDs.withValue { $0.append(tabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in true }
             $0.collectionFileClient.load = { url in
@@ -6942,6 +6951,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
         XCTAssertTrue(loadedURLs.value.isEmpty)
+        XCTAssertEqual(changedTabIDs.value, [inactiveID])
         XCTAssertEqual(
             store.state.contentTabs.tabs[id: inactiveID]?.anchor,
             .collectionFile(url: inactiveDurableURL),
@@ -7076,6 +7086,71 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, targetTabID)
         XCTAssertEqual(failedTabIDs.value, [returningTabID])
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: Collection 복귀 중 직접 탐색은 typed failure terminal을 전달한다.
+    /// 같은 경로 탐색이 후속 navigation action을 만들지 않아도 취소된 복귀가 외부 열기 대기를 해제하는지 검증한다.
+    /// - 검증 내용: pending Collection open 취소와 active pinned tabID의 failure delegate 전달
+    /// - 사전 조건: runtime Collection과 durable Collection이 다른 active pinned tab에서 복귀 load가 진행 중임
+    /// - 기대 결과: pending request가 정리되고 같은 tabID의 pinnedContentTabRuntimeNavigationFailed terminal 수신
+    func testDirectNavigationDuringPinnedCollectionReturnEmitsFailureTerminal() async {
+        let tabID = ContentTabID(rawValue: "navigating-pinned-collection-return")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/runtime-navigating.voycoll")
+        let durableURL = URL(fileURLWithPath: "/tmp/durable-navigating.voycoll")
+        let durableAnchor = ContentTabPageAnchor.collectionFile(url: durableURL)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: runtimeURL),
+                    isPinned: true,
+                ),
+            ],
+            activeTabID: tabID,
+            pinnedRecords: [
+                tabID: Self.pinnedRecord(
+                    id: tabID,
+                    anchor: durableAnchor,
+                    title: "Durable Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+        )
+        state.content = .initialContent(for: .collectionFile(url: runtimeURL))
+        state.content.navigation.seedInitialFolderPath("/")
+        state.syncActiveTabContentState()
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: durableURL,
+            sourceRoute: .folder("/"),
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        state.syncContentTabSidebarItems()
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(failedTabID)) = action {
+                    failedTabIDs.withValue { $0.append(failedTabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerClient.displayName = { _ in "/" }
+        }
+        // store.exhaustivity = .off: direct navigation child action보다 pinned 복귀 terminal 전달을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.navigateToPath("/"))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(failedTabIDs.value, [tabID])
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 

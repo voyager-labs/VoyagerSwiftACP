@@ -72,8 +72,12 @@ struct FileManagerNavigationActionReducer {
              .showTag,
              .showAiChat,
              .showAiChatSessions:
-            .concatenate(
-                cancelPendingCollectionOpen(state: &state),
+            let failedPinnedReturnTabID = pendingPinnedCollectionReturnTabID(state: state)
+            return .concatenate(
+                cancelPendingCollectionOpen(
+                    state: &state,
+                    failedPinnedReturnTabID: failedPinnedReturnTabID,
+                ),
                 handleDirectNavigationAction(action, state: &state),
             )
 
@@ -81,13 +85,17 @@ struct FileManagerNavigationActionReducer {
              .goForward,
              .goToHistoryIndex,
              .goToEnclosingDirectory:
-            .concatenate(
-                cancelPendingCollectionOpen(state: &state),
+            let failedPinnedReturnTabID = pendingPinnedCollectionReturnTabID(state: state)
+            return .concatenate(
+                cancelPendingCollectionOpen(
+                    state: &state,
+                    failedPinnedReturnTabID: failedPinnedReturnTabID,
+                ),
                 handleHistoryNavigationAction(action, state: &state),
             )
 
         case let .openCollectionFile(url):
-            handleOpenCollectionFile(
+            return handleOpenCollectionFile(
                 url: url,
                 state: &state,
                 collectionFileClient: collectionFileClient,
@@ -95,6 +103,18 @@ struct FileManagerNavigationActionReducer {
                 uuid: uuid,
             )
         }
+    }
+
+    private func pendingPinnedCollectionReturnTabID(state: State) -> ContentTabID? {
+        guard let tabID = state.contentTabs.activeTabID,
+              let tab = state.contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let record = state.contentTabs.pinnedRecords[tabID],
+              case let .collectionFile(durableURL) = record.anchor,
+              state.pendingCollectionOpenRequest?.url.standardizedFileURL == durableURL.standardizedFileURL,
+              tab.anchor != record.anchor
+        else { return nil }
+        return tabID
     }
 
     private func handleInternalAction(
