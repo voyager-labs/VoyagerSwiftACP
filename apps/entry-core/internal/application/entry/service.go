@@ -16,9 +16,11 @@ import (
 )
 
 var (
-	ErrInvalidService    = errors.New("invalid entry service")
-	ErrDuplicateSourceID = errors.New("duplicate adapter source id")
-	ErrSourceNotFound    = errors.New("source not found")
+	ErrInvalidService            = errors.New("invalid entry service")
+	ErrDuplicateSourceID         = errors.New("duplicate adapter source id")
+	ErrSourceNotFound            = errors.New("source not found")
+	ErrAmbiguousPropertySelector = errors.New("ambiguous property selector")
+	ErrUnregisteredPropertyID    = errors.New("unregistered property id")
 )
 
 type UnifiedService struct {
@@ -81,34 +83,77 @@ func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAda
 	return service, nil
 }
 
-func (service *UnifiedService) propertyDefinitions(requestedProperties []string) map[string]domainentry.PropertyDefinition {
+func (service *UnifiedService) propertyDefinitions(requestedProperties []string) (map[string]domainentry.PropertyDefinition, error) {
 	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(service.catalog.Definitions))
 	for _, definition := range service.catalog.Definitions {
 		definitions[definition.PropertyID] = definition
 	}
 	resolved := make(map[string]domainentry.PropertyDefinition, len(requestedProperties))
 	for _, requested := range requestedProperties {
-		for _, term := range service.catalog.Terms {
-			if term.TermValue != requested {
-				continue
+		catalogDefinition, found, resolveErr := service.catalogDefinitionFor(requested, definitions)
+		if resolveErr != nil {
+			message := "ambiguous_property_selector"
+			if errors.Is(resolveErr, ErrUnregisteredPropertyID) {
+				message = "unregistered_property_selector"
 			}
-			definition, ok := definitions[term.PropertyID]
-			if !ok {
-				continue
-			}
-			propertyDefinition, err := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
-				PropertyID: definition.PropertyID, IdentityScheme: definition.IdentityScheme, Namespace: definition.Namespace,
-				Key: definition.CanonicalKey, DisplayName: definition.DisplayName, ValueType: definition.ValueType,
-				Cardinality: definition.Cardinality, Editable: definition.Editable, Provenance: definition.Provenance,
-				ValidationRules: []domainentry.ValidationRule{}, Unit: definition.Unit,
-			})
-			if err == nil {
-				resolved[requested] = propertyDefinition
-			}
-			break
+			return nil, newApplicationError("invalid_request", message, resolveErr)
+		}
+		if !found {
+			continue
+		}
+		propertyDefinition, err := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
+			PropertyID: catalogDefinition.PropertyID, IdentityScheme: catalogDefinition.IdentityScheme, Namespace: catalogDefinition.Namespace,
+			Key: catalogDefinition.CanonicalKey, DisplayName: catalogDefinition.DisplayName, ValueType: catalogDefinition.ValueType,
+			Cardinality: catalogDefinition.Cardinality, Editable: catalogDefinition.Editable, Provenance: catalogDefinition.Provenance,
+			ValidationRules: []domainentry.ValidationRule{}, Unit: catalogDefinition.Unit,
+		})
+		if err == nil {
+			resolved[requested] = propertyDefinition
 		}
 	}
-	return resolved
+	return resolved, nil
+}
+
+// catalogDefinitionFor는 요청 이름을 정확한 PropertyID 텍스트 → 용어(alias) → canonical key
+// 순서로 검색하는 단일 해석 경로다. 정확한 PropertyID 텍스트는 단말 해석이다: 카탈로그
+// 적중이면 그 정의를, 미등록이면 ErrUnregisteredPropertyID로 실패 닫기하고 alias/canonical
+// 검색과 registry 재해싱을 시도하지 않는다. 같은 별칭이나 canonical key가 서로 다른
+// PropertyID에 걸리면 순서 의존 첫 매칭 대신 ErrAmbiguousPropertySelector로 실패 닫기한다.
+func (service *UnifiedService) catalogDefinitionFor(requested string, definitions map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition) (domainentry.WorkspacePropertyDefinition, bool, error) {
+	if id, err := domainentry.ParsePropertyID(requested); err == nil {
+		if definition, ok := definitions[id]; ok {
+			return definition, true, nil
+		}
+		return domainentry.WorkspacePropertyDefinition{}, false, ErrUnregisteredPropertyID
+	}
+	matched := domainentry.WorkspacePropertyDefinition{}
+	found := false
+	for _, term := range service.catalog.Terms {
+		if term.TermValue != requested {
+			continue
+		}
+		definition, ok := definitions[term.PropertyID]
+		if !ok {
+			continue
+		}
+		if found && matched.PropertyID != term.PropertyID {
+			return domainentry.WorkspacePropertyDefinition{}, false, ErrAmbiguousPropertySelector
+		}
+		matched, found = definition, true
+	}
+	if found {
+		return matched, true, nil
+	}
+	for _, definition := range service.catalog.Definitions {
+		if definition.CanonicalKey != requested {
+			continue
+		}
+		if found && matched.PropertyID != definition.PropertyID {
+			return domainentry.WorkspacePropertyDefinition{}, false, ErrAmbiguousPropertySelector
+		}
+		matched, found = definition, true
+	}
+	return matched, found, nil
 }
 
 func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedListRequest) (UnifiedListResult, error) {
@@ -163,8 +208,12 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		states = decoded.States
 		roundRobinStart = decoded.RoundRobinStart
 	}
+	definitions, definitionsErr := service.propertyDefinitions(request.RequestedProperties)
+	if definitionsErr != nil {
+		return UnifiedListResult{}, definitionsErr
+	}
 	if request.ParentRef != nil {
-		if resolveErr := service.resolveParentPaths(ctx, scopes, states, *request.ParentRef, request.RequestedProperties); resolveErr != nil {
+		if resolveErr := service.resolveParentPaths(ctx, scopes, states, *request.ParentRef, request.RequestedProperties, definitions); resolveErr != nil {
 			return UnifiedListResult{}, resolveErr
 		}
 	}
@@ -186,7 +235,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		if requestErr != nil {
 			return UnifiedListResult{}, newApplicationError("internal_error", "internal_error", ErrApplicationAdapterFailure)
 		}
-		adapterRequest.PropertyDefinitions = service.propertyDefinitions(request.RequestedProperties)
+		adapterRequest.PropertyDefinitions = clonePropertyDefinitions(definitions)
 		adapterResult, adapterErr := scope.adapter.List(ctx, adapterRequest)
 		if adapterErr != nil {
 			if errors.Is(adapterErr, source.ErrInvalidCursor) {
@@ -194,7 +243,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 			}
 			adapterResult = adapterErrorListResult(adapterErr, service.clock())
 		}
-		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], request.RequestedProperties)
+		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], request.RequestedProperties, definitions)
 		if err != nil {
 			pages[index] = service.adapterFailureScope(snapshot, scope, uint8(index))
 			pages[index].failure = err
@@ -289,7 +338,11 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if err != nil {
 		return ResolveResult{}, newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 	}
-	adapterRequest.PropertyDefinitions = service.propertyDefinitions(request.RequestedProperties)
+	definitions, definitionsErr := service.propertyDefinitions(request.RequestedProperties)
+	if definitionsErr != nil {
+		return ResolveResult{}, definitionsErr
+	}
+	adapterRequest.PropertyDefinitions = clonePropertyDefinitions(definitions)
 	adapterResult, adapterErr := binding.Adapter.Resolve(ctx, adapterRequest)
 	if adapterErr != nil {
 		return ResolveResult{}, mapCanonicalAdapterError(adapterErr)
@@ -310,7 +363,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if item.EntryRef.SourceInstanceID != binding.SourceRef.SourceInstanceID || item.EntrySnapshot.EntryRef.SourceInstanceID != binding.SourceRef.SourceInstanceID {
 		return ResolveResult{}, newApplicationError("context_mismatch", "context_mismatch", ErrContextMismatch)
 	}
-	if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, request.RequestedProperties) {
+	if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, request.RequestedProperties, definitions) {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
 	if entryRef != nil && item.EntryRef.EntryID != entryRef.EntryID {
@@ -398,7 +451,7 @@ func (service *UnifiedService) EntryRefToVirtualPaths(ref domainentry.EntryRef) 
 	return result, nil
 }
 
-func (service *UnifiedService) resolveParentPaths(ctx context.Context, scopes []selectedScope, states []paginationScopeState, parent domainentry.EntryRef, requested []string) error {
+func (service *UnifiedService) resolveParentPaths(ctx context.Context, scopes []selectedScope, states []paginationScopeState, parent domainentry.EntryRef, requested []string, definitions map[string]domainentry.PropertyDefinition) error {
 	for index := range scopes {
 		if states[index].State == paginationStateExhausted {
 			continue
@@ -407,6 +460,7 @@ func (service *UnifiedService) resolveParentPaths(ctx context.Context, scopes []
 		if err != nil {
 			return newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 		}
+		request.PropertyDefinitions = clonePropertyDefinitions(definitions)
 		result, err := scopes[index].adapter.Resolve(ctx, request)
 		if err != nil {
 			return mapCanonicalAdapterError(err)
@@ -529,7 +583,7 @@ func (service *UnifiedService) selectScopes(request UnifiedListRequest, snapshot
 	return scopes, normalizedPath, nil
 }
 
-func (service *UnifiedService) consumeScopePage(snapshot mount.MountRegistrySnapshot, scope selectedScope, index uint8, result source.AdapterListResult, quota int, requestedProperties []string) (scopePage, error) {
+func (service *UnifiedService) consumeScopePage(snapshot mount.MountRegistrySnapshot, scope selectedScope, index uint8, result source.AdapterListResult, quota int, requestedProperties []string, definitions map[string]domainentry.PropertyDefinition) (scopePage, error) {
 	if result.Validate(quota) != nil {
 		return scopePage{}, source.ErrAdapterFailure
 	}
@@ -542,7 +596,7 @@ func (service *UnifiedService) consumeScopePage(snapshot mount.MountRegistrySnap
 		page.availability.Error = scopeError(scope, result.SourceError)
 	}
 	for _, item := range result.Items {
-		if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, requestedProperties) {
+		if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, requestedProperties, definitions) {
 			return scopePage{}, source.ErrAdapterFailure
 		}
 		if item.EntryRef.SourceInstanceID != scope.sourceRef.SourceInstanceID || item.EntrySnapshot.Availability != result.Availability || !equalCanonicalFreshnessEnvelope(item.EntrySnapshot.Freshness, result.Freshness) {
@@ -576,7 +630,7 @@ func (service *UnifiedService) consumeScopePage(snapshot mount.MountRegistrySnap
 
 func (service *UnifiedService) adapterFailureScope(snapshot mount.MountRegistrySnapshot, scope selectedScope, index uint8) scopePage {
 	result := adapterFailureListResult(service.clock())
-	page, _ := service.consumeScopePage(snapshot, scope, index, result, 1, []string{})
+	page, _ := service.consumeScopePage(snapshot, scope, index, result, 1, []string{}, nil)
 	return page
 }
 
@@ -903,14 +957,46 @@ func longestMatchingMount(mounts []domainentry.MountRef, path string) *domainent
 	}
 	return best
 }
-func propertiesWithinRequest(properties []domainentry.PropertyValue, requested []string) bool {
-	expected := make(map[domainentry.PropertyID]struct{}, len(requested))
-	for _, name := range requested {
-		id, err := domainentry.RegistryPropertyID(name)
-		if err != nil {
-			return false
+
+// clonePropertyDefinitions는 어댑터에 넘길 정의 맵을 깊은 복제한다. 어댑터가 맵이나
+// 슬라이스·포인터 필드를 변조해도 권위 맵과 이후 요청이 영향을 받지 않는다.
+func clonePropertyDefinitions(definitions map[string]domainentry.PropertyDefinition) map[string]domainentry.PropertyDefinition {
+	cloned := make(map[string]domainentry.PropertyDefinition, len(definitions))
+	for name, definition := range definitions {
+		copied := definition
+		copied.ValidationRules = make([]domainentry.ValidationRule, len(definition.ValidationRules))
+		copy(copied.ValidationRules, definition.ValidationRules)
+		if definition.Unit != nil {
+			unit := *definition.Unit
+			copied.Unit = &unit
 		}
-		expected[id] = struct{}{}
+		cloned[name] = copied
+	}
+	return cloned
+}
+
+// propertiesWithinRequest는 어댑터 요청과 동일한 해석 결과로 출력을 검증한다.
+// 카탈로그 바인딩 이름은 권위 정의로 ID·타입·cardinality까지 검증하고, 미바인딩 이름만
+// registry 파생 ID 멤버십을 기대한다. 등록되지 않은 PropertyID 텍스트는 재해싱하지 않고
+// 거부한다.
+func propertiesWithinRequest(properties []domainentry.PropertyValue, requested []string, definitions map[string]domainentry.PropertyDefinition) bool {
+	expected := make(map[domainentry.PropertyID]struct{}, len(requested))
+	bound := make(map[domainentry.PropertyID]domainentry.PropertyDefinition, len(definitions))
+	for _, name := range requested {
+		definition, ok := definitions[name]
+		if !ok {
+			if _, err := domainentry.ParsePropertyID(name); err == nil {
+				return false
+			}
+			id, err := domainentry.RegistryPropertyID(name)
+			if err != nil {
+				return false
+			}
+			expected[id] = struct{}{}
+			continue
+		}
+		expected[definition.PropertyID] = struct{}{}
+		bound[definition.PropertyID] = definition
 	}
 	seen := make(map[domainentry.PropertyID]struct{}, len(properties))
 	for _, property := range properties {
@@ -921,6 +1007,11 @@ func propertiesWithinRequest(properties []domainentry.PropertyValue, requested [
 			return false
 		}
 		seen[property.PropertyID] = struct{}{}
+		if definition, ok := bound[property.PropertyID]; ok {
+			if !property.ValidateAgainst(definition).Valid {
+				return false
+			}
+		}
 	}
 	return true
 }

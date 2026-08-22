@@ -164,6 +164,8 @@ func protocolCodeForEntryError(err error) schema.ErrorCode {
 		return schema.ErrorMountNotFound
 	case errors.Is(err, applicationentry.ErrSourceNotFound):
 		return schema.ErrorSourceNotFound
+	case errors.Is(err, applicationentry.ErrAmbiguousPropertySelector), errors.Is(err, applicationentry.ErrUnregisteredPropertyID):
+		return schema.ErrorInvalidRequest
 	case errors.Is(err, applicationentry.ErrInvalidRequest):
 		return schema.ErrorInvalidRequest
 	case errors.Is(err, applicationentry.ErrApplicationAdapterFailure), errors.Is(err, source.ErrAdapterFailure):

@@ -226,6 +226,37 @@ func (adapter *recordingResourceAdapter) Resolve(_ context.Context, request sour
 	return adapter.resolveResult, nil
 }
 
+// mutatingResourceAdapter는 악의적 어댑터가 요청 맵을 변조하고 임의 결과를 반환하는
+// 시나리오를 재현한다. 서비스 소유 정의 맵이 어댑터 변조로 오염되지 않음을 검증한다.
+type mutatingResourceAdapter struct {
+	listResults     []source.AdapterListResult
+	resolveResult   source.AdapterResolveResult
+	onList          func(request source.AdapterListRequest)
+	onResolve       func(request source.AdapterResolveRequest)
+	listRequests    []source.AdapterListRequest
+	resolveRequests []source.AdapterResolveRequest
+}
+
+func (adapter *mutatingResourceAdapter) List(_ context.Context, request source.AdapterListRequest) (source.AdapterListResult, error) {
+	if adapter.onList != nil {
+		adapter.onList(request)
+	}
+	adapter.listRequests = append(adapter.listRequests, request)
+	index := len(adapter.listRequests) - 1
+	if index >= len(adapter.listResults) {
+		return source.AdapterListResult{}, source.ErrAdapterFailure
+	}
+	return adapter.listResults[index], nil
+}
+
+func (adapter *mutatingResourceAdapter) Resolve(_ context.Context, request source.AdapterResolveRequest) (source.AdapterResolveResult, error) {
+	if adapter.onResolve != nil {
+		adapter.onResolve(request)
+	}
+	adapter.resolveRequests = append(adapter.resolveRequests, request)
+	return adapter.resolveResult, nil
+}
+
 func unifiedFixture(t *testing.T) (*mount.Registry, []ResourceAdapterBinding) {
 	t.Helper()
 	available, _ := domainentry.NewAvailability(domainentry.AvailabilityStateAvailable)
@@ -267,10 +298,133 @@ func TestPropertyDefinitionsResolveCatalogTerms(t *testing.T) {
 		}},
 		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
 	}}
-	definitions := service.propertyDefinitions([]string{"title"})
+	definitions, err := service.propertyDefinitions([]string{"title"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	definition, ok := definitions["title"]
 	if !ok || definition.PropertyID != titleID || definition.Key != "common.title" || definition.Namespace != "system" {
 		t.Fatalf("title definition = %#v", definition)
+	}
+}
+
+// VOY-764 회귀: canonical key와 alias는 하나의 resolver를 공유하고 같은 카탈로그
+// 정의(PropertyID·ValueType·Cardinality)를 반환해야 한다.
+func TestPropertyDefinitionsResolveCanonicalKeySameAsAlias(t *testing.T) {
+	titleID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: titleID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	aliasDefinitions, err := service.propertyDefinitions([]string{"title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalDefinitions, err := service.propertyDefinitions([]string{"common.title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias, aliasOK := aliasDefinitions["title"]
+	canonical, canonicalOK := canonicalDefinitions["common.title"]
+	if !aliasOK || !canonicalOK {
+		t.Fatalf("resolution missing: alias=%v canonical=%v", aliasOK, canonicalOK)
+	}
+	if alias.PropertyID != titleID || canonical.PropertyID != titleID {
+		t.Fatalf("alias id = %s, canonical id = %s, want %s", alias.PropertyID, canonical.PropertyID, titleID)
+	}
+	if alias.ValueType != domainentry.PropertyTypeText || canonical.ValueType != domainentry.PropertyTypeText ||
+		alias.Cardinality != domainentry.PropertyCardinalityOne || canonical.Cardinality != domainentry.PropertyCardinalityOne ||
+		canonical.Key != "common.title" {
+		t.Fatalf("alias = %#v, canonical = %#v, want shared catalog contract", alias, canonical)
+	}
+}
+
+// VOY-764 회귀: UUIDv7 PropertyID term은 registry 재해싱 없이 resolve된다.
+func TestPropertyDefinitionsResolveVoyagerIssuedTerm(t *testing.T) {
+	v7ID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e12345")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: v7ID, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: v7ID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	definitions, err := service.propertyDefinitions([]string{"title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["title"]
+	if !ok || definition.PropertyID != v7ID || definition.IdentityScheme != domainentry.PropertyIdentitySchemeVoyagerIssued {
+		t.Fatalf("title definition = %#v, want voyager-issued %s", definition, v7ID)
+	}
+}
+
+// VOY-764 회귀(후속 P1): 같은 별칭이 서로 다른 PropertyID에 걸리면 첫 매칭 대신 실패 닫기한다.
+func TestPropertyDefinitionsRejectsAmbiguousAlias(t *testing.T) {
+	firstID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	secondID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64e")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{
+			{
+				PropertyID: firstID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+			{
+				PropertyID: secondID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.body", DisplayName: "Body",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+		},
+		Terms: []domainentry.WorkspacePropertyTerm{
+			{PropertyID: firstID, TermKind: "legacy_alias", TermValue: "shared"},
+			{PropertyID: secondID, TermKind: "legacy_alias", TermValue: "shared"},
+		},
+	}}
+	definitions, err := service.propertyDefinitions([]string{"shared"})
+	if !errors.Is(err, ErrAmbiguousPropertySelector) {
+		t.Fatalf("propertyDefinitions() error = %v, want %v", err, ErrAmbiguousPropertySelector)
+	}
+	if definitions != nil {
+		t.Fatalf("definitions = %#v, want nil on ambiguity", definitions)
+	}
+}
+
+// VOY-764 회귀(후속 P1): canonical key가 여러 정의에 걸리는 잘못된 스냅샷도 실패 닫기한다.
+func TestPropertyDefinitionsRejectsAmbiguousCanonicalKey(t *testing.T) {
+	firstID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	secondID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64e")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{
+			{
+				PropertyID: firstID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.dup", DisplayName: "First",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+			{
+				PropertyID: secondID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.dup", DisplayName: "Second",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+		},
+	}}
+	definitions, err := service.propertyDefinitions([]string{"common.dup"})
+	if !errors.Is(err, ErrAmbiguousPropertySelector) {
+		t.Fatalf("propertyDefinitions() error = %v, want %v", err, ErrAmbiguousPropertySelector)
+	}
+	if definitions != nil {
+		t.Fatalf("definitions = %#v, want nil on ambiguity", definitions)
 	}
 }
 
