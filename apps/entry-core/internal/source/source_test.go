@@ -407,6 +407,19 @@ func TestFilenameExtensionTransformOmitsExtensionlessValue(t *testing.T) {
 	}
 }
 
+func TestNativeValueMatchesTagArrayDescriptor(t *testing.T) {
+	descriptor := entry.SourcePropertyDescriptor{
+		NativeType:        "string_list",
+		NativeCardinality: entry.PropertyCardinalityMany,
+	}
+	if !nativeValueMatchesDescriptor(mustStringListValue(t, []string{"Red", "Blue"}), descriptor) {
+		t.Fatal("string-list tag payload rejected by string_list/many descriptor")
+	}
+	if nativeValueMatchesDescriptor(mustStringValue(t, "Red"), descriptor) {
+		t.Fatal("scalar tag payload accepted by string_list/many descriptor")
+	}
+}
+
 func mustStringValue(t *testing.T, value string) entry.PropertyValue {
 	t.Helper()
 	propertyValue, err := entry.NewStringPropertyValue(value)
