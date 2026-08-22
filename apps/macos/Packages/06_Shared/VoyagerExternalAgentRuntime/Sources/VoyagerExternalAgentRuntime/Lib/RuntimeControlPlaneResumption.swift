@@ -37,6 +37,9 @@ public extension RuntimeControlPlane {
             }
             throw RuntimeHostError.persistenceConflict
         }
+        if let terminal = try await terminalAfterRestorationClaim(claim, host: hostReference) {
+            return terminal
+        }
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         let consumption = try await consumeRestoredClaim(claim, from: adapter, host: hostReference)
         if case let .persistedTerminal(terminal) = consumption {
@@ -111,6 +114,31 @@ public extension RuntimeControlPlane {
         } catch {
             return try await resolveResumedAdapterError(error, claim: claim, host: host)
         }
+    }
+
+    private func terminalAfterRestorationClaim(
+        _ claim: RestoredRunClaim,
+        host: ExternalAgentSessionReference,
+    ) async throws -> RuntimeResult? {
+        if pendingPersistenceMutations[host, default: 0] > 0 {
+            _ = try await mutateAfterPersistedTransitions { _ in () }
+        }
+        do {
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+            throw CancellationError()
+        }
+        guard let terminal = storedTerminalResult(
+            host: host,
+            runReference: claim.receipt.runReference,
+        ) else { return nil }
+        finalizeVisibleResumptionTerminal(
+            host: host,
+            runReference: claim.receipt.runReference,
+            lease: claim.lease,
+        )
+        return terminal
     }
 
     private func validateRestorationResultAdmission(
@@ -595,7 +623,7 @@ public extension RuntimeControlPlane {
                     now: now,
                 )
             } catch RuntimeHostError.persistenceConflict {
-                try? await restoreResumptionClaimIfNeeded(
+                try await restoreResumptionClaimIfNeeded(
                     host,
                     lease: lease,
                     fencePersistedOwner: true,
