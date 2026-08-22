@@ -60,6 +60,7 @@ export const PermissionsStep: FC<PermissionsStepProps> = ({ state }) => {
 
 interface AiProviderStepProps {
   readonly state: OnboardingState
+  readonly onSetUpLater?: () => void
 }
 
 function providerAction(provider: ProviderState) {
@@ -91,7 +92,7 @@ function providerAction(provider: ProviderState) {
   )
 }
 
-export const AiProviderStep: FC<AiProviderStepProps> = ({ state }) => (
+export const AiProviderStep: FC<AiProviderStepProps> = ({ state, onSetUpLater }) => (
   <div className="onb-ai-step">
     <header>
       <h2>AI Provider Setup</h2>
@@ -110,7 +111,7 @@ export const AiProviderStep: FC<AiProviderStepProps> = ({ state }) => (
         <p>{state.aiError}</p>
         <div className="onb-inline-action">
           <Button variant="primary">Retry</Button>
-          <Button>Set up later</Button>
+          <Button onClick={onSetUpLater}>Set up later</Button>
         </div>
       </div>
     ) : null}
@@ -134,7 +135,9 @@ export const AiProviderStep: FC<AiProviderStepProps> = ({ state }) => (
     ) : null}
 
     <div className="onb-skip-action">
-      <Button disabled={state.step === "complete"}>Set up later</Button>
+      <Button disabled={state.step === "complete"} onClick={onSetUpLater}>
+        Set up later
+      </Button>
     </div>
   </div>
 )

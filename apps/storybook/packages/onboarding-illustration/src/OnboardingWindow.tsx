@@ -47,14 +47,18 @@ function nextDisabledMessage(state: OnboardingState, step: OnboardingStep): stri
   return null
 }
 
-function stepContent(state: OnboardingState, step: OnboardingStep): ReactNode {
+function stepContent(
+  state: OnboardingState,
+  step: OnboardingStep,
+  onSetUpLater: () => void,
+): ReactNode {
   switch (step) {
     case "welcome":
       return null
     case "permissions":
       return <PermissionsStep state={state.permissions} />
     case "aiProvider":
-      return <AiProviderStep state={state} />
+      return <AiProviderStep state={state} onSetUpLater={onSetUpLater} />
     case "complete":
       return <CompleteStep phase={state.completePhase} />
     default:
@@ -91,7 +95,7 @@ export const OnboardingWindow: FC<OnboardingWindowProps> = ({ state }) => {
       subtitle={copy.subtitle}
       disabledMessage={disabledMessage}
     >
-      {stepContent(state, step)}
+      {stepContent(state, step, () => setStep("complete"))}
     </OnboardingLayout>
   )
 }
