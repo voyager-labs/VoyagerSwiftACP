@@ -60,7 +60,9 @@ var queryProfileOverride = map[string]string{
 }
 
 var nativeTypeOverride = map[string]string{
-	"mditem:kMDItemFSName": "string",
+	"mditem:kMDItemFSName":   "string",
+	"mditem:kMDItemUserTags": "string_list",
+	"nsurl:NSURLTagNamesKey": "string_list",
 }
 
 // ProjectSystemRegistry는 System Registry를 정확한 active-set
@@ -203,6 +205,7 @@ func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, 
 				binding := entry.PropertyBinding{
 					PropertyID:            propertyID,
 					SourceRef:             ref,
+					BindingOrdinal:        ordinal,
 					ReadTransform:         readTransform,
 					Direction:             "read",
 					EffectiveReadable:     effectiveReadable,
