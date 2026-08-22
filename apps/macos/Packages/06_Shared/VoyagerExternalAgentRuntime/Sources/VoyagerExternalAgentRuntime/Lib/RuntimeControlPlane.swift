@@ -14,6 +14,23 @@ public struct RuntimeCleanupFailureEvidence: Sendable, Equatable {
     }
 }
 
+struct RuntimeRestoreResumeAttemptID: Hashable {
+    let rawValue: UInt64
+}
+
+struct RuntimeRestoredResumeContext {
+    let attemptID: RuntimeRestoreResumeAttemptID
+    let lease: UInt64
+}
+
+enum RuntimeRestoredResumeAttemptError: Error {
+    case lost
+}
+
+extension RuntimeRestoreResumeAttemptID: Sendable {}
+extension RuntimeRestoredResumeContext: Sendable {}
+extension RuntimeRestoredResumeAttemptError: Sendable {}
+
 public actor RuntimeControlPlane {
     typealias SessionRegistry = [ExternalAgentSessionReference: Session]
 
@@ -97,6 +114,8 @@ public actor RuntimeControlPlane {
     var persistenceMutationWaiters: [CheckedContinuation<Void, Never>] = []
     var pendingPersistenceMutations: [ExternalAgentSessionReference: Int] = [:]
     var cleanupFailureEvidenceByHost: [ExternalAgentSessionReference: RuntimeCleanupFailureEvidence] = [:]
+    var nextRestoredResumeAttemptID: UInt64 = 0
+    var activeRestoredResumeAttempts: [ExternalAgentSessionReference: RuntimeRestoreResumeAttemptID] = [:]
 
     var hydrationWaiterCount: Int {
         hydrationWaiterCounts.values.reduce(0, +)
@@ -155,6 +174,58 @@ public actor RuntimeControlPlane {
     func normalizeAdapterError(_ error: any Error) -> RuntimeHostError {
         guard let failure = error as? RuntimeAdapterFailure else { return .adapterUnavailable }
         return .adapterFailure(failure.kind, failure.diagnosticCode)
+    }
+
+    func beginRestoredResumeAttempt(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) throws -> RuntimeRestoreResumeAttemptID {
+        guard let session = sessions[host],
+              session.stored.runReference == runReference,
+              session.lease == .resuming(lease)
+        else { throw RuntimeRestoredResumeAttemptError.lost }
+        nextRestoredResumeAttemptID += 1
+        let attempt = RuntimeRestoreResumeAttemptID(rawValue: nextRestoredResumeAttemptID)
+        activeRestoredResumeAttempts[host] = attempt
+        return attempt
+    }
+
+    func invalidateRestoredResumeAttempt(
+        _ attempt: RuntimeRestoreResumeAttemptID,
+        host: ExternalAgentSessionReference,
+    ) {
+        guard activeRestoredResumeAttempts[host] == attempt else { return }
+        activeRestoredResumeAttempts.removeValue(forKey: host)
+    }
+
+    func requireRestoredResumeAttempt(
+        _ attempt: RuntimeRestoreResumeAttemptID,
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        in registry: SessionRegistry? = nil,
+    ) throws {
+        guard activeRestoredResumeAttempts[host] == attempt,
+              let session = registry?[host] ?? sessions[host],
+              session.stored.runReference == runReference,
+              session.lease == .resuming(lease)
+        else { throw RuntimeRestoredResumeAttemptError.lost }
+    }
+
+    func requireRestoredResumeContext(
+        _ context: RuntimeRestoredResumeContext,
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        in registry: SessionRegistry? = nil,
+    ) throws {
+        try requireRestoredResumeAttempt(
+            context.attemptID,
+            host: host,
+            runReference: runReference,
+            lease: context.lease,
+            in: registry,
+        )
     }
 }
 
