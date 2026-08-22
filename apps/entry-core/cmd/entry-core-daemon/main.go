@@ -37,6 +37,7 @@ type daemonStore interface {
 	Migrate(ctx context.Context) error
 	BootstrapOrRestoreWorkspace(ctx context.Context) (domainentry.WorkspaceContext, error)
 	ApplyCatalogSeed(ctx context.Context, wsctx domainentry.WorkspaceContext) error
+	ValidateActiveCatalog(ctx context.Context, wsctx domainentry.WorkspaceContext) error
 	Close() error
 }
 
@@ -87,6 +88,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer, dependencies daemonD
 			return 1
 		}
 		if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+			logger.Printf("startup failed: %v", err)
+			_ = store.Close()
+			return 1
+		}
+		// 시드 트랜잭션 성공 뒤, 소켓 readiness 전에 활성 카탈로그 전체를 로드·검증한다.
+		// 고아 참조나 invalid 스냅샷은 기동을 실패 닫기한다.
+		if err := store.ValidateActiveCatalog(ctx, wsctx); err != nil {
 			logger.Printf("startup failed: %v", err)
 			_ = store.Close()
 			return 1
@@ -243,6 +251,14 @@ func (s sqliteDaemonStore) BootstrapOrRestoreWorkspace(ctx context.Context) (dom
 
 func (s sqliteDaemonStore) ApplyCatalogSeed(ctx context.Context, wsctx domainentry.WorkspaceContext) error {
 	return s.store.ApplyCatalogSeed(ctx, wsctx)
+}
+
+// ValidateActiveCatalog는 시드 적용 뒤 활성 카탈로그 전체를 기존
+// PropertyCatalogRepository.Load 경로로 로드·검증한다. 고아 참조(ErrCatalogOrphanRef)나
+// invalid 활성 스냅샷은 오류로 반환되어 기동이 실패 닫기된다.
+func (s sqliteDaemonStore) ValidateActiveCatalog(ctx context.Context, wsctx domainentry.WorkspaceContext) error {
+	_, err := sqlite.NewPropertyCatalogRepository(s.store).Load(ctx, wsctx)
+	return err
 }
 
 func (s sqliteDaemonStore) Close() error {
