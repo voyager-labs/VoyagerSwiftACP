@@ -278,14 +278,19 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
             emit: fixture.emit,
         )
 
-        XCTAssertEqual(fixture.commands, [.presentSwitcher, .movePrevious, .movePrevious, .dismissSwitcher])
+        XCTAssertEqual(fixture.commands, [.presentSwitcher, .movePrevious, .moveNext, .dismissSwitcher])
     }
 
     func testExternalDismissalResynchronizesHeldControlTabBeforeRetriggering() {
         let fixture = MonitorFixture()
+        let ownerContext = AppKeyboardShortcutMonitor.ContentTabShortcutContext(
+            hasFocusedWindow: true,
+            isComposerPresented: false,
+            focusedWindowID: UUID(),
+        )
         _ = fixture.monitor.handleKeyDownEvent(
             fixture.event(.keyDown, timestamp: 10),
-            context: fixture.context,
+            context: ownerContext,
             firstResponder: nil,
             emit: fixture.emit,
         )
@@ -293,7 +298,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
 
         let passedThroughExternalDismissal = fixture.monitor.handleKeyDownEvent(
             fixture.event(.keyDown, timestamp: 10.3),
-            context: fixture.context,
+            context: ownerContext,
             firstResponder: nil,
             emit: fixture.emit,
         )
@@ -531,6 +536,37 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         ))
         overlayFixture.fireScheduledHold()
         XCTAssertEqual(overlayFixture.commands, [.presentSwitcher, .dismissSwitcher])
+    }
+
+    /// CTM-004-short_hold_arbitration: Caps Lock does not block Control+Tab gestures.
+    ///
+    /// - 검증 내용: Caps Lock이 켜진 short release와 hold 경로의 semantic command
+    /// - 사전 조건: focused File Manager window에서 Caps Lock과 Control modifier가 활성화됨
+    /// - 기대 결과: short release는 MRU를 선택하고 hold는 switcher를 표시함
+    func testCapsLockDoesNotBlockControlTabShortAndHoldGestures() {
+        let shortFixture = MonitorFixture()
+        _ = shortFixture.monitor.handleKeyDownEvent(
+            shortFixture.event(.keyDown, timestamp: 10, modifiers: [.control, .capsLock]),
+            context: shortFixture.context,
+            firstResponder: nil,
+            emit: shortFixture.emit,
+        )
+        _ = shortFixture.monitor.handleKeyUpEvent(
+            shortFixture.event(.keyUp, timestamp: 10.1, modifiers: [.control, .capsLock]),
+            context: shortFixture.context,
+            emit: shortFixture.emit,
+        )
+        XCTAssertEqual(shortFixture.commands, [.immediateMostRecentlyUsed])
+
+        let holdFixture = MonitorFixture()
+        _ = holdFixture.monitor.handleKeyDownEvent(
+            holdFixture.event(.keyDown, timestamp: 20, modifiers: [.control, .shift, .capsLock]),
+            context: holdFixture.context,
+            firstResponder: nil,
+            emit: holdFixture.emit,
+        )
+        holdFixture.fireScheduledHold()
+        XCTAssertEqual(holdFixture.commands, [.presentSwitcher])
     }
 
     @MainActor

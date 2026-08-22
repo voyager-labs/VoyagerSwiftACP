@@ -403,8 +403,10 @@ final class AppKeyboardShortcutMonitor {
     }
 
     private static func isExactControlTab(modifierFlags: NSEvent.ModifierFlags) -> Bool {
-        modifierFlags.intersection(.deviceIndependentFlagsMask) == [.control] ||
-            modifierFlags.intersection(.deviceIndependentFlagsMask) == [.control, .shift]
+        let modifiers = modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting(.capsLock)
+        return modifiers == [.control] || modifiers == [.control, .shift]
     }
 
     @discardableResult
