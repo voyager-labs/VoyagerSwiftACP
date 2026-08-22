@@ -1,6 +1,7 @@
 import { Button, TextField, Toggle } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import type { OnboardingState, PermissionState, ProviderState } from "./model"
+import { aiSetupComplete } from "./model"
 
 interface PermissionsStepProps {
   readonly state: PermissionState
@@ -135,7 +136,7 @@ export const AiProviderStep: FC<AiProviderStepProps> = ({ state, onSetUpLater })
     ) : null}
 
     <div className="onb-skip-action">
-      <Button disabled={state.step === "complete"} onClick={onSetUpLater}>
+      <Button disabled={aiSetupComplete(state) || state.step === "complete"} onClick={onSetUpLater}>
         Set up later
       </Button>
     </div>
