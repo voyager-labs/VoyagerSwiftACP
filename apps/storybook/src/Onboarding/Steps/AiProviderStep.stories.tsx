@@ -22,11 +22,11 @@ const meta = {
             background: "var(--macos-under-page-background-color)",
           }}
         >
-          <header className="onb-summary" style={{ maxWidth: 720 }}>
-            <span>Onboarding component</span>
-            <h1>AI Provider</h1>
-          </header>
-          <div style={{ maxWidth: 720 }}>
+          <div className="onb-content">
+            <header className="onb-summary">
+              <span>Onboarding component</span>
+              <h1>AI Provider</h1>
+            </header>
             <Story />
           </div>
         </main>
