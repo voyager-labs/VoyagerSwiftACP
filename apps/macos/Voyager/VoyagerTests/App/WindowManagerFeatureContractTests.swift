@@ -10602,6 +10602,80 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// activation 대상이 아닌 계획 창이 닫히면 대기 중 pinned 복귀를 실패 terminal로 소비한다.
+    /// - 검증 내용: windowClosed 이후 pinnedFallbackCount 1 replacement plan apply가 수신됨
+    /// - 사전 조건: survivor window로 activation 시도 중이고 다른 계획 창의 pinned 복귀가 아직 settle되지 않음
+    /// - 기대 결과: 닫힌 창의 pinned tab을 제외해 신규 reservation fallback으로 배치가 재계획되어 멈추지 않음
+    func testPlacementWindowRemovalConsumesAwaitedPinnedReturnAsFailure() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let pinnedWindowID = fixture.plan.windows[0].windowID
+        let pinnedRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
+        let survivorWindowID = UUID()
+        let survivorTabID = ContentTabID(rawValue: "removal-survivor")
+        let survivorItemID = UUID()
+        let survivorRoute = ContentTabPageAnchor.directory(path: "/tmp/removal-survivor")
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                .init(itemID: survivorItemID, anchor: survivorRoute, pendingSelectEntryID: nil),
+                pinnedRequestItem,
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [
+                .init(
+                    windowID: survivorWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: survivorItemID,
+                        tabID: survivorTabID,
+                        anchor: survivorRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+                fixture.plan.windows[0],
+            ],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows.append(Self.makeRouteWindow(
+            id: survivorWindowID,
+            tabs: [(survivorTabID, survivorRoute)],
+            activeTabID: survivorTabID,
+        ))
+        state.externalOpenActivationAttempt = .init(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: survivorWindowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: window 제거 후 native lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowClosed(pinnedWindowID)))
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else { return false }
+            let pinnedItem = replacementPlan.orderedItems.first(where: {
+                $0.itemID == pinnedRequestItem.itemID
+            })
+            return replacementPlan.request?.pinnedFallbackCount == 1
+                && pinnedItem?.tabID != fixture.tabID
+                && pinnedItem?.requiresReservation == true
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// stale apply 재계획 예산을 사용한 뒤에도 pinned 후보 실패는 독립 fallback으로 복구한다.
     /// - 검증 내용: staleReplanCount 1 request에서 pinned 실패 terminal이 신규 reservation apply를 생성함
     /// - 사전 조건: stale apply 재계획을 마친 durable pinned Collection plan이 activation 중 실패함

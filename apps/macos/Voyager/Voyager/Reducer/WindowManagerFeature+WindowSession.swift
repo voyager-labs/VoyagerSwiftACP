@@ -362,6 +362,15 @@ extension WindowManagerFeature {
         if let activationAttempt, state.authorizedExternalOpenBatchID == activationAttempt.batchID {
             state.externalOpenActivationAttempt = nil
             effects.append(retryExternalOpenActivation(after: activationAttempt, state: &state))
+        } else if let attempt = state.externalOpenActivationAttempt,
+                  state.authorizedExternalOpenBatchID == attempt.batchID,
+                  let removedPlanWindow = attempt.plan.windows.first(where: { $0.windowID == id }),
+                  let unsettledTabID = removedPlanWindow.items.last(where: {
+                      $0.requiresPinnedAnchorReturn
+                          && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
+                  })?.tabID
+        {
+            effects.append(replanExternalOpenActivationExcluding(tabID: unsettledTabID, state: &state))
         }
         if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
             state.defaultWindowBootstrapRequestID = nil
