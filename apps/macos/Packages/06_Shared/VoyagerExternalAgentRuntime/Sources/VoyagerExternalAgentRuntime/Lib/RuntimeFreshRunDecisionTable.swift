@@ -126,8 +126,16 @@ enum RuntimeFreshRunDecisionTable {
         return .persist(
             projection: terminal,
             attachReceipt: normalizedReceipt(snapshot.receiptToken),
-            lease: .none,
+            lease: consumptionLeaseHeldThroughTerminal(snapshot.lease),
         )
+    }
+
+    /// terminal event 후에도 결과 수렴 전까지 consuming 소유권 유지.
+    private static func consumptionLeaseHeldThroughTerminal(
+        _ lease: RuntimeControlPlane.RuntimeLease,
+    ) -> RuntimeControlPlane.RuntimeLease {
+        guard case let .consuming(value) = lease else { return .none }
+        return .consuming(value)
     }
 
     private static func providerResultDecision(
@@ -161,6 +169,10 @@ enum RuntimeFreshRunDecisionTable {
             return .ignore
         case .cleanupFailed:
             return .recordCleanupFailure
+        case .callerCancel:
+            // terminal 스냅샷에서 consuming 소유자의 취소는 소유권만 해제한다.
+            guard case let .consuming(value) = snapshot.lease else { return .ignore }
+            return .persist(projection: snapshot.projection, attachReceipt: nil, lease: .none)
         default:
             return .ignore
         }

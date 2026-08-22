@@ -361,6 +361,12 @@ extension RuntimeControlPlane {
                 host: reservation.host,
                 runReference: receipt.runReference,
             ) {
+                // terminal 수렴 시 consuming 소유권 해제.
+                try? await releaseConsumedTerminalOwner(
+                    host: reservation.host,
+                    runReference: receipt.runReference,
+                    lease: lease,
+                )
                 return .terminal(terminal.outcome == result.outcome ? result : terminal)
             }
             return .result(result)
@@ -489,6 +495,23 @@ extension RuntimeControlPlane {
             session.revision += 1
             plane.sessions[host] = session
             return terminal.outcome == result.outcome ? result : terminal
+        }
+    }
+
+    private func releaseConsumedTerminalOwner(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) async throws {
+        try await mutateAfterPersistedTransitions { plane in
+            guard var session = plane.sessions[host],
+                  session.stored.runReference == runReference,
+                  session.lease == .consuming(lease),
+                  session.stored.projection.isTerminal
+            else { return }
+            session.lease = .none
+            session.revision += 1
+            plane.sessions[host] = session
         }
     }
 

@@ -551,7 +551,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(RuntimeFreshRunDecisionTable.decide(
             .providerEvent(kind: .completed, hasGap: false, isDuplicate: false, isStale: false),
             on: running,
-        ) == .persist(projection: .completed, attachReceipt: "receipt-running", lease: .none))
+        ) == .persist(projection: .completed, attachReceipt: "receipt-running", lease: .consuming(4)))
         #expect(RuntimeFreshRunDecisionTable.decide(
             .providerEvent(kind: .failed, hasGap: true, isDuplicate: false, isStale: false),
             on: running,
