@@ -214,11 +214,20 @@ func activeTabHandoffEffect(
     } else {
         .none
     }
+    let failedPinnedReturnTabID = state.pendingCollectionOpenRequest == nil
+        ? nil
+        : state.contentTabs.previousActiveTabID.flatMap { tabID in
+            state.contentTabs.tabs[id: tabID]?.isPinned == true ? tabID : nil
+        }
+    let failedPinnedReturnEffect: Effect<FileManagerWindowAction> = failedPinnedReturnTabID.map { tabID in
+        .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: tabID)))
+    } ?? .none
     state.pendingCollectionOpenRequest = nil
     let navigationEffect = resyncContentNavigationEffect(state: state)
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
         restoreHistoryEffect,
+        failedPinnedReturnEffect,
         .merge(
             navigationEffect,
             restartAiChatProviderLoadOnTabRestoreEffect(

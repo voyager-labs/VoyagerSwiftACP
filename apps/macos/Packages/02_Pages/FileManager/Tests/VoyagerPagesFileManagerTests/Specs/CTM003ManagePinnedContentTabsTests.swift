@@ -7005,6 +7005,80 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: Collection 복귀 중 tab 전환은 typed failure terminal을 전달한다.
+    /// 외부 열기 activation이 tab 전환으로 취소된 Collection load를 계속 기다리지 않도록 handoff 경계를 검증한다.
+    /// - 검증 내용: pending Collection open을 가진 active pinned tab에서 다른 tab으로 전환하면 복귀 실패 delegate를 보냄
+    /// - 사전 조건: runtime Collection에서 durable Collection 복귀 load가 진행 중이고 다른 Directory tab이 존재함
+    /// - 기대 결과: 새 tab이 활성화되고 pending request가 정리되며 이전 tabID의 failure terminal 수신
+    func testSwitchingTabsDuringPinnedCollectionReturnEmitsFailureTerminal() async {
+        let returningTabID = ContentTabID(rawValue: "switching-pinned-collection-return")
+        let targetTabID = ContentTabID(rawValue: "switching-target-directory")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/runtime-switching.voycoll")
+        let durableURL = URL(fileURLWithPath: "/tmp/durable-switching.voycoll")
+        let targetAnchor = ContentTabPageAnchor.directory(path: "/tmp/switching-target")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: returningTabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: runtimeURL),
+                    isPinned: true,
+                    title: "Returning Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: targetTabID,
+                    page: .directory,
+                    anchor: targetAnchor,
+                    isPinned: false,
+                ),
+            ],
+            activeTabID: returningTabID,
+            pinnedRecords: [
+                returningTabID: Self.pinnedRecord(
+                    id: returningTabID,
+                    anchor: .collectionFile(url: durableURL),
+                    title: "Durable Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+        )
+        state.content = .initialContent(for: .collectionFile(url: runtimeURL))
+        state.tabContentStates[targetTabID] = .initialContent(for: targetAnchor)
+        state.syncActiveTabContentState()
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: durableURL,
+            sourceRoute: state.content.navigation.navigationState,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        state.syncContentTabSidebarItems()
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(failedTabID)) = action {
+                    failedTabIDs.withValue { $0.append(failedTabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: tab handoff 세부 action보다 pinned 복귀 terminal 전달을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.contentTabs(.setCurrent(targetTabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, targetTabID)
+        XCTAssertEqual(failedTabIDs.value, [returningTabID])
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned Directory 재선택 시 durable anchor로 복귀
     /// 이미 활성인 sidebar row 재선택도 pinned record의 최초 위치를 기존 navigation lifecycle로 적용하는지 검증한다.
     /// - 검증 내용: active identity 유지, durable anchor 복귀, pinned record 불변
