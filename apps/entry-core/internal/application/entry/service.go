@@ -114,6 +114,34 @@ func (service *UnifiedService) propertyDefinitions(requestedProperties []string)
 	return resolved, nil
 }
 
+func (service *UnifiedService) normalizeRequestedProperties(requestedProperties []string) ([]string, error) {
+	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(service.catalog.Definitions))
+	for _, definition := range service.catalog.Definitions {
+		definitions[definition.PropertyID] = definition
+	}
+	seenSelectors := make(map[string]struct{}, len(requestedProperties))
+	seenPropertyIDs := make(map[domainentry.PropertyID]struct{}, len(requestedProperties))
+	normalized := make([]string, 0, len(requestedProperties))
+	for _, requested := range requestedProperties {
+		if _, seen := seenSelectors[requested]; seen {
+			continue
+		}
+		seenSelectors[requested] = struct{}{}
+		definition, found, err := service.catalogDefinitionFor(requested, definitions)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			if _, seen := seenPropertyIDs[definition.PropertyID]; seen {
+				continue
+			}
+			seenPropertyIDs[definition.PropertyID] = struct{}{}
+		}
+		normalized = append(normalized, requested)
+	}
+	return normalized, nil
+}
+
 // catalogDefinitionFor는 요청 이름을 정확한 PropertyID 텍스트 → 용어(alias) → canonical key
 // 순서로 검색하는 단일 해석 경로다. 정확한 PropertyID 텍스트는 단말 해석이다: 카탈로그
 // 적중이면 그 정의를, 미등록이면 ErrUnregisteredPropertyID로 실패 닫기하고 alias/canonical
@@ -289,6 +317,10 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		request.PageSize < 1 || request.PageSize > 256 || !validApplicationProperties(request.RequestedProperties) || !validOptionalToken(request.PageToken) {
 		return UnifiedListResult{}, newApplicationError("invalid_request", "invalid_request", ErrInvalidRequest)
 	}
+	requestedProperties, normalizeErr := service.normalizeRequestedProperties(request.RequestedProperties)
+	if normalizeErr != nil {
+		return UnifiedListResult{}, newApplicationError("invalid_request", "invalid_property_selector", normalizeErr)
+	}
 	snapshot := service.mountRegistry.Snapshot()
 	scopes, normalizedPath, err := service.selectScopes(request, snapshot)
 	if err != nil {
@@ -300,7 +332,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 	if request.PageSize < len(scopes) {
 		return UnifiedListResult{}, newApplicationError("invalid_request", "page_size_too_small", ErrInvalidRequest)
 	}
-	query := cursorQuery{WorkspaceID: request.WorkspaceID, VirtualPath: normalizedPath, PageSize: request.PageSize, RequestedProperties: append([]string(nil), request.RequestedProperties...)}
+	query := cursorQuery{WorkspaceID: request.WorkspaceID, VirtualPath: normalizedPath, PageSize: request.PageSize, RequestedProperties: append([]string(nil), requestedProperties...)}
 	if request.MountID != nil {
 		query.MountID = *request.MountID
 	}
@@ -335,12 +367,12 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		states = decoded.States
 		roundRobinStart = decoded.RoundRobinStart
 	}
-	definitions, definitionsErr := service.propertyDefinitions(request.RequestedProperties)
+	definitions, definitionsErr := service.propertyDefinitions(requestedProperties)
 	if definitionsErr != nil {
 		return UnifiedListResult{}, definitionsErr
 	}
 	if request.ParentRef != nil {
-		if resolveErr := service.resolveParentPaths(ctx, scopes, states, *request.ParentRef, request.RequestedProperties, definitions); resolveErr != nil {
+		if resolveErr := service.resolveParentPaths(ctx, scopes, states, *request.ParentRef, requestedProperties, definitions); resolveErr != nil {
 			return UnifiedListResult{}, resolveErr
 		}
 	}
@@ -358,7 +390,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 			}
 			continue
 		}
-		adapterRequest, requestErr := source.NewAdapterListRequest(scope.sourceRef, scope.mount, scope.relativePath, quotas[index], states[index].ChildCursor, request.RequestedProperties)
+		adapterRequest, requestErr := source.NewAdapterListRequest(scope.sourceRef, scope.mount, scope.relativePath, quotas[index], states[index].ChildCursor, requestedProperties)
 		if requestErr != nil {
 			return UnifiedListResult{}, newApplicationError("internal_error", "internal_error", ErrApplicationAdapterFailure)
 		}
@@ -377,7 +409,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 			}
 			adapterResult = adapterErrorListResult(adapterErr, service.clock())
 		}
-		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], request.RequestedProperties, definitions)
+		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], requestedProperties, definitions)
 		if err != nil {
 			pages[index] = service.adapterFailureScope(snapshot, scope, uint8(index))
 			pages[index].failure = err
@@ -437,6 +469,10 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 		(request.EntryRef != nil && request.MountID == nil) || (request.VirtualPath != nil && request.MountID != nil) {
 		return ResolveResult{}, newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 	}
+	requestedProperties, normalizeErr := service.normalizeRequestedProperties(request.RequestedProperties)
+	if normalizeErr != nil {
+		return ResolveResult{}, newApplicationError("invalid_request", "invalid_property_selector", normalizeErr)
+	}
 	snapshot := service.mountRegistry.Snapshot()
 	var mountRef domainentry.MountRef
 	var relativePath *string
@@ -468,11 +504,11 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if !exists {
 		return ResolveResult{}, ErrSourceNotFound
 	}
-	adapterRequest, err := source.NewAdapterResolveRequest(binding.SourceRef, mountRef, entryRef, relativePath, request.RequestedProperties)
+	adapterRequest, err := source.NewAdapterResolveRequest(binding.SourceRef, mountRef, entryRef, relativePath, requestedProperties)
 	if err != nil {
 		return ResolveResult{}, newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 	}
-	definitions, definitionsErr := service.propertyDefinitions(request.RequestedProperties)
+	definitions, definitionsErr := service.propertyDefinitions(requestedProperties)
 	if definitionsErr != nil {
 		return ResolveResult{}, definitionsErr
 	}

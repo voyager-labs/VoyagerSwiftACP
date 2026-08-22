@@ -344,6 +344,26 @@ func TestPropertyDefinitionsResolveCanonicalKeySameAsAlias(t *testing.T) {
 	}
 }
 
+func TestNormalizeRequestedPropertiesDeduplicatesSemanticSelectors(t *testing.T) {
+	titleID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: titleID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	normalized, err := service.normalizeRequestedProperties([]string{"common.title", "title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(normalized) != 1 || normalized[0] != "common.title" {
+		t.Fatalf("normalized selectors = %#v, want [common.title]", normalized)
+	}
+}
+
 // VOY-764 회귀: UUIDv7 PropertyID term은 registry 재해싱 없이 resolve된다.
 func TestPropertyDefinitionsResolveVoyagerIssuedTerm(t *testing.T) {
 	v7ID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e12345")
