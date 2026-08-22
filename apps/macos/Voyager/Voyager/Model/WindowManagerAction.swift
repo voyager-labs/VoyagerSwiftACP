@@ -584,18 +584,18 @@ enum ExternalOpenPlacementApplication {
             guard !excludedWindowIDs.contains(placementWindow.windowID),
                   !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
-                  let window = state.windows[id: placementWindow.windowID]?.window,
-                  window.isExternalOpenActivationEligible(for: item)
+                  let window = state.windows[id: placementWindow.windowID]?.window
             else { continue }
             if placementWindow.isNewWindow,
                state.externalWindowBatchIDs[placementWindow.windowID] != plan.batchID
             {
                 continue
             }
-            if window.stillMatchesExternalOpenItem(item) {
+            if window.contentTabs.tabs[id: item.tabID] != nil {
+                guard window.isExternalOpenActivationEligible(for: item),
+                      window.stillMatchesExternalOpenItem(item)
+                else { return nil }
                 lastMatch = placementWindow.windowID
-            } else if window.contentTabs.tabs[id: item.tabID] != nil {
-                return nil
             }
         }
         return lastMatch

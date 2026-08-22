@@ -10307,6 +10307,106 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
+    /// 계획된 기존 tab 하나가 lifecycle-ineligible이면 다른 survivor를 활성화하지 않고 전체 배치를 재계획한다.
+    /// - 검증 내용: pending Collection open tab이 존재하면 staleReplanCount 1 replacement plan을 생성함
+    /// - 사전 조건: 첫 window의 exact-route tab은 pending Collection open, 두 번째 window는 exact-route survivor
+    /// - 기대 결과: native activation 없이 첫 route는 신규 reservation, 두 번째 route는 기존 tab 재사용
+    func testPlacementActivationReplansWholeBatchWhenPlannedTabBecomesLifecycleIneligible() async {
+        let batchID = UUID()
+        let firstItemID = UUID()
+        let secondItemID = UUID()
+        let firstWindowID = UUID()
+        let secondWindowID = UUID()
+        let firstTabID = ContentTabID(rawValue: "lifecycle-ineligible-first")
+        let secondTabID = ContentTabID(rawValue: "lifecycle-survivor-second")
+        let firstRoute = ContentTabPageAnchor.directory(path: "/tmp/lifecycle-first")
+        let secondRoute = ContentTabPageAnchor.directory(path: "/tmp/lifecycle-second")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: firstItemID, anchor: firstRoute, pendingSelectEntryID: nil),
+                .init(itemID: secondItemID, anchor: secondRoute, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: firstItemID,
+                        tabID: firstTabID,
+                        anchor: firstRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+                .init(
+                    windowID: secondWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: secondItemID,
+                        tabID: secondTabID,
+                        anchor: secondRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+            ],
+            request: request,
+        )
+        var firstWindow = Self.makeRouteWindow(
+            id: firstWindowID,
+            tabs: [(firstTabID, firstRoute)],
+            activeTabID: firstTabID,
+        )
+        firstWindow.window.pendingCollectionOpenRequest = .init(
+            id: UUID(),
+            url: URL(fileURLWithPath: "/tmp/unrelated-pending.voycoll"),
+            sourceRoute: .folder("/tmp/lifecycle-first"),
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [
+            firstWindow,
+            Self.makeRouteWindow(
+                id: secondWindowID,
+                tabs: [(secondTabID, secondRoute)],
+                activeTabID: secondTabID,
+            ),
+        ]
+        state.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.activate = { _ in
+                XCTFail("lifecycle-ineligible plan은 native activation 전에 전체 재계획해야 한다")
+                return .becameKey
+            }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: replacement apply 이후 window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(plan)))
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else { return false }
+            let firstItem = replacementPlan.orderedItems.first(where: { $0.itemID == firstItemID })
+            let secondItem = replacementPlan.orderedItems.first(where: { $0.itemID == secondItemID })
+            return replacementPlan.request?.staleReplanCount == 1
+                && firstItem?.tabID != firstTabID
+                && firstItem?.requiresReservation == true
+                && secondItem?.tabID == secondTabID
+                && secondItem?.requiresReservation == false
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// pinned Collection 복귀가 아직 pending이면 becameKey만으로 activation을 끝내지 않는다.
     /// - 검증 내용: pendingCollectionOpenRequest가 있으면 batch authorization이 유지됨
     /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection, open request pending
@@ -10423,6 +10523,83 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             [duplicateTabID],
         )
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
+    }
+
+    /// native activation에서 제외된 window의 pinned 복귀 실패도 correlated terminal로 소비한다.
+    /// - 검증 내용: excluded window failure가 pinnedFallbackCount 1 replacement plan을 생성함
+    /// - 사전 조건: 다른 survivor로 native activation을 재시도한 뒤 제외된 window의 pinned Collection 복귀가 실패함
+    /// - 기대 결과: 실패 terminal을 버리지 않고 failed tab을 제외한 신규 reservation fallback을 적용함
+    func testPlacementActivationReplansExcludedWindowPinnedReturnFailure() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let pinnedWindowID = fixture.plan.windows[0].windowID
+        let pinnedRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
+        let survivorWindowID = UUID()
+        let survivorTabID = ContentTabID(rawValue: "excluded-failure-survivor")
+        let survivorItemID = UUID()
+        let survivorRoute = ContentTabPageAnchor.directory(path: "/tmp/excluded-failure-survivor")
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                .init(itemID: survivorItemID, anchor: survivorRoute, pendingSelectEntryID: nil),
+                pinnedRequestItem,
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [
+                .init(
+                    windowID: survivorWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: survivorItemID,
+                        tabID: survivorTabID,
+                        anchor: survivorRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+                fixture.plan.windows[0],
+            ],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows.append(Self.makeRouteWindow(
+            id: survivorWindowID,
+            tabs: [(survivorTabID, survivorRoute)],
+            activeTabID: survivorTabID,
+        ))
+        state.externalOpenActivationAttempt = .init(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: survivorWindowID,
+            excludedWindowIDs: [pinnedWindowID],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: pinnedWindowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: fixture.tabID))),
+        )))
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else { return false }
+            let pinnedItem = replacementPlan.orderedItems.first(where: {
+                $0.itemID == pinnedRequestItem.itemID
+            })
+            return replacementPlan.request?.pinnedFallbackCount == 1
+                && pinnedItem?.tabID != fixture.tabID
+                && pinnedItem?.requiresReservation == true
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
     }
 
     /// stale apply 재계획 예산을 사용한 뒤에도 pinned 후보 실패는 독립 fallback으로 복구한다.

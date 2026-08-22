@@ -213,15 +213,13 @@ extension WindowManagerFeature {
         return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
     }
 
-    /// pinned route 복귀 실패 delegate를 받으면 해당 tab을 제외하고 배치를 한 번 재계획한다.
+    /// pinned route 복귀 실패 delegate를 받으면 native 재시도에서 제외된 window의 실패도 소비해 배치를 한 번 재계획한다.
     func replanExternalOpenActivationExcluding(
         tabID: ContentTabID,
-        windowID: State.WindowID,
         state: inout State,
     ) -> Effect<Action> {
         guard let attempt = state.externalOpenActivationAttempt,
               state.authorizedExternalOpenBatchID == attempt.batchID,
-              !attempt.excludedWindowIDs.contains(windowID),
               attempt.plan.orderedItems.contains(where: { $0.tabID == tabID && $0.requiresPinnedAnchorReturn })
         else { return .none }
         state.externalOpenActivationAttempt = nil
