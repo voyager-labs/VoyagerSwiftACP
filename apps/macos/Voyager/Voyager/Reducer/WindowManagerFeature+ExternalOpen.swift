@@ -141,14 +141,21 @@ extension WindowManagerFeature {
                         action: .window(.content(.internal(.reloadDirectoryListing))),
                     ))),
                 ]
-                : []) + (activation.shouldPublishSelectionChange
-                ? [
-                    .send(.windows(.element(
-                        id: activation.windowID,
-                        action: .window(.content(.entryViewLayout(.delegate(.selectionChanged)))),
-                    ))),
-                ]
-                : [])
+                : []) + externalOpenSelectionChangeEffects(activation)
+        }
+    }
+
+    private func externalOpenSelectionChangeEffects(
+        _ activation: ExternalOpenPlacementApplication.ExistingWindowActivation,
+    ) -> [Effect<Action>] {
+        activation.selectionChangedTabIDs.map { tabID in
+            let action: FileManagerWindowAction = tabID == activation.activeTabID
+                ? .content(.entryViewLayout(.delegate(.selectionChanged)))
+                : .tabContent(
+                    tabID: tabID,
+                    action: .entryViewLayout(.delegate(.selectionChanged)),
+                )
+            return .send(.windows(.element(id: activation.windowID, action: .window(action))))
         }
     }
 
@@ -184,16 +191,10 @@ extension WindowManagerFeature {
         guard let attempt = state.externalOpenActivationAttempt,
               state.authorizedExternalOpenBatchID == attempt.batchID
         else { return .none }
-        // pinned collection 복귀는 navigation/anchor commit 후의 성공 delegate가 올 때까지 대기한다.
-        let awaitedPinnedCollectionTabIDs = Set<ContentTabID>(attempt.plan.windows.compactMap { window in
-            guard !window.isNewWindow,
-                  let activeItem = window.items.last,
-                  activeItem.requiresPinnedAnchorReturn,
-                  case .collectionFile = activeItem.anchor
-            else { return nil }
-            return activeItem.tabID
+        let awaitedPinnedReturnTabIDs = Set<ContentTabID>(attempt.plan.orderedItems.compactMap { item in
+            item.requiresPinnedAnchorReturn ? item.tabID : nil
         })
-        guard awaitedPinnedCollectionTabIDs.isSubset(of: attempt.settledPinnedReturnTabIDs) else { return .none }
+        guard awaitedPinnedReturnTabIDs.isSubset(of: attempt.settledPinnedReturnTabIDs) else { return .none }
         guard state.externalOpenActivationBecameKey else { return .none }
         let survivingWindowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
             for: attempt.plan,

@@ -9679,7 +9679,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window.content.entryViewLayout.selectedIds, [lastReveal])
         XCTAssertTrue(window.content.entryViewLayout.shouldScrollToSelection)
         XCTAssertEqual(application.existingWindowActivations.first?.activeTabID, tabID)
-        XCTAssertEqual(application.existingWindowActivations.first?.shouldPublishSelectionChange, true)
+        XCTAssertEqual(application.existingWindowActivations.first?.selectionChangedTabIDs, [tabID])
     }
 
     /// 재사용 Directory tab의 stale listing에 파일이 없으면 canonical reload로 reveal을 완료한다.
@@ -9778,7 +9778,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// 비활성 Directory tab을 파일 열기로 재사용해도 즉시 selection 변경을 activation delegate로 넘긴다.
-    /// - 검증 내용: inactive snapshot에서 pending 소비, shouldPublishSelectionChange true
+    /// - 검증 내용: inactive snapshot에서 pending 소비, selectionChangedTabIDs에 reused tab 포함
     /// - 사전 조건: 다른 tab이 활성, 재사용 Directory tab snapshot에 대상 파일이 이미 로드됨
     /// - 기대 결과: snapshot selectedIds가 마지막 파일이고 activation이 selectionChanged를 예약함
     func testPlacementApplicationPublishesSelectionChangeForInactiveReusedDirectoryTab() throws {
@@ -9843,9 +9843,115 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let window = try XCTUnwrap(application.windows[id: windowID]?.window)
 
         XCTAssertEqual(application.existingWindowActivations.first?.activeTabID, reusedTabID)
-        XCTAssertEqual(application.existingWindowActivations.first?.shouldPublishSelectionChange, true)
+        XCTAssertEqual(application.existingWindowActivations.first?.selectionChangedTabIDs, [reusedTabID])
         XCTAssertNil(window.tabContentStates[reusedTabID]?.pendingSelectEntryID)
         XCTAssertEqual(window.tabContentStates[reusedTabID]?.entryViewLayout.selectedIds, [lastReveal])
+    }
+
+    /// 여러 loaded Directory tab을 한 배치에서 재사용하면 각 tab의 canonical selection 상태를 동기화한다.
+    /// - 검증 내용: active·inactive tab 모두 selectedIds와 EntryOperations selectedEntryIDs를 같은 reveal로 반영
+    /// - 사전 조건: 서로 다른 두 Directory tab에 대상 파일이 이미 로드되고 A, B 순서로 외부 열기가 요청됨
+    /// - 기대 결과: 마지막 B가 활성화되고 A와 B의 child selection projection이 모두 갱신됨
+    func testPlacementApplicationPublishesSelectionChangesForAllReusedDirectoryTabs() async throws {
+        func loadedEntry(path: String) -> EntryModel {
+            EntryModel(
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                fullPath: path,
+                isFolder: false,
+                isHidden: false,
+                size: 1,
+                modifiedDate: Date(timeIntervalSince1970: 0),
+                fileExtension: "txt",
+                facets: .init(
+                    createdDate: Date(timeIntervalSince1970: 0),
+                    addedDate: Date(timeIntervalSince1970: 0),
+                    lastOpenedDate: nil,
+                    kind: "Text",
+                    creatorApplication: nil,
+                    tags: nil,
+                    supplementaryMetadata: nil,
+                ),
+            )
+        }
+
+        let batchID = UUID()
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "selection-fanout-a")
+        let tabB = ContentTabID(rawValue: "selection-fanout-b")
+        let routeA = ContentTabPageAnchor.directory(path: "/tmp/selection-fanout-a")
+        let routeB = ContentTabPageAnchor.directory(path: "/tmp/selection-fanout-b")
+        let revealA = "/tmp/selection-fanout-a/a.txt"
+        let revealB = "/tmp/selection-fanout-b/b.txt"
+        var window = Self.makeRouteWindow(
+            id: windowID,
+            tabs: [(tabA, routeA), (tabB, routeB)],
+            activeTabID: tabA,
+        )
+        window.window.content.navigation.seedInitialFolderPath("/tmp/selection-fanout-a")
+        window.window.content.entryViewLayout.entryOperations.items = [loadedEntry(path: revealA)]
+        var snapshotB = FileManagerContentState()
+        snapshotB.navigation.seedInitialFolderPath("/tmp/selection-fanout-b")
+        snapshotB.entryViewLayout.entryOperations.items = [loadedEntry(path: revealB)]
+        window.window.tabContentStates[tabB] = snapshotB
+        window.window.syncActiveTabContentState()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [window]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: UUID(), anchor: routeA, pendingSelectEntryID: revealA),
+                .init(itemID: UUID(), anchor: routeB, pendingSelectEntryID: revealB),
+            ],
+            preferredWindowIDs: [],
+        )
+        let planningResult = ExternalOpenPlacementPlanner.make(
+            request,
+            state: initialState,
+            generateUUID: UUID(),
+        )
+        let plan = try planningResult.get()
+        let publishedSelectionTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { state, action in
+                    switch action {
+                    case let .windows(.element(
+                        id: id,
+                        action: .window(.content(.entryViewLayout(.delegate(.selectionChanged)))),
+                    )):
+                        if let activeTabID = state.windows[id: id]?.window.contentTabs.activeTabID {
+                            publishedSelectionTabIDs.withValue { $0.append(activeTabID) }
+                        }
+                    case let .windows(.element(
+                        id: _,
+                        action: .window(.tabContent(
+                            tabID: tabID,
+                            action: .entryViewLayout(.delegate(.selectionChanged)),
+                        )),
+                    )):
+                        publishedSelectionTabIDs.withValue { $0.append(tabID) }
+                    default:
+                        break
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: child selection delegate 순서보다 모든 tab projection의 최종 동기화를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(plan: plan, reservationsByItemID: [:])))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let appliedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(appliedWindow.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(appliedWindow.tabContentStates[tabA]?.entryViewLayout.selectedIds, [revealA])
+        XCTAssertEqual(Set(publishedSelectionTabIDs.value), [tabA, tabB])
     }
 
     /// 재사용 대상으로 계획한 tab이 apply 전에 바뀌면 같은 request를 현재 live route로 한 번 다시 계획한다.
@@ -10438,11 +10544,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// 같은 window의 비활성 pinned Collection 복귀는 동기 완료되어 settlement를 기다리지 않는다.
-    /// - 검증 내용: 최종 active Collection의 성공 delegate만으로 external open activation을 완료함
-    /// - 사전 조건: 비활성 tab은 동기 복귀 완료, 최종 active tab은 비동기 복귀 중임
-    /// - 기대 결과: 비활성 tab의 delegate 없이 authorized batch와 activation attempt가 해제됨
-    func testPlacementActivationWaitsOnlyForActivePinnedCollectionReturn() async {
+    /// 같은 window의 모든 pinned 복귀 terminal이 도착한 뒤 activation을 완료한다.
+    /// - 검증 내용: active Collection 성공만으로 완료하지 않고 비활성 pinned 복귀 성공까지 대기함
+    /// - 사전 조건: 비활성 pinned Collection과 최종 active pinned Collection이 한 배치에 포함됨
+    /// - 기대 결과: 두 tab의 성공 delegate가 모두 도착한 뒤 authorized batch와 activation attempt가 해제됨
+    func testPlacementActivationWaitsForAllPinnedReturns() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let windowID = fixture.plan.windows[0].windowID
         let inactiveTabID = ContentTabID(rawValue: "inactive-pinned-collection-return")
@@ -10516,6 +10622,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: windowID,
             action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
                 tabID: fixture.tabID,
+                navigationState: .folder("/tmp"),
+            ))),
+        )))
+
+        XCTAssertEqual(store.state.authorizedExternalOpenBatchID, plan.batchID)
+        XCTAssertEqual(store.state.externalOpenActivationAttempt?.settledPinnedReturnTabIDs, [fixture.tabID])
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: inactiveTabID,
                 navigationState: .folder("/tmp"),
             ))),
         )))

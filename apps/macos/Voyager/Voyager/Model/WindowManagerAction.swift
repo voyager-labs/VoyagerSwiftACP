@@ -504,7 +504,7 @@ enum ExternalOpenPlacementApplication {
         let tabIDs: [ContentTabID]
         let activeTabID: ContentTabID
         let pinnedAnchorReturns: [PinnedAnchorReturn]
-        let shouldPublishSelectionChange: Bool
+        let selectionChangedTabIDs: [ContentTabID]
         let shouldReloadActiveDirectory: Bool
     }
 
@@ -658,15 +658,31 @@ enum ExternalOpenPlacementApplication {
             tabIDs: reservations.map(\.id),
             activeTabID: activeItem.tabID,
             pinnedAnchorReturns: pinnedAnchorReturns,
-            shouldPublishSelectionChange: activeItem.pendingSelectEntryID != nil
-                && publishedContent?.pendingSelectEntryID == nil
-                && !(publishedContent?.entryViewLayout.selectedIds.isEmpty ?? true),
+            selectionChangedTabIDs: selectionChangedTabIDs(for: placement.items, in: window),
             shouldReloadActiveDirectory: !activeItem.requiresReservation
                 && !activeItem.requiresPinnedAnchorReturn
                 && activeItem.pendingSelectEntryID != nil
                 && isDirectoryAnchor
                 && publishedContent?.pendingSelectEntryID != nil,
         )
+    }
+
+    private static func selectionChangedTabIDs(
+        for items: [ExternalOpenPlacementPlan.Item],
+        in window: FileManagerWindowState,
+    ) -> [ContentTabID] {
+        var tabIDs: [ContentTabID] = []
+        for item in items where item.pendingSelectEntryID != nil {
+            let content = item.tabID == window.contentTabs.activeTabID
+                ? window.content
+                : window.tabContentStates[item.tabID]
+            guard content?.pendingSelectEntryID == nil,
+                  !(content?.entryViewLayout.selectedIds.isEmpty ?? true),
+                  !tabIDs.contains(item.tabID)
+            else { continue }
+            tabIDs.append(item.tabID)
+        }
+        return tabIDs
     }
 }
 
