@@ -105,6 +105,28 @@ importers:
         specifier: ^8.1.1
         version: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)
 
+  packages/onboarding-illustration:
+    dependencies:
+      '@voyager-labs/design-foundation':
+        specifier: workspace:*
+        version: link:../design-foundation
+      react:
+        specifier: ^19.2.7
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@vitejs/plugin-react':
+        specifier: ^6.0.3
+        version: 6.0.4(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1))
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+      vite:
+        specifier: ^8.1.1
+        version: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)
+
   packages/settings-illustration:
     dependencies:
       '@voyager-labs/design-foundation':

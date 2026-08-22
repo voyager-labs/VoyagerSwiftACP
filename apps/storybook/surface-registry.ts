@@ -77,6 +77,21 @@ export type Surface = ActiveSurface | PlannedSurface | RetiredSurface
  */
 export const surfaceRegistry: readonly Surface[] = [
   {
+    id: "design-foundation",
+    kind: "foundation",
+    lifecycle: "active",
+    owner: "Design Foundation",
+    design: "packages/design-foundation/DESIGN.md",
+    fixtureOwner: "Design Foundation",
+    packageRoot: "packages/design-foundation",
+    rootConsumer: null,
+    story: {
+      directory: "../src/DesignFoundation",
+      titlePrefix: "Design Foundation",
+      files: "**/*.stories.tsx",
+    },
+  },
+  {
     id: "file-manager",
     kind: "component",
     lifecycle: "active",
@@ -107,31 +122,19 @@ export const surfaceRegistry: readonly Surface[] = [
     },
   },
   {
-    id: "design-foundation",
-    kind: "foundation",
-    lifecycle: "active",
-    owner: "Design Foundation",
-    design: "packages/design-foundation/DESIGN.md",
-    fixtureOwner: "Design Foundation",
-    packageRoot: "packages/design-foundation",
-    rootConsumer: null,
-    story: {
-      directory: "../src/DesignFoundation",
-      titlePrefix: "Design Foundation",
-      files: "**/*.stories.tsx",
-    },
-  },
-  {
     id: "onboarding",
     kind: "component",
-    lifecycle: "planned",
+    lifecycle: "active",
     owner: "Onboarding",
-    design: null,
+    design: "packages/onboarding-illustration/DESIGN.md",
     fixtureOwner: "Onboarding",
-    packageRoot: null,
+    packageRoot: "packages/onboarding-illustration",
     rootConsumer: "OnboardingHost",
-    story: null,
-    retirementCondition: null,
+    story: {
+      directory: "../src/Onboarding",
+      titlePrefix: "Onboarding",
+      files: "**/*.stories.tsx",
+    },
   },
   {
     id: "feedback",
