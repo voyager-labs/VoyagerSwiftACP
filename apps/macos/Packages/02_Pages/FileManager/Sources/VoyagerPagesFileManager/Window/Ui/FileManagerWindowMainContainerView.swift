@@ -30,6 +30,7 @@ struct FileManagerWindowMainContainerView: View {
                             contentTabs: store.contentTabs,
                             focusedCandidateID: presentation.focusedCandidateID,
                         ),
+                        onFocusChanged: contentTabSwitcherFocusChanged,
                         onDismiss: dismissContentTabSwitcher,
                     )
                     .onExitCommand(perform: dismissContentTabSwitcher)
@@ -79,6 +80,10 @@ struct FileManagerWindowMainContainerView: View {
 
     private func dismissContentTabSwitcher() {
         store.send(.view(.dismissContentTabSwitcher))
+    }
+
+    private func contentTabSwitcherFocusChanged(_ id: ContentTabID) {
+        store.send(.view(.contentTabSwitcherFocusChanged(id)))
     }
 }
 

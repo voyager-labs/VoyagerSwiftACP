@@ -431,6 +431,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         XCTAssertFalse(switcherSource.contains("@FocusState private var isSwitcherFocused"))
         XCTAssertFalse(switcherSource.contains(".focused($isSwitcherFocused)"))
         XCTAssertTrue(switcherSource.contains(".onAppear(perform: synchronizeFocus)"))
+        XCTAssertTrue(switcherSource.contains(".onChange(of: focusedRowID, perform: handleNativeFocusChange)"))
         XCTAssertTrue(switcherSource.contains(".onExitCommand(perform: onDismiss)"))
         XCTAssertTrue(switcherSource.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)"))
 
@@ -508,6 +509,39 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
             contentTabs: state,
             contentTabsBeforeFocus: contentTabsBeforeFocus,
         )
+    }
+
+    /// CTM-004-present_focused_candidate: native focus traversal은 reducer presentation focus와 동기화한다.
+    /// 메뉴로 표시한 전환기에서 Tab 이동이 시각 focus와 semantic candidate identity를 분리하지 않는지 검증한다.
+    /// - 검증 내용: exact candidate focus action, live candidate snapshot, Content Tab 의미 상태 불변
+    /// - 사전 조건: current와 별도의 focus 후보가 있는 automatic switcher
+    /// - 기대 결과: presentation focus만 요청한 live candidate로 이동하고 active/MRU/selection은 유지된다.
+    @MainActor
+    func testNativeFocusTraversalUpdatesPresentationWithoutActivatingTab() async throws {
+        let initialState = makeSwitcherWindowState(prefix: "native-focus")
+        let semanticSnapshot = ContentTabSemanticSnapshot(initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.request(.presentContentTabSwitcher(source: .automatic))) {
+            $0.contentTabSwitcherPresentation = .init(source: .automatic, contentTabs: $0.contentTabs)
+        }
+        let requestedID = try XCTUnwrap(
+            store.state.contentTabSwitcherPresentation?.candidateIDs.first(where: {
+                $0 != store.state.contentTabSwitcherPresentation?.focusedCandidateID
+            }),
+        )
+
+        await store.send(.view(.contentTabSwitcherFocusChanged(requestedID))) {
+            $0.contentTabSwitcherPresentation = .init(
+                source: .automatic,
+                candidateIDs: $0.contentTabSwitcherPresentation?.candidateIDs ?? [],
+                focusedCandidateID: requestedID,
+            )
+        }
+
+        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticSnapshot)
     }
 
     /// CTM-004-present_focused_candidate: FileManagerHost content fixture가 1·5·6·10 card focus layout을 결정적으로 노출한다.
@@ -1039,7 +1073,7 @@ private func assertFocusedCandidateViewContract(
     XCTAssertFalse(viewSource.contains("row.anchorSummary"))
     XCTAssertTrue(viewSource.contains(".onChange(of: focusRenderState)"))
     XCTAssertTrue(viewSource.contains("rowIDs: rowIDs"))
-    XCTAssertFalse(viewSource.contains(".onChange(of: focusedRowID)"))
+    XCTAssertTrue(viewSource.contains(".onChange(of: focusedRowID, perform: handleNativeFocusChange)"))
     XCTAssertFalse(viewSource.contains("@FocusState private var isSwitcherFocused"))
     XCTAssertTrue(viewSource.contains("row.isFocused"))
     XCTAssertTrue(viewSource.contains("VoyagerDS.BrandPrimaryColor.c500"))

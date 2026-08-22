@@ -164,6 +164,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 state.contentTabSwitcherPresentation = nil
                 return .none
 
+            case let .view(.contentTabSwitcherFocusChanged(id)):
+                return handleContentTabSwitcherFocusChanged(id, state: &state)
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 

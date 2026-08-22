@@ -51,6 +51,7 @@ enum ContentTabSwitcherLayout {
 
 struct FileManagerContentTabSwitcherView: View {
     private let viewState: ContentTabSwitcherViewState
+    private let onFocusChanged: (ContentTabID) -> Void
     private let onDismiss: () -> Void
 
     @Environment(\.colorScheme)
@@ -59,9 +60,11 @@ struct FileManagerContentTabSwitcherView: View {
 
     init(
         viewState: ContentTabSwitcherViewState,
+        onFocusChanged: @escaping (ContentTabID) -> Void = { _ in },
         onDismiss: @escaping () -> Void,
     ) {
         self.viewState = viewState
+        self.onFocusChanged = onFocusChanged
         self.onDismiss = onDismiss
     }
 
@@ -78,6 +81,7 @@ struct FileManagerContentTabSwitcherView: View {
         .onChange(of: focusRenderState) { _ in
             synchronizeFocus()
         }
+        .onChange(of: focusedRowID, perform: handleNativeFocusChange)
         .onExitCommand(perform: onDismiss)
     }
 
@@ -117,6 +121,11 @@ struct FileManagerContentTabSwitcherView: View {
 
     private func synchronizeFocus() {
         focusedRowID = focusedCandidateID
+    }
+
+    private func handleNativeFocusChange(_ id: ContentTabID?) {
+        guard let id, id != focusedCandidateID else { return }
+        onFocusChanged(id)
     }
 
     private func switcherSurface(availableWidth: CGFloat) -> some View {
