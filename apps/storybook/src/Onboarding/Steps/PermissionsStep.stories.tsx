@@ -16,7 +16,11 @@ const meta = {
       <div data-design-foundation data-onboarding-illustration>
         <main
           className="onb-specimen"
-          style={{ minHeight: "100dvh", padding: 48, background: "var(--macos-under-page-background-color)" }}
+          style={{
+            minHeight: "100dvh",
+            padding: 48,
+            background: "var(--macos-under-page-background-color)",
+          }}
         >
           <header className="onb-summary" style={{ maxWidth: 720 }}>
             <span>Onboarding component</span>
