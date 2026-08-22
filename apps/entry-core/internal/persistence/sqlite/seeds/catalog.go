@@ -5,8 +5,6 @@
 // Registry JSON을 읽지 않는다.
 package seeds
 
-import "crypto/sha256"
-
 // SeedMetadata는 커밋된 full-state seed의 불변 metadata이다.
 type SeedMetadata struct {
 	// SeedOrdinal은 불변 seed ordinal(첫 full-state seed는 1)이다.
@@ -27,21 +25,11 @@ type SeedMetadata struct {
 }
 
 // Current는 생성 상수와 embedded SQL body를 합친 seed metadata를 반환한다. SQL
-// SHA-256은 embedded body에서 다시 계산하므로 runtime에서 항상 자기 일관적이다.
+// SHA-256은 generation 시점에 검토되어 catalog_gen.go에 고정되므로 runtime에서
+// 재계산하지 않고 그대로 보존한다. embedded body가 그 고정 hash와 다르면
+// applyCatalogSeedInTx의 pre-write gate가 실패 닫기한다.
 func Current() SeedMetadata {
 	metadata := generatedSeedMetadata
 	metadata.SQLBody = sqlBody
-	metadata.SQLSHA256 = sha256Hex(sqlBody)
 	return metadata
-}
-
-func sha256Hex(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	const hexDigits = "0123456789abcdef"
-	out := make([]byte, 64)
-	for index, b := range sum {
-		out[index*2] = hexDigits[b>>4]
-		out[index*2+1] = hexDigits[b&0x0f]
-	}
-	return string(out)
 }
