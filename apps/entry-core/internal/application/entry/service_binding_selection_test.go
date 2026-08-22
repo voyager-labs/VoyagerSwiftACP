@@ -2,6 +2,7 @@ package entry
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
@@ -106,6 +107,95 @@ func TestUnifiedListSelectsApplicableBindingRegardlessOfCatalogOrder(t *testing.
 			}
 			assertWorkspaceTitleSelected(t, result.Entries[0].EntrySnapshot.CanonicalProperties)
 		})
+	}
+}
+
+// VOY-764 ordinal 수리 회귀: 같은 스코프 계층(여기서는 system)에 여러 system key
+// 바인딩이 있으면 모호로 거부하지 않고 검토된 binding_ordinal이 낮은 것을 선택한다.
+// ordinal이 같고 서로 다른 소스 ref면 여전히 동순위 모호로 실패 닫기한다.
+func TestUnifiedListSelectsLowestOrdinalWithinSameScope(t *testing.T) {
+	scenarios := []struct {
+		name      string
+		firstKey  string
+		firstOrd  int
+		secondKey string
+		secondOrd int
+		wantText  string
+	}{
+		{"lower ordinal listed first", "system_title", 0, "display_title", 1, "SystemTitle"},
+		{"lower ordinal listed last", "display_title", 1, "system_title", 0, "SystemTitle"},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			registry, bindings, sourceInstanceID := fakeExternalFixture(t, multiSourceNativeProperties(t))
+			catalog := titleCatalogFixture()
+			for _, spec := range []struct {
+				key string
+				ord int
+			}{{scenario.firstKey, scenario.firstOrd}, {scenario.secondKey, scenario.secondOrd}} {
+				ref := domainentry.SourcePropertyRef{
+					ProviderID: "macos.fakeexternal", SourceInstanceID: sourceInstanceID,
+					ScopeKind: domainentry.SourceScopeKindSystem, ScopeExternalID: "macos",
+					ExternalPropertyID: spec.key,
+				}
+				catalog.Descriptors = append(catalog.Descriptors, domainentry.SourcePropertyDescriptor{
+					Ref: ref, NativeKey: spec.key, NativeType: "string",
+					NativeCardinality: domainentry.PropertyCardinalityOne,
+					Authority:         domainentry.AuthorityKindProvider, SourceReadable: true,
+					Lifecycle: domainentry.PropertyLifecycleActive,
+				})
+				catalog.Bindings = append(catalog.Bindings, domainentry.PropertyBinding{
+					PropertyID: catalogTitleID, SourceRef: ref, BindingOrdinal: spec.ord,
+					ReadTransform: "identity", Direction: "read",
+					EffectiveReadable: true, ApprovalState: "approved", Lifecycle: domainentry.PropertyLifecycleActive,
+				})
+			}
+			service := mustUnifiedServiceWithCatalog(t, registry, bindings, catalog)
+			path := "/external"
+
+			result, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+				WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1, RequestedProperties: []string{"common.title"},
+			})
+			if err != nil {
+				t.Fatalf("UnifiedList() error = %v", err)
+			}
+			if len(result.Entries) != 1 {
+				t.Fatalf("entries = %#v, want exactly one entry", result.Entries)
+			}
+			assertCanonicalTitleText(t, result.Entries[0].EntrySnapshot.CanonicalProperties, scenario.wantText)
+		})
+	}
+}
+
+func TestUnifiedListRejectsSameScopeEqualOrdinalAmbiguity(t *testing.T) {
+	registry, bindings, sourceInstanceID := fakeExternalFixture(t, multiSourceNativeProperties(t))
+	catalog := titleCatalogFixture()
+	for _, nativeKey := range []string{"system_title", "display_title"} {
+		ref := domainentry.SourcePropertyRef{
+			ProviderID: "macos.fakeexternal", SourceInstanceID: sourceInstanceID,
+			ScopeKind: domainentry.SourceScopeKindSystem, ScopeExternalID: "macos",
+			ExternalPropertyID: nativeKey,
+		}
+		catalog.Descriptors = append(catalog.Descriptors, domainentry.SourcePropertyDescriptor{
+			Ref: ref, NativeKey: nativeKey, NativeType: "string",
+			NativeCardinality: domainentry.PropertyCardinalityOne,
+			Authority:         domainentry.AuthorityKindProvider, SourceReadable: true,
+			Lifecycle: domainentry.PropertyLifecycleActive,
+		})
+		catalog.Bindings = append(catalog.Bindings, domainentry.PropertyBinding{
+			PropertyID: catalogTitleID, SourceRef: ref, BindingOrdinal: 0,
+			ReadTransform: "identity", Direction: "read",
+			EffectiveReadable: true, ApprovalState: "approved", Lifecycle: domainentry.PropertyLifecycleActive,
+		})
+	}
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, catalog)
+	path := "/external"
+
+	_, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 1, RequestedProperties: []string{"common.title"},
+	})
+	if !errors.Is(err, ErrAmbiguousSourceBinding) {
+		t.Fatalf("UnifiedList() error = %v, want ErrAmbiguousSourceBinding", err)
 	}
 }
 

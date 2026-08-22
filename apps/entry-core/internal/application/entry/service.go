@@ -239,18 +239,25 @@ func sourceScopePrecedence(kind domainentry.SourceScopeKind) int {
 }
 
 // selectExecutableSourceBinding는 실행 가능한 후보 중 가장 구체적인 스코프 계층을
-// 선택한다. 최상위 계층에 서로 다른 후보가 둘 이상 남으면 동순위 모호로 실패 닫기하며,
-// 판정은 슬라이스 순서와 무관하다.
+// 선택한다. 같은 계층에 후보가 여러 개면 System Registry가 부여한 검토된
+// binding_ordinal이 낮은 것을 선택한다. 같은 계층·같은 ordinal에 서로 다른 후보가
+// 남으면 동순위 모호로 실패 닫기하며, 판정은 슬라이스 순서와 무관하다.
 func selectExecutableSourceBinding(candidates []domainentry.PropertyBinding) (domainentry.PropertyBinding, error) {
 	best := candidates[0]
 	bestPrecedence := sourceScopePrecedence(best.SourceRef.ScopeKind)
 	ambiguous := false
 	for _, candidate := range candidates[1:] {
-		switch precedence := sourceScopePrecedence(candidate.SourceRef.ScopeKind); {
+		precedence := sourceScopePrecedence(candidate.SourceRef.ScopeKind)
+		switch {
 		case precedence > bestPrecedence:
 			best, bestPrecedence, ambiguous = candidate, precedence, false
 		case precedence == bestPrecedence:
-			ambiguous = true
+			switch {
+			case candidate.BindingOrdinal < best.BindingOrdinal:
+				best, ambiguous = candidate, false
+			case candidate.BindingOrdinal == best.BindingOrdinal && candidate.SourceRef != best.SourceRef:
+				ambiguous = true
+			}
 		}
 	}
 	if ambiguous {

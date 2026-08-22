@@ -143,6 +143,7 @@ func (descriptor SourcePropertyDescriptor) Validate() error {
 type PropertyBinding struct {
 	PropertyID            PropertyID
 	SourceRef             SourcePropertyRef
+	BindingOrdinal        int
 	ReadTransform         string
 	Direction             string
 	EffectiveReadable     bool
@@ -159,6 +160,7 @@ type PropertyBinding struct {
 
 func (binding PropertyBinding) Validate() error {
 	if !binding.PropertyID.valid() || binding.SourceRef.Validate() != nil ||
+		binding.BindingOrdinal < 0 ||
 		!validUTF8Bytes(binding.ReadTransform, 0, 128) || !validUTF8Bytes(binding.Direction, 0, 64) ||
 		!validUTF8Bytes(binding.QueryProfile, 0, 64) || !validUTF8Bytes(binding.Provenance, 0, 128) ||
 		!validUTF8Bytes(binding.ApprovalState, 0, 64) || !validUTF8Bytes(binding.Lossiness, 0, 64) ||
