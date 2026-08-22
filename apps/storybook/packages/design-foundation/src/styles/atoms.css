@@ -100,6 +100,12 @@
   padding-left: calc(var(--fm-space-6) + 16px + var(--fm-space-4));
 }
 
+/* 네이티브 NSMenu 규약: 단축키 행이 있는 메뉴는 라벨-단축키 호흡을 위해 최소 폭을 가진다. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  :is(.fm-menu, .vc-combo-box-popover):has(kbd) {
+  min-width: 220px;
+}
+
 /* === Tooltip === */
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .fm-tooltip {
