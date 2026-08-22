@@ -1,5 +1,7 @@
 import { type CSSProperties, type FC, useCallback, useId, useRef, useState } from "react"
 import type { ControlOption } from "./ControlOption"
+import { Menu } from "./Menu"
+import { MenuItem } from "./MenuItem"
 
 export interface PopUpButtonProps<Value = string> {
   /** Available options */
@@ -32,6 +34,7 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
   const [open, setOpen] = useState(false)
   const listboxId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const selected = options.find((o) => o.value === value)
 
@@ -57,10 +60,11 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
     }
   }, [])
 
-  /** Close on Escape */
+  /** Close on Escape and restore trigger focus */
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       setOpen(false)
+      triggerRef.current?.focus()
     }
   }, [])
 
@@ -75,8 +79,9 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
       onKeyDown={handleKeyDown}
     >
       <button
+        ref={triggerRef}
         type="button"
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={open}
         aria-label={accessibilityLabel ?? selected?.label}
         disabled={disabled}
@@ -91,29 +96,19 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
       </button>
 
       {open ? (
-        <div id={listboxId} className="vc-popup-menu">
+        <Menu id={listboxId} className="vc-popup-menu" focusOnMount>
           {options.map((opt) => (
-            <button
+            <MenuItem
               key={String(opt.value)}
-              type="button"
-              aria-selected={opt.value === value}
-              aria-disabled={opt.disabled || undefined}
+              label={opt.label}
+              detail={opt.detail}
+              role="menuitemradio"
+              checked={opt.value === value}
               disabled={opt.disabled}
-              className={["vc-popup-option", opt.value === value ? "selected" : ""]
-                .filter(Boolean)
-                .join(" ")}
               onClick={() => handleSelect(opt)}
-            >
-              <span className="vc-popup-option-label">{opt.label}</span>
-              {opt.value === value ? (
-                <span className="vc-popup-option-check" aria-hidden="true">
-                  ✓
-                </span>
-              ) : null}
-              {opt.detail ? <span className="vc-popup-option-detail">{opt.detail}</span> : null}
-            </button>
+            />
           ))}
-        </div>
+        </Menu>
       ) : null}
     </div>
   )

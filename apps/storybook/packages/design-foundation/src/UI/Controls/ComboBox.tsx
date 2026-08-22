@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 import type { CSSProperties, FC, FocusEvent, KeyboardEvent, MouseEvent } from "react"
 import type { ControlOption } from "./ControlOption"
+import { MenuItem } from "./MenuItem"
 
 export interface ComboBoxProps<Value = string> {
   /** 옵션 목록 */
@@ -204,30 +205,18 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string>({
           {options.map((option) => {
             const isSelected = option.value === value
             return (
-              <button
+              <MenuItem
                 key={String(option.value)}
-                type="button"
-                aria-selected={isSelected}
                 className="vc-combo-box-option"
+                role="option"
+                aria-selected={isSelected}
+                label={option.label}
+                detail={option.detail}
+                checked={isSelected}
                 disabled={option.disabled}
                 onClick={() => handleOptionClick(option.value)}
                 onKeyDown={(e) => handleOptionKeyDown(e, option.value)}
-              >
-                <span className="vc-combo-box-option-label">{option.label}</span>
-                {option.detail ? (
-                  <span className="vc-combo-box-option-detail">{option.detail}</span>
-                ) : null}
-                <svg
-                  className={["vc-combo-box-option-check", isSelected ? "visible" : ""]
-                    .filter(Boolean)
-                    .join(" ")}
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
-                </svg>
-              </button>
+              />
             )
           })}
         </div>
